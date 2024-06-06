@@ -40,13 +40,14 @@ var (
 )
 
 type Client struct {
-	client client.Client
-	// region string
+	client    client.Client
+	namespace string
 }
 
-func NewClient(client client.Client) *Client {
+func NewClient(client client.Client, namespace string) *Client {
 	return &Client{
-		client: client,
+		client:    client,
+		namespace: namespace,
 	}
 }
 
@@ -55,7 +56,7 @@ func NewClient(client client.Client) *Client {
 func (c *Client) list(ctx context.Context) (*unikornv1.RegionList, error) {
 	var regions unikornv1.RegionList
 
-	if err := c.client.List(ctx, &regions); err != nil {
+	if err := c.client.List(ctx, &regions, &client.ListOptions{Namespace: c.namespace}); err != nil {
 		return nil, err
 	}
 
@@ -110,9 +111,21 @@ func (c *Client) Provider(ctx context.Context, regionName string) (providers.Pro
 	return provider, nil
 }
 
+func convertRegionType(in unikornv1.Provider) openapi.RegionType {
+	switch in {
+	case unikornv1.ProviderOpenstack:
+		return openapi.Openstack
+	}
+
+	return ""
+}
+
 func convert(in *unikornv1.Region) *openapi.RegionRead {
 	out := &openapi.RegionRead{
 		Metadata: conversion.ResourceReadMetadata(in, coreopenapi.ResourceProvisioningStatusProvisioned),
+		Spec: openapi.RegionSpec{
+			Type: convertRegionType(in.Spec.Provider),
+		},
 	}
 
 	return out

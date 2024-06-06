@@ -44,7 +44,7 @@ type RegionList struct {
 // about the provider for that region.
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// +kubebuilder:resource:scope=Cluster,categories=unikorn
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="display name",type="string",JSONPath=".metadata.labels['unikorn-cloud\\.org/name']"
 // +kubebuilder:printcolumn:name="provider",type="string",JSONPath=".spec.provider"

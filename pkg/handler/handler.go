@@ -38,6 +38,9 @@ type Handler struct {
 	// client gives cached access to Kubernetes.
 	client client.Client
 
+	// namespace is the namespace we are running in.
+	namespace string
+
 	// options allows behaviour to be defined on the CLI.
 	options *Options
 
@@ -45,7 +48,7 @@ type Handler struct {
 	authorizerOptions *oidc.Options
 }
 
-func New(client client.Client, options *Options, authorizerOptions *oidc.Options) (*Handler, error) {
+func New(client client.Client, namespace string, options *Options, authorizerOptions *oidc.Options) (*Handler, error) {
 	h := &Handler{
 		client:            client,
 		options:           options,
@@ -65,7 +68,7 @@ func (h *Handler) setUncacheable(w http.ResponseWriter) {
 }
 
 func (h *Handler) GetApiV1Regions(w http.ResponseWriter, r *http.Request) {
-	result, err := region.NewClient(h.client).List(r.Context())
+	result, err := region.NewClient(h.client, h.namespace).List(r.Context())
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -76,7 +79,7 @@ func (h *Handler) GetApiV1Regions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetApiV1RegionsRegionIDFlavors(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter) {
-	provider, err := region.NewClient(h.client).Provider(r.Context(), regionID)
+	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -113,7 +116,7 @@ func (h *Handler) GetApiV1RegionsRegionIDFlavors(w http.ResponseWriter, r *http.
 }
 
 func (h *Handler) GetApiV1RegionsRegionIDImages(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter) {
-	provider, err := region.NewClient(h.client).Provider(r.Context(), regionID)
+	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return

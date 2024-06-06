@@ -1,5 +1,5 @@
 {{- range $region := .Values.regions }}
-apiVersion: unikorn-cloud.org/v1alpha1
+apiVersion: region.unikorn-cloud.org/v1alpha1
 kind: Region
 metadata:
   name: {{ include "resource.id" $region.name }}

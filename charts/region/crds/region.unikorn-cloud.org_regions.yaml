@@ -14,7 +14,7 @@ spec:
     listKind: RegionList
     plural: regions
     singular: region
-  scope: Cluster
+  scope: Namespaced
   versions:
   - additionalPrinterColumns:
     - jsonPath: .metadata.labels['unikorn-cloud\.org/name']
