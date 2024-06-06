@@ -130,3 +130,48 @@ type RegionStatus struct {
 	// Current service state of a region.
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
 }
+
+// IdentityList is a typed list of identities.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type IdentityList struct {
+        metav1.TypeMeta `json:",inline"`
+        metav1.ListMeta `json:"metadata,omitempty"`
+        Items           []Identity `json:"items"`
+}
+
+// Identity defines an on-demand cloud identity.  The region controller must
+// create any resources necessary to provide dynamic provisioning of clusters
+// e.g. compute, storage and networking.  This resource is used for persistence
+// of information by the controller and not for manual lifecycle management.
+// Any credentials should not be stored unless absolutely necessary, and should
+// be passed to a client on initial identity creation only.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:printcolumn:name="provider",type="string",JSONPath=".spec.provider"
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type Identity struct {
+        metav1.TypeMeta   `json:",inline"`
+        metav1.ObjectMeta `json:"metadata,omitempty"`
+        Spec              IdentitySpec `json:"spec"`
+	Status            IdentityStatus `json:"status"`
+}
+
+// IdentitySpec stores any state necessary to manage identity.
+type IdentitySpec struct {
+	// Provider defines the provider type.
+	Provider Provider `json:"provider"`
+	// OpenStack is populated when the provider type is set to "openstack".
+	OpenStack *IdentitySpecOpenStack `json:"openstack,omitempty"`
+}
+
+type IdentitySpecOpenStack struct {
+	// UserID is the ID of the user created for the identity.
+	UserID string
+	// ProjectIS is the ID of the project created for the identity.
+	ProjectID string
+}
+
+type IdentityStatus struct {
+}

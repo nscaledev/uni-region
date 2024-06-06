@@ -61,13 +61,66 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/regions/{regionID}/identities:
+    description: |-
+      Managed identity services.  Identities should be single use e.g. a single cluster instance.
+      This limits blast radius in the event of a credential leak, or in some cases avoids bugs in
+      provisioning software.
+    parameters:
+    - $ref: '#/components/parameters/regionIDParameter'
+    post:
+      description: Create a new identity in the region.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/identityRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/identityResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/regions/{regionID}/identities/{identityID}:
+    description: |-
+      Managed identity services.  Identities should be single use e.g. a single cluster instance.
+      This limits blast radius in the event of a credential leak, or in some cases avoids bugs in
+      provisioning software
+    parameters:
+    - $ref: '#/components/parameters/regionIDParameter'
+    - $ref: '#/components/parameters/identityIDParameter'
+    delete:
+      description: Delete an identity from the region.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          description: The identity was successfully deleted.
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 components:
   parameters:
     regionIDParameter:
       name: regionID
       in: path
-      description: |-
-        The region name.
+      description: The region identifier.
+      required: true
+      schema:
+        $ref: '#/components/schemas/kubernetesNameParameter'
+    identityIDParameter:
+      name: identityID
+      in: path
+      description: The identity identifier.
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
@@ -187,6 +240,84 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/flavor'
+    tag:
+      description: A key value pair.
+      type: object
+      required:
+      - name
+      - value
+      properties:
+        name:
+          description: A unique tag name.
+          type: string
+        value:
+          description: An arbirary value, may be marshaled JSON for example.
+          type: string
+    tagList:
+      description: A list of tags.
+      type: array
+      items:
+        $ref: '#/components/schemas/tag'
+    identityWrite:
+      description: Request parameters for creating an identity.
+      type: object
+      properties:
+        tags:
+          $ref: '#/components/schemas/tagList'
+    identitySpecOpenStack:
+      description: Everything an OpenStack client needs to function.
+      type: object
+      required:
+      - cloud
+      - cloudConfig
+      # TODO: isn't the new CAPO able to derive this now??
+      - externalNetworkID
+      properties:
+        cloud:
+          description: The name of the cloud in the cloud config.
+          type: string
+        cloudConfig:
+          description: A base64 encoded cloud config file.
+          type: string
+        externalNetworkID:
+          description: An external network that can be used to provision floating IPs.
+          type: string
+    identitySpec:
+      description: |-
+        A provider specific identity, while the client can list regions to infer the
+        type, we don't requires this and return it with the response.  That can then
+        be used in turn to determine which provider specification to examine.
+      type: object
+      required:
+      - type
+      properties:
+        type:
+          $ref: '#/components/schemas/regionType'
+        openstack:
+          $ref: '#/components/schemas/identitySpecOpenStack'
+    identityRead:
+      description: A provider specific identity.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/identitySpec'
+  requestBodies:
+    identityRequest:
+      description: A request for an identity.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/identityWrite'
+          example:
+            tags:
+            - name: clusterID
+              value: c7568e2d-f9ab-453d-9a3a-51375f78426b
   responses:
     regionsResponse:
       description: A list of regions.
@@ -230,6 +361,24 @@ components:
             id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
             memory: 32
             name: g.4.highmem.a100.1g.10gb
+    identityResponse:
+      description: An identity response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/identityRead'
+          example:
+            metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: unused
+              creationTime: 2024-05-31T14:11:00Z
+              provisioningStatus: provisioned
+            spec:
+              type: openstack
+              openstack:
+                cloud: default
+                cloudConfig: dGhpcyBpcyBhIHRlc3QK
+                externalNetworkID: e36c058a-8eba-4f5b-91f4-f6ffb983795c
   securitySchemes:
     oauth2Authentication:
       description: Operation requires OAuth2 bearer token authentication.

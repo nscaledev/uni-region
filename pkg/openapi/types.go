@@ -42,6 +42,46 @@ type Flavor struct {
 // Flavors A list of flavors.
 type Flavors = []Flavor
 
+// IdentityRead A provider specific identity.
+type IdentityRead struct {
+	// Metadata Resource metadata valid for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A provider specific identity, while the client can list regions to infer the
+	// type, we don't requires this and return it with the response.  That can then
+	// be used in turn to determine which provider specification to examine.
+	Spec IdentitySpec `json:"spec"`
+}
+
+// IdentitySpec A provider specific identity, while the client can list regions to infer the
+// type, we don't requires this and return it with the response.  That can then
+// be used in turn to determine which provider specification to examine.
+type IdentitySpec struct {
+	// Openstack Everything an OpenStack client needs to function.
+	Openstack *IdentitySpecOpenStack `json:"openstack,omitempty"`
+
+	// Type The region's provider type.
+	Type RegionType `json:"type"`
+}
+
+// IdentitySpecOpenStack Everything an OpenStack client needs to function.
+type IdentitySpecOpenStack struct {
+	// Cloud The name of the cloud in the cloud config.
+	Cloud string `json:"cloud"`
+
+	// CloudConfig A base64 encoded cloud config file.
+	CloudConfig string `json:"cloudConfig"`
+
+	// ExternalNetworkID An external network that can be used to provision floating IPs.
+	ExternalNetworkID string `json:"externalNetworkID"`
+}
+
+// IdentityWrite Request parameters for creating an identity.
+type IdentityWrite struct {
+	// Tags A list of tags.
+	Tags *TagList `json:"tags,omitempty"`
+}
+
 // Image An image.
 type Image struct {
 	// Created Time when the image was created. Images with a newer creation time should
@@ -98,14 +138,38 @@ type RegionType string
 // Regions A list of regions.
 type Regions = []RegionRead
 
+// Tag A key value pair.
+type Tag struct {
+	// Name A unique tag name.
+	Name string `json:"name"`
+
+	// Value An arbirary value, may be marshaled JSON for example.
+	Value string `json:"value"`
+}
+
+// TagList A list of tags.
+type TagList = []Tag
+
+// IdentityIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
+type IdentityIDParameter = KubernetesNameParameter
+
 // RegionIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type RegionIDParameter = KubernetesNameParameter
 
 // FlavorsResponse A list of flavors.
 type FlavorsResponse = Flavors
 
+// IdentityResponse A provider specific identity.
+type IdentityResponse = IdentityRead
+
 // ImagesResponse A list of images that are compatible with this platform.
 type ImagesResponse = Images
 
 // RegionsResponse A list of regions.
 type RegionsResponse = Regions
+
+// IdentityRequest Request parameters for creating an identity.
+type IdentityRequest = IdentityWrite
+
+// PostApiV1RegionsRegionIDIdentitiesJSONRequestBody defines body for PostApiV1RegionsRegionIDIdentities for application/json ContentType.
+type PostApiV1RegionsRegionIDIdentitiesJSONRequestBody = IdentityWrite

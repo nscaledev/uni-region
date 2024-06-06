@@ -49,6 +49,7 @@ var (
 //nolint:gochecknoinits
 func init() {
 	SchemeBuilder.Register(&Region{}, &RegionList{})
+	SchemeBuilder.Register(&Identity{}, &IdentityList{})
 }
 
 // Resource maps a resource type to a group resource.

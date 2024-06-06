@@ -147,3 +147,9 @@ func (h *Handler) GetApiV1RegionsRegionIDImages(w http.ResponseWriter, r *http.R
 	h.setCacheable(w)
 	util.WriteJSONResponse(w, r, http.StatusOK, out)
 }
+
+func (h *Handler) PostApiV1RegionsRegionIDIdentities(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter) {
+}
+
+func (h *Handler) DeleteApiV1RegionsRegionIDIdentitiesIdentityID(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter, identityID openapi.IdentityIDParameter) {
+}
