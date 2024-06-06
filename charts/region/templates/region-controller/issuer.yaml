@@ -1,0 +1,10 @@
+{{- if (not .Values.region.ingress.annotations) }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: unikorn-region-ingress
+  labels:
+    {{- include "unikorn.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+{{- end }}
