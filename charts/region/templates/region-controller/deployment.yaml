@@ -18,6 +18,7 @@ spec:
       - name: unikorn-region
         image: {{ include "unikorn.regionImage" . }}
         args:
+        - --namespace={{ .Release.Namespace }}
         {{- with $cors := .Values.region.cors }}
           {{- range $origin := $cors.allowOrigin }}
             {{ printf "- --cors-allow-origin=%s" $origin | nindent 8 }}

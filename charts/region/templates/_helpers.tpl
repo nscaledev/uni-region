@@ -72,20 +72,8 @@ Create the container images
 {{- end }}
 {{- end }}
 
-{{- define "unikorn.clusterManagerControllerImage" -}}
-{{- .Values.clusterManagerController.image | default (printf "%s/unikorn-cluster-manager-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
-{{- end }}
-
-{{- define "unikorn.clusterControllerImage" -}}
-{{- .Values.clusterController.image | default (printf "%s/unikorn-cluster-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
-{{- end }}
-
-{{- define "unikorn.monitorImage" -}}
-{{- .Values.monitor.image | default (printf "%s/unikorn-monitor:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
-{{- end }}
-
 {{- define "unikorn.regionImage" -}}
-{{- .Values.region.image | default (printf "%s/unikorn-region:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
+{{- .Values.region.image | default (printf "%s/unikorn-region-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
 {{- end }}
 
 {{/*

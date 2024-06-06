@@ -77,14 +77,30 @@ components:
       type: string
       minLength: 1
       maxLength: 63
+    regionType:
+      description: The region's provider type.
+      type: string
+      enum:
+      - openstack
+    regionSpec:
+      description: Information about the region.
+      type: object
+      required:
+      - type
+      properties:
+        type:
+          $ref: '#/components/schemas/regionType'
     regionRead:
       description: A region.
       type: object
       required:
       - metadata
+      - spec
       properties:
         metadata:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceReadMetadata'
+        spec:
+          $ref: '#/components/schemas/regionSpec'
     regions:
       description: A list of regions.
       type: array
@@ -185,6 +201,8 @@ components:
               description: An oxymoronic tier-3 datacenter based in Liverpool.
               creationTime: 2023-07-31T10:45:45Z
               provisioningStatus: provisioned
+            spec:
+              type: openstack
     imagesResponse:
       description: A list of images that are compatible with this platform.
       content:

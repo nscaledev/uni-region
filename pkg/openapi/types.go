@@ -13,6 +13,11 @@ const (
 	Oauth2AuthenticationScopes = "oauth2Authentication.Scopes"
 )
 
+// Defines values for RegionType.
+const (
+	Openstack RegionType = "openstack"
+)
+
 // Flavor A flavor.
 type Flavor struct {
 	// Cpus The number of CPUs.
@@ -76,7 +81,19 @@ type KubernetesNameParameter = string
 type RegionRead struct {
 	// Metadata Resource metadata valid for all reads.
 	Metadata externalRef0.ResourceReadMetadata `json:"metadata"`
+
+	// Spec Information about the region.
+	Spec RegionSpec `json:"spec"`
 }
+
+// RegionSpec Information about the region.
+type RegionSpec struct {
+	// Type The region's provider type.
+	Type RegionType `json:"type"`
+}
+
+// RegionType The region's provider type.
+type RegionType string
 
 // Regions A list of regions.
 type Regions = []RegionRead
