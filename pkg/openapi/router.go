@@ -21,6 +21,12 @@ type ServerInterface interface {
 	// (GET /api/v1/regions/{regionID}/flavors)
 	GetApiV1RegionsRegionIDFlavors(w http.ResponseWriter, r *http.Request, regionID RegionIDParameter)
 
+	// (POST /api/v1/regions/{regionID}/identities)
+	PostApiV1RegionsRegionIDIdentities(w http.ResponseWriter, r *http.Request, regionID RegionIDParameter)
+
+	// (DELETE /api/v1/regions/{regionID}/identities/{identityID})
+	DeleteApiV1RegionsRegionIDIdentitiesIdentityID(w http.ResponseWriter, r *http.Request, regionID RegionIDParameter, identityID IdentityIDParameter)
+
 	// (GET /api/v1/regions/{regionID}/images)
 	GetApiV1RegionsRegionIDImages(w http.ResponseWriter, r *http.Request, regionID RegionIDParameter)
 }
@@ -36,6 +42,16 @@ func (_ Unimplemented) GetApiV1Regions(w http.ResponseWriter, r *http.Request) {
 
 // (GET /api/v1/regions/{regionID}/flavors)
 func (_ Unimplemented) GetApiV1RegionsRegionIDFlavors(w http.ResponseWriter, r *http.Request, regionID RegionIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /api/v1/regions/{regionID}/identities)
+func (_ Unimplemented) PostApiV1RegionsRegionIDIdentities(w http.ResponseWriter, r *http.Request, regionID RegionIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /api/v1/regions/{regionID}/identities/{identityID})
+func (_ Unimplemented) DeleteApiV1RegionsRegionIDIdentitiesIdentityID(w http.ResponseWriter, r *http.Request, regionID RegionIDParameter, identityID IdentityIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -89,6 +105,71 @@ func (siw *ServerInterfaceWrapper) GetApiV1RegionsRegionIDFlavors(w http.Respons
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetApiV1RegionsRegionIDFlavors(w, r, regionID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r.WithContext(ctx))
+}
+
+// PostApiV1RegionsRegionIDIdentities operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV1RegionsRegionIDIdentities(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var err error
+
+	// ------------- Path parameter "regionID" -------------
+	var regionID RegionIDParameter
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "regionID", runtime.ParamLocationPath, chi.URLParam(r, "regionID"), &regionID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "regionID", Err: err})
+		return
+	}
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiV1RegionsRegionIDIdentities(w, r, regionID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r.WithContext(ctx))
+}
+
+// DeleteApiV1RegionsRegionIDIdentitiesIdentityID operation middleware
+func (siw *ServerInterfaceWrapper) DeleteApiV1RegionsRegionIDIdentitiesIdentityID(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var err error
+
+	// ------------- Path parameter "regionID" -------------
+	var regionID RegionIDParameter
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "regionID", runtime.ParamLocationPath, chi.URLParam(r, "regionID"), &regionID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "regionID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "identityID" -------------
+	var identityID IdentityIDParameter
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "identityID", runtime.ParamLocationPath, chi.URLParam(r, "identityID"), &identityID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "identityID", Err: err})
+		return
+	}
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteApiV1RegionsRegionIDIdentitiesIdentityID(w, r, regionID, identityID)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -244,6 +325,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/regions/{regionID}/flavors", wrapper.GetApiV1RegionsRegionIDFlavors)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/regions/{regionID}/identities", wrapper.PostApiV1RegionsRegionIDIdentities)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/regions/{regionID}/identities/{identityID}", wrapper.DeleteApiV1RegionsRegionIDIdentitiesIdentityID)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/regions/{regionID}/images", wrapper.GetApiV1RegionsRegionIDImages)

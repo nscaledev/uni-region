@@ -4,6 +4,7 @@
 package openapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -95,6 +96,14 @@ type ClientInterface interface {
 	// GetApiV1RegionsRegionIDFlavors request
 	GetApiV1RegionsRegionIDFlavors(ctx context.Context, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PostApiV1RegionsRegionIDIdentitiesWithBody request with any body
+	PostApiV1RegionsRegionIDIdentitiesWithBody(ctx context.Context, regionID RegionIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostApiV1RegionsRegionIDIdentities(ctx context.Context, regionID RegionIDParameter, body PostApiV1RegionsRegionIDIdentitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteApiV1RegionsRegionIDIdentitiesIdentityID request
+	DeleteApiV1RegionsRegionIDIdentitiesIdentityID(ctx context.Context, regionID RegionIDParameter, identityID IdentityIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApiV1RegionsRegionIDImages request
 	GetApiV1RegionsRegionIDImages(ctx context.Context, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
@@ -113,6 +122,42 @@ func (c *Client) GetApiV1Regions(ctx context.Context, reqEditors ...RequestEdito
 
 func (c *Client) GetApiV1RegionsRegionIDFlavors(ctx context.Context, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiV1RegionsRegionIDFlavorsRequest(c.Server, regionID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiV1RegionsRegionIDIdentitiesWithBody(ctx context.Context, regionID RegionIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV1RegionsRegionIDIdentitiesRequestWithBody(c.Server, regionID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiV1RegionsRegionIDIdentities(ctx context.Context, regionID RegionIDParameter, body PostApiV1RegionsRegionIDIdentitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV1RegionsRegionIDIdentitiesRequest(c.Server, regionID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteApiV1RegionsRegionIDIdentitiesIdentityID(ctx context.Context, regionID RegionIDParameter, identityID IdentityIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApiV1RegionsRegionIDIdentitiesIdentityIDRequest(c.Server, regionID, identityID)
 	if err != nil {
 		return nil, err
 	}
@@ -189,6 +234,94 @@ func NewGetApiV1RegionsRegionIDFlavorsRequest(server string, regionID RegionIDPa
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostApiV1RegionsRegionIDIdentitiesRequest calls the generic PostApiV1RegionsRegionIDIdentities builder with application/json body
+func NewPostApiV1RegionsRegionIDIdentitiesRequest(server string, regionID RegionIDParameter, body PostApiV1RegionsRegionIDIdentitiesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApiV1RegionsRegionIDIdentitiesRequestWithBody(server, regionID, "application/json", bodyReader)
+}
+
+// NewPostApiV1RegionsRegionIDIdentitiesRequestWithBody generates requests for PostApiV1RegionsRegionIDIdentities with any type of body
+func NewPostApiV1RegionsRegionIDIdentitiesRequestWithBody(server string, regionID RegionIDParameter, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "regionID", runtime.ParamLocationPath, regionID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/regions/%s/identities", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteApiV1RegionsRegionIDIdentitiesIdentityIDRequest generates requests for DeleteApiV1RegionsRegionIDIdentitiesIdentityID
+func NewDeleteApiV1RegionsRegionIDIdentitiesIdentityIDRequest(server string, regionID RegionIDParameter, identityID IdentityIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "regionID", runtime.ParamLocationPath, regionID)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "identityID", runtime.ParamLocationPath, identityID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/regions/%s/identities/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -279,6 +412,14 @@ type ClientWithResponsesInterface interface {
 	// GetApiV1RegionsRegionIDFlavorsWithResponse request
 	GetApiV1RegionsRegionIDFlavorsWithResponse(ctx context.Context, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1RegionsRegionIDFlavorsResponse, error)
 
+	// PostApiV1RegionsRegionIDIdentitiesWithBodyWithResponse request with any body
+	PostApiV1RegionsRegionIDIdentitiesWithBodyWithResponse(ctx context.Context, regionID RegionIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV1RegionsRegionIDIdentitiesResponse, error)
+
+	PostApiV1RegionsRegionIDIdentitiesWithResponse(ctx context.Context, regionID RegionIDParameter, body PostApiV1RegionsRegionIDIdentitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV1RegionsRegionIDIdentitiesResponse, error)
+
+	// DeleteApiV1RegionsRegionIDIdentitiesIdentityIDWithResponse request
+	DeleteApiV1RegionsRegionIDIdentitiesIdentityIDWithResponse(ctx context.Context, regionID RegionIDParameter, identityID IdentityIDParameter, reqEditors ...RequestEditorFn) (*DeleteApiV1RegionsRegionIDIdentitiesIdentityIDResponse, error)
+
 	// GetApiV1RegionsRegionIDImagesWithResponse request
 	GetApiV1RegionsRegionIDImagesWithResponse(ctx context.Context, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1RegionsRegionIDImagesResponse, error)
 }
@@ -332,6 +473,57 @@ func (r GetApiV1RegionsRegionIDFlavorsResponse) StatusCode() int {
 	return 0
 }
 
+type PostApiV1RegionsRegionIDIdentitiesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *IdentityResponse
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApiV1RegionsRegionIDIdentitiesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApiV1RegionsRegionIDIdentitiesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteApiV1RegionsRegionIDIdentitiesIdentityIDResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteApiV1RegionsRegionIDIdentitiesIdentityIDResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteApiV1RegionsRegionIDIdentitiesIdentityIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetApiV1RegionsRegionIDImagesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -373,6 +565,32 @@ func (c *ClientWithResponses) GetApiV1RegionsRegionIDFlavorsWithResponse(ctx con
 		return nil, err
 	}
 	return ParseGetApiV1RegionsRegionIDFlavorsResponse(rsp)
+}
+
+// PostApiV1RegionsRegionIDIdentitiesWithBodyWithResponse request with arbitrary body returning *PostApiV1RegionsRegionIDIdentitiesResponse
+func (c *ClientWithResponses) PostApiV1RegionsRegionIDIdentitiesWithBodyWithResponse(ctx context.Context, regionID RegionIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV1RegionsRegionIDIdentitiesResponse, error) {
+	rsp, err := c.PostApiV1RegionsRegionIDIdentitiesWithBody(ctx, regionID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiV1RegionsRegionIDIdentitiesResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostApiV1RegionsRegionIDIdentitiesWithResponse(ctx context.Context, regionID RegionIDParameter, body PostApiV1RegionsRegionIDIdentitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV1RegionsRegionIDIdentitiesResponse, error) {
+	rsp, err := c.PostApiV1RegionsRegionIDIdentities(ctx, regionID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiV1RegionsRegionIDIdentitiesResponse(rsp)
+}
+
+// DeleteApiV1RegionsRegionIDIdentitiesIdentityIDWithResponse request returning *DeleteApiV1RegionsRegionIDIdentitiesIdentityIDResponse
+func (c *ClientWithResponses) DeleteApiV1RegionsRegionIDIdentitiesIdentityIDWithResponse(ctx context.Context, regionID RegionIDParameter, identityID IdentityIDParameter, reqEditors ...RequestEditorFn) (*DeleteApiV1RegionsRegionIDIdentitiesIdentityIDResponse, error) {
+	rsp, err := c.DeleteApiV1RegionsRegionIDIdentitiesIdentityID(ctx, regionID, identityID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteApiV1RegionsRegionIDIdentitiesIdentityIDResponse(rsp)
 }
 
 // GetApiV1RegionsRegionIDImagesWithResponse request returning *GetApiV1RegionsRegionIDImagesResponse
@@ -458,6 +676,107 @@ func ParseGetApiV1RegionsRegionIDFlavorsResponse(rsp *http.Response) (*GetApiV1R
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostApiV1RegionsRegionIDIdentitiesResponse parses an HTTP response from a PostApiV1RegionsRegionIDIdentitiesWithResponse call
+func ParsePostApiV1RegionsRegionIDIdentitiesResponse(rsp *http.Response) (*PostApiV1RegionsRegionIDIdentitiesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApiV1RegionsRegionIDIdentitiesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest IdentityResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteApiV1RegionsRegionIDIdentitiesIdentityIDResponse parses an HTTP response from a DeleteApiV1RegionsRegionIDIdentitiesIdentityIDWithResponse call
+func ParseDeleteApiV1RegionsRegionIDIdentitiesIdentityIDResponse(rsp *http.Response) (*DeleteApiV1RegionsRegionIDIdentitiesIdentityIDResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteApiV1RegionsRegionIDIdentitiesIdentityIDResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest externalRef0.InternalServerErrorResponse
