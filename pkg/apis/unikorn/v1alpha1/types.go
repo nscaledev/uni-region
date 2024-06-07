@@ -134,9 +134,9 @@ type RegionStatus struct {
 // IdentityList is a typed list of identities.
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type IdentityList struct {
-        metav1.TypeMeta `json:",inline"`
-        metav1.ListMeta `json:"metadata,omitempty"`
-        Items           []Identity `json:"items"`
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []Identity `json:"items"`
 }
 
 // Identity defines an on-demand cloud identity.  The region controller must
@@ -152,9 +152,9 @@ type IdentityList struct {
 // +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
 // +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
 type Identity struct {
-        metav1.TypeMeta   `json:",inline"`
-        metav1.ObjectMeta `json:"metadata,omitempty"`
-        Spec              IdentitySpec `json:"spec"`
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              IdentitySpec   `json:"spec"`
 	Status            IdentityStatus `json:"status"`
 }
 

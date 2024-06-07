@@ -4,13 +4,17 @@
 package openapi
 
 import (
-	"time"
-
 	externalRef0 "github.com/unikorn-cloud/core/pkg/openapi"
 )
 
 const (
 	Oauth2AuthenticationScopes = "oauth2Authentication.Scopes"
+)
+
+// Defines values for GpuVendor.
+const (
+	Amd    GpuVendor = "amd"
+	Nvidia GpuVendor = "nvidia"
 )
 
 // Defines values for RegionType.
@@ -20,27 +24,56 @@ const (
 
 // Flavor A flavor.
 type Flavor struct {
+	// Metadata This metadata is for resources that just exist, and don't require
+	// any provisioning and health status, but benefit from a standarized
+	// metadata format.
+	Metadata externalRef0.StaticResourceMetadata `json:"metadata"`
+
+	// Spec A flavor.
+	Spec FlavorSpec `json:"spec"`
+}
+
+// FlavorSpec A flavor.
+type FlavorSpec struct {
 	// Cpus The number of CPUs.
 	Cpus int `json:"cpus"`
 
 	// Disk The amount of ephemeral disk in GB.
 	Disk int `json:"disk"`
 
-	// Gpus The number of GPUs, if not set there are none.
-	Gpus *int `json:"gpus,omitempty"`
-
-	// Id The unique flavor ID.
-	Id string `json:"id"`
+	// Gpu GPU specification.
+	Gpu *GpuSpec `json:"gpu,omitempty"`
 
 	// Memory The amount of memory in GiB.
 	Memory int `json:"memory"`
-
-	// Name The flavor name.
-	Name string `json:"name"`
 }
 
 // Flavors A list of flavors.
 type Flavors = []Flavor
+
+// GpuDriver The GPU driver if installed.
+type GpuDriver struct {
+	// Vendor The GPU vendor.
+	Vendor GpuVendor `json:"vendor"`
+
+	// Version The GPU driver version, this is vendor specific.
+	Version string `json:"version"`
+}
+
+// GpuSpec GPU specification.
+type GpuSpec struct {
+	// Count The number of GPUs available.
+	Count int `json:"count"`
+
+	// Model A GPU model.
+	Model string `json:"model"`
+
+	// Vendor The GPU vendor.
+	Vendor GpuVendor `json:"vendor"`
+}
+
+// GpuVendor The GPU vendor.
+type GpuVendor string
 
 // IdentityRead A provider specific identity.
 type IdentityRead struct {
@@ -84,31 +117,22 @@ type IdentityWrite struct {
 
 // Image An image.
 type Image struct {
-	// Created Time when the image was created. Images with a newer creation time should
-	// be favoured over older images as they will contain updates and fewer vulnerabilities.
-	Created time.Time `json:"created"`
+	// Metadata This metadata is for resources that just exist, and don't require
+	// any provisioning and health status, but benefit from a standarized
+	// metadata format.
+	Metadata externalRef0.StaticResourceMetadata `json:"metadata"`
 
-	// Id The unique image ID.
-	Id string `json:"id"`
-
-	// Modified Time when the image was last modified.
-	Modified time.Time `json:"modified"`
-
-	// Name The image name.
-	Name string `json:"name"`
-
-	// Versions Image version metadata.
-	Versions ImageVersions `json:"versions"`
+	// Spec An image.
+	Spec ImageSpec `json:"spec"`
 }
 
-// ImageVersions Image version metadata.
-type ImageVersions struct {
-	// Kubernetes The kubernetes semantic version.  This should be used directly when specifying
-	// Kubernetes cluster managers and workload pools in a cluster specification.
-	Kubernetes string `json:"kubernetes"`
+// ImageSpec An image.
+type ImageSpec struct {
+	// GpuDriver The GPU driver if installed.
+	GpuDriver *GpuDriver `json:"gpuDriver,omitempty"`
 
-	// NvidiaDriver The nvidia driver version.
-	NvidiaDriver string `json:"nvidiaDriver"`
+	// SoftwareVersions Image preinstalled version version metadata.
+	SoftwareVersions *SoftwareVersions `json:"softwareVersions,omitempty"`
 }
 
 // Images A list of images that are compatible with this platform.
@@ -137,6 +161,12 @@ type RegionType string
 
 // Regions A list of regions.
 type Regions = []RegionRead
+
+// SoftwareVersions Image preinstalled version version metadata.
+type SoftwareVersions struct {
+	// Kubernetes A semantic version.
+	Kubernetes *externalRef0.Semver `json:"kubernetes,omitempty"`
+}
 
 // Tag A key value pair.
 type Tag struct {

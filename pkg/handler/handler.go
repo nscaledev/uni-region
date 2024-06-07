@@ -24,11 +24,13 @@ import (
 	"sort"
 	"time"
 
+	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/openapi/oidc"
 	coreutil "github.com/unikorn-cloud/core/pkg/util"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/server/util"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -78,6 +80,41 @@ func (h *Handler) GetApiV1Regions(w http.ResponseWriter, r *http.Request) {
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
+func convertGpuVendor(in providers.GPUVendor) openapi.GpuVendor {
+	switch in {
+	case providers.Nvidia:
+		return openapi.Nvidia
+	case providers.AMD:
+		return openapi.Amd
+	}
+
+	return ""
+}
+
+func convertFlavor(in providers.Flavor) openapi.Flavor {
+	out := openapi.Flavor{
+		Metadata: coreopenapi.StaticResourceMetadata{
+			Id:   in.ID,
+			Name: in.Name,
+		},
+		Spec: openapi.FlavorSpec{
+			Cpus:   in.CPUs,
+			Memory: int(in.Memory.Value()) >> 30,
+			Disk:   int(in.Disk.Value()) / 1000000000,
+		},
+	}
+
+	if in.GPUs != 0 {
+		out.Spec.Gpu = &openapi.GpuSpec{
+			Vendor: convertGpuVendor(in.GPUVendor),
+			Model:  "H100",
+			Count:  in.GPUs,
+		}
+	}
+
+	return out
+}
+
 func (h *Handler) GetApiV1RegionsRegionIDFlavors(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter) {
 	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), regionID)
 	if err != nil {
@@ -94,25 +131,33 @@ func (h *Handler) GetApiV1RegionsRegionIDFlavors(w http.ResponseWriter, r *http.
 	// Apply ordering guarantees.
 	sort.Stable(result)
 
-	out := make(openapi.Flavors, 0, len(result))
+	out := make(openapi.Flavors, len(result))
 
-	for _, r := range result {
-		t := openapi.Flavor{
-			Name:   r.Name,
-			Cpus:   r.CPUs,
-			Memory: int(r.Memory.Value()) >> 30,
-			Disk:   int(r.Disk.Value()) / 1000000000,
-		}
-
-		if r.GPUs != 0 {
-			t.Gpus = coreutil.ToPointer(r.GPUs)
-		}
-
-		out = append(out, t)
+	for i := range result {
+		out[i] = convertFlavor(result[i])
 	}
 
 	h.setCacheable(w)
 	util.WriteJSONResponse(w, r, http.StatusOK, out)
+}
+
+func convertImage(in providers.Image) openapi.Image {
+	out := openapi.Image{
+		Metadata: coreopenapi.StaticResourceMetadata{
+			Id:           in.ID,
+			Name:         in.Name,
+			CreationTime: in.Created,
+		},
+		Spec: openapi.ImageSpec{
+			SoftwareVersions: &openapi.SoftwareVersions{},
+		},
+	}
+
+	if in.KubernetesVersion != "" {
+		out.Spec.SoftwareVersions.Kubernetes = coreutil.ToPointer(in.KubernetesVersion)
+	}
+
+	return out
 }
 
 func (h *Handler) GetApiV1RegionsRegionIDImages(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter) {
@@ -131,17 +176,10 @@ func (h *Handler) GetApiV1RegionsRegionIDImages(w http.ResponseWriter, r *http.R
 	// Apply ordering guarantees.
 	sort.Stable(result)
 
-	out := make(openapi.Images, 0, len(result))
+	out := make(openapi.Images, len(result))
 
-	for _, r := range result {
-		out = append(out, openapi.Image{
-			Name:     r.Name,
-			Created:  r.Created,
-			Modified: r.Modified,
-			Versions: openapi.ImageVersions{
-				Kubernetes: r.KubernetesVersion,
-			},
-		})
+	for i := range result {
+		out[i] = convertImage(result[i])
 	}
 
 	h.setCacheable(w)

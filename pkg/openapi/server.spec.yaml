@@ -159,70 +159,80 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/regionRead'
-    imageVersions:
-      description: Image version metadata.
+    softwareVersions:
+      description: Image preinstalled version version metadata.
       type: object
-      required:
-      - kubernetes
-      - nvidiaDriver
       properties:
         kubernetes:
-          description: |-
-            The kubernetes semantic version.  This should be used directly when specifying
-            Kubernetes cluster managers and workload pools in a cluster specification.
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/semver'
+    gpuVendor:
+      description: The GPU vendor.
+      type: string
+      enum:
+      - nvidia
+      - amd
+    gpuDriver:
+      description: The GPU driver if installed.
+      type: object
+      required:
+      - vendor
+      - version
+      properties:
+        vendor:
+          $ref: '#/components/schemas/gpuVendor'
+        version:
+          description: The GPU driver version, this is vendor specific.
           type: string
-        nvidiaDriver:
-          description: The nvidia driver version.
-          type: string
+    imageSpec:
+      description: An image.
+      type: object
+      properties:
+        softwareVersions:
+          $ref: '#/components/schemas/softwareVersions'
+        gpuDriver:
+          $ref: '#/components/schemas/gpuDriver'
     image:
       description: An image.
       type: object
       required:
-      - id
-      - name
-      - created
-      - modified
-      - versions
+      - metadata
+      - spec
       properties:
-        id:
-          description: The unique image ID.
+        metadata:
           type: string
-        name:
-          description: The image name.
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/staticResourceMetadata'
+        spec:
           type: string
-        created:
-          description: |-
-            Time when the image was created. Images with a newer creation time should
-            be favoured over older images as they will contain updates and fewer vulnerabilities.
-          type: string
-          format: date-time
-        modified:
-          description: Time when the image was last modified.
-          type: string
-          format: date-time
-        versions:
-          $ref: '#/components/schemas/imageVersions'
+          $ref: '#/components/schemas/imageSpec'
     images:
       description: A list of images that are compatible with this platform.
       type: array
       items:
         $ref: '#/components/schemas/image'
-    flavor:
+    gpuSpec:
+      description: GPU specification.
+      type: object
+      required:
+      - vendor
+      - model
+      - count
+      properties:
+        vendor:
+          $ref: '#/components/schemas/gpuVendor'
+        model:
+          description: A GPU model.
+          type: string
+        count:
+          description: The number of GPUs available.
+          type: integer
+    flavorSpec:
       description: A flavor.
       type: object
       required:
-      - id
-      - name
       - cpus
       - memory
       - disk
       properties:
-        id:
-          description: The unique flavor ID.
-          type: string
-        name:
-          description: The flavor name.
-          type: string
         cpus:
           description: The number of CPUs.
           type: integer
@@ -232,9 +242,19 @@ components:
         disk:
           description: The amount of ephemeral disk in GB.
           type: integer
-        gpus:
-          description: The number of GPUs, if not set there are none.
-          type: integer
+        gpu:
+          $ref: '#/components/schemas/gpuSpec'
+    flavor:
+      description: A flavor.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/staticResourceMetadata'
+        spec:
+          $ref: '#/components/schemas/flavorSpec'
     flavors:
       description: A list of flavors.
       type: array
@@ -341,13 +361,16 @@ components:
           schema:
             $ref: '#/components/schemas/images'
           example:
-          - created: 2023-02-22T12:04:13Z
-            id: a64f9269-36e0-4312-b8d1-52d93d569b7b
-            modified: 2023-02-22T12:15:18Z
-            name: ubu2204-v1.25.6-gpu-525.85.05-7ced4154
-            versions:
-              kubernetes: v1.25.6
-              nvidiaDriver: 525.85.05
+          - metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: ubu2204-v1.25.6-gpu-525.85.05-7ced4154
+              creationTime: 2023-02-22T12:04:13Z
+            spec:
+              softwareVersions:
+                kubernetes: v1.25.6
+              gpuDriver:
+                vendor: nvidia
+                version: 525.85.05
     flavorsResponse:
       description: A list of flavors.
       content:
@@ -355,12 +378,18 @@ components:
           schema:
             $ref: '#/components/schemas/flavors'
           example:
-          - cpus: 4
-            disk: 20
-            gpus: 1
-            id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
-            memory: 32
-            name: g.4.highmem.a100.1g.10gb
+          - metadata:
+              id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              name: g.4.highmem.a100.1g.10gb
+              creationTime: 1970-01-01T00:00:00Z
+            spec:
+              cpus: 4
+              disk: 20
+              memory: 32
+              gpu:
+                vendor: nvidia
+                model: H100
+                count: 1
     identityResponse:
       description: An identity response.
       content:

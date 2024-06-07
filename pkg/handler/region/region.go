@@ -63,9 +63,9 @@ func (c *Client) list(ctx context.Context) (*unikornv1.RegionList, error) {
 	return &regions, nil
 }
 
-func findRegion(regions *unikornv1.RegionList, region string) (*unikornv1.Region, error) {
+func findRegion(regions *unikornv1.RegionList, regionID string) (*unikornv1.Region, error) {
 	for i := range regions.Items {
-		if regions.Items[i].Name == region {
+		if regions.Items[i].Name == regionID {
 			return &regions.Items[i], nil
 		}
 	}
@@ -86,13 +86,13 @@ func (c Client) newProvider(region *unikornv1.Region) (providers.Provider, error
 	return nil, ErrRegionProviderUnimplmented
 }
 
-func (c *Client) Provider(ctx context.Context, regionName string) (providers.Provider, error) {
+func (c *Client) Provider(ctx context.Context, regionID string) (providers.Provider, error) {
 	regions, err := c.list(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	region, err := findRegion(regions, regionName)
+	region, err := findRegion(regions, regionID)
 	if err != nil {
 		return nil, err
 	}
