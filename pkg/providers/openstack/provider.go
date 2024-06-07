@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -87,7 +88,7 @@ func (p *Provider) serviceClientRefresh(ctx context.Context) error {
 
 	region := &unikornv1.Region{}
 
-	if err := p.client.Get(ctx, client.ObjectKey{Name: p.region.Name}, region); err != nil {
+	if err := p.client.Get(ctx, client.ObjectKey{Namespace: p.region.Namespace, Name: p.region.Name}, region); err != nil {
 		return err
 	}
 
@@ -244,6 +245,7 @@ func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
 
 		// API memory is in MiB, disk is in GB
 		result = append(result, providers.Flavor{
+			ID:        flavor.ID,
 			Name:      flavor.Name,
 			CPUs:      flavor.VCPUs,
 			Memory:    resource.NewQuantity(int64(flavor.RAM)<<20, resource.BinarySI),
@@ -254,6 +256,14 @@ func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
 	}
 
 	return result, nil
+}
+
+func semver(in string) string {
+	if !strings.HasPrefix(in, "v") {
+		return "v" + in
+	}
+
+	return in
 }
 
 // Images lists all available images.
@@ -276,10 +286,11 @@ func (p *Provider) Images(ctx context.Context) (providers.ImageList, error) {
 		kuebernetesVersion, _ := image.Properties["k8s"].(string)
 
 		result = append(result, providers.Image{
+			ID:                image.ID,
 			Name:              image.Name,
 			Created:           image.CreatedAt,
 			Modified:          image.UpdatedAt,
-			KubernetesVersion: kuebernetesVersion,
+			KubernetesVersion: semver(kuebernetesVersion),
 		})
 	}
 

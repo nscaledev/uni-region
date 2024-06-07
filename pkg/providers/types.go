@@ -32,6 +32,10 @@ const (
 
 // Flavor represents a machine type.
 type Flavor struct {
+	// ID must be an immutable ID, preferably a UUID.
+	// If the provider doesn't have the concept of an ID, and the name
+	// is immutable you can make one out of that.
+	ID string
 	// Name of the flavor.
 	Name string
 	// CPU count.
@@ -53,6 +57,10 @@ type FlavorList []Flavor
 
 // Image represents an operating system image.
 type Image struct {
+	// ID must be an immutable ID, preferably a UUID.
+	// If the provider doesn't have the concept of an ID, and the name
+	// is immutable you can make one out of that.
+	ID string
 	// Name of the image.
 	Name string
 	// Created is when the image was created.
@@ -62,7 +70,7 @@ type Image struct {
 	// KubernetesVersion is only populated if the image contains a pre-installed
 	// version of Kubernetes, this acts as a cache and improves provisioning performance.
 	// This is pretty much the only source of truth about Kubernetes versions at
-	// present, so should be populated.
+	// present, so should be populated.  It must be a semver (starts with a vN.N.N).
 	KubernetesVersion string
 }
 
