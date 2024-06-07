@@ -3,7 +3,7 @@ info:
   title: Kubernetes Region Service API
   description: |-
     Cloud region discovery and routing service.
-  version: 0.1.0
+  version: 0.1.1
 paths:
   /api/v1/regions:
     description: |-
@@ -323,7 +323,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceReadMetadata'
         spec:
           $ref: '#/components/schemas/identitySpec'
   requestBodies:

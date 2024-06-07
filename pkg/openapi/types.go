@@ -77,8 +77,8 @@ type GpuVendor string
 
 // IdentityRead A provider specific identity.
 type IdentityRead struct {
-	// Metadata Resource metadata valid for all API resource reads and writes.
-	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+	// Metadata Resource metadata valid for all reads.
+	Metadata externalRef0.ResourceReadMetadata `json:"metadata"`
 
 	// Spec A provider specific identity, while the client can list regions to infer the
 	// type, we don't requires this and return it with the response.  That can then
