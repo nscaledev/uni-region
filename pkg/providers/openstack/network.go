@@ -87,19 +87,3 @@ func (c *NetworkClient) ExternalNetworks(ctx context.Context) ([]networks.Networ
 
 	return results, nil
 }
-
-/*
-// Get a network for external connectivity.
-func (c *NetworkClient) defaultExternalNetwork(ctx context.Context) (*networks.Network, error) {
-	externalNetworks, err := c.ExternalNetworks(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(externalNetworks) == 0 {
-		return nil, fmt.Errorf("%w: default external network", ErrResourceNotFound)
-	}
-
-	return &externalNetworks[0], nil
-}
-*/

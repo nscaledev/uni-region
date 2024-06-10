@@ -212,7 +212,6 @@ func (p *Provider) image(ctx context.Context) (*ImageClient, error) {
 	return p._image, nil
 }
 
-/*
 func (p *Provider) network(ctx context.Context) (*NetworkClient, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -223,7 +222,6 @@ func (p *Provider) network(ctx context.Context) (*NetworkClient, error) {
 
 	return p._network, nil
 }
-*/
 
 // Flavors list all available flavors.
 func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
@@ -547,4 +545,29 @@ func (p *Provider) DeconfigureCluster(ctx context.Context, state *providers.Open
 	}
 
 	return nil
+}
+
+// ListExternalNetworks returns a list of external networks if the platform
+// supports such a concept.
+func (p *Provider) ListExternalNetworks(ctx context.Context) (providers.ExternalNetworks, error) {
+	networkService, err := p.network(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := networkService.ExternalNetworks(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(providers.ExternalNetworks, len(result))
+
+	for i, in := range result {
+		out[i] = providers.ExternalNetwork{
+			ID:   in.ID,
+			Name: in.Name,
+		}
+	}
+
+	return out, nil
 }

@@ -93,6 +93,9 @@ type ClientInterface interface {
 	// GetApiV1Regions request
 	GetApiV1Regions(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiV1RegionsRegionIDExternalnetworks request
+	GetApiV1RegionsRegionIDExternalnetworks(ctx context.Context, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApiV1RegionsRegionIDFlavors request
 	GetApiV1RegionsRegionIDFlavors(ctx context.Context, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -110,6 +113,18 @@ type ClientInterface interface {
 
 func (c *Client) GetApiV1Regions(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiV1RegionsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiV1RegionsRegionIDExternalnetworks(ctx context.Context, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV1RegionsRegionIDExternalnetworksRequest(c.Server, regionID)
 	if err != nil {
 		return nil, err
 	}
@@ -190,6 +205,40 @@ func NewGetApiV1RegionsRequest(server string) (*http.Request, error) {
 	}
 
 	operationPath := fmt.Sprintf("/api/v1/regions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiV1RegionsRegionIDExternalnetworksRequest generates requests for GetApiV1RegionsRegionIDExternalnetworks
+func NewGetApiV1RegionsRegionIDExternalnetworksRequest(server string, regionID RegionIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "regionID", runtime.ParamLocationPath, regionID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/regions/%s/externalnetworks", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -409,6 +458,9 @@ type ClientWithResponsesInterface interface {
 	// GetApiV1RegionsWithResponse request
 	GetApiV1RegionsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetApiV1RegionsResponse, error)
 
+	// GetApiV1RegionsRegionIDExternalnetworksWithResponse request
+	GetApiV1RegionsRegionIDExternalnetworksWithResponse(ctx context.Context, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1RegionsRegionIDExternalnetworksResponse, error)
+
 	// GetApiV1RegionsRegionIDFlavorsWithResponse request
 	GetApiV1RegionsRegionIDFlavorsWithResponse(ctx context.Context, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1RegionsRegionIDFlavorsResponse, error)
 
@@ -442,6 +494,32 @@ func (r GetApiV1RegionsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetApiV1RegionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetApiV1RegionsRegionIDExternalnetworksResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ExternalNetworksResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV1RegionsRegionIDExternalnetworksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV1RegionsRegionIDExternalnetworksResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -558,6 +636,15 @@ func (c *ClientWithResponses) GetApiV1RegionsWithResponse(ctx context.Context, r
 	return ParseGetApiV1RegionsResponse(rsp)
 }
 
+// GetApiV1RegionsRegionIDExternalnetworksWithResponse request returning *GetApiV1RegionsRegionIDExternalnetworksResponse
+func (c *ClientWithResponses) GetApiV1RegionsRegionIDExternalnetworksWithResponse(ctx context.Context, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1RegionsRegionIDExternalnetworksResponse, error) {
+	rsp, err := c.GetApiV1RegionsRegionIDExternalnetworks(ctx, regionID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV1RegionsRegionIDExternalnetworksResponse(rsp)
+}
+
 // GetApiV1RegionsRegionIDFlavorsWithResponse request returning *GetApiV1RegionsRegionIDFlavorsResponse
 func (c *ClientWithResponses) GetApiV1RegionsRegionIDFlavorsWithResponse(ctx context.Context, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1RegionsRegionIDFlavorsResponse, error) {
 	rsp, err := c.GetApiV1RegionsRegionIDFlavors(ctx, regionID, reqEditors...)
@@ -629,6 +716,60 @@ func ParseGetApiV1RegionsResponse(rsp *http.Response) (*GetApiV1RegionsResponse,
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiV1RegionsRegionIDExternalnetworksResponse parses an HTTP response from a GetApiV1RegionsRegionIDExternalnetworksWithResponse call
+func ParseGetApiV1RegionsRegionIDExternalnetworksResponse(rsp *http.Response) (*GetApiV1RegionsRegionIDExternalnetworksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV1RegionsRegionIDExternalnetworksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ExternalNetworksResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest externalRef0.InternalServerErrorResponse

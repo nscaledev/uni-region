@@ -128,3 +128,14 @@ type CloudConfig struct {
 	// OpenStack is populated when the type is "openstack"
 	OpenStack *OpenStackCloudConfig
 }
+
+// ExternalNetwork represents an external network.
+type ExternalNetwork struct {
+	// ID is the provider specific netwokr ID.
+	ID string
+	// Name is the netwokr name.
+	Name string
+}
+
+// ExternalNetworks is a list of provider networks.
+type ExternalNetworks []ExternalNetwork

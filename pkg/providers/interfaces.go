@@ -32,4 +32,7 @@ type Provider interface {
 	Images(ctx context.Context) (ImageList, error)
 	// CreateIdentity creates a new identity for cloud infrastructure.
 	CreateIdentity(ctx context.Context, info *ClusterInfo) (*unikornv1.Identity, *CloudConfig, error)
+	// ListExternalNetworks returns a list of external networks if the platform
+	// supports such a concept.
+	ListExternalNetworks(ctx context.Context) (ExternalNetworks, error)
 }
