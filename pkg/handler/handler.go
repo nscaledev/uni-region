@@ -220,6 +220,16 @@ func convertCloudConfig(identity *unikornv1.Identity, in *providers.CloudConfig)
 	return out
 }
 
+func generateClusterInfo(in *openapi.IdentityWrite) *providers.ClusterInfo {
+	out := &providers.ClusterInfo{
+		OrganizationID: in.OrganizationId,
+		ProjectID:      in.ProjectId,
+		ClusterID:      in.ClusterId,
+	}
+
+	return out
+}
+
 func (h *Handler) PostApiV1RegionsRegionIDIdentities(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter) {
 	request := &openapi.IdentityWrite{}
 
@@ -234,7 +244,7 @@ func (h *Handler) PostApiV1RegionsRegionIDIdentities(w http.ResponseWriter, r *h
 		return
 	}
 
-	identity, cloudconfig, err := provider.CreateIdentity(r.Context(), &providers.ClusterInfo{})
+	identity, cloudconfig, err := provider.CreateIdentity(r.Context(), generateClusterInfo(request))
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -245,4 +255,40 @@ func (h *Handler) PostApiV1RegionsRegionIDIdentities(w http.ResponseWriter, r *h
 }
 
 func (h *Handler) DeleteApiV1RegionsRegionIDIdentitiesIdentityID(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter, identityID openapi.IdentityIDParameter) {
+}
+
+func convertExternalNetwork(in providers.ExternalNetwork) openapi.ExternalNetwork {
+	out := openapi.ExternalNetwork{
+		Id:   in.ID,
+		Name: in.Name,
+	}
+
+	return out
+}
+
+func convertExternalNetworks(in providers.ExternalNetworks) openapi.ExternalNetworks {
+	out := make(openapi.ExternalNetworks, len(in))
+
+	for i := range in {
+		out[i] = convertExternalNetwork(in[i])
+	}
+
+	return out
+}
+
+func (h *Handler) GetApiV1RegionsRegionIDExternalnetworks(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter) {
+	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), regionID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := provider.ListExternalNetworks(r.Context())
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	h.setCacheable(w)
+	util.WriteJSONResponse(w, r, http.StatusOK, convertExternalNetworks(result))
 }

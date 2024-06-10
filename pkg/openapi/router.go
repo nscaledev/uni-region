@@ -18,6 +18,9 @@ type ServerInterface interface {
 	// (GET /api/v1/regions)
 	GetApiV1Regions(w http.ResponseWriter, r *http.Request)
 
+	// (GET /api/v1/regions/{regionID}/externalnetworks)
+	GetApiV1RegionsRegionIDExternalnetworks(w http.ResponseWriter, r *http.Request, regionID RegionIDParameter)
+
 	// (GET /api/v1/regions/{regionID}/flavors)
 	GetApiV1RegionsRegionIDFlavors(w http.ResponseWriter, r *http.Request, regionID RegionIDParameter)
 
@@ -37,6 +40,11 @@ type Unimplemented struct{}
 
 // (GET /api/v1/regions)
 func (_ Unimplemented) GetApiV1Regions(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /api/v1/regions/{regionID}/externalnetworks)
+func (_ Unimplemented) GetApiV1RegionsRegionIDExternalnetworks(w http.ResponseWriter, r *http.Request, regionID RegionIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -77,6 +85,34 @@ func (siw *ServerInterfaceWrapper) GetApiV1Regions(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetApiV1Regions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r.WithContext(ctx))
+}
+
+// GetApiV1RegionsRegionIDExternalnetworks operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV1RegionsRegionIDExternalnetworks(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var err error
+
+	// ------------- Path parameter "regionID" -------------
+	var regionID RegionIDParameter
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "regionID", runtime.ParamLocationPath, chi.URLParam(r, "regionID"), &regionID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "regionID", Err: err})
+		return
+	}
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV1RegionsRegionIDExternalnetworks(w, r, regionID)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -322,6 +358,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/regions", wrapper.GetApiV1Regions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/regions/{regionID}/externalnetworks", wrapper.GetApiV1RegionsRegionIDExternalnetworks)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/regions/{regionID}/flavors", wrapper.GetApiV1RegionsRegionIDFlavors)

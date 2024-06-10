@@ -108,6 +108,29 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/regions/{regionID}/externalnetworks:
+    description: |-
+      Allows access to "external networks" for providers that support them.
+      While CAPO can infer the external network itself, it craps out -
+      as per usual - if more than one is found, wracked with indescision.
+      Thus we still need to handle it as a special snowflake.
+    parameters:
+    - $ref: '#/components/parameters/regionIDParameter'
+    get:
+      description: Get a list of external networks.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/externalNetworksResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 components:
   parameters:
     regionIDParameter:
@@ -322,6 +345,24 @@ components:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
           $ref: '#/components/schemas/identitySpec'
+    externalNetwork:
+      description: An Openstack external network.
+      type: object
+      required:
+      - id
+      - name
+      properties:
+        id:
+          description: The resource ID.
+          type: string
+        name:
+          description: The resource name.
+          type: string
+    externalNetworks:
+      description: A list of openstack external networks.
+      type: array
+      items:
+        $ref: '#/components/schemas/externalNetwork'
   requestBodies:
     identityRequest:
       description: A request for an identity.
@@ -407,6 +448,15 @@ components:
                 cloudConfig: dGhpcyBpcyBhIHRlc3QK
                 projectId: eb9c92d937464d14bf87e50fa726380d
                 userId: a19678a28126497dba24b54c96a064fa
+    externalNetworksResponse:
+      description: A list of valid external networks.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/externalNetworks'
+          example:
+          - id: c3f92716-1fdc-4b7b-906e-4fe0154dfcdf
+            name: foo
   securitySchemes:
     oauth2Authentication:
       description: Operation requires OAuth2 bearer token authentication.

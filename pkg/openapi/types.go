@@ -22,6 +22,18 @@ const (
 	Openstack RegionType = "openstack"
 )
 
+// ExternalNetwork An Openstack external network.
+type ExternalNetwork struct {
+	// Id The resource ID.
+	Id string `json:"id"`
+
+	// Name The resource name.
+	Name string `json:"name"`
+}
+
+// ExternalNetworks A list of openstack external networks.
+type ExternalNetworks = []ExternalNetwork
+
 // Flavor A flavor.
 type Flavor struct {
 	// Metadata This metadata is for resources that just exist, and don't require
@@ -181,6 +193,9 @@ type IdentityIDParameter = KubernetesNameParameter
 
 // RegionIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type RegionIDParameter = KubernetesNameParameter
+
+// ExternalNetworksResponse A list of openstack external networks.
+type ExternalNetworksResponse = ExternalNetworks
 
 // FlavorsResponse A list of flavors.
 type FlavorsResponse = Flavors
