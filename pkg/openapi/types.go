@@ -77,8 +77,7 @@ type GpuVendor string
 
 // IdentityRead A provider specific identity.
 type IdentityRead struct {
-	// Metadata Resource metadata valid for all reads.
-	Metadata externalRef0.ResourceReadMetadata `json:"metadata"`
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
 
 	// Spec A provider specific identity, while the client can list regions to infer the
 	// type, we don't requires this and return it with the response.  That can then
@@ -105,14 +104,23 @@ type IdentitySpecOpenStack struct {
 	// CloudConfig A base64 encoded cloud config file.
 	CloudConfig string `json:"cloudConfig"`
 
-	// ExternalNetworkID An external network that can be used to provision floating IPs.
-	ExternalNetworkID string `json:"externalNetworkID"`
+	// ProjectId Project identifier allocated for the infrastructure.
+	ProjectId string `json:"projectId"`
+
+	// UserId User identitifer allocated for the infrastructure.
+	UserId string `json:"userId"`
 }
 
 // IdentityWrite Request parameters for creating an identity.
 type IdentityWrite struct {
-	// Tags A list of tags.
-	Tags *TagList `json:"tags,omitempty"`
+	// ClusterId Cluster the owns the resource.
+	ClusterId string `json:"clusterId"`
+
+	// OrganizationId Organization that owns the resource.
+	OrganizationId string `json:"organizationId"`
+
+	// ProjectId Project that owns the resource.
+	ProjectId string `json:"projectId"`
 }
 
 // Image An image.
@@ -167,18 +175,6 @@ type SoftwareVersions struct {
 	// Kubernetes A semantic version.
 	Kubernetes *externalRef0.Semver `json:"kubernetes,omitempty"`
 }
-
-// Tag A key value pair.
-type Tag struct {
-	// Name A unique tag name.
-	Name string `json:"name"`
-
-	// Value An arbirary value, may be marshaled JSON for example.
-	Value string `json:"value"`
-}
-
-// TagList A list of tags.
-type TagList = []Tag
 
 // IdentityIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type IdentityIDParameter = KubernetesNameParameter

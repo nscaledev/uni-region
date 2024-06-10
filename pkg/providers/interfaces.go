@@ -18,6 +18,8 @@ package providers
 
 import (
 	"context"
+
+	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 )
 
 // Providers are expected to provide a provider agnostic manner.
@@ -28,4 +30,6 @@ type Provider interface {
 	Flavors(ctx context.Context) (FlavorList, error)
 	// Images lists all available images.
 	Images(ctx context.Context) (ImageList, error)
+	// CreateIdentity creates a new identity for cloud infrastructure.
+	CreateIdentity(ctx context.Context, info *ClusterInfo) (*unikornv1.Identity, *CloudConfig, error)
 }

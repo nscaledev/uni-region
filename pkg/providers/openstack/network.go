@@ -19,7 +19,6 @@ package openstack
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
@@ -89,6 +88,7 @@ func (c *NetworkClient) ExternalNetworks(ctx context.Context) ([]networks.Networ
 	return results, nil
 }
 
+/*
 // Get a network for external connectivity.
 func (c *NetworkClient) defaultExternalNetwork(ctx context.Context) (*networks.Network, error) {
 	externalNetworks, err := c.ExternalNetworks(ctx)
@@ -102,3 +102,4 @@ func (c *NetworkClient) defaultExternalNetwork(ctx context.Context) (*networks.N
 
 	return &externalNetworks[0], nil
 }
+*/

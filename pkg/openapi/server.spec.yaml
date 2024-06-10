@@ -260,38 +260,31 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/flavor'
-    tag:
-      description: A key value pair.
-      type: object
-      required:
-      - name
-      - value
-      properties:
-        name:
-          description: A unique tag name.
-          type: string
-        value:
-          description: An arbirary value, may be marshaled JSON for example.
-          type: string
-    tagList:
-      description: A list of tags.
-      type: array
-      items:
-        $ref: '#/components/schemas/tag'
     identityWrite:
       description: Request parameters for creating an identity.
       type: object
+      required:
+      - organizationId
+      - projectId
+      - clusterId
       properties:
-        tags:
-          $ref: '#/components/schemas/tagList'
+        organizationId:
+          description: Organization that owns the resource.
+          type: string
+        projectId:
+          description: Project that owns the resource.
+          type: string
+        clusterId:
+          description: Cluster the owns the resource.
+          type: string
     identitySpecOpenStack:
       description: Everything an OpenStack client needs to function.
       type: object
       required:
       - cloud
       - cloudConfig
-      # TODO: isn't the new CAPO able to derive this now??
-      - externalNetworkID
+      - userId
+      - projectId
       properties:
         cloud:
           description: The name of the cloud in the cloud config.
@@ -299,8 +292,11 @@ components:
         cloudConfig:
           description: A base64 encoded cloud config file.
           type: string
-        externalNetworkID:
-          description: An external network that can be used to provision floating IPs.
+        userId:
+          description: User identitifer allocated for the infrastructure.
+          type: string
+        projectId:
+          description: Project identifier allocated for the infrastructure.
           type: string
     identitySpec:
       description: |-
@@ -323,7 +319,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceReadMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
           $ref: '#/components/schemas/identitySpec'
   requestBodies:
@@ -335,9 +331,9 @@ components:
           schema:
             $ref: '#/components/schemas/identityWrite'
           example:
-            tags:
-            - name: clusterID
-              value: c7568e2d-f9ab-453d-9a3a-51375f78426b
+            organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+            projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+            clusterId: 9361402c-f998-49cc-ab21-9bb99afcfde8
   responses:
     regionsResponse:
       description: A list of regions.
@@ -400,6 +396,8 @@ components:
             metadata:
               id: a64f9269-36e0-4312-b8d1-52d93d569b7b
               name: unused
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
               creationTime: 2024-05-31T14:11:00Z
               provisioningStatus: provisioned
             spec:
@@ -407,7 +405,8 @@ components:
               openstack:
                 cloud: default
                 cloudConfig: dGhpcyBpcyBhIHRlc3QK
-                externalNetworkID: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+                projectId: eb9c92d937464d14bf87e50fa726380d
+                userId: a19678a28126497dba24b54c96a064fa
   securitySchemes:
     oauth2Authentication:
       description: Operation requires OAuth2 bearer token authentication.
