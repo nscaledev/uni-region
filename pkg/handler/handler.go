@@ -19,15 +19,19 @@ limitations under the License.
 package handler
 
 import (
+	"cmp"
+	"encoding/base64"
 	"fmt"
 	"net/http"
-	"sort"
+	"slices"
 	"time"
 
 	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
+	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/openapi/oidc"
 	coreutil "github.com/unikorn-cloud/core/pkg/util"
+	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
@@ -128,8 +132,15 @@ func (h *Handler) GetApiV1RegionsRegionIDFlavors(w http.ResponseWriter, r *http.
 		return
 	}
 
-	// Apply ordering guarantees.
-	sort.Stable(result)
+	// Apply ordering guarantees, ascending order with GPUs taking precedence over
+	// CPUs.
+	slices.SortFunc(result, func(a, b providers.Flavor) int {
+		if v := cmp.Compare(a.GPUs, b.GPUs); v != 0 {
+			return v
+		}
+
+		return cmp.Compare(a.CPUs, b.CPUs)
+	})
 
 	out := make(openapi.Flavors, len(result))
 
@@ -173,8 +184,10 @@ func (h *Handler) GetApiV1RegionsRegionIDImages(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Apply ordering guarantees.
-	sort.Stable(result)
+	// Apply ordering guarantees, ordered by name.
+	slices.SortFunc(result, func(a, b providers.Image) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
 
 	out := make(openapi.Images, len(result))
 
@@ -186,7 +199,49 @@ func (h *Handler) GetApiV1RegionsRegionIDImages(w http.ResponseWriter, r *http.R
 	util.WriteJSONResponse(w, r, http.StatusOK, out)
 }
 
+func convertCloudConfig(identity *unikornv1.Identity, in *providers.CloudConfig) *openapi.IdentityRead {
+	out := &openapi.IdentityRead{
+		Metadata: conversion.ProjectScopedResourceReadMetadata(identity, coreopenapi.ResourceProvisioningStatusProvisioned),
+	}
+
+	switch in.Type {
+	case providers.ProviderTypeOpenStack:
+		out.Spec = openapi.IdentitySpec{
+			Type: openapi.Openstack,
+			Openstack: &openapi.IdentitySpecOpenStack{
+				Cloud:       in.OpenStack.Credentials.Cloud,
+				CloudConfig: base64.URLEncoding.EncodeToString(in.OpenStack.Credentials.CloudConfig),
+				UserId:      in.OpenStack.State.UserID,
+				ProjectId:   in.OpenStack.State.ProjectID,
+			},
+		}
+	}
+
+	return out
+}
+
 func (h *Handler) PostApiV1RegionsRegionIDIdentities(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter) {
+	request := &openapi.IdentityWrite{}
+
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), regionID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	identity, cloudconfig, err := provider.CreateIdentity(r.Context(), &providers.ClusterInfo{})
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	h.setCacheable(w)
+	util.WriteJSONResponse(w, r, http.StatusCreated, convertCloudConfig(identity, cloudconfig))
 }
 
 func (h *Handler) DeleteApiV1RegionsRegionIDIdentitiesIdentityID(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter, identityID openapi.IdentityIDParameter) {

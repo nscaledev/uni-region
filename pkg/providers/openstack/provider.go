@@ -24,19 +24,21 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/google/uuid"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/applicationcredentials"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/projects"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/users"
 	"github.com/gophercloud/utils/openstack/clientconfig"
 
+	"github.com/unikorn-cloud/core/pkg/constants"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/util/uuid"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
@@ -210,6 +212,7 @@ func (p *Provider) image(ctx context.Context) (*ImageClient, error) {
 	return p._image, nil
 }
 
+/*
 func (p *Provider) network(ctx context.Context) (*NetworkClient, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -220,6 +223,7 @@ func (p *Provider) network(ctx context.Context) (*NetworkClient, error) {
 
 	return p._network, nil
 }
+*/
 
 // Flavors list all available flavors.
 func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
@@ -312,14 +316,8 @@ const (
 	ClusterTag      = "cluster"
 )
 
-type ClusterInfo struct {
-	OrganizationID string
-	ProjectID      string
-	ClusterID      string
-}
-
 // projectTags defines how to tag projects.
-func projectTags(info *ClusterInfo) []string {
+func projectTags(info *providers.ClusterInfo) []string {
 	tags := []string{
 		OrganizationTag + "=" + info.OrganizationID,
 		ProjectTag + "=" + info.ProjectID,
@@ -333,7 +331,7 @@ func projectTags(info *ClusterInfo) []string {
 // There is a 1:1 mapping of user to project, and the project name is unique in the
 // domain, so just reuse this, we can clean them up at the same time.
 func (p *Provider) provisionUser(ctx context.Context, identityService *IdentityClient, project *projects.Project) (*users.User, string, error) {
-	password := uuid.New().String()
+	password := string(uuid.NewUUID())
 
 	user, err := identityService.CreateUser(ctx, p.domainID, project.Name, password)
 	if err != nil {
@@ -346,7 +344,7 @@ func (p *Provider) provisionUser(ctx context.Context, identityService *IdentityC
 // provisionProject creates a project per-cluster.  Cluster API provider Openstack is
 // somewhat broken in that networks can alias and cause all kinds of disasters, so it's
 // safest to have one cluster in one project so it has its own namespace.
-func (p *Provider) provisionProject(ctx context.Context, identityService *IdentityClient, info *ClusterInfo) (*projects.Project, error) {
+func (p *Provider) provisionProject(ctx context.Context, identityService *IdentityClient, info *providers.ClusterInfo) (*projects.Project, error) {
 	name := "unikorn-" + rand.String(8)
 
 	project, err := identityService.CreateProject(ctx, p.domainID, name, projectTags(info))
@@ -424,34 +422,7 @@ func (p *Provider) provisionApplicationCredential(ctx context.Context, userID, p
 	return projectScopedIdentity.CreateApplicationCredential(ctx, userID, project.Name, "IaaS lifecycle management", p.getRequiredRoles())
 }
 
-type CloudConfigType string
-
-const (
-	CloudConfigTypeOpenStack CloudConfigType = "openstack"
-)
-
-type OpenStackCloudCredentials struct {
-	Cloud             string
-	CloudConfig       []byte
-	ExternalNetworkID string
-}
-
-type OpenStackCloudState struct {
-	UserID    string
-	ProjectID string
-}
-
-type OpenStackCloudConfig struct {
-	Credentials *OpenStackCloudCredentials
-	State       *OpenStackCloudState
-}
-
-type CloudConfig struct {
-	Type      CloudConfigType
-	OpenStack *OpenStackCloudConfig
-}
-
-func (p *Provider) createClientConfig(applicationCredential *applicationcredentials.ApplicationCredential) (*OpenStackCloudCredentials, error) {
+func (p *Provider) createClientConfig(applicationCredential *applicationcredentials.ApplicationCredential) (*providers.OpenStackCloudCredentials, error) {
 	cloud := "cloud"
 
 	clientConfig := &clientconfig.Clouds{
@@ -472,7 +443,7 @@ func (p *Provider) createClientConfig(applicationCredential *applicationcredenti
 		return nil, err
 	}
 
-	credentials := &OpenStackCloudCredentials{
+	credentials := &providers.OpenStackCloudCredentials{
 		Cloud:       cloud,
 		CloudConfig: clientConfigYAML,
 	}
@@ -480,20 +451,20 @@ func (p *Provider) createClientConfig(applicationCredential *applicationcredenti
 	return credentials, nil
 }
 
-// ConfigureCluster does any provider specific configuration for a cluster.
+// CreateIdentity creates a new identity for cloud infrastructure.
 //
 //nolint:cyclop
-func (p *Provider) ConfigureCluster(ctx context.Context, info *ClusterInfo) (*CloudConfig, error) {
+func (p *Provider) CreateIdentity(ctx context.Context, info *providers.ClusterInfo) (*unikornv1.Identity, *providers.CloudConfig, error) {
 	identityService, err := p.identity(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Every cluster has its own project to mitigate "nuances" in CAPO i.e. it's
 	// totally broken when it comes to network aliasing.
 	project, err := p.provisionProject(ctx, identityService, info)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// You MUST provision a new user, if we rotate a password, any application credentials
@@ -501,55 +472,67 @@ func (p *Provider) ConfigureCluster(ctx context.Context, info *ClusterInfo) (*Cl
 	// will be pretty catastrophic for all clusters in the region.
 	user, password, err := p.provisionUser(ctx, identityService, project)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Give the user only what permissions they need to provision a cluster and
 	// manage it during its lifetime.
 	if err := p.provisionProjectRoles(ctx, identityService, user.ID, project); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Always use application credentials, they are scoped to a single project and
 	// cannot be used to break from that jail.
 	applicationCredential, err := p.provisionApplicationCredential(ctx, user.ID, password, project)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	credentials, err := p.createClientConfig(applicationCredential)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	networkService, err := p.network(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	externalNetwork, err := networkService.defaultExternalNetwork(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	config := &CloudConfig{
-		Type: CloudConfigTypeOpenStack,
-		OpenStack: &OpenStackCloudConfig{
+	config := &providers.CloudConfig{
+		Type: providers.ProviderTypeOpenStack,
+		OpenStack: &providers.OpenStackCloudConfig{
 			Credentials: credentials,
-			State: &OpenStackCloudState{
+			State: &providers.OpenStackCloudState{
 				UserID:    user.ID,
 				ProjectID: project.ID,
 			},
 		},
 	}
 
-	config.OpenStack.Credentials.ExternalNetworkID = externalNetwork.ID
+	identity := &unikornv1.Identity{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: p.region.Namespace,
+			Name:      string(uuid.NewUUID()),
+			Labels: map[string]string{
+				constants.NameLabel:              "undefined",
+				constants.OrganizationLabel:      info.OrganizationID,
+				constants.ProjectLabel:           info.ProjectID,
+				constants.KubernetesClusterLabel: info.ClusterID,
+			},
+		},
+		Spec: unikornv1.IdentitySpec{
+			Provider: unikornv1.ProviderOpenstack,
+			OpenStack: &unikornv1.IdentitySpecOpenStack{
+				UserID:    user.ID,
+				ProjectID: project.ID,
+			},
+		},
+	}
 
-	return config, nil
+	if err := p.client.Create(ctx, identity); err != nil {
+		return nil, nil, err
+	}
+
+	return identity, config, nil
 }
 
 // DeconfigureCluster does any provider specific cluster cleanup.
-func (p *Provider) DeconfigureCluster(ctx context.Context, state *OpenStackCloudState) error {
+func (p *Provider) DeconfigureCluster(ctx context.Context, state *providers.OpenStackCloudState) error {
 	identityService, err := p.identity(ctx)
 	if err != nil {
 		return err

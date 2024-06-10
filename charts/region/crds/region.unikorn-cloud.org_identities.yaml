@@ -1,0 +1,91 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+  name: identities.region.unikorn-cloud.org
+spec:
+  group: region.unikorn-cloud.org
+  names:
+    categories:
+    - unikorn
+    kind: Identity
+    listKind: IdentityList
+    plural: identities
+    singular: identity
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.provider
+      name: provider
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Available")].reason
+      name: status
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Identity defines an on-demand cloud identity.  The region controller must
+          create any resources necessary to provide dynamic provisioning of clusters
+          e.g. compute, storage and networking.  This resource is used for persistence
+          of information by the controller and not for manual lifecycle management.
+          Any credentials should not be stored unless absolutely necessary, and should
+          be passed to a client on initial identity creation only.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: IdentitySpec stores any state necessary to manage identity.
+            properties:
+              openstack:
+                description: OpenStack is populated when the provider type is set
+                  to "openstack".
+                properties:
+                  projectID:
+                    description: ProjectIS is the ID of the project created for the
+                      identity.
+                    type: string
+                  userID:
+                    description: UserID is the ID of the user created for the identity.
+                    type: string
+                required:
+                - projectID
+                - userID
+                type: object
+              provider:
+                description: Provider defines the provider type.
+                enum:
+                - openstack
+                type: string
+            required:
+            - provider
+            type: object
+          status:
+            type: object
+        required:
+        - spec
+        - status
+        type: object
+    served: true
+    storage: true
+    subresources: {}

@@ -168,9 +168,9 @@ type IdentitySpec struct {
 
 type IdentitySpecOpenStack struct {
 	// UserID is the ID of the user created for the identity.
-	UserID string
+	UserID string `json:"userID"`
 	// ProjectIS is the ID of the project created for the identity.
-	ProjectID string
+	ProjectID string `json:"projectID"`
 }
 
 type IdentityStatus struct {

@@ -14,6 +14,15 @@ rules:
   - list
   - watch
 - apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - identities
+  verbs:
+  - list
+  - watch
+  - create
+  - delete
+- apiGroups:
   - ""
   resources:
   - secrets
