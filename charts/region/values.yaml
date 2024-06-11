@@ -71,7 +71,7 @@ region:
 
   ingress:
     # Sets the ingress class to use.
-    class: nginx
+    # class: nginx
 
     # Sets the DNS hosts/X.509 Certs.
     host: region.unikorn-cloud.org

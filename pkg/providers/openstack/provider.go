@@ -529,18 +529,28 @@ func (p *Provider) CreateIdentity(ctx context.Context, info *providers.ClusterIn
 	return identity, config, nil
 }
 
-// DeconfigureCluster does any provider specific cluster cleanup.
-func (p *Provider) DeconfigureCluster(ctx context.Context, state *providers.OpenStackCloudState) error {
+// DeleteIdentity cleans up an identity for cloud infrastructure.
+func (p *Provider) DeleteIdentity(ctx context.Context, identityID string) error {
+	identity := &unikornv1.Identity{}
+
+	if err := p.client.Get(ctx, client.ObjectKey{Namespace: p.region.Namespace, Name: identityID}, identity); err != nil {
+		return err
+	}
+
 	identityService, err := p.identity(ctx)
 	if err != nil {
 		return err
 	}
 
-	if err := identityService.DeleteUser(ctx, state.UserID); err != nil {
+	if err := identityService.DeleteUser(ctx, identity.Spec.OpenStack.UserID); err != nil {
 		return err
 	}
 
-	if err := identityService.DeleteProject(ctx, state.ProjectID); err != nil {
+	if err := identityService.DeleteProject(ctx, identity.Spec.OpenStack.ProjectID); err != nil {
+		return err
+	}
+
+	if err := p.client.Delete(ctx, identity); err != nil {
 		return err
 	}
 

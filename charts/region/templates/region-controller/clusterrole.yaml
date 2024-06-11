@@ -29,3 +29,10 @@ rules:
   verbs:
   - list
   - watch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - list
+  - watch

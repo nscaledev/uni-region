@@ -5,12 +5,11 @@ go 1.22.1
 require (
 	github.com/getkin/kin-openapi v0.123.0
 	github.com/go-chi/chi/v5 v5.0.12
-	github.com/google/uuid v1.6.0
 	github.com/gophercloud/gophercloud/v2 v2.0.0-rc.3
 	github.com/gophercloud/utils v0.0.0-20231010081019-80377eca5d56
 	github.com/oapi-codegen/runtime v1.1.1
 	github.com/spf13/pflag v1.0.5
-	github.com/unikorn-cloud/core v0.1.45
+	github.com/unikorn-cloud/core v0.1.46
 	go.opentelemetry.io/otel v1.27.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.27.0
 	go.opentelemetry.io/otel/sdk v1.27.0
@@ -41,6 +40,7 @@ require (
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/gophercloud/gophercloud v1.3.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0 // indirect

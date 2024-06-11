@@ -133,13 +133,17 @@ func (h *Handler) GetApiV1RegionsRegionIDFlavors(w http.ResponseWriter, r *http.
 	}
 
 	// Apply ordering guarantees, ascending order with GPUs taking precedence over
-	// CPUs.
+	// CPUs and memory.
 	slices.SortFunc(result, func(a, b providers.Flavor) int {
 		if v := cmp.Compare(a.GPUs, b.GPUs); v != 0 {
 			return v
 		}
 
-		return cmp.Compare(a.CPUs, b.CPUs)
+		if v := cmp.Compare(a.CPUs, b.CPUs); v != 0 {
+			return v
+		}
+
+		return cmp.Compare(a.Memory.Value(), b.Memory.Value())
 	})
 
 	out := make(openapi.Flavors, len(result))
