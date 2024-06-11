@@ -16,7 +16,9 @@ metadata:
     external-dns.alpha.kubernetes.io/hostname: {{ .Values.region.ingress.host }}
   {{- end }}
 spec:
+  {{- if .Values.region.ingress.class }}
   ingressClassName: {{ .Values.region.ingress.class }}
+  {{- end }}
   # For development you will want to add these names to /etc/hosts for the ingress
   # endpoint address.
   tls:
