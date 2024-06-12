@@ -4,7 +4,7 @@ Provides a driver for OpenStack based regions.
 
 ## Initial Setup
 
-It is envisoned that an OpenStack cluster may be used for things other than the exclusive use of Unikorn, and as such it tries to respect this as much as possible.
+It is envisaged that an OpenStack cluster may be used for things other than the exclusive use of Unikorn, and as such it tries to respect this as much as possible.
 In particular we want to allow different instances of Unikorn to cohabit to support, for example, staging environments.
 
 You will need to install the [domain manager](https://docs.scs.community/standards/scs-0302-v1-domain-manager-role/) policy defined by SCS.
@@ -21,7 +21,7 @@ export PASSWORD=$(apg -n 1 -m 24)
 ```
 
 Create the domain.
-The use of project domains for projects deployed to provision Kubernetes cluster acheives a few aims.
+The use of project domains for projects deployed to provision Kubernetes cluster achieves a few aims.
 First namespace isolation.
 Second is a security consideration.
 It is dangerous, anecdotally, to have a privileged process that has the power of deletion.
@@ -59,14 +59,17 @@ kubectl create secret generic -n unikorn uk-north-1-credentials \
 	--from-literal=password=${PASSWORD}
 ```
 
-Finally we can create the region itself.
-For additional configuration options for individual OpenStack services, consult `kubectl explain regions.unikorn-cloud.org` for documentation.
+Finally we can create the region itself, although this should be statically configured via Helm.
+For additional configuration options for individual OpenStack services, consult `kubectl explain regions.region.unikorn-cloud.org` for documentation.
 
 ```yaml
-apiVersion: unikorn-cloud.org/v1alpha1
+apiVersion: region.unikorn-cloud.org/v1alpha1
 kind: Region
 metadata:
-  name: uk-north-1
+  # Use "uuidgen -r" to select a random ID, this MUST start with a character a-f.
+  name: c7e8492f-c320-4278-8201-48cd38fed38b
+  labels:
+    unikorn-cloud.org/name: uk-north-1
 spec:
   provider: openstack
   openstack:
