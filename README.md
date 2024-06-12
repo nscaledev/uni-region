@@ -20,7 +20,7 @@ Given this service holds elevated privilege credentials to all of those clouds, 
 Eventually, the goal is to have this act as a purely discovery and routing service, and platform specific region controllers live in those platforms, including their credentials.
 The end goal being the compromise of one, doesn't affect the others, limiting blast radius, and not having to disseminate credentials across the internet, they would reside locally in the cloud platform's AS to improve security guarantees.
 
-## Provider Setup
+## Supported Providers
 
 ### OpenStack
 
@@ -31,6 +31,14 @@ This obviously entails a support crew to keep it up and running!
 For further info see the [OpenStack provider documentation](pkg/providers/openstack/README.md).
 
 ## Installation
+
+### Unikorn Prerequisites
+
+The use the Kubernetes service you first need to install:
+
+* [The identity service](https://github.com/unikorn-cloud/identity) to provide API authentication and authorization.
+
+### Installing the Service
 
 The region service is typically installed with Helm as follows:
 
