@@ -69,4 +69,4 @@ Regions define cloud instances to expose to clients.
 ## What Next?
 
 The region controller is useless as it is, and requires a service provider to use it to yield a consumable resource.
-Try out the [Kubernetes service](https://github.com/unikorn-cloud/unikorn).
+Try out the [Kubernetes service](https://github.com/unikorn-cloud/kubernetes).
