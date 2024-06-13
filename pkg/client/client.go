@@ -41,13 +41,7 @@ var (
 	ErrFormatError = errors.New("secret incorrectly formatted")
 )
 
-// Client wraps up the raw OpenAPI client with things to make it useable e.g.
-// authorization and TLS.
-type Client struct {
-	// client is a Kubenetes client.
-	client client.Client
-	// namespace is the namespace the client is running in.
-	namespace string
+type Options struct {
 	// host is the region host name.
 	host string
 	// caSecretNamespace tells us where to source the CA secret.
@@ -56,37 +50,49 @@ type Client struct {
 	caSecretName string
 }
 
-// New creates a new client.
-func New(client client.Client, namespace string) *Client {
-	return &Client{
-		client:    client,
-		namespace: namespace,
-	}
+// Client wraps up the raw OpenAPI client with things to make it useable e.g.
+// authorization and TLS.
+type Client struct {
+	// client is a Kubenetes client.
+	client client.Client
+	// namespace is the namespace the client is running in.
+	namespace string
+	// options allows setting of option from the CLI
+	options *Options
 }
 
 // AddFlags adds the options to the CLI flags.
-func (c *Client) AddFlags(f *pflag.FlagSet) {
-	f.StringVar(&c.host, "region-host", "", "Region endpoint URL.")
-	f.StringVar(&c.caSecretNamespace, "region-ca-secret-namespace", "", "Region endpoint CA certificate secret namespace.")
-	f.StringVar(&c.caSecretName, "region-ca-secret-name", "", "Region endpoint CA certificate secret.")
+func (o *Options) AddFlags(f *pflag.FlagSet) {
+	f.StringVar(&o.host, "region-host", "", "Region endpoint URL.")
+	f.StringVar(&o.caSecretNamespace, "region-ca-secret-namespace", "", "Region endpoint CA certificate secret namespace.")
+	f.StringVar(&o.caSecretName, "region-ca-secret-name", "", "Region endpoint CA certificate secret.")
+}
+
+// New creates a new client.
+func New(client client.Client, namespace string, options *Options) *Client {
+	return &Client{
+		client:    client,
+		namespace: namespace,
+		options:   options,
+	}
 }
 
 // tlsClientConfig abstracts away private TLS CAs or self signed certificates.
 func (c *Client) tlsClientConfig(ctx context.Context) (*tls.Config, error) {
-	if c.caSecretName == "" {
+	if c.options.caSecretName == "" {
 		//nolint:nilnil
 		return nil, nil
 	}
 
 	namespace := c.namespace
 
-	if c.caSecretNamespace != "" {
-		namespace = c.caSecretNamespace
+	if c.options.caSecretNamespace != "" {
+		namespace = c.options.caSecretNamespace
 	}
 
 	secret := &corev1.Secret{}
 
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: c.caSecretName}, secret); err != nil {
+	if err := c.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: c.options.caSecretName}, secret); err != nil {
 		return nil, err
 	}
 
@@ -149,7 +155,7 @@ func (c *Client) Client(ctx context.Context) (*openapi.ClientWithResponses, erro
 		return nil, err
 	}
 
-	client, err := openapi.NewClientWithResponses(c.host, openapi.WithHTTPClient(httpClient), openapi.WithRequestEditorFn(accessTokenInjector))
+	client, err := openapi.NewClientWithResponses(c.options.host, openapi.WithHTTPClient(httpClient), openapi.WithRequestEditorFn(accessTokenInjector))
 	if err != nil {
 		return nil, err
 	}
