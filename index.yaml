@@ -58,6 +58,17 @@ entries:
     version: v0.1.0
   unikorn-region:
   - apiVersion: v2
+    appVersion: v0.1.6
+    created: "2024-06-13T12:53:03.627205071Z"
+    description: A Helm chart for deploying Unikorn's Region Controller
+    digest: e70656b74ac130e5ed3ca51f5521b66877358c3e61858e321033bd734edcd925
+    icon: https://raw.githubusercontent.com/unikorn-cloud/assets/main/images/logos/dark-on-light/icon.png
+    name: unikorn-region
+    type: application
+    urls:
+    - https://github.com/unikorn-cloud/region/releases/download/v0.1.6/unikorn-region-v0.1.6.tgz
+    version: v0.1.6
+  - apiVersion: v2
     appVersion: v0.1.5
     created: "2024-06-12T13:10:42.246647503Z"
     description: A Helm chart for deploying Unikorn's Region Controller
@@ -68,4 +79,4 @@ entries:
     urls:
     - https://github.com/unikorn-cloud/region/releases/download/v0.1.5/unikorn-region-v0.1.5.tgz
     version: v0.1.5
-generated: "2024-06-12T13:10:42.246733875Z"
+generated: "2024-06-13T12:53:03.62726266Z"
