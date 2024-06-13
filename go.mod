@@ -9,7 +9,7 @@ require (
 	github.com/gophercloud/utils v0.0.0-20231010081019-80377eca5d56
 	github.com/oapi-codegen/runtime v1.1.1
 	github.com/spf13/pflag v1.0.5
-	github.com/unikorn-cloud/core v0.1.46
+	github.com/unikorn-cloud/core v0.1.47
 	go.opentelemetry.io/otel v1.27.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.27.0
 	go.opentelemetry.io/otel/sdk v1.27.0
