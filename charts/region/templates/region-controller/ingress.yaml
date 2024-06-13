@@ -9,8 +9,6 @@ metadata:
     cert-manager.io/cluster-issuer: {{ .Values.region.ingress.clusterIssuer | indent 2 }}
   {{- else if .Values.region.ingress.issuer }}
     cert-manager.io/issuer: {{ .Values.region.ingress.issuer }}
-  {{- else }}
-    cert-manager.io/issuer: unikorn-region-ingress
   {{- end }}
   {{- if .Values.region.ingress.externalDns }}
     external-dns.alpha.kubernetes.io/hostname: {{ .Values.region.ingress.host }}

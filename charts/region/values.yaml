@@ -81,7 +81,7 @@ region:
     issuer: ~
 
     # clusterIssuer to use.
-    clusterIssuer: ~
+    clusterIssuer: unikorn-issuer
 
     # If true, will add the external DNS hostname annotation.
     externalDns: false
@@ -98,8 +98,8 @@ region:
     issuer: https://identity.unikorn-cloud.org
 
     # CA certificate to use to verify connections to the issuer, used in development only.
-    # This is a base64 encoded PEM file.
-    # issuerCA:
+    # issuerCASecretNamespace: ~
+    # issuerCASecretName: ~
 
   # Sets the OTLP endpoint for shipping spans.
   # otlpEndpoint: jaeger-collector.default:4318

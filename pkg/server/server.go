@@ -141,7 +141,7 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
 
 	// Setup middleware.
-	authorizer := oidc.NewAuthorizer(&s.AuthorizerOptions)
+	authorizer := oidc.NewAuthorizer(client, s.Options.Namespace, &s.AuthorizerOptions)
 
 	// Middleware specified here is applied to all requests post-routing.
 	// NOTE: these are applied in reverse order!!
