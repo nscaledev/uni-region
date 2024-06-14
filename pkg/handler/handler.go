@@ -96,7 +96,7 @@ func (h *Handler) checkRBAC(ctx context.Context, organizationID, scope string, p
 	return nil
 }
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
+func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegions(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter) {
 	if err := h.checkRBAC(r.Context(), organizationID, "infrastructure", constants.Read); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -147,7 +147,7 @@ func convertFlavor(in providers.Flavor) openapi.Flavor {
 	return out
 }
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
+func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavors(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, regionID openapi.RegionIDParameter) {
 	if err := h.checkRBAC(r.Context(), organizationID, "infrastructure", constants.Read); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -208,7 +208,7 @@ func convertImage(in providers.Image) openapi.Image {
 	return out
 }
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
+func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, regionID openapi.RegionIDParameter) {
 	if err := h.checkRBAC(r.Context(), organizationID, "infrastructure", constants.Read); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -262,17 +262,17 @@ func convertCloudConfig(identity *unikornv1.Identity, in *providers.CloudConfig)
 	return out
 }
 
-func generateClusterInfo(in *openapi.IdentityWrite) *providers.ClusterInfo {
+func generateClusterInfo(organizationID, projectID string, in *openapi.IdentityWrite) *providers.ClusterInfo {
 	out := &providers.ClusterInfo{
-		OrganizationID: in.OrganizationId,
-		ProjectID:      in.ProjectId,
+		OrganizationID: organizationID,
+		ProjectID:      projectID,
 		ClusterID:      in.ClusterId,
 	}
 
 	return out
 }
 
-func (h *Handler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
+func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, regionID openapi.RegionIDParameter) {
 	if err := h.checkRBAC(r.Context(), organizationID, "infrastructure", constants.Create); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -291,7 +291,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentities(
 		return
 	}
 
-	identity, cloudconfig, err := provider.CreateIdentity(r.Context(), generateClusterInfo(request))
+	identity, cloudconfig, err := provider.CreateIdentity(r.Context(), generateClusterInfo(organizationID, projectID, request))
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -320,7 +320,7 @@ func convertExternalNetworks(in providers.ExternalNetworks) openapi.ExternalNetw
 	return out
 }
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
+func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, regionID openapi.RegionIDParameter) {
 	if err := h.checkRBAC(r.Context(), organizationID, "infrastructure", constants.Read); err != nil {
 		errors.HandleError(w, r, err)
 		return
