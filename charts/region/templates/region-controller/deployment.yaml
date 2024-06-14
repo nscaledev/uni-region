@@ -27,13 +27,13 @@ spec:
             {{ printf "- --cors-max-age=%s" $cors.maxAge | nindent 8 }}
           {{- end }}
         {{- end }}
-        {{- with $oidc := .Values.region.oidc }}
-        - --oidc-issuer={{ $oidc.issuer }}
-          {{- if $oidc.issuerCASecretNamespace }}
-          {{ printf "- --oidc-issuer-ca-secret-namespace=%s" $oidc.issuerCASecretNamespace | nindent 8 }}
+        {{- with $identity := .Values.region.identity }}
+        - --identity-host={{ $identity.host }}
+          {{- if $identity.caSecretNamespace }}
+          {{ printf "- --identity-ca-secret-namespace=%s" $identity.caSecretNamespace | nindent 8 }}
           {{- end }}
-          {{- if $oidc.issuerCASecretName }}
-          {{ printf "- --oidc-issuer-ca-secret-name=%s" $oidc.issuerCASecretName | nindent 8 }}
+          {{- if $identity.caSecretName }}
+          {{ printf "- --identity-ca-secret-name=%s" $identity.caSecretName | nindent 8 }}
           {{- end }}
         {{- end }}
         {{- if .Values.region.otlpEndpoint }}

@@ -33,9 +33,10 @@ import (
 
 	"github.com/unikorn-cloud/core/pkg/server/middleware/cors"
 	openapimiddleware "github.com/unikorn-cloud/core/pkg/server/middleware/openapi"
-	"github.com/unikorn-cloud/core/pkg/server/middleware/openapi/oidc"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/opentelemetry"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/timeout"
+	identityclient "github.com/unikorn-cloud/identity/pkg/client"
+	"github.com/unikorn-cloud/identity/pkg/middleware/authorizer"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -55,8 +56,8 @@ type Server struct {
 	// HandlerOptions sets options for the HTTP handler.
 	HandlerOptions handler.Options
 
-	// AuthorizerOptions allow configuration of the OIDC backend.
-	AuthorizerOptions oidc.Options
+	// IdentityOptions allow configuration of the authorization middleware.
+	IdentityOptions identityclient.Options
 
 	// CORSOptions are for remote resource sharing.
 	CORSOptions cors.Options
@@ -67,7 +68,7 @@ func (s *Server) AddFlags(goflags *flag.FlagSet, flags *pflag.FlagSet) {
 
 	s.Options.AddFlags(flags)
 	s.HandlerOptions.AddFlags(flags)
-	s.AuthorizerOptions.AddFlags(flags)
+	s.IdentityOptions.AddFlags(flags)
 	s.CORSOptions.AddFlags(flags)
 }
 
@@ -140,8 +141,7 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 	router.NotFound(http.HandlerFunc(handler.NotFound))
 	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
 
-	// Setup middleware.
-	authorizer := oidc.NewAuthorizer(client, s.Options.Namespace, &s.AuthorizerOptions)
+	authorizer := authorizer.NewAuthorizer(client, s.Options.Namespace, &s.IdentityOptions)
 
 	// Middleware specified here is applied to all requests post-routing.
 	// NOTE: these are applied in reverse order!!
@@ -153,7 +153,9 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 		},
 	}
 
-	handlerInterface, err := handler.New(client, s.Options.Namespace, &s.HandlerOptions, &s.AuthorizerOptions)
+	identity := identityclient.New(client, s.Options.Namespace, &s.IdentityOptions)
+
+	handlerInterface, err := handler.New(client, s.Options.Namespace, &s.HandlerOptions, identity)
 	if err != nil {
 		return nil, err
 	}
