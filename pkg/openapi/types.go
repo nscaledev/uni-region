@@ -127,12 +127,6 @@ type IdentitySpecOpenStack struct {
 type IdentityWrite struct {
 	// ClusterId Cluster the owns the resource.
 	ClusterId string `json:"clusterId"`
-
-	// OrganizationId Organization that owns the resource.
-	OrganizationId string `json:"organizationId"`
-
-	// ProjectId Project that owns the resource.
-	ProjectId string `json:"projectId"`
 }
 
 // Image An image.
@@ -191,6 +185,9 @@ type SoftwareVersions struct {
 // OrganizationIDParameter defines model for organizationIDParameter.
 type OrganizationIDParameter = string
 
+// ProjectIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
+type ProjectIDParameter = KubernetesNameParameter
+
 // RegionIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type RegionIDParameter = KubernetesNameParameter
 
@@ -212,5 +209,5 @@ type RegionsResponse = Regions
 // IdentityRequest Request parameters for creating an identity.
 type IdentityRequest = IdentityWrite
 
-// PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentities for application/json ContentType.
-type PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesJSONRequestBody = IdentityWrite
+// PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentities for application/json ContentType.
+type PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesJSONRequestBody = IdentityWrite

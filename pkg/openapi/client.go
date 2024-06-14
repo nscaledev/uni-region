@@ -90,26 +90,26 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
-	// GetApiV1OrganizationsOrganizationIDRegions request
-	GetApiV1OrganizationsOrganizationIDRegions(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegions request
+	GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegions(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworks request
-	GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworks(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworks request
+	GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworks(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors request
-	GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavors request
+	GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavors(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesWithBody request with any body
-	PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesWithBody(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesWithBody request with any body
+	PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesWithBody(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentities(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, body PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentities(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, body PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages request
-	GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImages request
+	GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImages(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
-func (c *Client) GetApiV1OrganizationsOrganizationIDRegions(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetApiV1OrganizationsOrganizationIDRegionsRequest(c.Server, organizationID)
+func (c *Client) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegions(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRequest(c.Server, organizationID, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -120,8 +120,8 @@ func (c *Client) GetApiV1OrganizationsOrganizationIDRegions(ctx context.Context,
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworks(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksRequest(c.Server, organizationID, regionID)
+func (c *Client) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworks(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksRequest(c.Server, organizationID, projectID, regionID)
 	if err != nil {
 		return nil, err
 	}
@@ -132,8 +132,8 @@ func (c *Client) GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetwo
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsRequest(c.Server, organizationID, regionID)
+func (c *Client) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavors(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsRequest(c.Server, organizationID, projectID, regionID)
 	if err != nil {
 		return nil, err
 	}
@@ -144,8 +144,8 @@ func (c *Client) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(ctx c
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesWithBody(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesRequestWithBody(c.Server, organizationID, regionID, contentType, body)
+func (c *Client) PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesWithBody(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesRequestWithBody(c.Server, organizationID, projectID, regionID, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -156,8 +156,8 @@ func (c *Client) PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesWi
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentities(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, body PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesRequest(c.Server, organizationID, regionID, body)
+func (c *Client) PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentities(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, body PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesRequest(c.Server, organizationID, projectID, regionID, body)
 	if err != nil {
 		return nil, err
 	}
@@ -168,8 +168,8 @@ func (c *Client) PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentities(c
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesRequest(c.Server, organizationID, regionID)
+func (c *Client) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImages(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesRequest(c.Server, organizationID, projectID, regionID)
 	if err != nil {
 		return nil, err
 	}
@@ -180,42 +180,8 @@ func (c *Client) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(ctx co
 	return c.Client.Do(req)
 }
 
-// NewGetApiV1OrganizationsOrganizationIDRegionsRequest generates requests for GetApiV1OrganizationsOrganizationIDRegions
-func NewGetApiV1OrganizationsOrganizationIDRegionsRequest(server string, organizationID OrganizationIDParameter) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "organizationID", runtime.ParamLocationPath, organizationID)
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/organizations/%s/regions", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksRequest generates requests for GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworks
-func NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksRequest(server string, organizationID OrganizationIDParameter, regionID RegionIDParameter) (*http.Request, error) {
+// NewGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRequest generates requests for GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegions
+func NewGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRequest(server string, organizationID OrganizationIDParameter, projectID ProjectIDParameter) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -227,7 +193,7 @@ func NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksReques
 
 	var pathParam1 string
 
-	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "regionID", runtime.ParamLocationPath, regionID)
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "projectID", runtime.ParamLocationPath, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +203,7 @@ func NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksReques
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/v1/organizations/%s/regions/%s/externalnetworks", pathParam0, pathParam1)
+	operationPath := fmt.Sprintf("/api/v1/organizations/%s/projects/%s/regions", pathParam0, pathParam1)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -255,8 +221,8 @@ func NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksReques
 	return req, nil
 }
 
-// NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsRequest generates requests for GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors
-func NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsRequest(server string, organizationID OrganizationIDParameter, regionID RegionIDParameter) (*http.Request, error) {
+// NewGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksRequest generates requests for GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworks
+func NewGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksRequest(server string, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -268,7 +234,14 @@ func NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsRequest(server 
 
 	var pathParam1 string
 
-	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "regionID", runtime.ParamLocationPath, regionID)
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "projectID", runtime.ParamLocationPath, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithLocation("simple", false, "regionID", runtime.ParamLocationPath, regionID)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +251,7 @@ func NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsRequest(server 
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/v1/organizations/%s/regions/%s/flavors", pathParam0, pathParam1)
+	operationPath := fmt.Sprintf("/api/v1/organizations/%s/projects/%s/regions/%s/externalnetworks", pathParam0, pathParam1, pathParam2)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -296,19 +269,67 @@ func NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsRequest(server 
 	return req, nil
 }
 
-// NewPostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesRequest calls the generic PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentities builder with application/json body
-func NewPostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesRequest(server string, organizationID OrganizationIDParameter, regionID RegionIDParameter, body PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesJSONRequestBody) (*http.Request, error) {
+// NewGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsRequest generates requests for GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavors
+func NewGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsRequest(server string, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "organizationID", runtime.ParamLocationPath, organizationID)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "projectID", runtime.ParamLocationPath, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithLocation("simple", false, "regionID", runtime.ParamLocationPath, regionID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/organizations/%s/projects/%s/regions/%s/flavors", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesRequest calls the generic PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentities builder with application/json body
+func NewPostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesRequest(server string, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, body PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewPostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesRequestWithBody(server, organizationID, regionID, "application/json", bodyReader)
+	return NewPostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesRequestWithBody(server, organizationID, projectID, regionID, "application/json", bodyReader)
 }
 
-// NewPostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesRequestWithBody generates requests for PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentities with any type of body
-func NewPostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesRequestWithBody(server string, organizationID OrganizationIDParameter, regionID RegionIDParameter, contentType string, body io.Reader) (*http.Request, error) {
+// NewPostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesRequestWithBody generates requests for PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentities with any type of body
+func NewPostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesRequestWithBody(server string, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -320,7 +341,14 @@ func NewPostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesRequestWith
 
 	var pathParam1 string
 
-	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "regionID", runtime.ParamLocationPath, regionID)
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "projectID", runtime.ParamLocationPath, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithLocation("simple", false, "regionID", runtime.ParamLocationPath, regionID)
 	if err != nil {
 		return nil, err
 	}
@@ -330,7 +358,7 @@ func NewPostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesRequestWith
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/v1/organizations/%s/regions/%s/identities", pathParam0, pathParam1)
+	operationPath := fmt.Sprintf("/api/v1/organizations/%s/projects/%s/regions/%s/identities", pathParam0, pathParam1, pathParam2)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -350,8 +378,8 @@ func NewPostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesRequestWith
 	return req, nil
 }
 
-// NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesRequest generates requests for GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages
-func NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesRequest(server string, organizationID OrganizationIDParameter, regionID RegionIDParameter) (*http.Request, error) {
+// NewGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesRequest generates requests for GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImages
+func NewGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesRequest(server string, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -363,7 +391,14 @@ func NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesRequest(server s
 
 	var pathParam1 string
 
-	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "regionID", runtime.ParamLocationPath, regionID)
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "projectID", runtime.ParamLocationPath, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithLocation("simple", false, "regionID", runtime.ParamLocationPath, regionID)
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +408,7 @@ func NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesRequest(server s
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/v1/organizations/%s/regions/%s/images", pathParam0, pathParam1)
+	operationPath := fmt.Sprintf("/api/v1/organizations/%s/projects/%s/regions/%s/images", pathParam0, pathParam1, pathParam2)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -434,25 +469,25 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
-	// GetApiV1OrganizationsOrganizationIDRegionsWithResponse request
-	GetApiV1OrganizationsOrganizationIDRegionsWithResponse(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDRegionsResponse, error)
+	// GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsWithResponse request
+	GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsResponse, error)
 
-	// GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksWithResponse request
-	GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksWithResponse(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksResponse, error)
+	// GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksWithResponse request
+	GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksResponse, error)
 
-	// GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsWithResponse request
-	GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsWithResponse(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsResponse, error)
+	// GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsWithResponse request
+	GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsResponse, error)
 
-	// PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesWithBodyWithResponse request with any body
-	PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesWithBodyWithResponse(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesResponse, error)
+	// PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesWithBodyWithResponse request with any body
+	PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesWithBodyWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesResponse, error)
 
-	PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesWithResponse(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, body PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesResponse, error)
+	PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, body PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesResponse, error)
 
-	// GetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesWithResponse request
-	GetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesWithResponse(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesResponse, error)
+	// GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesWithResponse request
+	GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesResponse, error)
 }
 
-type GetApiV1OrganizationsOrganizationIDRegionsResponse struct {
+type GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *RegionsResponse
@@ -461,7 +496,7 @@ type GetApiV1OrganizationsOrganizationIDRegionsResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetApiV1OrganizationsOrganizationIDRegionsResponse) Status() string {
+func (r GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -469,14 +504,14 @@ func (r GetApiV1OrganizationsOrganizationIDRegionsResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetApiV1OrganizationsOrganizationIDRegionsResponse) StatusCode() int {
+func (r GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksResponse struct {
+type GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *ExternalNetworksResponse
@@ -487,7 +522,7 @@ type GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksResponse 
 }
 
 // Status returns HTTPResponse.Status
-func (r GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksResponse) Status() string {
+func (r GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -495,14 +530,14 @@ func (r GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksRespon
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksResponse) StatusCode() int {
+func (r GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsResponse struct {
+type GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *FlavorsResponse
@@ -512,7 +547,7 @@ type GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsResponse) Status() string {
+func (r GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -520,14 +555,14 @@ func (r GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsResponse) Statu
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsResponse) StatusCode() int {
+func (r GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesResponse struct {
+type PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON201      *IdentityResponse
@@ -538,7 +573,7 @@ type PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesResponse struc
 }
 
 // Status returns HTTPResponse.Status
-func (r PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesResponse) Status() string {
+func (r PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -546,14 +581,14 @@ func (r PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesResponse) S
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesResponse) StatusCode() int {
+func (r PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesResponse struct {
+type GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *ImagesResponse
@@ -563,7 +598,7 @@ type GetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesResponse) Status() string {
+func (r GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -571,75 +606,75 @@ func (r GetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesResponse) Status
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesResponse) StatusCode() int {
+func (r GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-// GetApiV1OrganizationsOrganizationIDRegionsWithResponse request returning *GetApiV1OrganizationsOrganizationIDRegionsResponse
-func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDRegionsWithResponse(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDRegionsResponse, error) {
-	rsp, err := c.GetApiV1OrganizationsOrganizationIDRegions(ctx, organizationID, reqEditors...)
+// GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsWithResponse request returning *GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsResponse
+func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsResponse, error) {
+	rsp, err := c.GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegions(ctx, organizationID, projectID, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetApiV1OrganizationsOrganizationIDRegionsResponse(rsp)
+	return ParseGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsResponse(rsp)
 }
 
-// GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksWithResponse request returning *GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksResponse
-func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksWithResponse(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksResponse, error) {
-	rsp, err := c.GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworks(ctx, organizationID, regionID, reqEditors...)
+// GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksWithResponse request returning *GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksResponse
+func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksResponse, error) {
+	rsp, err := c.GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworks(ctx, organizationID, projectID, regionID, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksResponse(rsp)
+	return ParseGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksResponse(rsp)
 }
 
-// GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsWithResponse request returning *GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsResponse
-func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsWithResponse(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsResponse, error) {
-	rsp, err := c.GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(ctx, organizationID, regionID, reqEditors...)
+// GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsWithResponse request returning *GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsResponse
+func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsResponse, error) {
+	rsp, err := c.GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavors(ctx, organizationID, projectID, regionID, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsResponse(rsp)
+	return ParseGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsResponse(rsp)
 }
 
-// PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesWithBodyWithResponse request with arbitrary body returning *PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesResponse
-func (c *ClientWithResponses) PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesWithBodyWithResponse(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesResponse, error) {
-	rsp, err := c.PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesWithBody(ctx, organizationID, regionID, contentType, body, reqEditors...)
+// PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesWithBodyWithResponse request with arbitrary body returning *PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesResponse
+func (c *ClientWithResponses) PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesWithBodyWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesResponse, error) {
+	rsp, err := c.PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesWithBody(ctx, organizationID, projectID, regionID, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesResponse(rsp)
+	return ParsePostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesResponse(rsp)
 }
 
-func (c *ClientWithResponses) PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesWithResponse(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, body PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesResponse, error) {
-	rsp, err := c.PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentities(ctx, organizationID, regionID, body, reqEditors...)
+func (c *ClientWithResponses) PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, body PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesResponse, error) {
+	rsp, err := c.PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentities(ctx, organizationID, projectID, regionID, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesResponse(rsp)
+	return ParsePostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesResponse(rsp)
 }
 
-// GetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesWithResponse request returning *GetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesResponse
-func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesWithResponse(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesResponse, error) {
-	rsp, err := c.GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(ctx, organizationID, regionID, reqEditors...)
+// GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesWithResponse request returning *GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesResponse
+func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesResponse, error) {
+	rsp, err := c.GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImages(ctx, organizationID, projectID, regionID, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesResponse(rsp)
+	return ParseGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesResponse(rsp)
 }
 
-// ParseGetApiV1OrganizationsOrganizationIDRegionsResponse parses an HTTP response from a GetApiV1OrganizationsOrganizationIDRegionsWithResponse call
-func ParseGetApiV1OrganizationsOrganizationIDRegionsResponse(rsp *http.Response) (*GetApiV1OrganizationsOrganizationIDRegionsResponse, error) {
+// ParseGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsResponse parses an HTTP response from a GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsWithResponse call
+func ParseGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsResponse(rsp *http.Response) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetApiV1OrganizationsOrganizationIDRegionsResponse{
+	response := &GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -671,15 +706,15 @@ func ParseGetApiV1OrganizationsOrganizationIDRegionsResponse(rsp *http.Response)
 	return response, nil
 }
 
-// ParseGetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksResponse parses an HTTP response from a GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksWithResponse call
-func ParseGetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksResponse(rsp *http.Response) (*GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksResponse, error) {
+// ParseGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksResponse parses an HTTP response from a GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksWithResponse call
+func ParseGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksResponse(rsp *http.Response) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksResponse{
+	response := &GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworksResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -725,15 +760,15 @@ func ParseGetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksResp
 	return response, nil
 }
 
-// ParseGetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsResponse parses an HTTP response from a GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsWithResponse call
-func ParseGetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsResponse(rsp *http.Response) (*GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsResponse, error) {
+// ParseGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsResponse parses an HTTP response from a GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsWithResponse call
+func ParseGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsResponse(rsp *http.Response) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsResponse{
+	response := &GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavorsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -772,15 +807,15 @@ func ParseGetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavorsResponse(rsp 
 	return response, nil
 }
 
-// ParsePostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesResponse parses an HTTP response from a PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesWithResponse call
-func ParsePostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesResponse(rsp *http.Response) (*PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesResponse, error) {
+// ParsePostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesResponse parses an HTTP response from a PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesWithResponse call
+func ParsePostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesResponse(rsp *http.Response) (*PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesResponse{
+	response := &PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -826,15 +861,15 @@ func ParsePostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesResponse(
 	return response, nil
 }
 
-// ParseGetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesResponse parses an HTTP response from a GetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesWithResponse call
-func ParseGetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesResponse(rsp *http.Response) (*GetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesResponse, error) {
+// ParseGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesResponse parses an HTTP response from a GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesWithResponse call
+func ParseGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesResponse(rsp *http.Response) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesResponse{
+	response := &GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
