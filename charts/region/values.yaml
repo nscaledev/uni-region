@@ -93,13 +93,13 @@ region:
   #   # How long to cache the CORS preflight for, mostly useless as browsers override this.
   #   maxAge: 86400
 
-  oidc:
+  identity:
     # OIDC issuer used to discover OIDC configuration and verify access tokens.
-    issuer: https://identity.unikorn-cloud.org
+    host: https://identity.unikorn-cloud.org
 
     # CA certificate to use to verify connections to the issuer, used in development only.
-    # issuerCASecretNamespace: ~
-    # issuerCASecretName: ~
+    # caSecretNamespace: ~
+    # caSecretName: ~
 
   # Sets the OTLP endpoint for shipping spans.
   # otlpEndpoint: jaeger-collector.default:4318

@@ -188,8 +188,8 @@ type SoftwareVersions struct {
 	Kubernetes *externalRef0.Semver `json:"kubernetes,omitempty"`
 }
 
-// IdentityIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
-type IdentityIDParameter = KubernetesNameParameter
+// OrganizationIDParameter defines model for organizationIDParameter.
+type OrganizationIDParameter = string
 
 // RegionIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type RegionIDParameter = KubernetesNameParameter
@@ -212,5 +212,5 @@ type RegionsResponse = Regions
 // IdentityRequest Request parameters for creating an identity.
 type IdentityRequest = IdentityWrite
 
-// PostApiV1RegionsRegionIDIdentitiesJSONRequestBody defines body for PostApiV1RegionsRegionIDIdentities for application/json ContentType.
-type PostApiV1RegionsRegionIDIdentitiesJSONRequestBody = IdentityWrite
+// PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentities for application/json ContentType.
+type PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentitiesJSONRequestBody = IdentityWrite

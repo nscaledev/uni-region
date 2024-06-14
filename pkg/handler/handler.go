@@ -20,17 +20,21 @@ package handler
 
 import (
 	"cmp"
+	"context"
 	"encoding/base64"
 	"fmt"
 	"net/http"
 	"slices"
 	"time"
 
+	"github.com/unikorn-cloud/core/pkg/authorization/constants"
+	"github.com/unikorn-cloud/core/pkg/authorization/userinfo"
 	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
-	"github.com/unikorn-cloud/core/pkg/server/middleware/openapi/oidc"
 	coreutil "github.com/unikorn-cloud/core/pkg/util"
+	"github.com/unikorn-cloud/identity/pkg/authorization"
+	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -50,15 +54,15 @@ type Handler struct {
 	// options allows behaviour to be defined on the CLI.
 	options *Options
 
-	// authorizerOptions allows access to the identity service for RBAC callbacks.
-	authorizerOptions *oidc.Options
+	// identity is an identity client for RBAC access.
+	identity *identityclient.Client
 }
 
-func New(client client.Client, namespace string, options *Options, authorizerOptions *oidc.Options) (*Handler, error) {
+func New(client client.Client, namespace string, options *Options, identity *identityclient.Client) (*Handler, error) {
 	h := &Handler{
-		client:            client,
-		options:           options,
-		authorizerOptions: authorizerOptions,
+		client:   client,
+		options:  options,
+		identity: identity,
 	}
 
 	return h, nil
@@ -73,7 +77,31 @@ func (h *Handler) setUncacheable(w http.ResponseWriter) {
 	w.Header().Add("Cache-Control", "no-cache")
 }
 
-func (h *Handler) GetApiV1Regions(w http.ResponseWriter, r *http.Request) {
+//nolint:unparam
+func (h *Handler) checkRBAC(ctx context.Context, organizationID, scope string, permission constants.Permission) error {
+	identity, err := h.identity.Client(ctx)
+	if err != nil {
+		return err
+	}
+
+	authorizer, err := userinfo.NewAuthorizer(ctx, authorization.NewIdentityACLGetter(identity, organizationID))
+	if err != nil {
+		return errors.HTTPForbidden("operation is not allowed by rbac").WithError(err)
+	}
+
+	if err := authorizer.Allow(ctx, scope, permission); err != nil {
+		return errors.HTTPForbidden("operation is not allowed by rbac").WithError(err)
+	}
+
+	return nil
+}
+
+func (h *Handler) GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
+	if err := h.checkRBAC(r.Context(), organizationID, "infrastructure", constants.Read); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
 	result, err := region.NewClient(h.client, h.namespace).List(r.Context())
 	if err != nil {
 		errors.HandleError(w, r, err)
@@ -119,7 +147,12 @@ func convertFlavor(in providers.Flavor) openapi.Flavor {
 	return out
 }
 
-func (h *Handler) GetApiV1RegionsRegionIDFlavors(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter) {
+func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
+	if err := h.checkRBAC(r.Context(), organizationID, "infrastructure", constants.Read); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
 	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)
@@ -175,7 +208,12 @@ func convertImage(in providers.Image) openapi.Image {
 	return out
 }
 
-func (h *Handler) GetApiV1RegionsRegionIDImages(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter) {
+func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
+	if err := h.checkRBAC(r.Context(), organizationID, "infrastructure", constants.Read); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
 	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)
@@ -234,7 +272,12 @@ func generateClusterInfo(in *openapi.IdentityWrite) *providers.ClusterInfo {
 	return out
 }
 
-func (h *Handler) PostApiV1RegionsRegionIDIdentities(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter) {
+func (h *Handler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
+	if err := h.checkRBAC(r.Context(), organizationID, "infrastructure", constants.Create); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
 	request := &openapi.IdentityWrite{}
 
 	if err := util.ReadJSONBody(r, request); err != nil {
@@ -258,9 +301,6 @@ func (h *Handler) PostApiV1RegionsRegionIDIdentities(w http.ResponseWriter, r *h
 	util.WriteJSONResponse(w, r, http.StatusCreated, convertCloudConfig(identity, cloudconfig))
 }
 
-func (h *Handler) DeleteApiV1RegionsRegionIDIdentitiesIdentityID(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter, identityID openapi.IdentityIDParameter) {
-}
-
 func convertExternalNetwork(in providers.ExternalNetwork) openapi.ExternalNetwork {
 	out := openapi.ExternalNetwork{
 		Id:   in.ID,
@@ -280,7 +320,12 @@ func convertExternalNetworks(in providers.ExternalNetworks) openapi.ExternalNetw
 	return out
 }
 
-func (h *Handler) GetApiV1RegionsRegionIDExternalnetworks(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter) {
+func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
+	if err := h.checkRBAC(r.Context(), organizationID, "infrastructure", constants.Read); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
 	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)

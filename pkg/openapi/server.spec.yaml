@@ -5,7 +5,7 @@ info:
     Cloud region discovery and routing service.
   version: 0.1.1
 paths:
-  /api/v1/regions:
+  /api/v1/organizations/{organizationID}/regions:
     description: |-
       Regions define a cloud.  This may be geographical or any logical partition.
       Either way this is the primitive that is used to associate metadata such as
@@ -13,6 +13,8 @@ paths:
       Each region has its own provider associated with it, for example OpenStack, and
       its own set of credentials so things can be scoped to a specific slice of a
       shared cloud through whatever mechanism is available on that cloud provider.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
     get:
       description: |-
         List all regions.
@@ -25,9 +27,10 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v1/regions/{regionID}/flavors:
+  /api/v1/organizations/{organizationID}/regions/{regionID}/flavors:
     description: Compute flavor services.
     parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/regionIDParameter'
     get:
       description: |-
@@ -43,9 +46,10 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v1/regions/{regionID}/images:
+  /api/v1/organizations/{organizationID}/regions/{regionID}/images:
     description: Compute image services.
     parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/regionIDParameter'
     get:
       description: |-
@@ -61,12 +65,13 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v1/regions/{regionID}/identities:
+  /api/v1/organizations/{organizationID}/regions/{regionID}/identities:
     description: |-
       Managed identity services.  Identities should be single use e.g. a single cluster instance.
       This limits blast radius in the event of a credential leak, or in some cases avoids bugs in
       provisioning software.
     parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/regionIDParameter'
     post:
       description: Create a new identity in the region.
@@ -85,36 +90,14 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v1/regions/{regionID}/identities/{identityID}:
-    description: |-
-      Managed identity services.  Identities should be single use e.g. a single cluster instance.
-      This limits blast radius in the event of a credential leak, or in some cases avoids bugs in
-      provisioning software
-    parameters:
-    - $ref: '#/components/parameters/regionIDParameter'
-    - $ref: '#/components/parameters/identityIDParameter'
-    delete:
-      description: Delete an identity from the region.
-      security:
-      - oauth2Authentication: []
-      responses:
-        '200':
-          description: The identity was successfully deleted.
-        '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
-        '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
-        '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
-        '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v1/regions/{regionID}/externalnetworks:
+  /api/v1/organizations/{organizationID}/regions/{regionID}/externalnetworks:
     description: |-
       Allows access to "external networks" for providers that support them.
       While CAPO can infer the external network itself, it craps out -
       as per usual - if more than one is found, wracked with indescision.
       Thus we still need to handle it as a special snowflake.
     parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/regionIDParameter'
     get:
       description: Get a list of external networks.
@@ -133,6 +116,13 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 components:
   parameters:
+    organizationIDParameter:
+      name: organizationID
+      in: path
+      description: An organization ID.
+      required: true
+      schema:
+        type: string
     regionIDParameter:
       name: regionID
       in: path
