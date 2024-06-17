@@ -31,6 +31,7 @@ imagePullSecret:
 #     endpoint: https://keystone.my.cloud:5000
 #     # Keystone credentials.
 #     serviceAccountSecret:
+#       # Defaults to the release namespace if not specified.
 #       namespace: default
 #       name: openstack-admin-secret
 #     # Identity service configuration.
