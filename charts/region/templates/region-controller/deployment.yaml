@@ -27,7 +27,7 @@ spec:
             {{ printf "- --cors-max-age=%s" $cors.maxAge | nindent 8 }}
           {{- end }}
         {{- end }}
-        - --identity-host={{ include "unikorn.identity.host" . }}
+        - --identity-host=https://{{ include "unikorn.identity.host" . }}
         {{- with $identitiyCaSecretNamespace := ( include "unikorn.identity.ca.secretNamespace" . ) -}}
           {{ printf "- --identity-ca-secret-namespace=%s" $identitiyCaSecretNamespace | nindent 8 }}
         {{- end }}
