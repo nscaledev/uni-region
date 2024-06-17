@@ -12,7 +12,11 @@ spec:
   openstack:
     endpoint: {{ $openstack.endpoint }}
     serviceAccountSecret:
+      {{- if $openstack.serviceAccountSecret.namespace }}
       namespace: {{ $openstack.serviceAccountSecret.namespace }}
+      {{- else }}
+      namespace: {{ $.Release.Namespace }}
+      {{- end }}
       name: {{ $openstack.serviceAccountSecret.name }}
     {{- with $identity := $openstack.identity }}
       {{ printf "identity:" | nindent 4 }}
