@@ -70,15 +70,12 @@ imagePullSecret:
 image:
 
 # Sets the DNS hosts/X.509 Certs.
-host: region.unikorn-cloud.org
+region:
+  host: region.unikorn-cloud.org
 
 ingress:
   # Sets the ingress class to use.
   # class: nginx
-
-  # Cert Manager certificate issuer to use.  If not specified it will generate a
-  # self signed one.
-  issuer: ~
 
   # clusterIssuer to use.
   clusterIssuer: unikorn-issuer
@@ -97,9 +94,11 @@ identity:
   # OIDC issuer used to discover OIDC configuration and verify access tokens.
   host: identity.unikorn-cloud.org
 
-  # CA certificate to use to verify connections to the issuer, used in development only.
-  # caSecretNamespace: ~
-  # caSecretName: ~
+# CA certificate to use to verify connections to the issuer, used in development only.
+# ca:
+#   secretNamespace: ~
+#   secretName: ~
 
 # Sets the OTLP endpoint for shipping spans.
-# otlpEndpoint: jaeger-collector.default:4318
+# otlp:
+#   endpoint: jaeger-collector.default:4318
