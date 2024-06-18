@@ -1,5 +1,7 @@
 /bin
 /sboms
+/charts/region/Chart.lock
+/charts/region/charts
 *.swp
 cover.out
 cover.html

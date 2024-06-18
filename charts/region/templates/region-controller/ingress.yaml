@@ -8,9 +8,6 @@ metadata:
   {{- with $clusterIssuer := ( include "unikorn.ingress.clusterIssuer" . ) }}
     cert-manager.io/cluster-issuer: {{ $clusterIssuer }}
   {{- end }}
-  {{- if .Values.ingress.issuer }}
-    cert-manager.io/issuer: {{ .Values.ingress.issuer }}
-  {{- end }}
   {{- if .Values.ingress.externalDns }}
     external-dns.alpha.kubernetes.io/hostname: {{ include "unikorn.region.host" . }}
   {{- end }}

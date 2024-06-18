@@ -4,7 +4,6 @@ metadata:
   name: unikorn-region
   labels:
     {{- include "unikorn.labels" . | nindent 4 }}
-    {{- include "unikorn.prometheusLabels" (dict "job" "unikorn-region") | nindent 4 }}
 spec:
   selector:
     app: unikorn-region
