@@ -181,7 +181,11 @@ func (c *ImageClient) Images(ctx context.Context) ([]images.Image, error) {
 	_, span := tracer.Start(ctx, "/imageservice/v2/images", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
-	page, err := images.List(c.client, &images.ListOpts{}).AllPages(ctx)
+	opts := &images.ListOpts{
+		Visibility: images.ImageVisibilityPublic,
+	}
+
+	page, err := images.List(c.client, opts).AllPages(ctx)
 	if err != nil {
 		return nil, err
 	}
