@@ -64,34 +64,108 @@ spec:
                   compute:
                     description: Compute is configuration for the compute service.
                     properties:
-                      flavorExtraSpecsExclude:
+                      flavors:
                         description: |-
-                          FlavorExtraSpecsExclude discards any flavors with the listed
-                          extra specs keys.
-                        items:
-                          type: string
-                        type: array
-                      gpuDescriptors:
-                        description: |-
-                          GPUDescriptors defines a set of keys that can be probed to
-                          list GPU topology information.
-                        items:
-                          properties:
-                            expression:
-                              description: |-
-                                Expression describes how to extract the number of GPUs from the property
-                                if it exists.  This must contain exactly one submatch that is a number
-                                e.g. "^(\d+)$".
-                              type: string
-                            property:
-                              description: Property is the property name to examine
-                                e.g. "resources.VGPU".
-                              type: string
-                          required:
-                          - expression
-                          - property
-                          type: object
-                        type: array
+                          Flavors defines how flavors are filtered and reported to
+                          clients.  If not defined, then all flavors are exported.
+                        properties:
+                          exclude:
+                            description: Exclude inhibits the export of flavors from
+                              the region service.
+                            items:
+                              properties:
+                                id:
+                                  description: ID flavor ID is the immutable Openstack
+                                    identifier for the flavor.
+                                  type: string
+                              required:
+                              - id
+                              type: object
+                            type: array
+                          include:
+                            description: |-
+                              Include allows or augments flavors that can be exported by the region
+                              service as defined by the "selectionPolicy" property.  This explcitly
+                              allows a flavor to be used, and or allows metadata to be mapped to the
+                              flavor e.g. CPU/GPU information that isn't supported by OpenStack.
+                            items:
+                              properties:
+                                baremetal:
+                                  description: |-
+                                    Baremetal indicates that this is a baremetal flavor, as opposed to a
+                                    virtualized one in case this affects image selection or even how instances
+                                    are provisioned.
+                                  type: boolean
+                                cpu:
+                                  description: CPU defines additional CPU metadata.
+                                  properties:
+                                    family:
+                                      description: |-
+                                        Family is a free-form string that can communicate the CPU family to clients
+                                        e.g. "Xeon Platinum 8160T (Skylake)", and allows users to make scheduling
+                                        decisions based on CPU architecture and performance etc.
+                                      type: string
+                                  type: object
+                                gpu:
+                                  description: |-
+                                    GPU defines additional GPU metadata.  When provided it will enable selection
+                                    of images based on GPU vendor and model.
+                                  properties:
+                                    count:
+                                      description: Count is the number of logical
+                                        GPUs in the flavor.
+                                      type: integer
+                                    memory:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      description: Memory is the amount of memory
+                                        each logical GPU has access to.
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    model:
+                                      description: |-
+                                        Model is a free-form model name that corresponds to the supported models
+                                        property included on images, and must be an exact match e.g. H100.
+                                      type: string
+                                    vendor:
+                                      description: |-
+                                        Vendor is the GPU vendor, used for coarse grained flavor and image
+                                        selection.
+                                      enum:
+                                      - NVIDIA
+                                      - AMD
+                                      type: string
+                                  required:
+                                  - count
+                                  - memory
+                                  - model
+                                  - vendor
+                                  type: object
+                                id:
+                                  description: |-
+                                    ID is the immutable Openstack identifier for the flavor.
+                                    While most flavor metadata (CPUs/Memory) should be immutable, the name is
+                                    not, and may change due to sales and marketing people.
+                                  type: string
+                              required:
+                              - id
+                              type: object
+                            type: array
+                          selectionPolicy:
+                            description: |-
+                              SelectionPolicy defines the default set of flavors to export.  "All" exports
+                              all flavors, the "include" property defines additional metadata to
+                              merge with matching flavors and the "exclude" inhibits export.  "None" is a
+                              more secure policy that only exports those flavors defined in the "include"
+                              property, the "exclude" property is ignored as it's redundant.
+                            enum:
+                            - All
+                            - None
+                            type: string
+                        required:
+                        - selectionPolicy
+                        type: object
                       serverGroupPolicy:
                         description: |-
                           ServerGroupPolicy defines the anti-affinity policy to use for
@@ -130,6 +204,15 @@ spec:
                           property, the value of which must be a base64 encoded ECDSA signature of
                           the SHA256 hash of the image ID.
                         format: byte
+                        type: string
+                    type: object
+                  network:
+                    description: Network is configuration for the network service.
+                    properties:
+                      physicalNetwork:
+                        description: |-
+                          PhysicalNetwork is the neutron provider specific network name used
+                          to provision provider networks e.g. VLANs for bare metal clusters.
                         type: string
                     type: object
                   serviceAccountSecret:

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 
@@ -157,7 +158,7 @@ func (p *Provider) serviceClientRefresh(ctx context.Context) error {
 		return err
 	}
 
-	network, err := NewNetworkClient(ctx, providerClient)
+	network, err := NewNetworkClient(ctx, providerClient, region.Spec.Openstack.Network)
 	if err != nil {
 		return err
 	}
@@ -235,26 +236,51 @@ func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
 		return nil, err
 	}
 
-	result := make(providers.FlavorList, 0, len(resources))
+	result := make(providers.FlavorList, len(resources))
 
 	for i := range resources {
 		flavor := &resources[i]
 
-		gpus, err := computeService.FlavorGPUs(flavor)
-		if err != nil {
-			return nil, err
+		// API memory is in MiB, disk is in GB
+		f := providers.Flavor{
+			ID:     flavor.ID,
+			Name:   flavor.Name,
+			CPUs:   flavor.VCPUs,
+			Memory: resource.NewQuantity(int64(flavor.RAM)<<20, resource.BinarySI),
+			Disk:   resource.NewScaledQuantity(int64(flavor.Disk), resource.Giga),
 		}
 
-		// API memory is in MiB, disk is in GB
-		result = append(result, providers.Flavor{
-			ID:        flavor.ID,
-			Name:      flavor.Name,
-			CPUs:      flavor.VCPUs,
-			Memory:    resource.NewQuantity(int64(flavor.RAM)<<20, resource.BinarySI),
-			Disk:      resource.NewScaledQuantity(int64(flavor.Disk), resource.Giga),
-			GPUs:      gpus.GPUs,
-			GPUVendor: providers.Nvidia,
-		})
+		// Apply any extra metadata to the flavor.
+		if p.region.Spec.Openstack.Compute != nil && p.region.Spec.Openstack.Compute.Flavors != nil {
+			inclusions := p.region.Spec.Openstack.Compute.Flavors.Include
+
+			i := slices.IndexFunc(inclusions, func(inclusion unikornv1.OpenstackFlavorInclude) bool {
+				return flavor.ID == inclusion.ID
+			})
+
+			if i >= 0 {
+				metadata := &inclusions[i]
+
+				f.Baremetal = metadata.Baremetal
+
+				if metadata.CPU != nil {
+					f.CPUFamily = metadata.CPU.Family
+				}
+
+				if metadata.GPU != nil {
+					f.GPU = &providers.GPU{
+						// TODO: while these align, you should really put a
+						// proper conversion in here.
+						Vendor: providers.GPUVendor(metadata.GPU.Vendor),
+						Model:  metadata.GPU.Model,
+						Memory: metadata.GPU.Memory,
+						Count:  metadata.GPU.Count,
+					}
+				}
+			}
+		}
+
+		result[i] = f
 	}
 
 	return result, nil

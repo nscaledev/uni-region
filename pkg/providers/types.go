@@ -26,8 +26,8 @@ import (
 type GPUVendor string
 
 const (
-	Nvidia GPUVendor = "nvidia"
-	AMD    GPUVendor = "amd"
+	Nvidia GPUVendor = "NVIDIA"
+	AMD    GPUVendor = "AMD"
 )
 
 // Flavor represents a machine type.
@@ -40,16 +40,27 @@ type Flavor struct {
 	Name string
 	// CPU count.
 	CPUs int
+	// CPUFamily tells you the CPU type.
+	CPUFamily *string
 	// Memory available.
 	Memory *resource.Quantity
 	// Disk available.
 	Disk *resource.Quantity
-	// GPU count.
-	GPUs int
-	// GPUVendor is who makes the GPU, used to determine the drivers etc.
-	GPUVendor GPUVendor
-	// BareMetal is a bare-metal flavor.
-	BareMetal bool
+	// GPU describes the GPU(s) if any are available to the flavor.
+	GPU *GPU
+	// Baremetal is a bare-metal flavor.
+	Baremetal bool
+}
+
+type GPU struct {
+	// Vendor is who makes the GPU, used to determine the drivers etc.
+	Vendor GPUVendor
+	// Model is the type of GPU.
+	Model string
+	// Memory is the amount of memory each GPU has.
+	Memory *resource.Quantity
+	// Count is the number of GPUs in the flavor.
+	Count int
 }
 
 // FlavorList allows us to attach sort functions and the like.

@@ -45,6 +45,25 @@ imagePullSecret:
 #     compute:
 #       # Kubernetes control plane scheduling policy.
 #       serverGroupPolicy: soft-anti-affinity
+#       # Flavor selection and configuration.
+#       flavors:
+#         # The selection policy can be "All" or "None"
+#         selectionPolicy: All
+#         # Include specific flavors when the policy is "None".  In all cases
+#         # allows additional metadata to be exposed by the API that Openstack
+#         # cannot act as a source of truth for.
+#         include:
+#         - id: 60ab8c22-ac61-467d-8680-03d0ecca23c9
+#           cpu:
+#             family: Intel Xeon Platinum 8160T (Skylake)
+#           gpu:
+#             vendor: NVIDIA
+#             model: H100
+#             memory: 192Gi
+#             count: 2
+#         # Eclude specific flavors when the policy is "All".
+#         exclude:
+#         - id: d04d82d9-faa6-4b3b-9247-28b8a158b7ed
 #       # Flavors containing any of the specified extra specs will be discarded.
 #       flavorExtraSpecsExclude:
 #       - resources:CUSTOM_BAREMETAL

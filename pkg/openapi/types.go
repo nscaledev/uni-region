@@ -13,8 +13,8 @@ const (
 
 // Defines values for GpuVendor.
 const (
-	Amd    GpuVendor = "amd"
-	Nvidia GpuVendor = "nvidia"
+	AMD    GpuVendor = "AMD"
+	NVIDIA GpuVendor = "NVIDIA"
 )
 
 // Defines values for RegionType.
@@ -47,6 +47,9 @@ type Flavor struct {
 
 // FlavorSpec A flavor.
 type FlavorSpec struct {
+	// CpuFamily A free form CPU family description e.g. model number, architecture.
+	CpuFamily *string `json:"cpuFamily,omitempty"`
+
 	// Cpus The number of CPUs.
 	Cpus int `json:"cpus"`
 
@@ -76,6 +79,9 @@ type GpuDriver struct {
 type GpuSpec struct {
 	// Count The number of GPUs available.
 	Count int `json:"count"`
+
+	// Memory GPU memory in GiB.
+	Memory int `json:"memory"`
 
 	// Model A GPU model.
 	Model string `json:"model"`

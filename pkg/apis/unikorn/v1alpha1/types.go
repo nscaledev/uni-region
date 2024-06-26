@@ -20,6 +20,7 @@ package v1alpha1
 import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -77,6 +78,8 @@ type RegionOpenstackSpec struct {
 	Compute *RegionOpenstackComputeSpec `json:"compute,omitempty"`
 	// Image is configuration for the image service.
 	Image *RegionOpenstackImageSpec `json:"image,omitempty"`
+	// Network is configuration for the network service.
+	Network *RegionOpenstackNetworkSpec `json:"network,omitempty"`
 }
 
 type NamespacedObject struct {
@@ -97,21 +100,82 @@ type RegionOpenstackComputeSpec struct {
 	// ServerGroupPolicy defines the anti-affinity policy to use for
 	// scheduling cluster nodes.  Defaults to "soft-anti-affinity".
 	ServerGroupPolicy *string `json:"serverGroupPolicy,omitempty"`
-	// FlavorExtraSpecsExclude discards any flavors with the listed
-	// extra specs keys.
-	FlavorExtraSpecsExclude []string `json:"flavorExtraSpecsExclude,omitempty"`
-	// GPUDescriptors defines a set of keys that can be probed to
-	// list GPU topology information.
-	GPUDescriptors []OpenstackGPUDescriptor `json:"gpuDescriptors,omitempty"`
+	// Flavors defines how flavors are filtered and reported to
+	// clients.  If not defined, then all flavors are exported.
+	Flavors *OpenstackFlavorsSpec `json:"flavors,omitempty"`
 }
 
-type OpenstackGPUDescriptor struct {
-	// Property is the property name to examine e.g. "resources.VGPU".
-	Property string `json:"property"`
-	// Expression describes how to extract the number of GPUs from the property
-	// if it exists.  This must contain exactly one submatch that is a number
-	// e.g. "^(\d+)$".
-	Expression string `json:"expression"`
+// +kubebuilder:validation:Enum=All;None
+type OpenstackFlavorSelectionPolicy string
+
+const (
+	OpenstackFlavorSelectionPolicySelectAll  OpenstackFlavorSelectionPolicy = "All"
+	OpenstackFlavorSelectionPolicySelectNone OpenstackFlavorSelectionPolicy = "None"
+)
+
+type OpenstackFlavorsSpec struct {
+	// SelectionPolicy defines the default set of flavors to export.  "All" exports
+	// all flavors, the "include" property defines additional metadata to
+	// merge with matching flavors and the "exclude" inhibits export.  "None" is a
+	// more secure policy that only exports those flavors defined in the "include"
+	// property, the "exclude" property is ignored as it's redundant.
+	SelectionPolicy OpenstackFlavorSelectionPolicy `json:"selectionPolicy"`
+	// Include allows or augments flavors that can be exported by the region
+	// service as defined by the "selectionPolicy" property.  This explcitly
+	// allows a flavor to be used, and or allows metadata to be mapped to the
+	// flavor e.g. CPU/GPU information that isn't supported by OpenStack.
+	Include []OpenstackFlavorInclude `json:"include,omitempty"`
+	// Exclude inhibits the export of flavors from the region service.
+	Exclude []OpenstackFlavorExclude `json:"exclude,omitempty"`
+}
+
+type OpenstackFlavorInclude struct {
+	// ID is the immutable Openstack identifier for the flavor.
+	// While most flavor metadata (CPUs/Memory) should be immutable, the name is
+	// not, and may change due to sales and marketing people.
+	ID string `json:"id"`
+	// Baremetal indicates that this is a baremetal flavor, as opposed to a
+	// virtualized one in case this affects image selection or even how instances
+	// are provisioned.
+	Baremetal bool `json:"baremetal,omitempty"`
+	// CPU defines additional CPU metadata.
+	CPU *CPUSpec `json:"cpu,omitempty"`
+	// GPU defines additional GPU metadata.  When provided it will enable selection
+	// of images based on GPU vendor and model.
+	GPU *GPUSpec `json:"gpu,omitempty"`
+}
+
+type OpenstackFlavorExclude struct {
+	// ID flavor ID is the immutable Openstack identifier for the flavor.
+	ID string `json:"id"`
+}
+
+type CPUSpec struct {
+	// Family is a free-form string that can communicate the CPU family to clients
+	// e.g. "Xeon Platinum 8160T (Skylake)", and allows users to make scheduling
+	// decisions based on CPU architecture and performance etc.
+	Family *string `json:"family,omitempty"`
+}
+
+// +kubebuilder:validation:Enum=NVIDIA;AMD
+type GPUVendor string
+
+const (
+	NVIDIA GPUVendor = "NVIDIA"
+	AMD    GPUVendor = "AMD"
+)
+
+type GPUSpec struct {
+	// Vendor is the GPU vendor, used for coarse grained flavor and image
+	// selection.
+	Vendor GPUVendor `json:"vendor"`
+	// Model is a free-form model name that corresponds to the supported models
+	// property included on images, and must be an exact match e.g. H100.
+	Model string `json:"model"`
+	// Memory is the amount of memory each logical GPU has access to.
+	Memory *resource.Quantity `json:"memory"`
+	// Count is the number of logical GPUs in the flavor.
+	Count int `json:"count"`
 }
 
 type RegionOpenstackImageSpec struct {
@@ -123,6 +187,12 @@ type RegionOpenstackImageSpec struct {
 	// property, the value of which must be a base64 encoded ECDSA signature of
 	// the SHA256 hash of the image ID.
 	SigningKey []byte `json:"signingKey,omitempty"`
+}
+
+type RegionOpenstackNetworkSpec struct {
+	// PhysicalNetwork is the neutron provider specific network name used
+	// to provision provider networks e.g. VLANs for bare metal clusters.
+	PhysicalNetwork *string `json:"physicalNetwork,omitempty"`
 }
 
 // RegionStatus defines the status of the region.

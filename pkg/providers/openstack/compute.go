@@ -19,11 +19,7 @@ package openstack
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"regexp"
 	"slices"
-	"strconv"
 	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
@@ -38,11 +34,6 @@ import (
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-)
-
-var (
-	// ErrExpression is raised at runtime when expression evaluation fails.
-	ErrExpression = errors.New("expression must contain exactly one sub match that yields a number string")
 )
 
 // ComputeClient wraps the generic client because gophercloud is unsafe.
@@ -125,25 +116,33 @@ func (c *ComputeClient) Flavors(ctx context.Context) ([]flavors.Flavor, error) {
 
 		// Kubeadm requires 2 VCPU, 2 "GB" of RAM (I'll pretend it's GiB) and no swap:
 		// https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
-		if flavor.VCPUs < 2 {
+		if flavor.VCPUs < 2 || flavor.RAM < 2048 || flavor.Swap != 0 {
 			return true
 		}
 
-		// In MB...
-		if flavor.RAM < 2048 {
-			return true
-		}
-
-		if flavor.Swap != 0 {
-			return true
-		}
-
-		if c.options == nil {
+		// Don't remove the flavor if it's implicitly selected by a lack of configuration.
+		if c.options == nil || c.options.Flavors == nil {
 			return false
 		}
 
-		for _, exclude := range c.options.FlavorExtraSpecsExclude {
-			if _, ok := flavor.ExtraSpecs[exclude]; ok {
+		// If the selection policy is "allow all", then only reject if the flavor ID
+		// is in the exclusion list.  If the section policy is "reject all", then only
+		// allow if the flavor ID is in the inclusion list.
+		switch c.options.Flavors.SelectionPolicy {
+		case unikornv1.OpenstackFlavorSelectionPolicySelectAll:
+			ok := slices.ContainsFunc(c.options.Flavors.Exclude, func(exclusion unikornv1.OpenstackFlavorExclude) bool {
+				return flavor.ID == exclusion.ID
+			})
+
+			if ok {
+				return true
+			}
+		case unikornv1.OpenstackFlavorSelectionPolicySelectNone:
+			ok := slices.ContainsFunc(c.options.Flavors.Include, func(inclusion unikornv1.OpenstackFlavorInclude) bool {
+				return flavor.ID == inclusion.ID
+			})
+
+			if !ok {
 				return true
 			}
 		}
@@ -152,75 +151,6 @@ func (c *ComputeClient) Flavors(ctx context.Context) ([]flavors.Flavor, error) {
 	})
 
 	c.flavorCache.Set(result)
-
-	return result, nil
-}
-
-// GPUMeta describes GPUs.
-type GPUMeta struct {
-	// GPUs is the number of GPUs, this may be the total number
-	// or physical GPUs, or a single virtual GPU.  This value
-	// is what will be reported for Kubernetes scheduling.
-	GPUs int
-}
-
-// extraSpecToGPUs evaluates the falvor extra spec and tries to derive
-// the number of GPUs, returns -1 if none are found.
-func (c *ComputeClient) extraSpecToGPUs(name, value string) (int, error) {
-	if c.options == nil {
-		return -1, nil
-	}
-
-	for _, desc := range c.options.GPUDescriptors {
-		if desc.Property != name {
-			continue
-		}
-
-		re, err := regexp.Compile(desc.Expression)
-		if err != nil {
-			return -1, err
-		}
-
-		matches := re.FindStringSubmatch(value)
-		if matches == nil {
-			continue
-		}
-
-		if len(matches) != 2 {
-			return -1, ErrExpression
-		}
-
-		i, err := strconv.Atoi(matches[1])
-		if err != nil {
-			return -1, fmt.Errorf("%w: %s", ErrExpression, err.Error())
-		}
-
-		return i, nil
-	}
-
-	return -1, nil
-}
-
-// FlavorGPUs returns metadata about GPUs, e.g. the number of GPUs.  Sadly there is absolutely
-// no way of assiging metadata to flavors without having to add those same values to your host
-// aggregates, so we have to have knowledge of flavors built in somewhere.
-func (c *ComputeClient) FlavorGPUs(flavor *flavors.Flavor) (GPUMeta, error) {
-	var result GPUMeta
-
-	for name, value := range flavor.ExtraSpecs {
-		gpus, err := c.extraSpecToGPUs(name, value)
-		if err != nil {
-			return result, err
-		}
-
-		if gpus == -1 {
-			continue
-		}
-
-		result.GPUs = gpus
-
-		break
-	}
 
 	return result, nil
 }
