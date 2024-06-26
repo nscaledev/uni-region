@@ -214,6 +214,37 @@ spec:
                           PhysicalNetwork is the neutron provider specific network name used
                           to provision provider networks e.g. VLANs for bare metal clusters.
                         type: string
+                      vlan:
+                        description: |-
+                          VLAN is the VLAN configuration.  If not specified and a VLAN provider
+                          network is requested then the ID will be allocated between 1-6094
+                          inclusive.
+                        properties:
+                          segments:
+                            description: |-
+                              Segements allow blocks of VLAN IDs to be allocated from.  In a multi
+                              tenant system, it's possible and perhaps necessary, that this controller
+                              be limited to certain ranges to avoid split brain scenarios when another
+                              user or system is allocating VLAN IDs for itself.
+                            items:
+                              properties:
+                                endId:
+                                  description: EndID is the VLAN ID at the end of
+                                    the range.
+                                  maximum: 4094
+                                  type: integer
+                                startId:
+                                  description: StartID is VLAN ID at the start of
+                                    the range.
+                                  minimum: 1
+                                  type: integer
+                              required:
+                              - endId
+                              - startId
+                              type: object
+                            minItems: 1
+                            type: array
+                        type: object
                     type: object
                   serviceAccountSecret:
                     description: |-
