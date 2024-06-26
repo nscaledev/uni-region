@@ -193,6 +193,28 @@ type RegionOpenstackNetworkSpec struct {
 	// PhysicalNetwork is the neutron provider specific network name used
 	// to provision provider networks e.g. VLANs for bare metal clusters.
 	PhysicalNetwork *string `json:"physicalNetwork,omitempty"`
+	// VLAN is the VLAN configuration.  If not specified and a VLAN provider
+	// network is requested then the ID will be allocated between 1-6094
+	// inclusive.
+	VLAN *VLANSpec `json:"vlan,omitempty"`
+}
+
+type VLANSpec struct {
+	// Segements allow blocks of VLAN IDs to be allocated from.  In a multi
+	// tenant system, it's possible and perhaps necessary, that this controller
+	// be limited to certain ranges to avoid split brain scenarios when another
+	// user or system is allocating VLAN IDs for itself.
+	// +kubebuilder:validation:MinItems=1
+	Segments []VLANSegment `json:"segments,omitempty"`
+}
+
+type VLANSegment struct {
+	// StartID is VLAN ID at the start of the range.
+	// +kubebuilder:validation:Minimum=1
+	StartID int `json:"startId"`
+	// EndID is the VLAN ID at the end of the range.
+	// +kubebuilder:validation:Maximum=4094
+	EndID int `json:"endId"`
 }
 
 // RegionStatus defines the status of the region.
