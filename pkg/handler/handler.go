@@ -115,9 +115,9 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegions(w 
 func convertGpuVendor(in providers.GPUVendor) openapi.GpuVendor {
 	switch in {
 	case providers.Nvidia:
-		return openapi.Nvidia
+		return openapi.NVIDIA
 	case providers.AMD:
-		return openapi.Amd
+		return openapi.AMD
 	}
 
 	return ""
@@ -130,17 +130,19 @@ func convertFlavor(in providers.Flavor) openapi.Flavor {
 			Name: in.Name,
 		},
 		Spec: openapi.FlavorSpec{
-			Cpus:   in.CPUs,
-			Memory: int(in.Memory.Value()) >> 30,
-			Disk:   int(in.Disk.Value()) / 1000000000,
+			Cpus:      in.CPUs,
+			CpuFamily: in.CPUFamily,
+			Memory:    int(in.Memory.Value()) >> 30,
+			Disk:      int(in.Disk.Value()) / 1000000000,
 		},
 	}
 
-	if in.GPUs != 0 {
+	if in.GPU != nil {
 		out.Spec.Gpu = &openapi.GpuSpec{
-			Vendor: convertGpuVendor(in.GPUVendor),
-			Model:  "H100",
-			Count:  in.GPUs,
+			Vendor: convertGpuVendor(in.GPU.Vendor),
+			Model:  in.GPU.Model,
+			Memory: int(in.GPU.Memory.Value()) >> 30,
+			Count:  in.GPU.Count,
 		}
 	}
 
@@ -168,7 +170,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsReg
 	// Apply ordering guarantees, ascending order with GPUs taking precedence over
 	// CPUs and memory.
 	slices.SortFunc(result, func(a, b providers.Flavor) int {
-		if v := cmp.Compare(a.GPUs, b.GPUs); v != 0 {
+		if v := cmp.Compare(a.GPUCount(), b.GPUCount()); v != 0 {
 			return v
 		}
 

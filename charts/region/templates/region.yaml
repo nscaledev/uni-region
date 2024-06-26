@@ -27,34 +27,50 @@ spec:
         {{- end }}
       {{- end }}
     {{- end }}
-    {{- with $compute := $openstack.compute }}
-      {{ printf "compute:" | nindent 4 }}
-      {{- with $policy := $compute.regionGroupPolicy }}
+    {{- with $compute := $openstack.compute -}}
+      {{- printf "compute:" | nindent 4 }}
+      {{- with $policy := $compute.regionGroupPolicy -}}
         {{ printf "regionGroupPolicy: %s" $policy | nindent 6 }}
       {{- end }}
-      {{- with $specs := $compute.flavorExtraSpecsExclude }}
-        {{ printf "flavorExtraSpecsExclude:" | nindent 6 }}
-        {{- range $spec := $specs }}
-          {{ printf "- %s" $spec | nindent 6 }}
+      {{- with $flavors := $compute.flavors -}}
+        {{- printf "flavors:" | nindent 6 }}
+        {{- printf "selectionPolicy: %s" $flavors.selectionPolicy | nindent 8 }}
+        {{- with $includes := $flavors.include }}
+          {{- printf "include:" | nindent 8 }}
+          {{- range $include := $includes }}
+            {{- printf "- id: %s" $include.id | nindent 8 }}
+            {{- with $cpu := $include.cpu -}}
+              {{- printf "cpu:" | nindent 10 }}
+              {{- with $family := $cpu.family -}}
+                {{ printf "family: %s" $family | nindent 12 }}
+              {{- end }}
+            {{- end }}
+            {{- with $gpu := $include.gpu -}}
+              {{- printf "gpu:" | nindent 10 }}
+              {{- printf "vendor: %s" $gpu.vendor | nindent 12 }}
+              {{- printf "model: %s" $gpu.model | nindent 12 }}
+              {{- printf "memory: %s" $gpu.memory | nindent 12 }}
+              {{- printf "count: %v" $gpu.count | nindent 12 }}
+            {{- end }}
+          {{- end }}
         {{- end }}
-      {{- end }}
-      {{- with $descriptors := $compute.gpuDescriptors }}
-        {{ printf "gpuDescriptors:" | nindent 6 }}
-        {{- range $descriptor := $descriptors }}
-          {{ printf "- property: %s" $descriptor.property | nindent 6 }}
-          {{ printf "  expression: %s" $descriptor.expression | nindent 6 }}
+        {{- with $excludes := $flavors.exclude -}}
+          {{- printf "exclude:" | nindent 8 }}
+          {{- range $exclude := $excludes }}
+            {{- printf "- id: %s" $exclude.id | nindent 8 }}
+          {{- end }}
         {{- end }}
       {{- end }}
     {{- end }}
-    {{- with $image := $openstack.image}}
-      {{ printf "image:" | nindent 4 }}
-      {{- with $properties := $image.propertiesInclude }}
+    {{- with $image := $openstack.image -}}
+      {{- printf "image:" | nindent 4 }}
+      {{- with $properties := $image.propertiesInclude -}}
         {{ printf "propertiesInclude:" | nindent 6 }}
         {{- range $property := $properties }}
           {{ printf "- %s" $property | nindent 6 }}
         {{- end }}
       {{- end }}
-      {{- with $signingKey := $image.signingKey }}
+      {{- with $signingKey := $image.signingKey -}}
         {{ printf "signingKey: %s" $signingKey | nindent 6 }}
       {{- end }}
     {{- end }}

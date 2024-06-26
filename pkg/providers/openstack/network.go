@@ -19,17 +19,26 @@ package openstack
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/external"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/provider"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/networks"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/unikorn-cloud/core/pkg/util/cache"
+	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+)
+
+var (
+	// ErrConfiguration is raised when a feature requires additional configuration
+	// and none is provided for the region.
+	ErrConfiguration = errors.New("required configuration missing")
 )
 
 // NetworkClient wraps the generic client because gophercloud is unsafe.
@@ -37,10 +46,12 @@ type NetworkClient struct {
 	client *gophercloud.ServiceClient
 
 	externalNetworkCache *cache.TimeoutCache[[]networks.Network]
+
+	options *unikornv1.RegionOpenstackNetworkSpec
 }
 
 // NewNetworkClient provides a simple one-liner to start networking.
-func NewNetworkClient(ctx context.Context, provider CredentialProvider) (*NetworkClient, error) {
+func NewNetworkClient(ctx context.Context, provider CredentialProvider, options *unikornv1.RegionOpenstackNetworkSpec) (*NetworkClient, error) {
 	providerClient, err := provider.Client(ctx)
 	if err != nil {
 		return nil, err
@@ -86,4 +97,32 @@ func (c *NetworkClient) ExternalNetworks(ctx context.Context) ([]networks.Networ
 	c.externalNetworkCache.Set(results)
 
 	return results, nil
+}
+
+func (c *NetworkClient) CreateVLANProviderNetwork(ctx context.Context, name string, projectID string, vlanID int) (*networks.Network, error) {
+	if c.options == nil || c.options.PhysicalNetwork == nil {
+		return nil, ErrConfiguration
+	}
+
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "/networking/v2.0/networks", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	opts := &provider.CreateOptsExt{
+		CreateOptsBuilder: &networks.CreateOpts{
+			Name:        name,
+			Description: "unikorn provider network",
+			ProjectID:   projectID,
+		},
+		Segments: []provider.Segment{
+			{
+				NetworkType:     "vlan",
+				PhysicalNetwork: *c.options.PhysicalNetwork,
+				SegmentationID:  vlanID,
+			},
+		},
+	}
+
+	return networks.Create(ctx, c.client, opts).Extract()
 }

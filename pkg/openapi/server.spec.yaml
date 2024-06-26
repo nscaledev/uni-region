@@ -195,8 +195,8 @@ components:
       description: The GPU vendor.
       type: string
       enum:
-      - nvidia
-      - amd
+      - NVIDIA
+      - AMD
     gpuDriver:
       description: The GPU driver if installed.
       type: object
@@ -241,6 +241,7 @@ components:
       required:
       - vendor
       - model
+      - memory
       - count
       properties:
         vendor:
@@ -248,6 +249,9 @@ components:
         model:
           description: A GPU model.
           type: string
+        memory:
+          description: GPU memory in GiB.
+          type: integer
         count:
           description: The number of GPUs available.
           type: integer
@@ -262,6 +266,9 @@ components:
         cpus:
           description: The number of CPUs.
           type: integer
+        cpuFamily:
+          description: A free form CPU family description e.g. model number, architecture.
+          type: string
         memory:
           description: The amount of memory in GiB.
           type: integer
@@ -399,7 +406,7 @@ components:
               softwareVersions:
                 kubernetes: v1.25.6
               gpuDriver:
-                vendor: nvidia
+                vendor: NVIDIA
                 version: 525.85.05
     flavorsResponse:
       description: A list of flavors.
@@ -414,11 +421,13 @@ components:
               creationTime: 1970-01-01T00:00:00Z
             spec:
               cpus: 4
+              cpuFamily: Intel Xeon Platinum 8160T (Skylake)
               disk: 20
               memory: 32
               gpu:
-                vendor: nvidia
+                vendor: NVIDIA
                 model: H100
+                memory: 192
                 count: 1
     identityResponse:
       description: An identity response.
