@@ -243,9 +243,36 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsReg
 	util.WriteJSONResponse(w, r, http.StatusOK, out)
 }
 
-func convertCloudConfig(identity *unikornv1.Identity, in *providers.CloudConfig) *openapi.IdentityRead {
+func convertTag(in unikornv1.Tag) openapi.Tag {
+	out := openapi.Tag{
+		Name:  in.Name,
+		Value: in.Value,
+	}
+
+	return out
+}
+
+func convertTags(in unikornv1.TagList) openapi.TagList {
+	if in == nil {
+		return nil
+	}
+
+	out := make(openapi.TagList, len(in))
+
+	for i := range in {
+		out[i] = convertTag(in[i])
+	}
+
+	return out
+}
+
+func convertIdentity(identity *unikornv1.Identity, in *providers.CloudConfig) *openapi.IdentityRead {
 	out := &openapi.IdentityRead{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(identity, coreopenapi.ResourceProvisioningStatusProvisioned),
+	}
+
+	if tags := convertTags(identity.Spec.Tags); tags != nil {
+		out.Spec.Tags = &tags
 	}
 
 	switch in.Type {
@@ -259,16 +286,6 @@ func convertCloudConfig(identity *unikornv1.Identity, in *providers.CloudConfig)
 				ProjectId:   in.OpenStack.State.ProjectID,
 			},
 		}
-	}
-
-	return out
-}
-
-func generateClusterInfo(organizationID, projectID string, in *openapi.IdentityWrite) *providers.ClusterInfo {
-	out := &providers.ClusterInfo{
-		OrganizationID: organizationID,
-		ProjectID:      projectID,
-		ClusterID:      in.ClusterId,
 	}
 
 	return out
@@ -293,14 +310,54 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRe
 		return
 	}
 
-	identity, cloudconfig, err := provider.CreateIdentity(r.Context(), generateClusterInfo(organizationID, projectID, request))
+	identity, cloudconfig, err := provider.CreateIdentity(r.Context(), organizationID, projectID, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
 	h.setCacheable(w)
-	util.WriteJSONResponse(w, r, http.StatusCreated, convertCloudConfig(identity, cloudconfig))
+	util.WriteJSONResponse(w, r, http.StatusCreated, convertIdentity(identity, cloudconfig))
+}
+
+func convertPhysicalNetwork(in *unikornv1.PhysicalNetwork) *openapi.PhysicalNetworkRead {
+	out := &openapi.PhysicalNetworkRead{
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, coreopenapi.ResourceProvisioningStatusProvisioned),
+	}
+
+	if tags := convertTags(in.Spec.Tags); tags != nil {
+		out.Spec.Tags = &tags
+	}
+
+	return out
+}
+
+func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesIdentityIDPhysicalNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, regionID openapi.RegionIDParameter, identityID openapi.IdentityIDParameter) {
+	if err := h.checkRBAC(r.Context(), organizationID, "infrastructure", constants.Create); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	request := &openapi.PhysicalNetworkWrite{}
+
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), regionID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	network, err := provider.CreatePhysicalNetwork(r.Context(), organizationID, projectID, identityID, request)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusCreated, convertPhysicalNetwork(network))
 }
 
 func convertExternalNetwork(in providers.ExternalNetwork) openapi.ExternalNetwork {

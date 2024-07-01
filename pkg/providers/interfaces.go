@@ -20,6 +20,7 @@ import (
 	"context"
 
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/openapi"
 )
 
 // Providers are expected to provide a provider agnostic manner.
@@ -31,9 +32,11 @@ type Provider interface {
 	// Images lists all available images.
 	Images(ctx context.Context) (ImageList, error)
 	// CreateIdentity creates a new identity for cloud infrastructure.
-	CreateIdentity(ctx context.Context, info *ClusterInfo) (*unikornv1.Identity, *CloudConfig, error)
+	CreateIdentity(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*unikornv1.Identity, *CloudConfig, error)
 	// DeleteIdentity cleans up an identity for cloud infrastructure.
 	DeleteIdentity(ctx context.Context, identityID string) error
+	// CreatePhysicalNetwork create a new physical network.
+	CreatePhysicalNetwork(ctx context.Context, organizationID, projectID, identityID string, request *openapi.PhysicalNetworkWrite) (*unikornv1.PhysicalNetwork, error)
 	// ListExternalNetworks returns a list of external networks if the platform
 	// supports such a concept.
 	ListExternalNetworks(ctx context.Context) (ExternalNetworks, error)
