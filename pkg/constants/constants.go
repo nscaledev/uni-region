@@ -43,3 +43,12 @@ var (
 func VersionString() string {
 	return fmt.Sprintf("%s/%s (revision/%s)", Application, Version, Revision)
 }
+
+const (
+	// RegionLabel creates an indexable linkage between resources and their
+	// owning region.
+	RegionLabel = "regions.unikorn-cloud.org/region-id"
+	// IdentityLabel creates an indexable linkage between resources and an
+	// owning identity.
+	IdentityLabel = "regions.unikorn-cloud.org/identity-id"
+)

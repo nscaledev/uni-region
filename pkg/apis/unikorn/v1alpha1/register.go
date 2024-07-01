@@ -50,6 +50,7 @@ var (
 func init() {
 	SchemeBuilder.Register(&Region{}, &RegionList{})
 	SchemeBuilder.Register(&Identity{}, &IdentityList{})
+	SchemeBuilder.Register(&PhysicalNetwork{}, &PhysicalNetworkList{})
 }
 
 // Resource maps a resource type to a group resource.

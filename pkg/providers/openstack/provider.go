@@ -31,13 +31,14 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/users"
 	"github.com/gophercloud/utils/openstack/clientconfig"
 
-	"github.com/unikorn-cloud/core/pkg/constants"
+	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
@@ -326,26 +327,19 @@ func (p *Provider) Images(ctx context.Context) (providers.ImageList, error) {
 }
 
 const (
-	// ProjectIDAnnotation records the project ID created for a cluster.
-	ProjectIDAnnotation = "openstack." + providers.MetdataDomain + "/project-id"
-	// UserIDAnnotation records the user ID create for a cluster.
-	UserIDAnnotation = "openstack." + providers.MetdataDomain + "/user-id"
-
 	// Projects are randomly named to avoid clashes, so we need to add some tags
 	// in order to be able to reason about who they really belong to.  It is also
 	// useful to have these in place so we can spot orphaned resources and garbage
 	// collect them.
 	OrganizationTag = "organization"
 	ProjectTag      = "project"
-	ClusterTag      = "cluster"
 )
 
 // projectTags defines how to tag projects.
-func projectTags(info *providers.ClusterInfo) []string {
+func projectTags(organizationID, projectID string) []string {
 	tags := []string{
-		OrganizationTag + "=" + info.OrganizationID,
-		ProjectTag + "=" + info.ProjectID,
-		ClusterTag + "=" + info.ClusterID,
+		OrganizationTag + "=" + organizationID,
+		ProjectTag + "=" + projectID,
 	}
 
 	return tags
@@ -368,10 +362,10 @@ func (p *Provider) provisionUser(ctx context.Context, identityService *IdentityC
 // provisionProject creates a project per-cluster.  Cluster API provider Openstack is
 // somewhat broken in that networks can alias and cause all kinds of disasters, so it's
 // safest to have one cluster in one project so it has its own namespace.
-func (p *Provider) provisionProject(ctx context.Context, identityService *IdentityClient, info *providers.ClusterInfo) (*projects.Project, error) {
+func (p *Provider) provisionProject(ctx context.Context, identityService *IdentityClient, organizationID, projectID string) (*projects.Project, error) {
 	name := "unikorn-" + rand.String(8)
 
-	project, err := identityService.CreateProject(ctx, p.domainID, name, projectTags(info))
+	project, err := identityService.CreateProject(ctx, p.domainID, name, projectTags(organizationID, projectID))
 	if err != nil {
 		return nil, err
 	}
@@ -475,10 +469,33 @@ func (p *Provider) createClientConfig(applicationCredential *applicationcredenti
 	return credentials, nil
 }
 
+func convertTag(in openapi.Tag) unikornv1.Tag {
+	out := unikornv1.Tag{
+		Name:  in.Name,
+		Value: in.Value,
+	}
+
+	return out
+}
+
+func convertTagList(in *openapi.TagList) unikornv1.TagList {
+	if in == nil {
+		return nil
+	}
+
+	out := make(unikornv1.TagList, len(*in))
+
+	for i := range *in {
+		out[i] = convertTag((*in)[i])
+	}
+
+	return out
+}
+
 // CreateIdentity creates a new identity for cloud infrastructure.
 //
 //nolint:cyclop
-func (p *Provider) CreateIdentity(ctx context.Context, info *providers.ClusterInfo) (*unikornv1.Identity, *providers.CloudConfig, error) {
+func (p *Provider) CreateIdentity(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*unikornv1.Identity, *providers.CloudConfig, error) {
 	identityService, err := p.identity(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -486,7 +503,7 @@ func (p *Provider) CreateIdentity(ctx context.Context, info *providers.ClusterIn
 
 	// Every cluster has its own project to mitigate "nuances" in CAPO i.e. it's
 	// totally broken when it comes to network aliasing.
-	project, err := p.provisionProject(ctx, identityService, info)
+	project, err := p.provisionProject(ctx, identityService, organizationID, projectID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -528,18 +545,15 @@ func (p *Provider) CreateIdentity(ctx context.Context, info *providers.ClusterIn
 		},
 	}
 
+        objectMeta := conversion.NewObjectMetadata(&request.Metadata, p.region.Namespace)
+        objectMeta = objectMeta.WithOrganization(organizationID)
+        objectMeta = objectMeta.WithProject(projectID)
+        objectMeta = objectMeta.WithLabel(constants.RegionLabel, p.region.Name)
+
 	identity := &unikornv1.Identity{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: p.region.Namespace,
-			Name:      string(uuid.NewUUID()),
-			Labels: map[string]string{
-				constants.NameLabel:              "undefined",
-				constants.OrganizationLabel:      info.OrganizationID,
-				constants.ProjectLabel:           info.ProjectID,
-				constants.KubernetesClusterLabel: info.ClusterID,
-			},
-		},
+		ObjectMeta: objectMeta.Get(ctx),
 		Spec: unikornv1.IdentitySpec{
+			Tags:     convertTagList(request.Spec.Tags),
 			Provider: unikornv1.ProviderOpenstack,
 			OpenStack: &unikornv1.IdentitySpecOpenStack{
 				UserID:    user.ID,
@@ -581,6 +595,58 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identityID string) error 
 	}
 
 	return nil
+}
+
+// GetIdentity looks up the specified identity resource.
+func (p *Provider) GetIdentity(ctx context.Context, id string) (*unikornv1.Identity, error) {
+        out := &unikornv1.Identity{}
+
+        if err := p.client.Get(ctx, client.ObjectKey{Namespace: p.region.Namespace, Name: id}, out); err != nil {
+                return nil, err
+        }
+
+	return out, nil
+}
+
+// CreatePhysicalNetwork creates a physical network for an identity.
+func (p *Provider) CreatePhysicalNetwork(ctx context.Context, organizationID, projectID, identityID string, request *openapi.PhysicalNetworkWrite) (*unikornv1.PhysicalNetwork, error) {
+	identity, err := p.GetIdentity(ctx, identityID)
+	if err != nil {
+		return nil, err
+	}
+
+	networkService, err := p.network(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	vlanID, providerNetwork, err := networkService.CreateVLANProviderNetwork(ctx, "foo", identity.Spec.OpenStack.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+
+	objectMeta := conversion.NewObjectMetadata(&request.Metadata, p.region.Namespace)
+	objectMeta = objectMeta.WithOrganization(organizationID)
+	objectMeta = objectMeta.WithProject(projectID)
+	objectMeta = objectMeta.WithLabel(constants.RegionLabel, p.region.Name)
+	objectMeta = objectMeta.WithLabel(constants.IdentityLabel, identityID)
+
+	physicalNetwork := &unikornv1.PhysicalNetwork{
+		ObjectMeta: objectMeta.Get(ctx),
+		Spec: unikornv1.PhysicalNetworkSpec{
+			Tags: convertTagList(request.Spec.Tags),
+			ProviderNetwork: &unikornv1.OpenstackProviderNetworkSpec{
+				ID:     providerNetwork.ID,
+				VlanID: vlanID,
+			},
+		},
+	}
+
+	if err := p.client.Create(ctx, physicalNetwork); err != nil {
+		return nil, err
+	}
+
+	return physicalNetwork, nil
 }
 
 // ListExternalNetworks returns a list of external networks if the platform

@@ -88,17 +88,6 @@ type Image struct {
 // ImageList allows us to attach sort functions and the like.
 type ImageList []Image
 
-// ClusterInfo is required metadata when using the identity APIs to allow
-// tracking of ownership information.
-type ClusterInfo struct {
-	// OrganizationID defines which organization this belings to.
-	OrganizationID string
-	// ProjectID defines which project this belongs to.
-	ProjectID string
-	// ClusterID defines which cluster this belongs to.
-	ClusterID string
-}
-
 // ProviderType defines the provider to the client, while this is implicit,
 // as you had to select a region in the first instance, it's handy to refer to
 // to perform provider specific configuration.
@@ -142,9 +131,9 @@ type CloudConfig struct {
 
 // ExternalNetwork represents an external network.
 type ExternalNetwork struct {
-	// ID is the provider specific netwokr ID.
+	// ID is the provider specific network ID.
 	ID string
-	// Name is the netwokr name.
+	// Name is the network name.
 	Name string
 }
 

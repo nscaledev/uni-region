@@ -137,14 +137,14 @@ func (c *NetworkClient) AllocateVLAN(ctx context.Context) (int, error) {
 }
 
 // CreateVLANProviderNetwork creates a VLAN provider network for a project.
-func (c *NetworkClient) CreateVLANProviderNetwork(ctx context.Context, name string, projectID string) (*networks.Network, error) {
+func (c *NetworkClient) CreateVLANProviderNetwork(ctx context.Context, name string, projectID string) (int, *networks.Network, error) {
 	if c.options == nil || c.options.PhysicalNetwork == nil {
-		return nil, ErrConfiguration
+		return -1, nil, ErrConfiguration
 	}
 
 	vlanID, err := c.AllocateVLAN(ctx)
 	if err != nil {
-		return nil, err
+		return -1, nil, err
 	}
 
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
@@ -167,5 +167,10 @@ func (c *NetworkClient) CreateVLANProviderNetwork(ctx context.Context, name stri
 		},
 	}
 
-	return networks.Create(ctx, c.client, opts).Extract()
+	network, err := networks.Create(ctx, c.client, opts).Extract()
+	if err != nil {
+		return -1, nil, err
+	}
+
+	return vlanID, network, nil
 }

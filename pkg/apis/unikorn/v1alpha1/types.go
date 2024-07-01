@@ -223,6 +223,17 @@ type RegionStatus struct {
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
 }
 
+// Tag is an arbirary key/value.
+type Tag struct {
+	// Name of the tag.
+	Name string `json:"name"`
+	// Value of the tag.
+	Value string `json:"value"`
+}
+
+// TagList is an ordered list of tags.
+type TagList []Tag
+
 // IdentityList is a typed list of identities.
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type IdentityList struct {
@@ -252,6 +263,9 @@ type Identity struct {
 
 // IdentitySpec stores any state necessary to manage identity.
 type IdentitySpec struct {
+	// Tags are an abitrary list of key/value pairs that a client
+	// may populate to store metadata for the resource.
+	Tags TagList `json:"tags,omitempty"`
 	// Provider defines the provider type.
 	Provider Provider `json:"provider"`
 	// OpenStack is populated when the provider type is set to "openstack".
@@ -261,9 +275,49 @@ type IdentitySpec struct {
 type IdentitySpecOpenStack struct {
 	// UserID is the ID of the user created for the identity.
 	UserID string `json:"userID"`
-	// ProjectIS is the ID of the project created for the identity.
+	// ProjectID is the ID of the project created for the identity.
 	ProjectID string `json:"projectID"`
 }
 
 type IdentityStatus struct {
+}
+
+// PhysicalNetworkList s a typed list of physical networks.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type PhysicalNetworkList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []PhysicalNetwork `json:"items"`
+}
+
+// PhysicalNetwork defines a physical network beloning to an identity.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type PhysicalNetwork struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              PhysicalNetworkSpec   `json:"spec"`
+	Status            PhysicalNetworkStatus `json:"status"`
+}
+
+type PhysicalNetworkSpec struct {
+	// Tags are an abitrary list of key/value pairs that a client
+	// may populate to store metadata for the resource.
+	Tags TagList `json:"tags,omitempty"`
+	// ProviderNetwork is the provider network for port allocation of
+	// virtual machines.
+	ProviderNetwork *OpenstackProviderNetworkSpec `json:"providerNetwork,omitempty"`
+}
+
+type OpenstackProviderNetworkSpec struct {
+	// ID is the network ID.
+	ID string `json:"id"`
+	// VlanID is the ID if the VLAN for IPAM.
+	VlanID int `json:"vlanID"`
+}
+
+type PhysicalNetworkStatus struct {
 }
