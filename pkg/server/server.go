@@ -31,12 +31,13 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/trace"
 
+	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/cors"
-	openapimiddleware "github.com/unikorn-cloud/core/pkg/server/middleware/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/opentelemetry"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/timeout"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
-	"github.com/unikorn-cloud/identity/pkg/middleware/authorizer"
+	openapimiddleware "github.com/unikorn-cloud/identity/pkg/middleware/openapi"
+	openapimiddlewareremote "github.com/unikorn-cloud/identity/pkg/middleware/openapi/remote"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -128,7 +129,7 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 		}
 	}()
 
-	schema, err := openapimiddleware.NewSchema(openapi.GetSwagger)
+	schema, err := coreapi.NewSchema(openapi.GetSwagger)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +142,7 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 	router.NotFound(http.HandlerFunc(handler.NotFound))
 	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
 
-	authorizer := authorizer.NewAuthorizer(client, s.Options.Namespace, &s.IdentityOptions)
+	authorizer := openapimiddlewareremote.NewAuthorizer(client, s.Options.Namespace, &s.IdentityOptions)
 
 	// Middleware specified here is applied to all requests post-routing.
 	// NOTE: these are applied in reverse order!!

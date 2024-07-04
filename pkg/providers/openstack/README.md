@@ -53,7 +53,7 @@ When we create a `Region` of type `openstack`, it will require a secret that con
 This can be configured as follows.
 
 ```bash
-kubectl create secret generic -n unikorn uk-north-1-credentials \
+kubectl create secret generic -n unikorn-region gb-north-1-credentials \
 	--from-literal=domain-id=${DOMAIN_ID} \
 	--from-literal=user-id=${USER_ID} \
 	--from-literal=password=${PASSWORD}
@@ -67,16 +67,17 @@ apiVersion: region.unikorn-cloud.org/v1alpha1
 kind: Region
 metadata:
   # Use "uuidgen -r" to select a random ID, this MUST start with a character a-f.
+  namespace: unikorn-region
   name: c7e8492f-c320-4278-8201-48cd38fed38b
   labels:
-    unikorn-cloud.org/name: uk-north-1
+    unikorn-cloud.org/name: gb-north-1
 spec:
   provider: openstack
   openstack:
-    endpoint: https://openstack.uk-north-1.unikorn-cloud.org:5000
+    endpoint: https://openstack.gb-north-1.unikorn-cloud.org:5000
     serviceAccountSecret:
       namespace: unikorn
-      name: uk-north-1-credentials
+      name: gb-north-1-credentials
 ```
 
 Cleanup actions.

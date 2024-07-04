@@ -20,26 +20,27 @@ package handler
 
 import (
 	"cmp"
-	"context"
 	"encoding/base64"
 	"fmt"
 	"net/http"
 	"slices"
 	"time"
 
-	"github.com/unikorn-cloud/core/pkg/authorization/constants"
-	"github.com/unikorn-cloud/core/pkg/authorization/userinfo"
-	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
+	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/util"
-	"github.com/unikorn-cloud/identity/pkg/authorization"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
+	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	"github.com/unikorn-cloud/identity/pkg/rbac"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/server/util"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -77,27 +78,8 @@ func (h *Handler) setUncacheable(w http.ResponseWriter) {
 	w.Header().Add("Cache-Control", "no-cache")
 }
 
-//nolint:unparam
-func (h *Handler) checkRBAC(ctx context.Context, organizationID, scope string, permission constants.Permission) error {
-	identity, err := h.identity.Client(ctx)
-	if err != nil {
-		return err
-	}
-
-	authorizer, err := userinfo.NewAuthorizer(ctx, authorization.NewIdentityACLGetter(identity, organizationID))
-	if err != nil {
-		return errors.HTTPForbidden("operation is not allowed by rbac").WithError(err)
-	}
-
-	if err := authorizer.Allow(ctx, scope, permission); err != nil {
-		return errors.HTTPForbidden("operation is not allowed by rbac").WithError(err)
-	}
-
-	return nil
-}
-
 func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegions(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter) {
-	if err := h.checkRBAC(r.Context(), organizationID, "infrastructure", constants.Read); err != nil {
+	if err := rbac.AllowProjectScope(r.Context(), "infrastructure", identityapi.Read, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -125,7 +107,7 @@ func convertGpuVendor(in providers.GPUVendor) openapi.GpuVendor {
 
 func convertFlavor(in providers.Flavor) openapi.Flavor {
 	out := openapi.Flavor{
-		Metadata: coreopenapi.StaticResourceMetadata{
+		Metadata: coreapi.StaticResourceMetadata{
 			Id:   in.ID,
 			Name: in.Name,
 		},
@@ -150,7 +132,7 @@ func convertFlavor(in providers.Flavor) openapi.Flavor {
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavors(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, regionID openapi.RegionIDParameter) {
-	if err := h.checkRBAC(r.Context(), organizationID, "infrastructure", constants.Read); err != nil {
+	if err := rbac.AllowProjectScope(r.Context(), "infrastructure", identityapi.Read, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -193,7 +175,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsReg
 
 func convertImage(in providers.Image) openapi.Image {
 	out := openapi.Image{
-		Metadata: coreopenapi.StaticResourceMetadata{
+		Metadata: coreapi.StaticResourceMetadata{
 			Id:           in.ID,
 			Name:         in.Name,
 			CreationTime: in.Created,
@@ -211,7 +193,7 @@ func convertImage(in providers.Image) openapi.Image {
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, regionID openapi.RegionIDParameter) {
-	if err := h.checkRBAC(r.Context(), organizationID, "infrastructure", constants.Read); err != nil {
+	if err := rbac.AllowProjectScope(r.Context(), "infrastructure", identityapi.Read, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -266,9 +248,29 @@ func convertTags(in unikornv1.TagList) openapi.TagList {
 	return out
 }
 
+func regionScopedResourceReadMetadata(in metav1.Object, status coreapi.ResourceProvisioningStatus) coreapi.RegionScopedResourceMetadata {
+	labels := in.GetLabels()
+
+	temp := conversion.ProjectScopedResourceReadMetadata(in, status)
+
+	out := coreapi.RegionScopedResourceMetadata{
+		Id:                 temp.Id,
+		Name:               temp.Name,
+		Description:        temp.Description,
+		CreatedBy:          temp.CreatedBy,
+		CreationTime:       temp.CreationTime,
+		ProvisioningStatus: temp.ProvisioningStatus,
+		OrganizationId:     temp.OrganizationId,
+		ProjectId:          temp.ProjectId,
+		RegionId:           labels[constants.RegionLabel],
+	}
+
+	return out
+}
+
 func convertIdentity(identity *unikornv1.Identity, in *providers.CloudConfig) *openapi.IdentityRead {
 	out := &openapi.IdentityRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(identity, coreopenapi.ResourceProvisioningStatusProvisioned),
+		Metadata: regionScopedResourceReadMetadata(identity, coreapi.ResourceProvisioningStatusProvisioned),
 	}
 
 	if tags := convertTags(identity.Spec.Tags); tags != nil {
@@ -291,8 +293,11 @@ func convertIdentity(identity *unikornv1.Identity, in *providers.CloudConfig) *o
 	return out
 }
 
+func (h *Handler) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
+}
+
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, regionID openapi.RegionIDParameter) {
-	if err := h.checkRBAC(r.Context(), organizationID, "infrastructure", constants.Create); err != nil {
+	if err := rbac.AllowProjectScope(r.Context(), "infrastructure", identityapi.Create, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -322,7 +327,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRe
 
 func convertPhysicalNetwork(in *unikornv1.PhysicalNetwork) *openapi.PhysicalNetworkRead {
 	out := &openapi.PhysicalNetworkRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, coreopenapi.ResourceProvisioningStatusProvisioned),
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, coreapi.ResourceProvisioningStatusProvisioned),
 	}
 
 	if tags := convertTags(in.Spec.Tags); tags != nil {
@@ -333,7 +338,7 @@ func convertPhysicalNetwork(in *unikornv1.PhysicalNetwork) *openapi.PhysicalNetw
 }
 
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesIdentityIDPhysicalNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, regionID openapi.RegionIDParameter, identityID openapi.IdentityIDParameter) {
-	if err := h.checkRBAC(r.Context(), organizationID, "infrastructure", constants.Create); err != nil {
+	if err := rbac.AllowProjectScope(r.Context(), "infrastructure", identityapi.Create, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -380,7 +385,7 @@ func convertExternalNetworks(in providers.ExternalNetworks) openapi.ExternalNetw
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, regionID openapi.RegionIDParameter) {
-	if err := h.checkRBAC(r.Context(), organizationID, "infrastructure", constants.Read); err != nil {
+	if err := rbac.AllowProjectScope(r.Context(), "infrastructure", identityapi.Read, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
