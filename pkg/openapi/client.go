@@ -90,6 +90,9 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// GetApiV1OrganizationsOrganizationIDIdentities request
+	GetApiV1OrganizationsOrganizationIDIdentities(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegions request
 	GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegions(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -111,6 +114,18 @@ type ClientInterface interface {
 
 	// GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImages request
 	GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImages(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) GetApiV1OrganizationsOrganizationIDIdentities(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV1OrganizationsOrganizationIDIdentitiesRequest(c.Server, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegions(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -207,6 +222,40 @@ func (c *Client) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegi
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewGetApiV1OrganizationsOrganizationIDIdentitiesRequest generates requests for GetApiV1OrganizationsOrganizationIDIdentities
+func NewGetApiV1OrganizationsOrganizationIDIdentitiesRequest(server string, organizationID OrganizationIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "organizationID", runtime.ParamLocationPath, organizationID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/organizations/%s/identities", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
 // NewGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRequest generates requests for GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegions
@@ -566,6 +615,9 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// GetApiV1OrganizationsOrganizationIDIdentitiesWithResponse request
+	GetApiV1OrganizationsOrganizationIDIdentitiesWithResponse(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDIdentitiesResponse, error)
+
 	// GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsWithResponse request
 	GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsResponse, error)
 
@@ -587,6 +639,32 @@ type ClientWithResponsesInterface interface {
 
 	// GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesWithResponse request
 	GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesResponse, error)
+}
+
+type GetApiV1OrganizationsOrganizationIDIdentitiesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *IdentitiesResponse
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV1OrganizationsOrganizationIDIdentitiesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV1OrganizationsOrganizationIDIdentitiesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
 }
 
 type GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsResponse struct {
@@ -741,6 +819,15 @@ func (r GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImage
 	return 0
 }
 
+// GetApiV1OrganizationsOrganizationIDIdentitiesWithResponse request returning *GetApiV1OrganizationsOrganizationIDIdentitiesResponse
+func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDIdentitiesWithResponse(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDIdentitiesResponse, error) {
+	rsp, err := c.GetApiV1OrganizationsOrganizationIDIdentities(ctx, organizationID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV1OrganizationsOrganizationIDIdentitiesResponse(rsp)
+}
+
 // GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsWithResponse request returning *GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsResponse
 func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsResponse, error) {
 	rsp, err := c.GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegions(ctx, organizationID, projectID, reqEditors...)
@@ -809,6 +896,60 @@ func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDProjectsProject
 		return nil, err
 	}
 	return ParseGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImagesResponse(rsp)
+}
+
+// ParseGetApiV1OrganizationsOrganizationIDIdentitiesResponse parses an HTTP response from a GetApiV1OrganizationsOrganizationIDIdentitiesWithResponse call
+func ParseGetApiV1OrganizationsOrganizationIDIdentitiesResponse(rsp *http.Response) (*GetApiV1OrganizationsOrganizationIDIdentitiesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV1OrganizationsOrganizationIDIdentitiesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IdentitiesResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseGetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsResponse parses an HTTP response from a GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsWithResponse call

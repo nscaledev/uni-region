@@ -93,9 +93,12 @@ type GpuSpec struct {
 // GpuVendor The GPU vendor.
 type GpuVendor string
 
+// IdentitiesRead A list of provider specific identities.
+type IdentitiesRead = []IdentityRead
+
 // IdentityRead A provider specific identity.
 type IdentityRead struct {
-	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+	Metadata externalRef0.RegionScopedResourceMetadata `json:"metadata"`
 
 	// Spec A provider specific identity, while the client can list regions to infer the
 	// type, we don't requires this and return it with the response.  That can then
@@ -255,6 +258,9 @@ type ExternalNetworksResponse = ExternalNetworks
 
 // FlavorsResponse A list of flavors.
 type FlavorsResponse = Flavors
+
+// IdentitiesResponse A list of provider specific identities.
+type IdentitiesResponse = IdentitiesRead
 
 // IdentityResponse A provider specific identity.
 type IdentityResponse = IdentityRead

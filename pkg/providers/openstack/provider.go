@@ -545,10 +545,10 @@ func (p *Provider) CreateIdentity(ctx context.Context, organizationID, projectID
 		},
 	}
 
-        objectMeta := conversion.NewObjectMetadata(&request.Metadata, p.region.Namespace)
-        objectMeta = objectMeta.WithOrganization(organizationID)
-        objectMeta = objectMeta.WithProject(projectID)
-        objectMeta = objectMeta.WithLabel(constants.RegionLabel, p.region.Name)
+	objectMeta := conversion.NewObjectMetadata(&request.Metadata, p.region.Namespace)
+	objectMeta = objectMeta.WithOrganization(organizationID)
+	objectMeta = objectMeta.WithProject(projectID)
+	objectMeta = objectMeta.WithLabel(constants.RegionLabel, p.region.Name)
 
 	identity := &unikornv1.Identity{
 		ObjectMeta: objectMeta.Get(ctx),
@@ -599,11 +599,11 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identityID string) error 
 
 // GetIdentity looks up the specified identity resource.
 func (p *Provider) GetIdentity(ctx context.Context, id string) (*unikornv1.Identity, error) {
-        out := &unikornv1.Identity{}
+	out := &unikornv1.Identity{}
 
-        if err := p.client.Get(ctx, client.ObjectKey{Namespace: p.region.Namespace, Name: id}, out); err != nil {
-                return nil, err
-        }
+	if err := p.client.Get(ctx, client.ObjectKey{Namespace: p.region.Namespace, Name: id}, out); err != nil {
+		return nil, err
+	}
 
 	return out, nil
 }

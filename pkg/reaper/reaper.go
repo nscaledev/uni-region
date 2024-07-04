@@ -21,7 +21,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/unikorn-cloud/core/pkg/constants"
+	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 
 	corev1 "k8s.io/api/core/v1"
@@ -70,7 +72,7 @@ func (r *Reaper) Run(ctx context.Context) error {
 	// API access.
 	options := &client.ListOptions{
 		FieldSelector: fields.SelectorFromSet(fields.Set{
-			"reason": constants.IdentityCleanupReadyEventReason,
+			"reason": coreconstants.IdentityCleanupReadyEventReason,
 		}),
 	}
 
@@ -125,17 +127,18 @@ func (r *Reaper) handleEvent(ctx context.Context, event *corev1.Event) error {
 
 	log.Info("processing cluster deletion event", "event", event)
 
-	regionID, ok := event.Annotations[constants.RegionAnnotation]
-	if !ok {
-		return fmt.Errorf("%w: region annotation not present", ErrDataMissing)
-	}
-
-	identityID, ok := event.Annotations[constants.CloudIdentityAnnotation]
+	identityID, ok := event.Annotations[coreconstants.CloudIdentityAnnotation]
 	if !ok {
 		return fmt.Errorf("%w: identity annotation not present", ErrDataMissing)
 	}
 
-	provider, err := region.NewClient(r.client, r.namespace).Provider(ctx, regionID)
+	identity := &unikornv1.Identity{}
+
+	if err := r.client.Get(ctx, client.ObjectKey{Namespace: r.namespace, Name: identityID}, identity); err != nil {
+		return err
+	}
+
+	provider, err := region.NewClient(r.client, r.namespace).Provider(ctx, identity.Labels[constants.RegionLabel])
 	if err != nil {
 		return fmt.Errorf("%w: failed to create provider client", err)
 	}

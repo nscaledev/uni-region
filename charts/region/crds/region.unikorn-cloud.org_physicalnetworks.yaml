@@ -4,22 +4,19 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.14.0
-  name: identities.region.unikorn-cloud.org
+  name: physicalnetworks.region.unikorn-cloud.org
 spec:
   group: region.unikorn-cloud.org
   names:
     categories:
     - unikorn
-    kind: Identity
-    listKind: IdentityList
-    plural: identities
-    singular: identity
+    kind: PhysicalNetwork
+    listKind: PhysicalNetworkList
+    plural: physicalnetworks
+    singular: physicalnetwork
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.provider
-      name: provider
-      type: string
     - jsonPath: .status.conditions[?(@.type=="Available")].reason
       name: status
       type: string
@@ -29,13 +26,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: |-
-          Identity defines an on-demand cloud identity.  The region controller must
-          create any resources necessary to provide dynamic provisioning of clusters
-          e.g. compute, storage and networking.  This resource is used for persistence
-          of information by the controller and not for manual lifecycle management.
-          Any credentials should not be stored unless absolutely necessary, and should
-          be passed to a client on initial identity creation only.
+        description: PhysicalNetwork defines a physical network beloning to an identity.
         properties:
           apiVersion:
             description: |-
@@ -55,28 +46,22 @@ spec:
           metadata:
             type: object
           spec:
-            description: IdentitySpec stores any state necessary to manage identity.
             properties:
-              openstack:
-                description: OpenStack is populated when the provider type is set
-                  to "openstack".
+              providerNetwork:
+                description: |-
+                  ProviderNetwork is the provider network for port allocation of
+                  virtual machines.
                 properties:
-                  projectID:
-                    description: ProjectID is the ID of the project created for the
-                      identity.
+                  id:
+                    description: ID is the network ID.
                     type: string
-                  userID:
-                    description: UserID is the ID of the user created for the identity.
-                    type: string
+                  vlanID:
+                    description: VlanID is the ID if the VLAN for IPAM.
+                    type: integer
                 required:
-                - projectID
-                - userID
+                - id
+                - vlanID
                 type: object
-              provider:
-                description: Provider defines the provider type.
-                enum:
-                - openstack
-                type: string
               tags:
                 description: |-
                   Tags are an abitrary list of key/value pairs that a client
@@ -95,8 +80,6 @@ spec:
                   - value
                   type: object
                 type: array
-            required:
-            - provider
             type: object
           status:
             type: object
