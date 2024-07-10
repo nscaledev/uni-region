@@ -123,10 +123,10 @@ type IdentitySpec struct {
 // IdentitySpecOpenStack Everything an OpenStack client needs to function.
 type IdentitySpecOpenStack struct {
 	// Cloud The name of the cloud in the cloud config.
-	Cloud string `json:"cloud"`
+	Cloud *string `json:"cloud,omitempty"`
 
 	// CloudConfig A base64 encoded cloud config file.
-	CloudConfig string `json:"cloudConfig"`
+	CloudConfig *string `json:"cloudConfig,omitempty"`
 
 	// ProjectId Project identifier allocated for the infrastructure.
 	ProjectId string `json:"projectId"`

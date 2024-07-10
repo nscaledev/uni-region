@@ -26,6 +26,7 @@ import (
 	"slices"
 	"time"
 
+	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
@@ -41,6 +42,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/server/util"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -277,23 +279,56 @@ func convertIdentity(identity *unikornv1.Identity, in *providers.CloudConfig) *o
 		out.Spec.Tags = &tags
 	}
 
-	switch in.Type {
-	case providers.ProviderTypeOpenStack:
-		out.Spec = openapi.IdentitySpec{
-			Type: openapi.Openstack,
-			Openstack: &openapi.IdentitySpecOpenStack{
-				Cloud:       in.OpenStack.Credentials.Cloud,
-				CloudConfig: base64.URLEncoding.EncodeToString(in.OpenStack.Credentials.CloudConfig),
-				UserId:      in.OpenStack.State.UserID,
-				ProjectId:   in.OpenStack.State.ProjectID,
-			},
+	switch identity.Spec.Provider {
+	case unikornv1.ProviderOpenstack:
+		out.Spec.Type = openapi.Openstack
+
+		out.Spec.Openstack = &openapi.IdentitySpecOpenStack{
+			UserId:    identity.Spec.OpenStack.UserID,
+			ProjectId: identity.Spec.OpenStack.ProjectID,
+		}
+
+		if in != nil {
+			cloudConfig := base64.URLEncoding.EncodeToString(in.OpenStack.Credentials.CloudConfig)
+
+			out.Spec.Openstack.Cloud = &in.OpenStack.Credentials.Cloud
+			out.Spec.Openstack.CloudConfig = &cloudConfig
 		}
 	}
 
 	return out
 }
 
+func convertIdentityList(in unikornv1.IdentityList) openapi.IdentitiesRead {
+	out := make(openapi.IdentitiesRead, len(in.Items))
+
+	for i := range in.Items {
+		out[i] = *convertIdentity(&in.Items[i], nil)
+	}
+
+	return out
+}
+
 func (h *Handler) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
+	if err := rbac.AllowOrganizationScope(r.Context(), "infrastructure", identityapi.Read, organizationID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	var resources unikornv1.IdentityList
+
+	options := &client.ListOptions{
+		LabelSelector: labels.SelectorFromSet(map[string]string{
+			coreconstants.OrganizationLabel: organizationID,
+		}),
+	}
+
+	if err := h.client.List(r.Context(), &resources, options); err != nil {
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to list identities").WithError(err))
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, convertIdentityList(resources))
 }
 
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, regionID openapi.RegionIDParameter) {

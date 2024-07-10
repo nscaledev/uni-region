@@ -381,8 +381,6 @@ components:
       description: Everything an OpenStack client needs to function.
       type: object
       required:
-      - cloud
-      - cloudConfig
       - userId
       - projectId
       properties:
