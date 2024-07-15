@@ -41,7 +41,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/server/util"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -80,8 +80,8 @@ func (h *Handler) setUncacheable(w http.ResponseWriter) {
 	w.Header().Add("Cache-Control", "no-cache")
 }
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegions(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "infrastructure", identityapi.Read, organizationID, projectID); err != nil {
+func (h *Handler) GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
+	if err := rbac.AllowOrganizationScope(r.Context(), "regions", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -133,8 +133,8 @@ func convertFlavor(in providers.Flavor) openapi.Flavor {
 	return out
 }
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDFlavors(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, regionID openapi.RegionIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "infrastructure", identityapi.Read, organizationID, projectID); err != nil {
+func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
+	if err := rbac.AllowOrganizationScope(r.Context(), "regions", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -194,8 +194,8 @@ func convertImage(in providers.Image) openapi.Image {
 	return out
 }
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, regionID openapi.RegionIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "infrastructure", identityapi.Read, organizationID, projectID); err != nil {
+func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
+	if err := rbac.AllowOrganizationScope(r.Context(), "regions", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -250,29 +250,12 @@ func convertTags(in unikornv1.TagList) openapi.TagList {
 	return out
 }
 
-func regionScopedResourceReadMetadata(in metav1.Object, status coreapi.ResourceProvisioningStatus) coreapi.RegionScopedResourceMetadata {
-	labels := in.GetLabels()
-
-	temp := conversion.ProjectScopedResourceReadMetadata(in, status)
-
-	out := coreapi.RegionScopedResourceMetadata{
-		Id:                 temp.Id,
-		Name:               temp.Name,
-		Description:        temp.Description,
-		CreatedBy:          temp.CreatedBy,
-		CreationTime:       temp.CreationTime,
-		ProvisioningStatus: temp.ProvisioningStatus,
-		OrganizationId:     temp.OrganizationId,
-		ProjectId:          temp.ProjectId,
-		RegionId:           labels[constants.RegionLabel],
-	}
-
-	return out
-}
-
 func convertIdentity(identity *unikornv1.Identity, in *providers.CloudConfig) *openapi.IdentityRead {
 	out := &openapi.IdentityRead{
-		Metadata: regionScopedResourceReadMetadata(identity, coreapi.ResourceProvisioningStatusProvisioned),
+		Metadata: conversion.ProjectScopedResourceReadMetadata(identity, coreapi.ResourceProvisioningStatusProvisioned),
+		Spec: openapi.IdentitySpec{
+			RegionId: identity.Labels[constants.RegionLabel],
+		},
 	}
 
 	if tags := convertTags(identity.Spec.Tags); tags != nil {
@@ -310,7 +293,7 @@ func convertIdentityList(in unikornv1.IdentityList) openapi.IdentitiesRead {
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
-	if err := rbac.AllowOrganizationScope(r.Context(), "infrastructure", identityapi.Read, organizationID); err != nil {
+	if err := rbac.AllowOrganizationScope(r.Context(), "identities", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -331,8 +314,8 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseW
 	util.WriteJSONResponse(w, r, http.StatusOK, convertIdentityList(resources))
 }
 
-func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, regionID openapi.RegionIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "infrastructure", identityapi.Create, organizationID, projectID); err != nil {
+func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "identities", identityapi.Create, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -344,7 +327,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRe
 		return
 	}
 
-	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), regionID)
+	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), request.Spec.RegionId)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -372,8 +355,8 @@ func convertPhysicalNetwork(in *unikornv1.PhysicalNetwork) *openapi.PhysicalNetw
 	return out
 }
 
-func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesIdentityIDPhysicalNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, regionID openapi.RegionIDParameter, identityID openapi.IdentityIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "infrastructure", identityapi.Create, organizationID, projectID); err != nil {
+func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "identities", identityapi.Create, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -385,13 +368,25 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRe
 		return
 	}
 
-	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), regionID)
+	identity := &unikornv1.Identity{}
+
+	if err := h.client.Get(r.Context(), client.ObjectKey{Namespace: h.namespace, Name: identityID}, identity); err != nil {
+		if kerrors.IsNotFound(err) {
+			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
+			return
+		}
+
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), identity.Labels[constants.RegionLabel])
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	network, err := provider.CreatePhysicalNetwork(r.Context(), organizationID, projectID, identityID, request)
+	network, err := provider.CreatePhysicalNetwork(r.Context(), identity, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -419,8 +414,8 @@ func convertExternalNetworks(in providers.ExternalNetworks) openapi.ExternalNetw
 	return out
 }
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDExternalnetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, regionID openapi.RegionIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "infrastructure", identityapi.Read, organizationID, projectID); err != nil {
+func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
+	if err := rbac.AllowOrganizationScope(r.Context(), "regions", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}

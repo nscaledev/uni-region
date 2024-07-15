@@ -36,7 +36,7 @@ type Provider interface {
 	// DeleteIdentity cleans up an identity for cloud infrastructure.
 	DeleteIdentity(ctx context.Context, identityID string) error
 	// CreatePhysicalNetwork create a new physical network.
-	CreatePhysicalNetwork(ctx context.Context, organizationID, projectID, identityID string, request *openapi.PhysicalNetworkWrite) (*unikornv1.PhysicalNetwork, error)
+	CreatePhysicalNetwork(ctx context.Context, identity *unikornv1.Identity, request *openapi.PhysicalNetworkWrite) (*unikornv1.PhysicalNetwork, error)
 	// ListExternalNetworks returns a list of external networks if the platform
 	// supports such a concept.
 	ListExternalNetworks(ctx context.Context) (ExternalNetworks, error)
