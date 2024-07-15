@@ -31,6 +31,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/users"
 	"github.com/gophercloud/utils/openstack/clientconfig"
 
+	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -597,24 +598,8 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identityID string) error 
 	return nil
 }
 
-// GetIdentity looks up the specified identity resource.
-func (p *Provider) GetIdentity(ctx context.Context, id string) (*unikornv1.Identity, error) {
-	out := &unikornv1.Identity{}
-
-	if err := p.client.Get(ctx, client.ObjectKey{Namespace: p.region.Namespace, Name: id}, out); err != nil {
-		return nil, err
-	}
-
-	return out, nil
-}
-
 // CreatePhysicalNetwork creates a physical network for an identity.
-func (p *Provider) CreatePhysicalNetwork(ctx context.Context, organizationID, projectID, identityID string, request *openapi.PhysicalNetworkWrite) (*unikornv1.PhysicalNetwork, error) {
-	identity, err := p.GetIdentity(ctx, identityID)
-	if err != nil {
-		return nil, err
-	}
-
+func (p *Provider) CreatePhysicalNetwork(ctx context.Context, identity *unikornv1.Identity, request *openapi.PhysicalNetworkWrite) (*unikornv1.PhysicalNetwork, error) {
 	networkService, err := p.network(ctx)
 	if err != nil {
 		return nil, err
@@ -626,10 +611,10 @@ func (p *Provider) CreatePhysicalNetwork(ctx context.Context, organizationID, pr
 	}
 
 	objectMeta := conversion.NewObjectMetadata(&request.Metadata, p.region.Namespace)
-	objectMeta = objectMeta.WithOrganization(organizationID)
-	objectMeta = objectMeta.WithProject(projectID)
+	objectMeta = objectMeta.WithOrganization(identity.Labels[coreconstants.OrganizationLabel])
+	objectMeta = objectMeta.WithProject(identity.Labels[coreconstants.ProjectLabel])
 	objectMeta = objectMeta.WithLabel(constants.RegionLabel, p.region.Name)
-	objectMeta = objectMeta.WithLabel(constants.IdentityLabel, identityID)
+	objectMeta = objectMeta.WithLabel(constants.IdentityLabel, identity.Name)
 
 	physicalNetwork := &unikornv1.PhysicalNetwork{
 		ObjectMeta: objectMeta.Get(ctx),

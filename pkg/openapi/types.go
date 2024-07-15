@@ -98,7 +98,7 @@ type IdentitiesRead = []IdentityRead
 
 // IdentityRead A provider specific identity.
 type IdentityRead struct {
-	Metadata externalRef0.RegionScopedResourceMetadata `json:"metadata"`
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
 
 	// Spec A provider specific identity, while the client can list regions to infer the
 	// type, we don't requires this and return it with the response.  That can then
@@ -112,6 +112,9 @@ type IdentityRead struct {
 type IdentitySpec struct {
 	// Openstack Everything an OpenStack client needs to function.
 	Openstack *IdentitySpecOpenStack `json:"openstack,omitempty"`
+
+	// RegionId The region an identity is provisioned in.
+	RegionId string `json:"regionId"`
 
 	// Tags A list of tags.
 	Tags *TagList `json:"tags,omitempty"`
@@ -146,6 +149,9 @@ type IdentityWrite struct {
 
 // IdentityWriteSpec Request parameters for creating an identity.
 type IdentityWriteSpec struct {
+	// RegionId The region an identity is provisioned in.
+	RegionId string `json:"regionId"`
+
 	// Tags A list of tags.
 	Tags *TagList `json:"tags,omitempty"`
 }
@@ -280,8 +286,8 @@ type IdentityRequest = IdentityWrite
 // PhysicalNetworkRequest A physical network request.
 type PhysicalNetworkRequest = PhysicalNetworkWrite
 
-// PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentities for application/json ContentType.
-type PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesJSONRequestBody = IdentityWrite
+// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities for application/json ContentType.
+type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody = IdentityWrite
 
-// PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesIdentityIDPhysicalNetworksJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesIdentityIDPhysicalNetworks for application/json ContentType.
-type PostApiV1OrganizationsOrganizationIDProjectsProjectIDRegionsRegionIDIdentitiesIdentityIDPhysicalNetworksJSONRequestBody = PhysicalNetworkWrite
+// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalNetworksJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalNetworks for application/json ContentType.
+type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalNetworksJSONRequestBody = PhysicalNetworkWrite
