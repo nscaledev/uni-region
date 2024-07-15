@@ -140,8 +140,8 @@ github.com/ugorji/go/codec v1.2.12 h1:9LC83zGrHhuUA9l16C9AHXAqEV/2wBQ4nkvumAE65E
 github.com/ugorji/go/codec v1.2.12/go.mod h1:UNopzCgEMSXjBc6AOMqYvWC1ktqTAfzJZUZgYf6w6lg=
 github.com/unikorn-cloud/core v0.1.60 h1:N/4xkv3dNv8/ZM3VqyxsECm2Ji/gE3QBoLjGsEUQTg4=
 github.com/unikorn-cloud/core v0.1.60/go.mod h1:Cd0zU1LrKo+OwnnCwuTQ+QL3yibnkjDHtkujfDM4AdE=
-github.com/unikorn-cloud/identity v0.2.25 h1:nb45gnI8o/12idVodWtAVO5WRFW8cTg6PFQHYjLd3DM=
-github.com/unikorn-cloud/identity v0.2.25/go.mod h1:8WxgWetyrCvLjRGAeEWy5hWXDJ8prVz+FNt9sG17lV8=
+github.com/unikorn-cloud/identity v0.2.26 h1:wvyWSe188RwgKjfvCfHlTvOjpbGdQtXwohFV77WTnDg=
+github.com/unikorn-cloud/identity v0.2.26/go.mod h1:8WxgWetyrCvLjRGAeEWy5hWXDJ8prVz+FNt9sG17lV8=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
