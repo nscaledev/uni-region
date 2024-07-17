@@ -42,6 +42,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/server/util"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -63,9 +64,10 @@ type Handler struct {
 
 func New(client client.Client, namespace string, options *Options, identity *identityclient.Client) (*Handler, error) {
 	h := &Handler{
-		client:   client,
-		options:  options,
-		identity: identity,
+		client:    client,
+		namespace: namespace,
+		options:   options,
+		identity:  identity,
 	}
 
 	return h, nil
@@ -341,6 +343,30 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 
 	h.setCacheable(w)
 	util.WriteJSONResponse(w, r, http.StatusCreated, convertIdentity(identity, cloudconfig))
+}
+
+func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "identities", identityapi.Delete, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	resource := &unikornv1.Identity{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      identityID,
+			Namespace: h.namespace,
+		},
+	}
+
+	if err := h.client.Delete(r.Context(), resource); err != nil {
+		if kerrors.IsNotFound(err) {
+			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
+			return
+		}
+
+		errors.HandleError(w, r, errors.OAuth2ServerError("failed to delete identity").WithError(err))
+		return
+	}
 }
 
 func convertPhysicalNetwork(in *unikornv1.PhysicalNetwork) *openapi.PhysicalNetworkRead {
