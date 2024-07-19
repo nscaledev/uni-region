@@ -313,14 +313,14 @@ func (p *Provider) Images(ctx context.Context) (providers.ImageList, error) {
 	for i := range resources {
 		image := &resources[i]
 
-		kuebernetesVersion, _ := image.Properties["k8s"].(string)
+		kubernetesVersion, _ := image.Properties["k8s"].(string)
 
 		result = append(result, providers.Image{
 			ID:                image.ID,
 			Name:              image.Name,
 			Created:           image.CreatedAt,
 			Modified:          image.UpdatedAt,
-			KubernetesVersion: semver(kuebernetesVersion),
+			KubernetesVersion: semver(kubernetesVersion),
 		})
 	}
 
@@ -393,10 +393,7 @@ func (p *Provider) getRequiredRoles() []string {
 		return p.region.Spec.Openstack.Identity.ClusterRoles
 	}
 
-	// TODO: _member_ shouldn't be necessary, delete me when we get a hsndle on it.
-	// This is quired by Octavia to list providers and load balancers at the very least.
 	defaultRoles := []string{
-		"_member_",
 		"member",
 		"load-balancer_member",
 	}
