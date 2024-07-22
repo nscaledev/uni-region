@@ -1,4 +1,5 @@
 {{- range $region := .Values.regions }}
+---
 apiVersion: region.unikorn-cloud.org/v1alpha1
 kind: Region
 metadata:
