@@ -288,14 +288,6 @@ func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
 	return result, nil
 }
 
-func semver(in string) string {
-	if !strings.HasPrefix(in, "v") {
-		return "v" + in
-	}
-
-	return in
-}
-
 // Images lists all available images.
 func (p *Provider) Images(ctx context.Context) (providers.ImageList, error) {
 	imageService, err := p.image(ctx)
@@ -308,20 +300,44 @@ func (p *Provider) Images(ctx context.Context) (providers.ImageList, error) {
 		return nil, err
 	}
 
-	result := make(providers.ImageList, 0, len(resources))
+	result := make(providers.ImageList, len(resources))
 
 	for i := range resources {
 		image := &resources[i]
 
-		kubernetesVersion, _ := image.Properties["k8s"].(string)
+		virtualization, _ := image.Properties["unikorn:virtualization"].(string)
+		kubernetesVersion, _ := image.Properties["unikorn:kubernetes_version"].(string)
 
-		result = append(result, providers.Image{
+		providerImage := providers.Image{
 			ID:                image.ID,
 			Name:              image.Name,
 			Created:           image.CreatedAt,
 			Modified:          image.UpdatedAt,
-			KubernetesVersion: semver(kubernetesVersion),
-		})
+			Virtualization:    providers.ImageVirtualization(virtualization),
+			KubernetesVersion: kubernetesVersion,
+		}
+
+		if gpuVendor, ok := image.Properties["unikorn:gpu_vendor"].(string); ok {
+			gpuDriver, ok := image.Properties["unikorn:gpu_driver_version"].(string)
+			if !ok {
+				// TODO: it's perhaps better to just skip this one, rather than
+				// kill the entire service??
+				return nil, fmt.Errorf("%w: GPU driver is not defined for image %s", ErrKeyUndefined, image.ID)
+			}
+
+			gpu := &providers.ImageGPU{
+				Vendor: providers.GPUVendor(gpuVendor),
+				Driver: gpuDriver,
+			}
+
+			if models, ok := image.Properties["unikorn:gpu_models"].(string); ok {
+				gpu.Models = strings.Split(models, ",")
+			}
+
+			providerImage.GPU = gpu
+		}
+
+		result[i] = providerImage
 	}
 
 	return result, nil

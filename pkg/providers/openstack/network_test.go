@@ -40,11 +40,13 @@ func TestVLANAllocateRanges(t *testing.T) {
 		{
 			name: "SingleSegment",
 			options: &unikornv1.RegionOpenstackNetworkSpec{
-				VLAN: &unikornv1.VLANSpec{
-					Segments: []unikornv1.VLANSegment{
-						{
-							StartID: 100,
-							EndID:   200,
+				ProviderNetworks: &unikornv1.ProviderNetworks{
+					VLAN: &unikornv1.VLANSpec{
+						Segments: []unikornv1.VLANSegment{
+							{
+								StartID: 100,
+								EndID:   200,
+							},
 						},
 					},
 				},

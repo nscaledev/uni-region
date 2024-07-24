@@ -254,6 +254,13 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/regionRead'
+    imageVirtualization:
+      description: What type of machine the image is for.
+      type: string
+      enum:
+      - virtualized
+      - baremetal
+      - any
     softwareVersions:
       description: Image preinstalled version version metadata.
       type: object
@@ -266,26 +273,40 @@ components:
       enum:
       - NVIDIA
       - AMD
-    gpuDriver:
+    gpuModel:
+      description: A GPU model number.
+      type: string
+    gpuModelList:
+      description: A list of GPU model numbers.
+      type: array
+      items:
+        $ref: '#/components/schemas/gpuModel'
+    imageGpu:
       description: The GPU driver if installed.
       type: object
       required:
       - vendor
-      - version
+      - driver
       properties:
         vendor:
           $ref: '#/components/schemas/gpuVendor'
-        version:
+        driver:
           description: The GPU driver version, this is vendor specific.
           type: string
+        models:
+          $ref: '#/components/schemas/gpuModelList'
     imageSpec:
       description: An image.
       type: object
+      required:
+      - virtualization
       properties:
+        virtualization:
+          $ref: '#/components/schemas/imageVirtualization'
         softwareVersions:
           $ref: '#/components/schemas/softwareVersions'
-        gpuDriver:
-          $ref: '#/components/schemas/gpuDriver'
+        gpu:
+          $ref: '#/components/schemas/imageGpu'
     image:
       description: An image.
       type: object
@@ -569,11 +590,16 @@ components:
               name: ubu2204-v1.25.6-gpu-525.85.05-7ced4154
               creationTime: 2023-02-22T12:04:13Z
             spec:
+              virtualization: virtualized
               softwareVersions:
                 kubernetes: v1.25.6
-              gpuDriver:
+              gpu:
                 vendor: NVIDIA
-                version: 525.85.05
+                driver: 525.85.05
+                models:
+                - A100
+                - H100
+                - H200
     flavorsResponse:
       description: A list of flavors.
       content:

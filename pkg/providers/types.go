@@ -66,6 +66,14 @@ type GPU struct {
 // FlavorList allows us to attach sort functions and the like.
 type FlavorList []Flavor
 
+type ImageVirtualization string
+
+const (
+	Virtualized ImageVirtualization = "virtualized"
+	Baremetal   ImageVirtualization = "baremetal"
+	Any         ImageVirtualization = "any"
+)
+
 // Image represents an operating system image.
 type Image struct {
 	// ID must be an immutable ID, preferably a UUID.
@@ -78,11 +86,25 @@ type Image struct {
 	Created time.Time
 	// Modified is when the image was modified.
 	Modified time.Time
+	// ImageVirtualization defines how the image can be used.
+	Virtualization ImageVirtualization
 	// KubernetesVersion is only populated if the image contains a pre-installed
 	// version of Kubernetes, this acts as a cache and improves provisioning performance.
 	// This is pretty much the only source of truth about Kubernetes versions at
 	// present, so should be populated.  It must be a semver (starts with a vN.N.N).
 	KubernetesVersion string
+	// GPU is any GPU specific configuration for scheduling on a specific flavor type.
+	GPU *ImageGPU
+}
+
+// ImageGPU defines image specific GPU compatibility information.
+type ImageGPU struct {
+	// Vendor is the vendor a GPU is compatible with.
+	Vendor GPUVendor
+	// Driver is the driver version string.
+	Driver string
+	// Models is a list of GPU models a driver is certified with.
+	Models []string
 }
 
 // ImageList allows us to attach sort functions and the like.

@@ -17,6 +17,13 @@ const (
 	NVIDIA GpuVendor = "NVIDIA"
 )
 
+// Defines values for ImageVirtualization.
+const (
+	Any         ImageVirtualization = "any"
+	Baremetal   ImageVirtualization = "baremetal"
+	Virtualized ImageVirtualization = "virtualized"
+)
+
 // Defines values for RegionType.
 const (
 	Openstack RegionType = "openstack"
@@ -66,14 +73,11 @@ type FlavorSpec struct {
 // Flavors A list of flavors.
 type Flavors = []Flavor
 
-// GpuDriver The GPU driver if installed.
-type GpuDriver struct {
-	// Vendor The GPU vendor.
-	Vendor GpuVendor `json:"vendor"`
+// GpuModel A GPU model number.
+type GpuModel = string
 
-	// Version The GPU driver version, this is vendor specific.
-	Version string `json:"version"`
-}
+// GpuModelList A list of GPU model numbers.
+type GpuModelList = []GpuModel
 
 // GpuSpec GPU specification.
 type GpuSpec struct {
@@ -167,14 +171,32 @@ type Image struct {
 	Spec ImageSpec `json:"spec"`
 }
 
+// ImageGpu The GPU driver if installed.
+type ImageGpu struct {
+	// Driver The GPU driver version, this is vendor specific.
+	Driver string `json:"driver"`
+
+	// Models A list of GPU model numbers.
+	Models *GpuModelList `json:"models,omitempty"`
+
+	// Vendor The GPU vendor.
+	Vendor GpuVendor `json:"vendor"`
+}
+
 // ImageSpec An image.
 type ImageSpec struct {
-	// GpuDriver The GPU driver if installed.
-	GpuDriver *GpuDriver `json:"gpuDriver,omitempty"`
+	// Gpu The GPU driver if installed.
+	Gpu *ImageGpu `json:"gpu,omitempty"`
 
 	// SoftwareVersions Image preinstalled version version metadata.
 	SoftwareVersions *SoftwareVersions `json:"softwareVersions,omitempty"`
+
+	// Virtualization What type of machine the image is for.
+	Virtualization ImageVirtualization `json:"virtualization"`
 }
+
+// ImageVirtualization What type of machine the image is for.
+type ImageVirtualization string
 
 // Images A list of images that are compatible with this platform.
 type Images = []Image

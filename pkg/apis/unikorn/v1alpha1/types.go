@@ -179,9 +179,15 @@ type GPUSpec struct {
 }
 
 type RegionOpenstackImageSpec struct {
-	// PropertiesInclude defines the set of properties that must all exist
-	// for an image to be advertised by the provider.
-	PropertiesInclude []string `json:"propertiesInclude,omitempty"`
+	// Selector defines a set of rules to lookup images.
+	// If not specified, all images are selected.
+	Selector *ImageSelector `json:"selector,omitempty"`
+}
+
+type ImageSelector struct {
+	// Properties defines the set of properties an image needs to have to
+	// be selected.
+	Properties []string `json:"properties,omitempty"`
 	// SigningKey defines a PEM encoded public ECDSA signing key used to verify
 	// the image is trusted.  If specified, an image must contain the "digest"
 	// property, the value of which must be a base64 encoded ECDSA signature of
@@ -190,6 +196,26 @@ type RegionOpenstackImageSpec struct {
 }
 
 type RegionOpenstackNetworkSpec struct {
+	// ExternalNetworks allows external network options to be specified.
+	ExternalNetworks *ExternalNetworks `json:"externalNetworks,omitempty"`
+	// ProviderNetworks allows provider networks to be configured.
+	ProviderNetworks *ProviderNetworks `json:"providerNetworks,omitempty"`
+}
+
+type ExternalNetworks struct {
+	// Selector defines a set of rules to lookup external networks.
+	// In none is specified, all external networks are selected.
+	Selector *NetworkSelector `json:"selector,omitempty"`
+}
+
+type NetworkSelector struct {
+	// IDs is an explicit list of network IDs.
+	IDs []string `json:"ids,omitempty"`
+	// Tags is an implicit selector of networks with a set of all specified tags.
+	Tags []string `json:"tags,omitempty"`
+}
+
+type ProviderNetworks struct {
 	// PhysicalNetwork is the neutron provider specific network name used
 	// to provision provider networks e.g. VLANs for bare metal clusters.
 	PhysicalNetwork *string `json:"physicalNetwork,omitempty"`

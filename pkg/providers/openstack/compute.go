@@ -107,6 +107,22 @@ func (c *ComputeClient) Flavors(ctx context.Context) ([]flavors.Flavor, error) {
 		return nil, err
 	}
 
+	// *************************************************************************
+	// HACK HACK HACK
+	// *************************************************************************
+	for i := range result {
+		f := &result[i]
+
+		if f.ID == "c9b3b8c6-7268-4ed3-98d3-76743e3436cf" {
+			f.VCPUs = 128
+			f.RAM = 2 * 1024 * 1024
+		}
+
+	}
+	// *************************************************************************
+	// HACK HACK HACK
+	// *************************************************************************
+
 	result = slices.DeleteFunc(result, func(flavor flavors.Flavor) bool {
 		// We are admin, so see all the things, throw out private flavors.
 		// TODO: we _could_ allow if our project is in the allowed IDs.

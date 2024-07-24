@@ -190,60 +190,93 @@ spec:
                   image:
                     description: Image is configuration for the image service.
                     properties:
-                      propertiesInclude:
+                      selector:
                         description: |-
-                          PropertiesInclude defines the set of properties that must all exist
-                          for an image to be advertised by the provider.
-                        items:
-                          type: string
-                        type: array
-                      signingKey:
-                        description: |-
-                          SigningKey defines a PEM encoded public ECDSA signing key used to verify
-                          the image is trusted.  If specified, an image must contain the "digest"
-                          property, the value of which must be a base64 encoded ECDSA signature of
-                          the SHA256 hash of the image ID.
-                        format: byte
-                        type: string
+                          Selector defines a set of rules to lookup images.
+                          If not specified, all images are selected.
+                        properties:
+                          properties:
+                            description: |-
+                              Properties defines the set of properties an image needs to have to
+                              be selected.
+                            items:
+                              type: string
+                            type: array
+                          signingKey:
+                            description: |-
+                              SigningKey defines a PEM encoded public ECDSA signing key used to verify
+                              the image is trusted.  If specified, an image must contain the "digest"
+                              property, the value of which must be a base64 encoded ECDSA signature of
+                              the SHA256 hash of the image ID.
+                            format: byte
+                            type: string
+                        type: object
                     type: object
                   network:
                     description: Network is configuration for the network service.
                     properties:
-                      physicalNetwork:
-                        description: |-
-                          PhysicalNetwork is the neutron provider specific network name used
-                          to provision provider networks e.g. VLANs for bare metal clusters.
-                        type: string
-                      vlan:
-                        description: |-
-                          VLAN is the VLAN configuration.  If not specified and a VLAN provider
-                          network is requested then the ID will be allocated between 1-6094
-                          inclusive.
+                      externalNetworks:
+                        description: ExternalNetworks allows external network options
+                          to be specified.
                         properties:
-                          segments:
+                          selector:
                             description: |-
-                              Segements allow blocks of VLAN IDs to be allocated from.  In a multi
-                              tenant system, it's possible and perhaps necessary, that this controller
-                              be limited to certain ranges to avoid split brain scenarios when another
-                              user or system is allocating VLAN IDs for itself.
-                            items:
-                              properties:
-                                endId:
-                                  description: EndID is the VLAN ID at the end of
-                                    the range.
-                                  maximum: 4094
-                                  type: integer
-                                startId:
-                                  description: StartID is VLAN ID at the start of
-                                    the range.
-                                  minimum: 1
-                                  type: integer
-                              required:
-                              - endId
-                              - startId
-                              type: object
-                            minItems: 1
-                            type: array
+                              Selector defines a set of rules to lookup external networks.
+                              In none is specified, all external networks are selected.
+                            properties:
+                              ids:
+                                description: IDs is an explicit list of network IDs.
+                                items:
+                                  type: string
+                                type: array
+                              tags:
+                                description: Tags is an implicit selector of networks
+                                  with a set of all specified tags.
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                        type: object
+                      providerNetworks:
+                        description: ProviderNetworks allows provider networks to
+                          be configured.
+                        properties:
+                          physicalNetwork:
+                            description: |-
+                              PhysicalNetwork is the neutron provider specific network name used
+                              to provision provider networks e.g. VLANs for bare metal clusters.
+                            type: string
+                          vlan:
+                            description: |-
+                              VLAN is the VLAN configuration.  If not specified and a VLAN provider
+                              network is requested then the ID will be allocated between 1-6094
+                              inclusive.
+                            properties:
+                              segments:
+                                description: |-
+                                  Segements allow blocks of VLAN IDs to be allocated from.  In a multi
+                                  tenant system, it's possible and perhaps necessary, that this controller
+                                  be limited to certain ranges to avoid split brain scenarios when another
+                                  user or system is allocating VLAN IDs for itself.
+                                items:
+                                  properties:
+                                    endId:
+                                      description: EndID is the VLAN ID at the end
+                                        of the range.
+                                      maximum: 4094
+                                      type: integer
+                                    startId:
+                                      description: StartID is VLAN ID at the start
+                                        of the range.
+                                      minimum: 1
+                                      type: integer
+                                  required:
+                                  - endId
+                                  - startId
+                                  type: object
+                                minItems: 1
+                                type: array
+                            type: object
                         type: object
                     type: object
                   serviceAccountSecret:
