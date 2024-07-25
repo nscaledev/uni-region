@@ -12,12 +12,12 @@ organization: unikorn-cloud
 # Set the docker configuration, doing so will create a secret and link it
 # to the service accounts of all the controllers.  You can do something like:
 # --set dockerConfig=$(cat ~/.docker/config.json | base64 -w0)
-dockerConfig:
+# dockerConfig:
 
 # Set the image pull secret on the service accounts of all the controllers.
 # This is an alternative to dockerConfigs, but unlikely to play ball with
 # ArgoCD as it's a foreign object that needs pruning.
-imagePullSecret:
+# imagePullSecret:
 
 # Region discovery information.
 # regions:
@@ -75,18 +75,41 @@ imagePullSecret:
 #         expression: ^(\d+)$
 #     # Image service configuration.
 #     image:
-#       # Images must contain all the following properties to be exposed.
-#       propertiesInclude:
-#       - k8s
-#       # If specified the image signing key defines a base64 PEM encoded ECDSA
-#       # public key used to trust images.  Images must have the "digest" property
-#       # defined, and its value must be the ECDSA signature of the SHA256 hash of
-#       # the image ID.
-#       signingKey: ~
+#       # Image selection, the result is a boolean intersection of chosen options.
+#       selector:
+#         # Images must contain all the following properties to be exposed.
+#         properties:
+#         - k8s
+#         # If specified the image signing key defines a base64 PEM encoded ECDSA
+#         # public key used to trust images.  Images must have the "digest" property
+#         # defined, and its value must be the ECDSA signature of the SHA256 hash of
+#         # the image ID.
+#         signingKey: ~
+#     # Network service configuration.
+#     network:
+#       # External network selection, the result is a boolean intersection of
+#       # chosen options.
+#       externalNetworks:
+#         # Explicit list of network IDs.
+#         ids:
+#         - 49d51e7d-1c57-4480-9328-b466f9a12818
+#         # Implicit tags a network must contain.
+#         tags:
+#         - unikorn:external-network
+#       # Provider network configuration.
+#       providerNetwoks:
+#         # Physical network to allocate network segements on.
+#         physicalNetwork: physnet1
+#         # VLAN configuration.
+#         vlan:
+#           # A set of valid VLAN ID ranges for allocation
+#           segments:
+#           - startID: 1
+#             endID: 4094
 
 # REST server specific configuration.
 # Allows override of the global default image.
-image:
+# image:
 
 # Sets the DNS hosts/X.509 Certs.
 region:

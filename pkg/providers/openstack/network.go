@@ -20,6 +20,7 @@ package openstack
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
@@ -48,9 +49,9 @@ var (
 type NetworkClient struct {
 	client *gophercloud.ServiceClient
 
-	externalNetworkCache *cache.TimeoutCache[[]networks.Network]
-
 	options *unikornv1.RegionOpenstackNetworkSpec
+
+	externalNetworkCache *cache.TimeoutCache[[]networks.Network]
 }
 
 // NewNetworkClient provides a simple one-liner to start networking.
@@ -67,6 +68,7 @@ func NewNetworkClient(ctx context.Context, provider CredentialProvider, options 
 
 	c := &NetworkClient{
 		client:               client,
+		options:              options,
 		externalNetworkCache: cache.New[[]networks.Network](time.Hour),
 	}
 
@@ -79,8 +81,8 @@ func NewTestNetworkClient(options *unikornv1.RegionOpenstackNetworkSpec) *Networ
 	}
 }
 
-// ExternalNetworks returns a list of external networks.
-func (c *NetworkClient) ExternalNetworks(ctx context.Context) ([]networks.Network, error) {
+// externalNetworks does a memoized lookup of external networks.
+func (c *NetworkClient) externalNetworks(ctx context.Context) ([]networks.Network, error) {
 	if result, ok := c.externalNetworkCache.Get(); ok {
 		return result, nil
 	}
@@ -97,15 +99,52 @@ func (c *NetworkClient) ExternalNetworks(ctx context.Context) ([]networks.Networ
 		return nil, err
 	}
 
-	var results []networks.Network
+	var result []networks.Network
 
-	if err := networks.ExtractNetworksInto(page, &results); err != nil {
+	if err := networks.ExtractNetworksInto(page, &result); err != nil {
 		return nil, err
 	}
 
-	c.externalNetworkCache.Set(results)
+	c.externalNetworkCache.Set(result)
 
-	return results, nil
+	return result, nil
+}
+
+// filterExternalNetwork returns true if the image should be filtered.
+func (c *NetworkClient) filterExternalNetwork(network *networks.Network) bool {
+	if c.options == nil || c.options.ExternalNetworks == nil || c.options.ExternalNetworks.Selector == nil {
+		return false
+	}
+
+	if c.options.ExternalNetworks.Selector.IDs != nil {
+		if !slices.Contains(c.options.ExternalNetworks.Selector.IDs, network.ID) {
+			return true
+		}
+	}
+
+	if c.options.ExternalNetworks.Selector.Tags != nil {
+		for _, tag := range c.options.ExternalNetworks.Selector.Tags {
+			if !slices.Contains(network.Tags, tag) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// ExternalNetworks returns a list of external networks.
+func (c *NetworkClient) ExternalNetworks(ctx context.Context) ([]networks.Network, error) {
+	result, err := c.externalNetworks(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result = slices.DeleteFunc(result, func(network networks.Network) bool {
+		return c.filterExternalNetwork(&network)
+	})
+
+	return result, nil
 }
 
 // AllocateVLAN does exactly that using configured ID ranges and existing networks.
@@ -114,12 +153,12 @@ func (c *NetworkClient) AllocateVLAN(ctx context.Context) (int, error) {
 
 	// If no configuration is given, own all of the IDs.  If there are a list
 	// of segments, only allow those.
-	if c.options == nil || c.options.VLAN == nil || c.options.VLAN.Segments == nil {
+	if c.options == nil || c.options.ProviderNetworks == nil || c.options.ProviderNetworks.VLAN == nil || c.options.ProviderNetworks.VLAN.Segments == nil {
 		for i := 1; i < 4096; i++ {
 			allocatable[i] = true
 		}
 	} else {
-		for _, segment := range c.options.VLAN.Segments {
+		for _, segment := range c.options.ProviderNetworks.VLAN.Segments {
 			for i := segment.StartID; i < segment.EndID+1; i++ {
 				allocatable[i] = true
 			}
@@ -138,7 +177,7 @@ func (c *NetworkClient) AllocateVLAN(ctx context.Context) (int, error) {
 
 // CreateVLANProviderNetwork creates a VLAN provider network for a project.
 func (c *NetworkClient) CreateVLANProviderNetwork(ctx context.Context, name string, projectID string) (int, *networks.Network, error) {
-	if c.options == nil || c.options.PhysicalNetwork == nil {
+	if c.options == nil || c.options.ProviderNetworks == nil || c.options.ProviderNetworks.PhysicalNetwork == nil {
 		return -1, nil, ErrConfiguration
 	}
 
@@ -161,7 +200,7 @@ func (c *NetworkClient) CreateVLANProviderNetwork(ctx context.Context, name stri
 		Segments: []provider.Segment{
 			{
 				NetworkType:     "vlan",
-				PhysicalNetwork: *c.options.PhysicalNetwork,
+				PhysicalNetwork: *c.options.ProviderNetworks.PhysicalNetwork,
 				SegmentationID:  vlanID,
 			},
 		},

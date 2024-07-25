@@ -81,11 +81,11 @@ func NewImageClient(ctx context.Context, provider CredentialProvider, options *u
 }
 
 func (c *ImageClient) validateProperties(image *images.Image) bool {
-	if c.options == nil {
+	if c.options == nil || c.options.Selector == nil {
 		return true
 	}
 
-	for _, r := range c.options.PropertiesInclude {
+	for _, r := range c.options.Selector.Properties {
 		if !slices.Contains(util.Keys(image.Properties), r) {
 			return false
 		}
@@ -95,7 +95,7 @@ func (c *ImageClient) validateProperties(image *images.Image) bool {
 }
 
 func (c *ImageClient) decodeSigningKey() (*ecdsa.PublicKey, error) {
-	pemBlock, _ := pem.Decode(c.options.SigningKey)
+	pemBlock, _ := pem.Decode(c.options.Selector.SigningKey)
 	if pemBlock == nil {
 		return nil, ErrPEMDecode
 	}
@@ -119,7 +119,7 @@ func (c *ImageClient) decodeSigningKey() (*ecdsa.PublicKey, error) {
 
 // verifyImage asserts the image is trustworthy for use with our goodselves.
 func (c *ImageClient) verifyImage(image *images.Image) bool {
-	if c.options == nil || c.options.SigningKey == nil {
+	if c.options == nil || c.options.Selector == nil || c.options.Selector.SigningKey == nil {
 		return true
 	}
 
@@ -129,7 +129,7 @@ func (c *ImageClient) verifyImage(image *images.Image) bool {
 
 	// These will be digitally signed by Baski when created, so we only trust
 	// those images.
-	signatureRaw, ok := image.Properties["digest"]
+	signatureRaw, ok := image.Properties["unikorn:digest"]
 	if !ok {
 		return false
 	}
@@ -154,24 +154,24 @@ func (c *ImageClient) verifyImage(image *images.Image) bool {
 	return ecdsa.VerifyASN1(signingKey, hash[:], signature)
 }
 
-func (c *ImageClient) imageValid(image *images.Image) bool {
+func (c *ImageClient) filterImage(image *images.Image) bool {
 	if image.Status != "active" {
-		return false
+		return true
 	}
 
 	if !c.validateProperties(image) {
-		return false
+		return true
 	}
 
 	if !c.verifyImage(image) {
-		return false
+		return true
 	}
 
-	return true
+	return false
 }
 
-// Images returns a list of images.
-func (c *ImageClient) Images(ctx context.Context) ([]images.Image, error) {
+// images does a memoized lookup of images.
+func (c *ImageClient) images(ctx context.Context) ([]images.Image, error) {
 	if result, ok := c.imageCache.Get(); ok {
 		return result, nil
 	}
@@ -195,17 +195,27 @@ func (c *ImageClient) Images(ctx context.Context) ([]images.Image, error) {
 		return nil, err
 	}
 
+	c.imageCache.Set(result)
+
+	return result, nil
+}
+
+// Images returns a list of images.
+func (c *ImageClient) Images(ctx context.Context) ([]images.Image, error) {
+	result, err := c.images(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Filter out images that aren't compatible.
 	result = slices.DeleteFunc(result, func(image images.Image) bool {
-		return !c.imageValid(&image)
+		return c.filterImage(&image)
 	})
 
 	// Sort by age, the newest should have the fewest CVEs!
 	slices.SortStableFunc(result, func(a, b images.Image) int {
 		return a.CreatedAt.Compare(b.CreatedAt)
 	})
-
-	c.imageCache.Set(result)
 
 	return result, nil
 }

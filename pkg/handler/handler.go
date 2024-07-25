@@ -177,6 +177,19 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(w ht
 	util.WriteJSONResponse(w, r, http.StatusOK, out)
 }
 
+func convertImageVirtualization(in providers.ImageVirtualization) openapi.ImageVirtualization {
+	switch in {
+	case providers.Virtualized:
+		return openapi.Virtualized
+	case providers.Baremetal:
+		return openapi.Baremetal
+	case providers.Any:
+		return openapi.Any
+	}
+
+	return ""
+}
+
 func convertImage(in providers.Image) openapi.Image {
 	out := openapi.Image{
 		Metadata: coreapi.StaticResourceMetadata{
@@ -185,12 +198,26 @@ func convertImage(in providers.Image) openapi.Image {
 			CreationTime: in.Created,
 		},
 		Spec: openapi.ImageSpec{
+			Virtualization:   convertImageVirtualization(in.Virtualization),
 			SoftwareVersions: &openapi.SoftwareVersions{},
 		},
 	}
 
 	if in.KubernetesVersion != "" {
 		out.Spec.SoftwareVersions.Kubernetes = coreutil.ToPointer(in.KubernetesVersion)
+	}
+
+	if in.GPU != nil {
+		gpu := &openapi.ImageGpu{
+			Vendor: convertGpuVendor(in.GPU.Vendor),
+			Driver: in.GPU.Driver,
+		}
+
+		if len(in.GPU.Models) > 0 {
+			gpu.Models = &in.GPU.Models
+		}
+
+		out.Spec.Gpu = gpu
 	}
 
 	return out
