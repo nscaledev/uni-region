@@ -353,6 +353,9 @@ components:
       - memory
       - disk
       properties:
+        baremetal:
+          description: Whether the flavor is for a dedicated machine.
+          type: boolean
         cpus:
           description: The number of CPUs.
           type: integer

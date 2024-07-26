@@ -217,25 +217,19 @@
                 "properties": {
                   "flavors": {
                     "type": "object",
-                    "required": [
-                      "selectionPolicy"
-                    ],
                     "properties": {
-                      "exclude": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "id"
-                          ],
-                          "properties": {
-                            "id": {
+                      "selector": {
+                        "type": "object",
+                        "properties": {
+                          "ids": {
+                            "type": "array",
+                            "items": {
                               "type": "string"
                             }
                           }
                         }
                       },
-                      "include": {
+                      "metadata": {
                         "type": "array",
                         "items": {
                           "type": "object",
@@ -248,11 +242,18 @@
                             },
                             "cpu": {
                               "properties": {
+                                "count": {
+                                  "type": "integer"
+                                },
                                 "family": {
                                   "type": "string"
                                 }
                               },
                               "type": "object"
+                            },
+                            "memory": {
+                              "type": "string",
+                              "pattern": "^(\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))))?$"
                             },
                             "gpu": {
                               "type": "object",
@@ -267,14 +268,7 @@
                                   "type": "integer"
                                 },
                                 "memory": {
-                                  "anyOf": [
-                                    {
-                                      "type": "integer"
-                                    },
-                                    {
-                                      "type": "string"
-                                    }
-                                  ],
+                                  "type": "string",
                                   "pattern": "^(\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))))?$"
                                 },
                                 "model": {

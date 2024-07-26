@@ -84,6 +84,32 @@ func (c *ComputeClient) KeyPairs(ctx context.Context) ([]keypairs.KeyPair, error
 	return keypairs.ExtractKeyPairs(page)
 }
 
+// mutateFlavors allows nova's view of fact to be altered...
+func (c *ComputeClient) mutateFlavors(f []flavors.Flavor) {
+	if c.options == nil || c.options.Flavors == nil {
+		return
+	}
+
+	for _, metadata := range c.options.Flavors.Metadata {
+		index := slices.IndexFunc(f, func(flavor flavors.Flavor) bool {
+			return flavor.ID == metadata.ID
+		})
+
+		if index < 0 {
+			continue
+		}
+
+		if metadata.CPU != nil && metadata.CPU.Count != nil {
+			f[index].VCPUs = *metadata.CPU.Count
+		}
+
+		if metadata.Memory != nil {
+			// Convert from bytes to MiB
+			f[index].RAM = int(metadata.Memory.Value() >> 20)
+		}
+	}
+}
+
 // Flavors returns a list of flavors.
 //
 //nolint:cyclop
@@ -107,21 +133,8 @@ func (c *ComputeClient) Flavors(ctx context.Context) ([]flavors.Flavor, error) {
 		return nil, err
 	}
 
-	// *************************************************************************
-	// HACK HACK HACK
-	// *************************************************************************
-	for i := range result {
-		f := &result[i]
-
-		if f.ID == "c9b3b8c6-7268-4ed3-98d3-76743e3436cf" {
-			f.VCPUs = 128
-			f.RAM = 2 * 1024 * 1024
-		}
-
-	}
-	// *************************************************************************
-	// HACK HACK HACK
-	// *************************************************************************
+	// Mutate any flavors first, as this may alter their selection criteria.
+	c.mutateFlavors(result)
 
 	result = slices.DeleteFunc(result, func(flavor flavors.Flavor) bool {
 		// We are admin, so see all the things, throw out private flavors.
@@ -137,28 +150,12 @@ func (c *ComputeClient) Flavors(ctx context.Context) ([]flavors.Flavor, error) {
 		}
 
 		// Don't remove the flavor if it's implicitly selected by a lack of configuration.
-		if c.options == nil || c.options.Flavors == nil {
+		if c.options == nil || c.options.Flavors == nil || c.options.Flavors.Selector == nil {
 			return false
 		}
 
-		// If the selection policy is "allow all", then only reject if the flavor ID
-		// is in the exclusion list.  If the section policy is "reject all", then only
-		// allow if the flavor ID is in the inclusion list.
-		switch c.options.Flavors.SelectionPolicy {
-		case unikornv1.OpenstackFlavorSelectionPolicySelectAll:
-			ok := slices.ContainsFunc(c.options.Flavors.Exclude, func(exclusion unikornv1.OpenstackFlavorExclude) bool {
-				return flavor.ID == exclusion.ID
-			})
-
-			if ok {
-				return true
-			}
-		case unikornv1.OpenstackFlavorSelectionPolicySelectNone:
-			ok := slices.ContainsFunc(c.options.Flavors.Include, func(inclusion unikornv1.OpenstackFlavorInclude) bool {
-				return flavor.ID == inclusion.ID
-			})
-
-			if !ok {
+		if len(c.options.Flavors.Selector.IDs) > 0 {
+			if !slices.Contains(c.options.Flavors.Selector.IDs, flavor.ID) {
 				return true
 			}
 		}

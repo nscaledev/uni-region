@@ -123,6 +123,10 @@ func convertFlavor(in providers.Flavor) openapi.Flavor {
 		},
 	}
 
+	if in.Baremetal {
+		out.Spec.Baremetal = coreutil.ToPointer(true)
+	}
+
 	if in.GPU != nil {
 		out.Spec.Gpu = &openapi.GpuSpec{
 			Vendor: convertGpuVendor(in.GPU.Vendor),

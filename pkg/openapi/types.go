@@ -54,6 +54,9 @@ type Flavor struct {
 
 // FlavorSpec A flavor.
 type FlavorSpec struct {
+	// Baremetal Whether the flavor is for a dedicated machine.
+	Baremetal *bool `json:"baremetal,omitempty"`
+
 	// CpuFamily A free form CPU family description e.g. model number, architecture.
 	CpuFamily *string `json:"cpuFamily,omitempty"`
 
