@@ -331,7 +331,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseW
 		return
 	}
 
-	var resources unikornv1.IdentityList
+	var result unikornv1.IdentityList
 
 	options := &client.ListOptions{
 		LabelSelector: labels.SelectorFromSet(map[string]string{
@@ -339,12 +339,16 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseW
 		}),
 	}
 
-	if err := h.client.List(r.Context(), &resources, options); err != nil {
+	if err := h.client.List(r.Context(), &result, options); err != nil {
 		errors.HandleError(w, r, errors.OAuth2ServerError("unable to list identities").WithError(err))
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusOK, convertIdentityList(resources))
+	slices.SortFunc(result.Items, func(a, b unikornv1.Identity) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+
+	util.WriteJSONResponse(w, r, http.StatusOK, convertIdentityList(result))
 }
 
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter) {
