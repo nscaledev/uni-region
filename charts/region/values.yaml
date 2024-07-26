@@ -47,32 +47,22 @@ organization: unikorn-cloud
 #       serverGroupPolicy: soft-anti-affinity
 #       # Flavor selection and configuration.
 #       flavors:
-#         # The selection policy can be "All" or "None"
-#         selectionPolicy: All
-#         # Include specific flavors when the policy is "None".  In all cases
-#         # allows additional metadata to be exposed by the API that Openstack
-#         # cannot act as a source of truth for.
-#         include:
+#         # Include specific flavors.
+#         selector:
+#           ids:
+#           - 60ab8c22-ac61-467d-8680-03d0ecca23c9
+#         # Mutate flavors or provide extra information.
+#         metadata:
 #         - id: 60ab8c22-ac61-467d-8680-03d0ecca23c9
 #           cpu:
+#             count: 8
 #             family: Intel Xeon Platinum 8160T (Skylake)
+#           memory: 256Gi
 #           gpu:
 #             vendor: NVIDIA
 #             model: H100
 #             memory: 192Gi
 #             count: 2
-#         # Eclude specific flavors when the policy is "All".
-#         exclude:
-#         - id: d04d82d9-faa6-4b3b-9247-28b8a158b7ed
-#       # Flavors containing any of the specified extra specs will be discarded.
-#       flavorExtraSpecsExclude:
-#       - resources:CUSTOM_BAREMETAL
-#       # Define properties on flavors and how to extract the number of GPUs from them.
-#       gpuDescriptors:
-#       - property: resources:PGPU
-#         expression: ^(\d+)$
-#       - property: resources:VGPU
-#         expression: ^(\d+)$
 #     # Image service configuration.
 #     image:
 #       # Image selection, the result is a boolean intersection of chosen options.

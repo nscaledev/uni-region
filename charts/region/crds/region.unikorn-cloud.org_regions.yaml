@@ -69,25 +69,12 @@ spec:
                           Flavors defines how flavors are filtered and reported to
                           clients.  If not defined, then all flavors are exported.
                         properties:
-                          exclude:
-                            description: Exclude inhibits the export of flavors from
-                              the region service.
-                            items:
-                              properties:
-                                id:
-                                  description: ID flavor ID is the immutable Openstack
-                                    identifier for the flavor.
-                                  type: string
-                              required:
-                              - id
-                              type: object
-                            type: array
-                          include:
+                          metadata:
                             description: |-
-                              Include allows or augments flavors that can be exported by the region
-                              service as defined by the "selectionPolicy" property.  This explcitly
-                              allows a flavor to be used, and or allows metadata to be mapped to the
-                              flavor e.g. CPU/GPU information that isn't supported by OpenStack.
+                              Metadata allows flavors to be explicitly augmented with additional metadata.
+                              This acknowledges the fact that OpenStack is inadequate acting as a source
+                              of truth for machine topology, and needs external input to describe things
+                              like add on peripherals.
                             items:
                               properties:
                                 baremetal:
@@ -99,6 +86,12 @@ spec:
                                 cpu:
                                   description: CPU defines additional CPU metadata.
                                   properties:
+                                    count:
+                                      description: |-
+                                        Count allows you to override the number of CPUs.  Usually this wouldn't
+                                        be necessary, but alas some operators may not set this correctly for baremetal
+                                        flavors to make horizon display overcommit correctly...
+                                      type: integer
                                     family:
                                       description: |-
                                         Family is a free-form string that can communicate the CPU family to clients
@@ -143,28 +136,36 @@ spec:
                                   - vendor
                                   type: object
                                 id:
-                                  description: |-
-                                    ID is the immutable Openstack identifier for the flavor.
-                                    While most flavor metadata (CPUs/Memory) should be immutable, the name is
-                                    not, and may change due to sales and marketing people.
+                                  description: ID is the immutable Openstack identifier
+                                    for the flavor.
                                   type: string
+                                memory:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: Memory allows the memory amount to
+                                    be overridden.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
                               required:
                               - id
                               type: object
                             type: array
-                          selectionPolicy:
+                          selector:
                             description: |-
-                              SelectionPolicy defines the default set of flavors to export.  "All" exports
-                              all flavors, the "include" property defines additional metadata to
-                              merge with matching flavors and the "exclude" inhibits export.  "None" is a
-                              more secure policy that only exports those flavors defined in the "include"
-                              property, the "exclude" property is ignored as it's redundant.
-                            enum:
-                            - All
-                            - None
-                            type: string
-                        required:
-                        - selectionPolicy
+                              Selector allows flavors to be manually selected for inclusion.  The selected
+                              set is a boolean intersection of all defined filters in the selector.
+                              Note that there are some internal rules that will fiter out flavors such as
+                              if the flavor does not have enough resource to function correctly.
+                            properties:
+                              ids:
+                                description: |-
+                                  IDs is an explicit list of allowed flavors IDs.  If not specified,
+                                  then all flavors are considered.
+                                items:
+                                  type: string
+                                type: array
+                            type: object
                         type: object
                       serverGroupPolicy:
                         description: |-

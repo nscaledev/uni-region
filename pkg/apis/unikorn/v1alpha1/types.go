@@ -114,25 +114,26 @@ const (
 )
 
 type OpenstackFlavorsSpec struct {
-	// SelectionPolicy defines the default set of flavors to export.  "All" exports
-	// all flavors, the "include" property defines additional metadata to
-	// merge with matching flavors and the "exclude" inhibits export.  "None" is a
-	// more secure policy that only exports those flavors defined in the "include"
-	// property, the "exclude" property is ignored as it's redundant.
-	SelectionPolicy OpenstackFlavorSelectionPolicy `json:"selectionPolicy"`
-	// Include allows or augments flavors that can be exported by the region
-	// service as defined by the "selectionPolicy" property.  This explcitly
-	// allows a flavor to be used, and or allows metadata to be mapped to the
-	// flavor e.g. CPU/GPU information that isn't supported by OpenStack.
-	Include []OpenstackFlavorInclude `json:"include,omitempty"`
-	// Exclude inhibits the export of flavors from the region service.
-	Exclude []OpenstackFlavorExclude `json:"exclude,omitempty"`
+	// Selector allows flavors to be manually selected for inclusion.  The selected
+	// set is a boolean intersection of all defined filters in the selector.
+	// Note that there are some internal rules that will fiter out flavors such as
+	// if the flavor does not have enough resource to function correctly.
+	Selector *FlavorSelector `json:"selector,omitempty"`
+	// Metadata allows flavors to be explicitly augmented with additional metadata.
+	// This acknowledges the fact that OpenStack is inadequate acting as a source
+	// of truth for machine topology, and needs external input to describe things
+	// like add on peripherals.
+	Metadata []FlavorMetadata `json:"metadata,omitempty"`
 }
 
-type OpenstackFlavorInclude struct {
+type FlavorSelector struct {
+	// IDs is an explicit list of allowed flavors IDs.  If not specified,
+	// then all flavors are considered.
+	IDs []string `json:"ids,omitempty"`
+}
+
+type FlavorMetadata struct {
 	// ID is the immutable Openstack identifier for the flavor.
-	// While most flavor metadata (CPUs/Memory) should be immutable, the name is
-	// not, and may change due to sales and marketing people.
 	ID string `json:"id"`
 	// Baremetal indicates that this is a baremetal flavor, as opposed to a
 	// virtualized one in case this affects image selection or even how instances
@@ -140,17 +141,18 @@ type OpenstackFlavorInclude struct {
 	Baremetal bool `json:"baremetal,omitempty"`
 	// CPU defines additional CPU metadata.
 	CPU *CPUSpec `json:"cpu,omitempty"`
+	// Memory allows the memory amount to be overridden.
+	Memory *resource.Quantity `json:"memory,omitempty"`
 	// GPU defines additional GPU metadata.  When provided it will enable selection
 	// of images based on GPU vendor and model.
 	GPU *GPUSpec `json:"gpu,omitempty"`
 }
 
-type OpenstackFlavorExclude struct {
-	// ID flavor ID is the immutable Openstack identifier for the flavor.
-	ID string `json:"id"`
-}
-
 type CPUSpec struct {
+	// Count allows you to override the number of CPUs.  Usually this wouldn't
+	// be necessary, but alas some operators may not set this correctly for baremetal
+	// flavors to make horizon display overcommit correctly...
+	Count *int `json:"count,omitempty"`
 	// Family is a free-form string that can communicate the CPU family to clients
 	// e.g. "Xeon Platinum 8160T (Skylake)", and allows users to make scheduling
 	// decisions based on CPU architecture and performance etc.

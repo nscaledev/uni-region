@@ -254,14 +254,12 @@ func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
 
 		// Apply any extra metadata to the flavor.
 		if p.region.Spec.Openstack.Compute != nil && p.region.Spec.Openstack.Compute.Flavors != nil {
-			inclusions := p.region.Spec.Openstack.Compute.Flavors.Include
-
-			i := slices.IndexFunc(inclusions, func(inclusion unikornv1.OpenstackFlavorInclude) bool {
-				return flavor.ID == inclusion.ID
+			i := slices.IndexFunc(p.region.Spec.Openstack.Compute.Flavors.Metadata, func(metadata unikornv1.FlavorMetadata) bool {
+				return flavor.ID == metadata.ID
 			})
 
 			if i >= 0 {
-				metadata := &inclusions[i]
+				metadata := &p.region.Spec.Openstack.Compute.Flavors.Metadata[i]
 
 				f.Baremetal = metadata.Baremetal
 
