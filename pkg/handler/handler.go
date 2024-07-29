@@ -159,7 +159,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(w ht
 
 	// Apply ordering guarantees, ascending order with GPUs taking precedence over
 	// CPUs and memory.
-	slices.SortFunc(result, func(a, b providers.Flavor) int {
+	slices.SortStableFunc(result, func(a, b providers.Flavor) int {
 		if v := cmp.Compare(a.GPUCount(), b.GPUCount()); v != 0 {
 			return v
 		}
@@ -246,7 +246,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w htt
 	}
 
 	// Apply ordering guarantees, ordered by name.
-	slices.SortFunc(result, func(a, b providers.Image) int {
+	slices.SortStableFunc(result, func(a, b providers.Image) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 
@@ -344,7 +344,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseW
 		return
 	}
 
-	slices.SortFunc(result.Items, func(a, b unikornv1.Identity) int {
+	slices.SortStableFunc(result.Items, func(a, b unikornv1.Identity) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 
