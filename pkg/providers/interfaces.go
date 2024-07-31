@@ -32,9 +32,9 @@ type Provider interface {
 	// Images lists all available images.
 	Images(ctx context.Context) (ImageList, error)
 	// CreateIdentity creates a new identity for cloud infrastructure.
-	CreateIdentity(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*unikornv1.Identity, *CloudConfig, error)
+	CreateIdentity(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*unikornv1.Identity, error)
 	// DeleteIdentity cleans up an identity for cloud infrastructure.
-	DeleteIdentity(ctx context.Context, identityID string) error
+	DeleteIdentity(ctx context.Context, identity *unikornv1.Identity) error
 	// CreatePhysicalNetwork create a new physical network.
 	CreatePhysicalNetwork(ctx context.Context, identity *unikornv1.Identity, request *openapi.PhysicalNetworkWrite) (*unikornv1.PhysicalNetwork, error)
 	// ListExternalNetworks returns a list of external networks if the platform

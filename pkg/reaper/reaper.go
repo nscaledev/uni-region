@@ -143,7 +143,7 @@ func (r *Reaper) handleEvent(ctx context.Context, event *corev1.Event) error {
 		return fmt.Errorf("%w: failed to create provider client", err)
 	}
 
-	if err := provider.DeleteIdentity(ctx, identityID); err != nil {
+	if err := provider.DeleteIdentity(ctx, identity); err != nil {
 		return fmt.Errorf("%w: failed to delete identity", err)
 	}
 
