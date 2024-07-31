@@ -73,7 +73,7 @@ func NewComputeClient(ctx context.Context, provider CredentialProvider, options 
 func (c *ComputeClient) KeyPairs(ctx context.Context) ([]keypairs.KeyPair, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
-	_, span := tracer.Start(ctx, "/compute/v2/os-keypairs", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := tracer.Start(ctx, "GET /compute/v2/os-keypairs", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
 	page, err := keypairs.List(c.client, &keypairs.ListOpts{}).AllPages(ctx)
@@ -120,7 +120,7 @@ func (c *ComputeClient) Flavors(ctx context.Context) ([]flavors.Flavor, error) {
 
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
-	_, span := tracer.Start(ctx, "/compute/v2/flavors", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := tracer.Start(ctx, "GET /compute/v2/flavors", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
 	page, err := flavors.ListDetail(c.client, &flavors.ListOpts{SortKey: "name"}).AllPages(ctx)
@@ -172,7 +172,7 @@ func (c *ComputeClient) Flavors(ctx context.Context) ([]flavors.Flavor, error) {
 func (c *ComputeClient) AvailabilityZones(ctx context.Context) ([]availabilityzones.AvailabilityZone, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
-	_, span := tracer.Start(ctx, "/compute/v2/os-availability-zones", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := tracer.Start(ctx, "GET /compute/v2/os-availability-zones", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
 	page, err := availabilityzones.List(c.client).AllPages(ctx)
@@ -198,27 +198,12 @@ func (c *ComputeClient) AvailabilityZones(ctx context.Context) ([]availabilityzo
 	return filtered, nil
 }
 
-// ListServerGroups returns all server groups in the project.
-func (c *ComputeClient) ListServerGroups(ctx context.Context) ([]servergroups.ServerGroup, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "/compute/v2/os-server-groups", trace.WithSpanKind(trace.SpanKindClient))
-	defer span.End()
-
-	page, err := servergroups.List(c.client, &servergroups.ListOpts{}).AllPages(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return servergroups.ExtractServerGroups(page)
-}
-
 // CreateServerGroup creates the named server group with the given policy and returns
 // the result.
 func (c *ComputeClient) CreateServerGroup(ctx context.Context, name string) (*servergroups.ServerGroup, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
-	_, span := tracer.Start(ctx, "/compute/v2/os-server-groups", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := tracer.Start(ctx, "POST /compute/v2/os-server-groups", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
 	opts := &servergroups.CreateOpts{
@@ -231,4 +216,15 @@ func (c *ComputeClient) CreateServerGroup(ctx context.Context, name string) (*se
 	}
 
 	return servergroups.Create(ctx, c.client, opts).Extract()
+}
+
+// DeleteServerGroup removes a server group, this exists because nova does do any cleanup
+// on project deletion and just orphans the resource.
+func (c *ComputeClient) DeleteServerGroup(ctx context.Context, id string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "DELETE /compute/v2/os-server-groups/"+id)
+	defer span.End()
+
+	return servergroups.Delete(ctx, c.client, id).ExtractErr()
 }

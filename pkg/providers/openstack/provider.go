@@ -574,6 +574,7 @@ func (p *Provider) CreateIdentity(ctx context.Context, organizationID, projectID
 				CloudConfig: cloudConfig,
 				Cloud:       cloud,
 				UserID:      user.ID,
+				Password:    password,
 				ProjectID:   project.ID,
 			},
 		},
@@ -593,6 +594,20 @@ func (p *Provider) CreateIdentity(ctx context.Context, organizationID, projectID
 
 // DeleteIdentity cleans up an identity for cloud infrastructure.
 func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Identity) error {
+	// Rescope to the user/project...
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, identity.Spec.OpenStack.UserID, identity.Spec.OpenStack.Password, identity.Spec.OpenStack.ProjectID)
+
+	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	if err != nil {
+		return err
+	}
+
+	if identity.Spec.OpenStack.ServerGroupID != nil {
+		if err := computeService.DeleteServerGroup(ctx, *identity.Spec.OpenStack.ServerGroupID); err != nil {
+			return err
+		}
+	}
+
 	identityService, err := p.identity(ctx)
 	if err != nil {
 		return err

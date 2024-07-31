@@ -55,7 +55,7 @@ func NewBlockStorageClient(ctx context.Context, provider CredentialProvider) (*B
 
 // AvailabilityZones retrieves block storage availability zones.
 func (c *BlockStorageClient) AvailabilityZones(ctx context.Context) ([]availabilityzones.AvailabilityZone, error) {
-	url := c.client.ServiceURL("os-availability-zone")
+	url := c.client.ServiceURL("GET /block-storage/v3/os-availability-zone")
 
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
