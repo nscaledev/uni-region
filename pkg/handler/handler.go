@@ -20,6 +20,7 @@ package handler
 
 import (
 	"cmp"
+	"context"
 	"encoding/base64"
 	"fmt"
 	"net/http"
@@ -42,7 +43,6 @@ import (
 	"github.com/unikorn-cloud/region/pkg/server/util"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -80,6 +80,20 @@ func (h *Handler) setCacheable(w http.ResponseWriter) {
 
 func (h *Handler) setUncacheable(w http.ResponseWriter) {
 	w.Header().Add("Cache-Control", "no-cache")
+}
+
+func (h *Handler) getIdentity(ctx context.Context, id string) (*unikornv1.Identity, error) {
+	identity := &unikornv1.Identity{}
+
+	if err := h.client.Get(ctx, client.ObjectKey{Namespace: h.namespace, Name: id}, identity); err != nil {
+		if kerrors.IsNotFound(err) {
+			return nil, errors.HTTPNotFound().WithError(err)
+		}
+
+		return nil, errors.OAuth2ServerError("unable to lookup identity").WithError(err)
+	}
+
+	return identity, nil
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
@@ -283,32 +297,33 @@ func convertTags(in unikornv1.TagList) openapi.TagList {
 	return out
 }
 
-func convertIdentity(identity *unikornv1.Identity, in *providers.CloudConfig) *openapi.IdentityRead {
+func convertIdentity(in *unikornv1.Identity) *openapi.IdentityRead {
 	out := &openapi.IdentityRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(identity, coreapi.ResourceProvisioningStatusProvisioned),
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, coreapi.ResourceProvisioningStatusProvisioned),
 		Spec: openapi.IdentitySpec{
-			RegionId: identity.Labels[constants.RegionLabel],
+			RegionId: in.Labels[constants.RegionLabel],
 		},
 	}
 
-	if tags := convertTags(identity.Spec.Tags); tags != nil {
+	if tags := convertTags(in.Spec.Tags); tags != nil {
 		out.Spec.Tags = &tags
 	}
 
-	switch identity.Spec.Provider {
+	switch in.Spec.Provider {
 	case unikornv1.ProviderOpenstack:
 		out.Spec.Type = openapi.Openstack
 
+		cloudConfig := base64.URLEncoding.EncodeToString(in.Spec.OpenStack.CloudConfig)
+
 		out.Spec.Openstack = &openapi.IdentitySpecOpenStack{
-			UserId:    identity.Spec.OpenStack.UserID,
-			ProjectId: identity.Spec.OpenStack.ProjectID,
+			CloudConfig: cloudConfig,
+			Cloud:       in.Spec.OpenStack.Cloud,
+			UserId:      in.Spec.OpenStack.UserID,
+			ProjectId:   in.Spec.OpenStack.ProjectID,
 		}
 
-		if in != nil {
-			cloudConfig := base64.URLEncoding.EncodeToString(in.OpenStack.Credentials.CloudConfig)
-
-			out.Spec.Openstack.Cloud = &in.OpenStack.Credentials.Cloud
-			out.Spec.Openstack.CloudConfig = &cloudConfig
+		if in.Spec.OpenStack.ServerGroupID != nil {
+			out.Spec.Openstack.ServerGroupId = in.Spec.OpenStack.ServerGroupID
 		}
 	}
 
@@ -319,7 +334,7 @@ func convertIdentityList(in unikornv1.IdentityList) openapi.IdentitiesRead {
 	out := make(openapi.IdentitiesRead, len(in.Items))
 
 	for i := range in.Items {
-		out[i] = *convertIdentity(&in.Items[i], nil)
+		out[i] = *convertIdentity(&in.Items[i])
 	}
 
 	return out
@@ -370,14 +385,14 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	identity, cloudconfig, err := provider.CreateIdentity(r.Context(), organizationID, projectID, request)
+	identity, err := provider.CreateIdentity(r.Context(), organizationID, projectID, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
 	h.setCacheable(w)
-	util.WriteJSONResponse(w, r, http.StatusCreated, convertIdentity(identity, cloudconfig))
+	util.WriteJSONResponse(w, r, http.StatusCreated, convertIdentity(identity))
 }
 
 func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
@@ -386,22 +401,24 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		return
 	}
 
-	resource := &unikornv1.Identity{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      identityID,
-			Namespace: h.namespace,
-		},
+	identity, err := h.getIdentity(r.Context(), identityID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
 	}
 
-	if err := h.client.Delete(r.Context(), resource); err != nil {
-		if kerrors.IsNotFound(err) {
-			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
-			return
-		}
+	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), identity.Labels[constants.RegionLabel])
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
 
+	if err := provider.DeleteIdentity(r.Context(), identity); err != nil {
 		errors.HandleError(w, r, errors.OAuth2ServerError("failed to delete identity").WithError(err))
 		return
 	}
+
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func convertPhysicalNetwork(in *unikornv1.PhysicalNetwork) *openapi.PhysicalNetworkRead {
@@ -429,14 +446,8 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	identity := &unikornv1.Identity{}
-
-	if err := h.client.Get(r.Context(), client.ObjectKey{Namespace: h.namespace, Name: identityID}, identity); err != nil {
-		if kerrors.IsNotFound(err) {
-			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
-			return
-		}
-
+	identity, err := h.getIdentity(r.Context(), identityID)
+	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}

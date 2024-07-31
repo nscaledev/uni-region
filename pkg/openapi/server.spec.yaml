@@ -430,6 +430,8 @@ components:
       description: Everything an OpenStack client needs to function.
       type: object
       required:
+      - cloud
+      - cloudConfig
       - userId
       - projectId
       properties:
@@ -444,6 +446,9 @@ components:
           type: string
         projectId:
           description: Project identifier allocated for the infrastructure.
+          type: string
+        serverGroupId:
+          description: Server group identifier allocated for the intrastructure.
           type: string
     identitySpec:
       description: |-
@@ -483,20 +488,14 @@ components:
     physicalNetworkSpec:
       description: A phyical network's specification.
       type: object
-      required:
-      - prefix
       properties:
         tags:
           $ref: '#/components/schemas/tagList'
-        prefix:
-          description: An IPv4 address prefix.
-          type: string
     physicalNetworkWrite:
       description: A physical network request.
       type: object
       required:
       - metadata
-      - spec
       properties:
         metadata:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
@@ -507,7 +506,6 @@ components:
       type: object
       required:
       - metadata
-      - spec
       properties:
         metadata:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
@@ -564,7 +562,6 @@ components:
               tags:
               - name: cluster-id
                 value: 9361402c-f998-49cc-ab21-9bb99afcfde8
-              prefix: 10.0.0.0/8
   responses:
     regionsResponse:
       description: A list of regions.
@@ -687,8 +684,6 @@ components:
               creationTime: 2024-05-31T14:11:00Z
               createdBy: john.doe@acme.com
               provisioningStatus: provisioned
-            spec:
-              prefix: 10.0.0.0/8
     externalNetworksResponse:
       description: A list of valid external networks.
       content:

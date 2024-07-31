@@ -61,14 +61,27 @@ spec:
                 description: OpenStack is populated when the provider type is set
                   to "openstack".
                 properties:
+                  cloud:
+                    description: Cloud is the cloud name in the cloud config to use.
+                    type: string
+                  cloudConfig:
+                    description: CloudConfig is a client compatible cloud configuration.
+                    format: byte
+                    type: string
                   projectID:
                     description: ProjectID is the ID of the project created for the
                       identity.
+                    type: string
+                  serverGroupID:
+                    description: ServerGroupID is the ID of the server group created
+                      for the identity.
                     type: string
                   userID:
                     description: UserID is the ID of the user created for the identity.
                     type: string
                 required:
+                - cloud
+                - cloudConfig
                 - projectID
                 - userID
                 type: object

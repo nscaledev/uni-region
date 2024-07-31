@@ -133,13 +133,16 @@ type IdentitySpec struct {
 // IdentitySpecOpenStack Everything an OpenStack client needs to function.
 type IdentitySpecOpenStack struct {
 	// Cloud The name of the cloud in the cloud config.
-	Cloud *string `json:"cloud,omitempty"`
+	Cloud string `json:"cloud"`
 
 	// CloudConfig A base64 encoded cloud config file.
-	CloudConfig *string `json:"cloudConfig,omitempty"`
+	CloudConfig string `json:"cloudConfig"`
 
 	// ProjectId Project identifier allocated for the infrastructure.
 	ProjectId string `json:"projectId"`
+
+	// ServerGroupId Server group identifier allocated for the intrastructure.
+	ServerGroupId *string `json:"serverGroupId,omitempty"`
 
 	// UserId User identitifer allocated for the infrastructure.
 	UserId string `json:"userId"`
@@ -212,14 +215,11 @@ type PhysicalNetworkRead struct {
 	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
 
 	// Spec A phyical network's specification.
-	Spec PhysicalNetworkSpec `json:"spec"`
+	Spec *PhysicalNetworkSpec `json:"spec,omitempty"`
 }
 
 // PhysicalNetworkSpec A phyical network's specification.
 type PhysicalNetworkSpec struct {
-	// Prefix An IPv4 address prefix.
-	Prefix string `json:"prefix"`
-
 	// Tags A list of tags.
 	Tags *TagList `json:"tags,omitempty"`
 }
@@ -230,7 +230,7 @@ type PhysicalNetworkWrite struct {
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
 
 	// Spec A phyical network's specification.
-	Spec PhysicalNetworkSpec `json:"spec"`
+	Spec *PhysicalNetworkSpec `json:"spec,omitempty"`
 }
 
 // RegionRead A region.

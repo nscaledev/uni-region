@@ -301,10 +301,16 @@ type IdentitySpec struct {
 }
 
 type IdentitySpecOpenStack struct {
+	// CloudConfig is a client compatible cloud configuration.
+	CloudConfig []byte `json:"cloudConfig"`
+	// Cloud is the cloud name in the cloud config to use.
+	Cloud string `json:"cloud"`
 	// UserID is the ID of the user created for the identity.
 	UserID string `json:"userID"`
 	// ProjectID is the ID of the project created for the identity.
 	ProjectID string `json:"projectID"`
+	// ServerGroupID is the ID of the server group created for the identity.
+	ServerGroupID *string `json:"serverGroupID,omitempty"`
 }
 
 type IdentityStatus struct {

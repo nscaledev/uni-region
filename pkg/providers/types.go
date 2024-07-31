@@ -110,47 +110,6 @@ type ImageGPU struct {
 // ImageList allows us to attach sort functions and the like.
 type ImageList []Image
 
-// ProviderType defines the provider to the client, while this is implicit,
-// as you had to select a region in the first instance, it's handy to refer to
-// to perform provider specific configuration.
-type ProviderType string
-
-const (
-	ProviderTypeOpenStack ProviderType = "openstack"
-)
-
-// OpenStackCloudCredentials define OpenStack specific identity information
-// which is usually in the form of a cloud config for most uses.
-type OpenStackCloudCredentials struct {
-	Cloud       string
-	CloudConfig []byte
-}
-
-// OpenStackCloudState is used to propagate pertinent inforamtion up to the client
-// which is especially relevant for piecing together API logs and provider logs.
-type OpenStackCloudState struct {
-	// UserID is the unique user ID.
-	UserID string
-	// ProjectID is the unique project ID.
-	ProjectID string
-}
-
-// OpenStackCloudConfig bundles together various OpenStack specific state.
-type OpenStackCloudConfig struct {
-	// Credentials contain login data, bound to a user and project.
-	Credentials *OpenStackCloudCredentials
-	// State holds other pertinent metadata.
-	State *OpenStackCloudState
-}
-
-// CloudConfig is a top level provider "agnostic" type to be passed to the HTTP handler.
-type CloudConfig struct {
-	// Type defines the provider type.
-	Type ProviderType
-	// OpenStack is populated when the type is "openstack"
-	OpenStack *OpenStackCloudConfig
-}
-
 // ExternalNetwork represents an external network.
 type ExternalNetwork struct {
 	// ID is the provider specific network ID.
