@@ -17,10 +17,11 @@ Start by selecting a unique name that will be used for the deployment's name, pr
 ```bash
 export USER=unikorn-staging
 export DOMAIN=unikorn-staging
+export PROJECT=unikorn-default
 export PASSWORD=$(apg -n 1 -m 24)
 ```
 
-Create the domain.
+#### Create the domain.
 The use of project domains for projects deployed to provision Kubernetes cluster achieves a few aims.
 First namespace isolation.
 Second is a security consideration.
@@ -32,19 +33,32 @@ A domain may also aid in simplifying operations like auditing and capacity plann
 DOMAIN_ID=$(openstack domain create ${DOMAIN} -f json | jq -r .id)
 ```
 
-Crete the user.
+#### Create the project.
+As the OpenStack provider for the region controller also functions as a client in order to retrieve information such as available images, flavors, and so on it also needs to be associated with a project so that the default policy for various API requests is correctly satisfied:
+
+```bash
+PROJECT_ID=$(openstack project create $PROJECT --domain $DOMAIN -f json | jq -r .id)
+```
+
+#### Create the user.
 
 ```bash
 USER_ID=$(openstack user create --domain ${DOMAIN_ID} --password ${PASSWORD} ${USER} -f json | jq -r .id)
 ```
 
-Grant any roles to the user.
+### Grant any roles to the user.
 When a Kubernetes cluster is provisioned, it will be done using application credentials, so ensure any required application credentials as configured for the region are explicitly associated with the user here.
 
 ```bash
-for role in _member_ member load-balancer_member manager; do
+for role in member load-balancer_member manager; do
 	openstack role add --user ${USER_ID} --domain ${DOMAIN_ID} ${role}
 done
+```
+
+And also grant the `member` role on the project we created in a previous step:
+
+```bash
+openstack role add --user ${USER_ID} --project ${PROJECT_ID} member
 ```
 
 ### Unikorn Configuration
@@ -54,9 +68,10 @@ This can be configured as follows.
 
 ```bash
 kubectl create secret generic -n unikorn-region gb-north-1-credentials \
-	--from-literal=domain-id=${DOMAIN_ID} \
-	--from-literal=user-id=${USER_ID} \
-	--from-literal=password=${PASSWORD}
+    --from-literal=domain-id=${DOMAIN_ID} \
+    --from-literal=project-id=${PROJECT_ID} \
+    --from-literal=user-id=${USER_ID} \
+    --from-literal=password=${PASSWORD}
 ```
 
 Finally we can create the region itself, although this should be statically configured via Helm.
@@ -83,9 +98,11 @@ spec:
 Cleanup actions.
 
 ```bash
+unset DOMAIN
 unset DOMAIN_ID
+unset USER
 unset USER_ID
 unset PASSWORD
-unset DOMAIN
-unset USER
+unset PROJECT
+unset PROJECT_ID
 ```

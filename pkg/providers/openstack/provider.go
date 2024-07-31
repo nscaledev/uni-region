@@ -61,9 +61,10 @@ type Provider struct {
 	// secret is the current region secret.
 	secret *corev1.Secret
 
-	domainID string
-	userID   string
-	password string
+	domainID  string
+	projectID string
+	userID    string
+	password  string
 
 	// DO NOT USE DIRECTLY, CALL AN ACCESSOR.
 	_identity *IdentityClient
@@ -141,11 +142,16 @@ func (p *Provider) serviceClientRefresh(ctx context.Context) error {
 		return fmt.Errorf("%w: password", ErrKeyUndefined)
 	}
 
-	// Pass in an empty string to use the default project.
-	providerClient := NewDomainScopedPasswordProvider(region.Spec.Openstack.Endpoint, string(userID), string(password), string(domainID))
+	projectID, ok := secret.Data["project-id"]
+	if !ok {
+		return fmt.Errorf("%w: project-id", ErrKeyUndefined)
+	}
 
-	// Create the clients.
-	identity, err := NewIdentityClient(ctx, providerClient)
+	// 'Regular' client calls to APIs for Nova, Glance etc. must to be project-scoped
+	providerClient := NewPasswordProvider(region.Spec.Openstack.Endpoint, string(userID), string(password), string(projectID))
+
+	// Identity client is scoped to a domain to use the manager role
+	identity, err := NewIdentityClient(ctx, NewDomainScopedPasswordProvider(region.Spec.Openstack.Endpoint, string(userID), string(password), string(domainID)))
 	if err != nil {
 		return err
 	}
@@ -170,6 +176,8 @@ func (p *Provider) serviceClientRefresh(ctx context.Context) error {
 	p.secret = secret
 
 	p.domainID = string(domainID)
+	p.projectID = string(projectID)
+
 	p.userID = string(userID)
 	p.password = string(password)
 

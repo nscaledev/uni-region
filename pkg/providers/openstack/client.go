@@ -103,8 +103,10 @@ func (p *PasswordProvider) Client(ctx context.Context) (*gophercloud.ProviderCli
 		IdentityEndpoint: p.endpoint,
 		UserID:           p.userID,
 		Password:         p.password,
-		TenantID:         p.projectID,
 		AllowReauth:      true,
+		Scope: &gophercloud.AuthScope{
+			ProjectID: p.projectID,
+		},
 	}
 
 	return authenticatedClient(ctx, options)
@@ -120,8 +122,9 @@ type DomainScopedPasswordProvider struct {
 
 // Ensure the interface is implemented.
 var _ CredentialProvider = &DomainScopedPasswordProvider{}
+var _ CredentialProvider = &PasswordProvider{}
 
-// NewDomainScopedPasswordProvider creates a client that comsumes passwords
+// NewDomainScopedPasswordProvider creates a client that consumes passwords
 // for authentication.
 func NewDomainScopedPasswordProvider(endpoint, userID, password, domainID string) *DomainScopedPasswordProvider {
 	return &DomainScopedPasswordProvider{
