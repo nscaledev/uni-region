@@ -178,7 +178,7 @@ func (c *ImageClient) images(ctx context.Context) ([]images.Image, error) {
 
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
-	_, span := tracer.Start(ctx, "/imageservice/v2/images", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := tracer.Start(ctx, "GET /image/v2/images", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
 	opts := &images.ListOpts{

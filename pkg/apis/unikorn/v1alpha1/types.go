@@ -307,6 +307,8 @@ type IdentitySpecOpenStack struct {
 	Cloud string `json:"cloud"`
 	// UserID is the ID of the user created for the identity.
 	UserID string `json:"userID"`
+	// Password is the login for the user.
+	Password string `json:"password"`
 	// ProjectID is the ID of the project created for the identity.
 	ProjectID string `json:"projectID"`
 	// ServerGroupID is the ID of the server group created for the identity.

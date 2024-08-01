@@ -89,7 +89,7 @@ func (c *NetworkClient) externalNetworks(ctx context.Context) ([]networks.Networ
 
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
-	_, span := tracer.Start(ctx, "/networking/v2.0/networks", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := tracer.Start(ctx, "GET /network/v2.0/networks", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
 	affirmative := true
@@ -188,7 +188,7 @@ func (c *NetworkClient) CreateVLANProviderNetwork(ctx context.Context, name stri
 
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
-	_, span := tracer.Start(ctx, "/networking/v2.0/networks", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := tracer.Start(ctx, "POST /network/v2.0/networks", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
 	opts := &provider.CreateOptsExt{
