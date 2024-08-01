@@ -230,14 +230,30 @@ components:
       type: string
       enum:
       - openstack
+    regionFeatures:
+      description: A set of features the region may provide to clients.
+      type: object
+      required:
+      - physicalNetworks
+      properties:
+        physicalNetworks:
+          description: |
+            If set, this indicates that the region supports physical networks and
+            one should be provisioned for clusters to use.  The impliciation here is
+            the region supports base-metal machines, and these must be provisioned
+            on a physical VLAN etc.
+          type: boolean
     regionSpec:
       description: Information about the region.
       type: object
       required:
       - type
+      - features
       properties:
         type:
           $ref: '#/components/schemas/regionType'
+        features:
+          $ref: '#/components/schemas/regionFeatures'
     regionRead:
       description: A region.
       type: object
@@ -578,6 +594,8 @@ components:
               provisioningStatus: provisioned
             spec:
               type: openstack
+              features:
+                physicalNetworks: true
     imagesResponse:
       description: A list of images that are compatible with this platform.
       content:

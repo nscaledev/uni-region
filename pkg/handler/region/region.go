@@ -128,6 +128,11 @@ func convert(in *unikornv1.Region) *openapi.RegionRead {
 		},
 	}
 
+	// Calculate any region feature flags.
+	if in.Spec.Openstack != nil && in.Spec.Openstack.Network != nil && in.Spec.Openstack.Network.ProviderNetworks != nil {
+		out.Spec.Features.PhysicalNetworks = true
+	}
+
 	return out
 }
 
