@@ -233,6 +233,15 @@ type PhysicalNetworkWrite struct {
 	Spec *PhysicalNetworkSpec `json:"spec,omitempty"`
 }
 
+// RegionFeatures A set of features the region may provide to clients.
+type RegionFeatures struct {
+	// PhysicalNetworks If set, this indicates that the region supports physical networks and
+	// one should be provisioned for clusters to use.  The impliciation here is
+	// the region supports base-metal machines, and these must be provisioned
+	// on a physical VLAN etc.
+	PhysicalNetworks bool `json:"physicalNetworks"`
+}
+
 // RegionRead A region.
 type RegionRead struct {
 	// Metadata Resource metadata valid for all reads.
@@ -244,6 +253,9 @@ type RegionRead struct {
 
 // RegionSpec Information about the region.
 type RegionSpec struct {
+	// Features A set of features the region may provide to clients.
+	Features RegionFeatures `json:"features"`
+
 	// Type The region's provider type.
 	Type RegionType `json:"type"`
 }
