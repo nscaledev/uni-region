@@ -177,7 +177,7 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalNetworks:
+  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalnetworks:
     description: |-
       Manages physical networks.  Physical networks are networks that may be required for
       baremetal node provisioning e.g. a VLAN.  Note that only a single provider network is currently
@@ -187,7 +187,7 @@ paths:
     - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/identityIDParameter'
     post:
-      description: Create a new provider network.
+      description: Create a new physical network.
       security:
       - oauth2Authentication: []
       requestBody:
@@ -195,6 +195,46 @@ paths:
       responses:
         '201':
           $ref: '#/components/responses/physicalNetworkResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalnetworks/{physicalNetworkID}:
+    description: |-
+      Manages physical networks.  Physical networks are networks that may be required for
+      baremetal node provisioning e.g. a VLAN.  Note that only a single provider network is currently
+      supported per identity, as identities are intended to exist per piece of infrastructure.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/identityIDParameter'
+    - $ref: '#/components/parameters/physicalNetworkIDParameter'
+    get:
+      description: Get a phyiscal network.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/physicalNetworkResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    delete:
+      description: Delete a new physical network.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
@@ -231,6 +271,13 @@ components:
       name: identityID
       in: path
       description: The identity identifier.
+      required: true
+      schema:
+        $ref: '#/components/schemas/kubernetesNameParameter'
+    physicalNetworkIDParameter:
+      name: physicalNetworkID
+      in: path
+      description: The physical network identifier.
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
@@ -511,12 +558,66 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/identityRead'
-    physicalNetworkSpec:
+    ipv4Address:
+      description: An IPv4 address.
+      type: string
+    ipv4AddressList:
+      description: A list of IPv4 addresses.
+      type: array
+      items:
+        $ref: "#/components/schemas/ipv4Address"
+    physicalNetworkReadSpec:
       description: A phyical network's specification.
       type: object
+      required:
+      - regionId
+      - prefix
+      - dnsNameservers
+      - type
       properties:
         tags:
           $ref: '#/components/schemas/tagList'
+        prefix:
+          description: An IPv4 prefix for the network.
+          type: string
+        dnsNameservers:
+          $ref: '#/components/schemas/ipv4AddressList'
+        type:
+          $ref: '#/components/schemas/regionType'
+        regionId:
+          description: The region an identity is provisioned in.
+          type: string
+        openstack:
+          $ref: '#/components/schemas/physicalNetworkSpecOpenstack'
+    physicalNetworkSpecOpenstack:
+      description: An openstack physical network.
+      properties:
+        vlanId:
+          description: The allocated VLAN ID.
+          type: integer
+        networkId:
+          description: The openstack network ID.
+          type: string
+        subnetId:
+          description: The openstack subnet ID.
+          type: string
+        routerId:
+          description: The openstack router ID.
+          type: string
+    physicalNetworkWriteSpec:
+      description: A phyical network's specification.
+      type: object
+      required:
+      - prefix
+      - dnsNameservers
+      properties:
+        tags:
+          $ref: '#/components/schemas/tagList'
+        prefix:
+          description: An IPv4 prefix for the network.
+          type: string
+        dnsNameservers:
+          $ref: '#/components/schemas/ipv4AddressList'
     physicalNetworkWrite:
       description: A physical network request.
       type: object
@@ -526,7 +627,7 @@ components:
         metadata:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
-          $ref: '#/components/schemas/physicalNetworkSpec'
+          $ref: '#/components/schemas/physicalNetworkWriteSpec'
     physicalNetworkRead:
       description: A physical network.
       type: object
@@ -536,7 +637,7 @@ components:
         metadata:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
-          $ref: '#/components/schemas/physicalNetworkSpec'
+          $ref: '#/components/schemas/physicalNetworkReadSpec'
     externalNetwork:
       description: An Openstack external network.
       type: object
@@ -586,6 +687,9 @@ components:
               tags:
               - name: cluster-id
                 value: 9361402c-f998-49cc-ab21-9bb99afcfde8
+              prefix: 192.168.0.0/24
+              dnsNameservers:
+              - 8.8.8.8
   responses:
     regionsResponse:
       description: A list of regions.
@@ -700,8 +804,6 @@ components:
           schema:
             $ref: '#/components/schemas/physicalNetworkRead'
           example:
-            # TODO: metadata for region?
-            # TODO: metadata for identity?
             metadata:
               id: a64f9269-36e0-4312-b8d1-52d93d569b7b
               name: unused
@@ -710,6 +812,15 @@ components:
               creationTime: 2024-05-31T14:11:00Z
               createdBy: john.doe@acme.com
               provisioningStatus: provisioned
+            spec:
+              regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
+              prefix: 192.168.0.0/24
+              dnsNameservers:
+              - 8.8.8.8
+              type: openstack
+              openstack:
+                vlanId: 1024
+                networkId: 824e8c4c-5858-4b02-9906-390e34561bf3
     externalNetworksResponse:
       description: A list of valid external networks.
       content:

@@ -20,14 +20,17 @@ package openstack
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
-	"github.com/gophercloud/gophercloud/v2"
+	gophercloud "github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/external"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/provider"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/networks"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
@@ -47,10 +50,13 @@ var (
 
 // NetworkClient wraps the generic client because gophercloud is unsafe.
 type NetworkClient struct {
+	// client is a network client scoped as per the provider given
+	// during initialization.
 	client *gophercloud.ServiceClient
-
+	// options are optional configuration about the network service.
 	options *unikornv1.RegionOpenstackNetworkSpec
-
+	// externalNetworkCache provides caching to avoid having to talk to
+	// OpenStack.
 	externalNetworkCache *cache.TimeoutCache[[]networks.Network]
 }
 
@@ -147,43 +153,12 @@ func (c *NetworkClient) ExternalNetworks(ctx context.Context) ([]networks.Networ
 	return result, nil
 }
 
-// AllocateVLAN does exactly that using configured ID ranges and existing networks.
-func (c *NetworkClient) AllocateVLAN(ctx context.Context) (int, error) {
-	allocatable := make([]bool, 4096)
-
-	// If no configuration is given, own all of the IDs.  If there are a list
-	// of segments, only allow those.
-	if c.options == nil || c.options.ProviderNetworks == nil || c.options.ProviderNetworks.VLAN == nil || c.options.ProviderNetworks.VLAN.Segments == nil {
-		for i := 1; i < 4096; i++ {
-			allocatable[i] = true
-		}
-	} else {
-		for _, segment := range c.options.ProviderNetworks.VLAN.Segments {
-			for i := segment.StartID; i < segment.EndID+1; i++ {
-				allocatable[i] = true
-			}
-		}
-	}
-
-	// TODO: Next remove the ones we know are already allocated.
-	for i := range allocatable {
-		if allocatable[i] {
-			return i, nil
-		}
-	}
-
-	return -1, ErrUnsufficentResource
-}
-
 // CreateVLANProviderNetwork creates a VLAN provider network for a project.
-func (c *NetworkClient) CreateVLANProviderNetwork(ctx context.Context, name string, projectID string) (int, *networks.Network, error) {
+// This requires https://github.com/unikorn-cloud/python-unikorn-openstack-policy
+// to be installed, see the README for further details on how this has to work.
+func (c *NetworkClient) CreateVLANProviderNetwork(ctx context.Context, name string, vlanID int) (*networks.Network, error) {
 	if c.options == nil || c.options.ProviderNetworks == nil || c.options.ProviderNetworks.PhysicalNetwork == nil {
-		return -1, nil, ErrConfiguration
-	}
-
-	vlanID, err := c.AllocateVLAN(ctx)
-	if err != nil {
-		return -1, nil, err
+		return nil, ErrConfiguration
 	}
 
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
@@ -194,8 +169,7 @@ func (c *NetworkClient) CreateVLANProviderNetwork(ctx context.Context, name stri
 	opts := &provider.CreateOptsExt{
 		CreateOptsBuilder: &networks.CreateOpts{
 			Name:        name,
-			Description: "unikorn provider network",
-			ProjectID:   projectID,
+			Description: "unikorn managed provider network",
 		},
 		Segments: []provider.Segment{
 			{
@@ -208,8 +182,115 @@ func (c *NetworkClient) CreateVLANProviderNetwork(ctx context.Context, name stri
 
 	network, err := networks.Create(ctx, c.client, opts).Extract()
 	if err != nil {
-		return -1, nil, err
+		return nil, err
 	}
 
-	return vlanID, network, nil
+	return network, nil
+}
+
+func (c *NetworkClient) DeleteVLANProviderNetwork(ctx context.Context, id string) error {
+	if c.options == nil || c.options.ProviderNetworks == nil || c.options.ProviderNetworks.PhysicalNetwork == nil {
+		return ErrConfiguration
+	}
+
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /network/v2.0/networks/%s", id), trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	return networks.Delete(ctx, c.client, id).ExtractErr()
+}
+
+func (c *NetworkClient) CreateSubnet(ctx context.Context, name, networkID, prefix string, dnsNameservers []string) (*subnets.Subnet, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "POST /network/v2.0/subnets", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	opts := &subnets.CreateOpts{
+		Name:           name,
+		Description:    "unikorn managed subnet",
+		NetworkID:      networkID,
+		IPVersion:      gophercloud.IPv4,
+		CIDR:           prefix,
+		DNSNameservers: dnsNameservers,
+	}
+
+	subnet, err := subnets.Create(ctx, c.client, opts).Extract()
+	if err != nil {
+		return nil, err
+	}
+
+	return subnet, nil
+}
+
+func (c *NetworkClient) DeleteSubnet(ctx context.Context, id string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /network/v2.0/subnets/%s", id), trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	return subnets.Delete(ctx, c.client, id).ExtractErr()
+}
+
+func (c *NetworkClient) CreateRouter(ctx context.Context, name string) (*routers.Router, error) {
+	externalNetworks, err := c.ExternalNetworks(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "POST /network/v2.0/routers", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	opts := &routers.CreateOpts{
+		Name:        name,
+		Description: "unikorn managed router",
+		GatewayInfo: &routers.GatewayInfo{
+			NetworkID: externalNetworks[0].ID,
+		},
+	}
+
+	router, err := routers.Create(ctx, c.client, opts).Extract()
+	if err != nil {
+		return nil, err
+	}
+
+	return router, nil
+}
+
+func (c *NetworkClient) DeleteRouter(ctx context.Context, id string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /network/v2.0/routers/%s", id), trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	return routers.Delete(ctx, c.client, id).ExtractErr()
+}
+
+func (c *NetworkClient) AddRouterInterface(ctx context.Context, routerID, subnetID string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("PUT /network/v2.0/routers/%s/add_router_interface", routerID), trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	opts := &routers.AddInterfaceOpts{
+		SubnetID: subnetID,
+	}
+
+	return routers.AddInterface(ctx, c.client, routerID, opts).Err
+}
+
+func (c *NetworkClient) RemoveRouterInterface(ctx context.Context, routerID, subnetID string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("PUT /network/v2.0/routers/%s/remove_router_interface", routerID), trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	opts := &routers.RemoveInterfaceOpts{
+		SubnetID: subnetID,
+	}
+
+	return routers.RemoveInterface(ctx, c.client, routerID, opts).Err
 }

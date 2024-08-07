@@ -1,7 +1,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: unikorn-identity-controller
+  name: unikorn-physical-network-controller
   labels:
     {{- include "unikorn.labels" . | nindent 4 }}
 rules:
@@ -10,28 +10,10 @@ rules:
   - region.unikorn-cloud.org
   resources:
   - identities
-  verbs:
-  - list
-  - watch
-  - patch
-  - update
-- apiGroups:
-  - region.unikorn-cloud.org
-  resources:
-  - identities/status
-  verbs:
-  - update
-- apiGroups:
-  - region.unikorn-cloud.org
-  resources:
   - openstackidentities
   verbs:
   - list
   - watch
-  - create
-  - update
-  - delete
-# Cascading deletion.
 - apiGroups:
   - region.unikorn-cloud.org
   resources:
@@ -39,7 +21,33 @@ rules:
   verbs:
   - list
   - watch
+  - update
+  - patch
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - physicalnetworks/status
+  verbs:
+  - update
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - openstackphysicalnetworks
+  verbs:
+  - list
+  - watch
+  - create
+  - update
   - delete
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - vlanallocations
+  verbs:
+  - list
+  - watch
+  - create
+  - update
 - apiGroups:
   - ""
   resources:

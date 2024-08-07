@@ -12,7 +12,8 @@ REVISION := $(shell git rev-parse HEAD)
 # want to be amd64.
 CONTROLLERS = \
   unikorn-region-controller \
-  unikorn-identity-controller
+  unikorn-identity-controller \
+  unikorn-physical-network-controller
 
 # Release will do cross compliation of all images for the 'all' target.
 # Note we aren't fucking about with docker here because that opens up a

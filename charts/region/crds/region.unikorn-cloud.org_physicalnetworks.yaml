@@ -47,21 +47,24 @@ spec:
             type: object
           spec:
             properties:
-              providerNetwork:
-                description: |-
-                  ProviderNetwork is the provider network for port allocation of
-                  virtual machines.
-                properties:
-                  id:
-                    description: ID is the network ID.
-                    type: string
-                  vlanID:
-                    description: VlanID is the ID if the VLAN for IPAM.
-                    type: integer
-                required:
-                - id
-                - vlanID
-                type: object
+              dnsNameservers:
+                description: DNSNameservers are a set of DNS nameservrs for the network.
+                items:
+                  pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])$
+                  type: string
+                type: array
+              pause:
+                description: Pause, if true, will inhibit reconciliation.
+                type: boolean
+              prefix:
+                description: Prefix is the IPv4 address prefix.
+                pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\/(?:3[0-2]|[1-2]?[0-9])$
+                type: string
+              provider:
+                description: Provider defines the provider type.
+                enum:
+                - openstack
+                type: string
               tags:
                 description: |-
                   Tags are an abitrary list of key/value pairs that a client
@@ -80,12 +83,64 @@ spec:
                   - value
                   type: object
                 type: array
+            required:
+            - dnsNameservers
+            - prefix
+            - provider
             type: object
           status:
+            properties:
+              conditions:
+                description: Current service state of a cluster manager.
+                items:
+                  description: |-
+                    Condition is a generic condition type for use across all resource types.
+                    It's generic so that the underlying controller-manager functionality can
+                    be shared across all resources.
+                  properties:
+                    lastTransitionTime:
+                      description: Last time the condition transitioned from one status
+                        to another.
+                      format: date-time
+                      type: string
+                    message:
+                      description: Human-readable message indicating details about
+                        last transition.
+                      type: string
+                    reason:
+                      description: Unique, one-word, CamelCase reason for the condition's
+                        last transition.
+                      enum:
+                      - Provisioning
+                      - Provisioned
+                      - Cancelled
+                      - Errored
+                      - Deprovisioning
+                      - Deprovisioned
+                      type: string
+                    status:
+                      description: |-
+                        Status is the status of the condition.
+                        Can be True, False, Unknown.
+                      type: string
+                    type:
+                      description: Type is the type of the condition.
+                      enum:
+                      - Available
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
             type: object
         required:
         - spec
         type: object
     served: true
     storage: true
-    subresources: {}
+    subresources:
+      status: {}
