@@ -5,6 +5,10 @@ Create the container images
 {{- .Values.image | default (printf "%s/unikorn-region-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
 {{- end }}
 
+{{- define "unikorn.identityControllerImage" -}}
+{{- .Values.identityController.image | default (printf "%s/unikorn-identity-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
+{{- end }}
+
 {{/*
 Create image pull secrets
 */}}

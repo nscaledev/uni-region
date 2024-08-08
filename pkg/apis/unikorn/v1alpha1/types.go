@@ -291,6 +291,8 @@ type Identity struct {
 
 // IdentitySpec stores any state necessary to manage identity.
 type IdentitySpec struct {
+	// Pause, if true, will inhibit reconciliation.
+	Pause bool `json:"pause,omitempty"`
 	// Tags are an abitrary list of key/value pairs that a client
 	// may populate to store metadata for the resource.
 	Tags TagList `json:"tags,omitempty"`
@@ -316,6 +318,8 @@ type IdentitySpecOpenStack struct {
 }
 
 type IdentityStatus struct {
+	// Current service state of a cluster manager.
+	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
 }
 
 // PhysicalNetworkList s a typed list of physical networks.
