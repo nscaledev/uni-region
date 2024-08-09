@@ -101,6 +101,9 @@ type ClientInterface interface {
 	// DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID request
 	DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID request
+	GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalNetworksWithBody request with any body
 	PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalNetworksWithBody(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -157,6 +160,18 @@ func (c *Client) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 
 func (c *Client) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDRequest(c.Server, organizationID, projectID, identityID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDRequest(c.Server, organizationID, projectID, identityID)
 	if err != nil {
 		return nil, err
 	}
@@ -368,6 +383,54 @@ func NewDeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentit
 	}
 
 	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDRequest generates requests for GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID
+func NewGetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDRequest(server string, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "organizationID", runtime.ParamLocationPath, organizationID)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "projectID", runtime.ParamLocationPath, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithLocation("simple", false, "identityID", runtime.ParamLocationPath, identityID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/organizations/%s/projects/%s/identities/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -647,6 +710,9 @@ type ClientWithResponsesInterface interface {
 	// DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDWithResponse request
 	DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, reqEditors ...RequestEditorFn) (*DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDResponse, error)
 
+	// GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDWithResponse request
+	GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDResponse, error)
+
 	// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalNetworksWithBodyWithResponse request with any body
 	PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalNetworksWithBodyWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalNetworksResponse, error)
 
@@ -737,6 +803,32 @@ func (r DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentit
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *IdentityResponse
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -902,6 +994,15 @@ func (c *ClientWithResponses) DeleteApiV1OrganizationsOrganizationIDProjectsProj
 		return nil, err
 	}
 	return ParseDeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDResponse(rsp)
+}
+
+// GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDWithResponse request returning *GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDResponse
+func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDResponse, error) {
+	rsp, err := c.GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID(ctx, organizationID, projectID, identityID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDResponse(rsp)
 }
 
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalNetworksWithBodyWithResponse request with arbitrary body returning *PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalNetworksResponse
@@ -1106,6 +1207,60 @@ func ParseDeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdent
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDResponse parses an HTTP response from a GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDWithResponse call
+func ParseGetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDResponse(rsp *http.Response) (*GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IdentityResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest externalRef0.InternalServerErrorResponse

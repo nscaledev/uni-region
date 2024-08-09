@@ -57,40 +57,6 @@ spec:
           spec:
             description: IdentitySpec stores any state necessary to manage identity.
             properties:
-              openstack:
-                description: OpenStack is populated when the provider type is set
-                  to "openstack".
-                properties:
-                  applicationCredentialID:
-                    description: ApplicationCredentialID is the ID of the user's application
-                      credential.
-                    type: string
-                  applicationCredentialSecret:
-                    description: ApplicationCredentialSecret is the one-time secret
-                      for the application credential.
-                    type: string
-                  cloud:
-                    description: Cloud is the cloud name in the cloud config to use.
-                    type: string
-                  cloudConfig:
-                    description: CloudConfig is a client compatible cloud configuration.
-                    format: byte
-                    type: string
-                  password:
-                    description: Password is the login for the user.
-                    type: string
-                  projectID:
-                    description: ProjectID is the ID of the project created for the
-                      identity.
-                    type: string
-                  serverGroupID:
-                    description: ServerGroupID is the ID of the server group created
-                      for the identity.
-                    type: string
-                  userID:
-                    description: UserID is the ID of the user created for the identity.
-                    type: string
-                type: object
               pause:
                 description: Pause, if true, will inhibit reconciliation.
                 type: boolean

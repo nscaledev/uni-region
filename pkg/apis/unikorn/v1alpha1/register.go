@@ -50,6 +50,7 @@ var (
 func init() {
 	SchemeBuilder.Register(&Region{}, &RegionList{})
 	SchemeBuilder.Register(&Identity{}, &IdentityList{})
+	SchemeBuilder.Register(&OpenstackIdentity{}, &OpenstackIdentityList{})
 	SchemeBuilder.Register(&PhysicalNetwork{}, &PhysicalNetworkList{})
 }
 

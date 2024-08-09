@@ -17,6 +17,8 @@ spec:
       containers:
       - name: unikorn-identity-controller
         image: {{ include "unikorn.identityControllerImage" . }}
+        args:
+        {{- include "unikorn.otlp.flags" . | nindent 8 }}
         ports:
         - name: http
           containerPort: 6080

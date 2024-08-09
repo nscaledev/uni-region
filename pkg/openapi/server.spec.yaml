@@ -145,6 +145,21 @@ paths:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/identityIDParameter'
+    get:
+      description: Get a single identity.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/identityResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       description: Delete an identity and any resources associated with it.
       security:

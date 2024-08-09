@@ -299,11 +299,35 @@ type IdentitySpec struct {
 	Tags TagList `json:"tags,omitempty"`
 	// Provider defines the provider type.
 	Provider Provider `json:"provider"`
-	// OpenStack is populated when the provider type is set to "openstack".
-	OpenStack *IdentitySpecOpenStack `json:"openstack,omitempty"`
 }
 
-type IdentitySpecOpenStack struct {
+type IdentityStatus struct {
+	// Current service state of a cluster manager.
+	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+}
+
+// OpenstackIdentityList is a typed list of identities.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type OpenstackIdentityList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []OpenstackIdentity `json:"items"`
+}
+
+// OpenstackIdentity has no controller, its a database record of state.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:printcolumn:name="provider",type="string",JSONPath=".spec.provider"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type OpenstackIdentity struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              OpenstackIdentitySpec   `json:"spec"`
+	Status            OpenstackIdentityStatus `json:"status,omitempty"`
+}
+
+type OpenstackIdentitySpec struct {
 	// CloudConfig is a client compatible cloud configuration.
 	CloudConfig []byte `json:"cloudConfig,omitempty"`
 	// Cloud is the cloud name in the cloud config to use.
@@ -322,10 +346,7 @@ type IdentitySpecOpenStack struct {
 	ServerGroupID *string `json:"serverGroupID,omitempty"`
 }
 
-type IdentityStatus struct {
-	// Current service state of a cluster manager.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
-}
+type OpenstackIdentityStatus struct{}
 
 // PhysicalNetworkList s a typed list of physical networks.
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

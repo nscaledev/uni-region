@@ -22,6 +22,16 @@ rules:
   verbs:
   - update
 - apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - openstackidentities
+  verbs:
+  - list
+  - watch
+  - create
+  - update
+  - delete
+- apiGroups:
   - ""
   resources:
   - secrets
@@ -35,4 +45,3 @@ rules:
   verbs:
   - list
   - watch
-

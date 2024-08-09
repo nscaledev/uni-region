@@ -23,6 +23,13 @@ rules:
   - create
   - delete
 - apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - openstackidentities
+  verbs:
+  - list
+  - watch
+- apiGroups:
   - ""
   resources:
   - secrets
