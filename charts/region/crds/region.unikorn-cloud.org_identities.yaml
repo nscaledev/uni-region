@@ -61,6 +61,14 @@ spec:
                 description: OpenStack is populated when the provider type is set
                   to "openstack".
                 properties:
+                  applicationCredentialID:
+                    description: ApplicationCredentialID is the ID of the user's application
+                      credential.
+                    type: string
+                  applicationCredentialSecret:
+                    description: ApplicationCredentialSecret is the one-time secret
+                      for the application credential.
+                    type: string
                   cloud:
                     description: Cloud is the cloud name in the cloud config to use.
                     type: string
@@ -82,12 +90,6 @@ spec:
                   userID:
                     description: UserID is the ID of the user created for the identity.
                     type: string
-                required:
-                - cloud
-                - cloudConfig
-                - password
-                - projectID
-                - userID
                 type: object
               pause:
                 description: Pause, if true, will inhibit reconciliation.
@@ -169,8 +171,8 @@ spec:
             type: object
         required:
         - spec
-        - status
         type: object
     served: true
     storage: true
-    subresources: {}
+    subresources:
+      status: {}

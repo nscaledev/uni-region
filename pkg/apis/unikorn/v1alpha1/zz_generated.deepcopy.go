@@ -241,6 +241,36 @@ func (in *IdentitySpecOpenStack) DeepCopyInto(out *IdentitySpecOpenStack) {
 		*out = make([]byte, len(*in))
 		copy(*out, *in)
 	}
+	if in.Cloud != nil {
+		in, out := &in.Cloud, &out.Cloud
+		*out = new(string)
+		**out = **in
+	}
+	if in.UserID != nil {
+		in, out := &in.UserID, &out.UserID
+		*out = new(string)
+		**out = **in
+	}
+	if in.Password != nil {
+		in, out := &in.Password, &out.Password
+		*out = new(string)
+		**out = **in
+	}
+	if in.ProjectID != nil {
+		in, out := &in.ProjectID, &out.ProjectID
+		*out = new(string)
+		**out = **in
+	}
+	if in.ApplicationCredentialID != nil {
+		in, out := &in.ApplicationCredentialID, &out.ApplicationCredentialID
+		*out = new(string)
+		**out = **in
+	}
+	if in.ApplicationCredentialSecret != nil {
+		in, out := &in.ApplicationCredentialSecret, &out.ApplicationCredentialSecret
+		*out = new(string)
+		**out = **in
+	}
 	if in.ServerGroupID != nil {
 		in, out := &in.ServerGroupID, &out.ServerGroupID
 		*out = new(string)

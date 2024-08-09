@@ -27,12 +27,14 @@ import (
 // They are also expected to provide any caching or memoization required
 // to provide high performance and a decent UX.
 type Provider interface {
+	// Region returns the provider's region.
+	Region(ctx context.Context) (*unikornv1.Region, error)
 	// Flavors list all available flavors.
 	Flavors(ctx context.Context) (FlavorList, error)
 	// Images lists all available images.
 	Images(ctx context.Context) (ImageList, error)
 	// CreateIdentity creates a new identity for cloud infrastructure.
-	CreateIdentity(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*unikornv1.Identity, error)
+	CreateIdentity(ctx context.Context, identity *unikornv1.Identity) error
 	// DeleteIdentity cleans up an identity for cloud infrastructure.
 	DeleteIdentity(ctx context.Context, identity *unikornv1.Identity) error
 	// CreatePhysicalNetwork create a new physical network.

@@ -327,16 +327,6 @@ func (c *IdentityClient) CreateUser(ctx context.Context, domainID, name, passwor
 	return users.Create(ctx, c.client, opts).Extract()
 }
 
-// GetUser returns user details.
-func (c *IdentityClient) GetUser(ctx context.Context, userID string) (*users.User, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "GET /identity/v3/users/"+userID, trace.WithSpanKind(trace.SpanKindClient))
-	defer span.End()
-
-	return users.Get(ctx, c.client, userID).Extract()
-}
-
 // DeleteUser removes an existing user.
 func (c *IdentityClient) DeleteUser(ctx context.Context, userID string) error {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)

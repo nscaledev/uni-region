@@ -279,6 +279,7 @@ type IdentityList struct {
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="provider",type="string",JSONPath=".spec.provider"
 // +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
 // +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
@@ -286,7 +287,7 @@ type Identity struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Spec              IdentitySpec   `json:"spec"`
-	Status            IdentityStatus `json:"status"`
+	Status            IdentityStatus `json:"status,omitempty"`
 }
 
 // IdentitySpec stores any state necessary to manage identity.
@@ -304,15 +305,19 @@ type IdentitySpec struct {
 
 type IdentitySpecOpenStack struct {
 	// CloudConfig is a client compatible cloud configuration.
-	CloudConfig []byte `json:"cloudConfig"`
+	CloudConfig []byte `json:"cloudConfig,omitempty"`
 	// Cloud is the cloud name in the cloud config to use.
-	Cloud string `json:"cloud"`
+	Cloud *string `json:"cloud,omitempty"`
 	// UserID is the ID of the user created for the identity.
-	UserID string `json:"userID"`
+	UserID *string `json:"userID,omitempty"`
 	// Password is the login for the user.
-	Password string `json:"password"`
+	Password *string `json:"password,omitempty"`
 	// ProjectID is the ID of the project created for the identity.
-	ProjectID string `json:"projectID"`
+	ProjectID *string `json:"projectID,omitempty"`
+	// ApplicationCredentialID is the ID of the user's application credential.
+	ApplicationCredentialID *string `json:"applicationCredentialID,omitempty"`
+	// ApplicationCredentialSecret is the one-time secret for the application credential.
+	ApplicationCredentialSecret *string `json:"applicationCredentialSecret,omitempty"`
 	// ServerGroupID is the ID of the server group created for the identity.
 	ServerGroupID *string `json:"serverGroupID,omitempty"`
 }
@@ -340,7 +345,7 @@ type PhysicalNetwork struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Spec              PhysicalNetworkSpec   `json:"spec"`
-	Status            PhysicalNetworkStatus `json:"status"`
+	Status            PhysicalNetworkStatus `json:"status,omitempty"`
 }
 
 type PhysicalNetworkSpec struct {

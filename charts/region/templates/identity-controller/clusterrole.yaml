@@ -28,3 +28,11 @@ rules:
   verbs:
   - list
   - watch
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - regions
+  verbs:
+  - list
+  - watch
+

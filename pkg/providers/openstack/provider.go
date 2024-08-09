@@ -25,10 +25,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/applicationcredentials"
-	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/projects"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
-	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/users"
 	"github.com/gophercloud/utils/openstack/clientconfig"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -40,7 +37,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -234,6 +230,19 @@ func (p *Provider) network(ctx context.Context) (*NetworkClient, error) {
 	return p._network, nil
 }
 
+// Region returns the provider's region.
+func (p *Provider) Region(ctx context.Context) (*unikornv1.Region, error) {
+	// Get the newest version of the region.
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	if err := p.serviceClientRefresh(ctx); err != nil {
+		return nil, err
+	}
+
+	return p.region, nil
+}
+
 // Flavors list all available flavors.
 func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
 	computeService, err := p.compute(ctx)
@@ -359,41 +368,59 @@ const (
 )
 
 // projectTags defines how to tag projects.
-func projectTags(organizationID, projectID string) []string {
+func projectTags(identity *unikornv1.Identity) []string {
 	tags := []string{
-		OrganizationTag + "=" + organizationID,
-		ProjectTag + "=" + projectID,
+		OrganizationTag + "=" + identity.Labels[coreconstants.OrganizationLabel],
+		ProjectTag + "=" + identity.Labels[coreconstants.ProjectLabel],
 	}
 
 	return tags
 }
 
+func identityResourceName(identity *unikornv1.Identity) string {
+	return "unikorn-identity-" + identity.Name
+}
+
 // provisionUser creates a new user in the managed domain with a random password.
 // There is a 1:1 mapping of user to project, and the project name is unique in the
 // domain, so just reuse this, we can clean them up at the same time.
-func (p *Provider) provisionUser(ctx context.Context, identityService *IdentityClient, project *projects.Project) (*users.User, string, error) {
-	password := string(uuid.NewUUID())
-
-	user, err := identityService.CreateUser(ctx, p.domainID, project.Name, password)
-	if err != nil {
-		return nil, "", err
+func (p *Provider) provisionUser(ctx context.Context, identityService *IdentityClient, identity *unikornv1.Identity) error {
+	if identity.Spec.OpenStack.UserID != nil {
+		return nil
 	}
 
-	return user, password, nil
+	name := identityResourceName(identity)
+	password := string(uuid.NewUUID())
+
+	user, err := identityService.CreateUser(ctx, p.domainID, name, password)
+	if err != nil {
+		return err
+	}
+
+	identity.Spec.OpenStack.UserID = &user.ID
+	identity.Spec.OpenStack.Password = &password
+
+	return nil
 }
 
 // provisionProject creates a project per-cluster.  Cluster API provider Openstack is
 // somewhat broken in that networks can alias and cause all kinds of disasters, so it's
 // safest to have one cluster in one project so it has its own namespace.
-func (p *Provider) provisionProject(ctx context.Context, identityService *IdentityClient, organizationID, projectID string) (*projects.Project, error) {
-	name := "unikorn-" + rand.String(8)
-
-	project, err := identityService.CreateProject(ctx, p.domainID, name, projectTags(organizationID, projectID))
-	if err != nil {
-		return nil, err
+func (p *Provider) provisionProject(ctx context.Context, identityService *IdentityClient, identity *unikornv1.Identity) error {
+	if identity.Spec.OpenStack.ProjectID != nil {
+		return nil
 	}
 
-	return project, nil
+	name := identityResourceName(identity)
+
+	project, err := identityService.CreateProject(ctx, p.domainID, name, projectTags(identity))
+	if err != nil {
+		return err
+	}
+
+	identity.Spec.OpenStack.ProjectID = &project.ID
+
+	return nil
 }
 
 // roleNameToID maps from something human readable to something Openstack will operate with
@@ -426,7 +453,7 @@ func (p *Provider) getRequiredRoles() []string {
 // provisionProjectRoles creates a binding between our service account and the project
 // with the required roles to provision an application credential that will allow cluster
 // creation, deletion and life-cycle management.
-func (p *Provider) provisionProjectRoles(ctx context.Context, identityService *IdentityClient, userID string, project *projects.Project) error {
+func (p *Provider) provisionProjectRoles(ctx context.Context, identityService *IdentityClient, identity *unikornv1.Identity) error {
 	allRoles, err := identityService.ListRoles(ctx)
 	if err != nil {
 		return err
@@ -438,7 +465,7 @@ func (p *Provider) provisionProjectRoles(ctx context.Context, identityService *I
 			return err
 		}
 
-		if err := identityService.CreateRoleAssignment(ctx, userID, project.ID, roleID); err != nil {
+		if err := identityService.CreateRoleAssignment(ctx, *identity.Spec.OpenStack.UserID, *identity.Spec.OpenStack.ProjectID, roleID); err != nil {
 			return err
 		}
 	}
@@ -446,21 +473,37 @@ func (p *Provider) provisionProjectRoles(ctx context.Context, identityService *I
 	return nil
 }
 
-func (p *Provider) provisionApplicationCredential(ctx context.Context, userID, password string, project *projects.Project) (*applicationcredentials.ApplicationCredential, error) {
+func (p *Provider) provisionApplicationCredential(ctx context.Context, identity *unikornv1.Identity) error {
+	if identity.Spec.OpenStack.ApplicationCredentialID != nil {
+		return nil
+	}
+
 	// Rescope to the user/project...
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, userID, password, project.ID)
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *identity.Spec.OpenStack.UserID, *identity.Spec.OpenStack.Password, *identity.Spec.OpenStack.ProjectID)
 
 	identityService, err := NewIdentityClient(ctx, providerClient)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	// Application crdentials are scoped to the user, not the project, so the name needs
-	// to be unique, so just use the project name.
-	return identityService.CreateApplicationCredential(ctx, userID, project.Name, "IaaS lifecycle management", p.getRequiredRoles())
+	name := identityResourceName(identity)
+
+	appcred, err := identityService.CreateApplicationCredential(ctx, *identity.Spec.OpenStack.UserID, name, "IaaS lifecycle management", p.getRequiredRoles())
+	if err != nil {
+		return err
+	}
+
+	identity.Spec.OpenStack.ApplicationCredentialID = &appcred.ID
+	identity.Spec.OpenStack.ApplicationCredentialSecret = &appcred.Secret
+
+	return nil
 }
 
-func (p *Provider) createClientConfig(applicationCredential *applicationcredentials.ApplicationCredential) ([]byte, string, error) {
+func (p *Provider) createClientConfig(identity *unikornv1.Identity) error {
+	if identity.Spec.OpenStack.Cloud != nil {
+		return nil
+	}
+
 	cloud := "cloud"
 
 	clientConfig := &clientconfig.Clouds{
@@ -469,8 +512,8 @@ func (p *Provider) createClientConfig(applicationCredential *applicationcredenti
 				AuthType: clientconfig.AuthV3ApplicationCredential,
 				AuthInfo: &clientconfig.AuthInfo{
 					AuthURL:                     p.region.Spec.Openstack.Endpoint,
-					ApplicationCredentialID:     applicationCredential.ID,
-					ApplicationCredentialSecret: applicationCredential.Secret,
+					ApplicationCredentialID:     *identity.Spec.OpenStack.ApplicationCredentialID,
+					ApplicationCredentialSecret: *identity.Spec.OpenStack.ApplicationCredentialSecret,
 				},
 			},
 		},
@@ -478,10 +521,13 @@ func (p *Provider) createClientConfig(applicationCredential *applicationcredenti
 
 	clientConfigYAML, err := yaml.Marshal(clientConfig)
 	if err != nil {
-		return nil, "", err
+		return err
 	}
 
-	return clientConfigYAML, cloud, nil
+	identity.Spec.OpenStack.Cloud = &cloud
+	identity.Spec.OpenStack.CloudConfig = clientConfigYAML
+
+	return nil
 }
 
 func convertTag(in openapi.Tag) unikornv1.Tag {
@@ -507,16 +553,22 @@ func convertTagList(in *openapi.TagList) unikornv1.TagList {
 	return out
 }
 
-func (p *Provider) createIdentityServerGroup(ctx context.Context, identity *unikornv1.Identity, userID, password string) error {
+func (p *Provider) createIdentityServerGroup(ctx context.Context, identity *unikornv1.Identity) error {
+	if identity.Spec.OpenStack.ServerGroupID != nil {
+		return nil
+	}
+
 	// Rescope to the user/project...
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, userID, password, identity.Spec.OpenStack.ProjectID)
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *identity.Spec.OpenStack.UserID, *identity.Spec.OpenStack.Password, *identity.Spec.OpenStack.ProjectID)
 
 	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
 	if err != nil {
 		return err
 	}
 
-	result, err := computeService.CreateServerGroup(ctx, "cluster-anti-afinity")
+	name := identityResourceName(identity)
+
+	result, err := computeService.CreateServerGroup(ctx, name)
 	if err != nil {
 		return err
 	}
@@ -527,92 +579,68 @@ func (p *Provider) createIdentityServerGroup(ctx context.Context, identity *unik
 }
 
 // CreateIdentity creates a new identity for cloud infrastructure.
-//
-//nolint:cyclop
-func (p *Provider) CreateIdentity(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*unikornv1.Identity, error) {
+func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Identity) error {
 	identityService, err := p.identity(ctx)
 	if err != nil {
-		return nil, err
+		return err
+	}
+
+	if identity.Spec.OpenStack == nil {
+		identity.Spec.OpenStack = &unikornv1.IdentitySpecOpenStack{}
 	}
 
 	// Every cluster has its own project to mitigate "nuances" in CAPO i.e. it's
 	// totally broken when it comes to network aliasing.
-	project, err := p.provisionProject(ctx, identityService, organizationID, projectID)
-	if err != nil {
-		return nil, err
+	if err := p.provisionProject(ctx, identityService, identity); err != nil {
+		return err
 	}
 
 	// You MUST provision a new user, if we rotate a password, any application credentials
 	// hanging off it will stop working, i.e. doing that to the unikorn management user
 	// will be pretty catastrophic for all clusters in the region.
-	user, password, err := p.provisionUser(ctx, identityService, project)
-	if err != nil {
-		return nil, err
+	if err := p.provisionUser(ctx, identityService, identity); err != nil {
+		return err
 	}
 
 	// Give the user only what permissions they need to provision a cluster and
 	// manage it during its lifetime.
-	if err := p.provisionProjectRoles(ctx, identityService, user.ID, project); err != nil {
-		return nil, err
+	if err := p.provisionProjectRoles(ctx, identityService, identity); err != nil {
+		return err
 	}
 
 	// Always use application credentials, they are scoped to a single project and
 	// cannot be used to break from that jail.
-	applicationCredential, err := p.provisionApplicationCredential(ctx, user.ID, password, project)
-	if err != nil {
-		return nil, err
+	if err := p.provisionApplicationCredential(ctx, identity); err != nil {
+		return err
 	}
 
-	cloudConfig, cloud, err := p.createClientConfig(applicationCredential)
-	if err != nil {
-		return nil, err
-	}
-
-	objectMeta := conversion.NewObjectMetadata(&request.Metadata, p.region.Namespace)
-	objectMeta = objectMeta.WithOrganization(organizationID)
-	objectMeta = objectMeta.WithProject(projectID)
-	objectMeta = objectMeta.WithLabel(constants.RegionLabel, p.region.Name)
-
-	identity := &unikornv1.Identity{
-		ObjectMeta: objectMeta.Get(ctx),
-		Spec: unikornv1.IdentitySpec{
-			Tags:     convertTagList(request.Spec.Tags),
-			Provider: unikornv1.ProviderOpenstack,
-			OpenStack: &unikornv1.IdentitySpecOpenStack{
-				CloudConfig: cloudConfig,
-				Cloud:       cloud,
-				UserID:      user.ID,
-				Password:    password,
-				ProjectID:   project.ID,
-			},
-		},
+	if err := p.createClientConfig(identity); err != nil {
+		return err
 	}
 
 	// Add in any optional configuration.
-	if err := p.createIdentityServerGroup(ctx, identity, user.ID, password); err != nil {
-		return nil, err
+	if err := p.createIdentityServerGroup(ctx, identity); err != nil {
+		return err
 	}
 
-	if err := p.client.Create(ctx, identity); err != nil {
-		return nil, err
-	}
-
-	return identity, nil
+	return nil
 }
 
 // DeleteIdentity cleans up an identity for cloud infrastructure.
 func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Identity) error {
 	// Rescope to the user/project...
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, identity.Spec.OpenStack.UserID, identity.Spec.OpenStack.Password, identity.Spec.OpenStack.ProjectID)
+	if identity.Spec.OpenStack.UserID != nil && identity.Spec.OpenStack.ProjectID != nil {
+		providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *identity.Spec.OpenStack.UserID, *identity.Spec.OpenStack.Password, *identity.Spec.OpenStack.ProjectID)
 
-	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
-	if err != nil {
-		return err
-	}
-
-	if identity.Spec.OpenStack.ServerGroupID != nil {
-		if err := computeService.DeleteServerGroup(ctx, *identity.Spec.OpenStack.ServerGroupID); err != nil {
+		computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+		if err != nil {
 			return err
+		}
+
+		if identity.Spec.OpenStack.ServerGroupID != nil {
+			if err := computeService.DeleteServerGroup(ctx, *identity.Spec.OpenStack.ServerGroupID); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -621,16 +649,16 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Ident
 		return err
 	}
 
-	if err := identityService.DeleteUser(ctx, identity.Spec.OpenStack.UserID); err != nil {
-		return err
+	if identity.Spec.OpenStack.UserID != nil {
+		if err := identityService.DeleteUser(ctx, *identity.Spec.OpenStack.UserID); err != nil {
+			return err
+		}
 	}
 
-	if err := identityService.DeleteProject(ctx, identity.Spec.OpenStack.ProjectID); err != nil {
-		return err
-	}
-
-	if err := p.client.Delete(ctx, identity); err != nil {
-		return err
+	if identity.Spec.OpenStack.ProjectID != nil {
+		if err := identityService.DeleteProject(ctx, *identity.Spec.OpenStack.ProjectID); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -643,7 +671,7 @@ func (p *Provider) CreatePhysicalNetwork(ctx context.Context, identity *unikornv
 		return nil, err
 	}
 
-	vlanID, providerNetwork, err := networkService.CreateVLANProviderNetwork(ctx, "cluster-provider-network", identity.Spec.OpenStack.ProjectID)
+	vlanID, providerNetwork, err := networkService.CreateVLANProviderNetwork(ctx, "cluster-provider-network", *identity.Spec.OpenStack.ProjectID)
 	if err != nil {
 		return nil, err
 	}

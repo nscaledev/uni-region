@@ -445,11 +445,6 @@ components:
     identitySpecOpenStack:
       description: Everything an OpenStack client needs to function.
       type: object
-      required:
-      - cloud
-      - cloudConfig
-      - userId
-      - projectId
       properties:
         cloud:
           description: The name of the cloud in the cloud config.
@@ -555,7 +550,6 @@ components:
             $ref: '#/components/schemas/identityWrite'
           example:
             metadata:
-              id: c7568e2d-f9ab-453d-9a3a-51375f78426b
               name: identity-name
               description: A verbose description
             spec:
@@ -571,7 +565,6 @@ components:
             $ref: '#/components/schemas/physicalNetworkWrite'
           example:
             metadata:
-              id: c7568e2d-f9ab-453d-9a3a-51375f78426b
               name: physical-network-name
               description: A verbose description
             spec:

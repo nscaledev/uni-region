@@ -313,17 +313,21 @@ func convertIdentity(in *unikornv1.Identity) *openapi.IdentityRead {
 	case unikornv1.ProviderOpenstack:
 		out.Spec.Type = openapi.Openstack
 
-		cloudConfig := base64.URLEncoding.EncodeToString(in.Spec.OpenStack.CloudConfig)
+		if in.Spec.OpenStack != nil {
+			out.Spec.Openstack = &openapi.IdentitySpecOpenStack{
+				Cloud:     in.Spec.OpenStack.Cloud,
+				UserId:    in.Spec.OpenStack.UserID,
+				ProjectId: in.Spec.OpenStack.ProjectID,
+			}
 
-		out.Spec.Openstack = &openapi.IdentitySpecOpenStack{
-			CloudConfig: cloudConfig,
-			Cloud:       in.Spec.OpenStack.Cloud,
-			UserId:      in.Spec.OpenStack.UserID,
-			ProjectId:   in.Spec.OpenStack.ProjectID,
-		}
+			if in.Spec.OpenStack.CloudConfig != nil {
+				cloudConfig := base64.URLEncoding.EncodeToString(in.Spec.OpenStack.CloudConfig)
+				out.Spec.Openstack.CloudConfig = &cloudConfig
+			}
 
-		if in.Spec.OpenStack.ServerGroupID != nil {
-			out.Spec.Openstack.ServerGroupId = in.Spec.OpenStack.ServerGroupID
+			if in.Spec.OpenStack.ServerGroupID != nil {
+				out.Spec.Openstack.ServerGroupId = in.Spec.OpenStack.ServerGroupID
+			}
 		}
 	}
 
@@ -366,6 +370,29 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseW
 	util.WriteJSONResponse(w, r, http.StatusOK, convertIdentityList(result))
 }
 
+func generateTag(in openapi.Tag) unikornv1.Tag {
+	out := unikornv1.Tag{
+		Name:  in.Name,
+		Value: in.Value,
+	}
+
+	return out
+}
+
+func generateTagList(in *openapi.TagList) unikornv1.TagList {
+	if in == nil {
+		return nil
+	}
+
+	out := make(unikornv1.TagList, len(*in))
+
+	for i := range *in {
+		out[i] = generateTag((*in)[i])
+	}
+
+	return out
+}
+
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "identities", identityapi.Create, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
@@ -381,13 +408,26 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 
 	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), request.Spec.RegionId)
 	if err != nil {
-		errors.HandleError(w, r, err)
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to get region provider").WithError(err))
 		return
 	}
 
-	identity, err := provider.CreateIdentity(r.Context(), organizationID, projectID, request)
+	region, err := provider.Region(r.Context())
 	if err != nil {
-		errors.HandleError(w, r, err)
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to get region").WithError(err))
+		return
+	}
+
+	identity := &unikornv1.Identity{
+		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, h.namespace).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, request.Spec.RegionId).Get(r.Context()),
+		Spec: unikornv1.IdentitySpec{
+			Tags:     generateTagList(request.Spec.Tags),
+			Provider: region.Spec.Provider,
+		},
+	}
+
+	if err := h.client.Create(r.Context(), identity); err != nil {
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to create identity").WithError(err))
 		return
 	}
 
@@ -407,14 +447,13 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		return
 	}
 
-	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), identity.Labels[constants.RegionLabel])
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
+	if err := h.client.Delete(r.Context(), identity); err != nil {
+		if kerrors.IsNotFound(err) {
+			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
+			return
+		}
 
-	if err := provider.DeleteIdentity(r.Context(), identity); err != nil {
-		errors.HandleError(w, r, errors.OAuth2ServerError("failed to delete identity").WithError(err))
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to delete identity").WithError(err))
 		return
 	}
 
