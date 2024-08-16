@@ -145,6 +145,21 @@ paths:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/identityIDParameter'
+    get:
+      description: Get a single identity.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/identityResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       description: Delete an identity and any resources associated with it.
       security:
@@ -445,11 +460,6 @@ components:
     identitySpecOpenStack:
       description: Everything an OpenStack client needs to function.
       type: object
-      required:
-      - cloud
-      - cloudConfig
-      - userId
-      - projectId
       properties:
         cloud:
           description: The name of the cloud in the cloud config.
@@ -555,7 +565,6 @@ components:
             $ref: '#/components/schemas/identityWrite'
           example:
             metadata:
-              id: c7568e2d-f9ab-453d-9a3a-51375f78426b
               name: identity-name
               description: A verbose description
             spec:
@@ -571,7 +580,6 @@ components:
             $ref: '#/components/schemas/physicalNetworkWrite'
           example:
             metadata:
-              id: c7568e2d-f9ab-453d-9a3a-51375f78426b
               name: physical-network-name
               description: A verbose description
             spec:

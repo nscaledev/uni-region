@@ -27,12 +27,14 @@ import (
 	"slices"
 	"time"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/util"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
+	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -297,9 +299,15 @@ func convertTags(in unikornv1.TagList) openapi.TagList {
 	return out
 }
 
-func convertIdentity(in *unikornv1.Identity) *openapi.IdentityRead {
+func (h *Handler) convertIdentity(ctx context.Context, in *unikornv1.Identity) *openapi.IdentityRead {
+	provisioningStatus := coreapi.ResourceProvisioningStatusUnknown
+
+	if condition, err := in.StatusConditionRead(unikornv1core.ConditionAvailable); err == nil {
+		provisioningStatus = conversion.ConvertStatusCondition(condition)
+	}
+
 	out := &openapi.IdentityRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, coreapi.ResourceProvisioningStatusProvisioned),
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, provisioningStatus),
 		Spec: openapi.IdentitySpec{
 			RegionId: in.Labels[constants.RegionLabel],
 		},
@@ -313,28 +321,31 @@ func convertIdentity(in *unikornv1.Identity) *openapi.IdentityRead {
 	case unikornv1.ProviderOpenstack:
 		out.Spec.Type = openapi.Openstack
 
-		cloudConfig := base64.URLEncoding.EncodeToString(in.Spec.OpenStack.CloudConfig)
+		var openstackIdentity unikornv1.OpenstackIdentity
 
-		out.Spec.Openstack = &openapi.IdentitySpecOpenStack{
-			CloudConfig: cloudConfig,
-			Cloud:       in.Spec.OpenStack.Cloud,
-			UserId:      in.Spec.OpenStack.UserID,
-			ProjectId:   in.Spec.OpenStack.ProjectID,
-		}
+		if err := h.client.Get(ctx, client.ObjectKey{Namespace: in.Namespace, Name: in.Name}, &openstackIdentity); err == nil {
+			out.Spec.Openstack = &openapi.IdentitySpecOpenStack{
+				Cloud:         openstackIdentity.Spec.Cloud,
+				UserId:        openstackIdentity.Spec.UserID,
+				ProjectId:     openstackIdentity.Spec.ProjectID,
+				ServerGroupId: openstackIdentity.Spec.ServerGroupID,
+			}
 
-		if in.Spec.OpenStack.ServerGroupID != nil {
-			out.Spec.Openstack.ServerGroupId = in.Spec.OpenStack.ServerGroupID
+			if openstackIdentity.Spec.CloudConfig != nil {
+				cloudConfig := base64.URLEncoding.EncodeToString(openstackIdentity.Spec.CloudConfig)
+				out.Spec.Openstack.CloudConfig = &cloudConfig
+			}
 		}
 	}
 
 	return out
 }
 
-func convertIdentityList(in unikornv1.IdentityList) openapi.IdentitiesRead {
+func (h *Handler) convertIdentityList(ctx context.Context, in unikornv1.IdentityList) openapi.IdentitiesRead {
 	out := make(openapi.IdentitiesRead, len(in.Items))
 
 	for i := range in.Items {
-		out[i] = *convertIdentity(&in.Items[i])
+		out[i] = *h.convertIdentity(ctx, &in.Items[i])
 	}
 
 	return out
@@ -363,7 +374,30 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseW
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	util.WriteJSONResponse(w, r, http.StatusOK, convertIdentityList(result))
+	util.WriteJSONResponse(w, r, http.StatusOK, h.convertIdentityList(r.Context(), result))
+}
+
+func generateTag(in openapi.Tag) unikornv1.Tag {
+	out := unikornv1.Tag{
+		Name:  in.Name,
+		Value: in.Value,
+	}
+
+	return out
+}
+
+func generateTagList(in *openapi.TagList) unikornv1.TagList {
+	if in == nil {
+		return nil
+	}
+
+	out := make(unikornv1.TagList, len(*in))
+
+	for i := range *in {
+		out[i] = generateTag((*in)[i])
+	}
+
+	return out
 }
 
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter) {
@@ -381,18 +415,51 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 
 	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), request.Spec.RegionId)
 	if err != nil {
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to get region provider").WithError(err))
+		return
+	}
+
+	region, err := provider.Region(r.Context())
+	if err != nil {
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to get region").WithError(err))
+		return
+	}
+
+	userinfo, err := authorization.UserinfoFromContext(r.Context())
+	if err != nil {
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to get userinfo").WithError(err))
+		return
+	}
+
+	identity := &unikornv1.Identity{
+		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, h.namespace, userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, request.Spec.RegionId).Get(),
+		Spec: unikornv1.IdentitySpec{
+			Tags:     generateTagList(request.Spec.Tags),
+			Provider: region.Spec.Provider,
+		},
+	}
+
+	if err := h.client.Create(r.Context(), identity); err != nil {
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to create identity").WithError(err))
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusCreated, h.convertIdentity(r.Context(), identity))
+}
+
+func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "identities", identityapi.Read, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	identity, err := provider.CreateIdentity(r.Context(), organizationID, projectID, request)
+	identity, err := h.getIdentity(r.Context(), identityID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	h.setCacheable(w)
-	util.WriteJSONResponse(w, r, http.StatusCreated, convertIdentity(identity))
+	util.WriteJSONResponse(w, r, http.StatusOK, h.convertIdentity(r.Context(), identity))
 }
 
 func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
@@ -407,14 +474,13 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		return
 	}
 
-	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), identity.Labels[constants.RegionLabel])
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
+	if err := h.client.Delete(r.Context(), identity); err != nil {
+		if kerrors.IsNotFound(err) {
+			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
+			return
+		}
 
-	if err := provider.DeleteIdentity(r.Context(), identity); err != nil {
-		errors.HandleError(w, r, errors.OAuth2ServerError("failed to delete identity").WithError(err))
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to delete identity").WithError(err))
 		return
 	}
 

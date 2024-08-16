@@ -1,7 +1,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: unikorn-region
+  name: unikorn-identity-controller
   labels:
     {{- include "unikorn.labels" . | nindent 4 }}
 rules:
@@ -9,19 +9,18 @@ rules:
 - apiGroups:
   - region.unikorn-cloud.org
   resources:
-  - regions
-  verbs:
-  - list
-  - watch
-- apiGroups:
-  - region.unikorn-cloud.org
-  resources:
   - identities
   verbs:
   - list
   - watch
-  - create
-  - delete
+  - patch
+  - update
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - identities/status
+  verbs:
+  - update
 - apiGroups:
   - region.unikorn-cloud.org
   resources:
@@ -29,6 +28,9 @@ rules:
   verbs:
   - list
   - watch
+  - create
+  - update
+  - delete
 - apiGroups:
   - ""
   resources:
@@ -37,9 +39,9 @@ rules:
   - list
   - watch
 - apiGroups:
-  - ""
+  - region.unikorn-cloud.org
   resources:
-  - events
+  - regions
   verbs:
   - list
   - watch

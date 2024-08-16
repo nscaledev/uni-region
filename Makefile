@@ -11,7 +11,8 @@ REVISION := $(shell git rev-parse HEAD)
 # for your host's architecture.  The latter are going to run in Kubernetes, so
 # want to be amd64.
 CONTROLLERS = \
-  unikorn-region-controller
+  unikorn-region-controller \
+  unikorn-identity-controller
 
 # Release will do cross compliation of all images for the 'all' target.
 # Note we aren't fucking about with docker here because that opens up a
