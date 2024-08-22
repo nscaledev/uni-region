@@ -29,12 +29,10 @@ import (
 	"github.com/gophercloud/utils/openstack/clientconfig"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
-	"github.com/unikorn-cloud/core/pkg/server/conversion"
-	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
+	"github.com/unikorn-cloud/region/pkg/providers/allocation/vlan"
 
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -51,6 +49,14 @@ var (
 	ErrKeyUndefined = errors.New("a required key was not defined")
 )
 
+type providerCredentials struct {
+	endpoint  string
+	domainID  string
+	projectID string
+	userID    string
+	password  string
+}
+
 type Provider struct {
 	// client is Kubernetes client.
 	client client.Client
@@ -61,10 +67,14 @@ type Provider struct {
 	// secret is the current region secret.
 	secret *corev1.Secret
 
-	domainID  string
-	projectID string
-	userID    string
-	password  string
+	// credentials hold cloud identity information.
+	credentials *providerCredentials
+
+	// vlan allocation table.
+	// NOTE: this can only be used by a single client unless it's moved
+	// into a Kubernetes resource of some variety to gain speculative locking
+	// powers.
+	vlanAllocator *vlan.Allocator
 
 	// DO NOT USE DIRECTLY, CALL AN ACCESSOR.
 	_identity *IdentityClient
@@ -77,11 +87,24 @@ type Provider struct {
 
 var _ providers.Provider = &Provider{}
 
-func New(client client.Client, region *unikornv1.Region) *Provider {
-	return &Provider{
-		client: client,
-		region: region,
+func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Provider, error) {
+	var vlanSpec *unikornv1.VLANSpec
+
+	if region.Spec.Openstack != nil && region.Spec.Openstack.Network != nil && region.Spec.Openstack.Network.ProviderNetworks != nil {
+		vlanSpec = region.Spec.Openstack.Network.ProviderNetworks.VLAN
 	}
+
+	p := &Provider{
+		client:        cli,
+		region:        region,
+		vlanAllocator: vlan.New(cli, region.Namespace, "openstack-region-provider", vlanSpec),
+	}
+
+	if err := p.serviceClientRefresh(ctx); err != nil {
+		return nil, err
+	}
+
+	return p, nil
 }
 
 // serviceClientRefresh updates clients if they need to e.g. in the event
@@ -147,14 +170,24 @@ func (p *Provider) serviceClientRefresh(ctx context.Context) error {
 		return fmt.Errorf("%w: project-id", ErrKeyUndefined)
 	}
 
-	// 'Regular' client calls to APIs for Nova, Glance etc. must to be project-scoped
-	providerClient := NewPasswordProvider(region.Spec.Openstack.Endpoint, string(userID), string(password), string(projectID))
+	credentials := &providerCredentials{
+		endpoint:  region.Spec.Openstack.Endpoint,
+		domainID:  string(domainID),
+		projectID: string(projectID),
+		userID:    string(userID),
+		password:  string(password),
+	}
 
-	// Identity client is scoped to a domain to use the manager role
+	// The identity client needs to have "manager" powers, so it create projects and
+	// users within a domain without full admin.
 	identity, err := NewIdentityClient(ctx, NewDomainScopedPasswordProvider(region.Spec.Openstack.Endpoint, string(userID), string(password), string(domainID)))
 	if err != nil {
 		return err
 	}
+
+	// Everything else gets a default view when bound to a project as a "member".
+	// Sadly, domain scoped accesses do not work by default any longer.
+	providerClient := NewPasswordProvider(region.Spec.Openstack.Endpoint, string(userID), string(password), string(projectID))
 
 	compute, err := NewComputeClient(ctx, providerClient, region.Spec.Openstack.Compute)
 	if err != nil {
@@ -174,12 +207,7 @@ func (p *Provider) serviceClientRefresh(ctx context.Context) error {
 	// Save the current configuration for checking next time.
 	p.region = region
 	p.secret = secret
-
-	p.domainID = string(domainID)
-	p.projectID = string(projectID)
-
-	p.userID = string(userID)
-	p.password = string(password)
+	p.credentials = credentials
 
 	// Seve the clients
 	p._identity = identity
@@ -396,7 +424,7 @@ func (p *Provider) provisionUser(ctx context.Context, identityService *IdentityC
 	name := identityResourceName(identity)
 	password := string(uuid.NewUUID())
 
-	user, err := identityService.CreateUser(ctx, p.domainID, name, password)
+	user, err := identityService.CreateUser(ctx, p.credentials.domainID, name, password)
 	if err != nil {
 		return err
 	}
@@ -417,7 +445,7 @@ func (p *Provider) provisionProject(ctx context.Context, identityService *Identi
 
 	name := identityResourceName(identity)
 
-	project, err := identityService.CreateProject(ctx, p.domainID, name, projectTags(identity))
+	project, err := identityService.CreateProject(ctx, p.credentials.domainID, name, projectTags(identity))
 	if err != nil {
 		return err
 	}
@@ -439,9 +467,19 @@ func roleNameToID(roles []roles.Role, name string) (string, error) {
 	return "", fmt.Errorf("%w: role %s", ErrResourceNotFound, name)
 }
 
-// getRequiredRoles returns the roles required for a user to create, manage and delete
+// getRequiredProjectManagerRoles returns the roles required for a manager to create, manage
+// and delete things like provider networks to support baremetal.
+func (p *Provider) getRequiredProjectManagerRoles() []string {
+	defaultRoles := []string{
+		"manager",
+	}
+
+	return defaultRoles
+}
+
+// getRequiredProjectUserRoles returns the roles required for a user to create, manage and delete
 // a cluster.
-func (p *Provider) getRequiredRoles() []string {
+func (p *Provider) getRequiredProjectUserRoles() []string {
 	if p.region.Spec.Openstack.Identity != nil && len(p.region.Spec.Openstack.Identity.ClusterRoles) > 0 {
 		return p.region.Spec.Openstack.Identity.ClusterRoles
 	}
@@ -457,19 +495,19 @@ func (p *Provider) getRequiredRoles() []string {
 // provisionProjectRoles creates a binding between our service account and the project
 // with the required roles to provision an application credential that will allow cluster
 // creation, deletion and life-cycle management.
-func (p *Provider) provisionProjectRoles(ctx context.Context, identityService *IdentityClient, identity *unikornv1.OpenstackIdentity) error {
+func (p *Provider) provisionProjectRoles(ctx context.Context, identityService *IdentityClient, identity *unikornv1.OpenstackIdentity, userID string, rolesGetter func() []string) error {
 	allRoles, err := identityService.ListRoles(ctx)
 	if err != nil {
 		return err
 	}
 
-	for _, name := range p.getRequiredRoles() {
+	for _, name := range rolesGetter() {
 		roleID, err := roleNameToID(allRoles, name)
 		if err != nil {
 			return err
 		}
 
-		if err := identityService.CreateRoleAssignment(ctx, *identity.Spec.UserID, *identity.Spec.ProjectID, roleID); err != nil {
+		if err := identityService.CreateRoleAssignment(ctx, userID, *identity.Spec.ProjectID, roleID); err != nil {
 			return err
 		}
 	}
@@ -492,7 +530,7 @@ func (p *Provider) provisionApplicationCredential(ctx context.Context, identity 
 
 	name := identityResourceName(identity)
 
-	appcred, err := identityService.CreateApplicationCredential(ctx, *identity.Spec.UserID, name, "IaaS lifecycle management", p.getRequiredRoles())
+	appcred, err := identityService.CreateApplicationCredential(ctx, *identity.Spec.UserID, name, "IaaS lifecycle management", p.getRequiredProjectUserRoles())
 	if err != nil {
 		return err
 	}
@@ -532,29 +570,6 @@ func (p *Provider) createClientConfig(identity *unikornv1.OpenstackIdentity) err
 	identity.Spec.CloudConfig = clientConfigYAML
 
 	return nil
-}
-
-func convertTag(in openapi.Tag) unikornv1.Tag {
-	out := unikornv1.Tag{
-		Name:  in.Name,
-		Value: in.Value,
-	}
-
-	return out
-}
-
-func convertTagList(in *openapi.TagList) unikornv1.TagList {
-	if in == nil {
-		return nil
-	}
-
-	out := make(unikornv1.TagList, len(*in))
-
-	for i := range *in {
-		out[i] = convertTag((*in)[i])
-	}
-
-	return out
 }
 
 func (p *Provider) createIdentityServerGroup(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
@@ -634,6 +649,7 @@ func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Ident
 		return err
 	}
 
+	// Always attempt to record where we are up to for idempotency.
 	record := func() {
 		log := log.FromContext(ctx)
 
@@ -658,6 +674,14 @@ func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Ident
 		return err
 	}
 
+	// Grant the "manager" role on the project for unikorn's user.  Sadly when provisioning
+	// resources, most services can only infer the project ID from the token, and not any
+	// of the heirarchy, so we cannot define policy rules for a domain manager in the same
+	// way as can be done for the identity service.
+	if err := p.provisionProjectRoles(ctx, identityService, openstackIdentity, p.credentials.userID, p.getRequiredProjectManagerRoles); err != nil {
+		return err
+	}
+
 	// You MUST provision a new user, if we rotate a password, any application credentials
 	// hanging off it will stop working, i.e. doing that to the unikorn management user
 	// will be pretty catastrophic for all clusters in the region.
@@ -667,7 +691,7 @@ func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Ident
 
 	// Give the user only what permissions they need to provision a cluster and
 	// manage it during its lifetime.
-	if err := p.provisionProjectRoles(ctx, identityService, openstackIdentity); err != nil {
+	if err := p.provisionProjectRoles(ctx, identityService, openstackIdentity, *openstackIdentity.Spec.UserID, p.getRequiredProjectUserRoles); err != nil {
 		return err
 	}
 
@@ -700,7 +724,24 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Ident
 		return nil
 	}
 
-	if openstackIdentity.Spec.UserID != nil && openstackIdentity.Spec.ProjectID != nil {
+	complete := false
+
+	// Always attempt to record where we are up to for idempotency.
+	record := func() {
+		if complete {
+			return
+		}
+
+		log := log.FromContext(ctx)
+
+		if err := p.client.Update(ctx, openstackIdentity); err != nil {
+			log.Error(err, "failed to update openstack identity")
+		}
+	}
+
+	defer record()
+
+	if openstackIdentity.Spec.ServerGroupID != nil {
 		// Rescope to the user/project...
 		providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *openstackIdentity.Spec.UserID, *openstackIdentity.Spec.Password, *openstackIdentity.Spec.ProjectID)
 
@@ -709,11 +750,11 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Ident
 			return err
 		}
 
-		if openstackIdentity.Spec.ServerGroupID != nil {
-			if err := computeService.DeleteServerGroup(ctx, *openstackIdentity.Spec.ServerGroupID); err != nil {
-				return err
-			}
+		if err := computeService.DeleteServerGroup(ctx, *openstackIdentity.Spec.ServerGroupID); err != nil {
+			return err
 		}
+
+		openstackIdentity.Spec.ServerGroupID = nil
 	}
 
 	identityService, err := p.identity(ctx)
@@ -725,65 +766,298 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Ident
 		if err := identityService.DeleteUser(ctx, *openstackIdentity.Spec.UserID); err != nil {
 			return err
 		}
+
+		openstackIdentity.Spec.UserID = nil
 	}
 
 	if openstackIdentity.Spec.ProjectID != nil {
 		if err := identityService.DeleteProject(ctx, *openstackIdentity.Spec.ProjectID); err != nil {
 			return err
 		}
+
+		openstackIdentity.Spec.ProjectID = nil
 	}
 
 	if err := p.client.Delete(ctx, openstackIdentity); err != nil {
 		return err
 	}
 
+	complete = true
+
+	return nil
+}
+
+func (p *Provider) GetOpenstackPhysicalNetwork(ctx context.Context, physicalNetwork *unikornv1.PhysicalNetwork) (*unikornv1.OpenstackPhysicalNetwork, error) {
+	var result unikornv1.OpenstackPhysicalNetwork
+
+	if err := p.client.Get(ctx, client.ObjectKey{Namespace: physicalNetwork.Namespace, Name: physicalNetwork.Name}, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (p *Provider) GetOrCreateOpenstackPhysicalNetwork(ctx context.Context, identity *unikornv1.Identity, physicalNetwork *unikornv1.PhysicalNetwork) (*unikornv1.OpenstackPhysicalNetwork, bool, error) {
+	create := false
+
+	openstackPhysicalNetwork, err := p.GetOpenstackPhysicalNetwork(ctx, physicalNetwork)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			return nil, false, err
+		}
+
+		openstackPhysicalNetwork = &unikornv1.OpenstackPhysicalNetwork{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: physicalNetwork.Namespace,
+				Name:      physicalNetwork.Name,
+				Labels: map[string]string{
+					constants.IdentityLabel:        identity.Name,
+					constants.PhysicalNetworkLabel: physicalNetwork.Name,
+				},
+				Annotations: physicalNetwork.Annotations,
+			},
+		}
+
+		for k, v := range physicalNetwork.Labels {
+			openstackPhysicalNetwork.Labels[k] = v
+		}
+
+		create = true
+	}
+
+	return openstackPhysicalNetwork, create, nil
+}
+
+func (p *Provider) allocateVLAN(ctx context.Context, physicalNetwork *unikornv1.OpenstackPhysicalNetwork) error {
+	if physicalNetwork.Spec.VlanID != nil {
+		return nil
+	}
+
+	vlanID, err := p.vlanAllocator.Allocate(ctx, physicalNetwork.Name)
+	if err != nil {
+		return err
+	}
+
+	physicalNetwork.Spec.VlanID = &vlanID
+
+	return nil
+}
+
+func (p *Provider) createPhysicalNetwork(ctx context.Context, networkService *NetworkClient, identity *unikornv1.OpenstackIdentity, physicalNetwork *unikornv1.OpenstackPhysicalNetwork) error {
+	if physicalNetwork.Spec.NetworkID != nil {
+		return nil
+	}
+
+	providerNetwork, err := networkService.CreateVLANProviderNetwork(ctx, "unikorn-openstack-region-provider-network", *physicalNetwork.Spec.VlanID)
+	if err != nil {
+		return err
+	}
+
+	physicalNetwork.Spec.NetworkID = &providerNetwork.ID
+
+	return nil
+}
+
+func (p *Provider) createSubnet(ctx context.Context, networkService *NetworkClient, physicalNetwork *unikornv1.PhysicalNetwork, openstackPhysicalNetwork *unikornv1.OpenstackPhysicalNetwork) error {
+	if openstackPhysicalNetwork.Spec.SubnetID != nil {
+		return nil
+	}
+
+	dnsNameservers := make([]string, len(physicalNetwork.Spec.DNSNameservers))
+
+	for i, ip := range physicalNetwork.Spec.DNSNameservers {
+		dnsNameservers[i] = ip.String()
+	}
+
+	subnet, err := networkService.CreateSubnet(ctx, "unikorn-openstack-region-provider-subnet", *openstackPhysicalNetwork.Spec.NetworkID, physicalNetwork.Spec.Prefix.String(), dnsNameservers)
+	if err != nil {
+		return err
+	}
+
+	openstackPhysicalNetwork.Spec.SubnetID = &subnet.ID
+
+	return nil
+}
+
+func (p *Provider) createRouter(ctx context.Context, networkService *NetworkClient, openstackPhysicalNetwork *unikornv1.OpenstackPhysicalNetwork) error {
+	if openstackPhysicalNetwork.Spec.RouterID != nil {
+		return nil
+	}
+
+	router, err := networkService.CreateRouter(ctx, "unikorn-openstack-region-provider-router")
+	if err != nil {
+		return nil
+	}
+
+	openstackPhysicalNetwork.Spec.RouterID = &router.ID
+
+	return nil
+}
+
+func (p *Provider) addRouterSubnetInterface(ctx context.Context, networkService *NetworkClient, openstackPhysicalNetwork *unikornv1.OpenstackPhysicalNetwork) error {
+	if openstackPhysicalNetwork.Spec.RouterSubnetInterfaceAdded {
+		return nil
+	}
+
+	if err := networkService.AddRouterInterface(ctx, *openstackPhysicalNetwork.Spec.RouterID, *openstackPhysicalNetwork.Spec.SubnetID); err != nil {
+		return err
+	}
+
+	openstackPhysicalNetwork.Spec.RouterSubnetInterfaceAdded = true
+
 	return nil
 }
 
 // CreatePhysicalNetwork creates a physical network for an identity.
-func (p *Provider) CreatePhysicalNetwork(ctx context.Context, identity *unikornv1.Identity, request *openapi.PhysicalNetworkWrite) (*unikornv1.PhysicalNetwork, error) {
+func (p *Provider) CreatePhysicalNetwork(ctx context.Context, identity *unikornv1.Identity, physicalNetwork *unikornv1.PhysicalNetwork) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	networkService, err := p.network(ctx)
+	openstackPhysicalNetwork, create, err := p.GetOrCreateOpenstackPhysicalNetwork(ctx, identity, physicalNetwork)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	vlanID, providerNetwork, err := networkService.CreateVLANProviderNetwork(ctx, "cluster-provider-network", *openstackIdentity.Spec.ProjectID)
+	// Always attempt to record where we are up to for idempotency.
+	record := func() {
+		log := log.FromContext(ctx)
+
+		if create {
+			if err := p.client.Create(ctx, openstackPhysicalNetwork); err != nil {
+				log.Error(err, "failed to create openstack physical network")
+			}
+
+			return
+		}
+
+		if err := p.client.Update(ctx, openstackPhysicalNetwork); err != nil {
+			log.Error(err, "failed to update openstack physical network")
+		}
+	}
+
+	defer record()
+
+	if err := p.allocateVLAN(ctx, openstackPhysicalNetwork); err != nil {
+		return err
+	}
+
+	// Rescope to the project...
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	userinfo, err := authorization.UserinfoFromContext(ctx)
+	if err := p.createPhysicalNetwork(ctx, networkService, openstackIdentity, openstackPhysicalNetwork); err != nil {
+		return err
+	}
+
+	if err := p.createSubnet(ctx, networkService, physicalNetwork, openstackPhysicalNetwork); err != nil {
+		return err
+	}
+
+	if err := p.createRouter(ctx, networkService, openstackPhysicalNetwork); err != nil {
+		return err
+	}
+
+	if err := p.addRouterSubnetInterface(ctx, networkService, openstackPhysicalNetwork); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// DeletePhysicalNetwork deletes a physical network.
+func (p *Provider) DeletePhysicalNetwork(ctx context.Context, identity *unikornv1.Identity, physicalNetwork *unikornv1.PhysicalNetwork) error {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	objectMeta := conversion.NewObjectMetadata(&request.Metadata, p.region.Namespace, userinfo.Sub)
-	objectMeta = objectMeta.WithOrganization(identity.Labels[coreconstants.OrganizationLabel])
-	objectMeta = objectMeta.WithProject(identity.Labels[coreconstants.ProjectLabel])
-	objectMeta = objectMeta.WithLabel(constants.RegionLabel, p.region.Name)
-	objectMeta = objectMeta.WithLabel(constants.IdentityLabel, identity.Name)
+	openstackPhysicalNetwork, err := p.GetOpenstackPhysicalNetwork(ctx, physicalNetwork)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			return err
+		}
 
-	physicalNetwork := &unikornv1.PhysicalNetwork{
-		ObjectMeta: objectMeta.Get(),
-		Spec: unikornv1.PhysicalNetworkSpec{
-			Tags: convertTagList(request.Spec.Tags),
-			ProviderNetwork: &unikornv1.OpenstackProviderNetworkSpec{
-				ID:     providerNetwork.ID,
-				VlanID: vlanID,
-			},
-		},
+		return nil
 	}
 
-	if err := p.client.Create(ctx, physicalNetwork); err != nil {
-		return nil, err
+	complete := false
+
+	// Always attempt to record where we are up to for idempotency.
+	record := func() {
+		if complete {
+			return
+		}
+
+		log := log.FromContext(ctx)
+
+		if err := p.client.Update(ctx, openstackPhysicalNetwork); err != nil {
+			log.Error(err, "failed to update openstack physical network")
+		}
 	}
 
-	return physicalNetwork, nil
+	defer record()
+
+	// Rescope to the project...
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	if err != nil {
+		return err
+	}
+
+	if openstackPhysicalNetwork.Spec.RouterSubnetInterfaceAdded {
+		if err := networkService.RemoveRouterInterface(ctx, *openstackPhysicalNetwork.Spec.RouterID, *openstackPhysicalNetwork.Spec.SubnetID); err != nil {
+			return err
+		}
+
+		openstackPhysicalNetwork.Spec.RouterSubnetInterfaceAdded = false
+	}
+
+	if openstackPhysicalNetwork.Spec.RouterID != nil {
+		if err := networkService.DeleteRouter(ctx, *openstackPhysicalNetwork.Spec.RouterID); err != nil {
+			return err
+		}
+
+		openstackPhysicalNetwork.Spec.RouterID = nil
+	}
+
+	if openstackPhysicalNetwork.Spec.SubnetID != nil {
+		if err := networkService.DeleteSubnet(ctx, *openstackPhysicalNetwork.Spec.SubnetID); err != nil {
+			return err
+		}
+
+		openstackPhysicalNetwork.Spec.SubnetID = nil
+	}
+
+	if openstackPhysicalNetwork.Spec.NetworkID != nil {
+		if err := networkService.DeleteVLANProviderNetwork(ctx, *openstackPhysicalNetwork.Spec.NetworkID); err != nil {
+			return err
+		}
+
+		openstackPhysicalNetwork.Spec.NetworkID = nil
+	}
+
+	if openstackPhysicalNetwork.Spec.VlanID != nil {
+		if err := p.vlanAllocator.Free(ctx, *openstackPhysicalNetwork.Spec.VlanID); err != nil {
+			return err
+		}
+
+		openstackPhysicalNetwork.Spec.VlanID = nil
+	}
+
+	if err := p.client.Delete(ctx, openstackPhysicalNetwork); err != nil {
+		return err
+	}
+
+	complete = true
+
+	return nil
 }
 
 // ListExternalNetworks returns a list of external networks if the platform

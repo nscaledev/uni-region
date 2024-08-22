@@ -50,8 +50,10 @@ var (
 func init() {
 	SchemeBuilder.Register(&Region{}, &RegionList{})
 	SchemeBuilder.Register(&Identity{}, &IdentityList{})
-	SchemeBuilder.Register(&OpenstackIdentity{}, &OpenstackIdentityList{})
 	SchemeBuilder.Register(&PhysicalNetwork{}, &PhysicalNetworkList{})
+	SchemeBuilder.Register(&OpenstackIdentity{}, &OpenstackIdentityList{})
+	SchemeBuilder.Register(&OpenstackPhysicalNetwork{}, &OpenstackPhysicalNetworkList{})
+	SchemeBuilder.Register(&VLANAllocation{}, &VLANAllocationList{})
 }
 
 // Resource maps a resource type to a group resource.

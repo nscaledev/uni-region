@@ -360,6 +360,7 @@ type PhysicalNetworkList struct {
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
 // +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
 type PhysicalNetwork struct {
@@ -370,20 +371,94 @@ type PhysicalNetwork struct {
 }
 
 type PhysicalNetworkSpec struct {
+	// Pause, if true, will inhibit reconciliation.
+	Pause bool `json:"pause,omitempty"`
 	// Tags are an abitrary list of key/value pairs that a client
 	// may populate to store metadata for the resource.
 	Tags TagList `json:"tags,omitempty"`
-	// ProviderNetwork is the provider network for port allocation of
-	// virtual machines.
-	ProviderNetwork *OpenstackProviderNetworkSpec `json:"providerNetwork,omitempty"`
-}
-
-type OpenstackProviderNetworkSpec struct {
-	// ID is the network ID.
-	ID string `json:"id"`
-	// VlanID is the ID if the VLAN for IPAM.
-	VlanID int `json:"vlanID"`
+	// Provider defines the provider type.
+	Provider Provider `json:"provider"`
+	// Prefix is the IPv4 address prefix.
+	Prefix *unikornv1core.IPv4Prefix `json:"prefix"`
+	// DNSNameservers are a set of DNS nameservrs for the network.
+	DNSNameservers []unikornv1core.IPv4Address `json:"dnsNameservers"`
 }
 
 type PhysicalNetworkStatus struct {
+	// Current service state of a cluster manager.
+	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+}
+
+// OpenstackPhysicalNetworkList s a typed list of physical networks.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type OpenstackPhysicalNetworkList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []OpenstackPhysicalNetwork `json:"items"`
+}
+
+// OpenstackPhysicalNetwork defines a physical network beloning to an identity.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type OpenstackPhysicalNetwork struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              OpenstackPhysicalNetworkSpec   `json:"spec"`
+	Status            OpenstackPhysicalNetworkStatus `json:"status,omitempty"`
+}
+
+type OpenstackPhysicalNetworkSpec struct {
+	// NetworkID is the network ID.
+	NetworkID *string `json:"networkID,omitempty"`
+	// VlanID is the ID if the VLAN for IPAM.
+	VlanID *int `json:"vlanID,omitempty"`
+	// SubnetID is the subnet ID.
+	SubnetID *string `json:"subnetID,omitempty"`
+	// RouterID is the router ID.
+	RouterID *string `json:"routerID,omitempty"`
+	// RouterSubnetInterfaceAdded tells us if this step has been accomplished.
+	RouterSubnetInterfaceAdded bool `json:"routerSubnetInterfaceAdded,omitempty"`
+}
+
+type OpenstackPhysicalNetworkStatus struct {
+}
+
+// VLANAllocationList is a typed list of VLAN allocations.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type VLANAllocationList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []VLANAllocation `json:"items"`
+}
+
+// VLANAllocation is used to manage VLAN allocations.  Only a single instance is
+// allowed per region.  As this is a custom resource, we are guaranteed atomicity
+// due to Kubernetes' speculative locking implementation.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type VLANAllocation struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              VLANAllocationSpec   `json:"spec"`
+	Status            VLANAllocationStatus `json:"status,omitempty"`
+}
+
+type VLANAllocationSpec struct {
+	// Allocations are an explcit set of VLAN allocations.
+	Allocations []VLANAllocationEntry `json:"allocations,omitempty"`
+}
+
+type VLANAllocationEntry struct {
+	// ID is the VLAN ID.
+	ID int `json:"id"`
+	// PhysicalNetworkID is the physical network/provider specific physical network
+	// identifier that owns this entry.
+	PhysicalNetworkID string `json:"physicalNetworkID"`
+}
+
+type VLANAllocationStatus struct {
 }

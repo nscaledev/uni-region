@@ -76,11 +76,11 @@ func findRegion(regions *unikornv1.RegionList, regionID string) (*unikornv1.Regi
 //nolint:gochecknoglobals
 var cache = map[string]providers.Provider{}
 
-func (c Client) newProvider(region *unikornv1.Region) (providers.Provider, error) {
+func (c Client) newProvider(ctx context.Context, region *unikornv1.Region) (providers.Provider, error) {
 	//nolint:gocritic
 	switch region.Spec.Provider {
 	case unikornv1.ProviderOpenstack:
-		return openstack.New(c.client, region), nil
+		return openstack.New(ctx, c.client, region)
 	}
 
 	return nil, ErrRegionProviderUnimplmented
@@ -101,7 +101,7 @@ func (c *Client) Provider(ctx context.Context, regionID string) (providers.Provi
 		return provider, nil
 	}
 
-	provider, err := c.newProvider(region)
+	provider, err := c.newProvider(ctx, region)
 	if err != nil {
 		return nil, err
 	}

@@ -23,6 +23,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net"
 	"net/http"
 	"slices"
 	"time"
@@ -85,9 +86,9 @@ func (h *Handler) setUncacheable(w http.ResponseWriter) {
 }
 
 func (h *Handler) getIdentity(ctx context.Context, id string) (*unikornv1.Identity, error) {
-	identity := &unikornv1.Identity{}
+	resource := &unikornv1.Identity{}
 
-	if err := h.client.Get(ctx, client.ObjectKey{Namespace: h.namespace, Name: id}, identity); err != nil {
+	if err := h.client.Get(ctx, client.ObjectKey{Namespace: h.namespace, Name: id}, resource); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
@@ -95,7 +96,21 @@ func (h *Handler) getIdentity(ctx context.Context, id string) (*unikornv1.Identi
 		return nil, errors.OAuth2ServerError("unable to lookup identity").WithError(err)
 	}
 
-	return identity, nil
+	return resource, nil
+}
+
+func (h *Handler) getPhysicalNetwork(ctx context.Context, id string) (*unikornv1.PhysicalNetwork, error) {
+	resource := &unikornv1.PhysicalNetwork{}
+
+	if err := h.client.Get(ctx, client.ObjectKey{Namespace: h.namespace, Name: id}, resource); err != nil {
+		if kerrors.IsNotFound(err) {
+			return nil, errors.HTTPNotFound().WithError(err)
+		}
+
+		return nil, errors.OAuth2ServerError("unable to physical network identity").WithError(err)
+	}
+
+	return resource, nil
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
@@ -487,20 +502,56 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func convertPhysicalNetwork(in *unikornv1.PhysicalNetwork) *openapi.PhysicalNetworkRead {
+func convertIPv4List(in []unikornv1core.IPv4Address) openapi.Ipv4AddressList {
+	out := make(openapi.Ipv4AddressList, len(in))
+
+	for i, ip := range in {
+		out[i] = ip.String()
+	}
+
+	return out
+}
+
+func (h *Handler) convertPhysicalNetwork(ctx context.Context, in *unikornv1.PhysicalNetwork) *openapi.PhysicalNetworkRead {
+	provisioningStatus := coreapi.ResourceProvisioningStatusUnknown
+
+	if condition, err := in.StatusConditionRead(unikornv1core.ConditionAvailable); err == nil {
+		provisioningStatus = conversion.ConvertStatusCondition(condition)
+	}
+
 	out := &openapi.PhysicalNetworkRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, coreapi.ResourceProvisioningStatusProvisioned),
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, provisioningStatus),
+		Spec: &openapi.PhysicalNetworkReadSpec{
+			RegionId:       in.Labels[constants.RegionLabel],
+			Prefix:         in.Spec.Prefix.String(),
+			DnsNameservers: convertIPv4List(in.Spec.DNSNameservers),
+		},
 	}
 
 	if tags := convertTags(in.Spec.Tags); tags != nil {
 		out.Spec.Tags = &tags
 	}
 
+	switch in.Spec.Provider {
+	case unikornv1.ProviderOpenstack:
+		out.Spec.Type = openapi.Openstack
+
+		var openstackPhysicalNetwork unikornv1.OpenstackPhysicalNetwork
+
+		if err := h.client.Get(ctx, client.ObjectKey{Namespace: in.Namespace, Name: in.Name}, &openstackPhysicalNetwork); err == nil {
+			out.Spec.Openstack = &openapi.PhysicalNetworkSpecOpenstack{
+				VlanId:    openstackPhysicalNetwork.Spec.VlanID,
+				NetworkId: openstackPhysicalNetwork.Spec.NetworkID,
+				SubnetId:  openstackPhysicalNetwork.Spec.SubnetID,
+			}
+		}
+	}
+
 	return out
 }
 
-func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "identities", identityapi.Create, organizationID, projectID); err != nil {
+func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "physicalnetworks", identityapi.Create, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -518,19 +569,93 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), identity.Labels[constants.RegionLabel])
+	userinfo, err := authorization.UserinfoFromContext(r.Context())
+	if err != nil {
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to get userinfo").WithError(err))
+		return
+	}
+
+	_, prefix, err := net.ParseCIDR(request.Spec.Prefix)
+	if err != nil {
+		errors.HandleError(w, r, errors.OAuth2InvalidRequest("unable to parse prefix").WithError(err))
+		return
+	}
+
+	dnsNameservers := make([]unikornv1core.IPv4Address, len(request.Spec.DnsNameservers))
+
+	for i, ip := range request.Spec.DnsNameservers {
+		temp := net.ParseIP(ip)
+		if temp == nil {
+			errors.HandleError(w, r, errors.OAuth2InvalidRequest("unable to parse dns nameserver"))
+			return
+		}
+
+		dnsNameservers[i] = unikornv1core.IPv4Address{
+			IP: temp,
+		}
+	}
+
+	network := &unikornv1.PhysicalNetwork{
+		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, h.namespace, userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identityID).Get(),
+		Spec: unikornv1.PhysicalNetworkSpec{
+			Provider: identity.Spec.Provider,
+			Prefix: &unikornv1core.IPv4Prefix{
+				IPNet: *prefix,
+			},
+			DNSNameservers: dnsNameservers,
+		},
+	}
+
+	if request.Spec != nil {
+		network.Spec.Tags = generateTagList(request.Spec.Tags)
+	}
+
+	if err := h.client.Create(r.Context(), network); err != nil {
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to create physical network").WithError(err))
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusCreated, h.convertPhysicalNetwork(r.Context(), network))
+}
+
+func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, physicalNetworkID openapi.PhysicalNetworkIDParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "physicalnetworks", identityapi.Read, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	resource, err := h.getPhysicalNetwork(r.Context(), physicalNetworkID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	network, err := provider.CreatePhysicalNetwork(r.Context(), identity, request)
+	util.WriteJSONResponse(w, r, http.StatusOK, h.convertPhysicalNetwork(r.Context(), resource))
+}
+
+func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, physicalNetworkID openapi.PhysicalNetworkIDParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "physicalnetworks", identityapi.Delete, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	resource, err := h.getPhysicalNetwork(r.Context(), physicalNetworkID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusCreated, convertPhysicalNetwork(network))
+	if err := h.client.Delete(r.Context(), resource); err != nil {
+		if kerrors.IsNotFound(err) {
+			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
+			return
+		}
+
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to delete physical network").WithError(err))
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func convertExternalNetwork(in providers.ExternalNetwork) openapi.ExternalNetwork {

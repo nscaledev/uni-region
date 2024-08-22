@@ -207,6 +207,12 @@ type ImageVirtualization string
 // Images A list of images that are compatible with this platform.
 type Images = []Image
 
+// Ipv4Address An IPv4 address.
+type Ipv4Address = string
+
+// Ipv4AddressList A list of IPv4 addresses.
+type Ipv4AddressList = []Ipv4Address
+
 // KubernetesNameParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type KubernetesNameParameter = string
 
@@ -215,13 +221,43 @@ type PhysicalNetworkRead struct {
 	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
 
 	// Spec A phyical network's specification.
-	Spec *PhysicalNetworkSpec `json:"spec,omitempty"`
+	Spec *PhysicalNetworkReadSpec `json:"spec,omitempty"`
 }
 
-// PhysicalNetworkSpec A phyical network's specification.
-type PhysicalNetworkSpec struct {
+// PhysicalNetworkReadSpec A phyical network's specification.
+type PhysicalNetworkReadSpec struct {
+	// DnsNameservers A list of IPv4 addresses.
+	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
+
+	// Openstack An openstack physical network.
+	Openstack *PhysicalNetworkSpecOpenstack `json:"openstack,omitempty"`
+
+	// Prefix An IPv4 prefix for the network.
+	Prefix string `json:"prefix"`
+
+	// RegionId The region an identity is provisioned in.
+	RegionId string `json:"regionId"`
+
 	// Tags A list of tags.
 	Tags *TagList `json:"tags,omitempty"`
+
+	// Type The region's provider type.
+	Type RegionType `json:"type"`
+}
+
+// PhysicalNetworkSpecOpenstack An openstack physical network.
+type PhysicalNetworkSpecOpenstack struct {
+	// NetworkId The openstack network ID.
+	NetworkId *string `json:"networkId,omitempty"`
+
+	// RouterId The openstack router ID.
+	RouterId *string `json:"routerId,omitempty"`
+
+	// SubnetId The openstack subnet ID.
+	SubnetId *string `json:"subnetId,omitempty"`
+
+	// VlanId The allocated VLAN ID.
+	VlanId *int `json:"vlanId,omitempty"`
 }
 
 // PhysicalNetworkWrite A physical network request.
@@ -230,7 +266,19 @@ type PhysicalNetworkWrite struct {
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
 
 	// Spec A phyical network's specification.
-	Spec *PhysicalNetworkSpec `json:"spec,omitempty"`
+	Spec *PhysicalNetworkWriteSpec `json:"spec,omitempty"`
+}
+
+// PhysicalNetworkWriteSpec A phyical network's specification.
+type PhysicalNetworkWriteSpec struct {
+	// DnsNameservers A list of IPv4 addresses.
+	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
+
+	// Prefix An IPv4 prefix for the network.
+	Prefix string `json:"prefix"`
+
+	// Tags A list of tags.
+	Tags *TagList `json:"tags,omitempty"`
 }
 
 // RegionFeatures A set of features the region may provide to clients.
@@ -290,6 +338,9 @@ type IdentityIDParameter = KubernetesNameParameter
 // OrganizationIDParameter defines model for organizationIDParameter.
 type OrganizationIDParameter = string
 
+// PhysicalNetworkIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
+type PhysicalNetworkIDParameter = KubernetesNameParameter
+
 // ProjectIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type ProjectIDParameter = KubernetesNameParameter
 
@@ -326,5 +377,5 @@ type PhysicalNetworkRequest = PhysicalNetworkWrite
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody = IdentityWrite
 
-// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalNetworksJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalNetworks for application/json ContentType.
-type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalNetworksJSONRequestBody = PhysicalNetworkWrite
+// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworks for application/json ContentType.
+type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksJSONRequestBody = PhysicalNetworkWrite

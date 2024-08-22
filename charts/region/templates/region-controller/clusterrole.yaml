@@ -17,6 +17,7 @@ rules:
   - region.unikorn-cloud.org
   resources:
   - identities
+  - physicalnetworks
   verbs:
   - list
   - watch
@@ -26,6 +27,7 @@ rules:
   - region.unikorn-cloud.org
   resources:
   - openstackidentities
+  - openstackphysicalnetworks
   verbs:
   - list
   - watch

@@ -9,6 +9,10 @@ Create the container images
 {{- .Values.identityController.image | default (printf "%s/unikorn-identity-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
 {{- end }}
 
+{{- define "unikorn.physicalNetworkControllerImage" -}}
+{{- .Values.physicalNetworkController.image | default (printf "%s/unikorn-physical-network-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
+{{- end }}
+
 {{/*
 Create image pull secrets
 */}}

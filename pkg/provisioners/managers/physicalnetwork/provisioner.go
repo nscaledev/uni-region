@@ -14,10 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package identity
+package physicalnetwork
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
@@ -27,25 +29,26 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+)
+
+var (
+	ErrResouceDependency = errors.New("resource dependency error")
 )
 
 // Provisioner encapsulates control plane provisioning.
 type Provisioner struct {
 	provisioners.Metadata
 
-	// identity is the identity we're provisioning.
-	identity *unikornv1.Identity
+	// physicalNetwork is the physicalNetwork we're provisioning.
+	physicalNetwork *unikornv1.PhysicalNetwork
 }
 
 // New returns a new initialized provisioner object.
 func New(_ coremanager.ControllerOptions) provisioners.ManagerProvisioner {
 	return &Provisioner{
-		identity: &unikornv1.Identity{},
+		physicalNetwork: &unikornv1.PhysicalNetwork{},
 	}
 }
 
@@ -53,22 +56,59 @@ func New(_ coremanager.ControllerOptions) provisioners.ManagerProvisioner {
 var _ provisioners.ManagerProvisioner = &Provisioner{}
 
 func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
-	return p.identity
+	return p.physicalNetwork
+}
+
+func (p *Provisioner) getIdentity(ctx context.Context, cli client.Client) (*unikornv1.Identity, error) {
+	identity := &unikornv1.Identity{}
+
+	if err := cli.Get(ctx, client.ObjectKey{Namespace: p.physicalNetwork.Namespace, Name: p.physicalNetwork.Labels[constants.IdentityLabel]}, identity); err != nil {
+		return nil, err
+	}
+
+	return identity, nil
 }
 
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
+	log := log.FromContext(ctx)
+
 	cli, err := coreclient.ProvisionerClientFromContext(ctx)
 	if err != nil {
 		return err
 	}
 
-	provider, err := region.NewClient(cli, p.identity.Namespace).Provider(ctx, p.identity.Labels[constants.RegionLabel])
+	provider, err := region.NewClient(cli, p.physicalNetwork.Namespace).Provider(ctx, p.physicalNetwork.Labels[constants.RegionLabel])
 	if err != nil {
 		return err
 	}
 
-	if err := provider.CreateIdentity(ctx, p.identity); err != nil {
+	identity, err := p.getIdentity(ctx, cli)
+	if err != nil {
+		return err
+	}
+
+	// Inhibit provisioning until the identity is ready, as we may need the identity information
+	// to create the physical network e.g. the project ID in the case of OpenStack.
+	// TODO: the kinda mirrors what the Kubernetes service is doing when waiting for an identity
+	// and physical network, perhaps we can formalize and share the concepts?
+	status, err := identity.StatusConditionRead(unikornv1core.ConditionAvailable)
+	if err != nil {
+		log.Info("waiting for identity status update")
+
+		return provisioners.ErrYield
+	}
+
+	switch status.Reason {
+	case unikornv1core.ConditionReasonProvisioned:
+		break
+	case unikornv1core.ConditionReasonProvisioning:
+		return provisioners.ErrYield
+	default:
+		return fmt.Errorf("%w: identity in unexpected condition %v", ErrResouceDependency, status.Reason)
+	}
+
+	if err := provider.CreatePhysicalNetwork(ctx, identity, p.physicalNetwork); err != nil {
 		return err
 	}
 
@@ -77,54 +117,22 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	log := log.FromContext(ctx)
-
 	cli, err := coreclient.ProvisionerClientFromContext(ctx)
 	if err != nil {
 		return err
 	}
 
-	identityRequirement, err := labels.NewRequirement(constants.IdentityLabel, selection.Equals, []string{p.identity.Name})
+	provider, err := region.NewClient(cli, p.physicalNetwork.Namespace).Provider(ctx, p.physicalNetwork.Labels[constants.RegionLabel])
 	if err != nil {
 		return err
 	}
 
-	selector := labels.NewSelector()
-	selector = selector.Add(*identityRequirement)
-
-	// Block identity deletion until all owned resources are deleted, we cannot guarantee
-	// the underlying cloud implementation will not just orphan them and leak resources.
-	var physicalNetworks unikornv1.PhysicalNetworkList
-
-	if err := cli.List(ctx, &physicalNetworks, &client.ListOptions{Namespace: p.identity.Namespace, LabelSelector: selector}); err != nil {
-		return err
-	}
-
-	if len(physicalNetworks.Items) != 0 {
-		for i := range physicalNetworks.Items {
-			resource := &physicalNetworks.Items[i]
-
-			if resource.DeletionTimestamp != nil {
-				log.Info("awaiting physical network deletion", "physical network", resource.Name)
-				continue
-			}
-
-			log.Info("triggering physical network deletion", "physical network", resource.Name)
-
-			if err := cli.Delete(ctx, resource); err != nil {
-				return err
-			}
-		}
-
-		return provisioners.ErrYield
-	}
-
-	provider, err := region.NewClient(cli, p.identity.Namespace).Provider(ctx, p.identity.Labels[constants.RegionLabel])
+	identity, err := p.getIdentity(ctx, cli)
 	if err != nil {
 		return err
 	}
 
-	if err := provider.DeleteIdentity(ctx, p.identity); err != nil {
+	if err := provider.DeletePhysicalNetwork(ctx, identity, p.physicalNetwork); err != nil {
 		return err
 	}
 
