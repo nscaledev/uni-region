@@ -93,6 +93,9 @@ type ClientInterface interface {
 	// GetApiV1OrganizationsOrganizationIDIdentities request
 	GetApiV1OrganizationsOrganizationIDIdentities(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiV1OrganizationsOrganizationIDPhysicalnetworks request
+	GetApiV1OrganizationsOrganizationIDPhysicalnetworks(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesWithBody request with any body
 	PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesWithBody(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -130,6 +133,18 @@ type ClientInterface interface {
 
 func (c *Client) GetApiV1OrganizationsOrganizationIDIdentities(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiV1OrganizationsOrganizationIDIdentitiesRequest(c.Server, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiV1OrganizationsOrganizationIDPhysicalnetworks(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV1OrganizationsOrganizationIDPhysicalnetworksRequest(c.Server, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -301,6 +316,40 @@ func NewGetApiV1OrganizationsOrganizationIDIdentitiesRequest(server string, orga
 	}
 
 	operationPath := fmt.Sprintf("/api/v1/organizations/%s/identities", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiV1OrganizationsOrganizationIDPhysicalnetworksRequest generates requests for GetApiV1OrganizationsOrganizationIDPhysicalnetworks
+func NewGetApiV1OrganizationsOrganizationIDPhysicalnetworksRequest(server string, organizationID OrganizationIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "organizationID", runtime.ParamLocationPath, organizationID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/organizations/%s/physicalnetworks", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -842,6 +891,9 @@ type ClientWithResponsesInterface interface {
 	// GetApiV1OrganizationsOrganizationIDIdentitiesWithResponse request
 	GetApiV1OrganizationsOrganizationIDIdentitiesWithResponse(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDIdentitiesResponse, error)
 
+	// GetApiV1OrganizationsOrganizationIDPhysicalnetworksWithResponse request
+	GetApiV1OrganizationsOrganizationIDPhysicalnetworksWithResponse(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDPhysicalnetworksResponse, error)
+
 	// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesWithBodyWithResponse request with any body
 	PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesWithBodyWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesResponse, error)
 
@@ -897,6 +949,32 @@ func (r GetApiV1OrganizationsOrganizationIDIdentitiesResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetApiV1OrganizationsOrganizationIDIdentitiesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetApiV1OrganizationsOrganizationIDPhysicalnetworksResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PhysicalNetworksResponse
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV1OrganizationsOrganizationIDPhysicalnetworksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV1OrganizationsOrganizationIDPhysicalnetworksResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1167,6 +1245,15 @@ func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDIdentitiesWithR
 	return ParseGetApiV1OrganizationsOrganizationIDIdentitiesResponse(rsp)
 }
 
+// GetApiV1OrganizationsOrganizationIDPhysicalnetworksWithResponse request returning *GetApiV1OrganizationsOrganizationIDPhysicalnetworksResponse
+func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDPhysicalnetworksWithResponse(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDPhysicalnetworksResponse, error) {
+	rsp, err := c.GetApiV1OrganizationsOrganizationIDPhysicalnetworks(ctx, organizationID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV1OrganizationsOrganizationIDPhysicalnetworksResponse(rsp)
+}
+
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesWithBodyWithResponse request with arbitrary body returning *PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesResponse
 func (c *ClientWithResponses) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesWithBodyWithResponse(ctx context.Context, organizationID OrganizationIDParameter, projectID ProjectIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesResponse, error) {
 	rsp, err := c.PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesWithBody(ctx, organizationID, projectID, contentType, body, reqEditors...)
@@ -1289,6 +1376,60 @@ func ParseGetApiV1OrganizationsOrganizationIDIdentitiesResponse(rsp *http.Respon
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest IdentitiesResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiV1OrganizationsOrganizationIDPhysicalnetworksResponse parses an HTTP response from a GetApiV1OrganizationsOrganizationIDPhysicalnetworksWithResponse call
+func ParseGetApiV1OrganizationsOrganizationIDPhysicalnetworksResponse(rsp *http.Response) (*GetApiV1OrganizationsOrganizationIDPhysicalnetworksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV1OrganizationsOrganizationIDPhysicalnetworksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PhysicalNetworksResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

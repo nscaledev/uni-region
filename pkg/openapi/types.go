@@ -221,7 +221,7 @@ type PhysicalNetworkRead struct {
 	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
 
 	// Spec A phyical network's specification.
-	Spec *PhysicalNetworkReadSpec `json:"spec,omitempty"`
+	Spec PhysicalNetworkReadSpec `json:"spec"`
 }
 
 // PhysicalNetworkReadSpec A phyical network's specification.
@@ -280,6 +280,9 @@ type PhysicalNetworkWriteSpec struct {
 	// Tags A list of tags.
 	Tags *TagList `json:"tags,omitempty"`
 }
+
+// PhysicalNetworksRead A list of physical networks.
+type PhysicalNetworksRead = []PhysicalNetworkRead
 
 // RegionFeatures A set of features the region may provide to clients.
 type RegionFeatures struct {
@@ -364,6 +367,9 @@ type ImagesResponse = Images
 
 // PhysicalNetworkResponse A physical network.
 type PhysicalNetworkResponse = PhysicalNetworkRead
+
+// PhysicalNetworksResponse A list of physical networks.
+type PhysicalNetworksResponse = PhysicalNetworksRead
 
 // RegionsResponse A list of regions.
 type RegionsResponse = Regions

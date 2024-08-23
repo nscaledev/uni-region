@@ -177,6 +177,28 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/organizations/{organizationID}/physicalnetworks:
+    description: |-
+      Manages physical networks.  Physical networks are networks that may be required for
+      baremetal node provisioning e.g. a VLAN.  Note that only a single provider network is currently
+      supported per identity, as identities are intended to exist per piece of infrastructure.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    get:
+      description: List physical networks.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/physicalNetworksResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalnetworks:
     description: |-
       Manages physical networks.  Physical networks are networks that may be required for
@@ -633,11 +655,17 @@ components:
       type: object
       required:
       - metadata
+      - spec
       properties:
         metadata:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
           $ref: '#/components/schemas/physicalNetworkReadSpec'
+    physicalNetworksRead:
+      description: A list of physical networks.
+      type: array
+      items:
+        $ref: '#/components/schemas/physicalNetworkRead'
     externalNetwork:
       description: An Openstack external network.
       type: object
@@ -805,6 +833,30 @@ components:
             $ref: '#/components/schemas/physicalNetworkRead'
           example:
             metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: unused
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2024-05-31T14:11:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: provisioned
+            spec:
+              regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
+              prefix: 192.168.0.0/24
+              dnsNameservers:
+              - 8.8.8.8
+              type: openstack
+              openstack:
+                vlanId: 1024
+                networkId: 824e8c4c-5858-4b02-9906-390e34561bf3
+    physicalNetworksResponse:
+      description: A list of physical networks.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/physicalNetworksRead'
+          example:
+          - metadata:
               id: a64f9269-36e0-4312-b8d1-52d93d569b7b
               name: unused
               organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
