@@ -521,7 +521,7 @@ func (h *Handler) convertPhysicalNetwork(ctx context.Context, in *unikornv1.Phys
 
 	out := &openapi.PhysicalNetworkRead{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, provisioningStatus),
-		Spec: &openapi.PhysicalNetworkReadSpec{
+		Spec: openapi.PhysicalNetworkReadSpec{
 			RegionId:       in.Labels[constants.RegionLabel],
 			Prefix:         in.Spec.Prefix.String(),
 			DnsNameservers: convertIPv4List(in.Spec.DNSNameservers),
@@ -548,6 +548,42 @@ func (h *Handler) convertPhysicalNetwork(ctx context.Context, in *unikornv1.Phys
 	}
 
 	return out
+}
+
+func (h *Handler) convertPhysicalNetworkList(ctx context.Context, in unikornv1.PhysicalNetworkList) openapi.PhysicalNetworksRead {
+	out := make(openapi.PhysicalNetworksRead, len(in.Items))
+
+	for i := range in.Items {
+		out[i] = *h.convertPhysicalNetwork(ctx, &in.Items[i])
+	}
+
+	return out
+}
+
+func (h *Handler) GetApiV1OrganizationsOrganizationIDPhysicalnetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
+	if err := rbac.AllowOrganizationScope(r.Context(), "physicalnetworks", identityapi.Read, organizationID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	var result unikornv1.PhysicalNetworkList
+
+	options := &client.ListOptions{
+		LabelSelector: labels.SelectorFromSet(map[string]string{
+			coreconstants.OrganizationLabel: organizationID,
+		}),
+	}
+
+	if err := h.client.List(r.Context(), &result, options); err != nil {
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to list physical networks").WithError(err))
+		return
+	}
+
+	slices.SortStableFunc(result.Items, func(a, b unikornv1.PhysicalNetwork) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+
+	util.WriteJSONResponse(w, r, http.StatusOK, h.convertPhysicalNetworkList(r.Context(), result))
 }
 
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {

@@ -18,6 +18,9 @@ type ServerInterface interface {
 	// (GET /api/v1/organizations/{organizationID}/identities)
 	GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter)
 
+	// (GET /api/v1/organizations/{organizationID}/physicalnetworks)
+	GetApiV1OrganizationsOrganizationIDPhysicalnetworks(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter)
+
 	// (POST /api/v1/organizations/{organizationID}/projects/{projectID}/identities)
 	PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter)
 
@@ -55,6 +58,11 @@ type Unimplemented struct{}
 
 // (GET /api/v1/organizations/{organizationID}/identities)
 func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /api/v1/organizations/{organizationID}/physicalnetworks)
+func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDPhysicalnetworks(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -136,6 +144,34 @@ func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDIdentities
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetApiV1OrganizationsOrganizationIDIdentities(w, r, organizationID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r.WithContext(ctx))
+}
+
+// GetApiV1OrganizationsOrganizationIDPhysicalnetworks operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDPhysicalnetworks(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var err error
+
+	// ------------- Path parameter "organizationID" -------------
+	var organizationID OrganizationIDParameter
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "organizationID", runtime.ParamLocationPath, chi.URLParam(r, "organizationID"), &organizationID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
+		return
+	}
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV1OrganizationsOrganizationIDPhysicalnetworks(w, r, organizationID)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -684,6 +720,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/identities", wrapper.GetApiV1OrganizationsOrganizationIDIdentities)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/physicalnetworks", wrapper.GetApiV1OrganizationsOrganizationIDPhysicalnetworks)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities", wrapper.PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities)
