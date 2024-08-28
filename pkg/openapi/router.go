@@ -39,6 +39,12 @@ type ServerInterface interface {
 	// (GET /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalnetworks/{physicalNetworkID})
 	GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, physicalNetworkID PhysicalNetworkIDParameter)
 
+	// (GET /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/quotas)
+	GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter)
+
+	// (PUT /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/quotas)
+	PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter)
+
 	// (GET /api/v1/organizations/{organizationID}/regions)
 	GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter)
 
@@ -93,6 +99,16 @@ func (_ Unimplemented) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDId
 
 // (GET /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalnetworks/{physicalNetworkID})
 func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, physicalNetworkID PhysicalNetworkIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/quotas)
+func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PUT /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/quotas)
+func (_ Unimplemented) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -466,6 +482,98 @@ func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDProjectsPr
 	handler.ServeHTTP(w, r.WithContext(ctx))
 }
 
+// GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var err error
+
+	// ------------- Path parameter "organizationID" -------------
+	var organizationID OrganizationIDParameter
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "organizationID", runtime.ParamLocationPath, chi.URLParam(r, "organizationID"), &organizationID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "projectID" -------------
+	var projectID ProjectIDParameter
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "projectID", runtime.ParamLocationPath, chi.URLParam(r, "projectID"), &projectID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "identityID" -------------
+	var identityID IdentityIDParameter
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "identityID", runtime.ParamLocationPath, chi.URLParam(r, "identityID"), &identityID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "identityID", Err: err})
+		return
+	}
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas(w, r, organizationID, projectID, identityID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r.WithContext(ctx))
+}
+
+// PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas operation middleware
+func (siw *ServerInterfaceWrapper) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var err error
+
+	// ------------- Path parameter "organizationID" -------------
+	var organizationID OrganizationIDParameter
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "organizationID", runtime.ParamLocationPath, chi.URLParam(r, "organizationID"), &organizationID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "projectID" -------------
+	var projectID ProjectIDParameter
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "projectID", runtime.ParamLocationPath, chi.URLParam(r, "projectID"), &projectID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "identityID" -------------
+	var identityID IdentityIDParameter
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "identityID", runtime.ParamLocationPath, chi.URLParam(r, "identityID"), &identityID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "identityID", Err: err})
+		return
+	}
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas(w, r, organizationID, projectID, identityID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r.WithContext(ctx))
+}
+
 // GetApiV1OrganizationsOrganizationIDRegions operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -741,6 +849,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalnetworks/{physicalNetworkID}", wrapper.GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/quotas", wrapper.GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/quotas", wrapper.PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/regions", wrapper.GetApiV1OrganizationsOrganizationIDRegions)

@@ -49,6 +49,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 type Handler struct {
@@ -689,6 +690,188 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		}
 
 		errors.HandleError(w, r, errors.OAuth2ServerError("unable to delete physical network").WithError(err))
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (h *Handler) getQuota(ctx context.Context, identity *unikornv1.Identity) (*unikornv1.Quota, error) {
+	userinfo, err := authorization.UserinfoFromContext(ctx)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("unable to get userinfo").WithError(err)
+	}
+
+	options := &client.ListOptions{
+		Namespace: h.namespace,
+		LabelSelector: labels.SelectorFromSet(map[string]string{
+			constants.IdentityLabel: identity.Name,
+		}),
+	}
+
+	resources := &unikornv1.QuotaList{}
+
+	if err := h.client.List(ctx, resources, options); err != nil {
+		return nil, errors.OAuth2ServerError("unable to list quotas").WithError(err)
+	}
+
+	// Default scoping rule is that you can only see your own quota.
+	resources.Items = slices.DeleteFunc(resources.Items, func(resource unikornv1.Quota) bool {
+		return resource.Annotations[coreconstants.CreatorAnnotation] != userinfo.Sub
+	})
+
+	if len(resources.Items) == 0 {
+		//nolint:nilnil
+		return nil, nil
+	}
+
+	// TODO: what if there's more than one!!
+	return &resources.Items[0], nil
+}
+
+func convertFlavorQuotas(in []unikornv1.FlavorQuota) *openapi.FlavorQuotaList {
+	if len(in) == 0 {
+		return nil
+	}
+
+	out := make(openapi.FlavorQuotaList, len(in))
+
+	for i := range in {
+		out[i] = openapi.FlavorQuota{
+			Id:    in[i].ID,
+			Count: in[i].Count,
+		}
+	}
+
+	return &out
+}
+
+func convertQuota(in *unikornv1.Quota) *openapi.QuotasSpec {
+	out := &openapi.QuotasSpec{
+		Flavors: convertFlavorQuotas(in.Spec.Flavors),
+	}
+
+	return out
+}
+
+func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "quotas", identityapi.Read, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	identity, err := h.getIdentity(r.Context(), identityID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	resource, err := h.getQuota(r.Context(), identity)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	if resource == nil {
+		resource = &unikornv1.Quota{}
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, convertQuota(resource))
+}
+
+func generateFlavorQuotas(in *openapi.FlavorQuotaList) []unikornv1.FlavorQuota {
+	if in == nil || len(*in) == 0 {
+		return nil
+	}
+
+	t := *in
+
+	out := make([]unikornv1.FlavorQuota, len(t))
+
+	for i := range t {
+		out[i] = unikornv1.FlavorQuota{
+			ID:    t[i].Id,
+			Count: t[i].Count,
+		}
+	}
+
+	return out
+}
+
+func (h *Handler) generateQuota(ctx context.Context, organizationID, projectID string, identity *unikornv1.Identity, in *openapi.QuotasSpec) (*unikornv1.Quota, error) {
+	userinfo, err := authorization.UserinfoFromContext(ctx)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("unable to get userinfo").WithError(err)
+	}
+
+	metadata := &coreapi.ResourceWriteMetadata{
+		Name: fmt.Sprintf("identity-quota-%s", identity.Name),
+	}
+
+	resource := &unikornv1.Quota{
+		ObjectMeta: conversion.NewObjectMetadata(metadata, h.namespace, userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identity.Name).Get(),
+		Spec: unikornv1.QuotaSpec{
+			Flavors: generateFlavorQuotas(in.Flavors),
+		},
+	}
+
+	// Ensure the quota is owned by the identity so it is automatically cleaned
+	// up on identity deletion.
+	if err := controllerutil.SetOwnerReference(identity, resource, h.client.Scheme()); err != nil {
+		return nil, err
+	}
+
+	return resource, nil
+}
+
+func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "quotas", identityapi.Update, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	request := &openapi.QuotasSpec{}
+
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	identity, err := h.getIdentity(r.Context(), identityID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	required, err := h.generateQuota(r.Context(), organizationID, projectID, identity, request)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	current, err := h.getQuota(r.Context(), identity)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	if current == nil {
+		if err := h.client.Create(r.Context(), required); err != nil {
+			errors.HandleError(w, r, errors.OAuth2ServerError("unable to create quota").WithError(err))
+			return
+		}
+
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
+	updated := current.DeepCopy()
+	updated.Labels = required.Labels
+	updated.Annotations = required.Annotations
+	updated.Spec = required.Spec
+
+	if err := h.client.Patch(r.Context(), updated, client.MergeFrom(current)); err != nil {
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to updated quota").WithError(err))
 		return
 	}
 

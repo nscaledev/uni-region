@@ -18,11 +18,14 @@ rules:
   resources:
   - identities
   - physicalnetworks
+  - quotas
   verbs:
   - list
   - watch
   - create
   - delete
+  - patch
+  - update
 - apiGroups:
   - region.unikorn-cloud.org
   resources:

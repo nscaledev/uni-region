@@ -52,6 +52,18 @@ type Flavor struct {
 	Spec FlavorSpec `json:"spec"`
 }
 
+// FlavorQuota A flavor quota.
+type FlavorQuota struct {
+	// Count The number of the required flavor.
+	Count int `json:"count"`
+
+	// Id The flavor ID.
+	Id string `json:"id"`
+}
+
+// FlavorQuotaList A list of flavor quotas.
+type FlavorQuotaList = []FlavorQuota
+
 // FlavorSpec A flavor.
 type FlavorSpec struct {
 	// Baremetal Whether the flavor is for a dedicated machine.
@@ -287,6 +299,12 @@ type PhysicalNetworkWriteSpec struct {
 // PhysicalNetworksRead A list of physical networks.
 type PhysicalNetworksRead = []PhysicalNetworkRead
 
+// QuotasSpec defines model for quotasSpec.
+type QuotasSpec struct {
+	// Flavors A list of flavor quotas.
+	Flavors *FlavorQuotaList `json:"flavors,omitempty"`
+}
+
 // RegionFeatures A set of features the region may provide to clients.
 type RegionFeatures struct {
 	// PhysicalNetworks If set, this indicates that the region supports physical networks and
@@ -374,6 +392,9 @@ type PhysicalNetworkResponse = PhysicalNetworkRead
 // PhysicalNetworksResponse A list of physical networks.
 type PhysicalNetworksResponse = PhysicalNetworksRead
 
+// QuotasResponse defines model for quotasResponse.
+type QuotasResponse = QuotasSpec
+
 // RegionsResponse A list of regions.
 type RegionsResponse = Regions
 
@@ -383,8 +404,14 @@ type IdentityRequest = IdentityWrite
 // PhysicalNetworkRequest A physical network request.
 type PhysicalNetworkRequest = PhysicalNetworkWrite
 
+// QuotasRequest defines model for quotasRequest.
+type QuotasRequest = QuotasSpec
+
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody = IdentityWrite
 
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworks for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksJSONRequestBody = PhysicalNetworkWrite
+
+// PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotasJSONRequestBody defines body for PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas for application/json ContentType.
+type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotasJSONRequestBody = QuotasSpec

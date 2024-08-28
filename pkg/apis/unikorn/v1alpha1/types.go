@@ -466,3 +466,50 @@ type VLANAllocationEntry struct {
 
 type VLANAllocationStatus struct {
 }
+
+// QuotaList is a typed list of quotas.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type QuotaList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []Quota `json:"items"`
+}
+
+// Quota defines resource limits for identities.
+// We don't want to be concerned with Hertz and bytes, instead we want to
+// expose higher level primitives like flavors and how many they are.  This
+// removes a lot of the burden from clients.  Where we have to be careful is
+// with overheads, e.g. a machine implicitly defines CPUs, memory and storage,
+// but this will also need networks, NICs and other supporting resources.
+// Quotas are scoped to identities, and also to a specific client, as this avoids
+// having to worry about IPC and split brain concerns.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type Quota struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              QuotaSpec   `json:"spec"`
+	Status            QuotaStatus `json:"status,omitempty"`
+}
+
+type QuotaSpec struct {
+	// Flavors is a list of flavors and their count.
+	// +listType=map
+	// +listMapKey=id
+	Flavors []FlavorQuota `json:"flavors,omitempty"`
+}
+
+type FlavorQuota struct {
+	// ID is the flavor ID.
+	ID string `json:"id"`
+	// Count is the number of instances that are required.
+	// For certain services that can do rolling upgrades, be aware that this
+	// may need a little overhead to cater for that.  For example the Kubernetes
+	// service will do a one-in-one-out upgrade of the control plane.
+	Count int `json:"count"`
+}
+
+type QuotaStatus struct {
+}
