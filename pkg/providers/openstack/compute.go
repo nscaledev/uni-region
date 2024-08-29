@@ -28,6 +28,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/availabilityzones"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/keypairs"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/quotasets"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -255,4 +256,20 @@ func (c *ComputeClient) DeleteServerGroup(ctx context.Context, id string) error 
 	defer span.End()
 
 	return servergroups.Delete(ctx, c.client, id).ExtractErr()
+}
+
+func (c *ComputeClient) TweakQuotas(ctx context.Context, projectID string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "PUT /compute/v2/os-quota-sets")
+	defer span.End()
+
+	all := -1
+
+	opts := &quotasets.UpdateOpts{
+		Cores: &all,
+		RAM:   &all,
+	}
+
+	return quotasets.Update(ctx, c.client, projectID, opts).Err
 }

@@ -541,6 +541,17 @@ func (p *Provider) provisionApplicationCredential(ctx context.Context, identity 
 	return nil
 }
 
+func (p *Provider) provisionQuotas(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *identity.Spec.ProjectID)
+
+	compute, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	if err != nil {
+		return err
+	}
+
+	return compute.TweakQuotas(ctx, *identity.Spec.ProjectID)
+}
+
 func (p *Provider) createClientConfig(identity *unikornv1.OpenstackIdentity) error {
 	if identity.Spec.Cloud != nil {
 		return nil
@@ -700,6 +711,11 @@ func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Ident
 	// of the heirarchy, so we cannot define policy rules for a domain manager in the same
 	// way as can be done for the identity service.
 	if err := p.provisionProjectRoles(ctx, identityService, openstackIdentity, p.credentials.userID, p.getRequiredProjectManagerRoles); err != nil {
+		return err
+	}
+
+	// Try set quotas...
+	if err := p.provisionQuotas(ctx, openstackIdentity); err != nil {
 		return err
 	}
 
