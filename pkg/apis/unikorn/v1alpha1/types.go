@@ -344,6 +344,10 @@ type OpenstackIdentitySpec struct {
 	ApplicationCredentialSecret *string `json:"applicationCredentialSecret,omitempty"`
 	// ServerGroupID is the ID of the server group created for the identity.
 	ServerGroupID *string `json:"serverGroupID,omitempty"`
+	// SSHKeyName is the ssh key that may be injected into clusters by consuming services.
+	SSHKeyName *string `json:"sshKeyName,omitempty"`
+	// SSHPrivateKey is a PEM encoded private key.
+	SSHPrivateKey []byte `json:"sshPrivateKey,omitempty"`
 }
 
 type OpenstackIdentityStatus struct{}

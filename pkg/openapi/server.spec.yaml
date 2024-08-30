@@ -545,6 +545,9 @@ components:
         serverGroupId:
           description: Server group identifier allocated for the intrastructure.
           type: string
+        sshKeyName:
+          description: Ephemeral SSH key generated for the identity.
+          type: string
     identitySpec:
       description: |-
         A provider specific identity, while the client can list regions to infer the
@@ -802,6 +805,7 @@ components:
                 cloudConfig: dGhpcyBpcyBhIHRlc3QK
                 projectId: eb9c92d937464d14bf87e50fa726380d
                 userId: a19678a28126497dba24b54c96a064fa
+                sshKeyNmae: foo
     identitiesResponse:
       description: A list of identites.
       content:
@@ -825,6 +829,7 @@ components:
                 cloudConfig: dGhpcyBpcyBhIHRlc3QK
                 projectId: eb9c92d937464d14bf87e50fa726380d
                 userId: a19678a28126497dba24b54c96a064fa
+                sshKeyNmae: foo
     physicalNetworkResponse:
       description: A physical network.
       content:

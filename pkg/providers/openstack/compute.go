@@ -19,6 +19,7 @@ package openstack
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"time"
 
@@ -67,6 +68,33 @@ func NewComputeClient(ctx context.Context, provider CredentialProvider, options 
 	}
 
 	return c, nil
+}
+
+// CreateKeypair creates a new keypair.
+// NOTE: while OpenStack can generate one for us, we have far more control doing it ourselves
+// thus allowing us to impose stricter security, and it's more provider agnostic that way.
+func (c *ComputeClient) CreateKeypair(ctx context.Context, name, publicKey string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "POST /compute/v2/os-keypairs", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	opts := &keypairs.CreateOpts{
+		Name:      name,
+		Type:      "ssh",
+		PublicKey: publicKey,
+	}
+
+	return keypairs.Create(ctx, c.client, opts).Err
+}
+
+func (c *ComputeClient) DeleteKeypair(ctx context.Context, name string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /compute/v2/os-keypairs/%s", name), trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	return keypairs.Delete(ctx, c.client, name, nil).Err
 }
 
 // KeyPairs returns a list of key pairs.

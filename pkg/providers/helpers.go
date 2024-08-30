@@ -16,10 +16,41 @@ limitations under the License.
 
 package providers
 
+import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/pem"
+
+	"golang.org/x/crypto/ssh"
+)
+
 func (f Flavor) GPUCount() int {
 	if f.GPU != nil {
 		return f.GPU.Count
 	}
 
 	return 0
+}
+
+// GenerateSSHKeyPair creates an ephemeral SSH keypair, returning the
+// public and private keys in SSH fingerprint and PEM formats respectively.
+func GenerateSSHKeyPair() ([]byte, []byte, error) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	block, err := ssh.MarshalPrivateKey(priv, "unikorn ephemeral ed25519 key")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	privateKey := pem.EncodeToMemory(block)
+
+	publicKey, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return ssh.MarshalAuthorizedKey(publicKey), privateKey, nil
 }

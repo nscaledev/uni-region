@@ -451,6 +451,16 @@ func (in *OpenstackIdentitySpec) DeepCopyInto(out *OpenstackIdentitySpec) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.SSHKeyName != nil {
+		in, out := &in.SSHKeyName, &out.SSHKeyName
+		*out = new(string)
+		**out = **in
+	}
+	if in.SSHPrivateKey != nil {
+		in, out := &in.SSHPrivateKey, &out.SSHPrivateKey
+		*out = make([]byte, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 
