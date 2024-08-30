@@ -344,6 +344,7 @@ func (h *Handler) convertIdentity(ctx context.Context, in *unikornv1.Identity) *
 				UserId:        openstackIdentity.Spec.UserID,
 				ProjectId:     openstackIdentity.Spec.ProjectID,
 				ServerGroupId: openstackIdentity.Spec.ServerGroupID,
+				SshKeyName:    openstackIdentity.Spec.SSHKeyName,
 			}
 
 			if openstackIdentity.Spec.CloudConfig != nil {

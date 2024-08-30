@@ -572,7 +572,10 @@ func (p *Provider) createClientConfig(identity *unikornv1.OpenstackIdentity) err
 	return nil
 }
 
-func (p *Provider) createIdentityServerGroup(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
+// keyPairName is a fixed name for our per-identity keypair.
+const keyPairName = "unikorn-openstack-provider"
+
+func (p *Provider) createIdentityComputeResources(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
 	if identity.Spec.ServerGroupID != nil {
 		return nil
 	}
@@ -587,12 +590,30 @@ func (p *Provider) createIdentityServerGroup(ctx context.Context, identity *unik
 
 	name := identityResourceName(identity)
 
+	// Create a server group, that can be used by clients for soft anti-affinity.
 	result, err := computeService.CreateServerGroup(ctx, name)
 	if err != nil {
 		return err
 	}
 
 	identity.Spec.ServerGroupID = &result.ID
+
+	// Create an SSH key pair that can be used to gain access to servers.
+	// This is primarily a debugging aid, and you need to opt in at the client service
+	// to actually inject it into anything.  Besides, you have the uesrname and password
+	// available anyway, so you can do a server recovery and steal all the data that way.
+	publicKey, privateKey, err := providers.GenerateSSHKeyPair()
+	if err != nil {
+		return err
+	}
+
+	if err := computeService.CreateKeypair(ctx, keyPairName, string(publicKey)); err != nil {
+		return err
+	}
+
+	t := keyPairName
+	identity.Spec.SSHKeyName = &t
+	identity.Spec.SSHPrivateKey = privateKey
 
 	return nil
 }
@@ -706,7 +727,7 @@ func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Ident
 	}
 
 	// Add in any optional configuration.
-	if err := p.createIdentityServerGroup(ctx, openstackIdentity); err != nil {
+	if err := p.createIdentityComputeResources(ctx, openstackIdentity); err != nil {
 		return err
 	}
 
@@ -741,15 +762,24 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Ident
 
 	defer record()
 
-	if openstackIdentity.Spec.ServerGroupID != nil {
-		// Rescope to the user/project...
-		providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *openstackIdentity.Spec.UserID, *openstackIdentity.Spec.Password, *openstackIdentity.Spec.ProjectID)
+	// Rescope to the user/project...
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *openstackIdentity.Spec.UserID, *openstackIdentity.Spec.Password, *openstackIdentity.Spec.ProjectID)
 
-		computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
-		if err != nil {
+	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	if err != nil {
+		return err
+	}
+
+	if openstackIdentity.Spec.SSHKeyName != nil {
+		if err := computeService.DeleteKeypair(ctx, keyPairName); err != nil {
 			return err
 		}
 
+		openstackIdentity.Spec.SSHKeyName = nil
+		openstackIdentity.Spec.SSHPrivateKey = nil
+	}
+
+	if openstackIdentity.Spec.ServerGroupID != nil {
 		if err := computeService.DeleteServerGroup(ctx, *openstackIdentity.Spec.ServerGroupID); err != nil {
 			return err
 		}

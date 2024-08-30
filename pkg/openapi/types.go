@@ -144,6 +144,9 @@ type IdentitySpecOpenStack struct {
 	// ServerGroupId Server group identifier allocated for the intrastructure.
 	ServerGroupId *string `json:"serverGroupId,omitempty"`
 
+	// SshKeyName Ephemeral SSH key generated for the identity.
+	SshKeyName *string `json:"sshKeyName,omitempty"`
+
 	// UserId User identitifer allocated for the infrastructure.
 	UserId *string `json:"userId,omitempty"`
 }
