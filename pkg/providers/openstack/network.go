@@ -29,11 +29,13 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/external"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/provider"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/quotas"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/networks"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/unikorn-cloud/core/pkg/util"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -293,4 +295,21 @@ func (c *NetworkClient) RemoveRouterInterface(ctx context.Context, routerID, sub
 	}
 
 	return routers.RemoveInterface(ctx, c.client, routerID, opts).Err
+}
+
+func (c *NetworkClient) UpdateQuotas(ctx context.Context, projectID string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "PUT /network/v2.0/os-quota-sets")
+	defer span.End()
+
+	opts := &quotas.UpdateOpts{
+		// TODO: this is a relatively restrictive default, as floating IPs are
+		// in short supply.  This allows 1 for a Kubernetes API load balancer,
+		// 1 for an ingress controller, and a spare for debugging or as a
+		// bastion.
+		FloatingIP: util.ToPointer(3),
+	}
+
+	return quotas.Update(ctx, c.client, projectID, opts).Err
 }

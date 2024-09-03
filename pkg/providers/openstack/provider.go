@@ -553,6 +553,15 @@ func (p *Provider) provisionQuotas(ctx context.Context, identity *unikornv1.Open
 		return err
 	}
 
+	network, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	if err != nil {
+		return err
+	}
+
+	if err := network.UpdateQuotas(ctx, *identity.Spec.ProjectID); err != nil {
+		return err
+	}
+
 	return nil
 }
 
