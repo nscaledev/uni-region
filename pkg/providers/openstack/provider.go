@@ -549,7 +549,11 @@ func (p *Provider) provisionQuotas(ctx context.Context, identity *unikornv1.Open
 		return err
 	}
 
-	return compute.TweakQuotas(ctx, *identity.Spec.ProjectID)
+	if err := compute.UpdateQuotas(ctx, *identity.Spec.ProjectID); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (p *Provider) createClientConfig(identity *unikornv1.OpenstackIdentity) error {
