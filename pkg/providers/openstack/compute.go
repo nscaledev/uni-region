@@ -33,6 +33,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/unikorn-cloud/core/pkg/util"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -258,17 +259,17 @@ func (c *ComputeClient) DeleteServerGroup(ctx context.Context, id string) error 
 	return servergroups.Delete(ctx, c.client, id).ExtractErr()
 }
 
-func (c *ComputeClient) TweakQuotas(ctx context.Context, projectID string) error {
+func (c *ComputeClient) UpdateQuotas(ctx context.Context, projectID string) error {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, "PUT /compute/v2/os-quota-sets")
 	defer span.End()
 
-	all := -1
-
 	opts := &quotasets.UpdateOpts{
-		Cores: &all,
-		RAM:   &all,
+		// TODO: instances, cores and ram need to be driven by client input.
+		Instances: util.ToPointer(-1),
+		Cores:     util.ToPointer(-1),
+		RAM:       util.ToPointer(-1),
 	}
 
 	return quotasets.Update(ctx, c.client, projectID, opts).Err
