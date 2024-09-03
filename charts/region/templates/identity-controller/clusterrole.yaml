@@ -35,6 +35,7 @@ rules:
 - apiGroups:
   - region.unikorn-cloud.org
   resources:
+  - quotas
   - physicalnetworks
   verbs:
   - list

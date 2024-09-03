@@ -177,6 +177,49 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/quotas:
+    description: |-
+      Provides per-client quota management, to limit the scope within the identity and hide
+      other clients from each other.  Aggregation is handled transparently by the controller.
+      Please note that quotas cannot be enforced per-client, e.g. client A can accidentally
+      use client B's allocation.  Client scoping is handled via the token subject, so it's
+      important that callers be using service accounts, not end user tokens.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/identityIDParameter'
+    get:
+      description: A client-specific set of quotas for the identity.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/quotasResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    put:
+      description: Set per-client quotas for the identity.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/quotasRequest'
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/physicalnetworks:
     description: |-
       Manages physical networks.  Physical networks are networks that may be required for
@@ -300,6 +343,13 @@ components:
       name: physicalNetworkID
       in: path
       description: The physical network identifier.
+      required: true
+      schema:
+        $ref: '#/components/schemas/kubernetesNameParameter'
+    clientIDParameter:
+      name: clientID
+      in: path
+      description: The client a resource belongs to.
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
@@ -687,6 +737,29 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/externalNetwork'
+    flavorQuota:
+      description: A flavor quota.
+      type: object
+      required:
+      - id
+      - count
+      properties:
+        id:
+          description: The flavor ID.
+          type: string
+        count:
+          description: The number of the required flavor.
+          type: integer
+    flavorQuotaList:
+      description: A list of flavor quotas.
+      type: array
+      items:
+        $ref: '#/components/schemas/flavorQuota'
+    quotasSpec:
+      type: object
+      properties:
+        flavors:
+          $ref: '#/components/schemas/flavorQuotaList'
   requestBodies:
     identityRequest:
       description: A request for an identity.
@@ -721,6 +794,16 @@ components:
               prefix: 192.168.0.0/24
               dnsNameservers:
               - 8.8.8.8
+    quotasRequest:
+      description: A request to set quotas.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/quotasSpec'
+          example:
+            flavors:
+            - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              count: 8
   responses:
     regionsResponse:
       description: A list of regions.
@@ -887,6 +970,16 @@ components:
           example:
           - id: c3f92716-1fdc-4b7b-906e-4fe0154dfcdf
             name: foo
+    quotasResponse:
+      description: A set of quotas for a client.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/quotasSpec'
+          example:
+            flavors:
+            - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              count: 8
   securitySchemes:
     oauth2Authentication:
       description: Operation requires OAuth2 bearer token authentication.

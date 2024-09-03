@@ -17,12 +17,16 @@ limitations under the License.
 package identity
 
 import (
+	"context"
+
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	coremanager "github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/manager/options"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/provisioners/managers/identity"
+
+	"k8s.io/apimachinery/pkg/types"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -53,10 +57,30 @@ func (*Factory) Reconciler(options *options.Options, controllerOptions coremanag
 	return coremanager.NewReconciler(options, controllerOptions, manager, identity.New)
 }
 
+func mapFromQuotaToIdentity(ctx context.Context, quota *unikornv1.Quota) []reconcile.Request {
+	if quota.DeletionTimestamp != nil {
+		return nil
+	}
+
+	return []reconcile.Request{
+		{
+			NamespacedName: types.NamespacedName{
+				Namespace: quota.Namespace,
+				Name:      quota.Labels[constants.IdentityLabel],
+			},
+		},
+	}
+}
+
 // RegisterWatches adds any watches that would trigger a reconcile.
 func (*Factory) RegisterWatches(manager manager.Manager, controller controller.Controller) error {
 	// Any changes to the identity spec, trigger a reconcile.
 	if err := controller.Watch(source.Kind(manager.GetCache(), &unikornv1.Identity{}, &handler.TypedEnqueueRequestForObject[*unikornv1.Identity]{}, &predicate.TypedGenerationChangedPredicate[*unikornv1.Identity]{})); err != nil {
+		return err
+	}
+
+	// Any changes to a quota owned by the identity trigger a reconcile.
+	if err := controller.Watch(source.Kind(manager.GetCache(), &unikornv1.Quota{}, handler.TypedEnqueueRequestsFromMapFunc(mapFromQuotaToIdentity))); err != nil {
 		return err
 	}
 
