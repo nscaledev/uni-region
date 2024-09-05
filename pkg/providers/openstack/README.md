@@ -5,10 +5,12 @@ Provides a driver for OpenStack based regions.
 ## Initial Setup
 
 It is envisaged that an OpenStack cluster may be used for things other than the exclusive use of Unikorn, and as such it tries to respect this as much as possible.
+We also operate under the principle of least privilege, so don't want to have a full admin credential alyng around.
+
 In particular we want to allow different instances of Unikorn to cohabit to support, for example, staging environments.
 
-You will need to install the [domain manager](https://docs.scs.community/standards/scs-0302-v1-domain-manager-role/) policy defined by SCS.
-You will also need to edit this to allow the `_member_` role to be granted.
+We need a number of policies installing to function correctly.
+Follow the instructions in the [Unikorn OpenStack Policy repository](https://github.com/unikorn-cloud/python-unikorn-openstack-policy) to install them.
 
 ### OpenStack Platform Configuration
 
@@ -22,6 +24,7 @@ export PASSWORD=$(apg -n 1 -m 24)
 ```
 
 #### Create the domain.
+
 The use of project domains for projects deployed to provision Kubernetes cluster achieves a few aims.
 First namespace isolation.
 Second is a security consideration.
@@ -34,6 +37,7 @@ DOMAIN_ID=$(openstack domain create ${DOMAIN} -f json | jq -r .id)
 ```
 
 #### Create the project.
+
 As the OpenStack provider for the region controller also functions as a client in order to retrieve information such as available images, flavors, and so on it also needs to be associated with a project so that the default policy for various API requests is correctly satisfied:
 
 ```bash
@@ -47,7 +51,11 @@ USER_ID=$(openstack user create --domain ${DOMAIN_ID} --password ${PASSWORD} ${U
 ```
 
 ### Grant any roles to the user.
+
 When a Kubernetes cluster is provisioned, it will be done using application credentials, so ensure any required application credentials as configured for the region are explicitly associated with the user here.
+
+> [!NOTE]
+> It may be necessary to add the `_member_` role on older OpenStack deployments where Neutron requires it to function.
 
 ```bash
 for role in member load-balancer_member manager; do
@@ -55,7 +63,7 @@ for role in member load-balancer_member manager; do
 done
 ```
 
-And also grant the `member` role on the project we created in a previous step:
+Grant the `member` role on the project we created in a previous step:
 
 ```bash
 openstack role add --user ${USER_ID} --project ${PROJECT_ID} member
