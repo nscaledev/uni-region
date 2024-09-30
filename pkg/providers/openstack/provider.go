@@ -936,7 +936,7 @@ func (p *Provider) createRouter(ctx context.Context, networkService *NetworkClie
 
 	router, err := networkService.CreateRouter(ctx, "unikorn-openstack-region-provider-router")
 	if err != nil {
-		return nil
+		return err
 	}
 
 	openstackPhysicalNetwork.Spec.RouterID = &router.ID
