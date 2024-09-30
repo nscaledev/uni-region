@@ -549,7 +549,16 @@ func (p *Provider) provisionQuotas(ctx context.Context, identity *unikornv1.Open
 		return err
 	}
 
+	blockstorage, err := NewBlockStorageClient(ctx, providerClient)
+	if err != nil {
+		return err
+	}
+
 	if err := compute.UpdateQuotas(ctx, *identity.Spec.ProjectID); err != nil {
+		return err
+	}
+
+	if err := blockstorage.UpdateQuotas(ctx, *identity.Spec.ProjectID); err != nil {
 		return err
 	}
 
