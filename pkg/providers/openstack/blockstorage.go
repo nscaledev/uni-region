@@ -23,9 +23,11 @@ import (
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack"
 	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/availabilityzones"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/quotasets"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/unikorn-cloud/core/pkg/util"
 	"github.com/unikorn-cloud/region/pkg/constants"
 )
 
@@ -83,4 +85,18 @@ func (c *BlockStorageClient) AvailabilityZones(ctx context.Context) ([]availabil
 	}
 
 	return filtered, nil
+}
+
+func (c *BlockStorageClient) UpdateQuotas(ctx context.Context, projectID string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "PUT /block-storage/v3/os-quota-sets")
+	defer span.End()
+
+	opts := &quotasets.UpdateOpts{
+		Volumes:   util.ToPointer(-1),
+		Gigabytes: util.ToPointer(-1),
+	}
+
+	return quotasets.Update(ctx, c.client, projectID, opts).Err
 }
