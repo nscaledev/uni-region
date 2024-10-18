@@ -258,13 +258,17 @@
                             "gpu": {
                               "type": "object",
                               "required": [
-                                "count",
+                                "physicalCount",
+				"logicalCount",
                                 "memory",
                                 "model",
                                 "vendor"
                               ],
                               "properties": {
-                                "count": {
+                                "physicalCount": {
+                                  "type": "integer"
+                                },
+                                "logicalCount": {
                                   "type": "integer"
                                 },
                                 "memory": {

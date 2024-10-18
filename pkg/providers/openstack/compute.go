@@ -33,10 +33,11 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/unikorn-cloud/core/pkg/util"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+
+	"k8s.io/utils/ptr"
 )
 
 // ComputeClient wraps the generic client because gophercloud is unsafe.
@@ -267,9 +268,9 @@ func (c *ComputeClient) UpdateQuotas(ctx context.Context, projectID string) erro
 
 	opts := &quotasets.UpdateOpts{
 		// TODO: instances, cores and ram need to be driven by client input.
-		Instances: util.ToPointer(-1),
-		Cores:     util.ToPointer(-1),
-		RAM:       util.ToPointer(-1),
+		Instances: ptr.To(-1),
+		Cores:     ptr.To(-1),
+		RAM:       ptr.To(-1),
 	}
 
 	return quotasets.Update(ctx, c.client, projectID, opts).Err

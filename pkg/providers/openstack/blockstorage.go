@@ -27,8 +27,9 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/unikorn-cloud/core/pkg/util"
 	"github.com/unikorn-cloud/region/pkg/constants"
+
+	"k8s.io/utils/ptr"
 )
 
 // BlockStorageClient wraps the generic client because gophercloud is unsafe.
@@ -94,8 +95,8 @@ func (c *BlockStorageClient) UpdateQuotas(ctx context.Context, projectID string)
 	defer span.End()
 
 	opts := &quotasets.UpdateOpts{
-		Volumes:   util.ToPointer(-1),
-		Gigabytes: util.ToPointer(-1),
+		Volumes:   ptr.To(-1),
+		Gigabytes: ptr.To(-1),
 	}
 
 	return quotasets.Update(ctx, c.client, projectID, opts).Err

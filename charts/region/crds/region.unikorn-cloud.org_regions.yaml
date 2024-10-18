@@ -104,9 +104,10 @@ spec:
                                     GPU defines additional GPU metadata.  When provided it will enable selection
                                     of images based on GPU vendor and model.
                                   properties:
-                                    count:
-                                      description: Count is the number of logical
-                                        GPUs in the flavor.
+                                    logicalCount:
+                                      description: |-
+                                        LogicalCount is the number of logical GPUs e.g. an AMD MI250 is 2 MI200s.
+                                        This is primarily for scheduling e.g. autoscaling.
                                       type: integer
                                     memory:
                                       anyOf:
@@ -121,6 +122,11 @@ spec:
                                         Model is a free-form model name that corresponds to the supported models
                                         property included on images, and must be an exact match e.g. H100.
                                       type: string
+                                    physicalCount:
+                                      description: |-
+                                        PhysicalCount is the number of physical cards in the flavor.
+                                        This is primarily for end users, so it's not confusing.
+                                      type: integer
                                     vendor:
                                       description: |-
                                         Vendor is the GPU vendor, used for coarse grained flavor and image
@@ -130,9 +136,10 @@ spec:
                                       - AMD
                                       type: string
                                   required:
-                                  - count
+                                  - logicalCount
                                   - memory
                                   - model
+                                  - physicalCount
                                   - vendor
                                   type: object
                                 id:
