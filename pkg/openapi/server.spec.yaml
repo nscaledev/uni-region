@@ -482,7 +482,8 @@ components:
       - vendor
       - model
       - memory
-      - count
+      - physicalCount
+      - logicalCount
       properties:
         vendor:
           $ref: '#/components/schemas/gpuVendor'
@@ -492,8 +493,11 @@ components:
         memory:
           description: GPU memory in GiB.
           type: integer
-        count:
-          description: The number of GPUs available.
+        physicalCount:
+          description: The physical number of GPUs (cards) available.
+          type: integer
+        logicalCount:
+          description: The logical number of GPUs available as seen in the OS.
           type: integer
     flavorSpec:
       description: A flavor.
@@ -861,10 +865,11 @@ components:
               disk: 20
               memory: 32
               gpu:
-                vendor: NVIDIA
-                model: H100
-                memory: 192
-                count: 1
+                vendor: AMD
+                model: Instinct MI250
+                memory: 64
+                physicalCount: 1
+                logicalCount: 2
     identityResponse:
       description: An identity response.
       content:

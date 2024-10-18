@@ -34,7 +34,6 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
-	coreutil "github.com/unikorn-cloud/core/pkg/util"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
@@ -47,6 +46,7 @@ import (
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -156,15 +156,16 @@ func convertFlavor(in providers.Flavor) openapi.Flavor {
 	}
 
 	if in.Baremetal {
-		out.Spec.Baremetal = coreutil.ToPointer(true)
+		out.Spec.Baremetal = ptr.To(true)
 	}
 
 	if in.GPU != nil {
 		out.Spec.Gpu = &openapi.GpuSpec{
-			Vendor: convertGpuVendor(in.GPU.Vendor),
-			Model:  in.GPU.Model,
-			Memory: int(in.GPU.Memory.Value()) >> 30,
-			Count:  in.GPU.Count,
+			Vendor:        convertGpuVendor(in.GPU.Vendor),
+			Model:         in.GPU.Model,
+			Memory:        int(in.GPU.Memory.Value()) >> 30,
+			PhysicalCount: in.GPU.PhysicalCount,
+			LogicalCount:  in.GPU.LogicalCount,
 		}
 	}
 
@@ -240,7 +241,7 @@ func convertImage(in providers.Image) openapi.Image {
 	}
 
 	if in.KubernetesVersion != "" {
-		out.Spec.SoftwareVersions.Kubernetes = coreutil.ToPointer(in.KubernetesVersion)
+		out.Spec.SoftwareVersions.Kubernetes = ptr.To(in.KubernetesVersion)
 	}
 
 	if in.GPU != nil {

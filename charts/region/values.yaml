@@ -62,7 +62,8 @@ organization: unikorn-cloud
 #             vendor: NVIDIA
 #             model: H100
 #             memory: 192Gi
-#             count: 2
+#             physicalCount: 2
+#             logicalCount: 2
 #     # Image service configuration.
 #     image:
 #       # Image selection, the result is a boolean intersection of chosen options.

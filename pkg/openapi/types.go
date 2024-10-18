@@ -96,14 +96,17 @@ type GpuModelList = []GpuModel
 
 // GpuSpec GPU specification.
 type GpuSpec struct {
-	// Count The number of GPUs available.
-	Count int `json:"count"`
+	// LogicalCount The logical number of GPUs available as seen in the OS.
+	LogicalCount int `json:"logicalCount"`
 
 	// Memory GPU memory in GiB.
 	Memory int `json:"memory"`
 
 	// Model A GPU model.
 	Model string `json:"model"`
+
+	// PhysicalCount The physical number of GPUs (cards) available.
+	PhysicalCount int `json:"physicalCount"`
 
 	// Vendor The GPU vendor.
 	Vendor GpuVendor `json:"vendor"`
