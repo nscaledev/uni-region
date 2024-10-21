@@ -1,0 +1,174 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.1
+  name: securitygroups.region.unikorn-cloud.org
+spec:
+  group: region.unikorn-cloud.org
+  names:
+    categories:
+    - unikorn
+    kind: SecurityGroup
+    listKind: SecurityGroupList
+    plural: securitygroups
+    singular: securitygroup
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Available")].reason
+      name: status
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: SecurityGroup defines a security group beloning to an identity.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              ingress:
+                description: Ingress are the ingress rules.
+                items:
+                  properties:
+                    port:
+                      description: Port is the port or range of ports.
+                      properties:
+                        number:
+                          description: Number is the port number.
+                          type: integer
+                        range:
+                          description: Range is the port range.
+                          properties:
+                            end:
+                              description: End is the end of the range.
+                              maximum: 65535
+                              type: integer
+                            start:
+                              description: Start is the start of the range.
+                              minimum: 1
+                              type: integer
+                          required:
+                          - end
+                          - start
+                          type: object
+                      required:
+                      - number
+                      - range
+                      type: object
+                    protocol:
+                      description: Protocol is the protocol of the rule.
+                      enum:
+                      - tcp
+                      - udp
+                      type: string
+                  required:
+                  - port
+                  - protocol
+                  type: object
+                type: array
+              pause:
+                description: Pause, if true, will inhibit reconciliation.
+                type: boolean
+              provider:
+                description: Provider defines the provider type.
+                enum:
+                - openstack
+                type: string
+              tags:
+                description: |-
+                  Tags are an abitrary list of key/value pairs that a client
+                  may populate to store metadata for the resource.
+                items:
+                  description: Tag is an arbirary key/value.
+                  properties:
+                    name:
+                      description: Name of the tag.
+                      type: string
+                    value:
+                      description: Value of the tag.
+                      type: string
+                  required:
+                  - name
+                  - value
+                  type: object
+                type: array
+            required:
+            - provider
+            type: object
+          status:
+            properties:
+              conditions:
+                description: Current service state of a cluster manager.
+                items:
+                  description: |-
+                    Condition is a generic condition type for use across all resource types.
+                    It's generic so that the underlying controller-manager functionality can
+                    be shared across all resources.
+                  properties:
+                    lastTransitionTime:
+                      description: Last time the condition transitioned from one status
+                        to another.
+                      format: date-time
+                      type: string
+                    message:
+                      description: Human-readable message indicating details about
+                        last transition.
+                      type: string
+                    reason:
+                      description: Unique, one-word, CamelCase reason for the condition's
+                        last transition.
+                      enum:
+                      - Provisioning
+                      - Provisioned
+                      - Cancelled
+                      - Errored
+                      - Deprovisioning
+                      - Deprovisioned
+                      type: string
+                    status:
+                      description: |-
+                        Status is the status of the condition.
+                        Can be True, False, Unknown.
+                      type: string
+                    type:
+                      description: Type is the type of the condition.
+                      enum:
+                      - Available
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
