@@ -646,6 +646,19 @@ type ServerSpec struct {
 	Tags TagList `json:"tags,omitempty"`
 	// Provider defines the provider type.
 	Provider Provider `json:"provider"`
+	// FlavorID is the flavor ID.
+	FlavorID string `json:"flavorID"`
+	// ImageID is the image ID.
+	ImageID string `json:"imageID"`
+	// PublicIPAllocation is the public IP allocation.
+	PublicIPAllocation *ServerPublicIPAllocation `json:"publicIPAllocation"`
+	// SecurityGroups are the security groups.
+	SecurityGroups []string `json:"securityGroups"`
+}
+
+type ServerPublicIPAllocation struct {
+	// Enabled is a flag to enable public IP allocation.
+	Enabled bool `json:"enabled"`
 }
 
 type ServerStatus struct {
