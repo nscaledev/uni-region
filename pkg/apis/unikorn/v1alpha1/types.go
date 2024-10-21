@@ -552,7 +552,13 @@ type SecurityGroupSpec struct {
 	Ingress []SecurityGroupRule `json:"ingress,omitempty"`
 }
 
+// +kubebuilder:validation:Enum=tcp;udp
 type SecurityGroupRuleProtocol string
+
+const (
+	TCP SecurityGroupRuleProtocol = "tcp"
+	UDP SecurityGroupRuleProtocol = "udp"
+)
 
 type SecurityGroupRulePortRange struct {
 	// Start is the start of the range.
