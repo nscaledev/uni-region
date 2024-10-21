@@ -517,3 +517,158 @@ type FlavorQuota struct {
 
 type QuotaStatus struct {
 }
+
+// SecurityGroupList is a typed list of security groups.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type SecurityGroupList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []SecurityGroup `json:"items"`
+}
+
+// SecurityGroup defines a security group beloning to an identity.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type SecurityGroup struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              SecurityGroupSpec   `json:"spec"`
+	Status            SecurityGroupStatus `json:"status,omitempty"`
+}
+
+type SecurityGroupSpec struct {
+	// Pause, if true, will inhibit reconciliation.
+	Pause bool `json:"pause,omitempty"`
+	// Tags are an abitrary list of key/value pairs that a client
+	// may populate to store metadata for the resource.
+	Tags TagList `json:"tags,omitempty"`
+	// Provider defines the provider type.
+	Provider Provider `json:"provider"`
+	// Ingress are the ingress rules.
+	Ingress []SecurityGroupRule `json:"ingress,omitempty"`
+}
+
+type SecurityGroupRuleProtocol string
+
+type SecurityGroupRulePortRange struct {
+	// Start is the start of the range.
+	// +kubebuilder:validation:Minimum=1
+	Start int `json:"start"`
+	// End is the end of the range.
+	// +kubebuilder:validation:Maximum=65535
+	End int `json:"end"`
+}
+
+type SecurityGroupRulePort struct {
+	// Number is the port number.
+	Number *int `json:"number"`
+	// Range is the port range.
+	Range *SecurityGroupRulePortRange `json:"range"`
+}
+
+type SecurityGroupRule struct {
+	// Protocol is the protocol of the rule.
+	Protocol SecurityGroupRuleProtocol `json:"protocol"`
+	// Port is the port or range of ports.
+	Port SecurityGroupRulePort `json:"port"`
+}
+
+type SecurityGroupStatus struct {
+	// Current service state of a cluster manager.
+	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+}
+
+// OpenstackSecurityGroupList is a typed list of security groups.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type OpenstackSecurityGroupList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []OpenstackSecurityGroup `json:"items"`
+}
+
+// OpenstackSecurityGroup has no controller, its a database record of state.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type OpenstackSecurityGroup struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              OpenstackSecurityGroupSpec   `json:"spec"`
+	Status            OpenstackSecurityGroupStatus `json:"status,omitempty"`
+}
+
+type OpenstackSecurityGroupSpec struct {
+	// SecurityGroupID is the security group ID.
+	SecurityGroupID *string `json:"securityGroupID,omitempty"`
+}
+
+type OpenstackSecurityGroupStatus struct {
+}
+
+// ServerList is a typed list of servers.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type ServerList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []Server `json:"items"`
+}
+
+// Server defines a server beloning to an identity.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type Server struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              ServerSpec   `json:"spec"`
+	Status            ServerStatus `json:"status,omitempty"`
+}
+
+type ServerSpec struct {
+	// Pause, if true, will inhibit reconciliation.
+	Pause bool `json:"pause,omitempty"`
+	// Tags are an abitrary list of key/value pairs that a client
+	// may populate to store metadata for the resource.
+	Tags TagList `json:"tags,omitempty"`
+	// Provider defines the provider type.
+	Provider Provider `json:"provider"`
+}
+
+type ServerStatus struct {
+	// Current service state of a cluster manager.
+	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+}
+
+// OpenstackServerList is a typed list of servers.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type OpenstackServerList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []OpenstackServer `json:"items"`
+}
+
+// OpenstackServer has no controller, its a database record of state.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type OpenstackServer struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              OpenstackServerSpec   `json:"spec"`
+	Status            OpenstackServerStatus `json:"status,omitempty"`
+}
+
+type OpenstackServerSpec struct {
+}
+
+type OpenstackServerStatus struct {
+}
