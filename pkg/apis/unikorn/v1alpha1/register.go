@@ -55,6 +55,8 @@ func init() {
 	SchemeBuilder.Register(&OpenstackIdentity{}, &OpenstackIdentityList{})
 	SchemeBuilder.Register(&OpenstackPhysicalNetwork{}, &OpenstackPhysicalNetworkList{})
 	SchemeBuilder.Register(&VLANAllocation{}, &VLANAllocationList{})
+	SchemeBuilder.Register(&SecurityGroup{}, &SecurityGroupList{})
+	SchemeBuilder.Register(&OpenstackSecurityGroup{}, &OpenstackSecurityGroupList{})
 }
 
 // Resource maps a resource type to a group resource.
