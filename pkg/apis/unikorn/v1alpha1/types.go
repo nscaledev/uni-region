@@ -18,6 +18,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/rules"
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -611,6 +612,8 @@ type OpenstackSecurityGroup struct {
 type OpenstackSecurityGroupSpec struct {
 	// SecurityGroupID is the security group ID.
 	SecurityGroupID *string `json:"securityGroupID,omitempty"`
+	// Rules are the security group rules.
+	Rules []rules.SecGroupRule `json:"rules,omitempty"`
 }
 
 type OpenstackSecurityGroupStatus struct {
