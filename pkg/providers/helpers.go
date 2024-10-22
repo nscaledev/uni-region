@@ -26,7 +26,7 @@ import (
 
 func (f Flavor) GPUCount() int {
 	if f.GPU != nil {
-		return f.GPU.Count
+		return f.GPU.LogicalCount
 	}
 
 	return 0

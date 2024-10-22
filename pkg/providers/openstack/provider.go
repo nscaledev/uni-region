@@ -320,10 +320,11 @@ func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
 					f.GPU = &providers.GPU{
 						// TODO: while these align, you should really put a
 						// proper conversion in here.
-						Vendor: providers.GPUVendor(metadata.GPU.Vendor),
-						Model:  metadata.GPU.Model,
-						Memory: metadata.GPU.Memory,
-						Count:  metadata.GPU.Count,
+						Vendor:        providers.GPUVendor(metadata.GPU.Vendor),
+						Model:         metadata.GPU.Model,
+						Memory:        metadata.GPU.Memory,
+						PhysicalCount: metadata.GPU.PhysicalCount,
+						LogicalCount:  metadata.GPU.LogicalCount,
 					}
 				}
 			}

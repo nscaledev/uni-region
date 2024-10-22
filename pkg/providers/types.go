@@ -59,8 +59,12 @@ type GPU struct {
 	Model string
 	// Memory is the amount of memory each GPU has.
 	Memory *resource.Quantity
-	// Count is the number of GPUs in the flavor.
-	Count int
+	// PhysicalCount is the number of physical cards in the flavor.
+	// This is primarily for end users, so it's not confusing.
+	PhysicalCount int
+	// LogicalCount is the number of logical GPUs e.g. an AMD MI250 is 2 MI200s.
+	// This is primarily for scheduling e.g. autoscaling.
+	LogicalCount int
 }
 
 // FlavorList allows us to attach sort functions and the like.

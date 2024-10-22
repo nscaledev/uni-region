@@ -174,10 +174,14 @@ type GPUSpec struct {
 	// Model is a free-form model name that corresponds to the supported models
 	// property included on images, and must be an exact match e.g. H100.
 	Model string `json:"model"`
+	// PhysicalCount is the number of physical cards in the flavor.
+	// This is primarily for end users, so it's not confusing.
+	PhysicalCount int `json:"physicalCount"`
+	// LogicalCount is the number of logical GPUs e.g. an AMD MI250 is 2 MI200s.
+	// This is primarily for scheduling e.g. autoscaling.
+	LogicalCount int `json:"logicalCount"`
 	// Memory is the amount of memory each logical GPU has access to.
 	Memory *resource.Quantity `json:"memory"`
-	// Count is the number of logical GPUs in the flavor.
-	Count int `json:"count"`
 }
 
 type RegionOpenstackImageSpec struct {
