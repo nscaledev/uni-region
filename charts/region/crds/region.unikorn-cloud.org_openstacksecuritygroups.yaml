@@ -45,6 +45,51 @@ spec:
             type: object
           spec:
             properties:
+              rules:
+                description: Rules are the security group rules.
+                items:
+                  properties:
+                    direction:
+                      description: |-
+                        The direction in which the security group rule is applied. The only values
+                        allowed are "ingress" or "egress".
+                      type: string
+                    id:
+                      description: ID is the security group rule ID.
+                      type: string
+                    port_range_max:
+                      description: |-
+                        The maximum port number in the range that is matched by the security group
+                        rule. The PortRangeMin attribute constrains the PortRangeMax attribute. If
+                        the protocol is ICMP, this value must be an ICMP type.
+                      type: integer
+                    port_range_min:
+                      description: |-
+                        The minimum port number in the range that is matched by the security group
+                        rule. If the protocol is TCP or UDP, this value must be less than or equal
+                        to the value of the PortRangeMax attribute. If the protocol is ICMP, this
+                        value must be an ICMP type.
+                      type: integer
+                    protocol:
+                      description: |-
+                        The protocol that is matched by the security group rule. Valid values are
+                        "tcp", "udp", "icmp" or an empty string.
+                      type: string
+                    remote_ip_prefix:
+                      description: |-
+                        The remote IP prefix to be associated with this security group rule.
+                        This attribute matches the specified IP prefix as the source IP address of
+                        the IP packet.
+                      pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\/(?:3[0-2]|[1-2]?[0-9])$
+                      type: string
+                  required:
+                  - direction
+                  - id
+                  - port_range_max
+                  - port_range_min
+                  - protocol
+                  type: object
+                type: array
               securityGroupID:
                 description: SecurityGroupID is the security group ID.
                 type: string

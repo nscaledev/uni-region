@@ -18,7 +18,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/rules"
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -572,9 +571,9 @@ type SecurityGroupRulePortRange struct {
 
 type SecurityGroupRulePort struct {
 	// Number is the port number.
-	Number *int `json:"number"`
+	Number *int `json:"number,omitempty"`
 	// Range is the port range.
-	Range *SecurityGroupRulePortRange `json:"range"`
+	Range *SecurityGroupRulePortRange `json:"range,omitempty"`
 }
 
 type SecurityGroupRule struct {
@@ -582,6 +581,8 @@ type SecurityGroupRule struct {
 	Protocol SecurityGroupRuleProtocol `json:"protocol"`
 	// Port is the port or range of ports.
 	Port SecurityGroupRulePort `json:"port"`
+	// Cidr is the CIDR block to allow traffic from.
+	Cidr *unikornv1core.IPv4Prefix `json:"cidr"`
 }
 
 type SecurityGroupStatus struct {
@@ -613,7 +614,31 @@ type OpenstackSecurityGroupSpec struct {
 	// SecurityGroupID is the security group ID.
 	SecurityGroupID *string `json:"securityGroupID,omitempty"`
 	// Rules are the security group rules.
-	Rules []rules.SecGroupRule `json:"rules,omitempty"`
+	Rules []OpenstackSecurityGroupRule `json:"rules,omitempty"`
+}
+
+type OpenstackSecurityGroupRule struct {
+	// ID is the security group rule ID.
+	ID string `json:"id"`
+	// The direction in which the security group rule is applied. The only values
+	// allowed are "ingress" or "egress".
+	Direction string `json:"direction"`
+	// The minimum port number in the range that is matched by the security group
+	// rule. If the protocol is TCP or UDP, this value must be less than or equal
+	// to the value of the PortRangeMax attribute. If the protocol is ICMP, this
+	// value must be an ICMP type.
+	PortRangeMin int `json:"port_range_min"`
+	// The maximum port number in the range that is matched by the security group
+	// rule. The PortRangeMin attribute constrains the PortRangeMax attribute. If
+	// the protocol is ICMP, this value must be an ICMP type.
+	PortRangeMax int `json:"port_range_max"`
+	// The protocol that is matched by the security group rule. Valid values are
+	// "tcp", "udp", "icmp" or an empty string.
+	Protocol string `json:"protocol"`
+	// The remote IP prefix to be associated with this security group rule.
+	// This attribute matches the specified IP prefix as the source IP address of
+	// the IP packet.
+	RemoteIPPrefix *unikornv1core.IPv4Prefix `json:"remote_ip_prefix,omitempty"`
 }
 
 type OpenstackSecurityGroupStatus struct {
