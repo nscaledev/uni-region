@@ -924,7 +924,6 @@ components:
       type: object
       required:
       - regionId
-      - type
       - rules
       properties:
         tags:
