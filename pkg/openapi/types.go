@@ -29,6 +29,12 @@ const (
 	Openstack RegionType = "openstack"
 )
 
+// Defines values for SecurityGroupRuleProtocol.
+const (
+	Tcp SecurityGroupRuleProtocol = "tcp"
+	Udp SecurityGroupRuleProtocol = "udp"
+)
+
 // ExternalNetwork An Openstack external network.
 type ExternalNetwork struct {
 	// Id The resource ID.
@@ -341,6 +347,89 @@ type RegionType string
 // Regions A list of regions.
 type Regions = []RegionRead
 
+// SecurityGroupRead A security group.
+type SecurityGroupRead struct {
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+
+	// Spec A security group's specification.
+	Spec SecurityGroupReadSpec `json:"spec"`
+}
+
+// SecurityGroupReadSpec A security group's specification.
+type SecurityGroupReadSpec struct {
+	// RegionId The region an identity is provisioned in.
+	RegionId string `json:"regionId"`
+
+	// Rules Security group rules.
+	Rules SecurityGroupRules `json:"rules"`
+
+	// Tags A list of tags.
+	Tags *TagList `json:"tags,omitempty"`
+}
+
+// SecurityGroupRule A security group rule.
+type SecurityGroupRule struct {
+	// Cidr An IPv4 address.
+	Cidr Ipv4Address `json:"cidr"`
+
+	// Port The port definition to allow traffic.
+	Port SecurityGroupRulePort `json:"port"`
+
+	// Protocol The protocol to allow.
+	Protocol SecurityGroupRuleProtocol `json:"protocol"`
+}
+
+// SecurityGroupRuleProtocol The protocol to allow.
+type SecurityGroupRuleProtocol string
+
+// SecurityGroupRuleList A list of security group rules.
+type SecurityGroupRuleList = []SecurityGroupRule
+
+// SecurityGroupRulePort The port definition to allow traffic.
+type SecurityGroupRulePort struct {
+	// Number The port to allow.
+	Number *int `json:"number,omitempty"`
+
+	// Range The port range to allow traffic.
+	Range *SecurityGroupRulePortRange `json:"range,omitempty"`
+}
+
+// SecurityGroupRulePortRange The port range to allow traffic.
+type SecurityGroupRulePortRange struct {
+	// End The end of the port range.
+	End int `json:"end"`
+
+	// Start The start of the port range.
+	Start int `json:"start"`
+}
+
+// SecurityGroupRules Security group rules.
+type SecurityGroupRules struct {
+	// Ingress A list of security group rules.
+	Ingress SecurityGroupRuleList `json:"ingress"`
+}
+
+// SecurityGroupWrite A security group request.
+type SecurityGroupWrite struct {
+	// Metadata Resource metadata valid for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A security group's specification.
+	Spec *SecurityGroupWriteSpec `json:"spec,omitempty"`
+}
+
+// SecurityGroupWriteSpec A security group's specification.
+type SecurityGroupWriteSpec struct {
+	// Rules Security group rules.
+	Rules SecurityGroupRules `json:"rules"`
+
+	// Tags A list of tags.
+	Tags *TagList `json:"tags,omitempty"`
+}
+
+// SecurityGroupsRead A list of security groups.
+type SecurityGroupsRead = []SecurityGroupRead
+
 // SoftwareVersions Image preinstalled version version metadata.
 type SoftwareVersions struct {
 	// Kubernetes A semantic version.
@@ -374,6 +463,9 @@ type ProjectIDParameter = KubernetesNameParameter
 // RegionIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type RegionIDParameter = KubernetesNameParameter
 
+// SecurityGroupIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
+type SecurityGroupIDParameter = KubernetesNameParameter
+
 // ExternalNetworksResponse A list of openstack external networks.
 type ExternalNetworksResponse = ExternalNetworks
 
@@ -401,6 +493,12 @@ type QuotasResponse = QuotasSpec
 // RegionsResponse A list of regions.
 type RegionsResponse = Regions
 
+// SecurityGroupResponse A security group.
+type SecurityGroupResponse = SecurityGroupRead
+
+// SecurityGroupsResponse A list of security groups.
+type SecurityGroupsResponse = SecurityGroupsRead
+
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
 
@@ -410,6 +508,9 @@ type PhysicalNetworkRequest = PhysicalNetworkWrite
 // QuotasRequest defines model for quotasRequest.
 type QuotasRequest = QuotasSpec
 
+// SecurityGroupRequest A security group request.
+type SecurityGroupRequest = SecurityGroupWrite
+
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody = IdentityWrite
 
@@ -418,3 +519,6 @@ type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPh
 
 // PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotasJSONRequestBody defines body for PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas for application/json ContentType.
 type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotasJSONRequestBody = QuotasSpec
+
+// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroups for application/json ContentType.
+type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsJSONRequestBody = SecurityGroupWrite

@@ -919,3 +919,225 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetw
 	h.setCacheable(w)
 	util.WriteJSONResponse(w, r, http.StatusOK, convertExternalNetworks(result))
 }
+
+func convertSecurityGroupRulePort(in unikornv1.SecurityGroupRulePort) openapi.SecurityGroupRulePort {
+	out := openapi.SecurityGroupRulePort{}
+
+	if in.Number != nil {
+		out.Number = in.Number
+	}
+
+	if in.Range != nil {
+		out.Range = &openapi.SecurityGroupRulePortRange{
+			Start: in.Range.Start,
+			End:   in.Range.End,
+		}
+	}
+
+	return out
+}
+
+func convertSecurityGroupRule(in unikornv1.SecurityGroupRule) openapi.SecurityGroupRule {
+	out := openapi.SecurityGroupRule{
+		Protocol: openapi.SecurityGroupRuleProtocol(in.Protocol),
+		Cidr:     in.Cidr.String(),
+		Port:     convertSecurityGroupRulePort(in.Port),
+	}
+
+	return out
+}
+
+func convertSecurityGroupRules(in []unikornv1.SecurityGroupRule) openapi.SecurityGroupRuleList {
+	out := make(openapi.SecurityGroupRuleList, len(in))
+
+	for i := range in {
+		out[i] = convertSecurityGroupRule(in[i])
+	}
+
+	return out
+}
+
+func (h *Handler) convertSecurityGroup(in *unikornv1.SecurityGroup) *openapi.SecurityGroupRead {
+	provisioningStatus := coreapi.ResourceProvisioningStatusUnknown
+
+	if condition, err := in.StatusConditionRead(unikornv1core.ConditionAvailable); err == nil {
+		provisioningStatus = conversion.ConvertStatusCondition(condition)
+	}
+
+	out := &openapi.SecurityGroupRead{
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, provisioningStatus),
+		Spec: openapi.SecurityGroupReadSpec{
+			RegionId: in.Labels[constants.RegionLabel],
+			Rules: openapi.SecurityGroupRules{
+				Ingress: convertSecurityGroupRules(in.Spec.Ingress),
+			},
+		},
+	}
+
+	if tags := convertTags(in.Spec.Tags); tags != nil {
+		out.Spec.Tags = &tags
+	}
+
+	return out
+}
+
+func (h *Handler) convertSecurityGroupList(in unikornv1.SecurityGroupList) openapi.SecurityGroupsRead {
+	out := make(openapi.SecurityGroupsRead, len(in.Items))
+
+	for i := range in.Items {
+		out[i] = *h.convertSecurityGroup(&in.Items[i])
+	}
+
+	return out
+}
+
+func (h *Handler) getSecurityGroup(ctx context.Context, id string) (*unikornv1.SecurityGroup, error) {
+	resource := &unikornv1.SecurityGroup{}
+
+	if err := h.client.Get(ctx, client.ObjectKey{Namespace: h.namespace, Name: id}, resource); err != nil {
+		if kerrors.IsNotFound(err) {
+			return nil, errors.HTTPNotFound().WithError(err)
+		}
+
+		return nil, errors.OAuth2ServerError("unable to get security group").WithError(err)
+	}
+
+	return resource, nil
+}
+
+func (h *Handler) GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
+	if err := rbac.AllowOrganizationScope(r.Context(), "securitygroups", identityapi.Read, organizationID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	var result unikornv1.SecurityGroupList
+
+	options := &client.ListOptions{
+		LabelSelector: labels.SelectorFromSet(map[string]string{
+			coreconstants.OrganizationLabel: organizationID,
+		}),
+	}
+
+	if err := h.client.List(r.Context(), &result, options); err != nil {
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to list security groups").WithError(err))
+		return
+	}
+
+	slices.SortStableFunc(result.Items, func(a, b unikornv1.SecurityGroup) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+
+	util.WriteJSONResponse(w, r, http.StatusOK, h.convertSecurityGroupList(result))
+}
+
+func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "securitygroups", identityapi.Create, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	request := &openapi.SecurityGroupWrite{}
+
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	identity, err := h.getIdentity(r.Context(), identityID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	userinfo, err := authorization.UserinfoFromContext(r.Context())
+	if err != nil {
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to get userinfo").WithError(err))
+		return
+	}
+
+	ingressRules := make([]unikornv1.SecurityGroupRule, len(request.Spec.Rules.Ingress))
+
+	for i, rule := range request.Spec.Rules.Ingress {
+		_, cidr, err := net.ParseCIDR(rule.Cidr)
+		if err != nil {
+			errors.HandleError(w, r, errors.OAuth2InvalidRequest("unable to parse cidr").WithError(err))
+			return
+		}
+		port := unikornv1.SecurityGroupRulePort{}
+		port.Number = rule.Port.Number
+		if rule.Port.Range != nil {
+			port.Range = &unikornv1.SecurityGroupRulePortRange{
+				Start: rule.Port.Range.Start,
+				End:   rule.Port.Range.End,
+			}
+		}
+
+		ingressRules[i] = unikornv1.SecurityGroupRule{
+			Protocol: unikornv1.SecurityGroupRuleProtocol(rule.Protocol),
+			Cidr: &unikornv1core.IPv4Prefix{
+				IPNet: *cidr,
+			},
+			Port: port,
+		}
+	}
+
+	securityGroup := &unikornv1.SecurityGroup{
+		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, h.namespace, userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identityID).Get(),
+		Spec: unikornv1.SecurityGroupSpec{
+			Provider: identity.Spec.Provider,
+			Ingress:  ingressRules,
+		},
+	}
+
+	if request.Spec != nil {
+		securityGroup.Spec.Tags = generateTagList(request.Spec.Tags)
+	}
+
+	if err := h.client.Create(r.Context(), securityGroup); err != nil {
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to create security group").WithError(err))
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusCreated, h.convertSecurityGroup(securityGroup))
+}
+
+func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "securitygroups", identityapi.Delete, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	resource, err := h.getSecurityGroup(r.Context(), securityGroupID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	if err := h.client.Delete(r.Context(), resource); err != nil {
+		if kerrors.IsNotFound(err) {
+			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
+			return
+		}
+
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to delete security group").WithError(err))
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "securitygroups", identityapi.Read, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	resource, err := h.getSecurityGroup(r.Context(), securityGroupID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, h.convertSecurityGroup(resource))
+}

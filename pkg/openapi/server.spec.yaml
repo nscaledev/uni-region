@@ -308,6 +308,91 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/organizations/{organizationID}/securitygroups:
+    description: |-
+      Manages security groups. Decurity groupd acts as a virtual firewall for instances to control 
+      inbound and outbound traffic.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    get:
+      description: List security groups.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/securityGroupsResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/securitygroups:
+    description: |-
+      Manages security groups. Decurity groupd acts as a virtual firewall for instances to control 
+      inbound and outbound traffic.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/identityIDParameter'
+    post:
+      description: Create a new security group.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/securityGroupRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/securityGroupResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/securitygroups/{securityGroupID}:
+    description: |-
+      Manages security groups. Decurity groupd acts as a virtual firewall for instances to control 
+      inbound and outbound traffic.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/identityIDParameter'
+    - $ref: '#/components/parameters/securityGroupIDParameter'
+    get:
+      description: Get a security group.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/securityGroupResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    delete:
+      description: Delete a security group.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 components:
   parameters:
     organizationIDParameter:
@@ -350,6 +435,13 @@ components:
       name: clientID
       in: path
       description: The client a resource belongs to.
+      required: true
+      schema:
+        $ref: '#/components/schemas/kubernetesNameParameter'
+    securityGroupIDParameter:
+      name: securityGroupID
+      in: path
+      description: The security group identifier.
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
@@ -764,6 +856,110 @@ components:
       properties:
         flavors:
           $ref: '#/components/schemas/flavorQuotaList'
+    securityGroupRuleList:
+      description: A list of security group rules.
+      type: array
+      items:
+        $ref: '#/components/schemas/securityGroupRule'
+    securityGroupRules:
+      description: Security group rules.
+      type: object
+      required:
+      - ingress
+      properties:
+        ingress:
+          $ref: '#/components/schemas/securityGroupRuleList'
+    securityGroupRule:
+      description: A security group rule.
+      type: object
+      required:
+      - protocol
+      - port
+      - cidr
+      properties:
+        protocol:
+          description: The protocol to allow.
+          type: string
+          enum:
+          - tcp
+          - udp
+        port:
+          $ref: '#/components/schemas/securityGroupRulePort'
+        cidr:
+          $ref: '#/components/schemas/ipv4Address'
+    securityGroupRulePort:
+      description: The port definition to allow traffic.
+      type: object
+      properties:
+        number:
+          description: The port to allow.
+          type: integer
+        range:
+          $ref: '#/components/schemas/securityGroupRulePortRange'
+    securityGroupRulePortRange:
+      description: The port range to allow traffic.
+      type: object
+      required:
+      - start
+      - end
+      properties:
+        start:
+          description: The start of the port range.
+          type: integer
+        end:
+          description: The end of the port range.
+          type: integer
+    securityGroupWriteSpec:
+      description: A security group's specification.
+      type: object
+      required:
+      - rules
+      properties:
+        tags:
+          $ref: '#/components/schemas/tagList'
+        rules:
+          $ref: '#/components/schemas/securityGroupRules'
+    securityGroupReadSpec:
+      description: A security group's specification.
+      type: object
+      required:
+      - regionId
+      - type
+      - rules
+      properties:
+        tags:
+          $ref: '#/components/schemas/tagList'
+        regionId:
+          description: The region an identity is provisioned in.
+          type: string
+        rules:
+          $ref: '#/components/schemas/securityGroupRules'
+    securityGroupWrite:
+      description: A security group request.
+      type: object
+      required:
+      - metadata
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/securityGroupWriteSpec'
+    securityGroupRead:
+      description: A security group.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+        spec:
+          $ref: '#/components/schemas/securityGroupReadSpec'
+    securityGroupsRead:
+      description: A list of security groups.
+      type: array
+      items:
+        $ref: '#/components/schemas/securityGroupRead'
   requestBodies:
     identityRequest:
       description: A request for an identity.
@@ -808,6 +1004,32 @@ components:
             flavors:
             - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
               count: 8
+    securityGroupRequest:
+      description: A request for a security group.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/securityGroupWrite'
+          example:
+            metadata:
+              name: security-group-name
+              description: A verbose description
+            spec:
+              tags:
+              - name: cluster-id
+                value: 9361402c-f998-49cc-ab21-9bb99afcfde8
+              rules:
+                ingress:
+                - protocol: tcp
+                  port: 
+                    number: 80
+                  cidr: 0.0.0.0/0
+                - protocol: tcp
+                  port:
+                    range:
+                      start: 1066
+                      end: 1999
+                  cidr: 172.16.0.0/12
   responses:
     regionsResponse:
       description: A list of regions.
@@ -985,6 +1207,64 @@ components:
             flavors:
             - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
               count: 8
+    securityGroupResponse:
+      description: A security group.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/securityGroupRead'
+          example:
+            metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: unused
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2024-05-31T14:11:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: provisioned
+            spec:
+              regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
+              rules:
+                ingress:
+                - protocol: tcp
+                  port: 
+                    number: 80
+                  cidr: 0.0.0.0/0
+                - protocol: tcp
+                  port:
+                    range:
+                      start: 1066
+                      end: 1999
+                  cidr: 172.16.0.0/12
+    securityGroupsResponse:
+      description: A list of security groups.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/securityGroupsRead'
+          example:
+          - metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: unused
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2024-05-31T14:11:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: provisioned
+            spec:
+              regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
+              rules:
+                ingress:
+                - protocol: tcp
+                  port: 
+                    number: 80
+                  cidr: 0.0.0.0/0
+                - protocol: tcp
+                  port:
+                    range:
+                      start: 1066
+                      end: 1999
+                  cidr: 172.16.0.0/12
   securitySchemes:
     oauth2Authentication:
       description: Operation requires OAuth2 bearer token authentication.

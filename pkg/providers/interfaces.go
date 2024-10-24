@@ -43,4 +43,8 @@ type Provider interface {
 	// ListExternalNetworks returns a list of external networks if the platform
 	// supports such a concept.
 	ListExternalNetworks(ctx context.Context) (ExternalNetworks, error)
+	// CreateSecurityGroup creates a new security group.
+	CreateSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error
+	// DeleteSecurityGroup deletes a security group.
+	DeleteSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error
 }
