@@ -1190,17 +1190,6 @@ func generateSecurityGroupRulePort(in openapi.SecurityGroupRulePort) *unikornv1.
 	return &out
 }
 
-func convertSecurityGroupRuleProtocol(in unikornv1.SecurityGroupRuleProtocol) openapi.SecurityGroupRuleReadSpecProtocol {
-	switch in {
-	case unikornv1.TCP:
-		return openapi.SecurityGroupRuleReadSpecProtocolTcp
-	case unikornv1.UDP:
-		return openapi.SecurityGroupRuleReadSpecProtocolUdp
-	}
-
-	return ""
-}
-
 func generateSecurityGroupRuleProtocol(in openapi.SecurityGroupRuleWriteSpecProtocol) *unikornv1.SecurityGroupRuleProtocol {
 	var out unikornv1.SecurityGroupRuleProtocol
 
