@@ -13,6 +13,14 @@ Create the container images
 {{- .Values.physicalNetworkController.image | default (printf "%s/unikorn-physical-network-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
 {{- end }}
 
+{{- define "unikorn.securityGroupControllerImage" -}}
+{{- .Values.securityGroupController.image | default (printf "%s/unikorn-security-group-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
+{{- end }}
+
+{{- define "unikorn.securityGroupRuleControllerImage" -}}
+{{- .Values.securityGroupRuleController.image | default (printf "%s/unikorn-security-group-rule-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
+{{- end }}
+
 {{/*
 Create image pull secrets
 */}}

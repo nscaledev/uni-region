@@ -435,7 +435,7 @@ type SecurityGroupRuleWrite struct {
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
 
 	// Spec A security group rule's specification.
-	Spec *SecurityGroupRuleWriteSpec `json:"spec,omitempty"`
+	Spec SecurityGroupRuleWriteSpec `json:"spec"`
 }
 
 // SecurityGroupRuleWriteSpec A security group rule's specification.

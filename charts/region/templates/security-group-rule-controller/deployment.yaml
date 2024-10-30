@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: unikorn-security-group-rule-controller
+  labels:
+    {{- include "unikorn.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: unikorn-security-group-rule-controller
+  template:
+    metadata:
+      labels:
+        app: unikorn-security-group-rule-controller
+    spec:
+      containers:
+      - name: unikorn-security-group-rule-controller
+        image: {{ include "unikorn.securityGroupRuleControllerImage" . }}
+        args:
+        {{- include "unikorn.core.flags" . | nindent 8 }}
+        {{- include "unikorn.otlp.flags" . | nindent 8 }}
+        ports:
+        - name: http
+          containerPort: 6080
+        - name: prometheus
+          containerPort: 8080
+        - name: pprof
+          containerPort: 6060
+        resources:
+          requests:
+            cpu: "50m"
+            memory: 50Mi
+          limits:
+            cpu: "100m"
+            memory: 100Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+      serviceAccountName: unikorn-security-group-rule-controller
+      securityContext:
+        runAsNonRoot: true

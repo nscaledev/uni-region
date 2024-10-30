@@ -1013,6 +1013,7 @@ components:
       type: object
       required:
       - metadata
+      - spec
       properties:
         metadata:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
