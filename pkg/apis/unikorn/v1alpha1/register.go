@@ -57,6 +57,8 @@ func init() {
 	SchemeBuilder.Register(&VLANAllocation{}, &VLANAllocationList{})
 	SchemeBuilder.Register(&SecurityGroup{}, &SecurityGroupList{})
 	SchemeBuilder.Register(&OpenstackSecurityGroup{}, &OpenstackSecurityGroupList{})
+	SchemeBuilder.Register(&SecurityGroupRule{}, &SecurityGroupRuleList{})
+	SchemeBuilder.Register(&OpenstackSecurityGroupRule{}, &OpenstackSecurityGroupRuleList{})
 }
 
 // Resource maps a resource type to a group resource.

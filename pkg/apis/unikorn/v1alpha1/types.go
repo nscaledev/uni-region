@@ -548,45 +548,10 @@ type SecurityGroupSpec struct {
 	Tags TagList `json:"tags,omitempty"`
 	// Provider defines the provider type.
 	Provider Provider `json:"provider"`
-	// Ingress are the ingress rules.
-	Ingress []SecurityGroupRule `json:"ingress,omitempty"`
-}
-
-// +kubebuilder:validation:Enum=tcp;udp
-type SecurityGroupRuleProtocol string
-
-const (
-	TCP SecurityGroupRuleProtocol = "tcp"
-	UDP SecurityGroupRuleProtocol = "udp"
-)
-
-type SecurityGroupRulePortRange struct {
-	// Start is the start of the range.
-	// +kubebuilder:validation:Minimum=1
-	Start int `json:"start"`
-	// End is the end of the range.
-	// +kubebuilder:validation:Maximum=65535
-	End int `json:"end"`
-}
-
-type SecurityGroupRulePort struct {
-	// Number is the port number.
-	Number *int `json:"number,omitempty"`
-	// Range is the port range.
-	Range *SecurityGroupRulePortRange `json:"range,omitempty"`
-}
-
-type SecurityGroupRule struct {
-	// Protocol is the protocol of the rule.
-	Protocol SecurityGroupRuleProtocol `json:"protocol"`
-	// Port is the port or range of ports.
-	Port SecurityGroupRulePort `json:"port"`
-	// Cidr is the CIDR block to allow traffic from.
-	Cidr *unikornv1core.IPv4Prefix `json:"cidr"`
 }
 
 type SecurityGroupStatus struct {
-	// Current service state of a cluster manager.
+	// Current service state of a security group.
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
 }
 
@@ -613,33 +578,105 @@ type OpenstackSecurityGroup struct {
 type OpenstackSecurityGroupSpec struct {
 	// SecurityGroupID is the security group ID.
 	SecurityGroupID *string `json:"securityGroupID,omitempty"`
-	// Rules are the security group rules.
-	Rules []OpenstackSecurityGroupRule `json:"rules,omitempty"`
-}
-
-type OpenstackSecurityGroupRule struct {
-	// ID is the security group rule ID.
-	ID string `json:"id"`
-	// The direction in which the security group rule is applied. The only values
-	// allowed are "ingress" or "egress".
-	Direction string `json:"direction"`
-	// The minimum port number in the range that is matched by the security group
-	// rule. If the protocol is TCP or UDP, this value must be less than or equal
-	// to the value of the PortRangeMax attribute. If the protocol is ICMP, this
-	// value must be an ICMP type.
-	PortRangeMin int `json:"port_range_min"`
-	// The maximum port number in the range that is matched by the security group
-	// rule. The PortRangeMin attribute constrains the PortRangeMax attribute. If
-	// the protocol is ICMP, this value must be an ICMP type.
-	PortRangeMax int `json:"port_range_max"`
-	// The protocol that is matched by the security group rule. Valid values are
-	// "tcp", "udp", "icmp" or an empty string.
-	Protocol string `json:"protocol"`
-	// The remote IP prefix to be associated with this security group rule.
-	// This attribute matches the specified IP prefix as the source IP address of
-	// the IP packet.
-	RemoteIPPrefix *unikornv1core.IPv4Prefix `json:"remote_ip_prefix,omitempty"`
 }
 
 type OpenstackSecurityGroupStatus struct {
+}
+
+// SecurityGroupRuleList is a typed list of security group rules.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type SecurityGroupRuleList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []SecurityGroupRule `json:"items"`
+}
+
+// SecurityGroupRule defines a security group rule beloning to a security group.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type SecurityGroupRule struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              SecurityGroupRuleSpec   `json:"spec"`
+	Status            SecurityGroupRuleStatus `json:"status,omitempty"`
+}
+
+type SecurityGroupRuleSpec struct {
+	// Pause, if true, will inhibit reconciliation.
+	Pause bool `json:"pause,omitempty"`
+	// Direction is the direction of the rule.
+	Direction *SecurityGroupRuleDirection `json:"direction"`
+	// Protocol is the protocol of the rule.
+	Protocol *SecurityGroupRuleProtocol `json:"protocol"`
+	// Port is the port or range of ports.
+	Port *SecurityGroupRulePort `json:"port"`
+	// CIDR is the CIDR block to allow traffic from.
+	CIDR *unikornv1core.IPv4Prefix `json:"cidr"`
+}
+
+type SecurityGroupRuleStatus struct {
+	// Current service state of a security group rule.
+	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+}
+
+// +kubebuilder:validation:Enum=tcp;udp
+type SecurityGroupRuleProtocol string
+
+// +kubebuilder:validation:Enum=ingress;egress
+type SecurityGroupRuleDirection string
+
+const (
+	TCP     SecurityGroupRuleProtocol  = "tcp"
+	UDP     SecurityGroupRuleProtocol  = "udp"
+	Ingress SecurityGroupRuleDirection = "ingress"
+	Egress  SecurityGroupRuleDirection = "egress"
+)
+
+type SecurityGroupRulePortRange struct {
+	// Start is the start of the range.
+	// +kubebuilder:validation:Minimum=1
+	Start int `json:"start"`
+	// End is the end of the range.
+	// +kubebuilder:validation:Maximum=65535
+	End int `json:"end"`
+}
+
+// +kubebuilder:validation:XValidation:message="at least one of number or range must be defined",rule=(has(self.number) || has(self.range))
+type SecurityGroupRulePort struct {
+	// Number is the port number.
+	Number *int `json:"number,omitempty"`
+	// Range is the port range.
+	Range *SecurityGroupRulePortRange `json:"range,omitempty"`
+}
+
+// OpenstackSecurityGroupRuleList is a typed list of security groups.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type OpenstackSecurityGroupRuleList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []OpenstackSecurityGroupRule `json:"items"`
+}
+
+// OpenstackSecurityGroupRule has no controller, its a database record of state.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type OpenstackSecurityGroupRule struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              OpenstackSecurityGroupRuleSpec   `json:"spec"`
+	Status            OpenstackSecurityGroupRuleStatus `json:"status,omitempty"`
+}
+
+type OpenstackSecurityGroupRuleSpec struct {
+	// SecurityGroupRuleID is the security group rule ID.
+	SecurityGroupRuleID *string `json:"securityGroupRuleID,omitempty"`
+}
+
+type OpenstackSecurityGroupRuleStatus struct {
 }

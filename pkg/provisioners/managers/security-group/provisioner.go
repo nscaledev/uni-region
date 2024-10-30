@@ -29,6 +29,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 
+	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -115,12 +116,9 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	cli, err := coreclient.ProvisionerClientFromContext(ctx)
-	if err != nil {
-		return err
-	}
+	log := log.FromContext(ctx)
 
-	provider, err := region.NewClient(cli, p.securitygroup.Namespace).Provider(ctx, p.securitygroup.Labels[constants.RegionLabel])
+	cli, err := coreclient.ProvisionerClientFromContext(ctx)
 	if err != nil {
 		return err
 	}
@@ -130,9 +128,56 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
+	// Block security group deletion until all owned resources are deleted
+	rules, err := p.listSecurityGroupRules(ctx, cli, identity)
+	if err != nil {
+		return err
+	}
+
+	if len(rules.Items) != 0 {
+		for i := range rules.Items {
+			resource := &rules.Items[i]
+
+			if resource.DeletionTimestamp != nil {
+				log.Info("awaiting security group rule deletion", "security group rule", resource.Name)
+				continue
+			}
+
+			log.Info("triggering security group rule deletion", "security group rule", resource.Name)
+
+			if err := cli.Delete(ctx, resource); err != nil {
+				return err
+			}
+		}
+
+		return provisioners.ErrYield
+	}
+
+	provider, err := region.NewClient(cli, p.securitygroup.Namespace).Provider(ctx, p.securitygroup.Labels[constants.RegionLabel])
+	if err != nil {
+		return err
+	}
+
 	if err := provider.DeleteSecurityGroup(ctx, identity, p.securitygroup); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (p *Provisioner) listSecurityGroupRules(ctx context.Context, cli client.Client, identity *unikornv1.Identity) (*unikornv1.SecurityGroupRuleList, error) {
+	var result unikornv1.SecurityGroupRuleList
+
+	options := &client.ListOptions{
+		LabelSelector: labels.SelectorFromSet(map[string]string{
+			constants.IdentityLabel:      identity.Name,
+			constants.SecurityGroupLabel: p.securitygroup.Name,
+		}),
+	}
+
+	if err := cli.List(ctx, &result, options); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
 }

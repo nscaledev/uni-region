@@ -4,16 +4,16 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.16.1
-  name: openstacksecuritygroups.region.unikorn-cloud.org
+  name: openstacksecuritygrouprules.region.unikorn-cloud.org
 spec:
   group: region.unikorn-cloud.org
   names:
     categories:
     - unikorn
-    kind: OpenstackSecurityGroup
-    listKind: OpenstackSecurityGroupList
-    plural: openstacksecuritygroups
-    singular: openstacksecuritygroup
+    kind: OpenstackSecurityGroupRule
+    listKind: OpenstackSecurityGroupRuleList
+    plural: openstacksecuritygrouprules
+    singular: openstacksecuritygrouprule
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -23,8 +23,8 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: OpenstackSecurityGroup has no controller, its a database record
-          of state.
+        description: OpenstackSecurityGroupRule has no controller, its a database
+          record of state.
         properties:
           apiVersion:
             description: |-
@@ -45,8 +45,8 @@ spec:
             type: object
           spec:
             properties:
-              securityGroupID:
-                description: SecurityGroupID is the security group ID.
+              securityGroupRuleID:
+                description: SecurityGroupRuleID is the security group rule ID.
                 type: string
             type: object
           status:

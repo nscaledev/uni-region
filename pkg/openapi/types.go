@@ -29,10 +29,28 @@ const (
 	Openstack RegionType = "openstack"
 )
 
-// Defines values for SecurityGroupRuleProtocol.
+// Defines values for SecurityGroupRuleReadSpecDirection.
 const (
-	Tcp SecurityGroupRuleProtocol = "tcp"
-	Udp SecurityGroupRuleProtocol = "udp"
+	SecurityGroupRuleReadSpecDirectionEgress  SecurityGroupRuleReadSpecDirection = "egress"
+	SecurityGroupRuleReadSpecDirectionIngress SecurityGroupRuleReadSpecDirection = "ingress"
+)
+
+// Defines values for SecurityGroupRuleReadSpecProtocol.
+const (
+	SecurityGroupRuleReadSpecProtocolTcp SecurityGroupRuleReadSpecProtocol = "tcp"
+	SecurityGroupRuleReadSpecProtocolUdp SecurityGroupRuleReadSpecProtocol = "udp"
+)
+
+// Defines values for SecurityGroupRuleWriteSpecDirection.
+const (
+	SecurityGroupRuleWriteSpecDirectionEgress  SecurityGroupRuleWriteSpecDirection = "egress"
+	SecurityGroupRuleWriteSpecDirectionIngress SecurityGroupRuleWriteSpecDirection = "ingress"
+)
+
+// Defines values for SecurityGroupRuleWriteSpecProtocol.
+const (
+	SecurityGroupRuleWriteSpecProtocolTcp SecurityGroupRuleWriteSpecProtocol = "tcp"
+	SecurityGroupRuleWriteSpecProtocolUdp SecurityGroupRuleWriteSpecProtocol = "udp"
 )
 
 // ExternalNetwork An Openstack external network.
@@ -360,30 +378,9 @@ type SecurityGroupReadSpec struct {
 	// RegionId The region an identity is provisioned in.
 	RegionId string `json:"regionId"`
 
-	// Rules Security group rules.
-	Rules SecurityGroupRules `json:"rules"`
-
 	// Tags A list of tags.
 	Tags *TagList `json:"tags,omitempty"`
 }
-
-// SecurityGroupRule A security group rule.
-type SecurityGroupRule struct {
-	// Cidr An IPv4 address.
-	Cidr Ipv4Address `json:"cidr"`
-
-	// Port The port definition to allow traffic.
-	Port SecurityGroupRulePort `json:"port"`
-
-	// Protocol The protocol to allow.
-	Protocol SecurityGroupRuleProtocol `json:"protocol"`
-}
-
-// SecurityGroupRuleProtocol The protocol to allow.
-type SecurityGroupRuleProtocol string
-
-// SecurityGroupRuleList A list of security group rules.
-type SecurityGroupRuleList = []SecurityGroupRule
 
 // SecurityGroupRulePort The port definition to allow traffic.
 type SecurityGroupRulePort struct {
@@ -403,11 +400,67 @@ type SecurityGroupRulePortRange struct {
 	Start int `json:"start"`
 }
 
-// SecurityGroupRules Security group rules.
-type SecurityGroupRules struct {
-	// Ingress A list of security group rules.
-	Ingress SecurityGroupRuleList `json:"ingress"`
+// SecurityGroupRuleRead A security group rule.
+type SecurityGroupRuleRead struct {
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+
+	// Spec A security group rule's specification.
+	Spec SecurityGroupRuleReadSpec `json:"spec"`
 }
+
+// SecurityGroupRuleReadSpec A security group rule's specification.
+type SecurityGroupRuleReadSpec struct {
+	// Cidr An IPv4 address.
+	Cidr Ipv4Address `json:"cidr"`
+
+	// Direction The direction of the rule.
+	Direction SecurityGroupRuleReadSpecDirection `json:"direction"`
+
+	// Port The port definition to allow traffic.
+	Port SecurityGroupRulePort `json:"port"`
+
+	// Protocol The protocol to allow.
+	Protocol SecurityGroupRuleReadSpecProtocol `json:"protocol"`
+}
+
+// SecurityGroupRuleReadSpecDirection The direction of the rule.
+type SecurityGroupRuleReadSpecDirection string
+
+// SecurityGroupRuleReadSpecProtocol The protocol to allow.
+type SecurityGroupRuleReadSpecProtocol string
+
+// SecurityGroupRuleWrite A security group rule request.
+type SecurityGroupRuleWrite struct {
+	// Metadata Resource metadata valid for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A security group rule's specification.
+	Spec *SecurityGroupRuleWriteSpec `json:"spec,omitempty"`
+}
+
+// SecurityGroupRuleWriteSpec A security group rule's specification.
+type SecurityGroupRuleWriteSpec struct {
+	// Cidr An IPv4 address.
+	Cidr Ipv4Address `json:"cidr"`
+
+	// Direction The direction of the rule.
+	Direction SecurityGroupRuleWriteSpecDirection `json:"direction"`
+
+	// Port The port definition to allow traffic.
+	Port SecurityGroupRulePort `json:"port"`
+
+	// Protocol The protocol to allow.
+	Protocol SecurityGroupRuleWriteSpecProtocol `json:"protocol"`
+}
+
+// SecurityGroupRuleWriteSpecDirection The direction of the rule.
+type SecurityGroupRuleWriteSpecDirection string
+
+// SecurityGroupRuleWriteSpecProtocol The protocol to allow.
+type SecurityGroupRuleWriteSpecProtocol string
+
+// SecurityGroupRulesRead A list of security group rules.
+type SecurityGroupRulesRead = []SecurityGroupRuleRead
 
 // SecurityGroupWrite A security group request.
 type SecurityGroupWrite struct {
@@ -420,9 +473,6 @@ type SecurityGroupWrite struct {
 
 // SecurityGroupWriteSpec A security group's specification.
 type SecurityGroupWriteSpec struct {
-	// Rules Security group rules.
-	Rules SecurityGroupRules `json:"rules"`
-
 	// Tags A list of tags.
 	Tags *TagList `json:"tags,omitempty"`
 }
@@ -463,6 +513,9 @@ type ProjectIDParameter = KubernetesNameParameter
 // RegionIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type RegionIDParameter = KubernetesNameParameter
 
+// RuleIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
+type RuleIDParameter = KubernetesNameParameter
+
 // SecurityGroupIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type SecurityGroupIDParameter = KubernetesNameParameter
 
@@ -496,6 +549,12 @@ type RegionsResponse = Regions
 // SecurityGroupResponse A security group.
 type SecurityGroupResponse = SecurityGroupRead
 
+// SecurityGroupRuleResponse A security group rule.
+type SecurityGroupRuleResponse = SecurityGroupRuleRead
+
+// SecurityGroupRulesResponse A list of security group rules.
+type SecurityGroupRulesResponse = SecurityGroupRulesRead
+
 // SecurityGroupsResponse A list of security groups.
 type SecurityGroupsResponse = SecurityGroupsRead
 
@@ -511,6 +570,9 @@ type QuotasRequest = QuotasSpec
 // SecurityGroupRequest A security group request.
 type SecurityGroupRequest = SecurityGroupWrite
 
+// SecurityGroupRuleRequest A security group rule request.
+type SecurityGroupRuleRequest = SecurityGroupRuleWrite
+
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody = IdentityWrite
 
@@ -522,3 +584,9 @@ type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuo
 
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroups for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsJSONRequestBody = SecurityGroupWrite
+
+// PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDJSONRequestBody defines body for PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID for application/json ContentType.
+type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDJSONRequestBody = SecurityGroupWrite
+
+// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRulesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRules for application/json ContentType.
+type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRulesJSONRequestBody = SecurityGroupRuleWrite

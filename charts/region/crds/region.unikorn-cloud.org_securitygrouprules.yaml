@@ -4,16 +4,16 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.16.1
-  name: securitygroups.region.unikorn-cloud.org
+  name: securitygrouprules.region.unikorn-cloud.org
 spec:
   group: region.unikorn-cloud.org
   names:
     categories:
     - unikorn
-    kind: SecurityGroup
-    listKind: SecurityGroupList
-    plural: securitygroups
-    singular: securitygroup
+    kind: SecurityGroupRule
+    listKind: SecurityGroupRuleList
+    plural: securitygrouprules
+    singular: securitygrouprule
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -26,7 +26,8 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: SecurityGroup defines a security group beloning to an identity.
+        description: SecurityGroupRule defines a security group rule beloning to a
+          security group.
         properties:
           apiVersion:
             description: |-
@@ -47,39 +48,60 @@ spec:
             type: object
           spec:
             properties:
+              cidr:
+                description: CIDR is the CIDR block to allow traffic from.
+                pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\/(?:3[0-2]|[1-2]?[0-9])$
+                type: string
+              direction:
+                description: Direction is the direction of the rule.
+                enum:
+                - ingress
+                - egress
+                type: string
               pause:
                 description: Pause, if true, will inhibit reconciliation.
                 type: boolean
-              provider:
-                description: Provider defines the provider type.
+              port:
+                description: Port is the port or range of ports.
+                properties:
+                  number:
+                    description: Number is the port number.
+                    type: integer
+                  range:
+                    description: Range is the port range.
+                    properties:
+                      end:
+                        description: End is the end of the range.
+                        maximum: 65535
+                        type: integer
+                      start:
+                        description: Start is the start of the range.
+                        minimum: 1
+                        type: integer
+                    required:
+                    - end
+                    - start
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: at least one of number or range must be defined
+                  rule: (has(self.number) || has(self.range))
+              protocol:
+                description: Protocol is the protocol of the rule.
                 enum:
-                - openstack
+                - tcp
+                - udp
                 type: string
-              tags:
-                description: |-
-                  Tags are an abitrary list of key/value pairs that a client
-                  may populate to store metadata for the resource.
-                items:
-                  description: Tag is an arbirary key/value.
-                  properties:
-                    name:
-                      description: Name of the tag.
-                      type: string
-                    value:
-                      description: Value of the tag.
-                      type: string
-                  required:
-                  - name
-                  - value
-                  type: object
-                type: array
             required:
-            - provider
+            - cidr
+            - direction
+            - port
+            - protocol
             type: object
           status:
             properties:
               conditions:
-                description: Current service state of a security group.
+                description: Current service state of a security group rule.
                 items:
                   description: |-
                     Condition is a generic condition type for use across all resource types.

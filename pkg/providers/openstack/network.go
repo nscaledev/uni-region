@@ -328,8 +328,8 @@ func (c *NetworkClient) DeleteSecurityGroup(ctx context.Context, securityGroupID
 	return groups.Delete(ctx, c.client, securityGroupID).Err
 }
 
-// AddSecurityGroupRule adds a security group rule to a security group.
-func (c *NetworkClient) AddSecurityGroupRule(ctx context.Context, securityGroupID string, direction rules.RuleDirection, protocol rules.RuleProtocol, portStart, portEnd int, cidr *unikornv1core.IPv4Prefix) (*rules.SecGroupRule, error) {
+// CreateSecurityGroupRule adds a security group rule to a security group.
+func (c *NetworkClient) CreateSecurityGroupRule(ctx context.Context, securityGroupID string, direction rules.RuleDirection, protocol rules.RuleProtocol, portStart, portEnd int, cidr *unikornv1core.IPv4Prefix) (*rules.SecGroupRule, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, fmt.Sprintf("POST /network/v2.0/securitygroups/%s/rules", securityGroupID), trace.WithSpanKind(trace.SpanKindClient))
@@ -355,11 +355,11 @@ func (c *NetworkClient) AddSecurityGroupRule(ctx context.Context, securityGroupI
 }
 
 // DeleteSecurityGroupRule deletes a security group rule from a security group.
-func (c *NetworkClient) DeleteSecurityGroupRule(ctx context.Context, securityGroupID, securityGroupRuleID string) error {
+func (c *NetworkClient) DeleteSecurityGroupRule(ctx context.Context, securityGroupID, ruleID string) error {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
-	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /network/v2.0/securitygroups/%s/rules/%s", securityGroupID, securityGroupRuleID), trace.WithSpanKind(trace.SpanKindClient))
+	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /network/v2.0/securitygroups/%s/rules/%s", securityGroupID, ruleID), trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
-	return rules.Delete(ctx, c.client, securityGroupRuleID).Err
+	return rules.Delete(ctx, c.client, ruleID).Err
 }
