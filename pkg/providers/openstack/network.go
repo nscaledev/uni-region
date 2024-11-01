@@ -29,11 +29,14 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/external"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/provider"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/rules"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/networks"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -293,4 +296,70 @@ func (c *NetworkClient) RemoveRouterInterface(ctx context.Context, routerID, sub
 	}
 
 	return routers.RemoveInterface(ctx, c.client, routerID, opts).Err
+}
+
+// CreateSecurityGroup creates a new security group.
+func (c *NetworkClient) CreateSecurityGroup(ctx context.Context, name string) (*groups.SecGroup, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "POST /network/v2.0/securitygroups", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	opts := &groups.CreateOpts{
+		Name:        name,
+		Description: "unikorn managed security group",
+	}
+
+	securityGroup, err := groups.Create(ctx, c.client, opts).Extract()
+	if err != nil {
+		return nil, err
+	}
+
+	return securityGroup, nil
+}
+
+// DeleteSecurityGroup deletes a security group.
+func (c *NetworkClient) DeleteSecurityGroup(ctx context.Context, securityGroupID string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /network/v2.0/securitygroups/%s", securityGroupID), trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	return groups.Delete(ctx, c.client, securityGroupID).Err
+}
+
+// CreateSecurityGroupRule adds a security group rule to a security group.
+func (c *NetworkClient) CreateSecurityGroupRule(ctx context.Context, securityGroupID string, direction rules.RuleDirection, protocol rules.RuleProtocol, portStart, portEnd int, cidr *unikornv1core.IPv4Prefix) (*rules.SecGroupRule, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("POST /network/v2.0/securitygroups/%s/rules", securityGroupID), trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	opts := &rules.CreateOpts{
+		Description:    "unikorn managed security group rule",
+		Direction:      direction,
+		EtherType:      rules.EtherType4,
+		PortRangeMin:   portStart,
+		PortRangeMax:   portEnd,
+		Protocol:       protocol,
+		SecGroupID:     securityGroupID,
+		RemoteIPPrefix: cidr.String(),
+	}
+
+	rule, err := rules.Create(ctx, c.client, opts).Extract()
+	if err != nil {
+		return nil, err
+	}
+
+	return rule, nil
+}
+
+// DeleteSecurityGroupRule deletes a security group rule from a security group.
+func (c *NetworkClient) DeleteSecurityGroupRule(ctx context.Context, securityGroupID, ruleID string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /network/v2.0/securitygroups/%s/rules/%s", securityGroupID, ruleID), trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	return rules.Delete(ctx, c.client, ruleID).Err
 }

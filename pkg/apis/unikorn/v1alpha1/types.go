@@ -517,3 +517,166 @@ type FlavorQuota struct {
 
 type QuotaStatus struct {
 }
+
+// SecurityGroupList is a typed list of security groups.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type SecurityGroupList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []SecurityGroup `json:"items"`
+}
+
+// SecurityGroup defines a security group beloning to an identity.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type SecurityGroup struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              SecurityGroupSpec   `json:"spec"`
+	Status            SecurityGroupStatus `json:"status,omitempty"`
+}
+
+type SecurityGroupSpec struct {
+	// Pause, if true, will inhibit reconciliation.
+	Pause bool `json:"pause,omitempty"`
+	// Tags are an abitrary list of key/value pairs that a client
+	// may populate to store metadata for the resource.
+	Tags TagList `json:"tags,omitempty"`
+	// Provider defines the provider type.
+	Provider Provider `json:"provider"`
+}
+
+type SecurityGroupStatus struct {
+	// Current service state of a security group.
+	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+}
+
+// OpenstackSecurityGroupList is a typed list of security groups.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type OpenstackSecurityGroupList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []OpenstackSecurityGroup `json:"items"`
+}
+
+// OpenstackSecurityGroup has no controller, its a database record of state.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type OpenstackSecurityGroup struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              OpenstackSecurityGroupSpec   `json:"spec"`
+	Status            OpenstackSecurityGroupStatus `json:"status,omitempty"`
+}
+
+type OpenstackSecurityGroupSpec struct {
+	// SecurityGroupID is the security group ID.
+	SecurityGroupID *string `json:"securityGroupID,omitempty"`
+}
+
+type OpenstackSecurityGroupStatus struct {
+}
+
+// SecurityGroupRuleList is a typed list of security group rules.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type SecurityGroupRuleList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []SecurityGroupRule `json:"items"`
+}
+
+// SecurityGroupRule defines a security group rule beloning to a security group.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type SecurityGroupRule struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              SecurityGroupRuleSpec   `json:"spec"`
+	Status            SecurityGroupRuleStatus `json:"status,omitempty"`
+}
+
+type SecurityGroupRuleSpec struct {
+	// Pause, if true, will inhibit reconciliation.
+	Pause bool `json:"pause,omitempty"`
+	// Direction is the direction of the rule.
+	Direction *SecurityGroupRuleDirection `json:"direction"`
+	// Protocol is the protocol of the rule.
+	Protocol *SecurityGroupRuleProtocol `json:"protocol"`
+	// Port is the port or range of ports.
+	Port *SecurityGroupRulePort `json:"port"`
+	// CIDR is the CIDR block to allow traffic from.
+	CIDR *unikornv1core.IPv4Prefix `json:"cidr"`
+}
+
+type SecurityGroupRuleStatus struct {
+	// Current service state of a security group rule.
+	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+}
+
+// +kubebuilder:validation:Enum=tcp;udp
+type SecurityGroupRuleProtocol string
+
+// +kubebuilder:validation:Enum=ingress;egress
+type SecurityGroupRuleDirection string
+
+const (
+	TCP     SecurityGroupRuleProtocol  = "tcp"
+	UDP     SecurityGroupRuleProtocol  = "udp"
+	Ingress SecurityGroupRuleDirection = "ingress"
+	Egress  SecurityGroupRuleDirection = "egress"
+)
+
+type SecurityGroupRulePortRange struct {
+	// Start is the start of the range.
+	// +kubebuilder:validation:Minimum=1
+	Start int `json:"start"`
+	// End is the end of the range.
+	// +kubebuilder:validation:Maximum=65535
+	End int `json:"end"`
+}
+
+// +kubebuilder:validation:XValidation:message="at least one of number or range must be defined",rule=(has(self.number) || has(self.range))
+type SecurityGroupRulePort struct {
+	// Number is the port number.
+	Number *int `json:"number,omitempty"`
+	// Range is the port range.
+	Range *SecurityGroupRulePortRange `json:"range,omitempty"`
+}
+
+// OpenstackSecurityGroupRuleList is a typed list of security groups.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type OpenstackSecurityGroupRuleList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []OpenstackSecurityGroupRule `json:"items"`
+}
+
+// OpenstackSecurityGroupRule has no controller, its a database record of state.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type OpenstackSecurityGroupRule struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              OpenstackSecurityGroupRuleSpec   `json:"spec"`
+	Status            OpenstackSecurityGroupRuleStatus `json:"status,omitempty"`
+}
+
+type OpenstackSecurityGroupRuleSpec struct {
+	// SecurityGroupRuleID is the security group rule ID.
+	SecurityGroupRuleID *string `json:"securityGroupRuleID,omitempty"`
+}
+
+type OpenstackSecurityGroupRuleStatus struct {
+}
