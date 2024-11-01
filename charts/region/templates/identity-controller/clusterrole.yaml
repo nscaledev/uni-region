@@ -37,6 +37,7 @@ rules:
   resources:
   - quotas
   - physicalnetworks
+  - securitygroups
   verbs:
   - list
   - watch

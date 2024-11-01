@@ -77,7 +77,6 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	log := log.FromContext(ctx)
 
 	cli, err := coreclient.ProvisionerClientFromContext(ctx)
 	if err != nil {
@@ -94,6 +93,29 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 
 	// Block identity deletion until all owned resources are deleted, we cannot guarantee
 	// the underlying cloud implementation will not just orphan them and leak resources.
+	if err := p.triggerSecurityGroupDeletion(ctx, cli, selector); err != nil {
+		return err
+	}
+
+	if err := p.triggerPhysicalNetworkDeletion(ctx, cli, selector); err != nil {
+		return err
+	}
+
+	provider, err := region.NewClient(cli, p.identity.Namespace).Provider(ctx, p.identity.Labels[constants.RegionLabel])
+	if err != nil {
+		return err
+	}
+
+	if err := provider.DeleteIdentity(ctx, p.identity); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (p *Provisioner) triggerPhysicalNetworkDeletion(ctx context.Context, cli client.Client, selector labels.Selector) error {
+	log := log.FromContext(ctx)
+
 	var physicalNetworks unikornv1.PhysicalNetworkList
 
 	if err := cli.List(ctx, &physicalNetworks, &client.ListOptions{Namespace: p.identity.Namespace, LabelSelector: selector}); err != nil {
@@ -119,13 +141,35 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return provisioners.ErrYield
 	}
 
-	provider, err := region.NewClient(cli, p.identity.Namespace).Provider(ctx, p.identity.Labels[constants.RegionLabel])
-	if err != nil {
+	return nil
+}
+
+func (p *Provisioner) triggerSecurityGroupDeletion(ctx context.Context, cli client.Client, selector labels.Selector) error {
+	log := log.FromContext(ctx)
+
+	var securityGroups unikornv1.SecurityGroupList
+
+	if err := cli.List(ctx, &securityGroups, &client.ListOptions{Namespace: p.identity.Namespace, LabelSelector: selector}); err != nil {
 		return err
 	}
 
-	if err := provider.DeleteIdentity(ctx, p.identity); err != nil {
-		return err
+	if len(securityGroups.Items) != 0 {
+		for i := range securityGroups.Items {
+			resource := &securityGroups.Items[i]
+
+			if resource.DeletionTimestamp != nil {
+				log.Info("awaiting security group deletion", "security group", resource.Name)
+				continue
+			}
+
+			log.Info("triggering security group deletion", "security group", resource.Name)
+
+			if err := cli.Delete(ctx, resource); err != nil {
+				return err
+			}
+		}
+
+		return provisioners.ErrYield
 	}
 
 	return nil

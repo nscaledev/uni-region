@@ -54,4 +54,7 @@ const (
 	// PhysicalNetworkLabel creates an indexable linkage between resources
 	// and an owning entity.
 	PhysicalNetworkLabel = "regions.unikorn-cloud.org/phyiscal-network-id"
+	// SecurityGroupLabel creates an indexable linkage between resources
+	// and an owning entity.
+	SecurityGroupLabel = "regions.unikorn-cloud.org/security-group-id"
 )

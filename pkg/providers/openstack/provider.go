@@ -26,6 +26,7 @@ import (
 	"sync"
 
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/rules"
 	"github.com/gophercloud/utils/openstack/clientconfig"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -1143,4 +1144,354 @@ func (p *Provider) ListExternalNetworks(ctx context.Context) (providers.External
 	}
 
 	return out, nil
+}
+
+func (p *Provider) GetOpenstackSecurityGroup(ctx context.Context, securityGroup *unikornv1.SecurityGroup) (*unikornv1.OpenstackSecurityGroup, error) {
+	var result unikornv1.OpenstackSecurityGroup
+
+	if err := p.client.Get(ctx, client.ObjectKey{Namespace: securityGroup.Namespace, Name: securityGroup.Name}, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (p *Provider) GetOrCreateOpenstackSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) (*unikornv1.OpenstackSecurityGroup, bool, error) {
+	create := false
+
+	openstackSecurityGroup, err := p.GetOpenstackSecurityGroup(ctx, securityGroup)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			return nil, false, err
+		}
+
+		openstackSecurityGroup = &unikornv1.OpenstackSecurityGroup{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: securityGroup.Namespace,
+				Name:      securityGroup.Name,
+				Labels: map[string]string{
+					constants.IdentityLabel:      identity.Name,
+					constants.SecurityGroupLabel: securityGroup.Name,
+				},
+				Annotations: securityGroup.Annotations,
+			},
+		}
+
+		for k, v := range securityGroup.Labels {
+			openstackSecurityGroup.Labels[k] = v
+		}
+
+		create = true
+	}
+
+	return openstackSecurityGroup, create, nil
+}
+
+func (p *Provider) createSecurityGroup(ctx context.Context, networkService *NetworkClient, securityGroup *unikornv1.OpenstackSecurityGroup) error {
+	if securityGroup.Spec.SecurityGroupID != nil {
+		return nil
+	}
+
+	providerSecurityGroup, err := networkService.CreateSecurityGroup(ctx, securityGroup.Name)
+	if err != nil {
+		return err
+	}
+
+	securityGroup.Spec.SecurityGroupID = &providerSecurityGroup.ID
+
+	return nil
+}
+
+// CreateSecurityGroup creates a new security group.
+func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	openstackSecurityGroup, create, err := p.GetOrCreateOpenstackSecurityGroup(ctx, identity, securityGroup)
+	if err != nil {
+		return err
+	}
+
+	// Always attempt to record where we are up to for idempotency.
+	record := func() {
+		log := log.FromContext(ctx)
+
+		if create {
+			if err := p.client.Create(ctx, openstackSecurityGroup); err != nil {
+				log.Error(err, "failed to create openstack security group")
+			}
+
+			return
+		}
+
+		if err := p.client.Update(ctx, openstackSecurityGroup); err != nil {
+			log.Error(err, "failed to update openstack security group")
+		}
+	}
+
+	defer record()
+
+	// Rescope to the project...
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	if err != nil {
+		return err
+	}
+
+	if err := p.createSecurityGroup(ctx, networkService, openstackSecurityGroup); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// DeleteSecurityGroup deletes a security group.
+func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	openstackSecurityGroup, err := p.GetOpenstackSecurityGroup(ctx, securityGroup)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			return err
+		}
+
+		return nil
+	}
+
+	complete := false
+
+	// Always attempt to record where we are up to for idempotency.
+	record := func() {
+		if complete {
+			return
+		}
+
+		log := log.FromContext(ctx)
+
+		if err := p.client.Update(ctx, openstackSecurityGroup); err != nil {
+			log.Error(err, "failed to update openstack security group")
+		}
+	}
+
+	defer record()
+
+	// Rescope to the project...
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	if err != nil {
+		return err
+	}
+
+	if openstackSecurityGroup.Spec.SecurityGroupID != nil {
+		if err := networkService.DeleteSecurityGroup(ctx, *openstackSecurityGroup.Spec.SecurityGroupID); err != nil {
+			return err
+		}
+
+		openstackSecurityGroup.Spec.SecurityGroupID = nil
+	}
+
+	if err := p.client.Delete(ctx, openstackSecurityGroup); err != nil {
+		return err
+	}
+
+	complete = true
+
+	return nil
+}
+
+func (p *Provider) GetOpenstackSecurityGroupRule(ctx context.Context, securityGroupRule *unikornv1.SecurityGroupRule) (*unikornv1.OpenstackSecurityGroupRule, error) {
+	var result unikornv1.OpenstackSecurityGroupRule
+
+	if err := p.client.Get(ctx, client.ObjectKey{Namespace: securityGroupRule.Namespace, Name: securityGroupRule.Name}, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (p *Provider) GetOrCreateOpenstackSecurityGroupRule(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup, rule *unikornv1.SecurityGroupRule) (*unikornv1.OpenstackSecurityGroupRule, bool, error) {
+	create := false
+
+	openstackSecurityGroupRule, err := p.GetOpenstackSecurityGroupRule(ctx, rule)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			return nil, false, err
+		}
+
+		openstackSecurityGroupRule = &unikornv1.OpenstackSecurityGroupRule{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: rule.Namespace,
+				Name:      rule.Name,
+				Labels: map[string]string{
+					constants.IdentityLabel:      identity.Name,
+					constants.SecurityGroupLabel: securityGroup.Name,
+				},
+				Annotations: rule.Annotations,
+			},
+		}
+
+		for k, v := range rule.Labels {
+			openstackSecurityGroupRule.Labels[k] = v
+		}
+
+		create = true
+	}
+
+	return openstackSecurityGroupRule, create, nil
+}
+
+func (p *Provider) createSecurityGroupRule(ctx context.Context, networkService *NetworkClient, rule *unikornv1.SecurityGroupRule, openstackRule *unikornv1.OpenstackSecurityGroupRule, openstackSecurityGroup *unikornv1.OpenstackSecurityGroup) error {
+	if openstackRule.Spec.SecurityGroupRuleID != nil {
+		return nil
+	}
+
+	// Helper function to map port range
+	mapPortRange := func() (int, int, error) {
+		if rule.Spec.Port.Number != nil {
+			return *rule.Spec.Port.Number, *rule.Spec.Port.Number, nil
+		}
+		if rule.Spec.Port.Range != nil {
+			return rule.Spec.Port.Range.Start, rule.Spec.Port.Range.End, nil
+		}
+
+		return 0, 0, fmt.Errorf("%w: at least one of number or range must be defined for security rule %s", ErrKeyUndefined, rule.Name)
+	}
+
+	direction := rules.RuleDirection(*rule.Spec.Direction)
+	protocol := rules.RuleProtocol(*rule.Spec.Protocol)
+	securityGroupId := *openstackSecurityGroup.Spec.SecurityGroupID
+	portStart, portEnd, err := mapPortRange()
+	if err != nil {
+		return err
+	}
+
+	providerRule, err := networkService.CreateSecurityGroupRule(ctx, securityGroupId, direction, protocol, portStart, portEnd, rule.Spec.CIDR)
+	if err != nil {
+		return err
+	}
+
+	openstackRule.Spec.SecurityGroupRuleID = &providerRule.ID
+
+	return nil
+}
+
+// CreateSecurityGroupRule creates a new security group rule.
+func (p *Provider) CreateSecurityGroupRule(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup, rule *unikornv1.SecurityGroupRule) error {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	openstackSecurityGroupRule, create, err := p.GetOrCreateOpenstackSecurityGroupRule(ctx, identity, securityGroup, rule)
+	if err != nil {
+		return err
+	}
+
+	// Always attempt to record where we are up to for idempotency.
+	record := func() {
+		log := log.FromContext(ctx)
+
+		if create {
+			if err := p.client.Create(ctx, openstackSecurityGroupRule); err != nil {
+				log.Error(err, "failed to create openstack security group rule")
+			}
+
+			return
+		}
+
+		if err := p.client.Update(ctx, openstackSecurityGroupRule); err != nil {
+			log.Error(err, "failed to update openstack security group rule")
+		}
+	}
+
+	defer record()
+
+	// Rescope to the project...
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	if err != nil {
+		return err
+	}
+
+	openstackSecurityGroup, err := p.GetOpenstackSecurityGroup(ctx, securityGroup)
+	if err != nil {
+		return err
+	}
+
+	if err := p.createSecurityGroupRule(ctx, networkService, rule, openstackSecurityGroupRule, openstackSecurityGroup); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// DeleteSecurityGroupRule deletes a security group rule.
+func (p *Provider) DeleteSecurityGroupRule(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup, rule *unikornv1.SecurityGroupRule) error {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	openstackSecurityGroup, err := p.GetOpenstackSecurityGroup(ctx, securityGroup)
+	if err != nil {
+		return err
+	}
+
+	openstackSecurityGroupRule, err := p.GetOpenstackSecurityGroupRule(ctx, rule)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			return err
+		}
+
+		return nil
+	}
+
+	complete := false
+
+	// Always attempt to record where we are up to for idempotency.
+	record := func() {
+		if complete {
+			return
+		}
+
+		log := log.FromContext(ctx)
+
+		if err := p.client.Update(ctx, openstackSecurityGroupRule); err != nil {
+			log.Error(err, "failed to update openstack security group rule")
+		}
+	}
+
+	defer record()
+
+	// Rescope to the project...
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	if err != nil {
+		return err
+	}
+
+	if openstackSecurityGroupRule.Spec.SecurityGroupRuleID != nil {
+		if err := networkService.DeleteSecurityGroupRule(ctx, *openstackSecurityGroup.Spec.SecurityGroupID, *openstackSecurityGroupRule.Spec.SecurityGroupRuleID); err != nil {
+			return err
+		}
+
+		openstackSecurityGroupRule.Spec.SecurityGroupRuleID = nil
+	}
+
+	if err := p.client.Delete(ctx, openstackSecurityGroupRule); err != nil {
+		return err
+	}
+
+	complete = true
+
+	return nil
 }
