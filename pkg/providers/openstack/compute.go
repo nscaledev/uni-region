@@ -169,23 +169,15 @@ func (c *ComputeClient) Flavors(ctx context.Context) ([]flavors.Flavor, error) {
 
 	result = slices.DeleteFunc(result, func(flavor flavors.Flavor) bool {
 		// We are admin, so see all the things, throw out private flavors.
-		// TODO: we _could_ allow if our project is in the allowed IDs.
 		if !flavor.IsPublic {
 			return true
 		}
 
-		// Kubeadm requires 2 VCPU, 2 "GB" of RAM (I'll pretend it's GiB) and no swap:
-		// https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
-		if flavor.VCPUs < 2 || flavor.RAM < 2048 || flavor.Swap != 0 {
-			return true
-		}
-
-		// Don't remove the flavor if it's implicitly selected by a lack of configuration.
-		if c.options == nil || c.options.Flavors == nil || c.options.Flavors.Selector == nil {
+		if c.options == nil || c.options.Flavors == nil {
 			return false
 		}
 
-		if len(c.options.Flavors.Selector.IDs) > 0 {
+		if c.options.Flavors.Selector != nil && len(c.options.Flavors.Selector.IDs) > 0 {
 			if !slices.Contains(c.options.Flavors.Selector.IDs, flavor.ID) {
 				return true
 			}

@@ -10,13 +10,14 @@ require (
 	github.com/oapi-codegen/runtime v1.1.1
 	github.com/spf13/pflag v1.0.5
 	github.com/unikorn-cloud/core v0.1.76
-	github.com/unikorn-cloud/identity v0.2.42
+	github.com/unikorn-cloud/identity v0.2.44
 	go.opentelemetry.io/otel v1.31.0
 	go.opentelemetry.io/otel/sdk v1.31.0
 	go.opentelemetry.io/otel/trace v1.31.0
 	golang.org/x/crypto v0.28.0
 	k8s.io/api v0.31.1
 	k8s.io/apimachinery v0.31.1
+	k8s.io/utils v0.0.0-20240921022957-49e7df575cb6
 	sigs.k8s.io/controller-runtime v0.19.0
 	sigs.k8s.io/yaml v1.4.0
 )
@@ -93,7 +94,6 @@ require (
 	k8s.io/client-go v0.31.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20241009091222-67ed5848f094 // indirect
-	k8s.io/utils v0.0.0-20240921022957-49e7df575cb6 // indirect
 	sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 )
