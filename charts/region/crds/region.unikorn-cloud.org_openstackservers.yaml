@@ -44,15 +44,9 @@ spec:
             type: object
           spec:
             properties:
-              publicIPId:
-                description: PublicIPId is the public ip allocation id.
+              publicIPAllocationId:
+                description: PublicIPAllocationId is the public ip allocation id.
                 type: string
-              publicKeys:
-                description: SSHPublicKeys is a list of public keys injected into
-                  the server.
-                items:
-                  type: string
-                type: array
               serverID:
                 description: ServerID is the server ID.
                 type: string

@@ -15,7 +15,8 @@ CONTROLLERS = \
   unikorn-identity-controller \
   unikorn-physical-network-controller \
   unikorn-security-group-controller \
-  unikorn-security-group-rule-controller
+  unikorn-security-group-rule-controller \
+  unikorn-server-controller
 
 # Release will do cross compliation of all images for the 'all' target.
 # Note we aren't fucking about with docker here because that opens up a

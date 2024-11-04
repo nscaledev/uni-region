@@ -119,6 +119,10 @@ securityGroupRuleController:
   # Allow override of the controller image.
   image: ~
 
+serverController:
+  # Allow override of the controller image.
+  image: ~
+
 # Sets the DNS hosts/X.509 Certs.
 region:
   host: region.unikorn-cloud.org

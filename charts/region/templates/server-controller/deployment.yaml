@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: unikorn-server-controller
+  labels:
+    {{- include "unikorn.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: unikorn-server-controller
+  template:
+    metadata:
+      labels:
+        app: unikorn-server-controller
+    spec:
+      containers:
+      - name: unikorn-server-controller
+        image: {{ include "unikorn.serverControllerImage" . }}
+        args:
+        {{- include "unikorn.core.flags" . | nindent 8 }}
+        {{- include "unikorn.otlp.flags" . | nindent 8 }}
+        ports:
+        - name: http
+          containerPort: 6080
+        - name: prometheus
+          containerPort: 8080
+        - name: pprof
+          containerPort: 6060
+        resources:
+          requests:
+            cpu: "50m"
+            memory: 50Mi
+          limits:
+            cpu: "100m"
+            memory: 100Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+      serviceAccountName: unikorn-server-controller
+      securityContext:
+        runAsNonRoot: true

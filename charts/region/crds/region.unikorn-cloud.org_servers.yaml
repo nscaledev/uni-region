@@ -75,6 +75,23 @@ spec:
                     - version
                     type: object
                 type: object
+                x-kubernetes-validations:
+                - message: at least one of id or selector must be defined
+                  rule: (has(self.id) || has(self.selector))
+              networks:
+                description: Networks is the server network configuration.
+                items:
+                  properties:
+                    physicalNetwork:
+                      properties:
+                        id:
+                          description: ID is the physical network ID.
+                          type: string
+                      required:
+                      - id
+                      type: object
+                  type: object
+                type: array
               pause:
                 description: Pause, if true, will inhibit reconciliation.
                 type: boolean
@@ -91,21 +108,17 @@ spec:
                     description: Enabled is a flag to enable public IP allocation.
                     type: boolean
                 type: object
-              securityGroupIDs:
-                description: SecurityGroupIDs is a list of security group IDs.
+              securityGroups:
+                description: SecurityGroups is the server security groups.
                 items:
-                  type: string
-                type: array
-              ssh:
-                description: SSH is the server SSH configuration.
-                properties:
-                  publicKeys:
-                    description: PublicKeys is a list of public keys to inject into
-                      the server.
-                    items:
+                  properties:
+                    id:
+                      description: ID is the security group ID.
                       type: string
-                    type: array
-                type: object
+                  required:
+                  - id
+                  type: object
+                type: array
               tags:
                 description: |-
                   Tags are an abitrary list of key/value pairs that a client

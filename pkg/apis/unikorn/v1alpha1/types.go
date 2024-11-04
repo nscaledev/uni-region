@@ -716,14 +716,29 @@ type ServerSpec struct {
 	FlavorID string `json:"flavorID"`
 	// Image defines a set of rules to lookup for the server image.
 	Image *ServerImage `json:"image"`
-	// SecurityGroupIDs is a list of security group IDs.
-	SecurityGroupIDs []string `json:"securityGroupIDs,omitempty"`
+	// SecurityGroups is the server security groups.
+	SecurityGroups []ServerSecurityGroupSpec `json:"securityGroups,omitempty"`
 	// PublicIPAllocation is the server public IP allocation configuration.
 	PublicIPAllocation *ServerPublicIPAllocationSpec `json:"publicIPAllocation,omitempty"`
-	// SSH is the server SSH configuration.
-	SSH *ServerSSHSpec `json:"ssh,omitempty"`
+	// Networks is the server network configuration.
+	Networks []ServerNetworkSpec `json:"networks,omitempty"`
 }
 
+type ServerSecurityGroupSpec struct {
+	// ID is the security group ID.
+	ID string `json:"id"`
+}
+
+type ServerNetworkSpec struct {
+	PhysicalNetwork *ServerPhysicalNetworkSpec `json:"physicalNetwork,omitempty"`
+}
+
+type ServerPhysicalNetworkSpec struct {
+	// ID is the physical network ID.
+	ID string `json:"id"`
+}
+
+// +kubebuilder:validation:XValidation:message="at least one of id or selector must be defined",rule=(has(self.id) || has(self.selector))
 type ServerImage struct {
 	// ID is the image ID. If specified, it has priority over the selector.
 	ID *string `json:"id,omitempty"`
@@ -741,11 +756,6 @@ type ServerImageSelector struct {
 type ServerPublicIPAllocationSpec struct {
 	// Enabled is a flag to enable public IP allocation.
 	Enabled bool `json:"enabled,omitempty"`
-}
-
-type ServerSSHSpec struct {
-	// PublicKeys is a list of public keys to inject into the server.
-	PublicKeys []string `json:"publicKeys,omitempty"`
 }
 
 type ServerStatus struct {
@@ -780,10 +790,8 @@ type OpenstackServer struct {
 type OpenstackServerSpec struct {
 	// ServerID is the server ID.
 	ServerID *string `json:"serverID,omitempty"`
-	// PublicIPId is the public ip allocation id.
-	PublicIPId *string `json:"publicIPId,omitempty"`
-	// SSHPublicKeys is a list of public keys injected into the server.
-	SSHPublicKeys []string `json:"publicKeys,omitempty"`
+	// PublicIPAllocationId is the public ip allocation id.
+	PublicIPAllocationId *string `json:"publicIPAllocationId,omitempty"`
 }
 
 type OpenstackServerStatus struct {
