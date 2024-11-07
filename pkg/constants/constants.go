@@ -57,4 +57,7 @@ const (
 	// SecurityGroupLabel creates an indexable linkage between resources
 	// and an owning entity.
 	SecurityGroupLabel = "regions.unikorn-cloud.org/security-group-id"
+	// ServerLabel creates an indexable linkage between resources and an
+	// owning entity.
+	ServerLabel = "regions.unikorn-cloud.org/server-id"
 )

@@ -1,0 +1,53 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: unikorn-server-controller
+  labels:
+    {{- include "unikorn.labels" . | nindent 4 }}
+rules:
+# Orchestrate Unikorn resources (my job).
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - regions
+  - identities
+  - openstackidentities
+  - physicalnetworks
+  - openstackphysicalnetworks
+  - securitygroups
+  - openstacksecuritygroups
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - servers
+  verbs:
+  - list
+  - watch
+  - update
+  - patch
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - servers/status
+  verbs:
+  - update
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - openstackservers
+  verbs:
+  - list
+  - watch
+  - create
+  - update
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - list
+  - watch

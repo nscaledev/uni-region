@@ -680,3 +680,119 @@ type OpenstackSecurityGroupRuleSpec struct {
 
 type OpenstackSecurityGroupRuleStatus struct {
 }
+
+// ServerList is a typed list of servers.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type ServerList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []Server `json:"items"`
+}
+
+// Server defines a server beloning to an identity.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:printcolumn:name="publicIP",type="string",JSONPath=".status.publicIP"
+type Server struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              ServerSpec   `json:"spec"`
+	Status            ServerStatus `json:"status,omitempty"`
+}
+
+type ServerSpec struct {
+	// Pause, if true, will inhibit reconciliation.
+	Pause bool `json:"pause,omitempty"`
+	// Tags are an abitrary list of key/value pairs that a client
+	// may populate to store metadata for the resource.
+	Tags TagList `json:"tags,omitempty"`
+	// Provider defines the provider type.
+	Provider Provider `json:"provider"`
+	// FlavorID is the flavor ID.
+	FlavorID string `json:"flavorID"`
+	// Image defines a set of rules to lookup for the server image.
+	Image *ServerImage `json:"image"`
+	// SecurityGroups is the server security groups.
+	SecurityGroups []ServerSecurityGroupSpec `json:"securityGroups,omitempty"`
+	// PublicIPAllocation is the server public IP allocation configuration.
+	PublicIPAllocation *ServerPublicIPAllocationSpec `json:"publicIPAllocation,omitempty"`
+	// Networks is the server network configuration.
+	Networks []ServerNetworkSpec `json:"networks,omitempty"`
+}
+
+type ServerSecurityGroupSpec struct {
+	// ID is the security group ID.
+	ID string `json:"id"`
+}
+
+type ServerNetworkSpec struct {
+	PhysicalNetwork *ServerPhysicalNetworkSpec `json:"physicalNetwork,omitempty"`
+}
+
+type ServerPhysicalNetworkSpec struct {
+	// ID is the physical network ID.
+	ID string `json:"id"`
+}
+
+// +kubebuilder:validation:XValidation:message="at least one of id or selector must be defined",rule=(has(self.id) || has(self.selector))
+type ServerImage struct {
+	// ID is the image ID. If specified, it has priority over the selector.
+	ID *string `json:"id,omitempty"`
+	// Selector defines a set of rules to lookup images.
+	Selector *ServerImageSelector `json:"selector,omitempty"`
+}
+
+type ServerImageSelector struct {
+	// OS is the operating system of the image.
+	OS string `json:"os"`
+	// Version is the version of the image.
+	Version string `json:"version"`
+}
+
+type ServerPublicIPAllocationSpec struct {
+	// Enabled is a flag to enable public IP allocation.
+	Enabled bool `json:"enabled,omitempty"`
+}
+
+type ServerStatus struct {
+	// Current service state of a cluster manager.
+	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	// PrivateIP is the private IP address of the server.
+	PrivateIP *string `json:"privateIP,omitempty"`
+	// PublicIP is the public IP address of the server.
+	PublicIP *string `json:"publicIP,omitempty"`
+}
+
+// OpenstackServerList is a typed list of servers.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type OpenstackServerList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []OpenstackServer `json:"items"`
+}
+
+// OpenstackServer has no controller, its a database record of state.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type OpenstackServer struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              OpenstackServerSpec   `json:"spec"`
+	Status            OpenstackServerStatus `json:"status,omitempty"`
+}
+
+type OpenstackServerSpec struct {
+	// ServerID is the server ID.
+	ServerID *string `json:"serverID,omitempty"`
+	// PublicIPAllocationId is the public ip allocation id.
+	PublicIPAllocationId *string `json:"publicIPAllocationId,omitempty"`
+}
+
+type OpenstackServerStatus struct {
+}
