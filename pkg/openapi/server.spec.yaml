@@ -491,6 +491,88 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/organizations/{organizationID}/servers:
+    description: |-
+      Manages servers.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    get:
+      description: List servers.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/serversResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers:
+    description: |-
+      Manages servers.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/identityIDParameter'
+    post:
+      description: Create a new server.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/serverRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/serverResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}:
+    description: |-
+      Manages servers.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/identityIDParameter'
+    - $ref: '#/components/parameters/serverIDParameter'
+    get:
+      description: Get a server.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/serverResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    delete:
+      description: Delete a server.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 components:
   parameters:
     organizationIDParameter:
@@ -547,6 +629,13 @@ components:
       name: ruleID
       in: path
       description: The security group rule identifier.
+      required: true
+      schema:
+        $ref: '#/components/schemas/kubernetesNameParameter'
+    serverIDParameter:
+      name: serverID
+      in: path
+      description: The server identifier.
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
@@ -1103,6 +1192,154 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/securityGroupRead'
+    serverReadSpec:
+      description: A server's specification.
+      type: object
+      required:
+      - flavorId
+      - image
+      - networks
+      properties:
+        tags:
+          $ref: '#/components/schemas/tagList'
+        flavorId:
+          description: The flavor of the server.
+          type: string
+        image:
+          $ref: '#/components/schemas/serverImage'
+        securityGroups:
+          $ref: '#/components/schemas/serverSecurityGroupList'
+        publicIPAllocation:
+          $ref: '#/components/schemas/serverPublicIPAllocation'
+        networks:
+          $ref: '#/components/schemas/serverNetworkList'
+    serverNetworkList:
+      description: A list of networks.
+      type: array
+      minItems: 1
+      items:
+        $ref: '#/components/schemas/serverNetwork'
+    serverNetwork:
+      description: The server's network.
+      type: object
+      properties:
+        physicalNetwork:
+          $ref: '#/components/schemas/serverPhysicalNetwork'
+    serverPhysicalNetwork:
+      description: The server's physical network spec.
+      type: object
+      required:
+      - id
+      properties:
+        id:
+          description: The physical network ID.
+          type: string
+    serverPublicIPAllocation:
+      description: The server's public IP allocation.
+      type: object
+      required:
+      - enabled
+      properties:
+        enabled:
+          description: Whether to allocate a public IP.
+          type: boolean
+    serverSecurityGroupList:
+      description: A list of security groups.
+      type: array
+      items:
+        $ref: '#/components/schemas/serverSecurityGroup'
+    serverSecurityGroup:
+      description: A security group.
+      type: object
+      required:
+      - id
+      properties:
+        id:
+          description: The security group ID.
+          type: string
+    serverImage:
+      description: The image to use for the server.
+      type: object
+      properties:
+        id:
+          description: The image ID.
+          type: string
+        selector:
+          $ref: '#/components/schemas/serverImageSelector'
+    serverImageSelector:
+      description: A selector for an image.
+      type: object
+      required:
+      - os
+      - version
+      properties:
+        os:
+          description: The OS to match.
+          type: string
+        version:
+          description: The version to match.
+          type: string 
+    serverReadStatus:
+      description: A server's status.
+      type: object
+      properties:
+        privateIP:
+          description: The private IP address of the server.
+          type: string
+        publicIP:
+          description: The public IP address of the server.
+          type: string
+    serverWriteSpec:
+      description: A server's specification.
+      type: object
+      required:
+      - flavorId
+      - image
+      - networks
+      properties:
+        tags:
+          $ref: '#/components/schemas/tagList'
+        flavorId:
+          description: The flavor of the server.
+          type: string
+        image:
+          $ref: '#/components/schemas/serverImage'
+        securityGroups:
+          $ref: '#/components/schemas/serverSecurityGroupList'
+        publicIPAllocation:
+          $ref: '#/components/schemas/serverPublicIPAllocation'
+        networks:
+          $ref: '#/components/schemas/serverNetworkList'
+    serverWrite:
+      description: A server request.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/serverWriteSpec'
+    serverRead:
+      description: A server.
+      type: object
+      required:
+      - metadata
+      - spec
+      - status
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+        spec:
+          $ref: '#/components/schemas/serverReadSpec'
+        status:
+          $ref: '#/components/schemas/serverReadStatus'
+    serversRead:
+      description: A list of servers.
+      type: array
+      items:
+        $ref: '#/components/schemas/serverRead'
   requestBodies:
     identityRequest:
       description: A request for an identity.
@@ -1177,6 +1414,31 @@ components:
               port:
                 number: 80
               cidr: 172.16.0.0/12
+    serverRequest:
+      description: A request for a server.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/serverWrite'
+          example:
+            metadata:
+              name: server-name
+              description: A verbose description
+            spec:
+              flavorId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              image:
+                id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              securityGroups:
+              - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9e
+              publicIPAllocation:
+                enabled: true
+              networks:
+                - physicalNetwork:
+                    id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              tags:
+              - name: tag-name
+                value: tag-value
   responses:
     regionsResponse:
       description: A list of regions.
@@ -1448,6 +1710,72 @@ components:
               port:
                 number: 80
               cidr: 0.0.0.0/0
+    serverResponse:
+      description: A server.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/serverRead'
+          example:
+            metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: server-name
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2024-05-31T14:11:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: provisioned
+            spec:
+              flavorId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              image:
+                id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              securityGroups:
+              - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9e
+              publicIPAllocation:
+                enabled: true
+              networks:
+                - physicalNetwork:
+                    id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              tags:
+              - name: tag-name
+                value: tag-value
+            status:
+              privateIP: 192.168.1.50
+              publicIP: 142.250.66.196
+    serversResponse:
+      description: A list of servers.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/serversRead'
+          example:
+          - metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: server-name
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2024-05-31T14:11:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: provisioned
+            spec:
+              flavorId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              image:
+                id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              securityGroups:
+              - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9e
+              publicIPAllocation:
+                enabled: true
+              networks:
+                - physicalNetwork:
+                    id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              tags:
+              - name: tag-name
+                value: tag-value
+            status:
+              privateIP: 192.168.1.50
+              publicIP: 142.250.66.196
   securitySchemes:
     oauth2Authentication:
       description: Operation requires OAuth2 bearer token authentication.
