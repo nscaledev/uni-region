@@ -19,11 +19,18 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
+	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	coremanager "github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler/region"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 var (
@@ -54,12 +61,78 @@ func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
-	// TODO: Implement server provisioning
+	log := log.FromContext(ctx)
+
+	cli, err := coreclient.ProvisionerClientFromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	provider, err := region.NewClient(cli, p.server.Namespace).Provider(ctx, p.server.Labels[constants.RegionLabel])
+	if err != nil {
+		return err
+	}
+
+	identity, err := p.getIdentity(ctx, cli)
+	if err != nil {
+		return err
+	}
+
+	// Inhibit provisioning until the identity is ready, as we may need the identity information
+	// to create the security group e.g. the project ID in the case of OpenStack.
+	status, err := identity.StatusConditionRead(unikornv1core.ConditionAvailable)
+	if err != nil {
+		log.Info("waiting for identity status update")
+
+		return provisioners.ErrYield
+	}
+
+	switch status.Reason {
+	case unikornv1core.ConditionReasonProvisioned:
+		break
+	case unikornv1core.ConditionReasonProvisioning:
+		return provisioners.ErrYield
+	default:
+		return fmt.Errorf("%w: identity in unexpected condition %v", ErrResouceDependency, status.Reason)
+	}
+
+	if err := provider.CreateServer(ctx, identity, p.server); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	// TODO: Implement server deprovisioning
+	cli, err := coreclient.ProvisionerClientFromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	provider, err := region.NewClient(cli, p.server.Namespace).Provider(ctx, p.server.Labels[constants.RegionLabel])
+	if err != nil {
+		return err
+	}
+
+	identity, err := p.getIdentity(ctx, cli)
+	if err != nil {
+		return err
+	}
+
+	if err := provider.DeleteServer(ctx, identity, p.server); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (p *Provisioner) getIdentity(ctx context.Context, cli client.Client) (*unikornv1.Identity, error) {
+	identity := &unikornv1.Identity{}
+
+	if err := cli.Get(ctx, client.ObjectKey{Namespace: p.server.Namespace, Name: p.server.Labels[constants.IdentityLabel]}, identity); err != nil {
+		return nil, err
+	}
+
+	return identity, nil
 }

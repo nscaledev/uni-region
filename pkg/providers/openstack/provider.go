@@ -20,16 +20,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"reflect"
 	"slices"
 	"strings"
 	"sync"
 
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/rules"
 	"github.com/gophercloud/utils/openstack/clientconfig"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers"
@@ -39,9 +43,11 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/yaml"
 )
@@ -1488,6 +1494,411 @@ func (p *Provider) DeleteSecurityGroupRule(ctx context.Context, identity *unikor
 	}
 
 	if err := p.client.Delete(ctx, openstackSecurityGroupRule); err != nil {
+		return err
+	}
+
+	complete = true
+
+	return nil
+}
+
+func (p *Provider) GetOpenstackServer(ctx context.Context, server *unikornv1.Server) (*unikornv1.OpenstackServer, error) {
+	var result unikornv1.OpenstackServer
+
+	if err := p.client.Get(ctx, client.ObjectKey{Namespace: server.Namespace, Name: server.Name}, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (p *Provider) GetOrCreateOpenstackServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) (*unikornv1.OpenstackServer, bool, error) {
+	create := false
+
+	openstackServer, err := p.GetOpenstackServer(ctx, server)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			return nil, false, err
+		}
+
+		openstackServer = &unikornv1.OpenstackServer{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: server.Namespace,
+				Name:      server.Name,
+				Labels: map[string]string{
+					constants.IdentityLabel: identity.Name,
+					constants.ServerLabel:   server.Name,
+				},
+				Annotations: server.Annotations,
+			},
+		}
+
+		for k, v := range server.Labels {
+			openstackServer.Labels[k] = v
+		}
+
+		create = true
+	}
+
+	return openstackServer, create, nil
+}
+
+func (p *Provider) getServerFlavor(ctx context.Context, server *unikornv1.Server) (*providers.Flavor, error) {
+	flavors, err := p.Flavors(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	i := slices.IndexFunc(flavors, func(f providers.Flavor) bool {
+		return server.Spec.FlavorID == f.ID
+	})
+
+	if i < 0 {
+		return nil, fmt.Errorf("%w: flavor %s", ErrResourceNotFound, server.Spec.FlavorID)
+	}
+
+	return &flavors[i], nil
+}
+
+func (p *Provider) getServerImage(ctx context.Context, server *unikornv1.Server) (*providers.Image, error) {
+	images, err := p.Images(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	match := func(serverImage *unikornv1.ServerImage, i providers.Image) bool {
+		// If the image ID is set, use it to find the image.
+		if serverImage.ID != nil {
+			return *serverImage.ID == i.ID
+		}
+
+		// Otherwise, use the image selector to find the image by name.
+		name := fmt.Sprintf("%s-%s", serverImage.Selector.OS, serverImage.Selector.Version)
+		return name == i.Name
+	}
+
+	i := slices.IndexFunc(images, func(i providers.Image) bool {
+		return match(server.Spec.Image, i)
+	})
+
+	if i < 0 {
+		return nil, fmt.Errorf("%w: image %v", ErrResourceNotFound, server.Spec.Image)
+	}
+
+	return &images[i], nil
+}
+
+func (p *Provider) serverNetworksToIDs(ctx context.Context, identity *unikornv1.OpenstackIdentity, networks []unikornv1.ServerNetworkSpec) ([]string, error) {
+	options := &client.ListOptions{
+		Namespace: identity.Namespace,
+		LabelSelector: labels.SelectorFromSet(map[string]string{
+			constants.IdentityLabel: identity.Name,
+		}),
+	}
+
+	resources := &unikornv1.OpenstackPhysicalNetworkList{}
+	if err := p.client.List(ctx, resources, options); err != nil {
+		return nil, err
+	}
+
+	physicalNetworkMap := make(map[string]*unikornv1.OpenstackPhysicalNetwork)
+	for _, physNet := range resources.Items {
+		physicalNetworkMap[physNet.Name] = &physNet
+	}
+
+	var networkIDs []string
+	for _, network := range networks {
+		physNet, found := physicalNetworkMap[network.PhysicalNetwork.ID]
+		if !found {
+			return nil, fmt.Errorf("%w: physicalnetwork %s", ErrResourceNotFound, network.PhysicalNetwork.ID)
+		}
+
+		if physNet.Spec.NetworkID == nil {
+			return nil, fmt.Errorf("%w: physicalnetwork %s", ErrResouceDependency, network.PhysicalNetwork.ID)
+		}
+
+		networkIDs = append(networkIDs, *physNet.Spec.NetworkID)
+	}
+
+	return networkIDs, nil
+}
+
+// CreateServer creates a new server.
+func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	openstackServer, create, err := p.GetOrCreateOpenstackServer(ctx, identity, server)
+	if err != nil {
+		return err
+	}
+
+	// Always attempt to record where we are up to for idempotency.
+	record := func() {
+		log := log.FromContext(ctx)
+
+		if create {
+			if err := p.client.Create(ctx, openstackServer); err != nil {
+				log.Error(err, "failed to create openstack server")
+			}
+
+			return
+		}
+
+		if err := p.client.Update(ctx, openstackServer); err != nil {
+			log.Error(err, "failed to update openstack server")
+		}
+	}
+
+	defer record()
+
+	// Rescope to the project...
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	if err != nil {
+		return err
+	}
+
+	if err := p.createServer(ctx, computeService, openstackIdentity, server, openstackServer); err != nil {
+		return err
+	}
+
+	providerServer, err := computeService.GetServer(ctx, *openstackServer.Spec.ServerID)
+	if err != nil {
+		return err
+	}
+
+	// wait for server to be active
+	if providerServer.Status != "ACTIVE" {
+		return provisioners.ErrYield
+	}
+
+	addr, err := p.getServerFixedIP(providerServer)
+	if err != nil {
+		return err
+	}
+
+	server.Status.PrivateIP = addr
+
+	if server.Spec.PublicIPAllocation != nil && server.Spec.PublicIPAllocation.Enabled {
+		networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+		if err != nil {
+			return err
+		}
+
+		if err := p.allocateServerFloatingIP(ctx, networkService, server, openstackServer); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (p *Provider) createServer(ctx context.Context, computeService *ComputeClient, identity *unikornv1.OpenstackIdentity, server *unikornv1.Server, openstackServer *unikornv1.OpenstackServer) error {
+	if openstackServer.Spec.ServerID != nil {
+		return nil
+	}
+
+	flavor, err := p.getServerFlavor(ctx, server)
+	if err != nil {
+		return err
+	}
+
+	image, err := p.getServerImage(ctx, server)
+	if err != nil {
+		return err
+	}
+
+	networkIDs, err := p.serverNetworksToIDs(ctx, identity, server.Spec.Networks)
+	if err != nil {
+		return err
+	}
+
+	// placeholder for metadata
+	metadata := map[string]string{}
+
+	providerServer, err := computeService.CreateServer(ctx, server.Labels[coreconstants.NameLabel], image.ID, flavor.ID, *identity.Spec.SSHKeyName, networkIDs, identity.Spec.ServerGroupID, metadata)
+	if err != nil {
+		return err
+	}
+
+	openstackServer.Spec.ServerID = &providerServer.ID
+
+	if err := p.createServerCredentialsSecret(ctx, openstackServer, providerServer.AdminPass); err != nil {
+		return err
+	}
+
+	return provisioners.ErrYield
+}
+
+func (p *Provider) createServerCredentialsSecret(ctx context.Context, openstackServer *unikornv1.OpenstackServer, password string) error {
+	resource := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: openstackServer.Namespace,
+			Name:      openstackServer.Name,
+		},
+		StringData: map[string]string{
+			"password": password,
+		},
+	}
+
+	// Ensure the secret is owned by the openstackserver so it is automatically cleaned
+	// up on openstackserver deletion.
+	if err := controllerutil.SetOwnerReference(openstackServer, resource, p.client.Scheme()); err != nil {
+		return err
+	}
+
+	if err := p.client.Create(ctx, resource); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (p *Provider) deleteServerCredentialSecret(ctx context.Context, openstackServer *unikornv1.OpenstackServer) error {
+	resource := &corev1.Secret{}
+	if err := p.client.Get(ctx, client.ObjectKey{Namespace: openstackServer.Namespace, Name: openstackServer.Name}, resource); err != nil {
+		if kerrors.IsNotFound(err) {
+			// nothing to do here
+			return nil
+		}
+
+		return err
+	}
+
+	if err := p.client.Delete(ctx, resource); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (p *Provider) allocateServerFloatingIP(ctx context.Context, networkService *NetworkClient, server *unikornv1.Server, openstackServer *unikornv1.OpenstackServer) error {
+	if openstackServer.Spec.PublicIPAllocationId != nil {
+		return nil
+	}
+
+	ports, err := networkService.ListServerPorts(ctx, *openstackServer.Spec.ServerID)
+	if err != nil {
+		return err
+	}
+
+	if len(ports) == 0 {
+		return fmt.Errorf("%w: no ports found for server %s", ErrResourceNotFound, *openstackServer.Spec.ServerID)
+	}
+
+	port := ports[0]
+	if port.Status != "ACTIVE" {
+		return fmt.Errorf("%w: port %s is not active", ErrResouceDependency, port.ID)
+	}
+
+	floatingIP, err := networkService.CreateFloatingIP(ctx, port.ID)
+	if err != nil {
+		return err
+	}
+
+	server.Status.PublicIP = &floatingIP.FloatingIP
+	openstackServer.Spec.PublicIPAllocationId = &floatingIP.ID
+
+	return nil
+}
+
+func (p *Provider) getServerFixedIP(server *servers.Server) (*string, error) {
+
+	// Iterate through the server's addresses and extract the fixed IP.
+	for _, network := range server.Addresses {
+		for _, addr := range network.([]interface{}) {
+			iptype, ok := addr.(map[string]interface{})["OS-EXT-IPS:type"].(string)
+			if !ok || iptype != "fixed" {
+				continue
+			}
+			ipaddr, ok := addr.(map[string]interface{})["addr"].(string)
+			if !ok {
+				continue
+			}
+			return &ipaddr, nil
+		}
+	}
+
+	return nil, fmt.Errorf("%w: no ip address found for server %s", ErrResourceNotFound, server.ID)
+}
+
+// DeleteServer deletes a server.
+func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	openstackServer, err := p.GetOpenstackServer(ctx, server)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			return err
+		}
+
+		return nil
+	}
+
+	complete := false
+
+	// Always attempt to record where we are up to for idempotency.
+	record := func() {
+		if complete {
+			return
+		}
+
+		log := log.FromContext(ctx)
+
+		if err := p.client.Update(ctx, openstackServer); err != nil {
+			log.Error(err, "failed to update openstack server")
+		}
+	}
+
+	defer record()
+
+	// Rescope to the project...
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	if openstackServer.Spec.PublicIPAllocationId != nil {
+		networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+		if err != nil {
+			return err
+		}
+
+		if err := networkService.DeleteFloatingIP(ctx, *openstackServer.Spec.PublicIPAllocationId); err != nil {
+			// ignore not found errors
+			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+				return err
+			}
+		}
+
+		openstackServer.Spec.PublicIPAllocationId = nil
+	}
+
+	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	if err != nil {
+		return err
+	}
+
+	if openstackServer.Spec.ServerID != nil {
+		if err := computeService.DeleteServer(ctx, *openstackServer.Spec.ServerID); err != nil {
+			// ignore not found errors
+			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+				return err
+			}
+		}
+
+		openstackServer.Spec.ServerID = nil
+	}
+
+	if err := p.deleteServerCredentialSecret(ctx, openstackServer); err != nil {
+		return err
+	}
+
+	if err := p.client.Delete(ctx, openstackServer); err != nil {
 		return err
 	}
 
