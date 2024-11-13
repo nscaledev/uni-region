@@ -1717,8 +1717,15 @@ func (p *Provider) createServer(ctx context.Context, computeService *ComputeClie
 		return err
 	}
 
-	// placeholder for metadata
-	metadata := map[string]string{}
+	// These are defined to make cross referencing between unikorn
+	// and openstack logging easier.
+	metadata := map[string]string{
+		"serverID":       server.Name,
+		"organizationID": server.Labels[coreconstants.OrganizationLabel],
+		"projectID":      server.Labels[coreconstants.ProjectLabel],
+		"regionID":       server.Labels[constants.RegionLabel],
+		"identityID":     identity.Name,
+	}
 
 	providerServer, err := computeService.CreateServer(ctx, server.Labels[coreconstants.NameLabel], image.ID, flavor.ID, *identity.Spec.SSHKeyName, networkIDs, identity.Spec.ServerGroupID, metadata)
 	if err != nil {
