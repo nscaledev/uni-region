@@ -480,6 +480,128 @@ type SecurityGroupWriteSpec struct {
 // SecurityGroupsRead A list of security groups.
 type SecurityGroupsRead = []SecurityGroupRead
 
+// ServerImage The image to use for the server.
+type ServerImage struct {
+	// Id The image ID.
+	Id *string `json:"id,omitempty"`
+
+	// Selector A selector for an image.
+	Selector *ServerImageSelector `json:"selector,omitempty"`
+}
+
+// ServerImageSelector A selector for an image.
+type ServerImageSelector struct {
+	// Os The OS to match.
+	Os string `json:"os"`
+
+	// Version The version to match.
+	Version string `json:"version"`
+}
+
+// ServerNetwork The server's network.
+type ServerNetwork struct {
+	// PhysicalNetwork The server's physical network spec.
+	PhysicalNetwork *ServerPhysicalNetwork `json:"physicalNetwork,omitempty"`
+}
+
+// ServerNetworkList A list of networks.
+type ServerNetworkList = []ServerNetwork
+
+// ServerPhysicalNetwork The server's physical network spec.
+type ServerPhysicalNetwork struct {
+	// Id The physical network ID.
+	Id string `json:"id"`
+}
+
+// ServerPublicIPAllocation The server's public IP allocation.
+type ServerPublicIPAllocation struct {
+	// Enabled Whether to allocate a public IP.
+	Enabled bool `json:"enabled"`
+}
+
+// ServerRead A server.
+type ServerRead struct {
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+
+	// Spec A server's specification.
+	Spec ServerReadSpec `json:"spec"`
+
+	// Status A server's status.
+	Status ServerReadStatus `json:"status"`
+}
+
+// ServerReadSpec A server's specification.
+type ServerReadSpec struct {
+	// FlavorId The flavor of the server.
+	FlavorId string `json:"flavorId"`
+
+	// Image The image to use for the server.
+	Image ServerImage `json:"image"`
+
+	// Networks A list of networks.
+	Networks ServerNetworkList `json:"networks"`
+
+	// PublicIPAllocation The server's public IP allocation.
+	PublicIPAllocation *ServerPublicIPAllocation `json:"publicIPAllocation,omitempty"`
+
+	// SecurityGroups A list of security groups.
+	SecurityGroups *ServerSecurityGroupList `json:"securityGroups,omitempty"`
+
+	// Tags A list of tags.
+	Tags *TagList `json:"tags,omitempty"`
+}
+
+// ServerReadStatus A server's status.
+type ServerReadStatus struct {
+	// PrivateIP The private IP address of the server.
+	PrivateIP *string `json:"privateIP,omitempty"`
+
+	// PublicIP The public IP address of the server.
+	PublicIP *string `json:"publicIP,omitempty"`
+}
+
+// ServerSecurityGroup A security group.
+type ServerSecurityGroup struct {
+	// Id The security group ID.
+	Id string `json:"id"`
+}
+
+// ServerSecurityGroupList A list of security groups.
+type ServerSecurityGroupList = []ServerSecurityGroup
+
+// ServerWrite A server request.
+type ServerWrite struct {
+	// Metadata Resource metadata valid for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A server's specification.
+	Spec ServerWriteSpec `json:"spec"`
+}
+
+// ServerWriteSpec A server's specification.
+type ServerWriteSpec struct {
+	// FlavorId The flavor of the server.
+	FlavorId string `json:"flavorId"`
+
+	// Image The image to use for the server.
+	Image ServerImage `json:"image"`
+
+	// Networks A list of networks.
+	Networks ServerNetworkList `json:"networks"`
+
+	// PublicIPAllocation The server's public IP allocation.
+	PublicIPAllocation *ServerPublicIPAllocation `json:"publicIPAllocation,omitempty"`
+
+	// SecurityGroups A list of security groups.
+	SecurityGroups *ServerSecurityGroupList `json:"securityGroups,omitempty"`
+
+	// Tags A list of tags.
+	Tags *TagList `json:"tags,omitempty"`
+}
+
+// ServersRead A list of servers.
+type ServersRead = []ServerRead
+
 // SoftwareVersions Image preinstalled version version metadata.
 type SoftwareVersions struct {
 	// Kubernetes A semantic version.
@@ -518,6 +640,9 @@ type RuleIDParameter = KubernetesNameParameter
 
 // SecurityGroupIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type SecurityGroupIDParameter = KubernetesNameParameter
+
+// ServerIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
+type ServerIDParameter = KubernetesNameParameter
 
 // ExternalNetworksResponse A list of openstack external networks.
 type ExternalNetworksResponse = ExternalNetworks
@@ -558,6 +683,12 @@ type SecurityGroupRulesResponse = SecurityGroupRulesRead
 // SecurityGroupsResponse A list of security groups.
 type SecurityGroupsResponse = SecurityGroupsRead
 
+// ServerResponse A server.
+type ServerResponse = ServerRead
+
+// ServersResponse A list of servers.
+type ServersResponse = ServersRead
+
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
 
@@ -572,6 +703,9 @@ type SecurityGroupRequest = SecurityGroupWrite
 
 // SecurityGroupRuleRequest A security group rule request.
 type SecurityGroupRuleRequest = SecurityGroupRuleWrite
+
+// ServerRequest A server request.
+type ServerRequest = ServerWrite
 
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody = IdentityWrite
@@ -590,3 +724,6 @@ type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSec
 
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRulesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRules for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRulesJSONRequestBody = SecurityGroupRuleWrite
+
+// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServers for application/json ContentType.
+type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersJSONRequestBody = ServerWrite
