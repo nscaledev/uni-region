@@ -1655,7 +1655,7 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 	defer record()
 
 	// Rescope to the project...
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *openstackIdentity.Spec.UserID, *openstackIdentity.Spec.Password, *openstackIdentity.Spec.ProjectID)
 
 	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
 	if err != nil {
