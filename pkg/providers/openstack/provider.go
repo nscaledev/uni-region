@@ -1727,25 +1727,30 @@ func (p *Provider) createServer(ctx context.Context, computeService *ComputeClie
 		"identityID":     identity.Name,
 	}
 
-	providerServer, err := computeService.CreateServer(ctx, server.Labels[coreconstants.NameLabel], image.ID, flavor.ID, *identity.Spec.SSHKeyName, networkIDs, identity.Spec.ServerGroupID, metadata)
+	securityGroupIDs := make([]string, len(server.Spec.SecurityGroups))
+	for i, sg := range server.Spec.SecurityGroups {
+		securityGroupIDs[i] = sg.ID
+	}
+
+	providerServer, err := computeService.CreateServer(ctx, server.Labels[coreconstants.NameLabel], image.ID, flavor.ID, *identity.Spec.SSHKeyName, networkIDs, securityGroupIDs, identity.Spec.ServerGroupID, metadata)
 	if err != nil {
 		return err
 	}
 
 	openstackServer.Spec.ServerID = &providerServer.ID
 
-	if err := p.createServerCredentialsSecret(ctx, openstackServer, providerServer.AdminPass); err != nil {
+	if err := p.createServerCredentialsSecret(ctx, server, providerServer.AdminPass); err != nil {
 		return err
 	}
 
 	return provisioners.ErrYield
 }
 
-func (p *Provider) createServerCredentialsSecret(ctx context.Context, openstackServer *unikornv1.OpenstackServer, password string) error {
+func (p *Provider) createServerCredentialsSecret(ctx context.Context, server *unikornv1.Server, password string) error {
 	resource := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: openstackServer.Namespace,
-			Name:      openstackServer.Name,
+			Namespace: server.Namespace,
+			Name:      server.Name,
 		},
 		StringData: map[string]string{
 			"password": password,
@@ -1754,7 +1759,7 @@ func (p *Provider) createServerCredentialsSecret(ctx context.Context, openstackS
 
 	// Ensure the secret is owned by the openstackserver so it is automatically cleaned
 	// up on openstackserver deletion.
-	if err := controllerutil.SetOwnerReference(openstackServer, resource, p.client.Scheme()); err != nil {
+	if err := controllerutil.SetOwnerReference(server, resource, p.client.Scheme()); err != nil {
 		return err
 	}
 
