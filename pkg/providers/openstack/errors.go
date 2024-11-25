@@ -25,4 +25,8 @@ var (
 	// ErrResourceNotFound is returned when a named resource cannot
 	// be looked up (we have to do it ourselves) and it cannot be found.
 	ErrResourceNotFound = errors.New("requested resource not found")
+
+	// ErrResourceDependency is returned when a resource is in unexpected
+	// state or condition.
+	ErrResouceDependency = errors.New("resource dependency error")
 )

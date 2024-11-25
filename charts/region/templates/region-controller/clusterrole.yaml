@@ -21,6 +21,7 @@ rules:
   - quotas
   - securitygroups
   - securitygrouprules
+  - servers
   verbs:
   - list
   - watch

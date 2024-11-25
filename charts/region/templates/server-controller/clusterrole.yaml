@@ -51,3 +51,6 @@ rules:
   verbs:
   - list
   - watch
+  - create
+  - update
+  - delete

@@ -27,11 +27,13 @@ import (
 	gophercloud "github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/external"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/floatingips"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/provider"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/rules"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/networks"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -362,4 +364,63 @@ func (c *NetworkClient) DeleteSecurityGroupRule(ctx context.Context, securityGro
 	defer span.End()
 
 	return rules.Delete(ctx, c.client, ruleID).Err
+}
+
+// CreateFloatingIP creates a floating IP.
+func (c *NetworkClient) CreateFloatingIP(ctx context.Context, portID string) (*floatingips.FloatingIP, error) {
+	externalNetworks, err := c.ExternalNetworks(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "POST /network/v2.0/floatingips", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	opts := &floatingips.CreateOpts{
+		FloatingNetworkID: externalNetworks[0].ID,
+		PortID:            portID,
+	}
+
+	floatingIP, err := floatingips.Create(ctx, c.client, opts).Extract()
+	if err != nil {
+		return nil, err
+	}
+
+	return floatingIP, nil
+}
+
+// DeleteFloatingIP deletes a floating IP.
+func (c *NetworkClient) DeleteFloatingIP(ctx context.Context, id string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /network/v2.0/floatingips/%s", id), trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	return floatingips.Delete(ctx, c.client, id).Err
+}
+
+// ListServerPorts returns a list of ports for a server.
+func (c *NetworkClient) ListServerPorts(ctx context.Context, serverID string) ([]ports.Port, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "GET /network/v2.0/ports", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	listOpts := ports.ListOpts{
+		DeviceID: serverID,
+	}
+
+	allPages, err := ports.List(c.client, listOpts).AllPages(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	allPorts, err := ports.ExtractPorts(allPages)
+	if err != nil {
+		return nil, err
+	}
+
+	return allPorts, nil
 }

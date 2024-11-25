@@ -1323,7 +1323,7 @@ func (h *Handler) generateSecurityGroupRule(ctx context.Context, organizationID,
 func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRules(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter,
 	projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
 
-	if err := rbac.AllowProjectScope(r.Context(), "securitygroups", identityapi.Read, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups", identityapi.Read, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}

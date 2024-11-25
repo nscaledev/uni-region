@@ -696,6 +696,7 @@ type ServerList struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
 // +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:printcolumn:name="privateIP",type="string",JSONPath=".status.privateIP"
 // +kubebuilder:printcolumn:name="publicIP",type="string",JSONPath=".status.publicIP"
 type Server struct {
 	metav1.TypeMeta   `json:",inline"`

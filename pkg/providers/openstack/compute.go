@@ -30,6 +30,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/keypairs"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/quotasets"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
@@ -266,4 +267,56 @@ func (c *ComputeClient) UpdateQuotas(ctx context.Context, projectID string) erro
 	}
 
 	return quotasets.Update(ctx, c.client, projectID, opts).Err
+}
+
+func (c *ComputeClient) CreateServer(ctx context.Context, name, imageID, flavorID, keyName string, networkIDs, securityGroupIDs []string, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "POST /compute/v2/servers/")
+	defer span.End()
+
+	schedulerHintOpts := servers.SchedulerHintOpts{}
+
+	if serverGroupID != nil {
+		schedulerHintOpts.Group = *serverGroupID
+	}
+
+	networks := make([]servers.Network, len(networkIDs))
+	for i, id := range networkIDs {
+		networks[i] = servers.Network{UUID: id}
+	}
+
+	serverCreateOpts := servers.CreateOpts{
+		Name:           name,
+		ImageRef:       imageID,
+		FlavorRef:      flavorID,
+		Networks:       networks,
+		Metadata:       metadata,
+		SecurityGroups: securityGroupIDs,
+	}
+
+	createOpts := keypairs.CreateOptsExt{
+		CreateOptsBuilder: serverCreateOpts,
+		KeyName:           keyName,
+	}
+
+	return servers.Create(ctx, c.client, createOpts, schedulerHintOpts).Extract()
+}
+
+func (c *ComputeClient) DeleteServer(ctx context.Context, id string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /compute/v2/servers/%s", id))
+	defer span.End()
+
+	return servers.Delete(ctx, c.client, id).ExtractErr()
+}
+
+func (c *ComputeClient) GetServer(ctx context.Context, id string) (*servers.Server, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("GET /compute/v2/servers/%s", id))
+	defer span.End()
+
+	return servers.Get(ctx, c.client, id).Extract()
 }

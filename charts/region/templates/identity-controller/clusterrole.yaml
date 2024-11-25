@@ -38,6 +38,7 @@ rules:
   - quotas
   - physicalnetworks
   - securitygroups
+  - servers
   verbs:
   - list
   - watch

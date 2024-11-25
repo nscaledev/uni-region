@@ -93,6 +93,10 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 
 	// Block identity deletion until all owned resources are deleted, we cannot guarantee
 	// the underlying cloud implementation will not just orphan them and leak resources.
+	if err := p.triggerServerDeletion(ctx, cli, selector); err != nil {
+		return err
+	}
+
 	if err := p.triggerSecurityGroupDeletion(ctx, cli, selector); err != nil {
 		return err
 	}
@@ -163,6 +167,37 @@ func (p *Provisioner) triggerSecurityGroupDeletion(ctx context.Context, cli clie
 			}
 
 			log.Info("triggering security group deletion", "security group", resource.Name)
+
+			if err := cli.Delete(ctx, resource); err != nil {
+				return err
+			}
+		}
+
+		return provisioners.ErrYield
+	}
+
+	return nil
+}
+
+func (p *Provisioner) triggerServerDeletion(ctx context.Context, cli client.Client, selector labels.Selector) error {
+	log := log.FromContext(ctx)
+
+	var servers unikornv1.ServerList
+
+	if err := cli.List(ctx, &servers, &client.ListOptions{Namespace: p.identity.Namespace, LabelSelector: selector}); err != nil {
+		return err
+	}
+
+	if len(servers.Items) != 0 {
+		for i := range servers.Items {
+			resource := &servers.Items[i]
+
+			if resource.DeletionTimestamp != nil {
+				log.Info("awaiting server deletion", "server", resource.Name)
+				continue
+			}
+
+			log.Info("triggering server deletion", "server", resource.Name)
 
 			if err := cli.Delete(ctx, resource); err != nil {
 				return err
