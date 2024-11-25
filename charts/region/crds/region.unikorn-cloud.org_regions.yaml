@@ -251,7 +251,7 @@ spec:
                         properties:
                           physicalNetwork:
                             description: |-
-                              PhysicalNetwork is the neutron provider specific network name used
+                              Network is the neutron provider specific network name used
                               to provision provider networks e.g. VLANs for bare metal clusters.
                             type: string
                           vlan:

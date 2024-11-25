@@ -1,22 +1,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: unikorn-physical-network-controller
+  name: unikorn-network-controller
   labels:
     {{- include "unikorn.labels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: unikorn-physical-network-controller
+      app: unikorn-network-controller
   template:
     metadata:
       labels:
-        app: unikorn-physical-network-controller
+        app: unikorn-network-controller
     spec:
       containers:
-      - name: unikorn-physical-network-controller
-        image: {{ include "unikorn.physicalNetworkControllerImage" . }}
+      - name: unikorn-network-controller
+        image: {{ include "unikorn.networkControllerImage" . }}
         args:
         {{- include "unikorn.core.flags" . | nindent 8 }}
         {{- include "unikorn.otlp.flags" . | nindent 8 }}
@@ -36,6 +36,6 @@ spec:
             memory: 100Mi
         securityContext:
           readOnlyRootFilesystem: true
-      serviceAccountName: unikorn-physical-network-controller
+      serviceAccountName: unikorn-network-controller
       securityContext:
         runAsNonRoot: true

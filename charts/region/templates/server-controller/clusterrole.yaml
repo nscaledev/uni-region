@@ -12,8 +12,8 @@ rules:
   - regions
   - identities
   - openstackidentities
-  - physicalnetworks
-  - openstackphysicalnetworks
+  - networks
+  - openstacknetworks
   - securitygroups
   - openstacksecuritygroups
   verbs:

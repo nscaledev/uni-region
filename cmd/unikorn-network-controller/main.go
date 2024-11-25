@@ -19,9 +19,9 @@ package main
 
 import (
 	"github.com/unikorn-cloud/core/pkg/manager"
-	"github.com/unikorn-cloud/region/pkg/managers/physicalnetwork"
+	"github.com/unikorn-cloud/region/pkg/managers/network"
 )
 
 func main() {
-	manager.Run(&physicalnetwork.Factory{})
+	manager.Run(&network.Factory{})
 }

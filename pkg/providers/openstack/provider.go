@@ -854,100 +854,110 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Ident
 	return nil
 }
 
-func (p *Provider) GetOpenstackPhysicalNetwork(ctx context.Context, physicalNetwork *unikornv1.PhysicalNetwork) (*unikornv1.OpenstackPhysicalNetwork, error) {
-	var result unikornv1.OpenstackPhysicalNetwork
+func (p *Provider) GetOpenstackNetwork(ctx context.Context, network *unikornv1.Network) (*unikornv1.OpenstackNetwork, error) {
+	var result unikornv1.OpenstackNetwork
 
-	if err := p.client.Get(ctx, client.ObjectKey{Namespace: physicalNetwork.Namespace, Name: physicalNetwork.Name}, &result); err != nil {
+	if err := p.client.Get(ctx, client.ObjectKey{Namespace: network.Namespace, Name: network.Name}, &result); err != nil {
 		return nil, err
 	}
 
 	return &result, nil
 }
 
-func (p *Provider) GetOrCreateOpenstackPhysicalNetwork(ctx context.Context, identity *unikornv1.Identity, physicalNetwork *unikornv1.PhysicalNetwork) (*unikornv1.OpenstackPhysicalNetwork, bool, error) {
+func (p *Provider) GetOrCreateOpenstackNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) (*unikornv1.OpenstackNetwork, bool, error) {
 	create := false
 
-	openstackPhysicalNetwork, err := p.GetOpenstackPhysicalNetwork(ctx, physicalNetwork)
+	openstackNetwork, err := p.GetOpenstackNetwork(ctx, network)
 	if err != nil {
 		if !kerrors.IsNotFound(err) {
 			return nil, false, err
 		}
 
-		openstackPhysicalNetwork = &unikornv1.OpenstackPhysicalNetwork{
+		openstackNetwork = &unikornv1.OpenstackNetwork{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: physicalNetwork.Namespace,
-				Name:      physicalNetwork.Name,
+				Namespace: network.Namespace,
+				Name:      network.Name,
 				Labels: map[string]string{
-					constants.IdentityLabel:        identity.Name,
-					constants.PhysicalNetworkLabel: physicalNetwork.Name,
+					constants.IdentityLabel: identity.Name,
+					constants.NetworkLabel:  network.Name,
 				},
-				Annotations: physicalNetwork.Annotations,
+				Annotations: network.Annotations,
 			},
 		}
 
-		for k, v := range physicalNetwork.Labels {
-			openstackPhysicalNetwork.Labels[k] = v
+		for k, v := range network.Labels {
+			openstackNetwork.Labels[k] = v
 		}
 
 		create = true
 	}
 
-	return openstackPhysicalNetwork, create, nil
+	return openstackNetwork, create, nil
 }
 
-func (p *Provider) allocateVLAN(ctx context.Context, physicalNetwork *unikornv1.OpenstackPhysicalNetwork) error {
-	if physicalNetwork.Spec.VlanID != nil {
+func (p *Provider) allocateVLAN(ctx context.Context, network *unikornv1.OpenstackNetwork) error {
+	if !p.region.Spec.Openstack.Network.UseProviderNetworks() {
 		return nil
 	}
 
-	vlanID, err := p.vlanAllocator.Allocate(ctx, physicalNetwork.Name)
+	if network.Spec.VlanID != nil {
+		return nil
+	}
+
+	vlanID, err := p.vlanAllocator.Allocate(ctx, network.Name)
 	if err != nil {
 		return err
 	}
 
-	physicalNetwork.Spec.VlanID = &vlanID
+	network.Spec.VlanID = &vlanID
 
 	return nil
 }
 
-func (p *Provider) createPhysicalNetwork(ctx context.Context, networkService *NetworkClient, identity *unikornv1.OpenstackIdentity, physicalNetwork *unikornv1.OpenstackPhysicalNetwork) error {
-	if physicalNetwork.Spec.NetworkID != nil {
+func (p *Provider) createNetwork(ctx context.Context, networkService *NetworkClient, identity *unikornv1.OpenstackIdentity, network *unikornv1.OpenstackNetwork) error {
+	if network.Spec.NetworkID != nil {
 		return nil
 	}
 
-	providerNetwork, err := networkService.CreateVLANProviderNetwork(ctx, "unikorn-openstack-region-provider-network", *physicalNetwork.Spec.VlanID)
+	vlanID := -1
+
+	if network.Spec.VlanID != nil {
+		vlanID = *network.Spec.VlanID
+	}
+
+	openstackNetwork, err := networkService.CreateNetwork(ctx, "unikorn-openstack-region-network", vlanID)
 	if err != nil {
 		return err
 	}
 
-	physicalNetwork.Spec.NetworkID = &providerNetwork.ID
+	network.Spec.NetworkID = &openstackNetwork.ID
 
 	return nil
 }
 
-func (p *Provider) createSubnet(ctx context.Context, networkService *NetworkClient, physicalNetwork *unikornv1.PhysicalNetwork, openstackPhysicalNetwork *unikornv1.OpenstackPhysicalNetwork) error {
-	if openstackPhysicalNetwork.Spec.SubnetID != nil {
+func (p *Provider) createSubnet(ctx context.Context, networkService *NetworkClient, network *unikornv1.Network, openstackNetwork *unikornv1.OpenstackNetwork) error {
+	if openstackNetwork.Spec.SubnetID != nil {
 		return nil
 	}
 
-	dnsNameservers := make([]string, len(physicalNetwork.Spec.DNSNameservers))
+	dnsNameservers := make([]string, len(network.Spec.DNSNameservers))
 
-	for i, ip := range physicalNetwork.Spec.DNSNameservers {
+	for i, ip := range network.Spec.DNSNameservers {
 		dnsNameservers[i] = ip.String()
 	}
 
-	subnet, err := networkService.CreateSubnet(ctx, "unikorn-openstack-region-provider-subnet", *openstackPhysicalNetwork.Spec.NetworkID, physicalNetwork.Spec.Prefix.String(), dnsNameservers)
+	subnet, err := networkService.CreateSubnet(ctx, "unikorn-openstack-region-provider-subnet", *openstackNetwork.Spec.NetworkID, network.Spec.Prefix.String(), dnsNameservers)
 	if err != nil {
 		return err
 	}
 
-	openstackPhysicalNetwork.Spec.SubnetID = &subnet.ID
+	openstackNetwork.Spec.SubnetID = &subnet.ID
 
 	return nil
 }
 
-func (p *Provider) createRouter(ctx context.Context, networkService *NetworkClient, openstackPhysicalNetwork *unikornv1.OpenstackPhysicalNetwork) error {
-	if openstackPhysicalNetwork.Spec.RouterID != nil {
+func (p *Provider) createRouter(ctx context.Context, networkService *NetworkClient, openstackNetwork *unikornv1.OpenstackNetwork) error {
+	if openstackNetwork.Spec.RouterID != nil {
 		return nil
 	}
 
@@ -956,33 +966,33 @@ func (p *Provider) createRouter(ctx context.Context, networkService *NetworkClie
 		return err
 	}
 
-	openstackPhysicalNetwork.Spec.RouterID = &router.ID
+	openstackNetwork.Spec.RouterID = &router.ID
 
 	return nil
 }
 
-func (p *Provider) addRouterSubnetInterface(ctx context.Context, networkService *NetworkClient, openstackPhysicalNetwork *unikornv1.OpenstackPhysicalNetwork) error {
-	if openstackPhysicalNetwork.Spec.RouterSubnetInterfaceAdded {
+func (p *Provider) addRouterSubnetInterface(ctx context.Context, networkService *NetworkClient, openstackNetwork *unikornv1.OpenstackNetwork) error {
+	if openstackNetwork.Spec.RouterSubnetInterfaceAdded {
 		return nil
 	}
 
-	if err := networkService.AddRouterInterface(ctx, *openstackPhysicalNetwork.Spec.RouterID, *openstackPhysicalNetwork.Spec.SubnetID); err != nil {
+	if err := networkService.AddRouterInterface(ctx, *openstackNetwork.Spec.RouterID, *openstackNetwork.Spec.SubnetID); err != nil {
 		return err
 	}
 
-	openstackPhysicalNetwork.Spec.RouterSubnetInterfaceAdded = true
+	openstackNetwork.Spec.RouterSubnetInterfaceAdded = true
 
 	return nil
 }
 
-// CreatePhysicalNetwork creates a physical network for an identity.
-func (p *Provider) CreatePhysicalNetwork(ctx context.Context, identity *unikornv1.Identity, physicalNetwork *unikornv1.PhysicalNetwork) error {
+// CreateNetwork creates a physical network for an identity.
+func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return err
 	}
 
-	openstackPhysicalNetwork, create, err := p.GetOrCreateOpenstackPhysicalNetwork(ctx, identity, physicalNetwork)
+	openstackNetwork, create, err := p.GetOrCreateOpenstackNetwork(ctx, identity, network)
 	if err != nil {
 		return err
 	}
@@ -992,21 +1002,21 @@ func (p *Provider) CreatePhysicalNetwork(ctx context.Context, identity *unikornv
 		log := log.FromContext(ctx)
 
 		if create {
-			if err := p.client.Create(ctx, openstackPhysicalNetwork); err != nil {
+			if err := p.client.Create(ctx, openstackNetwork); err != nil {
 				log.Error(err, "failed to create openstack physical network")
 			}
 
 			return
 		}
 
-		if err := p.client.Update(ctx, openstackPhysicalNetwork); err != nil {
+		if err := p.client.Update(ctx, openstackNetwork); err != nil {
 			log.Error(err, "failed to update openstack physical network")
 		}
 	}
 
 	defer record()
 
-	if err := p.allocateVLAN(ctx, openstackPhysicalNetwork); err != nil {
+	if err := p.allocateVLAN(ctx, openstackNetwork); err != nil {
 		return err
 	}
 
@@ -1018,33 +1028,33 @@ func (p *Provider) CreatePhysicalNetwork(ctx context.Context, identity *unikornv
 		return err
 	}
 
-	if err := p.createPhysicalNetwork(ctx, networkService, openstackIdentity, openstackPhysicalNetwork); err != nil {
+	if err := p.createNetwork(ctx, networkService, openstackIdentity, openstackNetwork); err != nil {
 		return err
 	}
 
-	if err := p.createSubnet(ctx, networkService, physicalNetwork, openstackPhysicalNetwork); err != nil {
+	if err := p.createSubnet(ctx, networkService, network, openstackNetwork); err != nil {
 		return err
 	}
 
-	if err := p.createRouter(ctx, networkService, openstackPhysicalNetwork); err != nil {
+	if err := p.createRouter(ctx, networkService, openstackNetwork); err != nil {
 		return err
 	}
 
-	if err := p.addRouterSubnetInterface(ctx, networkService, openstackPhysicalNetwork); err != nil {
+	if err := p.addRouterSubnetInterface(ctx, networkService, openstackNetwork); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// DeletePhysicalNetwork deletes a physical network.
-func (p *Provider) DeletePhysicalNetwork(ctx context.Context, identity *unikornv1.Identity, physicalNetwork *unikornv1.PhysicalNetwork) error {
+// DeleteNetwork deletes a physical network.
+func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return err
 	}
 
-	openstackPhysicalNetwork, err := p.GetOpenstackPhysicalNetwork(ctx, physicalNetwork)
+	openstackNetwork, err := p.GetOpenstackNetwork(ctx, network)
 	if err != nil {
 		if !kerrors.IsNotFound(err) {
 			return err
@@ -1063,7 +1073,7 @@ func (p *Provider) DeletePhysicalNetwork(ctx context.Context, identity *unikornv
 
 		log := log.FromContext(ctx)
 
-		if err := p.client.Update(ctx, openstackPhysicalNetwork); err != nil {
+		if err := p.client.Update(ctx, openstackNetwork); err != nil {
 			log.Error(err, "failed to update openstack physical network")
 		}
 	}
@@ -1078,47 +1088,47 @@ func (p *Provider) DeletePhysicalNetwork(ctx context.Context, identity *unikornv
 		return err
 	}
 
-	if openstackPhysicalNetwork.Spec.RouterSubnetInterfaceAdded {
-		if err := networkService.RemoveRouterInterface(ctx, *openstackPhysicalNetwork.Spec.RouterID, *openstackPhysicalNetwork.Spec.SubnetID); err != nil {
+	if openstackNetwork.Spec.RouterSubnetInterfaceAdded {
+		if err := networkService.RemoveRouterInterface(ctx, *openstackNetwork.Spec.RouterID, *openstackNetwork.Spec.SubnetID); err != nil {
 			return err
 		}
 
-		openstackPhysicalNetwork.Spec.RouterSubnetInterfaceAdded = false
+		openstackNetwork.Spec.RouterSubnetInterfaceAdded = false
 	}
 
-	if openstackPhysicalNetwork.Spec.RouterID != nil {
-		if err := networkService.DeleteRouter(ctx, *openstackPhysicalNetwork.Spec.RouterID); err != nil {
+	if openstackNetwork.Spec.RouterID != nil {
+		if err := networkService.DeleteRouter(ctx, *openstackNetwork.Spec.RouterID); err != nil {
 			return err
 		}
 
-		openstackPhysicalNetwork.Spec.RouterID = nil
+		openstackNetwork.Spec.RouterID = nil
 	}
 
-	if openstackPhysicalNetwork.Spec.SubnetID != nil {
-		if err := networkService.DeleteSubnet(ctx, *openstackPhysicalNetwork.Spec.SubnetID); err != nil {
+	if openstackNetwork.Spec.SubnetID != nil {
+		if err := networkService.DeleteSubnet(ctx, *openstackNetwork.Spec.SubnetID); err != nil {
 			return err
 		}
 
-		openstackPhysicalNetwork.Spec.SubnetID = nil
+		openstackNetwork.Spec.SubnetID = nil
 	}
 
-	if openstackPhysicalNetwork.Spec.NetworkID != nil {
-		if err := networkService.DeleteVLANProviderNetwork(ctx, *openstackPhysicalNetwork.Spec.NetworkID); err != nil {
+	if openstackNetwork.Spec.NetworkID != nil {
+		if err := networkService.DeleteNetwork(ctx, *openstackNetwork.Spec.NetworkID); err != nil {
 			return err
 		}
 
-		openstackPhysicalNetwork.Spec.NetworkID = nil
+		openstackNetwork.Spec.NetworkID = nil
 	}
 
-	if openstackPhysicalNetwork.Spec.VlanID != nil {
-		if err := p.vlanAllocator.Free(ctx, *openstackPhysicalNetwork.Spec.VlanID); err != nil {
+	if openstackNetwork.Spec.VlanID != nil {
+		if err := p.vlanAllocator.Free(ctx, *openstackNetwork.Spec.VlanID); err != nil {
 			return err
 		}
 
-		openstackPhysicalNetwork.Spec.VlanID = nil
+		openstackNetwork.Spec.VlanID = nil
 	}
 
-	if err := p.client.Delete(ctx, openstackPhysicalNetwork); err != nil {
+	if err := p.client.Delete(ctx, openstackNetwork); err != nil {
 		return err
 	}
 
@@ -1596,28 +1606,28 @@ func (p *Provider) serverNetworksToIDs(ctx context.Context, identity *unikornv1.
 		}),
 	}
 
-	resources := &unikornv1.OpenstackPhysicalNetworkList{}
+	resources := &unikornv1.OpenstackNetworkList{}
 	if err := p.client.List(ctx, resources, options); err != nil {
 		return nil, err
 	}
 
-	physicalNetworkMap := make(map[string]*unikornv1.OpenstackPhysicalNetwork)
-	for _, physNet := range resources.Items {
-		physicalNetworkMap[physNet.Name] = &physNet
+	networkMap := make(map[string]*unikornv1.OpenstackNetwork)
+	for _, net := range resources.Items {
+		networkMap[net.Name] = &net
 	}
 
 	var networkIDs []string
 	for _, network := range networks {
-		physNet, found := physicalNetworkMap[network.PhysicalNetwork.ID]
+		net, found := networkMap[network.ID]
 		if !found {
-			return nil, fmt.Errorf("%w: physicalnetwork %s", ErrResourceNotFound, network.PhysicalNetwork.ID)
+			return nil, fmt.Errorf("%w: physicalnetwork %s", ErrResourceNotFound, network.ID)
 		}
 
-		if physNet.Spec.NetworkID == nil {
-			return nil, fmt.Errorf("%w: physicalnetwork %s", ErrResouceDependency, network.PhysicalNetwork.ID)
+		if net.Spec.NetworkID == nil {
+			return nil, fmt.Errorf("%w: physicalnetwork %s", ErrResouceDependency, network.ID)
 		}
 
-		networkIDs = append(networkIDs, *physNet.Spec.NetworkID)
+		networkIDs = append(networkIDs, *net.Spec.NetworkID)
 	}
 
 	return networkIDs, nil

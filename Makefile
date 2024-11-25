@@ -13,7 +13,7 @@ REVISION := $(shell git rev-parse HEAD)
 CONTROLLERS = \
   unikorn-region-controller \
   unikorn-identity-controller \
-  unikorn-physical-network-controller \
+  unikorn-network-controller \
   unikorn-security-group-controller \
   unikorn-security-group-rule-controller \
   unikorn-server-controller

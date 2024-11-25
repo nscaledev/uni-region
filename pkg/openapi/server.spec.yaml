@@ -220,20 +220,20 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v1/organizations/{organizationID}/physicalnetworks:
+  /api/v1/organizations/{organizationID}/networks:
     description: |-
-      Manages physical networks.  Physical networks are networks that may be required for
-      baremetal node provisioning e.g. a VLAN.  Note that only a single provider network is currently
-      supported per identity, as identities are intended to exist per piece of infrastructure.
+      Manages networks.  Networks may be required for baremetal node provisioning e.g. a VLAN.
+      Note that only a single network is currently supported per identity, as identities are
+      intended to exist per piece of infrastructure.
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
     get:
-      description: List physical networks.
+      description: List networks.
       security:
       - oauth2Authentication: []
       responses:
         '200':
-          $ref: '#/components/responses/physicalNetworksResponse'
+          $ref: '#/components/responses/networksResponse'
         '400':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
@@ -242,24 +242,24 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalnetworks:
+  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/networks:
     description: |-
-      Manages physical networks.  Physical networks are networks that may be required for
-      baremetal node provisioning e.g. a VLAN.  Note that only a single provider network is currently
-      supported per identity, as identities are intended to exist per piece of infrastructure.
+      Manages networks.  Networks may be required for baremetal node provisioning e.g. a VLAN.
+      Note that only a single network is currently supported per identity, as identities are
+      intended to exist per piece of infrastructure.
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/identityIDParameter'
     post:
-      description: Create a new physical network.
+      description: Create a new network.
       security:
       - oauth2Authentication: []
       requestBody:
-        $ref: '#/components/requestBodies/physicalNetworkRequest'
+        $ref: '#/components/requestBodies/networkRequest'
       responses:
         '201':
-          $ref: '#/components/responses/physicalNetworkResponse'
+          $ref: '#/components/responses/networkResponse'
         '400':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
@@ -268,23 +268,23 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalnetworks/{physicalNetworkID}:
+  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/networks/{networkID}:
     description: |-
-      Manages physical networks.  Physical networks are networks that may be required for
-      baremetal node provisioning e.g. a VLAN.  Note that only a single provider network is currently
-      supported per identity, as identities are intended to exist per piece of infrastructure.
+      Manages networks.  Networks may be required for baremetal node provisioning e.g. a VLAN.
+      Note that only a single network is currently supported per identity, as identities are
+      intended to exist per piece of infrastructure.
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/identityIDParameter'
-    - $ref: '#/components/parameters/physicalNetworkIDParameter'
+    - $ref: '#/components/parameters/networkIDParameter'
     get:
       description: Get a phyiscal network.
       security:
       - oauth2Authentication: []
       responses:
         '200':
-          $ref: '#/components/responses/physicalNetworkResponse'
+          $ref: '#/components/responses/networkResponse'
         '400':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
@@ -294,7 +294,7 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
-      description: Delete a new physical network.
+      description: Delete a new network.
       security:
       - oauth2Authentication: []
       responses:
@@ -604,10 +604,10 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
-    physicalNetworkIDParameter:
-      name: physicalNetworkID
+    networkIDParameter:
+      name: networkID
       in: path
-      description: The physical network identifier.
+      description: The network identifier.
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
@@ -931,7 +931,7 @@ components:
       type: array
       items:
         $ref: "#/components/schemas/ipv4Address"
-    physicalNetworkReadSpec:
+    networkReadSpec:
       description: A phyical network's specification.
       type: object
       required:
@@ -953,9 +953,9 @@ components:
           description: The region an identity is provisioned in.
           type: string
         openstack:
-          $ref: '#/components/schemas/physicalNetworkSpecOpenstack'
-    physicalNetworkSpecOpenstack:
-      description: An openstack physical network.
+          $ref: '#/components/schemas/networkSpecOpenstack'
+    networkSpecOpenstack:
+      description: An openstack network.
       properties:
         vlanId:
           description: The allocated VLAN ID.
@@ -969,7 +969,7 @@ components:
         routerId:
           description: The openstack router ID.
           type: string
-    physicalNetworkWriteSpec:
+    networkWriteSpec:
       description: A phyical network's specification.
       type: object
       required:
@@ -983,8 +983,8 @@ components:
           type: string
         dnsNameservers:
           $ref: '#/components/schemas/ipv4AddressList'
-    physicalNetworkWrite:
-      description: A physical network request.
+    networkWrite:
+      description: A network request.
       type: object
       required:
       - metadata
@@ -992,9 +992,9 @@ components:
         metadata:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
-          $ref: '#/components/schemas/physicalNetworkWriteSpec'
-    physicalNetworkRead:
-      description: A physical network.
+          $ref: '#/components/schemas/networkWriteSpec'
+    networkRead:
+      description: A network.
       type: object
       required:
       - metadata
@@ -1003,12 +1003,12 @@ components:
         metadata:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
-          $ref: '#/components/schemas/physicalNetworkReadSpec'
-    physicalNetworksRead:
-      description: A list of physical networks.
+          $ref: '#/components/schemas/networkReadSpec'
+    networksRead:
+      description: A list of networks.
       type: array
       items:
-        $ref: '#/components/schemas/physicalNetworkRead'
+        $ref: '#/components/schemas/networkRead'
     externalNetwork:
       description: An Openstack external network.
       type: object
@@ -1222,17 +1222,11 @@ components:
     serverNetwork:
       description: The server's network.
       type: object
-      properties:
-        physicalNetwork:
-          $ref: '#/components/schemas/serverPhysicalNetwork'
-    serverPhysicalNetwork:
-      description: The server's physical network spec.
-      type: object
       required:
       - id
       properties:
         id:
-          description: The physical network ID.
+          description: Network to attach the server to
           type: string
     serverPublicIPAllocation:
       description: The server's public IP allocation.
@@ -1357,15 +1351,15 @@ components:
               tags:
               - name: cluster-id
                 value: 9361402c-f998-49cc-ab21-9bb99afcfde8
-    physicalNetworkRequest:
-      description: A request for a physical network.
+    networkRequest:
+      description: A request for a network.
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/physicalNetworkWrite'
+            $ref: '#/components/schemas/networkWrite'
           example:
             metadata:
-              name: physical-network-name
+              name: network-name
               description: A verbose description
             spec:
               tags:
@@ -1434,8 +1428,7 @@ components:
               publicIPAllocation:
                 enabled: true
               networks:
-                - physicalNetwork:
-                    id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
               tags:
               - name: tag-name
                 value: tag-value
@@ -1549,12 +1542,12 @@ components:
                 projectId: eb9c92d937464d14bf87e50fa726380d
                 userId: a19678a28126497dba24b54c96a064fa
                 sshKeyNmae: foo
-    physicalNetworkResponse:
-      description: A physical network.
+    networkResponse:
+      description: A network.
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/physicalNetworkRead'
+            $ref: '#/components/schemas/networkRead'
           example:
             metadata:
               id: a64f9269-36e0-4312-b8d1-52d93d569b7b
@@ -1573,12 +1566,12 @@ components:
               openstack:
                 vlanId: 1024
                 networkId: 824e8c4c-5858-4b02-9906-390e34561bf3
-    physicalNetworksResponse:
-      description: A list of physical networks.
+    networksResponse:
+      description: A list of networks.
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/physicalNetworksRead'
+            $ref: '#/components/schemas/networksRead'
           example:
           - metadata:
               id: a64f9269-36e0-4312-b8d1-52d93d569b7b
@@ -1735,8 +1728,7 @@ components:
               publicIPAllocation:
                 enabled: true
               networks:
-                - physicalNetwork:
-                    id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+                - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
               tags:
               - name: tag-name
                 value: tag-value
@@ -1768,8 +1760,7 @@ components:
               publicIPAllocation:
                 enabled: true
               networks:
-                - physicalNetwork:
-                    id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
               tags:
               - name: tag-name
                 value: tag-value

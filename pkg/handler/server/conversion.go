@@ -87,9 +87,7 @@ func convertServerNetworks(in []unikornv1.ServerNetworkSpec) openapi.ServerNetwo
 
 func convertServerNetwork(in *unikornv1.ServerNetworkSpec) openapi.ServerNetwork {
 	return openapi.ServerNetwork{
-		PhysicalNetwork: &openapi.ServerPhysicalNetwork{
-			Id: in.PhysicalNetwork.ID,
-		},
+		Id: in.ID,
 	}
 }
 
@@ -267,9 +265,7 @@ func (g *generator) generateNetworks(in openapi.ServerNetworkList) []unikornv1.S
 
 	for i, network := range in {
 		out[i] = unikornv1.ServerNetworkSpec{
-			PhysicalNetwork: &unikornv1.ServerPhysicalNetworkSpec{
-				ID: network.PhysicalNetwork.Id,
-			},
+			ID: network.Id,
 		}
 	}
 

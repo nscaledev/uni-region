@@ -222,9 +222,9 @@ type NetworkSelector struct {
 }
 
 type ProviderNetworks struct {
-	// PhysicalNetwork is the neutron provider specific network name used
+	// Network is the neutron provider specific network name used
 	// to provision provider networks e.g. VLANs for bare metal clusters.
-	PhysicalNetwork *string `json:"physicalNetwork,omitempty"`
+	Network *string `json:"physicalNetwork,omitempty"`
 	// VLAN is the VLAN configuration.  If not specified and a VLAN provider
 	// network is requested then the ID will be allocated between 1-6094
 	// inclusive.
@@ -356,29 +356,29 @@ type OpenstackIdentitySpec struct {
 
 type OpenstackIdentityStatus struct{}
 
-// PhysicalNetworkList s a typed list of physical networks.
+// NetworkList s a typed list of physical networks.
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-type PhysicalNetworkList struct {
+type NetworkList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []PhysicalNetwork `json:"items"`
+	Items           []Network `json:"items"`
 }
 
-// PhysicalNetwork defines a physical network beloning to an identity.
+// Network defines a physical network beloning to an identity.
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:scope=Namespaced,categories=unikorn
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
 // +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
-type PhysicalNetwork struct {
+type Network struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              PhysicalNetworkSpec   `json:"spec"`
-	Status            PhysicalNetworkStatus `json:"status,omitempty"`
+	Spec              NetworkSpec   `json:"spec"`
+	Status            NetworkStatus `json:"status,omitempty"`
 }
 
-type PhysicalNetworkSpec struct {
+type NetworkSpec struct {
 	// Pause, if true, will inhibit reconciliation.
 	Pause bool `json:"pause,omitempty"`
 	// Tags are an abitrary list of key/value pairs that a client
@@ -392,32 +392,32 @@ type PhysicalNetworkSpec struct {
 	DNSNameservers []unikornv1core.IPv4Address `json:"dnsNameservers"`
 }
 
-type PhysicalNetworkStatus struct {
+type NetworkStatus struct {
 	// Current service state of a cluster manager.
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
 }
 
-// OpenstackPhysicalNetworkList s a typed list of physical networks.
+// OpenstackNetworkList s a typed list of physical networks.
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-type OpenstackPhysicalNetworkList struct {
+type OpenstackNetworkList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []OpenstackPhysicalNetwork `json:"items"`
+	Items           []OpenstackNetwork `json:"items"`
 }
 
-// OpenstackPhysicalNetwork defines a physical network beloning to an identity.
+// OpenstackNetwork defines a physical network beloning to an identity.
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:scope=Namespaced,categories=unikorn
 // +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
-type OpenstackPhysicalNetwork struct {
+type OpenstackNetwork struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              OpenstackPhysicalNetworkSpec   `json:"spec"`
-	Status            OpenstackPhysicalNetworkStatus `json:"status,omitempty"`
+	Spec              OpenstackNetworkSpec   `json:"spec"`
+	Status            OpenstackNetworkStatus `json:"status,omitempty"`
 }
 
-type OpenstackPhysicalNetworkSpec struct {
+type OpenstackNetworkSpec struct {
 	// NetworkID is the network ID.
 	NetworkID *string `json:"networkID,omitempty"`
 	// VlanID is the ID if the VLAN for IPAM.
@@ -430,7 +430,7 @@ type OpenstackPhysicalNetworkSpec struct {
 	RouterSubnetInterfaceAdded bool `json:"routerSubnetInterfaceAdded,omitempty"`
 }
 
-type OpenstackPhysicalNetworkStatus struct {
+type OpenstackNetworkStatus struct {
 }
 
 // VLANAllocationList is a typed list of VLAN allocations.
@@ -463,9 +463,9 @@ type VLANAllocationSpec struct {
 type VLANAllocationEntry struct {
 	// ID is the VLAN ID.
 	ID int `json:"id"`
-	// PhysicalNetworkID is the physical network/provider specific physical network
+	// NetworkID is the physical network/provider specific physical network
 	// identifier that owns this entry.
-	PhysicalNetworkID string `json:"physicalNetworkID"`
+	NetworkID string `json:"physicalNetworkID"`
 }
 
 type VLANAllocationStatus struct {
@@ -731,10 +731,6 @@ type ServerSecurityGroupSpec struct {
 }
 
 type ServerNetworkSpec struct {
-	PhysicalNetwork *ServerPhysicalNetworkSpec `json:"physicalNetwork,omitempty"`
-}
-
-type ServerPhysicalNetworkSpec struct {
 	// ID is the physical network ID.
 	ID string `json:"id"`
 }

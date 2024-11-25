@@ -18,8 +18,8 @@ type ServerInterface interface {
 	// (GET /api/v1/organizations/{organizationID}/identities)
 	GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter)
 
-	// (GET /api/v1/organizations/{organizationID}/physicalnetworks)
-	GetApiV1OrganizationsOrganizationIDPhysicalnetworks(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter)
+	// (GET /api/v1/organizations/{organizationID}/networks)
+	GetApiV1OrganizationsOrganizationIDNetworks(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter)
 
 	// (POST /api/v1/organizations/{organizationID}/projects/{projectID}/identities)
 	PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter)
@@ -30,14 +30,14 @@ type ServerInterface interface {
 	// (GET /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID})
 	GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter)
 
-	// (POST /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalnetworks)
-	PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworks(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter)
+	// (POST /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/networks)
+	PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworks(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter)
 
-	// (DELETE /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalnetworks/{physicalNetworkID})
-	DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, physicalNetworkID PhysicalNetworkIDParameter)
+	// (DELETE /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/networks/{networkID})
+	DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, networkID NetworkIDParameter)
 
-	// (GET /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalnetworks/{physicalNetworkID})
-	GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, physicalNetworkID PhysicalNetworkIDParameter)
+	// (GET /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/networks/{networkID})
+	GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, networkID NetworkIDParameter)
 
 	// (GET /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/quotas)
 	GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter)
@@ -106,8 +106,8 @@ func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDIdentities(w http.Resp
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// (GET /api/v1/organizations/{organizationID}/physicalnetworks)
-func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDPhysicalnetworks(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter) {
+// (GET /api/v1/organizations/{organizationID}/networks)
+func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDNetworks(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -126,18 +126,18 @@ func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdent
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// (POST /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalnetworks)
-func (_ Unimplemented) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworks(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter) {
+// (POST /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/networks)
+func (_ Unimplemented) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworks(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// (DELETE /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalnetworks/{physicalNetworkID})
-func (_ Unimplemented) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, physicalNetworkID PhysicalNetworkIDParameter) {
+// (DELETE /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/networks/{networkID})
+func (_ Unimplemented) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, networkID NetworkIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// (GET /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalnetworks/{physicalNetworkID})
-func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, physicalNetworkID PhysicalNetworkIDParameter) {
+// (GET /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/networks/{networkID})
+func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, networkID NetworkIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -276,8 +276,8 @@ func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDIdentities
 	handler.ServeHTTP(w, r)
 }
 
-// GetApiV1OrganizationsOrganizationIDPhysicalnetworks operation middleware
-func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDPhysicalnetworks(w http.ResponseWriter, r *http.Request) {
+// GetApiV1OrganizationsOrganizationIDNetworks operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDNetworks(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 
@@ -297,7 +297,7 @@ func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDPhysicalne
 	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetApiV1OrganizationsOrganizationIDPhysicalnetworks(w, r, organizationID)
+		siw.Handler.GetApiV1OrganizationsOrganizationIDNetworks(w, r, organizationID)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -445,8 +445,8 @@ func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDProjectsPr
 	handler.ServeHTTP(w, r)
 }
 
-// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworks operation middleware
-func (siw *ServerInterfaceWrapper) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworks(w http.ResponseWriter, r *http.Request) {
+// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworks operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworks(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 
@@ -484,7 +484,7 @@ func (siw *ServerInterfaceWrapper) PostApiV1OrganizationsOrganizationIDProjectsP
 	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworks(w, r, organizationID, projectID, identityID)
+		siw.Handler.PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworks(w, r, organizationID, projectID, identityID)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -494,8 +494,8 @@ func (siw *ServerInterfaceWrapper) PostApiV1OrganizationsOrganizationIDProjectsP
 	handler.ServeHTTP(w, r)
 }
 
-// DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID operation middleware
-func (siw *ServerInterfaceWrapper) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID(w http.ResponseWriter, r *http.Request) {
+// DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID operation middleware
+func (siw *ServerInterfaceWrapper) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 
@@ -526,12 +526,12 @@ func (siw *ServerInterfaceWrapper) DeleteApiV1OrganizationsOrganizationIDProject
 		return
 	}
 
-	// ------------- Path parameter "physicalNetworkID" -------------
-	var physicalNetworkID PhysicalNetworkIDParameter
+	// ------------- Path parameter "networkID" -------------
+	var networkID NetworkIDParameter
 
-	err = runtime.BindStyledParameterWithOptions("simple", "physicalNetworkID", chi.URLParam(r, "physicalNetworkID"), &physicalNetworkID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "networkID", chi.URLParam(r, "networkID"), &networkID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "physicalNetworkID", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "networkID", Err: err})
 		return
 	}
 
@@ -542,7 +542,7 @@ func (siw *ServerInterfaceWrapper) DeleteApiV1OrganizationsOrganizationIDProject
 	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID(w, r, organizationID, projectID, identityID, physicalNetworkID)
+		siw.Handler.DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w, r, organizationID, projectID, identityID, networkID)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -552,8 +552,8 @@ func (siw *ServerInterfaceWrapper) DeleteApiV1OrganizationsOrganizationIDProject
 	handler.ServeHTTP(w, r)
 }
 
-// GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID operation middleware
-func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID(w http.ResponseWriter, r *http.Request) {
+// GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 
@@ -584,12 +584,12 @@ func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDProjectsPr
 		return
 	}
 
-	// ------------- Path parameter "physicalNetworkID" -------------
-	var physicalNetworkID PhysicalNetworkIDParameter
+	// ------------- Path parameter "networkID" -------------
+	var networkID NetworkIDParameter
 
-	err = runtime.BindStyledParameterWithOptions("simple", "physicalNetworkID", chi.URLParam(r, "physicalNetworkID"), &physicalNetworkID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "networkID", chi.URLParam(r, "networkID"), &networkID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "physicalNetworkID", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "networkID", Err: err})
 		return
 	}
 
@@ -600,7 +600,7 @@ func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDProjectsPr
 	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID(w, r, organizationID, projectID, identityID, physicalNetworkID)
+		siw.Handler.GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w, r, organizationID, projectID, identityID, networkID)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1676,7 +1676,7 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/identities", wrapper.GetApiV1OrganizationsOrganizationIDIdentities)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/physicalnetworks", wrapper.GetApiV1OrganizationsOrganizationIDPhysicalnetworks)
+		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/networks", wrapper.GetApiV1OrganizationsOrganizationIDNetworks)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities", wrapper.PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities)
@@ -1688,13 +1688,13 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}", wrapper.GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID)
 	})
 	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalnetworks", wrapper.PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworks)
+		r.Post(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/networks", wrapper.PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworks)
 	})
 	r.Group(func(r chi.Router) {
-		r.Delete(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalnetworks/{physicalNetworkID}", wrapper.DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID)
+		r.Delete(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/networks/{networkID}", wrapper.DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/physicalnetworks/{physicalNetworkID}", wrapper.GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID)
+		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/networks/{networkID}", wrapper.GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/quotas", wrapper.GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas)
