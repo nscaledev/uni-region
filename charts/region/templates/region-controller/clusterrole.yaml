@@ -17,7 +17,7 @@ rules:
   - region.unikorn-cloud.org
   resources:
   - identities
-  - physicalnetworks
+  - networks
   - quotas
   - securitygroups
   - securitygrouprules
@@ -33,7 +33,7 @@ rules:
   - region.unikorn-cloud.org
   resources:
   - openstackidentities
-  - openstackphysicalnetworks
+  - openstacknetworks
   - openstacksecuritygroups
   - openstacksecuritygrouprules
   verbs:

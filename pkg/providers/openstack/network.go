@@ -45,10 +45,6 @@ import (
 )
 
 var (
-	// ErrConfiguration is raised when a feature requires additional configuration
-	// and none is provided for the region.
-	ErrConfiguration = errors.New("required configuration missing")
-
 	// ErrUnsufficentResource is retuend when we've run out of space.
 	ErrUnsufficentResource = errors.New("unsufficient resource for request")
 )
@@ -158,14 +154,10 @@ func (c *NetworkClient) ExternalNetworks(ctx context.Context) ([]networks.Networ
 	return result, nil
 }
 
-// CreateVLANProviderNetwork creates a VLAN provider network for a project.
+// CreateNetwork creates a virtual or VLAN provider network for a project.
 // This requires https://github.com/unikorn-cloud/python-unikorn-openstack-policy
 // to be installed, see the README for further details on how this has to work.
-func (c *NetworkClient) CreateVLANProviderNetwork(ctx context.Context, name string, vlanID int) (*networks.Network, error) {
-	if c.options == nil || c.options.ProviderNetworks == nil || c.options.ProviderNetworks.PhysicalNetwork == nil {
-		return nil, ErrConfiguration
-	}
-
+func (c *NetworkClient) CreateNetwork(ctx context.Context, name string, vlanID int) (*networks.Network, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, "POST /network/v2.0/networks", trace.WithSpanKind(trace.SpanKindClient))
@@ -176,13 +168,16 @@ func (c *NetworkClient) CreateVLANProviderNetwork(ctx context.Context, name stri
 			Name:        name,
 			Description: "unikorn managed provider network",
 		},
-		Segments: []provider.Segment{
+	}
+
+	if c.options.UseProviderNetworks() {
+		opts.Segments = []provider.Segment{
 			{
 				NetworkType:     "vlan",
-				PhysicalNetwork: *c.options.ProviderNetworks.PhysicalNetwork,
+				PhysicalNetwork: *c.options.ProviderNetworks.Network,
 				SegmentationID:  vlanID,
 			},
-		},
+		}
 	}
 
 	network, err := networks.Create(ctx, c.client, opts).Extract()
@@ -193,11 +188,7 @@ func (c *NetworkClient) CreateVLANProviderNetwork(ctx context.Context, name stri
 	return network, nil
 }
 
-func (c *NetworkClient) DeleteVLANProviderNetwork(ctx context.Context, id string) error {
-	if c.options == nil || c.options.ProviderNetworks == nil || c.options.ProviderNetworks.PhysicalNetwork == nil {
-		return ErrConfiguration
-	}
-
+func (c *NetworkClient) DeleteNetwork(ctx context.Context, id string) error {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /network/v2.0/networks/%s", id), trace.WithSpanKind(trace.SpanKindClient))

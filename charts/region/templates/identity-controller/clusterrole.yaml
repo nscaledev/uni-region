@@ -36,7 +36,7 @@ rules:
   - region.unikorn-cloud.org
   resources:
   - quotas
-  - physicalnetworks
+  - networks
   - securitygroups
   - servers
   verbs:

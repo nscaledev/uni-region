@@ -4,16 +4,16 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.16.1
-  name: openstackphysicalnetworks.region.unikorn-cloud.org
+  name: openstacknetworks.region.unikorn-cloud.org
 spec:
   group: region.unikorn-cloud.org
   names:
     categories:
     - unikorn
-    kind: OpenstackPhysicalNetwork
-    listKind: OpenstackPhysicalNetworkList
-    plural: openstackphysicalnetworks
-    singular: openstackphysicalnetwork
+    kind: OpenstackNetwork
+    listKind: OpenstackNetworkList
+    plural: openstacknetworks
+    singular: openstacknetwork
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -23,8 +23,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: OpenstackPhysicalNetwork defines a physical network beloning
-          to an identity.
+        description: OpenstackNetwork defines a physical network beloning to an identity.
         properties:
           apiVersion:
             description: |-

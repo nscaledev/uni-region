@@ -101,7 +101,7 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
-	if err := p.triggerPhysicalNetworkDeletion(ctx, cli, selector); err != nil {
+	if err := p.triggerNetworkDeletion(ctx, cli, selector); err != nil {
 		return err
 	}
 
@@ -117,25 +117,25 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 	return nil
 }
 
-func (p *Provisioner) triggerPhysicalNetworkDeletion(ctx context.Context, cli client.Client, selector labels.Selector) error {
+func (p *Provisioner) triggerNetworkDeletion(ctx context.Context, cli client.Client, selector labels.Selector) error {
 	log := log.FromContext(ctx)
 
-	var physicalNetworks unikornv1.PhysicalNetworkList
+	var networks unikornv1.NetworkList
 
-	if err := cli.List(ctx, &physicalNetworks, &client.ListOptions{Namespace: p.identity.Namespace, LabelSelector: selector}); err != nil {
+	if err := cli.List(ctx, &networks, &client.ListOptions{Namespace: p.identity.Namespace, LabelSelector: selector}); err != nil {
 		return err
 	}
 
-	if len(physicalNetworks.Items) != 0 {
-		for i := range physicalNetworks.Items {
-			resource := &physicalNetworks.Items[i]
+	if len(networks.Items) != 0 {
+		for i := range networks.Items {
+			resource := &networks.Items[i]
 
 			if resource.DeletionTimestamp != nil {
 				log.Info("awaiting physical network deletion", "physical network", resource.Name)
 				continue
 			}
 
-			log.Info("triggering physical network deletion", "physical network", resource.Name)
+			log.Info("triggering network deletion", "physical network", resource.Name)
 
 			if err := cli.Delete(ctx, resource); err != nil {
 				return err

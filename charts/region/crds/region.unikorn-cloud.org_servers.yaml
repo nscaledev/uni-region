@@ -85,14 +85,11 @@ spec:
                 description: Networks is the server network configuration.
                 items:
                   properties:
-                    physicalNetwork:
-                      properties:
-                        id:
-                          description: ID is the physical network ID.
-                          type: string
-                      required:
-                      - id
-                      type: object
+                    id:
+                      description: ID is the physical network ID.
+                      type: string
+                  required:
+                  - id
                   type: object
                 type: array
               pause:

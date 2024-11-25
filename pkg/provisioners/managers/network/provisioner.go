@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package physicalnetwork
+package network
 
 import (
 	"context"
@@ -41,14 +41,14 @@ var (
 type Provisioner struct {
 	provisioners.Metadata
 
-	// physicalNetwork is the physicalNetwork we're provisioning.
-	physicalNetwork *unikornv1.PhysicalNetwork
+	// network is the network we're provisioning.
+	network *unikornv1.Network
 }
 
 // New returns a new initialized provisioner object.
 func New(_ coremanager.ControllerOptions) provisioners.ManagerProvisioner {
 	return &Provisioner{
-		physicalNetwork: &unikornv1.PhysicalNetwork{},
+		network: &unikornv1.Network{},
 	}
 }
 
@@ -56,13 +56,13 @@ func New(_ coremanager.ControllerOptions) provisioners.ManagerProvisioner {
 var _ provisioners.ManagerProvisioner = &Provisioner{}
 
 func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
-	return p.physicalNetwork
+	return p.network
 }
 
 func (p *Provisioner) getIdentity(ctx context.Context, cli client.Client) (*unikornv1.Identity, error) {
 	identity := &unikornv1.Identity{}
 
-	if err := cli.Get(ctx, client.ObjectKey{Namespace: p.physicalNetwork.Namespace, Name: p.physicalNetwork.Labels[constants.IdentityLabel]}, identity); err != nil {
+	if err := cli.Get(ctx, client.ObjectKey{Namespace: p.network.Namespace, Name: p.network.Labels[constants.IdentityLabel]}, identity); err != nil {
 		return nil, err
 	}
 
@@ -78,7 +78,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
-	provider, err := region.NewClient(cli, p.physicalNetwork.Namespace).Provider(ctx, p.physicalNetwork.Labels[constants.RegionLabel])
+	provider, err := region.NewClient(cli, p.network.Namespace).Provider(ctx, p.network.Labels[constants.RegionLabel])
 	if err != nil {
 		return err
 	}
@@ -108,7 +108,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return fmt.Errorf("%w: identity in unexpected condition %v", ErrResouceDependency, status.Reason)
 	}
 
-	if err := provider.CreatePhysicalNetwork(ctx, identity, p.physicalNetwork); err != nil {
+	if err := provider.CreateNetwork(ctx, identity, p.network); err != nil {
 		return err
 	}
 
@@ -122,7 +122,7 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
-	provider, err := region.NewClient(cli, p.physicalNetwork.Namespace).Provider(ctx, p.physicalNetwork.Labels[constants.RegionLabel])
+	provider, err := region.NewClient(cli, p.network.Namespace).Provider(ctx, p.network.Labels[constants.RegionLabel])
 	if err != nil {
 		return err
 	}
@@ -132,7 +132,7 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
-	if err := provider.DeletePhysicalNetwork(ctx, identity, p.physicalNetwork); err != nil {
+	if err := provider.DeleteNetwork(ctx, identity, p.network); err != nil {
 		return err
 	}
 

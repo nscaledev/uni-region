@@ -48,26 +48,26 @@ func (c *Identity) ResourceLabels() (labels.Set, error) {
 }
 
 // Paused implements the ReconcilePauser interface.
-func (c *PhysicalNetwork) Paused() bool {
+func (c *Network) Paused() bool {
 	return c.Spec.Pause
 }
 
 // StatusConditionRead scans the status conditions for an existing condition whose type
 // matches.
-func (c *PhysicalNetwork) StatusConditionRead(t unikornv1core.ConditionType) (*unikornv1core.Condition, error) {
+func (c *Network) StatusConditionRead(t unikornv1core.ConditionType) (*unikornv1core.Condition, error) {
 	return unikornv1core.GetCondition(c.Status.Conditions, t)
 }
 
 // StatusConditionWrite either adds or updates a condition in the cluster manager status.
 // If the condition, status and message match an existing condition the update is
 // ignored.
-func (c *PhysicalNetwork) StatusConditionWrite(t unikornv1core.ConditionType, status corev1.ConditionStatus, reason unikornv1core.ConditionReason, message string) {
+func (c *Network) StatusConditionWrite(t unikornv1core.ConditionType, status corev1.ConditionStatus, reason unikornv1core.ConditionReason, message string) {
 	unikornv1core.UpdateCondition(&c.Status.Conditions, t, status, reason, message)
 }
 
 // ResourceLabels generates a set of labels to uniquely identify the resource
 // if it were to be placed in a single global namespace.
-func (c *PhysicalNetwork) ResourceLabels() (labels.Set, error) {
+func (c *Network) ResourceLabels() (labels.Set, error) {
 	return nil, nil
 }
 
@@ -141,4 +141,8 @@ func (c *Server) StatusConditionWrite(t unikornv1core.ConditionType, status core
 // if it were to be placed in a single global namespace.
 func (c *Server) ResourceLabels() (labels.Set, error) {
 	return nil, nil
+}
+
+func (s *RegionOpenstackNetworkSpec) UseProviderNetworks() bool {
+	return s != nil && s.ProviderNetworks != nil && s.ProviderNetworks.Network != nil
 }

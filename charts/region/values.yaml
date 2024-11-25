@@ -107,7 +107,7 @@ identityController:
   # Allow override of the controller image.
   image: ~
 
-physicalNetworkController:
+networkController:
   # Allow override of the controller image.
   image: ~
 

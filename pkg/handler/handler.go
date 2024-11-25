@@ -101,8 +101,8 @@ func (h *Handler) getIdentity(ctx context.Context, id string) (*unikornv1.Identi
 	return resource, nil
 }
 
-func (h *Handler) getPhysicalNetwork(ctx context.Context, id string) (*unikornv1.PhysicalNetwork, error) {
-	resource := &unikornv1.PhysicalNetwork{}
+func (h *Handler) getNetwork(ctx context.Context, id string) (*unikornv1.Network, error) {
+	resource := &unikornv1.Network{}
 
 	if err := h.client.Get(ctx, client.ObjectKey{Namespace: h.namespace, Name: id}, resource); err != nil {
 		if kerrors.IsNotFound(err) {
@@ -516,16 +516,16 @@ func convertIPv4List(in []unikornv1core.IPv4Address) openapi.Ipv4AddressList {
 	return out
 }
 
-func (h *Handler) convertPhysicalNetwork(ctx context.Context, in *unikornv1.PhysicalNetwork) *openapi.PhysicalNetworkRead {
+func (h *Handler) convertNetwork(ctx context.Context, in *unikornv1.Network) *openapi.NetworkRead {
 	provisioningStatus := coreapi.ResourceProvisioningStatusUnknown
 
 	if condition, err := in.StatusConditionRead(unikornv1core.ConditionAvailable); err == nil {
 		provisioningStatus = conversion.ConvertStatusCondition(condition)
 	}
 
-	out := &openapi.PhysicalNetworkRead{
+	out := &openapi.NetworkRead{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, provisioningStatus),
-		Spec: openapi.PhysicalNetworkReadSpec{
+		Spec: openapi.NetworkReadSpec{
 			RegionId:       in.Labels[constants.RegionLabel],
 			Prefix:         in.Spec.Prefix.String(),
 			DnsNameservers: convertIPv4List(in.Spec.DNSNameservers),
@@ -540,13 +540,13 @@ func (h *Handler) convertPhysicalNetwork(ctx context.Context, in *unikornv1.Phys
 	case unikornv1.ProviderOpenstack:
 		out.Spec.Type = openapi.Openstack
 
-		var openstackPhysicalNetwork unikornv1.OpenstackPhysicalNetwork
+		var openstackNetwork unikornv1.OpenstackNetwork
 
-		if err := h.client.Get(ctx, client.ObjectKey{Namespace: in.Namespace, Name: in.Name}, &openstackPhysicalNetwork); err == nil {
-			out.Spec.Openstack = &openapi.PhysicalNetworkSpecOpenstack{
-				VlanId:    openstackPhysicalNetwork.Spec.VlanID,
-				NetworkId: openstackPhysicalNetwork.Spec.NetworkID,
-				SubnetId:  openstackPhysicalNetwork.Spec.SubnetID,
+		if err := h.client.Get(ctx, client.ObjectKey{Namespace: in.Namespace, Name: in.Name}, &openstackNetwork); err == nil {
+			out.Spec.Openstack = &openapi.NetworkSpecOpenstack{
+				VlanId:    openstackNetwork.Spec.VlanID,
+				NetworkId: openstackNetwork.Spec.NetworkID,
+				SubnetId:  openstackNetwork.Spec.SubnetID,
 			}
 		}
 	}
@@ -554,23 +554,23 @@ func (h *Handler) convertPhysicalNetwork(ctx context.Context, in *unikornv1.Phys
 	return out
 }
 
-func (h *Handler) convertPhysicalNetworkList(ctx context.Context, in unikornv1.PhysicalNetworkList) openapi.PhysicalNetworksRead {
-	out := make(openapi.PhysicalNetworksRead, len(in.Items))
+func (h *Handler) convertNetworkList(ctx context.Context, in unikornv1.NetworkList) openapi.NetworksRead {
+	out := make(openapi.NetworksRead, len(in.Items))
 
 	for i := range in.Items {
-		out[i] = *h.convertPhysicalNetwork(ctx, &in.Items[i])
+		out[i] = *h.convertNetwork(ctx, &in.Items[i])
 	}
 
 	return out
 }
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDPhysicalnetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
+func (h *Handler) GetApiV1OrganizationsOrganizationIDNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
 	if err := rbac.AllowOrganizationScope(r.Context(), "region:physicalnetworks", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	var result unikornv1.PhysicalNetworkList
+	var result unikornv1.NetworkList
 
 	options := &client.ListOptions{
 		LabelSelector: labels.SelectorFromSet(map[string]string{
@@ -583,20 +583,20 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDPhysicalnetworks(w http.Res
 		return
 	}
 
-	slices.SortStableFunc(result.Items, func(a, b unikornv1.PhysicalNetwork) int {
+	slices.SortStableFunc(result.Items, func(a, b unikornv1.Network) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	util.WriteJSONResponse(w, r, http.StatusOK, h.convertPhysicalNetworkList(r.Context(), result))
+	util.WriteJSONResponse(w, r, http.StatusOK, h.convertNetworkList(r.Context(), result))
 }
 
-func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
+func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:physicalnetworks", identityapi.Create, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	request := &openapi.PhysicalNetworkWrite{}
+	request := &openapi.NetworkWrite{}
 
 	if err := util.ReadJSONBody(r, request); err != nil {
 		errors.HandleError(w, r, err)
@@ -635,9 +635,9 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		}
 	}
 
-	network := &unikornv1.PhysicalNetwork{
+	network := &unikornv1.Network{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, h.namespace, userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identityID).Get(),
-		Spec: unikornv1.PhysicalNetworkSpec{
+		Spec: unikornv1.NetworkSpec{
 			Provider: identity.Spec.Provider,
 			Prefix: &unikornv1core.IPv4Prefix{
 				IPNet: *prefix,
@@ -655,31 +655,31 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusCreated, h.convertPhysicalNetwork(r.Context(), network))
+	util.WriteJSONResponse(w, r, http.StatusCreated, h.convertNetwork(r.Context(), network))
 }
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, physicalNetworkID openapi.PhysicalNetworkIDParameter) {
+func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, physicalNetworkID openapi.NetworkIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:physicalnetworks", identityapi.Read, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	resource, err := h.getPhysicalNetwork(r.Context(), physicalNetworkID)
+	resource, err := h.getNetwork(r.Context(), physicalNetworkID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusOK, h.convertPhysicalNetwork(r.Context(), resource))
+	util.WriteJSONResponse(w, r, http.StatusOK, h.convertNetwork(r.Context(), resource))
 }
 
-func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDPhysicalnetworksPhysicalNetworkID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, physicalNetworkID openapi.PhysicalNetworkIDParameter) {
+func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, physicalNetworkID openapi.NetworkIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:physicalnetworks", identityapi.Delete, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	resource, err := h.getPhysicalNetwork(r.Context(), physicalNetworkID)
+	resource, err := h.getNetwork(r.Context(), physicalNetworkID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return

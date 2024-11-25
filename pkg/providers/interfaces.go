@@ -36,10 +36,10 @@ type Provider interface {
 	CreateIdentity(ctx context.Context, identity *unikornv1.Identity) error
 	// DeleteIdentity cleans up an identity for cloud infrastructure.
 	DeleteIdentity(ctx context.Context, identity *unikornv1.Identity) error
-	// CreatePhysicalNetwork creates a new physical network.
-	CreatePhysicalNetwork(ctx context.Context, identity *unikornv1.Identity, physicalNetwork *unikornv1.PhysicalNetwork) error
-	// DeletePhysicalNetwork deletes a physical network.
-	DeletePhysicalNetwork(ctx context.Context, identity *unikornv1.Identity, physicalNetwork *unikornv1.PhysicalNetwork) error
+	// CreateNetwork creates a new physical network.
+	CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error
+	// DeleteNetwork deletes a physical network.
+	DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error
 	// ListExternalNetworks returns a list of external networks if the platform
 	// supports such a concept.
 	ListExternalNetworks(ctx context.Context) (ExternalNetworks, error)

@@ -101,7 +101,7 @@ func (a *Allocator) getOrCreateVLANAllocation(ctx context.Context) (*unikornv1.V
 	return allocation, create, nil
 }
 
-func (a *Allocator) Allocate(ctx context.Context, physicalNetworkID string) (int, error) {
+func (a *Allocator) Allocate(ctx context.Context, networkID string) (int, error) {
 	allocation, create, err := a.getOrCreateVLANAllocation(ctx)
 	if err != nil {
 		return -1, err
@@ -127,8 +127,8 @@ func (a *Allocator) Allocate(ctx context.Context, physicalNetworkID string) (int
 
 		// Perform an atomic update of the allocation table.
 		allocation.Spec.Allocations = append(allocation.Spec.Allocations, unikornv1.VLANAllocationEntry{
-			ID:                id,
-			PhysicalNetworkID: physicalNetworkID,
+			ID:        id,
+			NetworkID: networkID,
 		})
 
 		if create {

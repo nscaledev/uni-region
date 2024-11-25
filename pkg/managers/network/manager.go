@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package physicalnetwork
+package network
 
 import (
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
@@ -22,7 +22,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/manager/options"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/provisioners/managers/physicalnetwork"
+	"github.com/unikorn-cloud/region/pkg/provisioners/managers/network"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -50,13 +50,13 @@ func (*Factory) Options() coremanager.ControllerOptions {
 
 // Reconciler returns a new reconciler instance.
 func (*Factory) Reconciler(options *options.Options, controllerOptions coremanager.ControllerOptions, manager manager.Manager) reconcile.Reconciler {
-	return coremanager.NewReconciler(options, controllerOptions, manager, physicalnetwork.New)
+	return coremanager.NewReconciler(options, controllerOptions, manager, network.New)
 }
 
 // RegisterWatches adds any watches that would trigger a reconcile.
 func (*Factory) RegisterWatches(manager manager.Manager, controller controller.Controller) error {
 	// Any changes to the physicalnetwork spec, trigger a reconcile.
-	if err := controller.Watch(source.Kind(manager.GetCache(), &unikornv1.PhysicalNetwork{}, &handler.TypedEnqueueRequestForObject[*unikornv1.PhysicalNetwork]{}, &predicate.TypedGenerationChangedPredicate[*unikornv1.PhysicalNetwork]{})); err != nil {
+	if err := controller.Watch(source.Kind(manager.GetCache(), &unikornv1.Network{}, &handler.TypedEnqueueRequestForObject[*unikornv1.Network]{}, &predicate.TypedGenerationChangedPredicate[*unikornv1.Network]{})); err != nil {
 		return err
 	}
 
