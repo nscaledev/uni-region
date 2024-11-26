@@ -40,14 +40,6 @@ rules:
   - update
   - delete
 - apiGroups:
-  - region.unikorn-cloud.org
-  resources:
-  - securitygrouprules
-  verbs:
-  - list
-  - watch
-  - delete
-- apiGroups:
   - ""
   resources:
   - secrets

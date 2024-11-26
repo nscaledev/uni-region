@@ -46,11 +46,18 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+)
+
+var (
+	foregroundDeleteOptions = &client.DeleteOptions{
+		PropagationPolicy: ptr.To(metav1.DeletePropagationForeground),
+	}
 )
 
 type Handler struct {
@@ -109,7 +116,7 @@ func (h *Handler) getNetwork(ctx context.Context, id string) (*unikornv1.Network
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("unable to physical network identity").WithError(err)
+		return nil, errors.OAuth2ServerError("unable to network identity").WithError(err)
 	}
 
 	return resource, nil
@@ -493,7 +500,7 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		return
 	}
 
-	if err := h.client.Delete(r.Context(), identity); err != nil {
+	if err := h.client.Delete(r.Context(), identity, foregroundDeleteOptions); err != nil {
 		if kerrors.IsNotFound(err) {
 			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
 			return
@@ -579,7 +586,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDNetworks(w http.ResponseWri
 	}
 
 	if err := h.client.List(r.Context(), &result, options); err != nil {
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to list physical networks").WithError(err))
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to list networks").WithError(err))
 		return
 	}
 
@@ -650,8 +657,14 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		network.Spec.Tags = generateTagList(request.Spec.Tags)
 	}
 
+	// The resource belongs to its identity, for cascading deletion.
+	if err := controllerutil.SetOwnerReference(identity, network, h.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to set resource owner").WithError(err))
+		return
+	}
+
 	if err := h.client.Create(r.Context(), network); err != nil {
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to create physical network").WithError(err))
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to create network").WithError(err))
 		return
 	}
 
@@ -685,13 +698,13 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		return
 	}
 
-	if err := h.client.Delete(r.Context(), resource); err != nil {
+	if err := h.client.Delete(r.Context(), resource, foregroundDeleteOptions); err != nil {
 		if kerrors.IsNotFound(err) {
 			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
 			return
 		}
 
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to delete physical network").WithError(err))
+		errors.HandleError(w, r, errors.OAuth2ServerError("unable to delete network").WithError(err))
 		return
 	}
 
@@ -819,7 +832,7 @@ func (h *Handler) generateQuota(ctx context.Context, organizationID, projectID s
 
 	// Ensure the quota is owned by the identity so it is automatically cleaned
 	// up on identity deletion.
-	if err := controllerutil.SetOwnerReference(identity, resource, h.client.Scheme()); err != nil {
+	if err := controllerutil.SetOwnerReference(identity, resource, h.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
 		return nil, err
 	}
 
@@ -1006,7 +1019,7 @@ func (h *Handler) generateSecurityGroup(ctx context.Context, organizationID, pro
 
 	// Ensure the security is owned by the identity so it is automatically cleaned
 	// up on identity deletion.
-	if err := controllerutil.SetOwnerReference(identity, resource, h.client.Scheme()); err != nil {
+	if err := controllerutil.SetOwnerReference(identity, resource, h.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
 		return nil, err
 	}
 
@@ -1076,7 +1089,7 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		return
 	}
 
-	if err := h.client.Delete(r.Context(), resource); err != nil {
+	if err := h.client.Delete(r.Context(), resource, foregroundDeleteOptions); err != nil {
 		if kerrors.IsNotFound(err) {
 			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
 			return
@@ -1313,7 +1326,7 @@ func (h *Handler) generateSecurityGroupRule(ctx context.Context, organizationID,
 
 	// Ensure the security is owned by the security group so it is automatically cleaned
 	// up on security group deletion.
-	if err := controllerutil.SetOwnerReference(securityGroup, resource, h.client.Scheme()); err != nil {
+	if err := controllerutil.SetOwnerReference(securityGroup, resource, h.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
 		return nil, err
 	}
 
@@ -1456,7 +1469,14 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	result, err := server.NewClient(h.client, h.namespace).Create(r.Context(), organizationID, projectID, identity, request)
+	// NOTE: exactly 1 is enforced at the API schema level.
+	network, err := h.getNetwork(r.Context(), request.Spec.Networks[0].Id)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := server.NewClient(h.client, h.namespace).Create(r.Context(), organizationID, projectID, identity, network, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return

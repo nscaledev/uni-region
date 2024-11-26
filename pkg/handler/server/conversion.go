@@ -182,15 +182,18 @@ type generator struct {
 	projectID string
 	// identity is the identity the resource is provisioned for.
 	identity *unikornv1.Identity
+	// network is the network tha resource is attacked to.
+	network *unikornv1.Network
 }
 
-func newGenerator(client client.Client, namespace, organizationID, projectID string, identity *unikornv1.Identity) *generator {
+func newGenerator(client client.Client, namespace, organizationID, projectID string, identity *unikornv1.Identity, network *unikornv1.Network) *generator {
 	return &generator{
 		client:         client,
 		namespace:      namespace,
 		organizationID: organizationID,
 		projectID:      projectID,
 		identity:       identity,
+		network:        network,
 	}
 }
 
@@ -214,9 +217,9 @@ func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*uni
 		},
 	}
 
-	// Ensure the server is owned by the identity so it is automatically cleaned
-	// up on identity deletion.
-	if err := controllerutil.SetOwnerReference(g.identity, resource, g.client.Scheme()); err != nil {
+	// Ensure the server is owned by the network so it is automatically cleaned
+	// up on cascading deletion.
+	if err := controllerutil.SetOwnerReference(g.network, resource, g.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
 		return nil, err
 	}
 

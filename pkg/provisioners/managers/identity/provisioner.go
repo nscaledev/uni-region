@@ -27,11 +27,9 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // Provisioner encapsulates control plane provisioning.
@@ -77,31 +75,13 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
+	// Wait for any owned resources to be cleaned up first.
+	if controllerutil.ContainsFinalizer(p.identity, metav1.FinalizerDeleteDependents) {
+		return provisioners.ErrYield
+	}
 
 	cli, err := coreclient.ProvisionerClientFromContext(ctx)
 	if err != nil {
-		return err
-	}
-
-	identityRequirement, err := labels.NewRequirement(constants.IdentityLabel, selection.Equals, []string{p.identity.Name})
-	if err != nil {
-		return err
-	}
-
-	selector := labels.NewSelector()
-	selector = selector.Add(*identityRequirement)
-
-	// Block identity deletion until all owned resources are deleted, we cannot guarantee
-	// the underlying cloud implementation will not just orphan them and leak resources.
-	if err := p.triggerServerDeletion(ctx, cli, selector); err != nil {
-		return err
-	}
-
-	if err := p.triggerSecurityGroupDeletion(ctx, cli, selector); err != nil {
-		return err
-	}
-
-	if err := p.triggerNetworkDeletion(ctx, cli, selector); err != nil {
 		return err
 	}
 
@@ -112,99 +92,6 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 
 	if err := provider.DeleteIdentity(ctx, p.identity); err != nil {
 		return err
-	}
-
-	return nil
-}
-
-func (p *Provisioner) triggerNetworkDeletion(ctx context.Context, cli client.Client, selector labels.Selector) error {
-	log := log.FromContext(ctx)
-
-	var networks unikornv1.NetworkList
-
-	if err := cli.List(ctx, &networks, &client.ListOptions{Namespace: p.identity.Namespace, LabelSelector: selector}); err != nil {
-		return err
-	}
-
-	if len(networks.Items) != 0 {
-		for i := range networks.Items {
-			resource := &networks.Items[i]
-
-			if resource.DeletionTimestamp != nil {
-				log.Info("awaiting physical network deletion", "physical network", resource.Name)
-				continue
-			}
-
-			log.Info("triggering network deletion", "physical network", resource.Name)
-
-			if err := cli.Delete(ctx, resource); err != nil {
-				return err
-			}
-		}
-
-		return provisioners.ErrYield
-	}
-
-	return nil
-}
-
-func (p *Provisioner) triggerSecurityGroupDeletion(ctx context.Context, cli client.Client, selector labels.Selector) error {
-	log := log.FromContext(ctx)
-
-	var securityGroups unikornv1.SecurityGroupList
-
-	if err := cli.List(ctx, &securityGroups, &client.ListOptions{Namespace: p.identity.Namespace, LabelSelector: selector}); err != nil {
-		return err
-	}
-
-	if len(securityGroups.Items) != 0 {
-		for i := range securityGroups.Items {
-			resource := &securityGroups.Items[i]
-
-			if resource.DeletionTimestamp != nil {
-				log.Info("awaiting security group deletion", "security group", resource.Name)
-				continue
-			}
-
-			log.Info("triggering security group deletion", "security group", resource.Name)
-
-			if err := cli.Delete(ctx, resource); err != nil {
-				return err
-			}
-		}
-
-		return provisioners.ErrYield
-	}
-
-	return nil
-}
-
-func (p *Provisioner) triggerServerDeletion(ctx context.Context, cli client.Client, selector labels.Selector) error {
-	log := log.FromContext(ctx)
-
-	var servers unikornv1.ServerList
-
-	if err := cli.List(ctx, &servers, &client.ListOptions{Namespace: p.identity.Namespace, LabelSelector: selector}); err != nil {
-		return err
-	}
-
-	if len(servers.Items) != 0 {
-		for i := range servers.Items {
-			resource := &servers.Items[i]
-
-			if resource.DeletionTimestamp != nil {
-				log.Info("awaiting server deletion", "server", resource.Name)
-				continue
-			}
-
-			log.Info("triggering server deletion", "server", resource.Name)
-
-			if err := cli.Delete(ctx, resource); err != nil {
-				return err
-			}
-		}
-
-		return provisioners.ErrYield
 	}
 
 	return nil
