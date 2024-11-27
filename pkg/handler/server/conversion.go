@@ -60,6 +60,10 @@ func convert(in *unikornv1.Server) *openapi.ServerRead {
 			PublicIPAllocation: convertServerPublicIPAllocation(in.Spec.PublicIPAllocation),
 			SecurityGroups:     convertServerSecurityGroups(in.Spec.SecurityGroups),
 		},
+		Status: openapi.ServerReadStatus{
+			PrivateIP: in.Status.PrivateIP,
+			PublicIP:  in.Status.PublicIP,
+		},
 	}
 
 	if tags := convertTags(in.Spec.Tags); tags != nil {
