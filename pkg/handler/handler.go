@@ -301,29 +301,6 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w htt
 	util.WriteJSONResponse(w, r, http.StatusOK, out)
 }
 
-func convertTag(in unikornv1.Tag) openapi.Tag {
-	out := openapi.Tag{
-		Name:  in.Name,
-		Value: in.Value,
-	}
-
-	return out
-}
-
-func convertTags(in unikornv1.TagList) openapi.TagList {
-	if in == nil {
-		return nil
-	}
-
-	out := make(openapi.TagList, len(in))
-
-	for i := range in {
-		out[i] = convertTag(in[i])
-	}
-
-	return out
-}
-
 func (h *Handler) convertIdentity(ctx context.Context, in *unikornv1.Identity) *openapi.IdentityRead {
 	provisioningStatus := coreapi.ResourceProvisioningStatusUnknown
 
@@ -332,14 +309,10 @@ func (h *Handler) convertIdentity(ctx context.Context, in *unikornv1.Identity) *
 	}
 
 	out := &openapi.IdentityRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, provisioningStatus),
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags, provisioningStatus),
 		Spec: openapi.IdentitySpec{
 			RegionId: in.Labels[constants.RegionLabel],
 		},
-	}
-
-	if tags := convertTags(in.Spec.Tags); tags != nil {
-		out.Spec.Tags = &tags
 	}
 
 	switch in.Spec.Provider {
@@ -403,29 +376,6 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseW
 	util.WriteJSONResponse(w, r, http.StatusOK, h.convertIdentityList(r.Context(), result))
 }
 
-func generateTag(in openapi.Tag) unikornv1.Tag {
-	out := unikornv1.Tag{
-		Name:  in.Name,
-		Value: in.Value,
-	}
-
-	return out
-}
-
-func generateTagList(in *openapi.TagList) unikornv1.TagList {
-	if in == nil {
-		return nil
-	}
-
-	out := make(unikornv1.TagList, len(*in))
-
-	for i := range *in {
-		out[i] = generateTag((*in)[i])
-	}
-
-	return out
-}
-
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:identities", identityapi.Create, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
@@ -460,7 +410,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 	identity := &unikornv1.Identity{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, h.namespace, userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, request.Spec.RegionId).Get(),
 		Spec: unikornv1.IdentitySpec{
-			Tags:     generateTagList(request.Spec.Tags),
+			Tags:     conversion.GenerateTagList(request.Metadata.Tags),
 			Provider: region.Spec.Provider,
 		},
 	}
@@ -531,16 +481,12 @@ func (h *Handler) convertNetwork(ctx context.Context, in *unikornv1.Network) *op
 	}
 
 	out := &openapi.NetworkRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, provisioningStatus),
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags, provisioningStatus),
 		Spec: openapi.NetworkReadSpec{
 			RegionId:       in.Labels[constants.RegionLabel],
 			Prefix:         in.Spec.Prefix.String(),
 			DnsNameservers: convertIPv4List(in.Spec.DNSNameservers),
 		},
-	}
-
-	if tags := convertTags(in.Spec.Tags); tags != nil {
-		out.Spec.Tags = &tags
 	}
 
 	switch in.Spec.Provider {
@@ -572,7 +518,7 @@ func (h *Handler) convertNetworkList(ctx context.Context, in unikornv1.NetworkLi
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
-	if err := rbac.AllowOrganizationScope(r.Context(), "region:physicalnetworks", identityapi.Read, organizationID); err != nil {
+	if err := rbac.AllowOrganizationScope(r.Context(), "region:networks", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -598,7 +544,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDNetworks(w http.ResponseWri
 }
 
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "region:physicalnetworks", identityapi.Create, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScope(r.Context(), "region:networks", identityapi.Create, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -645,16 +591,13 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 	network := &unikornv1.Network{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, h.namespace, userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identityID).Get(),
 		Spec: unikornv1.NetworkSpec{
+			Tags:     conversion.GenerateTagList(request.Metadata.Tags),
 			Provider: identity.Spec.Provider,
 			Prefix: &unikornv1core.IPv4Prefix{
 				IPNet: *prefix,
 			},
 			DNSNameservers: dnsNameservers,
 		},
-	}
-
-	if request.Spec != nil {
-		network.Spec.Tags = generateTagList(request.Spec.Tags)
 	}
 
 	// The resource belongs to its identity, for cascading deletion.
@@ -672,7 +615,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, physicalNetworkID openapi.NetworkIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "region:physicalnetworks", identityapi.Read, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScope(r.Context(), "region:networks", identityapi.Read, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -687,7 +630,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 }
 
 func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, physicalNetworkID openapi.NetworkIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "region:physicalnetworks", identityapi.Delete, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScope(r.Context(), "region:networks", identityapi.Delete, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -826,6 +769,7 @@ func (h *Handler) generateQuota(ctx context.Context, organizationID, projectID s
 	resource := &unikornv1.Quota{
 		ObjectMeta: conversion.NewObjectMetadata(metadata, h.namespace, userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identity.Name).Get(),
 		Spec: unikornv1.QuotaSpec{
+			// TODO: tags??
 			Flavors: generateFlavorQuotas(in.Flavors),
 		},
 	}
@@ -942,14 +886,10 @@ func (h *Handler) convertSecurityGroup(in *unikornv1.SecurityGroup) *openapi.Sec
 	}
 
 	out := &openapi.SecurityGroupRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, provisioningStatus),
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags, provisioningStatus),
 		Spec: openapi.SecurityGroupReadSpec{
 			RegionId: in.Labels[constants.RegionLabel],
 		},
-	}
-
-	if tags := convertTags(in.Spec.Tags); tags != nil {
-		out.Spec.Tags = &tags
 	}
 
 	return out
@@ -1009,12 +949,9 @@ func (h *Handler) generateSecurityGroup(ctx context.Context, organizationID, pro
 		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, h.namespace, userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, identity.Name).Get(),
 		Spec: unikornv1.SecurityGroupSpec{
+			Tags:     conversion.GenerateTagList(in.Metadata.Tags),
 			Provider: identity.Spec.Provider,
 		},
-	}
-
-	if in.Spec != nil {
-		resource.Spec.Tags = generateTagList(in.Spec.Tags)
 	}
 
 	// Ensure the security is owned by the identity so it is automatically cleaned
@@ -1244,7 +1181,7 @@ func (h *Handler) convertSecurityGroupRule(in *unikornv1.SecurityGroupRule) *ope
 	}
 
 	out := &openapi.SecurityGroupRuleRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, provisioningStatus),
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags, provisioningStatus),
 		Spec: openapi.SecurityGroupRuleReadSpec{
 			Direction: convertSecurityGroupRuleDirection(*in.Spec.Direction),
 			Protocol:  openapi.SecurityGroupRuleReadSpecProtocol(*in.Spec.Protocol),
@@ -1315,6 +1252,7 @@ func (h *Handler) generateSecurityGroupRule(ctx context.Context, organizationID,
 		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, h.namespace, userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, identity.Name).WithLabel(constants.SecurityGroupLabel, securityGroup.Name).Get(),
 		Spec: unikornv1.SecurityGroupRuleSpec{
+			Tags:      conversion.GenerateTagList(in.Metadata.Tags),
 			Direction: generateSecurityGroupRuleDirection(in.Spec.Direction),
 			Protocol:  generateSecurityGroupRuleProtocol(in.Spec.Protocol),
 			Port:      generateSecurityGroupRulePort(in.Spec.Port),

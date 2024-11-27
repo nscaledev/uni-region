@@ -59,6 +59,7 @@ spec:
                 description: |-
                   Tags are an abitrary list of key/value pairs that a client
                   may populate to store metadata for the resource.
+                  Tags are aribrary user data.
                 items:
                   description: Tag is an arbirary key/value.
                   properties:

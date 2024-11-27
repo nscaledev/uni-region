@@ -162,9 +162,6 @@ type IdentitySpec struct {
 	// RegionId The region an identity is provisioned in.
 	RegionId string `json:"regionId"`
 
-	// Tags A list of tags.
-	Tags *TagList `json:"tags,omitempty"`
-
 	// Type The region's provider type.
 	Type RegionType `json:"type"`
 }
@@ -203,9 +200,6 @@ type IdentityWrite struct {
 type IdentityWriteSpec struct {
 	// RegionId The region an identity is provisioned in.
 	RegionId string `json:"regionId"`
-
-	// Tags A list of tags.
-	Tags *TagList `json:"tags,omitempty"`
 }
 
 // Image An image.
@@ -280,9 +274,6 @@ type NetworkReadSpec struct {
 	// RegionId The region an identity is provisioned in.
 	RegionId string `json:"regionId"`
 
-	// Tags A list of tags.
-	Tags *TagList `json:"tags,omitempty"`
-
 	// Type The region's provider type.
 	Type RegionType `json:"type"`
 }
@@ -318,9 +309,6 @@ type NetworkWriteSpec struct {
 
 	// Prefix An IPv4 prefix for the network.
 	Prefix string `json:"prefix"`
-
-	// Tags A list of tags.
-	Tags *TagList `json:"tags,omitempty"`
 }
 
 // NetworksRead A list of networks.
@@ -377,9 +365,6 @@ type SecurityGroupRead struct {
 type SecurityGroupReadSpec struct {
 	// RegionId The region an identity is provisioned in.
 	RegionId string `json:"regionId"`
-
-	// Tags A list of tags.
-	Tags *TagList `json:"tags,omitempty"`
 }
 
 // SecurityGroupRulePort The port definition to allow traffic.
@@ -472,10 +457,7 @@ type SecurityGroupWrite struct {
 }
 
 // SecurityGroupWriteSpec A security group's specification.
-type SecurityGroupWriteSpec struct {
-	// Tags A list of tags.
-	Tags *TagList `json:"tags,omitempty"`
-}
+type SecurityGroupWriteSpec = map[string]interface{}
 
 // SecurityGroupsRead A list of security groups.
 type SecurityGroupsRead = []SecurityGroupRead
@@ -540,9 +522,6 @@ type ServerReadSpec struct {
 
 	// SecurityGroups A list of security groups.
 	SecurityGroups *ServerSecurityGroupList `json:"securityGroups,omitempty"`
-
-	// Tags A list of tags.
-	Tags *TagList `json:"tags,omitempty"`
 }
 
 // ServerReadStatus A server's status.
@@ -588,9 +567,6 @@ type ServerWriteSpec struct {
 
 	// SecurityGroups A list of security groups.
 	SecurityGroups *ServerSecurityGroupList `json:"securityGroups,omitempty"`
-
-	// Tags A list of tags.
-	Tags *TagList `json:"tags,omitempty"`
 }
 
 // ServersRead A list of servers.
@@ -601,18 +577,6 @@ type SoftwareVersions struct {
 	// Kubernetes A semantic version.
 	Kubernetes *externalRef0.Semver `json:"kubernetes,omitempty"`
 }
-
-// Tag An arbitrary tag name and value.
-type Tag struct {
-	// Name A unique tag name.
-	Name string `json:"name"`
-
-	// Value The value of the tag.
-	Value string `json:"value"`
-}
-
-// TagList A list of tags.
-type TagList = []Tag
 
 // IdentityIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type IdentityIDParameter = KubernetesNameParameter
