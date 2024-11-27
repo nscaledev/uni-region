@@ -826,32 +826,12 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/flavor'
-    tag:
-      description: An arbitrary tag name and value.
-      type: object
-      required:
-      - name
-      - value
-      properties:
-        name:
-          description: A unique tag name.
-          type: string
-        value:
-          description: The value of the tag.
-          type: string
-    tagList:
-      description: A list of tags.
-      type: array
-      items:
-        $ref: '#/components/schemas/tag'
     identityWriteSpec:
       description: Request parameters for creating an identity.
       type: object
       required:
       - regionId
       properties:
-        tags:
-          $ref: '#/components/schemas/tagList'
         regionId:
           description: The region an identity is provisioned in.
           type: string
@@ -898,8 +878,6 @@ components:
       - type
       - regionId
       properties:
-        tags:
-          $ref: '#/components/schemas/tagList'
         type:
           $ref: '#/components/schemas/regionType'
         regionId:
@@ -940,8 +918,6 @@ components:
       - dnsNameservers
       - type
       properties:
-        tags:
-          $ref: '#/components/schemas/tagList'
         prefix:
           description: An IPv4 prefix for the network.
           type: string
@@ -976,8 +952,6 @@ components:
       - prefix
       - dnsNameservers
       properties:
-        tags:
-          $ref: '#/components/schemas/tagList'
         prefix:
           description: An IPv4 prefix for the network.
           type: string
@@ -1152,17 +1126,12 @@ components:
     securityGroupWriteSpec:
       description: A security group's specification.
       type: object
-      properties:
-        tags:
-          $ref: '#/components/schemas/tagList'
     securityGroupReadSpec:
       description: A security group's specification.
       type: object
       required:
       - regionId
       properties:
-        tags:
-          $ref: '#/components/schemas/tagList'
         regionId:
           description: The region an identity is provisioned in.
           type: string
@@ -1200,8 +1169,6 @@ components:
       - image
       - networks
       properties:
-        tags:
-          $ref: '#/components/schemas/tagList'
         flavorId:
           description: The flavor of the server.
           type: string
@@ -1293,8 +1260,6 @@ components:
       - image
       - networks
       properties:
-        tags:
-          $ref: '#/components/schemas/tagList'
         flavorId:
           description: The flavor of the server.
           type: string
@@ -1348,11 +1313,11 @@ components:
             metadata:
               name: identity-name
               description: A verbose description
-            spec:
-              regionId: c7568e2d-f9ab-453d-9a3a-51375f78426b
               tags:
               - name: cluster-id
                 value: 9361402c-f998-49cc-ab21-9bb99afcfde8
+            spec:
+              regionId: c7568e2d-f9ab-453d-9a3a-51375f78426b
     networkRequest:
       description: A request for a network.
       content:
@@ -1363,10 +1328,10 @@ components:
             metadata:
               name: network-name
               description: A verbose description
-            spec:
               tags:
               - name: cluster-id
                 value: 9361402c-f998-49cc-ab21-9bb99afcfde8
+            spec:
               prefix: 192.168.0.0/24
               dnsNameservers:
               - 8.8.8.8
@@ -1390,7 +1355,6 @@ components:
             metadata:
               name: security-group-name
               description: A verbose description
-            spec:
               tags:
               - name: cluster-id
                 value: 9361402c-f998-49cc-ab21-9bb99afcfde8
@@ -1420,6 +1384,9 @@ components:
             metadata:
               name: server-name
               description: A verbose description
+              tags:
+              - name: tag-name
+                value: tag-value
             spec:
               flavorId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
               image:
@@ -1431,9 +1398,6 @@ components:
                 enabled: true
               networks:
               - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
-              tags:
-              - name: tag-name
-                value: tag-value
   responses:
     regionsResponse:
       description: A list of regions.
@@ -1720,6 +1684,9 @@ components:
               creationTime: 2024-05-31T14:11:00Z
               createdBy: john.doe@acme.com
               provisioningStatus: provisioned
+              tags:
+              - name: tag-name
+                value: tag-value
             spec:
               flavorId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
               image:
@@ -1731,9 +1698,6 @@ components:
                 enabled: true
               networks:
                 - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
-              tags:
-              - name: tag-name
-                value: tag-value
             status:
               privateIP: 192.168.1.50
               publicIP: 142.250.66.196
@@ -1752,6 +1716,9 @@ components:
               creationTime: 2024-05-31T14:11:00Z
               createdBy: john.doe@acme.com
               provisioningStatus: provisioned
+              tags:
+              - name: tag-name
+                value: tag-value
             spec:
               flavorId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
               image:
@@ -1763,9 +1730,6 @@ components:
                 enabled: true
               networks:
               - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
-              tags:
-              - name: tag-name
-                value: tag-value
             status:
               privateIP: 192.168.1.50
               publicIP: 142.250.66.196

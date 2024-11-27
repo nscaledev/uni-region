@@ -122,7 +122,7 @@ func convertRegionType(in unikornv1.Provider) openapi.RegionType {
 
 func convert(in *unikornv1.Region) *openapi.RegionRead {
 	out := &openapi.RegionRead{
-		Metadata: conversion.ResourceReadMetadata(in, coreopenapi.ResourceProvisioningStatusProvisioned),
+		Metadata: conversion.ResourceReadMetadata(in, in.Spec.Tags, coreopenapi.ResourceProvisioningStatusProvisioned),
 		Spec: openapi.RegionSpec{
 			Type: convertRegionType(in.Spec.Provider),
 		},

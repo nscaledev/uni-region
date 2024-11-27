@@ -60,6 +60,8 @@ type Region struct {
 
 // RegionSpec defines metadata about the region.
 type RegionSpec struct {
+	// Tags are aribrary user data.
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
 	// Type defines the provider type.
 	Provider Provider `json:"provider"`
 	// Openstack is provider specific configuration for the region.
@@ -255,17 +257,6 @@ type RegionStatus struct {
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
 }
 
-// Tag is an arbirary key/value.
-type Tag struct {
-	// Name of the tag.
-	Name string `json:"name"`
-	// Value of the tag.
-	Value string `json:"value"`
-}
-
-// TagList is an ordered list of tags.
-type TagList []Tag
-
 // IdentityList is a typed list of identities.
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type IdentityList struct {
@@ -300,7 +291,7 @@ type IdentitySpec struct {
 	Pause bool `json:"pause,omitempty"`
 	// Tags are an abitrary list of key/value pairs that a client
 	// may populate to store metadata for the resource.
-	Tags TagList `json:"tags,omitempty"`
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
 	// Provider defines the provider type.
 	Provider Provider `json:"provider"`
 }
@@ -383,7 +374,7 @@ type NetworkSpec struct {
 	Pause bool `json:"pause,omitempty"`
 	// Tags are an abitrary list of key/value pairs that a client
 	// may populate to store metadata for the resource.
-	Tags TagList `json:"tags,omitempty"`
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
 	// Provider defines the provider type.
 	Provider Provider `json:"provider"`
 	// Prefix is the IPv4 address prefix.
@@ -499,6 +490,8 @@ type Quota struct {
 }
 
 type QuotaSpec struct {
+	// Tags are aribrary user data.
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
 	// Flavors is a list of flavors and their count.
 	// +listType=map
 	// +listMapKey=id
@@ -545,7 +538,8 @@ type SecurityGroupSpec struct {
 	Pause bool `json:"pause,omitempty"`
 	// Tags are an abitrary list of key/value pairs that a client
 	// may populate to store metadata for the resource.
-	Tags TagList `json:"tags,omitempty"`
+	// Tags are aribrary user data.
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
 	// Provider defines the provider type.
 	Provider Provider `json:"provider"`
 }
@@ -608,6 +602,8 @@ type SecurityGroupRule struct {
 type SecurityGroupRuleSpec struct {
 	// Pause, if true, will inhibit reconciliation.
 	Pause bool `json:"pause,omitempty"`
+	// Tags are aribrary user data.
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
 	// Direction is the direction of the rule.
 	Direction *SecurityGroupRuleDirection `json:"direction"`
 	// Protocol is the protocol of the rule.
@@ -710,7 +706,7 @@ type ServerSpec struct {
 	Pause bool `json:"pause,omitempty"`
 	// Tags are an abitrary list of key/value pairs that a client
 	// may populate to store metadata for the resource.
-	Tags TagList `json:"tags,omitempty"`
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
 	// Provider defines the provider type.
 	Provider Provider `json:"provider"`
 	// FlavorID is the flavor ID.

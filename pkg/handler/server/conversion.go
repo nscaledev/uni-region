@@ -52,7 +52,7 @@ func convert(in *unikornv1.Server) *openapi.ServerRead {
 	}
 
 	out := &openapi.ServerRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, provisioningStatus),
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags, provisioningStatus),
 		Spec: openapi.ServerReadSpec{
 			FlavorId:           in.Spec.FlavorID,
 			Image:              convertServerImage(in.Spec.Image),
@@ -64,10 +64,6 @@ func convert(in *unikornv1.Server) *openapi.ServerRead {
 			PrivateIP: in.Status.PrivateIP,
 			PublicIP:  in.Status.PublicIP,
 		},
-	}
-
-	if tags := convertTags(in.Spec.Tags); tags != nil {
-		out.Spec.Tags = &tags
 	}
 
 	return out
@@ -125,52 +121,6 @@ func convertServerSecurityGroup(in *unikornv1.ServerSecurityGroupSpec) openapi.S
 	}
 }
 
-func convertTag(in unikornv1.Tag) openapi.Tag {
-	out := openapi.Tag{
-		Name:  in.Name,
-		Value: in.Value,
-	}
-
-	return out
-}
-
-func convertTags(in unikornv1.TagList) openapi.TagList {
-	if in == nil {
-		return nil
-	}
-
-	out := make(openapi.TagList, len(in))
-
-	for i := range in {
-		out[i] = convertTag(in[i])
-	}
-
-	return out
-}
-
-func generateTag(in openapi.Tag) unikornv1.Tag {
-	out := unikornv1.Tag{
-		Name:  in.Name,
-		Value: in.Value,
-	}
-
-	return out
-}
-
-func generateTagList(in *openapi.TagList) unikornv1.TagList {
-	if in == nil {
-		return nil
-	}
-
-	out := make(unikornv1.TagList, len(*in))
-
-	for i := range *in {
-		out[i] = generateTag((*in)[i])
-	}
-
-	return out
-}
-
 type generator struct {
 	// client allows Kubernetes API access.
 	client client.Client
@@ -207,7 +157,7 @@ func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*uni
 		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, g.namespace, userinfo.Sub).WithOrganization(g.organizationID).WithProject(g.projectID).WithLabel(constants.RegionLabel, g.identity.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, g.identity.Name).Get(),
 		Spec: unikornv1.ServerSpec{
-			Tags:               generateTagList(in.Spec.Tags),
+			Tags:               conversion.GenerateTagList(in.Metadata.Tags),
 			Provider:           g.identity.Spec.Provider,
 			FlavorID:           in.Spec.FlavorId,
 			Image:              g.generateImage(&in.Spec.Image),
