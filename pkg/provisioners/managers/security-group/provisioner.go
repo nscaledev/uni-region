@@ -29,8 +29,10 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 
-	"k8s.io/apimachinery/pkg/labels"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -116,7 +118,10 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	log := log.FromContext(ctx)
+	// Wait for any owned resources to be cleaned up first.
+	if controllerutil.ContainsFinalizer(p.securitygroup, metav1.FinalizerDeleteDependents) {
+		return provisioners.ErrYield
+	}
 
 	cli, err := coreclient.ProvisionerClientFromContext(ctx)
 	if err != nil {
@@ -126,31 +131,6 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 	identity, err := p.getIdentity(ctx, cli)
 	if err != nil {
 		return err
-	}
-
-	// Block security group deletion until all owned resources are deleted
-	rules, err := p.listSecurityGroupRules(ctx, cli, identity)
-	if err != nil {
-		return err
-	}
-
-	if len(rules.Items) != 0 {
-		for i := range rules.Items {
-			resource := &rules.Items[i]
-
-			if resource.DeletionTimestamp != nil {
-				log.Info("awaiting security group rule deletion", "security group rule", resource.Name)
-				continue
-			}
-
-			log.Info("triggering security group rule deletion", "security group rule", resource.Name)
-
-			if err := cli.Delete(ctx, resource); err != nil {
-				return err
-			}
-		}
-
-		return provisioners.ErrYield
 	}
 
 	provider, err := region.NewClient(cli, p.securitygroup.Namespace).Provider(ctx, p.securitygroup.Labels[constants.RegionLabel])
@@ -163,21 +143,4 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func (p *Provisioner) listSecurityGroupRules(ctx context.Context, cli client.Client, identity *unikornv1.Identity) (*unikornv1.SecurityGroupRuleList, error) {
-	var result unikornv1.SecurityGroupRuleList
-
-	options := &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(map[string]string{
-			constants.IdentityLabel:      identity.Name,
-			constants.SecurityGroupLabel: p.securitygroup.Name,
-		}),
-	}
-
-	if err := cli.List(ctx, &result, options); err != nil {
-		return nil, err
-	}
-
-	return &result, nil
 }

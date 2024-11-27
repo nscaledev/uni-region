@@ -68,9 +68,9 @@ func (c *Client) List(ctx context.Context, organizationID string) (openapi.Serve
 	return convertList(result), nil
 }
 
-func (c *Client) Create(ctx context.Context, organizationID, projectID string, identity *unikornv1.Identity, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
+func (c *Client) Create(ctx context.Context, organizationID, projectID string, identity *unikornv1.Identity, network *unikornv1.Network, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
 
-	resource, err := newGenerator(c.client, c.namespace, organizationID, projectID, identity).generate(ctx, request)
+	resource, err := newGenerator(c.client, c.namespace, organizationID, projectID, identity, network).generate(ctx, request)
 	if err != nil {
 		return nil, err
 	}

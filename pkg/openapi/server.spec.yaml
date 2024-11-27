@@ -1217,6 +1217,8 @@ components:
       description: A list of networks.
       type: array
       minItems: 1
+      # NOTE: this is pinned due to cascading deletion semantics, for now.
+      maxItems: 1
       items:
         $ref: '#/components/schemas/serverNetwork'
     serverNetwork:

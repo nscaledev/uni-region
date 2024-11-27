@@ -799,6 +799,11 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Ident
 
 	defer record()
 
+	// User never even created, so nothing else will have been.
+	if openstackIdentity.Spec.UserID == nil {
+		return nil
+	}
+
 	// Rescope to the user/project...
 	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *openstackIdentity.Spec.UserID, *openstackIdentity.Spec.Password, *openstackIdentity.Spec.ProjectID)
 

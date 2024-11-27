@@ -31,18 +31,13 @@ rules:
   - create
   - update
   - delete
-# Cascading deletion.
 - apiGroups:
   - region.unikorn-cloud.org
   resources:
   - quotas
-  - networks
-  - securitygroups
-  - servers
   verbs:
   - list
   - watch
-  - delete
 - apiGroups:
   - ""
   resources:
