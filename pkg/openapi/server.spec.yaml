@@ -731,14 +731,39 @@ components:
           type: string
         models:
           $ref: '#/components/schemas/gpuModelList'
+    osFamily:
+      description: A family of operating systems.  This typically defines the package format.
+      type: string
+      enum:
+      - Redhat
+      - Debian
+    imageOS:
+      description: An operating system description.
+      type: object
+      required:
+      - family
+      - name
+      - version
+      properties:
+        family:
+          $ref: '#/components/schemas/osFamily'
+        name:
+          description: Full name of the operating system e.g. "Redhat Enterprise Linux".
+          type: string
+        version:
+          description: Version of the operating system e.g. "24.04".
+          type: string
     imageSpec:
       description: An image.
       type: object
       required:
       - virtualization
+      - os
       properties:
         virtualization:
           $ref: '#/components/schemas/imageVirtualization'
+        os:
+          $ref: '#/components/schemas/imageOS'
         softwareVersions:
           $ref: '#/components/schemas/softwareVersions'
         gpu:
@@ -1429,6 +1454,10 @@ components:
               creationTime: 2023-02-22T12:04:13Z
             spec:
               virtualization: virtualized
+              os:
+                family: Debian
+                name: Ubuntu Server
+                version: '24.04'
               softwareVersions:
                 kubernetes: v1.25.6
               gpu:

@@ -24,6 +24,12 @@ const (
 	Virtualized ImageVirtualization = "virtualized"
 )
 
+// Defines values for OsFamily.
+const (
+	Debian OsFamily = "Debian"
+	Redhat OsFamily = "Redhat"
+)
+
 // Defines values for RegionType.
 const (
 	Openstack RegionType = "openstack"
@@ -225,10 +231,25 @@ type ImageGpu struct {
 	Vendor GpuVendor `json:"vendor"`
 }
 
+// ImageOS An operating system description.
+type ImageOS struct {
+	// Family A family of operating systems.  This typically defines the package format.
+	Family OsFamily `json:"family"`
+
+	// Name Full name of the operating system e.g. "Redhat Enterprise Linux".
+	Name string `json:"name"`
+
+	// Version Version of the operating system e.g. "24.04".
+	Version string `json:"version"`
+}
+
 // ImageSpec An image.
 type ImageSpec struct {
 	// Gpu The GPU driver if installed.
 	Gpu *ImageGpu `json:"gpu,omitempty"`
+
+	// Os An operating system description.
+	Os ImageOS `json:"os"`
 
 	// SoftwareVersions Image preinstalled version version metadata.
 	SoftwareVersions *SoftwareVersions `json:"softwareVersions,omitempty"`
@@ -313,6 +334,9 @@ type NetworkWriteSpec struct {
 
 // NetworksRead A list of networks.
 type NetworksRead = []NetworkRead
+
+// OsFamily A family of operating systems.  This typically defines the package format.
+type OsFamily string
 
 // QuotasSpec defines model for quotasSpec.
 type QuotasSpec struct {
