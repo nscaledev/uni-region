@@ -24,10 +24,21 @@ const (
 	Virtualized ImageVirtualization = "virtualized"
 )
 
+// Defines values for OsDistro.
+const (
+	Rocky  OsDistro = "rocky"
+	Ubuntu OsDistro = "ubuntu"
+)
+
 // Defines values for OsFamily.
 const (
-	Debian OsFamily = "Debian"
-	Redhat OsFamily = "Redhat"
+	Debian OsFamily = "debian"
+	Redhat OsFamily = "redhat"
+)
+
+// Defines values for OsKernel.
+const (
+	Linux OsKernel = "linux"
 )
 
 // Defines values for RegionType.
@@ -233,11 +244,20 @@ type ImageGpu struct {
 
 // ImageOS An operating system description.
 type ImageOS struct {
+	// Codename A free form code name e.g. warty/bionic.
+	Codename *string `json:"codename,omitempty"`
+
+	// Distro A distribution name.
+	Distro OsDistro `json:"distro"`
+
 	// Family A family of operating systems.  This typically defines the package format.
 	Family OsFamily `json:"family"`
 
-	// Name Full name of the operating system e.g. "Redhat Enterprise Linux".
-	Name string `json:"name"`
+	// Kernel A kernel type.
+	Kernel OsKernel `json:"kernel"`
+
+	// Variant A free form variant e.g. desktop/server.
+	Variant *string `json:"variant,omitempty"`
 
 	// Version Version of the operating system e.g. "24.04".
 	Version string `json:"version"`
@@ -335,8 +355,14 @@ type NetworkWriteSpec struct {
 // NetworksRead A list of networks.
 type NetworksRead = []NetworkRead
 
+// OsDistro A distribution name.
+type OsDistro string
+
 // OsFamily A family of operating systems.  This typically defines the package format.
 type OsFamily string
+
+// OsKernel A kernel type.
+type OsKernel string
 
 // QuotasSpec defines model for quotasSpec.
 type QuotasSpec struct {
