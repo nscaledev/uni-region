@@ -59,6 +59,7 @@ func convert(in *unikornv1.Server) *openapi.ServerRead {
 			Networks:           convertServerNetworks(in.Spec.Networks),
 			PublicIPAllocation: convertServerPublicIPAllocation(in.Spec.PublicIPAllocation),
 			SecurityGroups:     convertServerSecurityGroups(in.Spec.SecurityGroups),
+			UserData:           convertServerUserData(in.Spec.UserData),
 		},
 		Status: openapi.ServerReadStatus{
 			PrivateIP: in.Status.PrivateIP,
@@ -121,6 +122,14 @@ func convertServerSecurityGroup(in *unikornv1.ServerSecurityGroupSpec) openapi.S
 	}
 }
 
+func convertServerUserData(in []byte) *[]byte {
+	if in == nil {
+		return nil
+	}
+
+	return &in
+}
+
 type generator struct {
 	// client allows Kubernetes API access.
 	client client.Client
@@ -164,6 +173,7 @@ func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*uni
 			PublicIPAllocation: g.generatePublicIPAllocation(in.Spec.PublicIPAllocation),
 			SecurityGroups:     g.generateSecurityGroups(in.Spec.SecurityGroups),
 			Networks:           g.generateNetworks(in.Spec.Networks),
+			UserData:           g.generateUserData(in.Spec.UserData),
 		},
 	}
 
@@ -227,4 +237,12 @@ func (g *generator) generateNetworks(in openapi.ServerNetworkList) []unikornv1.S
 	}
 
 	return out
+}
+
+func (g *generator) generateUserData(in *[]byte) []byte {
+	if in == nil {
+		return nil
+	}
+
+	return *in
 }

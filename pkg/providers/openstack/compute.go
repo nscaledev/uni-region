@@ -269,7 +269,7 @@ func (c *ComputeClient) UpdateQuotas(ctx context.Context, projectID string) erro
 	return quotasets.Update(ctx, c.client, projectID, opts).Err
 }
 
-func (c *ComputeClient) CreateServer(ctx context.Context, name, imageID, flavorID, keyName string, networkIDs, securityGroupIDs []string, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
+func (c *ComputeClient) CreateServer(ctx context.Context, name, imageID, flavorID, keyName string, networkIDs, securityGroupIDs []string, serverGroupID *string, metadata map[string]string, userData []byte) (*servers.Server, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, "POST /compute/v2/servers/")
@@ -293,6 +293,7 @@ func (c *ComputeClient) CreateServer(ctx context.Context, name, imageID, flavorI
 		Networks:       networks,
 		Metadata:       metadata,
 		SecurityGroups: securityGroupIDs,
+		UserData:       userData,
 	}
 
 	createOpts := keypairs.CreateOptsExt{

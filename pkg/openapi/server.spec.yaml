@@ -1205,6 +1205,10 @@ components:
           $ref: '#/components/schemas/serverPublicIPAllocation'
         networks:
           $ref: '#/components/schemas/serverNetworkList'
+        userData:
+          description: UserData contains base64-encoded configuration information or scripts to use upon launch.
+          type: string
+          format: byte 
     serverNetworkList:
       description: A list of networks.
       type: array
@@ -1296,6 +1300,10 @@ components:
           $ref: '#/components/schemas/serverPublicIPAllocation'
         networks:
           $ref: '#/components/schemas/serverNetworkList'
+        userData:
+          description: UserData contains base64-encoded configuration information or scripts to use upon launch.
+          type: string
+          format: byte 
     serverWrite:
       description: A server request.
       type: object

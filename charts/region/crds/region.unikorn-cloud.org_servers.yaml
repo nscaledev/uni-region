@@ -137,6 +137,11 @@ spec:
                   - value
                   type: object
                 type: array
+              userData:
+                description: UserData contains configuration information or scripts
+                  to use upon launch.
+                format: byte
+                type: string
             required:
             - flavorID
             - image
