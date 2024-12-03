@@ -731,24 +731,43 @@ components:
           type: string
         models:
           $ref: '#/components/schemas/gpuModelList'
+    osKernel:
+      description: A kernel type.
+      type: string
+      enum:
+      - linux
     osFamily:
       description: A family of operating systems.  This typically defines the package format.
       type: string
       enum:
-      - Redhat
-      - Debian
+      - redhat
+      - debian
+    osDistro:
+      description: A distribution name.
+      type: string
+      enum:
+      - rocky
+      - ubuntu
     imageOS:
       description: An operating system description.
       type: object
       required:
+      - kernel
       - family
-      - name
+      - distro
       - version
       properties:
+        kernel:
+          $ref: '#/components/schemas/osKernel'
         family:
           $ref: '#/components/schemas/osFamily'
-        name:
-          description: Full name of the operating system e.g. "Redhat Enterprise Linux".
+        distro:
+          $ref: '#/components/schemas/osDistro'
+        variant:
+          description: A free form variant e.g. desktop/server.
+          type: string
+        codename:
+          description: A free form code name e.g. warty/bionic.
           type: string
         version:
           description: Version of the operating system e.g. "24.04".
@@ -1455,8 +1474,11 @@ components:
             spec:
               virtualization: virtualized
               os:
-                family: Debian
-                name: Ubuntu Server
+                kernel: linux
+                family: debian
+                distro: ubuntu
+                variant: server
+                codename: noble
                 version: '24.04'
               softwareVersions:
                 kubernetes: v1.25.6
