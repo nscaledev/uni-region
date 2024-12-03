@@ -245,9 +245,11 @@ func convertImage(in providers.Image) openapi.Image {
 		Spec: openapi.ImageSpec{
 			Virtualization:   convertImageVirtualization(in.Virtualization),
 			Os: openapi.ImageOS{
-				Family:  "Debian",
-				Name:    "Ubuntu Server",
-				Version: "24.04",
+				Kernel:   openapi.Linux,
+				Family:   openapi.Debian,
+				Distro:   openapi.Ubuntu,
+				Codename: ptr.To("noble"),
+				Version:  "24.04",
 			},
 			SoftwareVersions: &openapi.SoftwareVersions{},
 		},
