@@ -1450,6 +1450,7 @@ components:
                 enabled: true
               networks:
               - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
   responses:
     regionsResponse:
       description: A list of regions.
@@ -1757,6 +1758,7 @@ components:
                 enabled: true
               networks:
                 - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
             status:
               privateIP: 192.168.1.50
               publicIP: 142.250.66.196
@@ -1789,6 +1791,7 @@ components:
                 enabled: true
               networks:
               - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
             status:
               privateIP: 192.168.1.50
               publicIP: 142.250.66.196
