@@ -1858,6 +1858,11 @@ func (in *ServerSpec) DeepCopyInto(out *ServerSpec) {
 		*out = make([]ServerNetworkSpec, len(*in))
 		copy(*out, *in)
 	}
+	if in.UserData != nil {
+		in, out := &in.UserData, &out.UserData
+		*out = make([]byte, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 

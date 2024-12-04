@@ -1747,7 +1747,7 @@ func (p *Provider) createServer(ctx context.Context, computeService *ComputeClie
 		securityGroupIDs[i] = sg.ID
 	}
 
-	providerServer, err := computeService.CreateServer(ctx, server.Labels[coreconstants.NameLabel], image.ID, flavor.ID, *identity.Spec.SSHKeyName, networkIDs, securityGroupIDs, identity.Spec.ServerGroupID, metadata)
+	providerServer, err := computeService.CreateServer(ctx, server.Labels[coreconstants.NameLabel], image.ID, flavor.ID, *identity.Spec.SSHKeyName, networkIDs, securityGroupIDs, identity.Spec.ServerGroupID, metadata, server.Spec.UserData)
 	if err != nil {
 		return err
 	}

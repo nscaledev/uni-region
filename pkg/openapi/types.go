@@ -572,6 +572,9 @@ type ServerReadSpec struct {
 
 	// SecurityGroups A list of security groups.
 	SecurityGroups *ServerSecurityGroupList `json:"securityGroups,omitempty"`
+
+	// UserData UserData contains base64-encoded configuration information or scripts to use upon launch.
+	UserData *[]byte `json:"userData,omitempty"`
 }
 
 // ServerReadStatus A server's status.
@@ -617,6 +620,9 @@ type ServerWriteSpec struct {
 
 	// SecurityGroups A list of security groups.
 	SecurityGroups *ServerSecurityGroupList `json:"securityGroups,omitempty"`
+
+	// UserData UserData contains base64-encoded configuration information or scripts to use upon launch.
+	UserData *[]byte `json:"userData,omitempty"`
 }
 
 // ServersRead A list of servers.

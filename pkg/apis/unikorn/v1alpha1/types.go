@@ -719,6 +719,8 @@ type ServerSpec struct {
 	PublicIPAllocation *ServerPublicIPAllocationSpec `json:"publicIPAllocation,omitempty"`
 	// Networks is the server network configuration.
 	Networks []ServerNetworkSpec `json:"networks,omitempty"`
+	// UserData contains configuration information or scripts to use upon launch.
+	UserData []byte `json:"userData,omitempty"`
 }
 
 type ServerSecurityGroupSpec struct {
