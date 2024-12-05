@@ -90,6 +90,8 @@ type Image struct {
 	Created time.Time
 	// Modified is when the image was modified.
 	Modified time.Time
+	// SizeGiB is the minumum disk size for the image in GiB.
+	SizeGiB int
 	// ImageVirtualization defines how the image can be used.
 	Virtualization ImageVirtualization
 	// GPU is any GPU specific configuration for scheduling on a specific flavor type.

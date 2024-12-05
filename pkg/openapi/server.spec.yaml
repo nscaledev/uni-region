@@ -775,9 +775,13 @@ components:
       description: An image.
       type: object
       required:
+      - sizeGiB
       - virtualization
       - os
       properties:
+        sizeGiB:
+          description: Minimum disk size required to use the image in GiB.
+          type: integer
         virtualization:
           $ref: '#/components/schemas/imageVirtualization'
         os:
@@ -1480,6 +1484,7 @@ components:
               name: ubu2204-v1.25.6-gpu-525.85.05-7ced4154
               creationTime: 2023-02-22T12:04:13Z
             spec:
+              sizeGiB: 10
               virtualization: virtualized
               os:
                 kernel: linux

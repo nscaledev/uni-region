@@ -363,11 +363,19 @@ func (p *Provider) Images(ctx context.Context) (providers.ImageList, error) {
 
 		virtualization, _ := image.Properties["unikorn:virtualization"].(string)
 
+		size := image.MinDiskGigabytes
+
+		if size == 0 {
+			// Round up to the nearest GiB.
+			size = int((image.VirtualSize + (1 << 30) - 1) >> 30)
+		}
+
 		providerImage := providers.Image{
 			ID:             image.ID,
 			Name:           image.Name,
 			Created:        image.CreatedAt,
 			Modified:       image.UpdatedAt,
+			SizeGiB:        size,
 			Virtualization: providers.ImageVirtualization(virtualization),
 			OS:             p.imageOS(image),
 			Packages:       p.imagePackages(image),

@@ -288,6 +288,7 @@ func convertImage(in providers.Image) openapi.Image {
 			CreationTime: in.Created,
 		},
 		Spec: openapi.ImageSpec{
+			SizeGiB:        in.SizeGiB,
 			Virtualization: convertImageVirtualization(in.Virtualization),
 			Os: openapi.ImageOS{
 				Kernel:   convertOsKernel(in.OS.Kernel),

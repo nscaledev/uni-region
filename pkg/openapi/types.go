@@ -271,6 +271,9 @@ type ImageSpec struct {
 	// Os An operating system description.
 	Os ImageOS `json:"os"`
 
+	// SizeGiB Minimum disk size required to use the image in GiB.
+	SizeGiB int `json:"sizeGiB"`
+
 	// SoftwareVersions Image preinstalled version version metadata.
 	SoftwareVersions *SoftwareVersions `json:"softwareVersions,omitempty"`
 
