@@ -1280,19 +1280,26 @@ components:
           type: string
         selector:
           $ref: '#/components/schemas/serverImageSelector'
+      oneOf:
+      - required: [id]
+      - required: [selector]
     serverImageSelector:
       description: A selector for an image.
       type: object
       required:
-      - os
+      - distro
       - version
       properties:
-        os:
-          description: The OS to match.
+        distro:
+          $ref: '#/components/schemas/osDistro'
+        variant:
+          description: A free form variant e.g. desktop/server.
           type: string
         version:
-          description: The version to match.
-          type: string 
+          description: Version of the operating system e.g. "24.04".
+          type: string
+        softwareVersions:
+          $ref: '#/components/schemas/softwareVersions'
     serverReadStatus:
       description: A server's status.
       type: object

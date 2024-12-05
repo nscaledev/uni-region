@@ -71,9 +71,34 @@ func convert(in *unikornv1.Server) *openapi.ServerRead {
 }
 
 func convertServerImage(in *unikornv1.ServerImage) openapi.ServerImage {
-	return openapi.ServerImage{
+	out := openapi.ServerImage{
 		Id: in.ID,
 	}
+
+	if in.Selector != nil {
+		out.Selector = &openapi.ServerImageSelector{
+			Distro:           openapi.OsDistro(in.Selector.Distro),
+			Variant:          in.Selector.Variant,
+			Version:          in.Selector.Version,
+			SoftwareVersions: convertSoftwareVersions(in.Selector.SoftwareVersions),
+		}
+	}
+
+	return out
+}
+
+func convertSoftwareVersions(in *unikornv1.SoftwareVersions) *openapi.SoftwareVersions {
+	if in == nil {
+		return nil
+	}
+
+	out := make(openapi.SoftwareVersions)
+
+	for name, version := range *in {
+		out[name] = version
+	}
+
+	return &out
 }
 
 func convertServerNetworks(in []unikornv1.ServerNetworkSpec) openapi.ServerNetworkList {
@@ -193,12 +218,28 @@ func (g *generator) generateImage(in *openapi.ServerImage) *unikornv1.ServerImag
 
 	if in.Selector != nil {
 		out.Selector = &unikornv1.ServerImageSelector{
-			OS:      in.Selector.Os,
-			Version: in.Selector.Version,
+			Distro:           unikornv1.OsDistro(in.Selector.Distro),
+			Variant:          in.Selector.Variant,
+			Version:          in.Selector.Version,
+			SoftwareVersions: g.generateSoftwareVersions(in.Selector.SoftwareVersions),
 		}
 	}
 
 	return out
+}
+
+func (g *generator) generateSoftwareVersions(in *openapi.SoftwareVersions) *unikornv1.SoftwareVersions {
+	if in == nil {
+		return nil
+	}
+
+	out := make(unikornv1.SoftwareVersions)
+
+	for name, version := range *in {
+		out[name] = version
+	}
+
+	return &out
 }
 
 func (g *generator) generatePublicIPAllocation(in *openapi.ServerPublicIPAllocation) *unikornv1.ServerPublicIPAllocationSpec {

@@ -67,14 +67,24 @@ spec:
                   selector:
                     description: Selector defines a set of rules to lookup images.
                     properties:
-                      os:
-                        description: OS is the operating system of the image.
+                      distro:
+                        description: Distro A distribution name.
+                        type: string
+                      softwareVersions:
+                        additionalProperties:
+                          type: string
+                        description: SoftwareVersions Image preinstalled version version
+                          metadata.
+                        type: object
+                      variant:
+                        description: Variant A free form variant e.g. desktop/server.
                         type: string
                       version:
-                        description: Version is the version of the image.
+                        description: Version Version of the operating system e.g.
+                          "24.04".
                         type: string
                     required:
-                    - os
+                    - distro
                     - version
                     type: object
                 type: object

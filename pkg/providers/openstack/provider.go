@@ -1647,9 +1647,8 @@ func (p *Provider) getServerImage(ctx context.Context, server *unikornv1.Server)
 			return *serverImage.ID == i.ID
 		}
 
-		// Otherwise, use the image selector to find the image by name.
-		name := fmt.Sprintf("%s-%s", serverImage.Selector.OS, serverImage.Selector.Version)
-		return name == i.Name
+		// Otherwise, use the image selector properties to find the image.
+		return p.matchImageSelector(serverImage.Selector, i)
 	}
 
 	i := slices.IndexFunc(images, func(i providers.Image) bool {
@@ -1661,6 +1660,34 @@ func (p *Provider) getServerImage(ctx context.Context, server *unikornv1.Server)
 	}
 
 	return &images[i], nil
+}
+
+func (p *Provider) matchImageSelector(selector *unikornv1.ServerImageSelector, image providers.Image) bool {
+	// Check distro and version
+	if selector.Distro != unikornv1.OsDistro(image.OS.Distro) || selector.Version != image.OS.Version {
+		return false
+	}
+
+	// If variant is set, check it
+	if selector.Variant != nil && selector.Variant != image.OS.Variant {
+		return false
+	}
+
+	// If software versions are set, check them
+	if selector.SoftwareVersions != nil {
+		if image.Packages == nil {
+			return false
+		}
+
+		for name, version := range *selector.SoftwareVersions {
+			if v, found := (*image.Packages)[name]; !found || v != version {
+				return false
+			}
+		}
+	}
+
+	// All checks passed, return true
+	return true
 }
 
 func (p *Provider) serverNetworksToIDs(ctx context.Context, identity *unikornv1.OpenstackIdentity, networks []unikornv1.ServerNetworkSpec) ([]string, error) {

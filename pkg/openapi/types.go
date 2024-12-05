@@ -4,6 +4,10 @@
 package openapi
 
 import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/oapi-codegen/runtime"
 	externalRef0 "github.com/unikorn-cloud/core/pkg/openapi"
 )
 
@@ -522,14 +526,27 @@ type ServerImage struct {
 
 	// Selector A selector for an image.
 	Selector *ServerImageSelector `json:"selector,omitempty"`
+	union    json.RawMessage
 }
+
+// ServerImage0 defines model for .
+type ServerImage0 = interface{}
+
+// ServerImage1 defines model for .
+type ServerImage1 = interface{}
 
 // ServerImageSelector A selector for an image.
 type ServerImageSelector struct {
-	// Os The OS to match.
-	Os string `json:"os"`
+	// Distro A distribution name.
+	Distro OsDistro `json:"distro"`
 
-	// Version The version to match.
+	// SoftwareVersions Image preinstalled version version metadata.
+	SoftwareVersions *SoftwareVersions `json:"softwareVersions,omitempty"`
+
+	// Variant A free form variant e.g. desktop/server.
+	Variant *string `json:"variant,omitempty"`
+
+	// Version Version of the operating system e.g. "24.04".
 	Version string `json:"version"`
 }
 
@@ -741,3 +758,113 @@ type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSe
 
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServers for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersJSONRequestBody = ServerWrite
+
+// AsServerImage0 returns the union data inside the ServerImage as a ServerImage0
+func (t ServerImage) AsServerImage0() (ServerImage0, error) {
+	var body ServerImage0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromServerImage0 overwrites any union data inside the ServerImage as the provided ServerImage0
+func (t *ServerImage) FromServerImage0(v ServerImage0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeServerImage0 performs a merge with any union data inside the ServerImage, using the provided ServerImage0
+func (t *ServerImage) MergeServerImage0(v ServerImage0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsServerImage1 returns the union data inside the ServerImage as a ServerImage1
+func (t ServerImage) AsServerImage1() (ServerImage1, error) {
+	var body ServerImage1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromServerImage1 overwrites any union data inside the ServerImage as the provided ServerImage1
+func (t *ServerImage) FromServerImage1(v ServerImage1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeServerImage1 performs a merge with any union data inside the ServerImage, using the provided ServerImage1
+func (t *ServerImage) MergeServerImage1(v ServerImage1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t ServerImage) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	object := make(map[string]json.RawMessage)
+	if t.union != nil {
+		err = json.Unmarshal(b, &object)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if t.Id != nil {
+		object["id"], err = json.Marshal(t.Id)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'id': %w", err)
+		}
+	}
+
+	if t.Selector != nil {
+		object["selector"], err = json.Marshal(t.Selector)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'selector': %w", err)
+		}
+	}
+	b, err = json.Marshal(object)
+	return b, err
+}
+
+func (t *ServerImage) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	if err != nil {
+		return err
+	}
+	object := make(map[string]json.RawMessage)
+	err = json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["id"]; found {
+		err = json.Unmarshal(raw, &t.Id)
+		if err != nil {
+			return fmt.Errorf("error reading 'id': %w", err)
+		}
+	}
+
+	if raw, found := object["selector"]; found {
+		err = json.Unmarshal(raw, &t.Selector)
+		if err != nil {
+			return fmt.Errorf("error reading 'selector': %w", err)
+		}
+	}
+
+	return err
+}

@@ -741,11 +741,26 @@ type ServerImage struct {
 	Selector *ServerImageSelector `json:"selector,omitempty"`
 }
 
+// OsDistro A distribution name.
+type OsDistro string
+
+const (
+	Rocky  OsDistro = "rocky"
+	Ubuntu OsDistro = "ubuntu"
+)
+
+// SoftwareVersions is a map of pre-installed package names to versions. Versions must be a semver (starts with a vN.N.N)
+type SoftwareVersions map[string]string
+
 type ServerImageSelector struct {
-	// OS is the operating system of the image.
-	OS string `json:"os"`
-	// Version is the version of the image.
+	// Distro A distribution name.
+	Distro OsDistro `json:"distro"`
+	// Variant A free form variant e.g. desktop/server.
+	Variant *string `json:"variant,omitempty"`
+	// Version Version of the operating system e.g. "24.04".
 	Version string `json:"version"`
+	// SoftwareVersions Image preinstalled version version metadata.
+	SoftwareVersions *SoftwareVersions `json:"softwareVersions,omitempty"`
 }
 
 type ServerPublicIPAllocationSpec struct {
