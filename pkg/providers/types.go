@@ -92,13 +92,12 @@ type Image struct {
 	Modified time.Time
 	// ImageVirtualization defines how the image can be used.
 	Virtualization ImageVirtualization
-	// KubernetesVersion is only populated if the image contains a pre-installed
-	// version of Kubernetes, this acts as a cache and improves provisioning performance.
-	// This is pretty much the only source of truth about Kubernetes versions at
-	// present, so should be populated.  It must be a semver (starts with a vN.N.N).
-	KubernetesVersion string
 	// GPU is any GPU specific configuration for scheduling on a specific flavor type.
 	GPU *ImageGPU
+	// OS is the operating system specification.
+	OS ImageOS
+	// Packages is a list of pre-installed packages and its versions. Versions must be a semver (starts with a vN.N.N)
+	Packages *ImagePackages
 }
 
 // ImageGPU defines image specific GPU compatibility information.
@@ -110,6 +109,48 @@ type ImageGPU struct {
 	// Models is a list of GPU models a driver is certified with.
 	Models []string
 }
+
+// OsKernel represents the kernel type.
+type OsKernel string
+
+const (
+	Linux OsKernel = "linux"
+)
+
+// OsFamily A family of operating systems.  This typically defines the package format.
+type OsFamily string
+
+const (
+	Debian OsFamily = "debian"
+	Redhat OsFamily = "redhat"
+)
+
+// OsDistro A distribution name.
+type OsDistro string
+
+const (
+	Rocky  OsDistro = "rocky"
+	Ubuntu OsDistro = "ubuntu"
+)
+
+// ImageOS defines the operating system of an image.
+type ImageOS struct {
+	// Kernel is the kernel type of the OS.
+	Kernel OsKernel
+	// Family is the family of the OS.
+	Family OsFamily
+	// Distro is the distribution of the OS.
+	Distro OsDistro
+	// Variant is the variant of the OS.
+	Variant *string
+	// Codename is the codename of the OS.
+	Codename *string
+	// Version is the version of the OS.
+	Version string
+}
+
+// ImagePackages is a map of pre-installed package names to versions. Versions must be a semver (starts with a vN.N.N)
+type ImagePackages map[string]string
 
 // ImageList allows us to attach sort functions and the like.
 type ImageList []Image

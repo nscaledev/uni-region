@@ -235,6 +235,51 @@ func convertImageVirtualization(in providers.ImageVirtualization) openapi.ImageV
 	return ""
 }
 
+func convertOsKernel(in providers.OsKernel) openapi.OsKernel {
+	switch in {
+	case providers.Linux:
+		return openapi.Linux
+	}
+
+	return ""
+}
+
+func convertOsFamily(in providers.OsFamily) openapi.OsFamily {
+	switch in {
+	case providers.Debian:
+		return openapi.Debian
+	case providers.Redhat:
+		return openapi.Redhat
+	}
+
+	return ""
+}
+
+func convertOsDistro(in providers.OsDistro) openapi.OsDistro {
+	switch in {
+	case providers.Rocky:
+		return openapi.Rocky
+	case providers.Ubuntu:
+		return openapi.Ubuntu
+	}
+
+	return ""
+}
+
+func convertPackages(in *providers.ImagePackages) *openapi.SoftwareVersions {
+	if in == nil {
+		return nil
+	}
+
+	out := make(openapi.SoftwareVersions)
+
+	for name, version := range *in {
+		out[name] = version
+	}
+
+	return &out
+}
+
 func convertImage(in providers.Image) openapi.Image {
 	out := openapi.Image{
 		Metadata: coreapi.StaticResourceMetadata{
@@ -243,20 +288,17 @@ func convertImage(in providers.Image) openapi.Image {
 			CreationTime: in.Created,
 		},
 		Spec: openapi.ImageSpec{
-			Virtualization:   convertImageVirtualization(in.Virtualization),
+			Virtualization: convertImageVirtualization(in.Virtualization),
 			Os: openapi.ImageOS{
-				Kernel:   openapi.Linux,
-				Family:   openapi.Debian,
-				Distro:   openapi.Ubuntu,
-				Codename: ptr.To("noble"),
-				Version:  "24.04",
+				Kernel:   convertOsKernel(in.OS.Kernel),
+				Family:   convertOsFamily(in.OS.Family),
+				Distro:   convertOsDistro(in.OS.Distro),
+				Codename: in.OS.Codename,
+				Variant:  in.OS.Variant,
+				Version:  in.OS.Version,
 			},
-			SoftwareVersions: &openapi.SoftwareVersions{},
+			SoftwareVersions: convertPackages(in.Packages),
 		},
-	}
-
-	if in.KubernetesVersion != "" {
-		out.Spec.SoftwareVersions.Kubernetes = ptr.To(in.KubernetesVersion)
 	}
 
 	if in.GPU != nil {

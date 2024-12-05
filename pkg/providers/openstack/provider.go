@@ -29,6 +29,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
+	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/rules"
 	"github.com/gophercloud/utils/openstack/clientconfig"
 
@@ -361,15 +362,15 @@ func (p *Provider) Images(ctx context.Context) (providers.ImageList, error) {
 		image := &resources[i]
 
 		virtualization, _ := image.Properties["unikorn:virtualization"].(string)
-		kubernetesVersion, _ := image.Properties["unikorn:kubernetes_version"].(string)
 
 		providerImage := providers.Image{
-			ID:                image.ID,
-			Name:              image.Name,
-			Created:           image.CreatedAt,
-			Modified:          image.UpdatedAt,
-			Virtualization:    providers.ImageVirtualization(virtualization),
-			KubernetesVersion: kubernetesVersion,
+			ID:             image.ID,
+			Name:           image.Name,
+			Created:        image.CreatedAt,
+			Modified:       image.UpdatedAt,
+			Virtualization: providers.ImageVirtualization(virtualization),
+			OS:             p.imageOS(image),
+			Packages:       p.imagePackages(image),
 		}
 
 		if gpuVendor, ok := image.Properties["unikorn:gpu_vendor"].(string); ok {
@@ -396,6 +397,57 @@ func (p *Provider) Images(ctx context.Context) (providers.ImageList, error) {
 	}
 
 	return result, nil
+}
+
+// imageOS extracts the image OS from the image properties.
+func (p *Provider) imageOS(image *images.Image) providers.ImageOS {
+	kernel, _ := image.Properties["unikorn:os:kernel"].(string)
+	family, _ := image.Properties["unikorn:os:family"].(string)
+	distro, _ := image.Properties["unikorn:os:distro"].(string)
+	version, _ := image.Properties["unikorn:os:version"].(string)
+
+	result := providers.ImageOS{
+		Kernel:  providers.OsKernel(kernel),
+		Family:  providers.OsFamily(family),
+		Distro:  providers.OsDistro(distro),
+		Version: version,
+	}
+
+	if variant, exists := image.Properties["unikorn:os:variant"].(string); exists {
+		result.Variant = &variant
+	}
+
+	if codename, exists := image.Properties["unikorn:os:codename"].(string); exists {
+		result.Codename = &codename
+	}
+
+	return result
+}
+
+// imagePackages extracts the image packages from the image properties.
+func (p *Provider) imagePackages(image *images.Image) *providers.ImagePackages {
+	result := make(providers.ImagePackages)
+
+	for key, value := range image.Properties {
+		// Check if the key starts with "unikorn:package"
+		if strings.HasPrefix(key, "unikorn:package:") {
+			packageName := key[len("unikorn:package:"):]
+
+			if strValue, ok := value.(string); ok {
+				result[packageName] = strValue
+			}
+		}
+	}
+
+	// https://github.com/unikorn-cloud/specifications/blob/main/specifications/providers/openstack/flavors_and_images.md
+	// kubernetes_version was removed in v2.0.0 of the specification, but we still support it for backwards compatibility.
+	if _, exists := result["kubernetes"]; !exists {
+		if version, ok := image.Properties["unikorn:kubernetes_version"].(string); ok {
+			result["kubernetes"] = version
+		}
+	}
+
+	return &result
 }
 
 const (
