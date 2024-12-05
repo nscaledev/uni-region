@@ -402,13 +402,13 @@ func (p *Provider) Images(ctx context.Context) (providers.ImageList, error) {
 // imageOS extracts the image OS from the image properties.
 func (p *Provider) imageOS(image *images.Image) providers.ImageOS {
 	kernel, _ := image.Properties["unikorn:os:kernel"].(string)
-	familiy, _ := image.Properties["unikorn:os:familiy"].(string)
+	family, _ := image.Properties["unikorn:os:family"].(string)
 	distro, _ := image.Properties["unikorn:os:distro"].(string)
 	version, _ := image.Properties["unikorn:os:version"].(string)
 
 	result := providers.ImageOS{
 		Kernel:  providers.OsKernel(kernel),
-		Family:  providers.OsFamily(familiy),
+		Family:  providers.OsFamily(family),
 		Distro:  providers.OsDistro(distro),
 		Version: version,
 	}
