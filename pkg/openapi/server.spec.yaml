@@ -700,9 +700,8 @@ components:
     softwareVersions:
       description: Image preinstalled version version metadata.
       type: object
-      properties:
-        kubernetes:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/semver'
+      additionalProperties:
+        $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/semver'
     gpuVendor:
       description: The GPU vendor.
       type: string
