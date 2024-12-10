@@ -187,18 +187,9 @@ func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*uni
 }
 
 func (g *generator) generateImage(in *openapi.ServerImage) *unikornv1.ServerImage {
-	out := &unikornv1.ServerImage{
+	return &unikornv1.ServerImage{
 		ID: in.Id,
 	}
-
-	if in.Selector != nil {
-		out.Selector = &unikornv1.ServerImageSelector{
-			OS:      in.Selector.Os,
-			Version: in.Selector.Version,
-		}
-	}
-
-	return out
 }
 
 func (g *generator) generatePublicIPAllocation(in *openapi.ServerPublicIPAllocation) *unikornv1.ServerPublicIPAllocationSpec {

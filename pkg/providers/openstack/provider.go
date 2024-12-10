@@ -1641,19 +1641,8 @@ func (p *Provider) getServerImage(ctx context.Context, server *unikornv1.Server)
 		return nil, err
 	}
 
-	match := func(serverImage *unikornv1.ServerImage, i providers.Image) bool {
-		// If the image ID is set, use it to find the image.
-		if serverImage.ID != nil {
-			return *serverImage.ID == i.ID
-		}
-
-		// Otherwise, use the image selector to find the image by name.
-		name := fmt.Sprintf("%s-%s", serverImage.Selector.OS, serverImage.Selector.Version)
-		return name == i.Name
-	}
-
 	i := slices.IndexFunc(images, func(i providers.Image) bool {
-		return match(server.Spec.Image, i)
+		return server.Spec.Image.ID == i.ID
 	})
 
 	if i < 0 {

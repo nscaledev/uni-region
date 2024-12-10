@@ -1274,25 +1274,12 @@ components:
     serverImage:
       description: The image to use for the server.
       type: object
+      required:
+      - id
       properties:
         id:
           description: The image ID.
           type: string
-        selector:
-          $ref: '#/components/schemas/serverImageSelector'
-    serverImageSelector:
-      description: A selector for an image.
-      type: object
-      required:
-      - os
-      - version
-      properties:
-        os:
-          description: The OS to match.
-          type: string
-        version:
-          description: The version to match.
-          type: string 
     serverReadStatus:
       description: A server's status.
       type: object

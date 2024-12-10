@@ -518,19 +518,7 @@ type SecurityGroupsRead = []SecurityGroupRead
 // ServerImage The image to use for the server.
 type ServerImage struct {
 	// Id The image ID.
-	Id *string `json:"id,omitempty"`
-
-	// Selector A selector for an image.
-	Selector *ServerImageSelector `json:"selector,omitempty"`
-}
-
-// ServerImageSelector A selector for an image.
-type ServerImageSelector struct {
-	// Os The OS to match.
-	Os string `json:"os"`
-
-	// Version The version to match.
-	Version string `json:"version"`
+	Id string `json:"id"`
 }
 
 // ServerNetwork The server's network.
