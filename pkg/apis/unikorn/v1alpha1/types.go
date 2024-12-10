@@ -733,19 +733,9 @@ type ServerNetworkSpec struct {
 	ID string `json:"id"`
 }
 
-// +kubebuilder:validation:XValidation:message="at least one of id or selector must be defined",rule=(has(self.id) || has(self.selector))
 type ServerImage struct {
 	// ID is the image ID. If specified, it has priority over the selector.
-	ID *string `json:"id,omitempty"`
-	// Selector defines a set of rules to lookup images.
-	Selector *ServerImageSelector `json:"selector,omitempty"`
-}
-
-type ServerImageSelector struct {
-	// OS is the operating system of the image.
-	OS string `json:"os"`
-	// Version is the version of the image.
-	Version string `json:"version"`
+	ID string `json:"id"`
 }
 
 type ServerPublicIPAllocationSpec struct {
