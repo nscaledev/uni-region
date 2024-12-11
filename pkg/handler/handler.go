@@ -372,12 +372,19 @@ func (h *Handler) convertIdentity(ctx context.Context, in *unikornv1.Identity) *
 		var openstackIdentity unikornv1.OpenstackIdentity
 
 		if err := h.client.Get(ctx, client.ObjectKey{Namespace: in.Namespace, Name: in.Name}, &openstackIdentity); err == nil {
+			var sshPrivateKey *string
+
+			if len(openstackIdentity.Spec.SSHPrivateKey) > 0 {
+				sshPrivateKey = ptr.To(string(openstackIdentity.Spec.SSHPrivateKey))
+			}
+
 			out.Spec.Openstack = &openapi.IdentitySpecOpenStack{
 				Cloud:         openstackIdentity.Spec.Cloud,
 				UserId:        openstackIdentity.Spec.UserID,
 				ProjectId:     openstackIdentity.Spec.ProjectID,
 				ServerGroupId: openstackIdentity.Spec.ServerGroupID,
 				SshKeyName:    openstackIdentity.Spec.SSHKeyName,
+				SshPrivateKey: sshPrivateKey,
 			}
 
 			if openstackIdentity.Spec.CloudConfig != nil {
