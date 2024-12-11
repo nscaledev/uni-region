@@ -915,6 +915,9 @@ components:
         sshKeyName:
           description: Ephemeral SSH key generated for the identity.
           type: string
+        sshPrivateKey:
+          description: Ephemeral SSH private key to be used by higher order services.
+          type: string
     identitySpec:
       description: |-
         A provider specific identity, while the client can list regions to infer the

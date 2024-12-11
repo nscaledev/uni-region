@@ -200,6 +200,9 @@ type IdentitySpecOpenStack struct {
 	// SshKeyName Ephemeral SSH key generated for the identity.
 	SshKeyName *string `json:"sshKeyName,omitempty"`
 
+	// SshPrivateKey Ephemeral SSH private key to be used by higher order services.
+	SshPrivateKey *string `json:"sshPrivateKey,omitempty"`
+
 	// UserId User identitifer allocated for the infrastructure.
 	UserId *string `json:"userId,omitempty"`
 }
