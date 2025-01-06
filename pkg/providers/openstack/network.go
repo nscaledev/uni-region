@@ -372,6 +372,7 @@ func (c *NetworkClient) CreateFloatingIP(ctx context.Context, portID string) (*f
 	opts := &floatingips.CreateOpts{
 		FloatingNetworkID: externalNetworks[0].ID,
 		PortID:            portID,
+		Description:       "unikorn managed floating IP",
 	}
 
 	floatingIP, err := floatingips.Create(ctx, c.client, opts).Extract()
