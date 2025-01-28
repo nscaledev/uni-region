@@ -157,13 +157,13 @@ func newGenerator(client client.Client, namespace, organizationID, projectID str
 }
 
 func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*unikornv1.Server, error) {
-	userinfo, err := authorization.UserinfoFromContext(ctx)
+	info, err := authorization.FromContext(ctx)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to get userinfo").WithError(err)
+		return nil, errors.OAuth2ServerError("unable to get user info").WithError(err)
 	}
 
 	resource := &unikornv1.Server{
-		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, g.namespace, userinfo.Sub).WithOrganization(g.organizationID).WithProject(g.projectID).WithLabel(constants.RegionLabel, g.identity.Labels[constants.RegionLabel]).
+		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, g.namespace, info.Userinfo.Sub).WithOrganization(g.organizationID).WithProject(g.projectID).WithLabel(constants.RegionLabel, g.identity.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, g.identity.Name).Get(),
 		Spec: unikornv1.ServerSpec{
 			Tags:               conversion.GenerateTagList(in.Metadata.Tags),
