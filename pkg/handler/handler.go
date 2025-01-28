@@ -458,14 +458,14 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	userinfo, err := authorization.UserinfoFromContext(r.Context())
+	info, err := authorization.FromContext(r.Context())
 	if err != nil {
 		errors.HandleError(w, r, errors.OAuth2ServerError("unable to get userinfo").WithError(err))
 		return
 	}
 
 	identity := &unikornv1.Identity{
-		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, h.namespace, userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, request.Spec.RegionId).Get(),
+		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, h.namespace, info.Userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, request.Spec.RegionId).Get(),
 		Spec: unikornv1.IdentitySpec{
 			Tags:     conversion.GenerateTagList(request.Metadata.Tags),
 			Provider: region.Spec.Provider,
@@ -619,7 +619,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	userinfo, err := authorization.UserinfoFromContext(r.Context())
+	info, err := authorization.FromContext(r.Context())
 	if err != nil {
 		errors.HandleError(w, r, errors.OAuth2ServerError("unable to get userinfo").WithError(err))
 		return
@@ -646,7 +646,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 	}
 
 	network := &unikornv1.Network{
-		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, h.namespace, userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identityID).Get(),
+		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, h.namespace, info.Userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identityID).Get(),
 		Spec: unikornv1.NetworkSpec{
 			Tags:     conversion.GenerateTagList(request.Metadata.Tags),
 			Provider: identity.Spec.Provider,
@@ -712,7 +712,7 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 }
 
 func (h *Handler) getQuota(ctx context.Context, identity *unikornv1.Identity) (*unikornv1.Quota, error) {
-	userinfo, err := authorization.UserinfoFromContext(ctx)
+	info, err := authorization.FromContext(ctx)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("unable to get userinfo").WithError(err)
 	}
@@ -732,7 +732,7 @@ func (h *Handler) getQuota(ctx context.Context, identity *unikornv1.Identity) (*
 
 	// Default scoping rule is that you can only see your own quota.
 	resources.Items = slices.DeleteFunc(resources.Items, func(resource unikornv1.Quota) bool {
-		return resource.Annotations[coreconstants.CreatorAnnotation] != userinfo.Sub
+		return resource.Annotations[coreconstants.CreatorAnnotation] != info.Userinfo.Sub
 	})
 
 	if len(resources.Items) == 0 {
@@ -814,7 +814,7 @@ func generateFlavorQuotas(in *openapi.FlavorQuotaList) []unikornv1.FlavorQuota {
 }
 
 func (h *Handler) generateQuota(ctx context.Context, organizationID, projectID string, identity *unikornv1.Identity, in *openapi.QuotasSpec) (*unikornv1.Quota, error) {
-	userinfo, err := authorization.UserinfoFromContext(ctx)
+	info, err := authorization.FromContext(ctx)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("unable to get userinfo").WithError(err)
 	}
@@ -824,7 +824,7 @@ func (h *Handler) generateQuota(ctx context.Context, organizationID, projectID s
 	}
 
 	resource := &unikornv1.Quota{
-		ObjectMeta: conversion.NewObjectMetadata(metadata, h.namespace, userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identity.Name).Get(),
+		ObjectMeta: conversion.NewObjectMetadata(metadata, h.namespace, info.Userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identity.Name).Get(),
 		Spec: unikornv1.QuotaSpec{
 			// TODO: tags??
 			Flavors: generateFlavorQuotas(in.Flavors),
@@ -997,13 +997,13 @@ func (h *Handler) getSecurityGroupList(ctx context.Context, organizationID strin
 }
 
 func (h *Handler) generateSecurityGroup(ctx context.Context, organizationID, projectID string, identity *unikornv1.Identity, in *openapi.SecurityGroupWrite) (*unikornv1.SecurityGroup, error) {
-	userinfo, err := authorization.UserinfoFromContext(ctx)
+	info, err := authorization.FromContext(ctx)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("unable to get userinfo").WithError(err)
 	}
 
 	resource := &unikornv1.SecurityGroup{
-		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, h.namespace, userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
+		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, h.namespace, info.Userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, identity.Name).Get(),
 		Spec: unikornv1.SecurityGroupSpec{
 			Tags:     conversion.GenerateTagList(in.Metadata.Tags),
@@ -1295,7 +1295,7 @@ func (h *Handler) getSecurityGroupRuleList(ctx context.Context, securityGroupID 
 }
 
 func (h *Handler) generateSecurityGroupRule(ctx context.Context, organizationID, projectID string, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup, in *openapi.SecurityGroupRuleWrite) (*unikornv1.SecurityGroupRule, error) {
-	userinfo, err := authorization.UserinfoFromContext(ctx)
+	info, err := authorization.FromContext(ctx)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("unable to get userinfo").WithError(err)
 	}
@@ -1306,7 +1306,7 @@ func (h *Handler) generateSecurityGroupRule(ctx context.Context, organizationID,
 	}
 
 	resource := &unikornv1.SecurityGroupRule{
-		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, h.namespace, userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
+		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, h.namespace, info.Userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, identity.Name).WithLabel(constants.SecurityGroupLabel, securityGroup.Name).Get(),
 		Spec: unikornv1.SecurityGroupRuleSpec{
 			Tags:      conversion.GenerateTagList(in.Metadata.Tags),
