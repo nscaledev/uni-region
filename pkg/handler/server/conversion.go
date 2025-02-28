@@ -18,6 +18,7 @@ package server
 
 import (
 	"context"
+	"net"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
@@ -88,8 +89,26 @@ func convertServerNetworks(in []unikornv1.ServerNetworkSpec) openapi.ServerNetwo
 
 func convertServerNetwork(in *unikornv1.ServerNetworkSpec) openapi.ServerNetwork {
 	return openapi.ServerNetwork{
-		Id: in.ID,
+		Id:                  in.ID,
+		AllowedAddressPairs: convertServerNetworkAddressPairs(in.AllowedAddressPairs),
 	}
+}
+
+func convertServerNetworkAddressPairs(in []unikornv1.ServerNetworkAddressPair) *openapi.ServerNetworkAllowedAddressPairList {
+	if in == nil {
+		return nil
+	}
+
+	out := make(openapi.ServerNetworkAllowedAddressPairList, len(in))
+
+	for i := range in {
+		out[i] = openapi.ServerNetworkAllowedAddressPair{
+			Cidr:       in[i].CIDR.String(),
+			MacAddress: &in[i].MACAddress,
+		}
+	}
+
+	return &out
 }
 
 func convertServerPublicIPAllocation(in *unikornv1.ServerPublicIPAllocationSpec) *openapi.ServerPublicIPAllocation {
@@ -222,9 +241,41 @@ func (g *generator) generateNetworks(in openapi.ServerNetworkList) []unikornv1.S
 	out := make([]unikornv1.ServerNetworkSpec, len(in))
 
 	for i, network := range in {
+		addressPairs := g.generateAllowedAddressPairs(network.AllowedAddressPairs)
+
 		out[i] = unikornv1.ServerNetworkSpec{
-			ID: network.Id,
+			ID:                  network.Id,
+			AllowedAddressPairs: addressPairs,
 		}
+	}
+
+	return out
+}
+
+func (g *generator) generateAllowedAddressPairs(in *openapi.ServerNetworkAllowedAddressPairList) []unikornv1.ServerNetworkAddressPair {
+	out := []unikornv1.ServerNetworkAddressPair{}
+
+	if in == nil {
+		return out
+	}
+
+	for _, pair := range *in {
+		_, prefix, err := net.ParseCIDR(pair.Cidr)
+		if err != nil {
+			// ignore this address pair
+			continue
+		}
+		var macAddress string
+		if pair.MacAddress != nil {
+			macAddress = *pair.MacAddress
+		}
+
+		out = append(out, unikornv1.ServerNetworkAddressPair{
+			CIDR: unikornv1core.IPv4Prefix{
+				IPNet: *prefix,
+			},
+			MACAddress: macAddress,
+		})
 	}
 
 	return out

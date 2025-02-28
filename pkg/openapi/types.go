@@ -526,9 +526,24 @@ type ServerImage struct {
 
 // ServerNetwork The server's network.
 type ServerNetwork struct {
+	// AllowedAddressPairs A list of allowed address pairs.
+	AllowedAddressPairs *ServerNetworkAllowedAddressPairList `json:"allowedAddressPairs,omitempty"`
+
 	// Id Network to attach the server to
 	Id string `json:"id"`
 }
+
+// ServerNetworkAllowedAddressPair Allow multiple MAC/IP address (range) pairs to pass through this network port.
+type ServerNetworkAllowedAddressPair struct {
+	// Cidr The CIDR to allow.
+	Cidr string `json:"cidr"`
+
+	// MacAddress The MAC address to allow.
+	MacAddress *string `json:"macAddress,omitempty"`
+}
+
+// ServerNetworkAllowedAddressPairList A list of allowed address pairs.
+type ServerNetworkAllowedAddressPairList = []ServerNetworkAllowedAddressPair
 
 // ServerNetworkList A list of networks.
 type ServerNetworkList = []ServerNetwork

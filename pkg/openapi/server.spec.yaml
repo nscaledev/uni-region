@@ -1251,6 +1251,25 @@ components:
         id:
           description: Network to attach the server to
           type: string
+        allowedAddressPairs:
+          $ref: '#/components/schemas/serverNetworkAllowedAddressPairList'
+    serverNetworkAllowedAddressPairList:
+      description: A list of allowed address pairs.
+      type: array
+      items:
+        $ref: '#/components/schemas/serverNetworkAllowedAddressPair'
+    serverNetworkAllowedAddressPair:
+      description: Allow multiple MAC/IP address (range) pairs to pass through this network port.
+      type: object
+      required:
+      - cidr
+      properties:
+        cidr:
+          description: The CIDR to allow.
+          type: string
+        macAddress:
+          description: The MAC address to allow.
+          type: string
     serverPublicIPAllocation:
       description: The server's public IP allocation.
       type: object
@@ -1443,6 +1462,8 @@ components:
                 enabled: true
               networks:
               - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+                allowedAddressPairs:
+                - cidr: 192.168.192.0/24
               userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
   responses:
     regionsResponse:

@@ -44,6 +44,11 @@ spec:
             type: object
           spec:
             properties:
+              portIDs:
+                description: PortIDs is a list of port IDs.
+                items:
+                  type: string
+                type: array
               publicIPAllocationId:
                 description: PublicIPAllocationId is the public ip allocation id.
                 type: string

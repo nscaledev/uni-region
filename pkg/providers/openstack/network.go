@@ -37,6 +37,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
+	"k8s.io/utils/ptr"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
@@ -414,4 +415,37 @@ func (c *NetworkClient) ListServerPorts(ctx context.Context, serverID string) ([
 	}
 
 	return allPorts, nil
+}
+
+func (c *NetworkClient) CreatePort(ctx context.Context, networkID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "POST /network/v2.0/ports", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	opts := &ports.CreateOpts{
+		Name:                "unikorn managed port",
+		NetworkID:           networkID,
+		AllowedAddressPairs: allowedAddressPairs,
+	}
+
+	if len(securityGroupIDs) > 0 {
+		opts.SecurityGroups = ptr.To(securityGroupIDs)
+	}
+
+	port, err := ports.Create(ctx, c.client, opts).Extract()
+	if err != nil {
+		return nil, err
+	}
+
+	return port, nil
+}
+
+func (c *NetworkClient) DeletePort(ctx context.Context, portID string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /network/v2.0/ports/%s", portID), trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	return ports.Delete(ctx, c.client, portID).Err
 }
