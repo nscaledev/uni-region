@@ -71,6 +71,23 @@ spec:
                 description: Networks is the server network configuration.
                 items:
                   properties:
+                    allowedAddressPairs:
+                      description: AllowedAddressPairs is a list of allowed address
+                        pairs for the network interface. This will allow multiple
+                        MAC/IP address (range) pairs to pass through this port.
+                      items:
+                        properties:
+                          cidr:
+                            description: CIDR is the CIDR block to allow traffic from.
+                            pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\/(?:3[0-2]|[1-2]?[0-9])$
+                            type: string
+                          macAddress:
+                            description: Optional MAC address to allow traffic to/from.
+                            type: string
+                        required:
+                        - cidr
+                        type: object
+                      type: array
                     id:
                       description: ID is the physical network ID.
                       type: string

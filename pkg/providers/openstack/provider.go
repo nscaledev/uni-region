@@ -31,6 +31,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/rules"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
 	"github.com/gophercloud/utils/openstack/clientconfig"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -1652,7 +1653,8 @@ func (p *Provider) getServerImage(ctx context.Context, server *unikornv1.Server)
 	return &images[i], nil
 }
 
-func (p *Provider) serverNetworksToIDs(ctx context.Context, identity *unikornv1.OpenstackIdentity, networks []unikornv1.ServerNetworkSpec) ([]string, error) {
+// openstackNetworkID returns the openstack ID of the giving unikorn network.
+func (p *Provider) openstackNetworkID(ctx context.Context, identity *unikornv1.OpenstackIdentity, ID string) (string, error) {
 	options := &client.ListOptions{
 		Namespace: identity.Namespace,
 		LabelSelector: labels.SelectorFromSet(map[string]string{
@@ -1662,29 +1664,22 @@ func (p *Provider) serverNetworksToIDs(ctx context.Context, identity *unikornv1.
 
 	resources := &unikornv1.OpenstackNetworkList{}
 	if err := p.client.List(ctx, resources, options); err != nil {
-		return nil, err
+		return "", err
 	}
 
-	networkMap := make(map[string]*unikornv1.OpenstackNetwork)
-	for _, net := range resources.Items {
-		networkMap[net.Name] = &net
+	index := slices.IndexFunc(resources.Items, func(net unikornv1.OpenstackNetwork) bool {
+		return net.Name == ID
+	})
+
+	if index < 0 {
+		return "", fmt.Errorf("%w: network %s", ErrResourceNotFound, ID)
 	}
 
-	var networkIDs []string
-	for _, network := range networks {
-		net, found := networkMap[network.ID]
-		if !found {
-			return nil, fmt.Errorf("%w: physicalnetwork %s", ErrResourceNotFound, network.ID)
-		}
-
-		if net.Spec.NetworkID == nil {
-			return nil, fmt.Errorf("%w: physicalnetwork %s", ErrResouceDependency, network.ID)
-		}
-
-		networkIDs = append(networkIDs, *net.Spec.NetworkID)
+	if resources.Items[index].Spec.NetworkID == nil {
+		return "", fmt.Errorf("%w: network %s not provisioned", ErrResouceDependency, ID)
 	}
 
-	return networkIDs, nil
+	return *resources.Items[index].Spec.NetworkID, nil
 }
 
 // CreateServer creates a new server.
@@ -1721,6 +1716,15 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 	// Rescope to the project...
 	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *openstackIdentity.Spec.UserID, *openstackIdentity.Spec.Password, *openstackIdentity.Spec.ProjectID)
 
+	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	if err != nil {
+		return err
+	}
+
+	if err := p.createServerPorts(ctx, networkService, openstackIdentity, server, openstackServer); err != nil {
+		return err
+	}
+
 	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
 	if err != nil {
 		return err
@@ -1737,7 +1741,7 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 
 	// wait for server to be active
 	if providerServer.Status != "ACTIVE" {
-		return provisioners.ErrYield
+		return fmt.Errorf("%w: expected ACTIVE status for server %s, got %s", provisioners.ErrYield, server.Name, providerServer.Status)
 	}
 
 	addr, err := p.getServerFixedIP(providerServer)
@@ -1747,15 +1751,8 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 
 	server.Status.PrivateIP = addr
 
-	if server.Spec.PublicIPAllocation != nil && server.Spec.PublicIPAllocation.Enabled {
-		networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
-		if err != nil {
-			return err
-		}
-
-		if err := p.allocateServerFloatingIP(ctx, networkService, server, openstackServer); err != nil {
-			return err
-		}
+	if err := p.allocateServerFloatingIP(ctx, networkService, server, openstackServer); err != nil {
+		return err
 	}
 
 	return nil
@@ -1776,9 +1773,17 @@ func (p *Provider) createServer(ctx context.Context, computeService *ComputeClie
 		return err
 	}
 
-	networkIDs, err := p.serverNetworksToIDs(ctx, identity, server.Spec.Networks)
+	// NOTE: exactly 1 is enforced at the API schema level.
+	openstackNetworkID, err := p.openstackNetworkID(ctx, identity, server.Spec.Networks[0].ID)
 	if err != nil {
 		return err
+	}
+
+	networks := []NetworkOptions{
+		{
+			NetworkID: openstackNetworkID,
+			PortID:    openstackServer.Spec.PortIDs[0],
+		},
 	}
 
 	// These are defined to make cross referencing between unikorn
@@ -1791,12 +1796,7 @@ func (p *Provider) createServer(ctx context.Context, computeService *ComputeClie
 		"identityID":     identity.Name,
 	}
 
-	securityGroupIDs := make([]string, len(server.Spec.SecurityGroups))
-	for i, sg := range server.Spec.SecurityGroups {
-		securityGroupIDs[i] = sg.ID
-	}
-
-	providerServer, err := computeService.CreateServer(ctx, server.Labels[coreconstants.NameLabel], image.ID, flavor.ID, *identity.Spec.SSHKeyName, networkIDs, securityGroupIDs, identity.Spec.ServerGroupID, metadata, server.Spec.UserData)
+	providerServer, err := computeService.CreateServer(ctx, server.Labels[coreconstants.NameLabel], image.ID, flavor.ID, *identity.Spec.SSHKeyName, networks, identity.Spec.ServerGroupID, metadata, server.Spec.UserData)
 	if err != nil {
 		return err
 	}
@@ -1808,6 +1808,83 @@ func (p *Provider) createServer(ctx context.Context, computeService *ComputeClie
 	}
 
 	return provisioners.ErrYield
+}
+
+func (p *Provider) createServerPorts(ctx context.Context, networkService *NetworkClient, identity *unikornv1.OpenstackIdentity, server *unikornv1.Server, openstackServer *unikornv1.OpenstackServer) error {
+	// Prevent creating ports if the server is already provisioned. This is to avoid creating duplicate ports as we already
+	// have provisioned servers.
+	if openstackServer.Spec.ServerID != nil {
+		return nil
+	}
+
+	// NOTE: exactly 1 is enforced at the API schema level.
+	network := server.Spec.Networks[0]
+	openstackNetworkID, err := p.openstackNetworkID(ctx, identity, server.Spec.Networks[0].ID)
+	if err != nil {
+		return err
+	}
+
+	if len(openstackServer.Spec.PortIDs) > 0 {
+		return nil
+	}
+
+	securityGroupIDs, err := p.openstackSecurityGroupIDs(ctx, identity, server.Spec.SecurityGroups)
+	if err != nil {
+		return err
+	}
+
+	addressPairs := make([]ports.AddressPair, len(network.AllowedAddressPairs))
+	for i, pair := range network.AllowedAddressPairs {
+		addressPairs[i] = ports.AddressPair{
+			IPAddress:  pair.CIDR.String(),
+			MACAddress: pair.MACAddress,
+		}
+	}
+
+	providerPort, err := networkService.CreatePort(ctx, openstackNetworkID, securityGroupIDs, addressPairs)
+	if err != nil {
+		return err
+	}
+
+	openstackServer.Spec.PortIDs = append(openstackServer.Spec.PortIDs, providerPort.ID)
+
+	return nil
+}
+
+// openstackSecurityGroupIDs returns the openstack IDs for giving security group list.
+func (p *Provider) openstackSecurityGroupIDs(ctx context.Context, identity *unikornv1.OpenstackIdentity, securityGroups []unikornv1.ServerSecurityGroupSpec) ([]string, error) {
+	options := &client.ListOptions{
+		Namespace: identity.Namespace,
+		LabelSelector: labels.SelectorFromSet(map[string]string{
+			constants.IdentityLabel: identity.Name,
+		}),
+	}
+
+	resources := &unikornv1.OpenstackSecurityGroupList{}
+	if err := p.client.List(ctx, resources, options); err != nil {
+		return nil, err
+	}
+
+	sgMap := make(map[string]*unikornv1.OpenstackSecurityGroup)
+	for _, net := range resources.Items {
+		sgMap[net.Name] = &net
+	}
+
+	var sgIDs []string
+	for _, sg := range securityGroups {
+		s, found := sgMap[sg.ID]
+		if !found {
+			return nil, fmt.Errorf("%w: securitygroup %s", ErrResourceNotFound, sg.ID)
+		}
+
+		if s.Spec.SecurityGroupID == nil {
+			return nil, fmt.Errorf("%w: securitygroup %s", ErrResouceDependency, sg.ID)
+		}
+
+		sgIDs = append(sgIDs, *s.Spec.SecurityGroupID)
+	}
+
+	return sgIDs, nil
 }
 
 func (p *Provider) createServerCredentialsSecret(ctx context.Context, server *unikornv1.Server, password string) error {
@@ -1853,25 +1930,23 @@ func (p *Provider) deleteServerCredentialSecret(ctx context.Context, openstackSe
 }
 
 func (p *Provider) allocateServerFloatingIP(ctx context.Context, networkService *NetworkClient, server *unikornv1.Server, openstackServer *unikornv1.OpenstackServer) error {
+	if server.Spec.PublicIPAllocation == nil || !server.Spec.PublicIPAllocation.Enabled {
+		return nil
+	}
+
+	// ip already allocated
 	if openstackServer.Spec.PublicIPAllocationId != nil {
 		return nil
 	}
 
-	ports, err := networkService.ListServerPorts(ctx, *openstackServer.Spec.ServerID)
-	if err != nil {
-		return err
-	}
-
-	if len(ports) == 0 {
+	if len(openstackServer.Spec.PortIDs) == 0 {
 		return fmt.Errorf("%w: no ports found for server %s", ErrResourceNotFound, *openstackServer.Spec.ServerID)
 	}
 
-	port := ports[0]
-	if port.Status != "ACTIVE" {
-		return fmt.Errorf("%w: port %s is not active", ErrResouceDependency, port.ID)
-	}
+	// NOTE: exactly 1 is enforced at the API level as only 1 network is supported.
+	portID := openstackServer.Spec.PortIDs[0]
 
-	floatingIP, err := networkService.CreateFloatingIP(ctx, port.ID)
+	floatingIP, err := networkService.CreateFloatingIP(ctx, portID)
 	if err != nil {
 		return err
 	}
@@ -1938,12 +2013,12 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 	// Rescope to the project...
 	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
 
-	if openstackServer.Spec.PublicIPAllocationId != nil {
-		networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
-		if err != nil {
-			return err
-		}
+	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	if err != nil {
+		return err
+	}
 
+	if openstackServer.Spec.PublicIPAllocationId != nil {
 		if err := networkService.DeleteFloatingIP(ctx, *openstackServer.Spec.PublicIPAllocationId); err != nil {
 			// ignore not found errors
 			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
@@ -1968,6 +2043,19 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 		}
 
 		openstackServer.Spec.ServerID = nil
+	}
+
+	if len(openstackServer.Spec.PortIDs) > 0 {
+		for _, portID := range openstackServer.Spec.PortIDs {
+			if err := networkService.DeletePort(ctx, portID); err != nil {
+				// ignore not found errors
+				if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+					return err
+				}
+			}
+		}
+
+		openstackServer.Spec.PortIDs = nil
 	}
 
 	if err := p.deleteServerCredentialSecret(ctx, openstackServer); err != nil {

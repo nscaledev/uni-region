@@ -269,7 +269,12 @@ func (c *ComputeClient) UpdateQuotas(ctx context.Context, projectID string) erro
 	return quotasets.Update(ctx, c.client, projectID, opts).Err
 }
 
-func (c *ComputeClient) CreateServer(ctx context.Context, name, imageID, flavorID, keyName string, networkIDs, securityGroupIDs []string, serverGroupID *string, metadata map[string]string, userData []byte) (*servers.Server, error) {
+type NetworkOptions struct {
+	NetworkID string
+	PortID    string
+}
+
+func (c *ComputeClient) CreateServer(ctx context.Context, name, imageID, flavorID, keyName string, networks []NetworkOptions, serverGroupID *string, metadata map[string]string, userData []byte) (*servers.Server, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, "POST /compute/v2/servers/")
@@ -281,19 +286,21 @@ func (c *ComputeClient) CreateServer(ctx context.Context, name, imageID, flavorI
 		schedulerHintOpts.Group = *serverGroupID
 	}
 
-	networks := make([]servers.Network, len(networkIDs))
-	for i, id := range networkIDs {
-		networks[i] = servers.Network{UUID: id}
+	networksOps := make([]servers.Network, len(networks))
+	for i, n := range networks {
+		networksOps[i] = servers.Network{
+			UUID: n.NetworkID,
+			Port: n.PortID,
+		}
 	}
 
 	serverCreateOpts := servers.CreateOpts{
-		Name:           name,
-		ImageRef:       imageID,
-		FlavorRef:      flavorID,
-		Networks:       networks,
-		Metadata:       metadata,
-		SecurityGroups: securityGroupIDs,
-		UserData:       userData,
+		Name:      name,
+		ImageRef:  imageID,
+		FlavorRef: flavorID,
+		Networks:  networksOps,
+		Metadata:  metadata,
+		UserData:  userData,
 	}
 
 	createOpts := keypairs.CreateOptsExt{

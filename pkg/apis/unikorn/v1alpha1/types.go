@@ -731,6 +731,15 @@ type ServerSecurityGroupSpec struct {
 type ServerNetworkSpec struct {
 	// ID is the physical network ID.
 	ID string `json:"id"`
+	// AllowedAddressPairs is a list of allowed address pairs for the network interface. This will allow multiple MAC/IP address (range) pairs to pass through this port.
+	AllowedAddressPairs []ServerNetworkAddressPair `json:"allowedAddressPairs,omitempty"`
+}
+
+type ServerNetworkAddressPair struct {
+	// CIDR is the CIDR block to allow traffic from.
+	CIDR unikornv1core.IPv4Prefix `json:"cidr"`
+	// Optional MAC address to allow traffic to/from.
+	MACAddress string `json:"macAddress,omitempty"`
 }
 
 type ServerImage struct {
@@ -777,6 +786,8 @@ type OpenstackServerSpec struct {
 	ServerID *string `json:"serverID,omitempty"`
 	// PublicIPAllocationId is the public ip allocation id.
 	PublicIPAllocationId *string `json:"publicIPAllocationId,omitempty"`
+	// PortIDs is a list of port IDs.
+	PortIDs []string `json:"portIDs,omitempty"`
 }
 
 type OpenstackServerStatus struct {
