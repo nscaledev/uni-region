@@ -174,8 +174,106 @@
           "provider": {
             "type": "string",
             "enum": [
+              "kubernetes",
               "openstack"
             ]
+          },
+          "kubernetes": {
+            "type": "object",
+            "required": [
+              "kubeConfigSecret"
+            ],
+            "properties": {
+              "kubeConfigSecret": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              },
+              "nodes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+		  "required": [
+                    "id",
+		    "name",
+	            "cpu",
+		    "memory",
+		    "disk"
+		  ],
+                  "properties": {
+                    "id": {
+                      "type": "String"
+		    },
+		    "name": {
+                      "type": "string"
+		    },
+                    "cpu": {
+	              "required": [
+	                "count"
+		      ],
+                      "properties": {
+                        "count": {
+                          "type": "integer"
+                        },
+                        "family": {
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "memory": {
+                      "type": "string",
+                      "pattern": "^(\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))))?$"
+                    },
+		    "disk": {
+                      "type": "string",
+                      "pattern": "^(\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))))?$"
+                    },
+                    "gpu": {
+                      "type": "object",
+                      "required": [
+                        "physicalCount",
+                        "logicalCount",
+                        "memory",
+                        "model",
+                        "vendor"
+                      ],
+                      "properties": {
+                        "physicalCount": {
+                          "type": "integer"
+                        },
+                        "logicalCount": {
+                          "type": "integer"
+                        },
+                        "memory": {
+                          "type": "string",
+                          "pattern": "^(\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))))?$"
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "vendor": {
+                          "type": "string",
+                          "enum": [
+                            "NVIDIA",
+                            "AMD"
+                          ]
+                        }
+                      }
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           },
           "openstack": {
             "type": "object",
@@ -259,7 +357,7 @@
                               "type": "object",
                               "required": [
                                 "physicalCount",
-				"logicalCount",
+                                "logicalCount",
                                 "memory",
                                 "model",
                                 "vendor"
@@ -385,6 +483,20 @@
           }
         },
         "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kubernetes"
+            ],
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "kubernetes"
+                ]
+              }
+            }
+          },
           {
             "type": "object",
             "required": [

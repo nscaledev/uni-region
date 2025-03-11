@@ -650,6 +650,7 @@ components:
       type: string
       enum:
       - openstack
+      - kubernetes
     regionFeatures:
       description: A set of features the region may provide to clients.
       type: object
@@ -663,6 +664,15 @@ components:
             the region supports base-metal machines, and these must be provisioned
             on a physical VLAN etc.
           type: boolean
+    regionKubernetes:
+      description: Region specific information when the type is kubernetes.
+      type: object
+      required:
+      - kubeconfig
+      properties:
+        kubeconfig:
+          description: The region's base64 encoded Kubernetes configuration file.
+          type: string
     regionSpec:
       description: Information about the region.
       type: object
@@ -672,6 +682,8 @@ components:
       properties:
         type:
           $ref: '#/components/schemas/regionType'
+        kubernetes:
+          $ref: '#/components/schemas/regionKubernetes'
         features:
           $ref: '#/components/schemas/regionFeatures'
     regionRead:
