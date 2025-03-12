@@ -95,8 +95,11 @@ func (c *BlockStorageClient) UpdateQuotas(ctx context.Context, projectID string)
 	defer span.End()
 
 	opts := &quotasets.UpdateOpts{
-		Volumes:   ptr.To(-1),
-		Gigabytes: ptr.To(-1),
+		Volumes:         ptr.To(-1),
+		Gigabytes:       ptr.To(-1),
+		Snapshots:       ptr.To(-1),
+		Backups:         ptr.To(-1),
+		BackupGigabytes: ptr.To(-1),
 	}
 
 	return quotasets.Update(ctx, c.client, projectID, opts).Err
