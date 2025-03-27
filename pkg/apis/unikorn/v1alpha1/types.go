@@ -193,9 +193,6 @@ type RegionOpenstackImageSpec struct {
 }
 
 type ImageSelector struct {
-	// Properties defines the set of properties an image needs to have to
-	// be selected.
-	Properties []string `json:"properties,omitempty"`
 	// SigningKey defines a PEM encoded public ECDSA signing key used to verify
 	// the image is trusted.  If specified, an image must contain the "digest"
 	// property, the value of which must be a base64 encoded ECDSA signature of
