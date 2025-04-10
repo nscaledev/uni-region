@@ -43,7 +43,8 @@ const (
 
 // Defines values for RegionType.
 const (
-	Openstack RegionType = "openstack"
+	Kubernetes RegionType = "kubernetes"
+	Openstack  RegionType = "openstack"
 )
 
 // Defines values for SecurityGroupRuleReadSpecDirection.
@@ -385,6 +386,12 @@ type RegionFeatures struct {
 	PhysicalNetworks bool `json:"physicalNetworks"`
 }
 
+// RegionKubernetes Region specific information when the type is kubernetes.
+type RegionKubernetes struct {
+	// Kubeconfig The region's Kubernetes configuration file.
+	Kubeconfig string `json:"kubeconfig"`
+}
+
 // RegionRead A region.
 type RegionRead struct {
 	// Metadata Resource metadata valid for all reads.
@@ -398,6 +405,9 @@ type RegionRead struct {
 type RegionSpec struct {
 	// Features A set of features the region may provide to clients.
 	Features RegionFeatures `json:"features"`
+
+	// Kubernetes Region specific information when the type is kubernetes.
+	Kubernetes *RegionKubernetes `json:"kubernetes,omitempty"`
 
 	// Type The region's provider type.
 	Type RegionType `json:"type"`

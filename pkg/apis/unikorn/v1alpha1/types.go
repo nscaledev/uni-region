@@ -25,11 +25,12 @@ import (
 )
 
 // Provider is used to communicate the cloud type.
-// +kubebuilder:validation:Enum=openstack
+// +kubebuilder:validation:Enum=openstack;kubernetes
 type Provider string
 
 const (
-	ProviderOpenstack Provider = "openstack"
+	ProviderKubernetes Provider = "kubernetes"
+	ProviderOpenstack  Provider = "openstack"
 )
 
 // RegionList is a typed list of regions.
@@ -59,13 +60,44 @@ type Region struct {
 }
 
 // RegionSpec defines metadata about the region.
+// +kubebuilder:validation:XValidation:rule="self.provider == \"openstack\" ? has(self.openstack) : true",message="openstack definition required for region of openstack type"
+// +kubebuilder:validation:XValidation:rule="self.provider == \"kubernetes\" ? has(self.kubernetes) : true",message="kubernetes definition required for region of kubernetes type"
 type RegionSpec struct {
 	// Tags are aribrary user data.
 	Tags unikornv1core.TagList `json:"tags,omitempty"`
 	// Type defines the provider type.
 	Provider Provider `json:"provider"`
+	// Kubernetes is provider specific configuration for the region.
+	Kubernetes *RegionKubernetesSpec `json:"kubernetes,omitempty"`
 	// Openstack is provider specific configuration for the region.
 	Openstack *RegionOpenstackSpec `json:"openstack,omitempty"`
+}
+
+type RegionKubernetesSpec struct {
+	// Kubeconfig for the remote region.
+	KubeconfigSecret *NamespacedObject `json:"kubeConfigSecret"`
+	// Nodes describes the cluster nodes.
+	// +listType=map
+	// +listMapKey=id
+	Nodes []RegionKubernetesNodeSpec `json:"nodes,omitempty"`
+}
+
+type RegionKubernetesNodeSpec struct {
+	// ID maps to a node label kubernetes.region.unikorn-cloud.org/node-class.
+	// Only nodes with this label will be exported as "flavors", thus providing
+	// a way to hide nodes from end users e.g. control planes and the like.
+	ID string `json:"id"`
+	// Name is the name of the flavor.
+	Name string `json:"name"`
+	// CPU defines additional CPU metadata.
+	CPU *CPUSpec `json:"cpu"`
+	// Memory allows the memory amount to be specified.
+	Memory *resource.Quantity `json:"memory"`
+	// Disk allows the dick size to be specified.
+	Disk *resource.Quantity `json:"disk"`
+	// GPU defines additional GPU metadata.  When provided it will enable selection
+	// of images based on GPU vendor and model.
+	GPU *GPUSpec `json:"gpu,omitempty"`
 }
 
 type RegionOpenstackSpec struct {

@@ -57,6 +57,124 @@ spec:
           spec:
             description: RegionSpec defines metadata about the region.
             properties:
+              kubernetes:
+                description: Kubernetes is provider specific configuration for the
+                  region.
+                properties:
+                  kubeConfigSecret:
+                    description: Kubeconfig for the remote region.
+                    properties:
+                      name:
+                        description: Name is the name of the object.
+                        type: string
+                      namespace:
+                        description: Namespace is the namespace in which the object
+                          resides.
+                        type: string
+                    required:
+                    - name
+                    - namespace
+                    type: object
+                  nodes:
+                    description: Nodes describes the cluster nodes.
+                    items:
+                      properties:
+                        cpu:
+                          description: CPU defines additional CPU metadata.
+                          properties:
+                            count:
+                              description: |-
+                                Count allows you to override the number of CPUs.  Usually this wouldn't
+                                be necessary, but alas some operators may not set this correctly for baremetal
+                                flavors to make horizon display overcommit correctly...
+                              type: integer
+                            family:
+                              description: |-
+                                Family is a free-form string that can communicate the CPU family to clients
+                                e.g. "Xeon Platinum 8160T (Skylake)", and allows users to make scheduling
+                                decisions based on CPU architecture and performance etc.
+                              type: string
+                          type: object
+                        disk:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: Disk allows the dick size to be specified.
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        gpu:
+                          description: |-
+                            GPU defines additional GPU metadata.  When provided it will enable selection
+                            of images based on GPU vendor and model.
+                          properties:
+                            logicalCount:
+                              description: |-
+                                LogicalCount is the number of logical GPUs e.g. an AMD MI250 is 2 MI200s.
+                                This is primarily for scheduling e.g. autoscaling.
+                              type: integer
+                            memory:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              description: Memory is the amount of memory each logical
+                                GPU has access to.
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            model:
+                              description: |-
+                                Model is a free-form model name that corresponds to the supported models
+                                property included on images, and must be an exact match e.g. H100.
+                              type: string
+                            physicalCount:
+                              description: |-
+                                PhysicalCount is the number of physical cards in the flavor.
+                                This is primarily for end users, so it's not confusing.
+                              type: integer
+                            vendor:
+                              description: |-
+                                Vendor is the GPU vendor, used for coarse grained flavor and image
+                                selection.
+                              enum:
+                              - NVIDIA
+                              - AMD
+                              type: string
+                          required:
+                          - logicalCount
+                          - memory
+                          - model
+                          - physicalCount
+                          - vendor
+                          type: object
+                        id:
+                          description: |-
+                            ID maps to a node label kubernetes.region.unikorn-cloud.org/node-class.
+                            Only nodes with this label will be exported as "flavors", thus providing
+                            a way to hide nodes from end users e.g. control planes and the like.
+                          type: string
+                        memory:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: Memory allows the memory amount to be specified.
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        name:
+                          description: Name is the name of the flavor.
+                          type: string
+                      required:
+                      - cpu
+                      - disk
+                      - id
+                      - memory
+                      - name
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - id
+                    x-kubernetes-list-type: map
+                required:
+                - kubeConfigSecret
+                type: object
               openstack:
                 description: Openstack is provider specific configuration for the
                   region.
@@ -311,6 +429,7 @@ spec:
                 description: Type defines the provider type.
                 enum:
                 - openstack
+                - kubernetes
                 type: string
               tags:
                 description: Tags are aribrary user data.
@@ -331,6 +450,11 @@ spec:
             required:
             - provider
             type: object
+            x-kubernetes-validations:
+            - message: openstack definition required for region of openstack type
+              rule: 'self.provider == "openstack" ? has(self.openstack) : true'
+            - message: kubernetes definition required for region of kubernetes type
+              rule: 'self.provider == "kubernetes" ? has(self.kubernetes) : true'
           status:
             description: RegionStatus defines the status of the region.
             properties:

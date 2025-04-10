@@ -18,19 +18,29 @@ package region
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"fmt"
 
 	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
+	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	"github.com/unikorn-cloud/identity/pkg/rbac"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
+	"github.com/unikorn-cloud/region/pkg/providers/kubernetes"
 	"github.com/unikorn-cloud/region/pkg/providers/openstack"
+
+	corev1 "k8s.io/api/core/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var (
+	// ErrResource is raised when a resource is in a bad state.
+	ErrResource = errors.New("resource error")
+
 	// ErrRegionNotFound is raised when a region doesn't exist.
 	ErrRegionNotFound = errors.New("region doesn't exist")
 
@@ -79,6 +89,8 @@ var cache = map[string]providers.Provider{}
 func (c Client) newProvider(ctx context.Context, region *unikornv1.Region) (providers.Provider, error) {
 	//nolint:gocritic
 	switch region.Spec.Provider {
+	case unikornv1.ProviderKubernetes:
+		return kubernetes.New(ctx, c.client, region)
 	case unikornv1.ProviderOpenstack:
 		return openstack.New(ctx, c.client, region)
 	}
@@ -113,6 +125,8 @@ func (c *Client) Provider(ctx context.Context, regionID string) (providers.Provi
 
 func convertRegionType(in unikornv1.Provider) openapi.RegionType {
 	switch in {
+	case unikornv1.ProviderKubernetes:
+		return openapi.Kubernetes
 	case unikornv1.ProviderOpenstack:
 		return openapi.Openstack
 	}
@@ -120,7 +134,7 @@ func convertRegionType(in unikornv1.Provider) openapi.RegionType {
 	return ""
 }
 
-func convert(in *unikornv1.Region) *openapi.RegionRead {
+func (c *Client) convert(ctx context.Context, in *unikornv1.Region) (*openapi.RegionRead, error) {
 	out := &openapi.RegionRead{
 		Metadata: conversion.ResourceReadMetadata(in, in.Spec.Tags, coreopenapi.ResourceProvisioningStatusProvisioned),
 		Spec: openapi.RegionSpec{
@@ -128,22 +142,47 @@ func convert(in *unikornv1.Region) *openapi.RegionRead {
 		},
 	}
 
-	// Calculate any region feature flags.
-	if in.Spec.Openstack != nil && in.Spec.Openstack.Network != nil && in.Spec.Openstack.Network.ProviderNetworks != nil {
-		out.Spec.Features.PhysicalNetworks = true
+	// Calculate any region specific configuration.
+	switch in.Spec.Provider {
+	case unikornv1.ProviderKubernetes:
+		if err := rbac.AllowGlobalScope(ctx, "region:regions/credentials", identityapi.Read); err == nil {
+			secret := &corev1.Secret{}
+
+			if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: in.Spec.Kubernetes.KubeconfigSecret.Name}, secret); err != nil {
+				return nil, err
+			}
+
+			kubeconfig, ok := secret.Data["kubeconfig"]
+			if !ok {
+				return nil, fmt.Errorf("%w: kubeconfig kye missing in region secret", ErrResource)
+			}
+
+			out.Spec.Kubernetes = &openapi.RegionKubernetes{
+				Kubeconfig: base64.RawURLEncoding.EncodeToString(kubeconfig),
+			}
+		}
+	case unikornv1.ProviderOpenstack:
+		if in.Spec.Openstack.Network != nil && in.Spec.Openstack.Network.ProviderNetworks != nil {
+			out.Spec.Features.PhysicalNetworks = true
+		}
 	}
 
-	return out
+	return out, nil
 }
 
-func convertList(in *unikornv1.RegionList) openapi.Regions {
-	out := make(openapi.Regions, 0, len(in.Items))
+func (c *Client) convertList(ctx context.Context, in *unikornv1.RegionList) (openapi.Regions, error) {
+	out := make(openapi.Regions, len(in.Items))
 
 	for i := range in.Items {
-		out = append(out, *convert(&in.Items[i]))
+		t, err := c.convert(ctx, &in.Items[i])
+		if err != nil {
+			return nil, err
+		}
+
+		out[i] = *t
 	}
 
-	return out
+	return out, nil
 }
 
 func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
@@ -152,5 +191,5 @@ func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
 		return nil, err
 	}
 
-	return convertList(regions), nil
+	return c.convertList(ctx, regions)
 }

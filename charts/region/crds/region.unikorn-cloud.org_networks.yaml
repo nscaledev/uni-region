@@ -64,6 +64,7 @@ spec:
                 description: Provider defines the provider type.
                 enum:
                 - openstack
+                - kubernetes
                 type: string
               tags:
                 description: |-

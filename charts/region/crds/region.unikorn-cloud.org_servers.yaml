@@ -102,6 +102,7 @@ spec:
                 description: Provider defines the provider type.
                 enum:
                 - openstack
+                - kubernetes
                 type: string
               publicIPAllocation:
                 description: PublicIPAllocation is the server public IP allocation

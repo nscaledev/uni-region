@@ -9,6 +9,20 @@ metadata:
     {{- include "unikorn.labels" $ | nindent 4 }}
 spec:
   provider: {{ $region.provider }}
+  {{- with $kubernetes := $region.kubernetes }}
+  kubernetes:
+    kubeConfigSecret:
+      {{- if $kubernetes.kubeConfigSecret.namespace }}
+      namespace: {{ $kubernetes.kubeConfigSecret.namespace }}
+      {{- else }}
+      namespace: {{ $.Release.Namespace }}
+      {{- end }}
+      name: {{ $kubernetes.kubeConfigSecret.name }}
+    {{- with $nodes := $kubernetes.nodes }}
+    nodes:
+      {{- toYaml $nodes | nindent 4 }}
+    {{- end }}
+  {{- end }}
   {{- with $openstack := $region.openstack }}
   openstack:
     endpoint: {{ $openstack.endpoint }}
