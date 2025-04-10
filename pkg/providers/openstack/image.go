@@ -22,6 +22,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/sha256"
 	"crypto/x509"
+	_ "embed"
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
@@ -32,10 +33,10 @@ import (
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
+	"github.com/kaptinlin/jsonschema"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/unikorn-cloud/core/pkg/util"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -51,6 +52,13 @@ var (
 	// ErrKeyType is raised when we encounter an unsupported key type.
 	ErrKeyType = errors.New("key type unsupported")
 )
+
+// imagePropertySchemaV2 defines what consitutes a valid image e.g. contains all the
+// required information to work correctly.  This is defined in:
+// https://github.com/unikorn-cloud/specifications/blob/main/specifications/providers/openstack/flavors_and_images.md.
+//
+//go:embed v2.image.schema.json
+var imagePropertySchemaV2 []byte
 
 // ImageClient wraps the generic client because gophercloud is unsafe.
 type ImageClient struct {
@@ -80,22 +88,8 @@ func NewImageClient(ctx context.Context, provider CredentialProvider, options *u
 	return c, nil
 }
 
-func (c *ImageClient) validateProperties(image *images.Image) bool {
-	if c.options == nil || c.options.Selector == nil {
-		return true
-	}
-
-	for _, r := range c.options.Selector.Properties {
-		if !slices.Contains(util.Keys(image.Properties), r) {
-			return false
-		}
-	}
-
-	return true
-}
-
-func (c *ImageClient) decodeSigningKey() (*ecdsa.PublicKey, error) {
-	pemBlock, _ := pem.Decode(c.options.Selector.SigningKey)
+func decodeSigningKey(signingKey []byte) (*ecdsa.PublicKey, error) {
+	pemBlock, _ := pem.Decode(signingKey)
 	if pemBlock == nil {
 		return nil, ErrPEMDecode
 	}
@@ -117,18 +111,7 @@ func (c *ImageClient) decodeSigningKey() (*ecdsa.PublicKey, error) {
 	return ecKey, nil
 }
 
-// verifyImage asserts the image is trustworthy for use with our goodselves.
-func (c *ImageClient) verifyImage(image *images.Image) bool {
-	if c.options == nil || c.options.Selector == nil || c.options.Selector.SigningKey == nil {
-		return true
-	}
-
-	if image.Properties == nil {
-		return false
-	}
-
-	// These will be digitally signed by Baski when created, so we only trust
-	// those images.
+func ImageSignatureValid(image *images.Image, signingKeyRaw []byte) bool {
 	signatureRaw, ok := image.Properties["unikorn:digest"]
 	if !ok {
 		return false
@@ -146,7 +129,7 @@ func (c *ImageClient) verifyImage(image *images.Image) bool {
 
 	hash := sha256.Sum256([]byte(image.ID))
 
-	signingKey, err := c.decodeSigningKey()
+	signingKey, err := decodeSigningKey(signingKeyRaw)
 	if err != nil {
 		return false
 	}
@@ -154,20 +137,39 @@ func (c *ImageClient) verifyImage(image *images.Image) bool {
 	return ecdsa.VerifyASN1(signingKey, hash[:], signature)
 }
 
-func (c *ImageClient) filterImage(image *images.Image) bool {
+// verifyImageSignature asserts the image is trustworthy for use with our goodselves.
+func (c *ImageClient) verifyImageSignature(image *images.Image) bool {
+	if c.options == nil || c.options.Selector == nil || c.options.Selector.SigningKey == nil {
+		return true
+	}
+
+	if image.Properties == nil {
+		return false
+	}
+
+	return ImageSignatureValid(image, c.options.Selector.SigningKey)
+}
+
+func ImageSchemaValid(image *images.Image, schema *jsonschema.Schema) bool {
+	return schema.Validate(image.Properties).Valid
+}
+
+// imageValid returns true when the image is active, matches the schema and optionally
+// is signed by a trusted image building pipeline.
+func (c *ImageClient) imageValid(image *images.Image, schema *jsonschema.Schema) bool {
 	if image.Status != "active" {
-		return true
+		return false
 	}
 
-	if !c.validateProperties(image) {
-		return true
+	if !ImageSchemaValid(image, schema) {
+		return false
 	}
 
-	if !c.verifyImage(image) {
-		return true
+	if !c.verifyImageSignature(image) {
+		return false
 	}
 
-	return false
+	return true
 }
 
 // images does a memoized lookup of images.
@@ -200,6 +202,10 @@ func (c *ImageClient) images(ctx context.Context) ([]images.Image, error) {
 	return result, nil
 }
 
+func ImageSchema() (*jsonschema.Schema, error) {
+	return jsonschema.NewCompiler().Compile(imagePropertySchemaV2)
+}
+
 // Images returns a list of images.
 func (c *ImageClient) Images(ctx context.Context) ([]images.Image, error) {
 	result, err := c.images(ctx)
@@ -207,9 +213,14 @@ func (c *ImageClient) Images(ctx context.Context) ([]images.Image, error) {
 		return nil, err
 	}
 
+	schema, err := ImageSchema()
+	if err != nil {
+		return nil, err
+	}
+
 	// Filter out images that aren't compatible.
 	result = slices.DeleteFunc(result, func(image images.Image) bool {
-		return c.filterImage(&image)
+		return !c.imageValid(&image, schema)
 	})
 
 	// Sort by age, the newest should have the fewest CVEs!

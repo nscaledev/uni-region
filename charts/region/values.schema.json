@@ -313,12 +313,6 @@
                   "selector": {
                     "type": "object",
                     "properties": {
-                      "properties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
                       "signingKey": {
                         "type": "string"
                       }
