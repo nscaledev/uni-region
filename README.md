@@ -30,6 +30,13 @@ This obviously entails a support crew to keep it up and running!
 
 For further info see the [OpenStack provider documentation](pkg/providers/openstack/README.md).
 
+### Kubernetes
+
+Kubernetes regions allow Kubernetes clusters from any cloud provider to be consumed and increase capacity without the hassle of physical infrastructure.
+Kubernetes regions are exposed to end users with virtual Kubernetes clusters.
+
+For further info see the [Kubernetes provider documentation](pkg/providers/kubernetes/README.md).
+
 ## Installation
 
 ### Unikorn Prerequisites
