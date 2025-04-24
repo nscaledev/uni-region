@@ -138,6 +138,22 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWrit
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
+func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetail(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
+	if err := rbac.AllowOrganizationScope(r.Context(), "region:regions/detail", identityapi.Read, organizationID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := region.NewClient(h.client, h.namespace).GetDetail(r.Context(), regionID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	h.setUncacheable(w)
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
 func convertGpuVendor(in providers.GPUVendor) openapi.GpuVendor {
 	switch in {
 	case providers.Nvidia:

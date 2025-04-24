@@ -27,6 +27,28 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/organizations/{organizationID}/regions/{regionID}/detail:
+    description: |-
+      Retrieves admin-level region details.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/regionIDParameter'
+    get:
+      description: |-
+        Get a detailed view of the region, which may contain credentials.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/regionDetailResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/regions/{regionID}/flavors:
     description: Compute flavor services.
     parameters:
@@ -664,15 +686,6 @@ components:
             the region supports base-metal machines, and these must be provisioned
             on a physical VLAN etc.
           type: boolean
-    regionKubernetes:
-      description: Region specific information when the type is kubernetes.
-      type: object
-      required:
-      - kubeconfig
-      properties:
-        kubeconfig:
-          description: The region's base64 encoded Kubernetes configuration file.
-          type: string
     regionSpec:
       description: Information about the region.
       type: object
@@ -682,8 +695,27 @@ components:
       properties:
         type:
           $ref: '#/components/schemas/regionType'
+        features:
+          $ref: '#/components/schemas/regionFeatures'
+    regionDetailKubernetes:
+      description: Region specific information when the type is kubernetes.
+      type: object
+      required:
+      - kubeconfig
+      properties:
+        kubeconfig:
+          description: The region's base64 encoded Kubernetes configuration file.
+          type: string
+    regionDetailSpec:
+      description: Information about the region.
+      type: object
+      required:
+      - type
+      properties:
+        type:
+          $ref: '#/components/schemas/regionType'
         kubernetes:
-          $ref: '#/components/schemas/regionKubernetes'
+          $ref: '#/components/schemas/regionDetailKubernetes'
         features:
           $ref: '#/components/schemas/regionFeatures'
     regionRead:
@@ -697,6 +729,17 @@ components:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceReadMetadata'
         spec:
           $ref: '#/components/schemas/regionSpec'
+    regionDetailRead:
+      description: A region.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceReadMetadata'
+        spec:
+          $ref: '#/components/schemas/regionDetailSpec'
     regions:
       description: A list of regions.
       type: array
@@ -1495,6 +1538,23 @@ components:
               type: openstack
               features:
                 physicalNetworks: true
+    regionDetailResponse:
+      description: A detailed description of the region.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/regionDetailRead'
+          example:
+            metadata:
+              id: c7568e2d-f9ab-453d-9a3a-51375f78426b
+              name: uk-west
+              description: An oxymoronic tier-3 datacenter based in Liverpool.
+              creationTime: 2023-07-31T10:45:45Z
+              provisioningStatus: provisioned
+            spec:
+              type: kubernetes
+              kubernetes:
+                kubeconfig: Zm9v
     imagesResponse:
       description: A list of images that are compatible with this platform.
       content:

@@ -72,3 +72,9 @@ This is typically achieved with the `external-dns` controller:
 ```shell
 helm upgrade --install external-dns external-dns/external-dns -n external-dns --create-namespace --set provider.name=cloudflare --set env[0].name=CF_API_TOKEN --set env[0].value=foo --set domainFilters[0]=my-region.domain.com
 ```
+
+Finally when we install virtual clusters, they need to be monitored, and therefore require Prometheus:
+
+```shell
+helm upgrade --install kube-prometheus kube-prometheus prometheus-community/kube-prometheus-stack --create-namespace -n kube-prometheus
+```
