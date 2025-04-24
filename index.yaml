@@ -58,6 +58,21 @@ entries:
     version: v0.1.0
   unikorn-region:
   - apiVersion: v2
+    appVersion: v0.1.53-rc2
+    created: "2025-04-24T09:17:42.134844797Z"
+    dependencies:
+    - name: unikorn-common
+      repository: https://unikorn-cloud.github.io/helm-common
+      version: v0.1.14
+    description: A Helm chart for deploying Unikorn's Region Controller
+    digest: d0f1fcb4985486313a6c24f23b89cf375196eb3b4ece1d94b93aa230ebe83332
+    icon: https://raw.githubusercontent.com/unikorn-cloud/assets/main/images/logos/dark-on-light/icon.png
+    name: unikorn-region
+    type: application
+    urls:
+    - https://github.com/unikorn-cloud/region/releases/download/v0.1.53-rc2/unikorn-region-v0.1.53-rc2.tgz
+    version: v0.1.53-rc2
+  - apiVersion: v2
     appVersion: v0.1.53-rc1
     created: "2025-04-10T12:57:14.517784397Z"
     dependencies:
@@ -925,4 +940,4 @@ entries:
     urls:
     - https://github.com/unikorn-cloud/region/releases/download/v0.1.5/unikorn-region-v0.1.5.tgz
     version: v0.1.5
-generated: "2025-04-10T12:57:14.518038923Z"
+generated: "2025-04-24T09:17:42.135095744Z"
