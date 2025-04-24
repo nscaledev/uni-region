@@ -377,6 +377,33 @@ type QuotasSpec struct {
 	Flavors *FlavorQuotaList `json:"flavors,omitempty"`
 }
 
+// RegionDetailKubernetes Region specific information when the type is kubernetes.
+type RegionDetailKubernetes struct {
+	// Kubeconfig The region's base64 encoded Kubernetes configuration file.
+	Kubeconfig string `json:"kubeconfig"`
+}
+
+// RegionDetailRead A region.
+type RegionDetailRead struct {
+	// Metadata Resource metadata valid for all reads.
+	Metadata externalRef0.ResourceReadMetadata `json:"metadata"`
+
+	// Spec Information about the region.
+	Spec RegionDetailSpec `json:"spec"`
+}
+
+// RegionDetailSpec Information about the region.
+type RegionDetailSpec struct {
+	// Features A set of features the region may provide to clients.
+	Features *RegionFeatures `json:"features,omitempty"`
+
+	// Kubernetes Region specific information when the type is kubernetes.
+	Kubernetes *RegionDetailKubernetes `json:"kubernetes,omitempty"`
+
+	// Type The region's provider type.
+	Type RegionType `json:"type"`
+}
+
 // RegionFeatures A set of features the region may provide to clients.
 type RegionFeatures struct {
 	// PhysicalNetworks If set, this indicates that the region supports physical networks and
@@ -384,12 +411,6 @@ type RegionFeatures struct {
 	// the region supports base-metal machines, and these must be provisioned
 	// on a physical VLAN etc.
 	PhysicalNetworks bool `json:"physicalNetworks"`
-}
-
-// RegionKubernetes Region specific information when the type is kubernetes.
-type RegionKubernetes struct {
-	// Kubeconfig The region's Kubernetes configuration file.
-	Kubeconfig string `json:"kubeconfig"`
 }
 
 // RegionRead A region.
@@ -405,9 +426,6 @@ type RegionRead struct {
 type RegionSpec struct {
 	// Features A set of features the region may provide to clients.
 	Features RegionFeatures `json:"features"`
-
-	// Kubernetes Region specific information when the type is kubernetes.
-	Kubernetes *RegionKubernetes `json:"kubernetes,omitempty"`
 
 	// Type The region's provider type.
 	Type RegionType `json:"type"`
@@ -697,6 +715,9 @@ type NetworksResponse = NetworksRead
 
 // QuotasResponse defines model for quotasResponse.
 type QuotasResponse = QuotasSpec
+
+// RegionDetailResponse A region.
+type RegionDetailResponse = RegionDetailRead
 
 // RegionsResponse A list of regions.
 type RegionsResponse = Regions

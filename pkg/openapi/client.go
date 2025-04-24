@@ -170,6 +170,9 @@ type ClientInterface interface {
 	// GetApiV1OrganizationsOrganizationIDRegions request
 	GetApiV1OrganizationsOrganizationIDRegions(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetail request
+	GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetail(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworks request
 	GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworks(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -524,6 +527,18 @@ func (c *Client) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesI
 
 func (c *Client) GetApiV1OrganizationsOrganizationIDRegions(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiV1OrganizationsOrganizationIDRegionsRequest(c.Server, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetail(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailRequest(c.Server, organizationID, regionID)
 	if err != nil {
 		return nil, err
 	}
@@ -1783,6 +1798,47 @@ func NewGetApiV1OrganizationsOrganizationIDRegionsRequest(server string, organiz
 	return req, nil
 }
 
+// NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailRequest generates requests for GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetail
+func NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailRequest(server string, organizationID OrganizationIDParameter, regionID RegionIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "organizationID", runtime.ParamLocationPath, organizationID)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "regionID", runtime.ParamLocationPath, regionID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/organizations/%s/regions/%s/detail", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksRequest generates requests for GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworks
 func NewGetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksRequest(server string, organizationID OrganizationIDParameter, regionID RegionIDParameter) (*http.Request, error) {
 	var err error
@@ -2096,6 +2152,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetApiV1OrganizationsOrganizationIDRegionsWithResponse request
 	GetApiV1OrganizationsOrganizationIDRegionsWithResponse(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDRegionsResponse, error)
+
+	// GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailWithResponse request
+	GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailWithResponse(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailResponse, error)
 
 	// GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksWithResponse request
 	GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksWithResponse(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksResponse, error)
@@ -2677,6 +2736,32 @@ func (r GetApiV1OrganizationsOrganizationIDRegionsResponse) StatusCode() int {
 	return 0
 }
 
+type GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RegionDetailResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -3057,6 +3142,15 @@ func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDRegionsWithResp
 		return nil, err
 	}
 	return ParseGetApiV1OrganizationsOrganizationIDRegionsResponse(rsp)
+}
+
+// GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailWithResponse request returning *GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailResponse
+func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailWithResponse(ctx context.Context, organizationID OrganizationIDParameter, regionID RegionIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailResponse, error) {
+	rsp, err := c.GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetail(ctx, organizationID, regionID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailResponse(rsp)
 }
 
 // GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksWithResponse request returning *GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworksResponse
@@ -4223,6 +4317,60 @@ func ParseGetApiV1OrganizationsOrganizationIDRegionsResponse(rsp *http.Response)
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailResponse parses an HTTP response from a GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailWithResponse call
+func ParseGetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailResponse(rsp *http.Response) (*GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetailResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RegionDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest externalRef0.InternalServerErrorResponse

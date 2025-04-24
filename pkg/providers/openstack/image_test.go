@@ -271,7 +271,7 @@ func TestImageSigning(t *testing.T) {
 		// Check it does what it's meant to...
 		{
 			name:    "BasicImageInvalidID",
-                        fixture: signedBasicImageFixture(string(uuid.NewUUID()), string(signature)),
+			fixture: signedBasicImageFixture(string(uuid.NewUUID()), string(signature)),
 		},
 	}
 
