@@ -25,6 +25,8 @@ import (
 // Providers are expected to provide a provider agnostic manner.
 // They are also expected to provide any caching or memoization required
 // to provide high performance and a decent UX.
+//
+//nolint:interfacebloat
 type Provider interface {
 	// Region returns the provider's region.
 	Region(ctx context.Context) (*unikornv1.Region, error)

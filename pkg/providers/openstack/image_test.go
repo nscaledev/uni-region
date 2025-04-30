@@ -69,7 +69,7 @@ type imageFixtureMutator func(*images.Image)
 
 func basicImageFixture() *images.Image {
 	return &images.Image{
-		Properties: map[string]interface{}{
+		Properties: map[string]any{
 			osKernelProperty:       osKernelLinux,
 			osFamilyProperty:       osFamilyDebian,
 			osDistroProperty:       osDistroUbuntu,
@@ -112,6 +112,8 @@ func replacePropertyMutator(property string, value any) imageFixtureMutator {
 }
 
 func TestImageSchema(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name    string
 		fixture imageFixtureGenerator
@@ -219,6 +221,8 @@ func TestImageSchema(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
 			fixture := c.fixture()
 
 			if c.mutator != nil {
@@ -231,6 +235,8 @@ func TestImageSchema(t *testing.T) {
 }
 
 func TestImageSigning(t *testing.T) {
+	t.Parallel()
+
 	// If you know you know, if you don't, learn :D
 	signingKey, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
 	require.NoError(t, err)
@@ -265,18 +271,20 @@ func TestImageSigning(t *testing.T) {
 		// Check the test actually works...
 		{
 			name:    "BasicImage",
-			fixture: signedBasicImageFixture(id, string(signature)),
+			fixture: signedBasicImageFixture(id, signature),
 			valid:   true,
 		},
 		// Check it does what it's meant to...
 		{
 			name:    "BasicImageInvalidID",
-			fixture: signedBasicImageFixture(string(uuid.NewUUID()), string(signature)),
+			fixture: signedBasicImageFixture(string(uuid.NewUUID()), signature),
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
 			fixture := c.fixture()
 
 			if c.mutator != nil {

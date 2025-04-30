@@ -44,6 +44,7 @@ func (c *Identity) StatusConditionWrite(t unikornv1core.ConditionType, status co
 // ResourceLabels generates a set of labels to uniquely identify the resource
 // if it were to be placed in a single global namespace.
 func (c *Identity) ResourceLabels() (labels.Set, error) {
+	//nolint:nilnil
 	return nil, nil
 }
 
@@ -68,6 +69,7 @@ func (c *Network) StatusConditionWrite(t unikornv1core.ConditionType, status cor
 // ResourceLabels generates a set of labels to uniquely identify the resource
 // if it were to be placed in a single global namespace.
 func (c *Network) ResourceLabels() (labels.Set, error) {
+	//nolint:nilnil
 	return nil, nil
 }
 
@@ -92,6 +94,7 @@ func (c *SecurityGroup) StatusConditionWrite(t unikornv1core.ConditionType, stat
 // ResourceLabels generates a set of labels to uniquely identify the resource
 // if it were to be placed in a single global namespace.
 func (c *SecurityGroup) ResourceLabels() (labels.Set, error) {
+	//nolint:nilnil
 	return nil, nil
 }
 
@@ -116,6 +119,7 @@ func (c *SecurityGroupRule) StatusConditionWrite(t unikornv1core.ConditionType, 
 // ResourceLabels generates a set of labels to uniquely identify the resource
 // if it were to be placed in a single global namespace.
 func (c *SecurityGroupRule) ResourceLabels() (labels.Set, error) {
+	//nolint:nilnil
 	return nil, nil
 }
 
@@ -140,6 +144,7 @@ func (c *Server) StatusConditionWrite(t unikornv1core.ConditionType, status core
 // ResourceLabels generates a set of labels to uniquely identify the resource
 // if it were to be placed in a single global namespace.
 func (c *Server) ResourceLabels() (labels.Set, error) {
+	//nolint:nilnil
 	return nil, nil
 }
 

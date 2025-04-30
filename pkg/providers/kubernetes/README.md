@@ -9,6 +9,17 @@ The Unikorn Kubernetes service can consume Kubernetes regions for cluster provis
 
 Before importing a Kubernetes cluster as a region, some steps need to be carried out in order to make it consumable.
 
+### Kubernetes Configuration Secret
+
+The region will need access to the Kubernetes configuration with cluster admin permissions (for now).
+This is stored in a secret as follows:
+
+```shell
+kubectl create secret generic -n unikorn-region de-central-0-kubeconfig --from-file kubeconfig=/path/to/my/kubeconfig
+```
+
+It will be consumed in the example in the next section.
+
 ### Flavor Mapping
 
 Kubernetes clusters are composed of pools of machines.

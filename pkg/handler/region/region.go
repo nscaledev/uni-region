@@ -86,8 +86,7 @@ func findRegion(regions *unikornv1.RegionList, regionID string) (*unikornv1.Regi
 //nolint:gochecknoglobals
 var cache = map[string]providers.Provider{}
 
-func (c Client) newProvider(ctx context.Context, region *unikornv1.Region) (providers.Provider, error) {
-	//nolint:gocritic
+func (c *Client) newProvider(ctx context.Context, region *unikornv1.Region) (providers.Provider, error) {
 	switch region.Spec.Provider {
 	case unikornv1.ProviderKubernetes:
 		return kubernetes.New(ctx, c.client, region)
@@ -134,7 +133,7 @@ func convertRegionType(in unikornv1.Provider) openapi.RegionType {
 	return ""
 }
 
-func convert(ctx context.Context, in *unikornv1.Region) *openapi.RegionRead {
+func convert(in *unikornv1.Region) *openapi.RegionRead {
 	out := &openapi.RegionRead{
 		Metadata: conversion.ResourceReadMetadata(in, in.Spec.Tags, coreopenapi.ResourceProvisioningStatusProvisioned),
 		Spec: openapi.RegionSpec{
@@ -186,11 +185,11 @@ func (c *Client) convertDetail(ctx context.Context, in *unikornv1.Region) (*open
 	return out, nil
 }
 
-func convertList(ctx context.Context, in *unikornv1.RegionList) openapi.Regions {
+func convertList(in *unikornv1.RegionList) openapi.Regions {
 	out := make(openapi.Regions, len(in.Items))
 
 	for i := range in.Items {
-		out[i] = *convert(ctx, &in.Items[i])
+		out[i] = *convert(&in.Items[i])
 	}
 
 	return out
@@ -202,7 +201,7 @@ func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
 		return nil, err
 	}
 
-	return convertList(ctx, regions), nil
+	return convertList(regions), nil
 }
 
 func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.RegionDetailRead, error) {

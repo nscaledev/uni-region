@@ -995,8 +995,8 @@ func (in *OpenstackServerSpec) DeepCopyInto(out *OpenstackServerSpec) {
 		*out = new(string)
 		**out = **in
 	}
-	if in.PublicIPAllocationId != nil {
-		in, out := &in.PublicIPAllocationId, &out.PublicIPAllocationId
+	if in.PublicIPAllocationID != nil {
+		in, out := &in.PublicIPAllocationID, &out.PublicIPAllocationID
 		*out = new(string)
 		**out = **in
 	}
