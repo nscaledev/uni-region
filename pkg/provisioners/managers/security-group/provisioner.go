@@ -100,6 +100,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return provisioners.ErrYield
 	}
 
+	//nolint:exhaustive
 	switch status.Reason {
 	case unikornv1core.ConditionReasonProvisioned:
 		break

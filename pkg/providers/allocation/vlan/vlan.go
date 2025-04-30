@@ -26,6 +26,7 @@ import (
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -110,7 +111,7 @@ func (a *Allocator) Allocate(ctx context.Context, networkID string) (int, error)
 	allocatable := a.allocatable()
 
 	// Do an exhaustive search through all allocatable VLAN IDs...
-	// TODO: this is a O(n^2) problem, admitedly bounded.
+	// TODO: this is a O(n^2) problem, admittedly bounded.
 	for id := 1; id < 4095; id++ {
 		if !allocatable[id] {
 			continue

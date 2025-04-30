@@ -90,6 +90,7 @@ func (p *Provisioner) validateResourceStatus(ctx context.Context, resource uniko
 		return provisioners.ErrYield
 	}
 
+	//nolint:exhaustive
 	switch status.Reason {
 	case unikornv1core.ConditionReasonProvisioned:
 		break
@@ -104,7 +105,6 @@ func (p *Provisioner) validateResourceStatus(ctx context.Context, resource uniko
 
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
-
 	cli, err := coreclient.ProvisionerClientFromContext(ctx)
 	if err != nil {
 		return err

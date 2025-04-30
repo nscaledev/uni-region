@@ -37,12 +37,13 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
-	"k8s.io/utils/ptr"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+
+	"k8s.io/utils/ptr"
 )
 
 var (

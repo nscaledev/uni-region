@@ -265,7 +265,9 @@ func (g *generator) generateAllowedAddressPairs(in *openapi.ServerNetworkAllowed
 			// ignore this address pair
 			continue
 		}
+
 		var macAddress string
+
 		if pair.MacAddress != nil {
 			macAddress = *pair.MacAddress
 		}

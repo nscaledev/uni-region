@@ -311,6 +311,8 @@ func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
 		}
 
 		// Apply any extra metadata to the flavor.
+		//
+		//nolint:nestif
 		if p.region.Spec.Openstack.Compute != nil && p.region.Spec.Openstack.Compute.Flavors != nil {
 			i := slices.IndexFunc(p.region.Spec.Openstack.Compute.Flavors.Metadata, func(metadata unikornv1.FlavorMetadata) bool {
 				return flavor.ID == metadata.ID
@@ -752,6 +754,8 @@ func (p *Provider) GetOrCreateOpenstackIdentity(ctx context.Context, identity *u
 }
 
 // CreateIdentity creates a new identity for cloud infrastructure.
+//
+//nolint:cyclop
 func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Identity) error {
 	identityService, err := p.identity(ctx)
 	if err != nil {
@@ -790,7 +794,7 @@ func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Ident
 
 	// Grant the "manager" role on the project for unikorn's user.  Sadly when provisioning
 	// resources, most services can only infer the project ID from the token, and not any
-	// of the heirarchy, so we cannot define policy rules for a domain manager in the same
+	// of the hierarchy, so we cannot define policy rules for a domain manager in the same
 	// way as can be done for the identity service.
 	if err := p.provisionProjectRoles(ctx, identityService, openstackIdentity, p.credentials.userID, p.getRequiredProjectManagerRoles); err != nil {
 		return err
@@ -833,6 +837,8 @@ func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Ident
 }
 
 // DeleteIdentity cleans up an identity for cloud infrastructure.
+//
+//nolint:cyclop
 func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Identity) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
@@ -980,7 +986,7 @@ func (p *Provider) allocateVLAN(ctx context.Context, network *unikornv1.Openstac
 	return nil
 }
 
-func (p *Provider) createNetwork(ctx context.Context, networkService *NetworkClient, identity *unikornv1.OpenstackIdentity, network *unikornv1.OpenstackNetwork) error {
+func (p *Provider) createNetwork(ctx context.Context, networkService *NetworkClient, network *unikornv1.OpenstackNetwork) error {
 	if network.Spec.NetworkID != nil {
 		return nil
 	}
@@ -1052,6 +1058,8 @@ func (p *Provider) addRouterSubnetInterface(ctx context.Context, networkService 
 }
 
 // CreateNetwork creates a physical network for an identity.
+//
+//nolint:cyclop
 func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
@@ -1094,7 +1102,7 @@ func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identi
 		return err
 	}
 
-	if err := p.createNetwork(ctx, networkService, openstackIdentity, openstackNetwork); err != nil {
+	if err := p.createNetwork(ctx, networkService, openstackNetwork); err != nil {
 		return err
 	}
 
@@ -1114,6 +1122,8 @@ func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identi
 }
 
 // DeleteNetwork deletes a physical network.
+//
+//nolint:cyclop
 func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
@@ -1439,6 +1449,7 @@ func (p *Provider) createSecurityGroupRule(ctx context.Context, networkService *
 		if rule.Spec.Port.Number != nil {
 			return *rule.Spec.Port.Number, *rule.Spec.Port.Number, nil
 		}
+
 		if rule.Spec.Port.Range != nil {
 			return rule.Spec.Port.Range.Start, rule.Spec.Port.Range.End, nil
 		}
@@ -1448,13 +1459,14 @@ func (p *Provider) createSecurityGroupRule(ctx context.Context, networkService *
 
 	direction := rules.RuleDirection(*rule.Spec.Direction)
 	protocol := rules.RuleProtocol(*rule.Spec.Protocol)
-	securityGroupId := *openstackSecurityGroup.Spec.SecurityGroupID
+	securityGroupID := *openstackSecurityGroup.Spec.SecurityGroupID
+
 	portStart, portEnd, err := mapPortRange()
 	if err != nil {
 		return err
 	}
 
-	providerRule, err := networkService.CreateSecurityGroupRule(ctx, securityGroupId, direction, protocol, portStart, portEnd, rule.Spec.CIDR)
+	providerRule, err := networkService.CreateSecurityGroupRule(ctx, securityGroupID, direction, protocol, portStart, portEnd, rule.Spec.CIDR)
 	if err != nil {
 		return err
 	}
@@ -1516,6 +1528,8 @@ func (p *Provider) CreateSecurityGroupRule(ctx context.Context, identity *unikor
 }
 
 // DeleteSecurityGroupRule deletes a security group rule.
+//
+//nolint:cyclop
 func (p *Provider) DeleteSecurityGroupRule(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup, rule *unikornv1.SecurityGroupRule) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
@@ -1654,7 +1668,7 @@ func (p *Provider) getServerImage(ctx context.Context, server *unikornv1.Server)
 }
 
 // openstackNetworkID returns the openstack ID of the giving unikorn network.
-func (p *Provider) openstackNetworkID(ctx context.Context, identity *unikornv1.OpenstackIdentity, ID string) (string, error) {
+func (p *Provider) openstackNetworkID(ctx context.Context, identity *unikornv1.OpenstackIdentity, id string) (string, error) {
 	options := &client.ListOptions{
 		Namespace: identity.Namespace,
 		LabelSelector: labels.SelectorFromSet(map[string]string{
@@ -1668,21 +1682,23 @@ func (p *Provider) openstackNetworkID(ctx context.Context, identity *unikornv1.O
 	}
 
 	index := slices.IndexFunc(resources.Items, func(net unikornv1.OpenstackNetwork) bool {
-		return net.Name == ID
+		return net.Name == id
 	})
 
 	if index < 0 {
-		return "", fmt.Errorf("%w: network %s", ErrResourceNotFound, ID)
+		return "", fmt.Errorf("%w: network %s", ErrResourceNotFound, id)
 	}
 
 	if resources.Items[index].Spec.NetworkID == nil {
-		return "", fmt.Errorf("%w: network %s not provisioned", ErrResouceDependency, ID)
+		return "", fmt.Errorf("%w: network %s not provisioned", ErrResouceDependency, id)
 	}
 
 	return *resources.Items[index].Spec.NetworkID, nil
 }
 
 // CreateServer creates a new server.
+//
+//nolint:cyclop
 func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
@@ -1819,6 +1835,7 @@ func (p *Provider) createServerPorts(ctx context.Context, networkService *Networ
 
 	// NOTE: exactly 1 is enforced at the API schema level.
 	network := server.Spec.Networks[0]
+
 	openstackNetworkID, err := p.openstackNetworkID(ctx, identity, server.Spec.Networks[0].ID)
 	if err != nil {
 		return err
@@ -1866,11 +1883,13 @@ func (p *Provider) openstackSecurityGroupIDs(ctx context.Context, identity *unik
 	}
 
 	sgMap := make(map[string]*unikornv1.OpenstackSecurityGroup)
+
 	for _, net := range resources.Items {
 		sgMap[net.Name] = &net
 	}
 
-	var sgIDs []string
+	sgIDs := make([]string, 0, len(securityGroups))
+
 	for _, sg := range securityGroups {
 		s, found := sgMap[sg.ID]
 		if !found {
@@ -1935,7 +1954,7 @@ func (p *Provider) allocateServerFloatingIP(ctx context.Context, networkService 
 	}
 
 	// ip already allocated
-	if openstackServer.Spec.PublicIPAllocationId != nil {
+	if openstackServer.Spec.PublicIPAllocationID != nil {
 		return nil
 	}
 
@@ -1952,24 +1971,35 @@ func (p *Provider) allocateServerFloatingIP(ctx context.Context, networkService 
 	}
 
 	server.Status.PublicIP = &floatingIP.FloatingIP
-	openstackServer.Spec.PublicIPAllocationId = &floatingIP.ID
+	openstackServer.Spec.PublicIPAllocationID = &floatingIP.ID
 
 	return nil
 }
 
 func (p *Provider) getServerFixedIP(server *servers.Server) (*string, error) {
-
 	// Iterate through the server's addresses and extract the fixed IP.
 	for _, network := range server.Addresses {
-		for _, addr := range network.([]interface{}) {
-			iptype, ok := addr.(map[string]interface{})["OS-EXT-IPS:type"].(string)
-			if !ok || iptype != "fixed" {
-				continue
-			}
-			ipaddr, ok := addr.(map[string]interface{})["addr"].(string)
+		addresses, ok := network.([]any)
+		if !ok {
+			continue
+		}
+
+		for _, addr := range addresses {
+			properties, ok := addr.(map[string]any)
 			if !ok {
 				continue
 			}
+
+			iptype, ok := properties["OS-EXT-IPS:type"].(string)
+			if !ok || iptype != "fixed" {
+				continue
+			}
+
+			ipaddr, ok := properties["addr"].(string)
+			if !ok {
+				continue
+			}
+
 			return &ipaddr, nil
 		}
 	}
@@ -1978,6 +2008,8 @@ func (p *Provider) getServerFixedIP(server *servers.Server) (*string, error) {
 }
 
 // DeleteServer deletes a server.
+//
+//nolint:gocognit,cyclop
 func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
@@ -2018,15 +2050,15 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
-	if openstackServer.Spec.PublicIPAllocationId != nil {
-		if err := networkService.DeleteFloatingIP(ctx, *openstackServer.Spec.PublicIPAllocationId); err != nil {
+	if openstackServer.Spec.PublicIPAllocationID != nil {
+		if err := networkService.DeleteFloatingIP(ctx, *openstackServer.Spec.PublicIPAllocationID); err != nil {
 			// ignore not found errors
 			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 				return err
 			}
 		}
 
-		openstackServer.Spec.PublicIPAllocationId = nil
+		openstackServer.Spec.PublicIPAllocationID = nil
 	}
 
 	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)

@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.16.1
+    controller-gen.kubebuilder.io/version: v0.17.3
   name: regions.region.unikorn-cloud.org
 spec:
   group: region.unikorn-cloud.org
@@ -321,13 +321,6 @@ spec:
                           Selector defines a set of rules to lookup images.
                           If not specified, all images are selected.
                         properties:
-                          properties:
-                            description: |-
-                              Properties defines the set of properties an image needs to have to
-                              be selected.
-                            items:
-                              type: string
-                            type: array
                           signingKey:
                             description: |-
                               SigningKey defines a PEM encoded public ECDSA signing key used to verify

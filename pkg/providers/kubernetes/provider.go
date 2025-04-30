@@ -72,8 +72,8 @@ func (p *Provider) Region(ctx context.Context) (*unikornv1.Region, error) {
 	return p.region, nil
 }
 
-// KubernetesClientFromConfigBytes is a utility function to get a client for a kubeconfig.
-func KubernetesClientFromConfigBytes(kubeconfig []byte) (client.Client, error) {
+// ClientFromConfigBytes is a utility function to get a client for a kubeconfig.
+func ClientFromConfigBytes(kubeconfig []byte) (client.Client, error) {
 	config, err := clientcmd.NewClientConfigFromBytes(kubeconfig)
 	if err != nil {
 		return nil, err
@@ -133,7 +133,7 @@ func (p *Provider) regionClient(ctx context.Context) (client.Client, error) {
 		return nil, fmt.Errorf("%w: kubeconfig kye missing in region secret", ErrResource)
 	}
 
-	client, err := KubernetesClientFromConfigBytes(kubeconfig)
+	client, err := ClientFromConfigBytes(kubeconfig)
 	if err != nil {
 		return nil, err
 	}

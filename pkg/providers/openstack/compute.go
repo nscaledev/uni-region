@@ -143,8 +143,6 @@ func (c *ComputeClient) mutateFlavors(f []flavors.Flavor) {
 }
 
 // Flavors returns a list of flavors.
-//
-//nolint:cyclop
 func (c *ComputeClient) Flavors(ctx context.Context) ([]flavors.Flavor, error) {
 	if result, ok := c.flavorCache.Get(); ok {
 		return result, nil

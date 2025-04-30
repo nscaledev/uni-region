@@ -28,6 +28,7 @@ import (
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -69,7 +70,6 @@ func (c *Client) List(ctx context.Context, organizationID string) (openapi.Serve
 }
 
 func (c *Client) Create(ctx context.Context, organizationID, projectID string, identity *unikornv1.Identity, network *unikornv1.Network, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
-
 	resource, err := newGenerator(c.client, c.namespace, organizationID, projectID, identity, network).generate(ctx, request)
 	if err != nil {
 		return nil, err

@@ -15,6 +15,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+//nolint:tagliatelle
 package v1alpha1
 
 import (
@@ -813,8 +814,8 @@ type OpenstackServer struct {
 type OpenstackServerSpec struct {
 	// ServerID is the server ID.
 	ServerID *string `json:"serverID,omitempty"`
-	// PublicIPAllocationId is the public ip allocation id.
-	PublicIPAllocationId *string `json:"publicIPAllocationId,omitempty"`
+	// PublicIPAllocationID is the public ip allocation id.
+	PublicIPAllocationID *string `json:"publicIPAllocationId,omitempty"`
 	// PortIDs is a list of port IDs.
 	PortIDs []string `json:"portIDs,omitempty"`
 }

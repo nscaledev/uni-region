@@ -90,7 +90,7 @@ type Image struct {
 	Created time.Time
 	// Modified is when the image was modified.
 	Modified time.Time
-	// SizeGiB is the minumum disk size for the image in GiB.
+	// SizeGiB is the minimum disk size for the image in GiB.
 	SizeGiB int
 	// ImageVirtualization defines how the image can be used.
 	Virtualization ImageVirtualization
@@ -151,7 +151,7 @@ type ImageOS struct {
 	Version string
 }
 
-// ImagePackages is a map of pre-installed package names to versions. Versions must be a semver (starts with a vN.N.N)
+// ImagePackages is a map of pre-installed package names to versions. Versions must be a semver (starts with a vN.N.N).
 type ImagePackages map[string]string
 
 // ImageList allows us to attach sort functions and the like.

@@ -15,7 +15,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//nolint:revive,stylecheck
+//nolint:revive
 package handler
 
 import (
@@ -54,11 +54,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-var (
-	foregroundDeleteOptions = &client.DeleteOptions{
+func foregroundDeleteOptions() *client.DeleteOptions {
+	return &client.DeleteOptions{
 		PropagationPolicy: ptr.To(metav1.DeletePropagationForeground),
 	}
-)
+}
 
 type Handler struct {
 	// client gives cached access to Kubernetes.
@@ -252,6 +252,7 @@ func convertImageVirtualization(in providers.ImageVirtualization) openapi.ImageV
 }
 
 func convertOsKernel(in providers.OsKernel) openapi.OsKernel {
+	//nolint:gocritic
 	switch in {
 	case providers.Linux:
 		return openapi.Linux
@@ -381,6 +382,7 @@ func (h *Handler) convertIdentity(ctx context.Context, in *unikornv1.Identity) *
 		},
 	}
 
+	//nolint:exhaustive,gocritic
 	switch in.Spec.Provider {
 	case unikornv1.ProviderOpenstack:
 		out.Spec.Type = openapi.Openstack
@@ -423,6 +425,7 @@ func (h *Handler) convertIdentityList(ctx context.Context, in unikornv1.Identity
 	return out
 }
 
+//nolint:dupl
 func (h *Handler) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
 	if err := rbac.AllowOrganizationScope(r.Context(), "region:identities", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
@@ -523,13 +526,14 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		return
 	}
 
-	if err := h.client.Delete(r.Context(), identity, foregroundDeleteOptions); err != nil {
+	if err := h.client.Delete(r.Context(), identity, foregroundDeleteOptions()); err != nil {
 		if kerrors.IsNotFound(err) {
 			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
 			return
 		}
 
 		errors.HandleError(w, r, errors.OAuth2ServerError("unable to delete identity").WithError(err))
+
 		return
 	}
 
@@ -562,6 +566,7 @@ func (h *Handler) convertNetwork(ctx context.Context, in *unikornv1.Network) *op
 		},
 	}
 
+	//nolint:exhaustive,gocritic
 	switch in.Spec.Provider {
 	case unikornv1.ProviderOpenstack:
 		out.Spec.Type = openapi.Openstack
@@ -590,6 +595,7 @@ func (h *Handler) convertNetworkList(ctx context.Context, in unikornv1.NetworkLi
 	return out
 }
 
+//nolint:dupl
 func (h *Handler) GetApiV1OrganizationsOrganizationIDNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
 	if err := rbac.AllowOrganizationScope(r.Context(), "region:networks", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
@@ -702,6 +708,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 	util.WriteJSONResponse(w, r, http.StatusOK, h.convertNetwork(r.Context(), resource))
 }
 
+//nolint:dupl
 func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, physicalNetworkID openapi.NetworkIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:networks", identityapi.Delete, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
@@ -714,13 +721,14 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		return
 	}
 
-	if err := h.client.Delete(r.Context(), resource, foregroundDeleteOptions); err != nil {
+	if err := h.client.Delete(r.Context(), resource, foregroundDeleteOptions()); err != nil {
 		if kerrors.IsNotFound(err) {
 			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
 			return
 		}
 
 		errors.HandleError(w, r, errors.OAuth2ServerError("unable to delete network").WithError(err))
+
 		return
 	}
 
@@ -894,6 +902,7 @@ func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 		}
 
 		w.WriteHeader(http.StatusAccepted)
+
 		return
 	}
 
@@ -1051,9 +1060,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.Respo
 	util.WriteJSONResponse(w, r, http.StatusOK, h.convertSecurityGroupList(result))
 }
 
-func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter,
-	projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
-
+func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups", identityapi.Create, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -1085,9 +1092,8 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 	util.WriteJSONResponse(w, r, http.StatusCreated, h.convertSecurityGroup(securityGroup))
 }
 
-func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter,
-	projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
-
+//nolint:dupl
+func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups", identityapi.Delete, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -1099,22 +1105,21 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		return
 	}
 
-	if err := h.client.Delete(r.Context(), resource, foregroundDeleteOptions); err != nil {
+	if err := h.client.Delete(r.Context(), resource, foregroundDeleteOptions()); err != nil {
 		if kerrors.IsNotFound(err) {
 			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
 			return
 		}
 
 		errors.HandleError(w, r, errors.OAuth2ServerError("unable to delete security group").WithError(err))
+
 		return
 	}
 
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter,
-	projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
-
+func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups", identityapi.Read, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -1129,9 +1134,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 	util.WriteJSONResponse(w, r, http.StatusOK, h.convertSecurityGroup(resource))
 }
 
-func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter,
-	projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
-
+func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups", identityapi.Update, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -1172,7 +1175,6 @@ func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 	}
 
 	w.WriteHeader(http.StatusAccepted)
-
 }
 
 func convertSecurityGroupRulePort(in unikornv1.SecurityGroupRulePort) openapi.SecurityGroupRulePort {
@@ -1344,9 +1346,7 @@ func (h *Handler) generateSecurityGroupRule(ctx context.Context, organizationID,
 	return resource, nil
 }
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRules(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter,
-	projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
-
+func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRules(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups", identityapi.Read, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -1361,9 +1361,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 	util.WriteJSONResponse(w, r, http.StatusOK, h.convertSecurityGroupRuleList(result))
 }
 
-func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRules(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter,
-	projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
-
+func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRules(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups", identityapi.Create, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -1401,9 +1399,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 	util.WriteJSONResponse(w, r, http.StatusCreated, h.convertSecurityGroupRule(securityGroupRule))
 }
 
-func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRulesRuleID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter,
-	projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter, ruleID openapi.RuleIDParameter) {
-
+func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRulesRuleID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter, ruleID openapi.RuleIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups", identityapi.Delete, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -1422,15 +1418,14 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		}
 
 		errors.HandleError(w, r, errors.OAuth2ServerError("unable to delete security group rule").WithError(err))
+
 		return
 	}
 
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRulesRuleID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter,
-	projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter, ruleID openapi.RuleIDParameter) {
-
+func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRulesRuleID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter, ruleID openapi.RuleIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups", identityapi.Read, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -1460,9 +1455,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDServers(w http.ResponseWrit
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
-func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServers(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter,
-	identityID openapi.IdentityIDParameter) {
-
+func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServers(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:servers", identityapi.Create, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -1496,9 +1489,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 	util.WriteJSONResponse(w, r, http.StatusCreated, result)
 }
 
-func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter,
-	identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter) {
-
+func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:servers", identityapi.Delete, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -1513,9 +1504,7 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter,
-	identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter) {
-
+func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:servers", identityapi.Read, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return

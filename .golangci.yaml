@@ -1,0 +1,59 @@
+version: "2"
+linters:
+  default: all
+  disable:
+    - depguard
+    - exhaustruct
+    - forbidigo
+    - funlen
+    - goconst
+    - godox
+    - ireturn
+    - lll
+    - mnd
+    - perfsprint
+    - predeclared
+    - rowserrcheck
+    - sqlclosecheck
+    - varnamelen
+    - wastedassign
+    - wrapcheck
+    - funcorder
+  settings:
+    nlreturn:
+      block-size: 2
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - path: (.+)\.go$
+        text: if-return
+      - path: (.+)\.go$
+        text: unused-parameter
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - goimports
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/unikorn-cloud)
+        - prefix(k8s.io)
+        - prefix(sigs.k8s.io)
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
