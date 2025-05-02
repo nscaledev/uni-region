@@ -73,7 +73,7 @@ By default, the vCluster Helm chart assumes the `ingress-nginx` controller is in
 This can be installed in a similar manner to the following:
 
 ```shell
-helm upgrade --install nginx-ingress nginx/ingress-nginx -n ingress-nginx --create-namespace --set controller.ingressClassResource.default=true --set 'controller.extraArgs.enable-ssl-passthrough='
+helm upgrade --install nginx-ingress nginx/nginx-ingress -n ingress-nginx --create-namespace --set controller.ingressClassResource.default=true --set 'controller.extraArgs.enable-ssl-passthrough='
 ```
 
 As the ingress needs to be able to route the correct clients to the correct virtual cluster API endpoint via the shared ingress, we need to be able to use SNI in order to extract the HTTP hostname from the TLS handshake to perform the routing.
