@@ -1,21 +1,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: unikorn-security-group-rule-controller
+  name: {{ .Release.Name }}-security-group-rule-controller
   labels:
     {{- include "unikorn.labels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: unikorn-security-group-rule-controller
+      app: {{ .Release.Name }}-security-group-rule-controller
   template:
     metadata:
       labels:
-        app: unikorn-security-group-rule-controller
+        app: {{ .Release.Name }}-security-group-rule-controller
     spec:
       containers:
-      - name: unikorn-security-group-rule-controller
+      - name: {{ .Release.Name }}-security-group-rule-controller
         image: {{ include "unikorn.securityGroupRuleControllerImage" . }}
         args:
         {{- include "unikorn.core.flags" . | nindent 8 }}
@@ -36,6 +36,6 @@ spec:
             memory: 100Mi
         securityContext:
           readOnlyRootFilesystem: true
-      serviceAccountName: unikorn-security-group-rule-controller
+      serviceAccountName: {{ .Release.Name }}-security-group-rule-controller
       securityContext:
         runAsNonRoot: true

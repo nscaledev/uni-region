@@ -1,21 +1,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: unikorn-network-controller
+  name: {{ .Release.Name }}-network-controller
   labels:
     {{- include "unikorn.labels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: unikorn-network-controller
+      app: {{ .Release.Name }}-network-controller
   template:
     metadata:
       labels:
-        app: unikorn-network-controller
+        app: {{ .Release.Name }}-network-controller
     spec:
       containers:
-      - name: unikorn-network-controller
+      - name: {{ .Release.Name }}-network-controller
         image: {{ include "unikorn.networkControllerImage" . }}
         args:
         {{- include "unikorn.core.flags" . | nindent 8 }}
@@ -36,6 +36,6 @@ spec:
             memory: 100Mi
         securityContext:
           readOnlyRootFilesystem: true
-      serviceAccountName: unikorn-network-controller
+      serviceAccountName: {{ .Release.Name }}-network-controller
       securityContext:
         runAsNonRoot: true
