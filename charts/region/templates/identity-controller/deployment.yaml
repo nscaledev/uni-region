@@ -1,21 +1,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: unikorn-identity-controller
+  name: {{ .Release.Name }}-identity-controller
   labels:
     {{- include "unikorn.labels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: unikorn-identity-controller
+      app: {{ .Release.Name }}-identity-controller
   template:
     metadata:
       labels:
-        app: unikorn-identity-controller
+        app: {{ .Release.Name }}-identity-controller
     spec:
       containers:
-      - name: unikorn-identity-controller
+      - name: {{ .Release.Name }}-identity-controller
         image: {{ include "unikorn.identityControllerImage" . }}
         args:
         {{- include "unikorn.core.flags" . | nindent 8 }}
@@ -36,6 +36,6 @@ spec:
             memory: 100Mi
         securityContext:
           readOnlyRootFilesystem: true
-      serviceAccountName: unikorn-identity-controller
+      serviceAccountName: {{ .Release.Name }}-identity-controller
       securityContext:
         runAsNonRoot: true

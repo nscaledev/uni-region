@@ -24,15 +24,3 @@ Create the container images
 {{- define "unikorn.serverControllerImage" -}}
 {{- .Values.serverController.image | default (printf "%s/unikorn-server-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
 {{- end }}
-
-{{/*
-Create image pull secrets
-*/}}
-{{- define "unikorn.imagePullSecrets" -}}
-{{- if .Values.imagePullSecret -}}
-- name: {{ .Values.imagePullSecret }}
-{{ end }}
-{{- if .Values.dockerConfig -}}
-- name: docker-config
-{{- end }}
-{{- end }}

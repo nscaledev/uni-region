@@ -1,21 +1,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: unikorn-region
+  name: {{ .Release.Name }}-server
   labels:
     {{- include "unikorn.labels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: unikorn-region
+      app: {{ .Release.Name }}-server
   template:
     metadata:
       labels:
-        app: unikorn-region
+        app: {{ .Release.Name }}-server
     spec:
       containers:
-      - name: unikorn-region
+      - name: {{ .Release.Name }}-server
         image: {{ include "unikorn.regionImage" . }}
         args:
         {{- include "unikorn.core.flags" . | nindent 8 }}
@@ -38,6 +38,6 @@ spec:
             memory: 100Mi
         securityContext:
           readOnlyRootFilesystem: true
-      serviceAccountName: unikorn-region
+      serviceAccountName: {{ .Release.Name }}-server
       securityContext:
         runAsNonRoot: true
