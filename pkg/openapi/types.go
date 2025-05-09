@@ -395,7 +395,7 @@ type RegionDetailRead struct {
 // RegionDetailSpec Information about the region.
 type RegionDetailSpec struct {
 	// Features A set of features the region may provide to clients.
-	Features *RegionFeatures `json:"features,omitempty"`
+	Features RegionFeatures `json:"features"`
 
 	// Kubernetes Region specific information when the type is kubernetes.
 	Kubernetes *RegionDetailKubernetes `json:"kubernetes,omitempty"`
