@@ -711,6 +711,7 @@ components:
       type: object
       required:
       - type
+      - features
       properties:
         type:
           $ref: '#/components/schemas/regionType'
@@ -1555,6 +1556,8 @@ components:
               type: kubernetes
               kubernetes:
                 kubeconfig: Zm9v
+              features:
+                physicalNetworks: false
     imagesResponse:
       description: A list of images that are compatible with this platform.
       content:
