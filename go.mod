@@ -109,6 +109,6 @@ require (
 )
 
 replace (
-	github.com/unikorn-cloud/core => github.com/nscaledev/uni-core v1.0.0-rc1
-	github.com/unikorn-cloud/identity => github.com/nscaledev/uni-identity v1.0.0-rc1
+	github.com/unikorn-cloud/core => github.com/nscaledev/uni-core v1.0.0-rc2
+	github.com/unikorn-cloud/identity => github.com/nscaledev/uni-identity v1.0.0-rc2
 )
