@@ -1535,6 +1535,7 @@ components:
               description: An oxymoronic tier-3 datacenter based in Liverpool.
               creationTime: 2023-07-31T10:45:45Z
               provisioningStatus: provisioned
+              healthStatus: healthy
             spec:
               type: openstack
               features:
@@ -1552,6 +1553,7 @@ components:
               description: An oxymoronic tier-3 datacenter based in Liverpool.
               creationTime: 2023-07-31T10:45:45Z
               provisioningStatus: provisioned
+              healthStatus: healthy
             spec:
               type: kubernetes
               kubernetes:
@@ -1625,6 +1627,7 @@ components:
               creationTime: 2024-05-31T14:11:00Z
               createdBy: john.doe@acme.com
               provisioningStatus: provisioned
+              healthStatus: healthy
             spec:
               regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
               type: openstack
@@ -1649,6 +1652,7 @@ components:
               creationTime: 2024-05-31T14:11:00Z
               createdBy: john.doe@acme.com
               provisioningStatus: provisioned
+              healthStatus: healthy
             spec:
               regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
               type: openstack
@@ -1673,6 +1677,7 @@ components:
               creationTime: 2024-05-31T14:11:00Z
               createdBy: john.doe@acme.com
               provisioningStatus: provisioned
+              healthStatus: healthy
             spec:
               regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
               prefix: 192.168.0.0/24
@@ -1697,6 +1702,7 @@ components:
               creationTime: 2024-05-31T14:11:00Z
               createdBy: john.doe@acme.com
               provisioningStatus: provisioned
+              healthStatus: healthy
             spec:
               regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
               prefix: 192.168.0.0/24
@@ -1740,6 +1746,7 @@ components:
               creationTime: 2024-05-31T14:11:00Z
               createdBy: john.doe@acme.com
               provisioningStatus: provisioned
+              healthStatus: healthy
             spec:
               regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
     securityGroupsResponse:
@@ -1757,6 +1764,7 @@ components:
               creationTime: 2024-05-31T14:11:00Z
               createdBy: john.doe@acme.com
               provisioningStatus: provisioned
+              healthStatus: healthy
             spec:
               regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
     securityGroupRuleResponse:
@@ -1774,6 +1782,7 @@ components:
               creationTime: 2024-05-31T14:11:00Z
               createdBy: john.doe@acme.com
               provisioningStatus: provisioned
+              healthStatus: healthy
             spec:
               direction: ingress
               protocol: tcp
@@ -1797,6 +1806,7 @@ components:
               creationTime: 2024-05-31T14:11:00Z
               createdBy: john.doe@acme.com
               provisioningStatus: provisioned
+              healthStatus: healthy
             spec:
               direction: ingress
               protocol: tcp
@@ -1813,6 +1823,7 @@ components:
               creationTime: 2024-05-31T14:11:00Z
               createdBy: john.doe@acme.com
               provisioningStatus: provisioned
+              healthStatus: healthy
             spec:
               direction: ingress
               protocol: tcp
@@ -1834,6 +1845,7 @@ components:
               creationTime: 2024-05-31T14:11:00Z
               createdBy: john.doe@acme.com
               provisioningStatus: provisioned
+              healthStatus: healthy
               tags:
               - name: tag-name
                 value: tag-value
@@ -1867,6 +1879,7 @@ components:
               creationTime: 2024-05-31T14:11:00Z
               createdBy: john.doe@acme.com
               provisioningStatus: provisioned
+              healthStatus: healthy
               tags:
               - name: tag-name
                 value: tag-value

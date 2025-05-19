@@ -21,7 +21,6 @@ import (
 	"net"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
-	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
@@ -46,14 +45,8 @@ func convertList(in *unikornv1.ServerList) openapi.ServersRead {
 
 // convert converts from a custom resource into the API definition.
 func convert(in *unikornv1.Server) *openapi.ServerRead {
-	provisioningStatus := coreapi.ResourceProvisioningStatusUnknown
-
-	if condition, err := in.StatusConditionRead(unikornv1core.ConditionAvailable); err == nil {
-		provisioningStatus = conversion.ConvertStatusCondition(condition)
-	}
-
 	out := &openapi.ServerRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags, provisioningStatus),
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.ServerReadSpec{
 			FlavorId:           in.Spec.FlavorID,
 			Image:              convertServerImage(in.Spec.Image),

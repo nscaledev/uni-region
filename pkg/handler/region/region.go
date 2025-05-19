@@ -22,7 +22,6 @@ import (
 	goerrors "errors"
 	"fmt"
 
-	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -135,7 +134,7 @@ func convertRegionType(in unikornv1.Provider) openapi.RegionType {
 
 func convert(in *unikornv1.Region) *openapi.RegionRead {
 	out := &openapi.RegionRead{
-		Metadata: conversion.ResourceReadMetadata(in, in.Spec.Tags, coreopenapi.ResourceProvisioningStatusProvisioned),
+		Metadata: conversion.ResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.RegionSpec{
 			Type: convertRegionType(in.Spec.Provider),
 		},
@@ -153,7 +152,7 @@ func convert(in *unikornv1.Region) *openapi.RegionRead {
 
 func (c *Client) convertDetail(ctx context.Context, in *unikornv1.Region) (*openapi.RegionDetailRead, error) {
 	out := &openapi.RegionDetailRead{
-		Metadata: conversion.ResourceReadMetadata(in, in.Spec.Tags, coreopenapi.ResourceProvisioningStatusProvisioned),
+		Metadata: conversion.ResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.RegionDetailSpec{
 			Type: convertRegionType(in.Spec.Provider),
 		},
