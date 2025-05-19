@@ -369,14 +369,8 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w htt
 }
 
 func (h *Handler) convertIdentity(ctx context.Context, in *unikornv1.Identity) *openapi.IdentityRead {
-	provisioningStatus := coreapi.ResourceProvisioningStatusUnknown
-
-	if condition, err := in.StatusConditionRead(unikornv1core.ConditionAvailable); err == nil {
-		provisioningStatus = conversion.ConvertStatusCondition(condition)
-	}
-
 	out := &openapi.IdentityRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags, provisioningStatus),
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.IdentitySpec{
 			RegionId: in.Labels[constants.RegionLabel],
 		},
@@ -551,14 +545,8 @@ func convertIPv4List(in []unikornv1core.IPv4Address) openapi.Ipv4AddressList {
 }
 
 func (h *Handler) convertNetwork(ctx context.Context, in *unikornv1.Network) *openapi.NetworkRead {
-	provisioningStatus := coreapi.ResourceProvisioningStatusUnknown
-
-	if condition, err := in.StatusConditionRead(unikornv1core.ConditionAvailable); err == nil {
-		provisioningStatus = conversion.ConvertStatusCondition(condition)
-	}
-
 	out := &openapi.NetworkRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags, provisioningStatus),
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.NetworkReadSpec{
 			RegionId:       in.Labels[constants.RegionLabel],
 			Prefix:         in.Spec.Prefix.String(),
@@ -961,14 +949,8 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetw
 }
 
 func (h *Handler) convertSecurityGroup(in *unikornv1.SecurityGroup) *openapi.SecurityGroupRead {
-	provisioningStatus := coreapi.ResourceProvisioningStatusUnknown
-
-	if condition, err := in.StatusConditionRead(unikornv1core.ConditionAvailable); err == nil {
-		provisioningStatus = conversion.ConvertStatusCondition(condition)
-	}
-
 	out := &openapi.SecurityGroupRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags, provisioningStatus),
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.SecurityGroupReadSpec{
 			RegionId: in.Labels[constants.RegionLabel],
 		},
@@ -1249,14 +1231,8 @@ func generateSecurityGroupRuleDirection(in openapi.SecurityGroupRuleWriteSpecDir
 }
 
 func (h *Handler) convertSecurityGroupRule(in *unikornv1.SecurityGroupRule) *openapi.SecurityGroupRuleRead {
-	provisioningStatus := coreapi.ResourceProvisioningStatusUnknown
-
-	if condition, err := in.StatusConditionRead(unikornv1core.ConditionAvailable); err == nil {
-		provisioningStatus = conversion.ConvertStatusCondition(condition)
-	}
-
 	out := &openapi.SecurityGroupRuleRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags, provisioningStatus),
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.SecurityGroupRuleReadSpec{
 			Direction: convertSecurityGroupRuleDirection(*in.Spec.Direction),
 			Protocol:  openapi.SecurityGroupRuleReadSpecProtocol(*in.Spec.Protocol),
