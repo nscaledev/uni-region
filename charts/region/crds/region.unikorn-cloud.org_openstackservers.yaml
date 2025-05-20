@@ -50,7 +50,7 @@ spec:
                   type: string
                 type: array
               publicIPAllocationId:
-                description: PublicIPAllocationId is the public ip allocation id.
+                description: PublicIPAllocationID is the public ip allocation id.
                 type: string
               serverID:
                 description: ServerID is the server ID.
