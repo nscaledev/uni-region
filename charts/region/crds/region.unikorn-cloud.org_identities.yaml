@@ -116,6 +116,8 @@ spec:
                       - Errored
                       - Deprovisioning
                       - Deprovisioned
+                      - Healthy
+                      - Degraded
                       type: string
                     status:
                       description: |-
@@ -126,6 +128,7 @@ spec:
                       description: Type is the type of the condition.
                       enum:
                       - Available
+                      - Healthy
                       type: string
                   required:
                   - lastTransitionTime
