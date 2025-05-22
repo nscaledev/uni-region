@@ -1,15 +1,18 @@
 openapi: 3.0.3
 info:
-  title: Kubernetes Region Service API
+  title: Region Service API
   description: |-
-    Cloud region discovery and routing service.
-  version: 0.1.1
+    Cloud region discovery and routing service.  This is service not intended for direct access
+    by end users.  Region related functionality is typically exposed by higher level services
+    e.g. Compute and Kubernetes, that provide subsets of resources that are compatible with
+    that service.
+  version: 1.1.0
 paths:
   /api/v1/organizations/{organizationID}/regions:
     description: |-
       Regions define a cloud.  This may be geographical or any logical partition.
-      Either way this is the primitive that is used to associate metadata such as
-      geographical locale, an organisation's reserved blob of compute etc.
+      Either way, this is the primitive that is used to associate metadata such as
+      geographical locale, an organization's reserved blob of compute etc.
       Each region has its own provider associated with it, for example OpenStack, and
       its own set of credentials so things can be scoped to a specific slice of a
       shared cloud through whatever mechanism is available on that cloud provider.
@@ -30,12 +33,14 @@ paths:
   /api/v1/organizations/{organizationID}/regions/{regionID}/detail:
     description: |-
       Retrieves admin-level region details.
+      This API is intentionally separate from the main list regions API to limit
+      unintentional leakage of sensitive credentials.
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/regionIDParameter'
     get:
       description: |-
-        Get a detailed view of the region, which may contain credentials.
+        Get a detailed view of the region.
       security:
       - oauth2Authentication: []
       responses:
@@ -56,7 +61,7 @@ paths:
     - $ref: '#/components/parameters/regionIDParameter'
     get:
       description: |-
-        Lists all compute flavors that the authenticated user has access to
+        Lists all compute flavors.
       security:
       - oauth2Authentication: []
       responses:
@@ -75,7 +80,7 @@ paths:
     - $ref: '#/components/parameters/regionIDParameter'
     get:
       description: |-
-        Lists all compute images that the authenticated user has access to.
+        Lists all compute images.
       security:
       - oauth2Authentication: []
       responses:
@@ -90,9 +95,9 @@ paths:
   /api/v1/organizations/{organizationID}/regions/{regionID}/externalnetworks:
     description: |-
       Allows access to "external networks" for providers that support them.
-      While CAPO can infer the external network itself, it craps out -
-      as per usual - if more than one is found, wracked with indescision.
-      Thus we still need to handle it as a special snowflake.
+      While things like Cluster API can infer the external network itself,
+      it will break if it detects more than one, so this allows us to be
+      explicit in our selection.
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/regionIDParameter'
@@ -113,13 +118,15 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/identities:
     description: |-
-      Managed identity services.  Identities should be single use e.g. a single cluster instance.
-      This limits blast radius in the event of a credential leak, or in some cases avoids bugs in
-      provisioning software.
+      Identities are a limited scope set of credentials that can be used to provision
+      infrastructure in the region.  These typically contain isolated service accounts
+      and projects, with the minimum required privileges to allow infrastructure
+      provisioning.  This forms the basis of a security domain and minimizes risk in
+      the event of a credentials leak.
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
     get:
-      description: Get all identites scoped to an organization.
+      description: Get all identities scoped to an organization.
       security:
       - oauth2Authentication: []
       responses:
@@ -135,9 +142,11 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/projects/{projectID}/identities:
     description: |-
-      Managed identity services.  Identities should be single use e.g. a single cluster instance.
-      This limits blast radius in the event of a credential leak, or in some cases avoids bugs in
-      provisioning software.
+      Identities are a limited scope set of credentials that can be used to provision
+      infrastructure in the region.  These typically contain isolated service accounts
+      and projects, with the minimum required privileges to allow infrastructure
+      provisioning.  This forms the basis of a security domain and minimizes risk in
+      the event of a credentials leak.
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/projectIDParameter'
@@ -160,9 +169,11 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}:
     description: |-
-      Managed identity services.  Identities should be single use e.g. a single cluster instance.
-      This limits blast radius in the event of a credential leak, or in some cases avoids bugs in
-      provisioning software.
+      Identities are a limited scope set of credentials that can be used to provision
+      infrastructure in the region.  These typically contain isolated service accounts
+      and projects, with the minimum required privileges to allow infrastructure
+      provisioning.  This forms the basis of a security domain and minimizes risk in
+      the event of a credentials leak.
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/projectIDParameter'
@@ -246,7 +257,7 @@ paths:
     description: |-
       Manages networks.  Networks may be required for baremetal node provisioning e.g. a VLAN.
       Note that only a single network is currently supported per identity, as identities are
-      intended to exist per piece of infrastructure.
+      intended to be provisioned per-cluster.
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
     get:
@@ -268,7 +279,7 @@ paths:
     description: |-
       Manages networks.  Networks may be required for baremetal node provisioning e.g. a VLAN.
       Note that only a single network is currently supported per identity, as identities are
-      intended to exist per piece of infrastructure.
+      intended to be provisioned per-cluster.
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/projectIDParameter'
@@ -294,14 +305,14 @@ paths:
     description: |-
       Manages networks.  Networks may be required for baremetal node provisioning e.g. a VLAN.
       Note that only a single network is currently supported per identity, as identities are
-      intended to exist per piece of infrastructure.
+      intended to be provisioned per-cluster.
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/identityIDParameter'
     - $ref: '#/components/parameters/networkIDParameter'
     get:
-      description: Get a phyiscal network.
+      description: Get a physical network.
       security:
       - oauth2Authentication: []
       responses:
@@ -608,56 +619,49 @@ components:
       name: projectID
       in: path
       description: |-
-        The project name.
+        The project ID.
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
     regionIDParameter:
       name: regionID
       in: path
-      description: The region identifier.
+      description: The region ID.
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
     identityIDParameter:
       name: identityID
       in: path
-      description: The identity identifier.
+      description: The identity ID.
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
     networkIDParameter:
       name: networkID
       in: path
-      description: The network identifier.
-      required: true
-      schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
-    clientIDParameter:
-      name: clientID
-      in: path
-      description: The client a resource belongs to.
+      description: The network ID.
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
     securityGroupIDParameter:
       name: securityGroupID
       in: path
-      description: The security group identifier.
+      description: The security group ID.
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
     ruleIDParameter:
       name: ruleID
       in: path
-      description: The security group rule identifier.
+      description: The security group rule ID.
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
     serverIDParameter:
       name: serverID
       in: path
-      description: The server identifier.
+      description: The server ID.
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
@@ -682,7 +686,7 @@ components:
         physicalNetworks:
           description: |
             If set, this indicates that the region supports physical networks and
-            one should be provisioned for clusters to use.  The impliciation here is
+            one should be provisioned for clusters to use.  The implication here is
             the region supports base-metal machines, and these must be provisioned
             on a physical VLAN etc.
           type: boolean
@@ -698,7 +702,7 @@ components:
         features:
           $ref: '#/components/schemas/regionFeatures'
     regionDetailKubernetes:
-      description: Region specific information when the type is kubernetes.
+      description: Region specific information when the type is "kubernetes".
       type: object
       required:
       - kubeconfig
@@ -975,10 +979,7 @@ components:
           description: Ephemeral SSH private key to be used by higher order services.
           type: string
     identitySpec:
-      description: |-
-        A provider specific identity, while the client can list regions to infer the
-        type, we don't requires this and return it with the response.  That can then
-        be used in turn to determine which provider specification to examine.
+      description: A provider specific identity.
       type: object
       required:
       - type
@@ -1016,7 +1017,7 @@ components:
       items:
         $ref: "#/components/schemas/ipv4Address"
     networkReadSpec:
-      description: A phyical network's specification.
+      description: A physical network's specification.
       type: object
       required:
       - regionId
@@ -1052,7 +1053,7 @@ components:
           description: The openstack router ID.
           type: string
     networkWriteSpec:
-      description: A phyical network's specification.
+      description: A physical network's specification.
       type: object
       required:
       - prefix
@@ -1531,8 +1532,8 @@ components:
           example:
           - metadata:
               id: c7568e2d-f9ab-453d-9a3a-51375f78426b
-              name: uk-west
-              description: An oxymoronic tier-3 datacenter based in Liverpool.
+              name: uk-west-1
+              description: A top secret datacenter somewhere in the UK
               creationTime: 2023-07-31T10:45:45Z
               provisioningStatus: provisioned
               healthStatus: healthy
@@ -1550,7 +1551,7 @@ components:
             metadata:
               id: c7568e2d-f9ab-453d-9a3a-51375f78426b
               name: uk-west
-              description: An oxymoronic tier-3 datacenter based in Liverpool.
+              description: A top secret datacenter somewhere in the UK
               creationTime: 2023-07-31T10:45:45Z
               provisioningStatus: provisioned
               healthStatus: healthy
@@ -1900,10 +1901,10 @@ components:
               publicIP: 142.250.66.196
   securitySchemes:
     oauth2Authentication:
-      description: Operation requires OAuth2 bearer token authentication.
+      description: Operation requires OAuth 2.0 bearer token authentication.
       type: oauth2
       flows:
         authorizationCode:
-          authorizationUrl: https://identity.unikorn-cloud.org/oauth2/v2/authorization
-          tokenUrl: https://identity.unikorn-cloud.org/oauth2/v2/token
+          authorizationUrl: https://identity.nks.europe-west4.nscale.com/oauth2/v2/authorization
+          tokenUrl: https://identity.nks.europe-west4.nscale.com/oauth2/v2/token
           scopes: {}
