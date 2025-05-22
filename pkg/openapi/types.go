@@ -86,7 +86,7 @@ type ExternalNetworks = []ExternalNetwork
 // Flavor A flavor.
 type Flavor struct {
 	// Metadata This metadata is for resources that just exist, and don't require
-	// any provisioning and health status, but benefit from a standarized
+	// any provisioning and health status, but benefit from a standardized
 	// metadata format.
 	Metadata externalRef0.StaticResourceMetadata `json:"metadata"`
 
@@ -162,17 +162,14 @@ type IdentitiesRead = []IdentityRead
 
 // IdentityRead A provider specific identity.
 type IdentityRead struct {
+	// Metadata Metadata required by project scoped resource reads.
 	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
 
-	// Spec A provider specific identity, while the client can list regions to infer the
-	// type, we don't requires this and return it with the response.  That can then
-	// be used in turn to determine which provider specification to examine.
+	// Spec A provider specific identity.
 	Spec IdentitySpec `json:"spec"`
 }
 
-// IdentitySpec A provider specific identity, while the client can list regions to infer the
-// type, we don't requires this and return it with the response.  That can then
-// be used in turn to determine which provider specification to examine.
+// IdentitySpec A provider specific identity.
 type IdentitySpec struct {
 	// Openstack Everything an OpenStack client needs to function.
 	Openstack *IdentitySpecOpenStack `json:"openstack,omitempty"`
@@ -210,7 +207,7 @@ type IdentitySpecOpenStack struct {
 
 // IdentityWrite An identity request.
 type IdentityWrite struct {
-	// Metadata Resource metadata valid for all API resource reads and writes.
+	// Metadata Metadata required for all API resource reads and writes.
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
 
 	// Spec Request parameters for creating an identity.
@@ -226,7 +223,7 @@ type IdentityWriteSpec struct {
 // Image An image.
 type Image struct {
 	// Metadata This metadata is for resources that just exist, and don't require
-	// any provisioning and health status, but benefit from a standarized
+	// any provisioning and health status, but benefit from a standardized
 	// metadata format.
 	Metadata externalRef0.StaticResourceMetadata `json:"metadata"`
 
@@ -302,13 +299,14 @@ type KubernetesNameParameter = string
 
 // NetworkRead A network.
 type NetworkRead struct {
+	// Metadata Metadata required by project scoped resource reads.
 	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
 
-	// Spec A phyical network's specification.
+	// Spec A physical network's specification.
 	Spec NetworkReadSpec `json:"spec"`
 }
 
-// NetworkReadSpec A phyical network's specification.
+// NetworkReadSpec A physical network's specification.
 type NetworkReadSpec struct {
 	// DnsNameservers A list of IPv4 addresses.
 	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
@@ -343,14 +341,14 @@ type NetworkSpecOpenstack struct {
 
 // NetworkWrite A network request.
 type NetworkWrite struct {
-	// Metadata Resource metadata valid for all API resource reads and writes.
+	// Metadata Metadata required for all API resource reads and writes.
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
 
-	// Spec A phyical network's specification.
+	// Spec A physical network's specification.
 	Spec *NetworkWriteSpec `json:"spec,omitempty"`
 }
 
-// NetworkWriteSpec A phyical network's specification.
+// NetworkWriteSpec A physical network's specification.
 type NetworkWriteSpec struct {
 	// DnsNameservers A list of IPv4 addresses.
 	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
@@ -377,7 +375,7 @@ type QuotasSpec struct {
 	Flavors *FlavorQuotaList `json:"flavors,omitempty"`
 }
 
-// RegionDetailKubernetes Region specific information when the type is kubernetes.
+// RegionDetailKubernetes Region specific information when the type is "kubernetes".
 type RegionDetailKubernetes struct {
 	// Kubeconfig The region's base64 encoded Kubernetes configuration file.
 	Kubeconfig string `json:"kubeconfig"`
@@ -385,7 +383,7 @@ type RegionDetailKubernetes struct {
 
 // RegionDetailRead A region.
 type RegionDetailRead struct {
-	// Metadata Resource metadata valid for all reads.
+	// Metadata Metadata required by all resource reads.
 	Metadata externalRef0.ResourceReadMetadata `json:"metadata"`
 
 	// Spec Information about the region.
@@ -397,7 +395,7 @@ type RegionDetailSpec struct {
 	// Features A set of features the region may provide to clients.
 	Features RegionFeatures `json:"features"`
 
-	// Kubernetes Region specific information when the type is kubernetes.
+	// Kubernetes Region specific information when the type is "kubernetes".
 	Kubernetes *RegionDetailKubernetes `json:"kubernetes,omitempty"`
 
 	// Type The region's provider type.
@@ -407,7 +405,7 @@ type RegionDetailSpec struct {
 // RegionFeatures A set of features the region may provide to clients.
 type RegionFeatures struct {
 	// PhysicalNetworks If set, this indicates that the region supports physical networks and
-	// one should be provisioned for clusters to use.  The impliciation here is
+	// one should be provisioned for clusters to use.  The implication here is
 	// the region supports base-metal machines, and these must be provisioned
 	// on a physical VLAN etc.
 	PhysicalNetworks bool `json:"physicalNetworks"`
@@ -415,7 +413,7 @@ type RegionFeatures struct {
 
 // RegionRead A region.
 type RegionRead struct {
-	// Metadata Resource metadata valid for all reads.
+	// Metadata Metadata required by all resource reads.
 	Metadata externalRef0.ResourceReadMetadata `json:"metadata"`
 
 	// Spec Information about the region.
@@ -439,6 +437,7 @@ type Regions = []RegionRead
 
 // SecurityGroupRead A security group.
 type SecurityGroupRead struct {
+	// Metadata Metadata required by project scoped resource reads.
 	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
 
 	// Spec A security group's specification.
@@ -471,6 +470,7 @@ type SecurityGroupRulePortRange struct {
 
 // SecurityGroupRuleRead A security group rule.
 type SecurityGroupRuleRead struct {
+	// Metadata Metadata required by project scoped resource reads.
 	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
 
 	// Spec A security group rule's specification.
@@ -500,7 +500,7 @@ type SecurityGroupRuleReadSpecProtocol string
 
 // SecurityGroupRuleWrite A security group rule request.
 type SecurityGroupRuleWrite struct {
-	// Metadata Resource metadata valid for all API resource reads and writes.
+	// Metadata Metadata required for all API resource reads and writes.
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
 
 	// Spec A security group rule's specification.
@@ -533,7 +533,7 @@ type SecurityGroupRulesRead = []SecurityGroupRuleRead
 
 // SecurityGroupWrite A security group request.
 type SecurityGroupWrite struct {
-	// Metadata Resource metadata valid for all API resource reads and writes.
+	// Metadata Metadata required for all API resource reads and writes.
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
 
 	// Spec A security group's specification.
@@ -584,6 +584,7 @@ type ServerPublicIPAllocation struct {
 
 // ServerRead A server.
 type ServerRead struct {
+	// Metadata Metadata required by project scoped resource reads.
 	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
 
 	// Spec A server's specification.
@@ -634,7 +635,7 @@ type ServerSecurityGroupList = []ServerSecurityGroup
 
 // ServerWrite A server request.
 type ServerWrite struct {
-	// Metadata Resource metadata valid for all API resource reads and writes.
+	// Metadata Metadata required for all API resource reads and writes.
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
 
 	// Spec A server's specification.
