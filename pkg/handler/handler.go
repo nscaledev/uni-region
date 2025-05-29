@@ -1193,37 +1193,48 @@ func generateSecurityGroupRulePort(in openapi.SecurityGroupRulePort) *unikornv1.
 	return &out
 }
 
-func generateSecurityGroupRuleProtocol(in openapi.SecurityGroupRuleWriteSpecProtocol) *unikornv1.SecurityGroupRuleProtocol {
+func convertSecurityGroupRuleProtocol(in unikornv1.SecurityGroupRuleProtocol) openapi.NetworkProtocol {
+	switch in {
+	case unikornv1.TCP:
+		return openapi.Tcp
+	case unikornv1.UDP:
+		return openapi.Udp
+	}
+
+	return ""
+}
+
+func generateSecurityGroupRuleProtocol(in openapi.NetworkProtocol) *unikornv1.SecurityGroupRuleProtocol {
 	var out unikornv1.SecurityGroupRuleProtocol
 
 	switch in {
-	case openapi.SecurityGroupRuleWriteSpecProtocolTcp:
+	case openapi.Tcp:
 		out = unikornv1.TCP
-	case openapi.SecurityGroupRuleWriteSpecProtocolUdp:
+	case openapi.Udp:
 		out = unikornv1.UDP
 	}
 
 	return &out
 }
 
-func convertSecurityGroupRuleDirection(in unikornv1.SecurityGroupRuleDirection) openapi.SecurityGroupRuleReadSpecDirection {
+func convertSecurityGroupRuleDirection(in unikornv1.SecurityGroupRuleDirection) openapi.NetworkDirection {
 	switch in {
 	case unikornv1.Ingress:
-		return openapi.SecurityGroupRuleReadSpecDirectionIngress
+		return openapi.Ingress
 	case unikornv1.Egress:
-		return openapi.SecurityGroupRuleReadSpecDirectionEgress
+		return openapi.Egress
 	}
 
 	return ""
 }
 
-func generateSecurityGroupRuleDirection(in openapi.SecurityGroupRuleWriteSpecDirection) *unikornv1.SecurityGroupRuleDirection {
+func generateSecurityGroupRuleDirection(in openapi.NetworkDirection) *unikornv1.SecurityGroupRuleDirection {
 	var out unikornv1.SecurityGroupRuleDirection
 
 	switch in {
-	case openapi.SecurityGroupRuleWriteSpecDirectionIngress:
+	case openapi.Ingress:
 		out = unikornv1.Ingress
-	case openapi.SecurityGroupRuleWriteSpecDirectionEgress:
+	case openapi.Egress:
 		out = unikornv1.Egress
 	}
 
@@ -1233,9 +1244,9 @@ func generateSecurityGroupRuleDirection(in openapi.SecurityGroupRuleWriteSpecDir
 func (h *Handler) convertSecurityGroupRule(in *unikornv1.SecurityGroupRule) *openapi.SecurityGroupRuleRead {
 	out := &openapi.SecurityGroupRuleRead{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
-		Spec: openapi.SecurityGroupRuleReadSpec{
+		Spec: openapi.SecurityGroupRuleSpec{
 			Direction: convertSecurityGroupRuleDirection(*in.Spec.Direction),
-			Protocol:  openapi.SecurityGroupRuleReadSpecProtocol(*in.Spec.Protocol),
+			Protocol:  convertSecurityGroupRuleProtocol(*in.Spec.Protocol),
 			Cidr:      in.Spec.CIDR.String(),
 			Port:      convertSecurityGroupRulePort(*in.Spec.Port),
 		},

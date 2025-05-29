@@ -24,6 +24,18 @@ const (
 	Virtualized ImageVirtualization = "virtualized"
 )
 
+// Defines values for NetworkDirection.
+const (
+	Egress  NetworkDirection = "egress"
+	Ingress NetworkDirection = "ingress"
+)
+
+// Defines values for NetworkProtocol.
+const (
+	Tcp NetworkProtocol = "tcp"
+	Udp NetworkProtocol = "udp"
+)
+
 // Defines values for OsDistro.
 const (
 	Rocky  OsDistro = "rocky"
@@ -45,30 +57,6 @@ const (
 const (
 	Kubernetes RegionType = "kubernetes"
 	Openstack  RegionType = "openstack"
-)
-
-// Defines values for SecurityGroupRuleReadSpecDirection.
-const (
-	SecurityGroupRuleReadSpecDirectionEgress  SecurityGroupRuleReadSpecDirection = "egress"
-	SecurityGroupRuleReadSpecDirectionIngress SecurityGroupRuleReadSpecDirection = "ingress"
-)
-
-// Defines values for SecurityGroupRuleReadSpecProtocol.
-const (
-	SecurityGroupRuleReadSpecProtocolTcp SecurityGroupRuleReadSpecProtocol = "tcp"
-	SecurityGroupRuleReadSpecProtocolUdp SecurityGroupRuleReadSpecProtocol = "udp"
-)
-
-// Defines values for SecurityGroupRuleWriteSpecDirection.
-const (
-	SecurityGroupRuleWriteSpecDirectionEgress  SecurityGroupRuleWriteSpecDirection = "egress"
-	SecurityGroupRuleWriteSpecDirectionIngress SecurityGroupRuleWriteSpecDirection = "ingress"
-)
-
-// Defines values for SecurityGroupRuleWriteSpecProtocol.
-const (
-	SecurityGroupRuleWriteSpecProtocolTcp SecurityGroupRuleWriteSpecProtocol = "tcp"
-	SecurityGroupRuleWriteSpecProtocolUdp SecurityGroupRuleWriteSpecProtocol = "udp"
 )
 
 // ExternalNetwork An Openstack external network.
@@ -297,6 +285,12 @@ type Ipv4AddressList = []Ipv4Address
 // KubernetesNameParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type KubernetesNameParameter = string
 
+// NetworkDirection The direction of the rule.
+type NetworkDirection string
+
+// NetworkProtocol The protocol to allow.
+type NetworkProtocol string
+
 // NetworkRead A network.
 type NetworkRead struct {
 	// Metadata Metadata required by project scoped resource reads.
@@ -474,29 +468,23 @@ type SecurityGroupRuleRead struct {
 	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
 
 	// Spec A security group rule's specification.
-	Spec SecurityGroupRuleReadSpec `json:"spec"`
+	Spec SecurityGroupRuleSpec `json:"spec"`
 }
 
-// SecurityGroupRuleReadSpec A security group rule's specification.
-type SecurityGroupRuleReadSpec struct {
+// SecurityGroupRuleSpec A security group rule's specification.
+type SecurityGroupRuleSpec struct {
 	// Cidr An IPv4 address.
 	Cidr Ipv4Address `json:"cidr"`
 
 	// Direction The direction of the rule.
-	Direction SecurityGroupRuleReadSpecDirection `json:"direction"`
+	Direction NetworkDirection `json:"direction"`
 
 	// Port The port definition to allow traffic.
 	Port SecurityGroupRulePort `json:"port"`
 
 	// Protocol The protocol to allow.
-	Protocol SecurityGroupRuleReadSpecProtocol `json:"protocol"`
+	Protocol NetworkProtocol `json:"protocol"`
 }
-
-// SecurityGroupRuleReadSpecDirection The direction of the rule.
-type SecurityGroupRuleReadSpecDirection string
-
-// SecurityGroupRuleReadSpecProtocol The protocol to allow.
-type SecurityGroupRuleReadSpecProtocol string
 
 // SecurityGroupRuleWrite A security group rule request.
 type SecurityGroupRuleWrite struct {
@@ -504,29 +492,8 @@ type SecurityGroupRuleWrite struct {
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
 
 	// Spec A security group rule's specification.
-	Spec SecurityGroupRuleWriteSpec `json:"spec"`
+	Spec SecurityGroupRuleSpec `json:"spec"`
 }
-
-// SecurityGroupRuleWriteSpec A security group rule's specification.
-type SecurityGroupRuleWriteSpec struct {
-	// Cidr An IPv4 address.
-	Cidr Ipv4Address `json:"cidr"`
-
-	// Direction The direction of the rule.
-	Direction SecurityGroupRuleWriteSpecDirection `json:"direction"`
-
-	// Port The port definition to allow traffic.
-	Port SecurityGroupRulePort `json:"port"`
-
-	// Protocol The protocol to allow.
-	Protocol SecurityGroupRuleWriteSpecProtocol `json:"protocol"`
-}
-
-// SecurityGroupRuleWriteSpecDirection The direction of the rule.
-type SecurityGroupRuleWriteSpecDirection string
-
-// SecurityGroupRuleWriteSpecProtocol The protocol to allow.
-type SecurityGroupRuleWriteSpecProtocol string
 
 // SecurityGroupRulesRead A list of security group rules.
 type SecurityGroupRulesRead = []SecurityGroupRuleRead

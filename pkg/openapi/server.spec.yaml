@@ -1153,7 +1153,19 @@ components:
         end:
           description: The end of the port range.
           type: integer
-    securityGroupRuleWriteSpec:
+    networkDirection:
+      description: The direction of the rule.
+      type: string
+      enum:
+      - ingress
+      - egress
+    networkProtocol:
+      description: The protocol to allow.
+      type: string
+      enum:
+      - tcp
+      - udp
+    securityGroupRuleSpec:
       description: A security group rule's specification.
       type: object
       required:
@@ -1163,17 +1175,9 @@ components:
       - cidr
       properties:
         direction:
-          description: The direction of the rule.
-          type: string
-          enum:
-          - ingress
-          - egress
+          $ref: '#/components/schemas/networkDirection'
         protocol:
-          description: The protocol to allow.
-          type: string
-          enum:
-          - tcp
-          - udp
+          $ref: '#/components/schemas/networkProtocol'
         port:
           $ref: '#/components/schemas/securityGroupRulePort'
         cidr:
@@ -1188,32 +1192,7 @@ components:
         metadata:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
-          $ref: '#/components/schemas/securityGroupRuleWriteSpec'
-    securityGroupRuleReadSpec:
-      description: A security group rule's specification.
-      type: object
-      required:
-      - direction
-      - protocol
-      - port
-      - cidr
-      properties:
-        direction:
-          description: The direction of the rule.
-          type: string
-          enum:
-          - ingress
-          - egress
-        protocol:
-          description: The protocol to allow.
-          type: string
-          enum:
-          - tcp
-          - udp
-        port:
-          $ref: '#/components/schemas/securityGroupRulePort'
-        cidr:
-          $ref: '#/components/schemas/ipv4Address'
+          $ref: '#/components/schemas/securityGroupRuleSpec'
     securityGroupRuleRead:
       description: A security group rule.
       type: object
@@ -1224,7 +1203,7 @@ components:
         metadata:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
-          $ref: '#/components/schemas/securityGroupRuleReadSpec'
+          $ref: '#/components/schemas/securityGroupRuleSpec'
     securityGroupRulesRead:
       description: A list of security group rules.
       type: array
