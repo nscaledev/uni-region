@@ -1878,6 +1878,7 @@ func (p *Provider) openstackSecurityGroupIDs(ctx context.Context, identity *unik
 	}
 
 	resources := &unikornv1.OpenstackSecurityGroupList{}
+
 	if err := p.client.List(ctx, resources, options); err != nil {
 		return nil, err
 	}
@@ -1891,13 +1892,16 @@ func (p *Provider) openstackSecurityGroupIDs(ctx context.Context, identity *unik
 	sgIDs := make([]string, 0, len(securityGroups))
 
 	for _, sg := range securityGroups {
-		s, found := sgMap[sg.ID]
-		if !found {
-			return nil, fmt.Errorf("%w: securitygroup %s", ErrResourceNotFound, sg.ID)
+		// As we may be waiting for a separate controller to reconcile the
+		// security group, yield rather than raise an error which is bad for
+		// UX.
+		s, ok := sgMap[sg.ID]
+		if !ok {
+			return nil, provisioners.ErrYield
 		}
 
 		if s.Spec.SecurityGroupID == nil {
-			return nil, fmt.Errorf("%w: securitygroup %s", ErrResouceDependency, sg.ID)
+			return nil, provisioners.ErrYield
 		}
 
 		sgIDs = append(sgIDs, *s.Spec.SecurityGroupID)
