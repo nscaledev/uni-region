@@ -591,6 +591,23 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    put:
+      description: Update a server.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/serverRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/serverResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       description: Delete a server.
       security:
@@ -1247,7 +1264,7 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/securityGroupRead'
-    serverReadSpec:
+    serverSpec:
       description: A server's specification.
       type: object
       required:
@@ -1338,7 +1355,7 @@ components:
         id:
           description: The image ID.
           type: string
-    serverReadStatus:
+    serverStatus:
       description: A server's status.
       type: object
       properties:
@@ -1348,40 +1365,6 @@ components:
         publicIP:
           description: The public IP address of the server.
           type: string
-    serverWriteSpec:
-      description: A server's specification.
-      type: object
-      required:
-      - flavorId
-      - image
-      - networks
-      properties:
-        flavorId:
-          description: The flavor of the server.
-          type: string
-        image:
-          $ref: '#/components/schemas/serverImage'
-        securityGroups:
-          $ref: '#/components/schemas/serverSecurityGroupList'
-        publicIPAllocation:
-          $ref: '#/components/schemas/serverPublicIPAllocation'
-        networks:
-          $ref: '#/components/schemas/serverNetworkList'
-        userData:
-          description: UserData contains base64-encoded configuration information or scripts to use upon launch.
-          type: string
-          format: byte 
-    serverWrite:
-      description: A server request.
-      type: object
-      required:
-      - metadata
-      - spec
-      properties:
-        metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
-        spec:
-          $ref: '#/components/schemas/serverWriteSpec'
     serverRead:
       description: A server.
       type: object
@@ -1393,9 +1376,20 @@ components:
         metadata:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
-          $ref: '#/components/schemas/serverReadSpec'
+          $ref: '#/components/schemas/serverSpec'
         status:
-          $ref: '#/components/schemas/serverReadStatus'
+          $ref: '#/components/schemas/serverStatus'
+    serverWrite:
+      description: A server request.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/serverSpec'
     serversRead:
       description: A list of servers.
       type: array

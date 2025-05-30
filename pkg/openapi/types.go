@@ -555,40 +555,10 @@ type ServerRead struct {
 	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
 
 	// Spec A server's specification.
-	Spec ServerReadSpec `json:"spec"`
+	Spec ServerSpec `json:"spec"`
 
 	// Status A server's status.
-	Status ServerReadStatus `json:"status"`
-}
-
-// ServerReadSpec A server's specification.
-type ServerReadSpec struct {
-	// FlavorId The flavor of the server.
-	FlavorId string `json:"flavorId"`
-
-	// Image The image to use for the server.
-	Image ServerImage `json:"image"`
-
-	// Networks A list of networks.
-	Networks ServerNetworkList `json:"networks"`
-
-	// PublicIPAllocation The server's public IP allocation.
-	PublicIPAllocation *ServerPublicIPAllocation `json:"publicIPAllocation,omitempty"`
-
-	// SecurityGroups A list of security groups.
-	SecurityGroups *ServerSecurityGroupList `json:"securityGroups,omitempty"`
-
-	// UserData UserData contains base64-encoded configuration information or scripts to use upon launch.
-	UserData *[]byte `json:"userData,omitempty"`
-}
-
-// ServerReadStatus A server's status.
-type ServerReadStatus struct {
-	// PrivateIP The private IP address of the server.
-	PrivateIP *string `json:"privateIP,omitempty"`
-
-	// PublicIP The public IP address of the server.
-	PublicIP *string `json:"publicIP,omitempty"`
+	Status ServerStatus `json:"status"`
 }
 
 // ServerSecurityGroup A security group.
@@ -600,17 +570,8 @@ type ServerSecurityGroup struct {
 // ServerSecurityGroupList A list of security groups.
 type ServerSecurityGroupList = []ServerSecurityGroup
 
-// ServerWrite A server request.
-type ServerWrite struct {
-	// Metadata Metadata required for all API resource reads and writes.
-	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
-
-	// Spec A server's specification.
-	Spec ServerWriteSpec `json:"spec"`
-}
-
-// ServerWriteSpec A server's specification.
-type ServerWriteSpec struct {
+// ServerSpec A server's specification.
+type ServerSpec struct {
 	// FlavorId The flavor of the server.
 	FlavorId string `json:"flavorId"`
 
@@ -628,6 +589,24 @@ type ServerWriteSpec struct {
 
 	// UserData UserData contains base64-encoded configuration information or scripts to use upon launch.
 	UserData *[]byte `json:"userData,omitempty"`
+}
+
+// ServerStatus A server's status.
+type ServerStatus struct {
+	// PrivateIP The private IP address of the server.
+	PrivateIP *string `json:"privateIP,omitempty"`
+
+	// PublicIP The public IP address of the server.
+	PublicIP *string `json:"publicIP,omitempty"`
+}
+
+// ServerWrite A server request.
+type ServerWrite struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A server's specification.
+	Spec ServerSpec `json:"spec"`
 }
 
 // ServersRead A list of servers.
@@ -746,3 +725,6 @@ type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSe
 
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServers for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersJSONRequestBody = ServerWrite
+
+// PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody defines body for PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID for application/json ContentType.
+type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody = ServerWrite
