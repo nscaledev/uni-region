@@ -428,13 +428,29 @@ func (c *NetworkClient) CreatePort(ctx context.Context, networkID string, securi
 		Name:                "unikorn managed port",
 		NetworkID:           networkID,
 		AllowedAddressPairs: allowedAddressPairs,
-	}
-
-	if len(securityGroupIDs) > 0 {
-		opts.SecurityGroups = ptr.To(securityGroupIDs)
+		SecurityGroups:      ptr.To(securityGroupIDs),
 	}
 
 	port, err := ports.Create(ctx, c.client, opts).Extract()
+	if err != nil {
+		return nil, err
+	}
+
+	return port, nil
+}
+
+func (c *NetworkClient) UpdatePort(ctx context.Context, portID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "PUT /network/v2.0/ports/%s"+portID, trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	opts := &ports.UpdateOpts{
+		AllowedAddressPairs: ptr.To(allowedAddressPairs),
+		SecurityGroups:      ptr.To(securityGroupIDs),
+	}
+
+	port, err := ports.Update(ctx, c.client, portID, opts).Extract()
 	if err != nil {
 		return nil, err
 	}

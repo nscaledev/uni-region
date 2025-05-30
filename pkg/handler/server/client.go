@@ -22,6 +22,7 @@ import (
 	"slices"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -82,8 +83,35 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID string, i
 	return convert(resource), nil
 }
 
+func (c *Client) Update(ctx context.Context, organizationID, projectID string, identity *unikornv1.Identity, network *unikornv1.Network, serverID string, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
+	current, err := c.get(ctx, serverID)
+	if err != nil {
+		return nil, err
+	}
+
+	required, err := newGenerator(c.client, c.namespace, organizationID, projectID, identity, network).generate(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := conversion.UpdateObjectMetadata(required, current, nil, nil); err != nil {
+		return nil, errors.OAuth2ServerError("failed to merge metadata").WithError(err)
+	}
+
+	updated := current.DeepCopy()
+	updated.Labels = required.Labels
+	updated.Annotations = required.Annotations
+	updated.Spec = required.Spec
+
+	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+		return nil, errors.OAuth2ServerError("failed to patch server").WithError(err)
+	}
+
+	return convert(updated), nil
+}
+
 func (c *Client) Get(ctx context.Context, serverID string) (*openapi.ServerRead, error) {
-	resource, err := c.getServer(ctx, serverID)
+	resource, err := c.get(ctx, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +120,7 @@ func (c *Client) Get(ctx context.Context, serverID string) (*openapi.ServerRead,
 }
 
 func (c *Client) Delete(ctx context.Context, serverID string) error {
-	resource, err := c.getServer(ctx, serverID)
+	resource, err := c.get(ctx, serverID)
 	if err != nil {
 		return err
 	}
@@ -112,7 +140,7 @@ func (c *Client) Delete(ctx context.Context, serverID string) error {
 	return nil
 }
 
-func (c *Client) getServer(ctx context.Context, id string) (*unikornv1.Server, error) {
+func (c *Client) get(ctx context.Context, id string) (*unikornv1.Server, error) {
 	resource := &unikornv1.Server{}
 
 	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: id}, resource); err != nil {

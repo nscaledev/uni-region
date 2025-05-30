@@ -1476,6 +1476,40 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 	util.WriteJSONResponse(w, r, http.StatusCreated, result)
 }
 
+func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "region:servers", identityapi.Create, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	request := &openapi.ServerWrite{}
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	identity, err := h.getIdentity(r.Context(), identityID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	// NOTE: exactly 1 is enforced at the API schema level.
+	network, err := h.getNetwork(r.Context(), request.Spec.Networks[0].Id)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := server.NewClient(h.client, h.namespace).Update(r.Context(), organizationID, projectID, identity, network, serverID, request)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
+}
+
 func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:servers", identityapi.Delete, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)

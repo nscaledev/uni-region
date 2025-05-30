@@ -47,7 +47,7 @@ func convertList(in *unikornv1.ServerList) openapi.ServersRead {
 func convert(in *unikornv1.Server) *openapi.ServerRead {
 	out := &openapi.ServerRead{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
-		Spec: openapi.ServerReadSpec{
+		Spec: openapi.ServerSpec{
 			FlavorId:           in.Spec.FlavorID,
 			Image:              convertServerImage(in.Spec.Image),
 			Networks:           convertServerNetworks(in.Spec.Networks),
@@ -55,7 +55,7 @@ func convert(in *unikornv1.Server) *openapi.ServerRead {
 			SecurityGroups:     convertServerSecurityGroups(in.Spec.SecurityGroups),
 			UserData:           convertServerUserData(in.Spec.UserData),
 		},
-		Status: openapi.ServerReadStatus{
+		Status: openapi.ServerStatus{
 			PrivateIP: in.Status.PrivateIP,
 			PublicIP:  in.Status.PublicIP,
 		},
