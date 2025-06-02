@@ -1,13 +1,13 @@
-# Unikorn Region Manager
+# Region
 
 ![Unikorn Logo](https://raw.githubusercontent.com/unikorn-cloud/assets/main/images/logos/light-on-dark/logo.svg#gh-dark-mode-only)
 ![Unikorn Logo](https://raw.githubusercontent.com/unikorn-cloud/assets/main/images/logos/dark-on-light/logo.svg#gh-light-mode-only)
 
-Unikorn's centralized region discovery and routing service.
+Centralized region discovery and routing service.
 
 ## Architecture
 
-Unikorn is a composable suite of different micro-services that provide different functionality.
+We provide a composable suite of different micro-services that provide different functionality.
 
 Hardware provisioning can come in a number of different flavors, namely bare-metal, managed Kubernetes etc.
 These services have a common requirement on a compute cloud/region to provision projects, users, roles, networking etc. in order to function.
@@ -39,7 +39,7 @@ For further info see the [Kubernetes provider documentation](pkg/providers/kuber
 
 ## Installation
 
-### Unikorn Prerequisites
+### Prerequisites
 
 The use the Kubernetes service you first need to install:
 
