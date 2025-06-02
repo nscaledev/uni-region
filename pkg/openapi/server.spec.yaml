@@ -6,7 +6,7 @@ info:
     by end users.  Region related functionality is typically exposed by higher level services
     e.g. Compute and Kubernetes, that provide subsets of resources that are compatible with
     that service.
-  version: 1.1.0
+  version: 1.2.0
 paths:
   /api/v1/organizations/{organizationID}/regions:
     description: |-
