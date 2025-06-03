@@ -82,18 +82,6 @@ type Flavor struct {
 	Spec FlavorSpec `json:"spec"`
 }
 
-// FlavorQuota A flavor quota.
-type FlavorQuota struct {
-	// Count The number of the required flavor.
-	Count int `json:"count"`
-
-	// Id The flavor ID.
-	Id string `json:"id"`
-}
-
-// FlavorQuotaList A list of flavor quotas.
-type FlavorQuotaList = []FlavorQuota
-
 // FlavorSpec A flavor.
 type FlavorSpec struct {
 	// Baremetal Whether the flavor is for a dedicated machine.
@@ -362,12 +350,6 @@ type OsFamily string
 
 // OsKernel A kernel type.
 type OsKernel string
-
-// QuotasSpec defines model for quotasSpec.
-type QuotasSpec struct {
-	// Flavors A list of flavor quotas.
-	Flavors *FlavorQuotaList `json:"flavors,omitempty"`
-}
 
 // RegionDetailKubernetes Region specific information when the type is "kubernetes".
 type RegionDetailKubernetes struct {
@@ -663,9 +645,6 @@ type NetworkResponse = NetworkRead
 // NetworksResponse A list of networks.
 type NetworksResponse = NetworksRead
 
-// QuotasResponse defines model for quotasResponse.
-type QuotasResponse = QuotasSpec
-
 // RegionDetailResponse A region.
 type RegionDetailResponse = RegionDetailRead
 
@@ -696,9 +675,6 @@ type IdentityRequest = IdentityWrite
 // NetworkRequest A network request.
 type NetworkRequest = NetworkWrite
 
-// QuotasRequest defines model for quotasRequest.
-type QuotasRequest = QuotasSpec
-
 // SecurityGroupRequest A security group request.
 type SecurityGroupRequest = SecurityGroupWrite
 
@@ -727,9 +703,6 @@ type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestB
 
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworks for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksJSONRequestBody = NetworkWrite
-
-// PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotasJSONRequestBody defines body for PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas for application/json ContentType.
-type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotasJSONRequestBody = QuotasSpec
 
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroups for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsJSONRequestBody = SecurityGroupWrite

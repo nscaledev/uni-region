@@ -34,14 +34,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// Client provides a restful API for identities.
 type Client struct {
-	// client allows Kubernetes API access.
+	// client ia a Kubernetes client.
 	client client.Client
-
-	// namespace the controller runs in.
+	// namespace we are running in.
 	namespace string
 }
 
+// New creates a new client.
 func NewClient(client client.Client, namespace string) *Client {
 	return &Client{
 		client:    client,
@@ -49,6 +50,26 @@ func NewClient(client client.Client, namespace string) *Client {
 	}
 }
 
+// get gives access to the raw Kubernetes resource.
+func (c *Client) get(ctx context.Context, organizationID, projectID, serverID string) (*unikornv1.Server, error) {
+	resource := &unikornv1.Server{}
+
+	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: serverID}, resource); err != nil {
+		if kerrors.IsNotFound(err) {
+			return nil, errors.HTTPNotFound().WithError(err)
+		}
+
+		return nil, errors.OAuth2ServerError("unable to get server").WithError(err)
+	}
+
+	if err := util.AssertProjectOwnership(resource, organizationID, projectID); err != nil {
+		return nil, err
+	}
+
+	return resource, nil
+}
+
+// List returns an ordered list of all resources in scope.
 func (c *Client) List(ctx context.Context, organizationID string, params openapi.GetApiV1OrganizationsOrganizationIDServersParams) (openapi.ServersRead, error) {
 	result := &unikornv1.ServerList{}
 
@@ -80,8 +101,9 @@ func (c *Client) List(ctx context.Context, organizationID string, params openapi
 	return convertList(result), nil
 }
 
-func (c *Client) Create(ctx context.Context, organizationID, projectID string, identity *unikornv1.Identity, network *unikornv1.Network, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
-	resource, err := newGenerator(c.client, c.namespace, organizationID, projectID, identity, network).generate(ctx, request)
+// Create instantiates a new resource.
+func (c *Client) Create(ctx context.Context, organizationID, projectID, identityID string, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
+	resource, err := newGenerator(c.client, c.namespace, organizationID, projectID, identityID).generate(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -93,13 +115,24 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID string, i
 	return convert(resource), nil
 }
 
-func (c *Client) Update(ctx context.Context, organizationID, projectID string, identity *unikornv1.Identity, network *unikornv1.Network, serverID string, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
-	current, err := c.get(ctx, serverID)
+// Get a resource.
+func (c *Client) Get(ctx context.Context, organizationID, projectID, serverID string) (*openapi.ServerRead, error) {
+	resource, err := c.get(ctx, organizationID, projectID, serverID)
 	if err != nil {
 		return nil, err
 	}
 
-	required, err := newGenerator(c.client, c.namespace, organizationID, projectID, identity, network).generate(ctx, request)
+	return convert(resource), nil
+}
+
+// Update a resource.
+func (c *Client) Update(ctx context.Context, organizationID, projectID, identityID, serverID string, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
+	current, err := c.get(ctx, organizationID, projectID, serverID)
+	if err != nil {
+		return nil, err
+	}
+
+	required, err := newGenerator(c.client, c.namespace, organizationID, projectID, identityID).generate(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -120,23 +153,11 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID string, i
 	return convert(updated), nil
 }
 
-func (c *Client) Get(ctx context.Context, serverID string) (*openapi.ServerRead, error) {
-	resource, err := c.get(ctx, serverID)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(resource), nil
-}
-
-func (c *Client) Delete(ctx context.Context, serverID string) error {
-	resource, err := c.get(ctx, serverID)
+// Delete a resource.
+func (c *Client) Delete(ctx context.Context, organizationID, projectID, serverID string) error {
+	resource, err := c.get(ctx, organizationID, projectID, serverID)
 	if err != nil {
 		return err
-	}
-
-	if resource.DeletionTimestamp != nil {
-		return errors.OAuth2InvalidRequest("server is already being deleted")
 	}
 
 	if err := c.client.Delete(ctx, resource); err != nil {
@@ -148,18 +169,4 @@ func (c *Client) Delete(ctx context.Context, serverID string) error {
 	}
 
 	return nil
-}
-
-func (c *Client) get(ctx context.Context, id string) (*unikornv1.Server, error) {
-	resource := &unikornv1.Server{}
-
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: id}, resource); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, errors.OAuth2ServerError("unable to get server").WithError(err)
-	}
-
-	return resource, nil
 }

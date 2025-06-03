@@ -17,11 +17,14 @@ limitations under the License.
 package region
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	goerrors "errors"
 	"fmt"
+	"slices"
 
+	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -32,6 +35,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -217,4 +221,243 @@ func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.Regio
 	}
 
 	return c.convertDetail(ctx, result)
+}
+
+func convertGpuVendor(in providers.GPUVendor) openapi.GpuVendor {
+	switch in {
+	case providers.Nvidia:
+		return openapi.NVIDIA
+	case providers.AMD:
+		return openapi.AMD
+	}
+
+	return ""
+}
+
+func convertFlavor(in *providers.Flavor) *openapi.Flavor {
+	out := &openapi.Flavor{
+		Metadata: coreapi.StaticResourceMetadata{
+			Id:   in.ID,
+			Name: in.Name,
+		},
+		Spec: openapi.FlavorSpec{
+			Cpus:      in.CPUs,
+			CpuFamily: in.CPUFamily,
+			Memory:    int(in.Memory.Value()) >> 30,
+			Disk:      int(in.Disk.Value()) / 1000000000,
+		},
+	}
+
+	if in.Baremetal {
+		out.Spec.Baremetal = ptr.To(true)
+	}
+
+	if in.GPU != nil {
+		out.Spec.Gpu = &openapi.GpuSpec{
+			Vendor:        convertGpuVendor(in.GPU.Vendor),
+			Model:         in.GPU.Model,
+			Memory:        int(in.GPU.Memory.Value()) >> 30,
+			PhysicalCount: in.GPU.PhysicalCount,
+			LogicalCount:  in.GPU.LogicalCount,
+		}
+	}
+
+	return out
+}
+
+func convertFlavors(in []providers.Flavor) openapi.Flavors {
+	out := make(openapi.Flavors, len(in))
+
+	for i := range in {
+		out[i] = *convertFlavor(&in[i])
+	}
+
+	return out
+}
+
+func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID string) (openapi.Flavors, error) {
+	provider, err := c.Provider(ctx, regionID)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	result, err := provider.Flavors(ctx)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to list flavors").WithError(err)
+	}
+
+	// Apply ordering guarantees, ascending order with GPUs taking precedence over
+	// CPUs and memory.
+	slices.SortStableFunc(result, func(a, b providers.Flavor) int {
+		if v := cmp.Compare(a.GPUCount(), b.GPUCount()); v != 0 {
+			return v
+		}
+
+		if v := cmp.Compare(a.CPUs, b.CPUs); v != 0 {
+			return v
+		}
+
+		return cmp.Compare(a.Memory.Value(), b.Memory.Value())
+	})
+
+	return convertFlavors(result), nil
+}
+
+func convertImageVirtualization(in providers.ImageVirtualization) openapi.ImageVirtualization {
+	switch in {
+	case providers.Virtualized:
+		return openapi.Virtualized
+	case providers.Baremetal:
+		return openapi.Baremetal
+	case providers.Any:
+		return openapi.Any
+	}
+
+	return ""
+}
+
+func convertOsKernel(in providers.OsKernel) openapi.OsKernel {
+	//nolint:gocritic
+	switch in {
+	case providers.Linux:
+		return openapi.Linux
+	}
+
+	return ""
+}
+
+func convertOsFamily(in providers.OsFamily) openapi.OsFamily {
+	switch in {
+	case providers.Debian:
+		return openapi.Debian
+	case providers.Redhat:
+		return openapi.Redhat
+	}
+
+	return ""
+}
+
+func convertOsDistro(in providers.OsDistro) openapi.OsDistro {
+	switch in {
+	case providers.Rocky:
+		return openapi.Rocky
+	case providers.Ubuntu:
+		return openapi.Ubuntu
+	}
+
+	return ""
+}
+
+func convertPackages(in *providers.ImagePackages) *openapi.SoftwareVersions {
+	if in == nil {
+		return nil
+	}
+
+	out := make(openapi.SoftwareVersions)
+
+	for name, version := range *in {
+		out[name] = version
+	}
+
+	return &out
+}
+
+func convertImage(in *providers.Image) *openapi.Image {
+	out := &openapi.Image{
+		Metadata: coreapi.StaticResourceMetadata{
+			Id:           in.ID,
+			Name:         in.Name,
+			CreationTime: in.Created,
+		},
+		Spec: openapi.ImageSpec{
+			SizeGiB:        in.SizeGiB,
+			Virtualization: convertImageVirtualization(in.Virtualization),
+			Os: openapi.ImageOS{
+				Kernel:   convertOsKernel(in.OS.Kernel),
+				Family:   convertOsFamily(in.OS.Family),
+				Distro:   convertOsDistro(in.OS.Distro),
+				Codename: in.OS.Codename,
+				Variant:  in.OS.Variant,
+				Version:  in.OS.Version,
+			},
+			SoftwareVersions: convertPackages(in.Packages),
+		},
+	}
+
+	if in.GPU != nil {
+		gpu := &openapi.ImageGpu{
+			Vendor: convertGpuVendor(in.GPU.Vendor),
+			Driver: in.GPU.Driver,
+		}
+
+		if len(in.GPU.Models) > 0 {
+			gpu.Models = &in.GPU.Models
+		}
+
+		out.Spec.Gpu = gpu
+	}
+
+	return out
+}
+
+func convertImages(in []providers.Image) openapi.Images {
+	out := make(openapi.Images, len(in))
+
+	for i := range in {
+		out[i] = *convertImage(&in[i])
+	}
+
+	return out
+}
+
+func (c *Client) ListImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {
+	provider, err := c.Provider(ctx, regionID)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	result, err := provider.Images(ctx)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to list images").WithError(err)
+	}
+
+	// Apply ordering guarantees, ordered by name.
+	slices.SortStableFunc(result, func(a, b providers.Image) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+
+	return convertImages(result), nil
+}
+
+func convertExternalNetwork(in providers.ExternalNetwork) openapi.ExternalNetwork {
+	out := openapi.ExternalNetwork{
+		Id:   in.ID,
+		Name: in.Name,
+	}
+
+	return out
+}
+
+func convertExternalNetworks(in providers.ExternalNetworks) openapi.ExternalNetworks {
+	out := make(openapi.ExternalNetworks, len(in))
+
+	for i := range in {
+		out[i] = convertExternalNetwork(in[i])
+	}
+
+	return out
+}
+
+func (c *Client) ListExternalNetworks(ctx context.Context, regionID string) (openapi.ExternalNetworks, error) {
+	provider, err := c.Provider(ctx, regionID)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	result, err := provider.ListExternalNetworks(ctx)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to list external networks").WithError(err)
+	}
+
+	return convertExternalNetworks(result), nil
 }
