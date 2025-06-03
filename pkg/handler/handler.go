@@ -42,6 +42,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
+	handlerutil "github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
 
@@ -1027,7 +1028,7 @@ func (h *Handler) generateSecurityGroup(ctx context.Context, organizationID, pro
 	return resource, nil
 }
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
+func (h *Handler) GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, params openapi.GetApiV1OrganizationsOrganizationIDSecuritygroupsParams) {
 	if err := rbac.AllowOrganizationScope(r.Context(), "region:securitygroups", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -1038,6 +1039,16 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.Respo
 		errors.HandleError(w, r, err)
 		return
 	}
+
+	tagSelector, err := handlerutil.DecodeTagSelectorParam(params.Tag)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result.Items = slices.DeleteFunc(result.Items, func(resource unikornv1.SecurityGroup) bool {
+		return !resource.Spec.Tags.ContainsAll(tagSelector)
+	})
 
 	util.WriteJSONResponse(w, r, http.StatusOK, h.convertSecurityGroupList(result))
 }
@@ -1427,13 +1438,13 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 	util.WriteJSONResponse(w, r, http.StatusOK, h.convertSecurityGroupRule(resource))
 }
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDServers(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
+func (h *Handler) GetApiV1OrganizationsOrganizationIDServers(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, params openapi.GetApiV1OrganizationsOrganizationIDServersParams) {
 	if err := rbac.AllowOrganizationScope(r.Context(), "region:servers", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	result, err := server.NewClient(h.client, h.namespace).List(r.Context(), organizationID)
+	result, err := server.NewClient(h.client, h.namespace).List(r.Context(), organizationID, params)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return

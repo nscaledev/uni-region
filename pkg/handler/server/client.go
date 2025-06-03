@@ -25,6 +25,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -48,7 +49,7 @@ func NewClient(client client.Client, namespace string) *Client {
 	}
 }
 
-func (c *Client) List(ctx context.Context, organizationID string) (openapi.ServersRead, error) {
+func (c *Client) List(ctx context.Context, organizationID string, params openapi.GetApiV1OrganizationsOrganizationIDServersParams) (openapi.ServersRead, error) {
 	result := &unikornv1.ServerList{}
 
 	options := &client.ListOptions{
@@ -61,6 +62,15 @@ func (c *Client) List(ctx context.Context, organizationID string) (openapi.Serve
 	if err := c.client.List(ctx, result, options); err != nil {
 		return nil, errors.OAuth2ServerError("unable to list servers").WithError(err)
 	}
+
+	tagSelector, err := util.DecodeTagSelectorParam(params.Tag)
+	if err != nil {
+		return nil, err
+	}
+
+	result.Items = slices.DeleteFunc(result.Items, func(resource unikornv1.Server) bool {
+		return !resource.Spec.Tags.ContainsAll(tagSelector)
+	})
 
 	// Apply ordering guarantees, ordered by name.
 	slices.SortStableFunc(result.Items, func(a, b unikornv1.Server) int {

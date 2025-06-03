@@ -97,10 +97,10 @@ type ServerInterface interface {
 	GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, regionID RegionIDParameter)
 
 	// (GET /api/v1/organizations/{organizationID}/securitygroups)
-	GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter)
+	GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, params GetApiV1OrganizationsOrganizationIDSecuritygroupsParams)
 
 	// (GET /api/v1/organizations/{organizationID}/servers)
-	GetApiV1OrganizationsOrganizationIDServers(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter)
+	GetApiV1OrganizationsOrganizationIDServers(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, params GetApiV1OrganizationsOrganizationIDServersParams)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -243,12 +243,12 @@ func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(
 }
 
 // (GET /api/v1/organizations/{organizationID}/securitygroups)
-func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter) {
+func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, params GetApiV1OrganizationsOrganizationIDSecuritygroupsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // (GET /api/v1/organizations/{organizationID}/servers)
-func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDServers(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter) {
+func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDServers(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, params GetApiV1OrganizationsOrganizationIDServersParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1631,8 +1631,19 @@ func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDSecuritygr
 
 	r = r.WithContext(ctx)
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetApiV1OrganizationsOrganizationIDSecuritygroupsParams
+
+	// ------------- Optional query parameter "tag" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "tag", r.URL.Query(), &params.Tag)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetApiV1OrganizationsOrganizationIDSecuritygroups(w, r, organizationID)
+		siw.Handler.GetApiV1OrganizationsOrganizationIDSecuritygroups(w, r, organizationID, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1662,8 +1673,19 @@ func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDServers(w 
 
 	r = r.WithContext(ctx)
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetApiV1OrganizationsOrganizationIDServersParams
+
+	// ------------- Optional query parameter "tag" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "tag", r.URL.Query(), &params.Tag)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetApiV1OrganizationsOrganizationIDServers(w, r, organizationID)
+		siw.Handler.GetApiV1OrganizationsOrganizationIDServers(w, r, organizationID, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
