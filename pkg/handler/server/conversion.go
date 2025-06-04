@@ -51,11 +51,11 @@ func convert(in *unikornv1.Server) *openapi.ServerRead {
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.ServerSpec{
 			FlavorId:           in.Spec.FlavorID,
-			Image:              convertServerImage(in.Spec.Image),
-			Networks:           convertServerNetworks(in.Spec.Networks),
-			PublicIPAllocation: convertServerPublicIPAllocation(in.Spec.PublicIPAllocation),
-			SecurityGroups:     convertServerSecurityGroups(in.Spec.SecurityGroups),
-			UserData:           convertServerUserData(in.Spec.UserData),
+			ImageId:            in.Spec.Image.ID,
+			Networks:           convertNetworks(in.Spec.Networks),
+			PublicIPAllocation: convertPublicIPAllocation(in.Spec.PublicIPAllocation),
+			SecurityGroups:     convertSecurityGroups(in.Spec.SecurityGroups),
+			UserData:           convertUserData(in.Spec.UserData),
 		},
 		Status: openapi.ServerStatus{
 			PrivateIP: in.Status.PrivateIP,
@@ -66,30 +66,24 @@ func convert(in *unikornv1.Server) *openapi.ServerRead {
 	return out
 }
 
-func convertServerImage(in *unikornv1.ServerImage) openapi.ServerImage {
-	return openapi.ServerImage{
-		Id: in.ID,
-	}
-}
-
-func convertServerNetworks(in []unikornv1.ServerNetworkSpec) openapi.ServerNetworkList {
+func convertNetworks(in []unikornv1.ServerNetworkSpec) openapi.ServerNetworkList {
 	out := make(openapi.ServerNetworkList, len(in))
 
 	for i := range in {
-		out[i] = convertServerNetwork(&in[i])
+		out[i] = convertNetwork(&in[i])
 	}
 
 	return out
 }
 
-func convertServerNetwork(in *unikornv1.ServerNetworkSpec) openapi.ServerNetwork {
+func convertNetwork(in *unikornv1.ServerNetworkSpec) openapi.ServerNetwork {
 	return openapi.ServerNetwork{
 		Id:                  in.ID,
-		AllowedAddressPairs: convertServerNetworkAddressPairs(in.AllowedAddressPairs),
+		AllowedAddressPairs: convertNetworkAddressPairs(in.AllowedAddressPairs),
 	}
 }
 
-func convertServerNetworkAddressPairs(in []unikornv1.ServerNetworkAddressPair) *openapi.ServerNetworkAllowedAddressPairList {
+func convertNetworkAddressPairs(in []unikornv1.ServerNetworkAddressPair) *openapi.ServerNetworkAllowedAddressPairList {
 	if in == nil {
 		return nil
 	}
@@ -106,7 +100,7 @@ func convertServerNetworkAddressPairs(in []unikornv1.ServerNetworkAddressPair) *
 	return &out
 }
 
-func convertServerPublicIPAllocation(in *unikornv1.ServerPublicIPAllocationSpec) *openapi.ServerPublicIPAllocation {
+func convertPublicIPAllocation(in *unikornv1.ServerPublicIPAllocationSpec) *openapi.ServerPublicIPAllocation {
 	if in == nil {
 		return nil
 	}
@@ -116,7 +110,7 @@ func convertServerPublicIPAllocation(in *unikornv1.ServerPublicIPAllocationSpec)
 	}
 }
 
-func convertServerSecurityGroups(in []unikornv1.ServerSecurityGroupSpec) *openapi.ServerSecurityGroupList {
+func convertSecurityGroups(in []unikornv1.ServerSecurityGroupSpec) *openapi.ServerSecurityGroupList {
 	if in == nil {
 		return nil
 	}
@@ -124,19 +118,19 @@ func convertServerSecurityGroups(in []unikornv1.ServerSecurityGroupSpec) *openap
 	out := make(openapi.ServerSecurityGroupList, len(in))
 
 	for i := range in {
-		out[i] = convertServerSecurityGroup(&in[i])
+		out[i] = convertSecurityGroup(&in[i])
 	}
 
 	return &out
 }
 
-func convertServerSecurityGroup(in *unikornv1.ServerSecurityGroupSpec) openapi.ServerSecurityGroup {
+func convertSecurityGroup(in *unikornv1.ServerSecurityGroupSpec) openapi.ServerSecurityGroup {
 	return openapi.ServerSecurityGroup{
 		Id: in.ID,
 	}
 }
 
-func convertServerUserData(in []byte) *[]byte {
+func convertUserData(in []byte) *[]byte {
 	if in == nil {
 		return nil
 	}
@@ -188,10 +182,12 @@ func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*uni
 		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, g.namespace, info.Userinfo.Sub).WithOrganization(g.organizationID).WithProject(g.projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, identity.Name).Get(),
 		Spec: unikornv1.ServerSpec{
-			Tags:               conversion.GenerateTagList(in.Metadata.Tags),
-			Provider:           identity.Spec.Provider,
-			FlavorID:           in.Spec.FlavorId,
-			Image:              g.generateImage(&in.Spec.Image),
+			Tags:     conversion.GenerateTagList(in.Metadata.Tags),
+			Provider: identity.Spec.Provider,
+			FlavorID: in.Spec.FlavorId,
+			Image: &unikornv1.ServerImage{
+				ID: in.Spec.ImageId,
+			},
 			PublicIPAllocation: g.generatePublicIPAllocation(in.Spec.PublicIPAllocation),
 			SecurityGroups:     g.generateSecurityGroups(in.Spec.SecurityGroups),
 			Networks:           g.generateNetworks(in.Spec.Networks),
@@ -206,12 +202,6 @@ func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*uni
 	}
 
 	return resource, nil
-}
-
-func (g *generator) generateImage(in *openapi.ServerImage) *unikornv1.ServerImage {
-	return &unikornv1.ServerImage{
-		ID: in.Id,
-	}
 }
 
 func (g *generator) generatePublicIPAllocation(in *openapi.ServerPublicIPAllocation) *unikornv1.ServerPublicIPAllocationSpec {

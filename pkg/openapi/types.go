@@ -495,12 +495,6 @@ type SecurityGroupWriteSpec = map[string]interface{}
 // SecurityGroupsRead A list of security groups.
 type SecurityGroupsRead = []SecurityGroupRead
 
-// ServerImage The image to use for the server.
-type ServerImage struct {
-	// Id The image ID.
-	Id string `json:"id"`
-}
-
 // ServerNetwork The server's network.
 type ServerNetwork struct {
 	// AllowedAddressPairs A list of allowed address pairs.
@@ -557,8 +551,8 @@ type ServerSpec struct {
 	// FlavorId The flavor of the server.
 	FlavorId string `json:"flavorId"`
 
-	// Image The image to use for the server.
-	Image ServerImage `json:"image"`
+	// ImageId The image of the server.
+	ImageId string `json:"imageId"`
 
 	// Networks A list of networks.
 	Networks ServerNetworkList `json:"networks"`

@@ -1215,14 +1215,15 @@ components:
       type: object
       required:
       - flavorId
-      - image
+      - imageId
       - networks
       properties:
         flavorId:
           description: The flavor of the server.
           type: string
-        image:
-          $ref: '#/components/schemas/serverImage'
+        imageId:
+          description: The image of the server.
+          type: string
         securityGroups:
           $ref: '#/components/schemas/serverSecurityGroupList'
         publicIPAllocation:
@@ -1291,15 +1292,6 @@ components:
       properties:
         id:
           description: The security group ID.
-          type: string
-    serverImage:
-      description: The image to use for the server.
-      type: object
-      required:
-      - id
-      properties:
-        id:
-          description: The image ID.
           type: string
     serverStatus:
       description: A server's status.
@@ -1419,8 +1411,7 @@ components:
                 value: tag-value
             spec:
               flavorId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
-              image:
-                id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              imageId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
               securityGroups:
               - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
               - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9e
@@ -1751,8 +1742,7 @@ components:
                 value: tag-value
             spec:
               flavorId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
-              image:
-                id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              imageId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
               securityGroups:
               - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
               - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9e
@@ -1785,8 +1775,7 @@ components:
                 value: tag-value
             spec:
               flavorId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
-              image:
-                id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              imageId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
               securityGroups:
               - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
               - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9e
