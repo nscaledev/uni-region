@@ -97,6 +97,11 @@ organization: nscaledev
 # Allows override of the global default image.
 # image:
 
+# Monitor configuration.
+monitor:
+  # Allow override of the controller image.
+  image: ~
+
 # Identity controller configuration.
 identityController:
   # Allow override of the controller image.
