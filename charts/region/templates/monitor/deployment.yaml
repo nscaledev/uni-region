@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-monitor
+  labels:
+    {{- include "unikorn.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-monitor
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-monitor
+    spec:
+      containers:
+      - name: {{ .Release.Name }}-monitor
+        image: {{ include "unikorn.regionMonitorImage" . }}
+        resources:
+          requests:
+            cpu: 50m
+            memory: 50Mi
+          limits:
+            cpu: 100m
+            memory: 100Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+      serviceAccountName: {{ .Release.Name }}-monitor
+      securityContext:
+        runAsNonRoot: true
