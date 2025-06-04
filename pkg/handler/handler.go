@@ -19,47 +19,25 @@ limitations under the License.
 package handler
 
 import (
-	"cmp"
-	"context"
-	"encoding/base64"
 	"fmt"
-	"net"
 	"net/http"
-	"slices"
 	"time"
 
-	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
-	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
-	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
-	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
-	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
-	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler/identity"
+	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
+	"github.com/unikorn-cloud/region/pkg/handler/securitygroup"
+	"github.com/unikorn-cloud/region/pkg/handler/securitygrouprule"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
-	handlerutil "github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
-	"github.com/unikorn-cloud/region/pkg/providers"
-
-	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
-
-func foregroundDeleteOptions() *client.DeleteOptions {
-	return &client.DeleteOptions{
-		PropagationPolicy: ptr.To(metav1.DeletePropagationForeground),
-	}
-}
 
 type Handler struct {
 	// client gives cached access to Kubernetes.
@@ -95,34 +73,6 @@ func (h *Handler) setUncacheable(w http.ResponseWriter) {
 	w.Header().Add("Cache-Control", "no-cache")
 }
 
-func (h *Handler) getIdentity(ctx context.Context, id string) (*unikornv1.Identity, error) {
-	resource := &unikornv1.Identity{}
-
-	if err := h.client.Get(ctx, client.ObjectKey{Namespace: h.namespace, Name: id}, resource); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, errors.OAuth2ServerError("unable to lookup identity").WithError(err)
-	}
-
-	return resource, nil
-}
-
-func (h *Handler) getNetwork(ctx context.Context, id string) (*unikornv1.Network, error) {
-	resource := &unikornv1.Network{}
-
-	if err := h.client.Get(ctx, client.ObjectKey{Namespace: h.namespace, Name: id}, resource); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, errors.OAuth2ServerError("unable to network identity").WithError(err)
-	}
-
-	return resource, nil
-}
-
 func (h *Handler) GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
 	if err := rbac.AllowOrganizationScope(r.Context(), "region:regions", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
@@ -155,46 +105,20 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetail(w htt
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
-func convertGpuVendor(in providers.GPUVendor) openapi.GpuVendor {
-	switch in {
-	case providers.Nvidia:
-		return openapi.NVIDIA
-	case providers.AMD:
-		return openapi.AMD
+func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
+	if err := rbac.AllowOrganizationScope(r.Context(), "region:externalnetworks", identityapi.Read, organizationID); err != nil {
+		errors.HandleError(w, r, err)
+		return
 	}
 
-	return ""
-}
-
-func convertFlavor(in providers.Flavor) openapi.Flavor {
-	out := openapi.Flavor{
-		Metadata: coreapi.StaticResourceMetadata{
-			Id:   in.ID,
-			Name: in.Name,
-		},
-		Spec: openapi.FlavorSpec{
-			Cpus:      in.CPUs,
-			CpuFamily: in.CPUFamily,
-			Memory:    int(in.Memory.Value()) >> 30,
-			Disk:      int(in.Disk.Value()) / 1000000000,
-		},
+	result, err := region.NewClient(h.client, h.namespace).ListExternalNetworks(r.Context(), regionID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
 	}
 
-	if in.Baremetal {
-		out.Spec.Baremetal = ptr.To(true)
-	}
-
-	if in.GPU != nil {
-		out.Spec.Gpu = &openapi.GpuSpec{
-			Vendor:        convertGpuVendor(in.GPU.Vendor),
-			Model:         in.GPU.Model,
-			Memory:        int(in.GPU.Memory.Value()) >> 30,
-			PhysicalCount: in.GPU.PhysicalCount,
-			LogicalCount:  in.GPU.LogicalCount,
-		}
-	}
-
-	return out
+	h.setCacheable(w)
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
@@ -203,137 +127,14 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(w ht
 		return
 	}
 
-	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), regionID)
+	result, err := region.NewClient(h.client, h.namespace).ListFlavors(r.Context(), organizationID, regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
-	}
-
-	result, err := provider.Flavors(r.Context())
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	// Apply ordering guarantees, ascending order with GPUs taking precedence over
-	// CPUs and memory.
-	slices.SortStableFunc(result, func(a, b providers.Flavor) int {
-		if v := cmp.Compare(a.GPUCount(), b.GPUCount()); v != 0 {
-			return v
-		}
-
-		if v := cmp.Compare(a.CPUs, b.CPUs); v != 0 {
-			return v
-		}
-
-		return cmp.Compare(a.Memory.Value(), b.Memory.Value())
-	})
-
-	out := make(openapi.Flavors, len(result))
-
-	for i := range result {
-		out[i] = convertFlavor(result[i])
 	}
 
 	h.setCacheable(w)
-	util.WriteJSONResponse(w, r, http.StatusOK, out)
-}
-
-func convertImageVirtualization(in providers.ImageVirtualization) openapi.ImageVirtualization {
-	switch in {
-	case providers.Virtualized:
-		return openapi.Virtualized
-	case providers.Baremetal:
-		return openapi.Baremetal
-	case providers.Any:
-		return openapi.Any
-	}
-
-	return ""
-}
-
-func convertOsKernel(in providers.OsKernel) openapi.OsKernel {
-	//nolint:gocritic
-	switch in {
-	case providers.Linux:
-		return openapi.Linux
-	}
-
-	return ""
-}
-
-func convertOsFamily(in providers.OsFamily) openapi.OsFamily {
-	switch in {
-	case providers.Debian:
-		return openapi.Debian
-	case providers.Redhat:
-		return openapi.Redhat
-	}
-
-	return ""
-}
-
-func convertOsDistro(in providers.OsDistro) openapi.OsDistro {
-	switch in {
-	case providers.Rocky:
-		return openapi.Rocky
-	case providers.Ubuntu:
-		return openapi.Ubuntu
-	}
-
-	return ""
-}
-
-func convertPackages(in *providers.ImagePackages) *openapi.SoftwareVersions {
-	if in == nil {
-		return nil
-	}
-
-	out := make(openapi.SoftwareVersions)
-
-	for name, version := range *in {
-		out[name] = version
-	}
-
-	return &out
-}
-
-func convertImage(in providers.Image) openapi.Image {
-	out := openapi.Image{
-		Metadata: coreapi.StaticResourceMetadata{
-			Id:           in.ID,
-			Name:         in.Name,
-			CreationTime: in.Created,
-		},
-		Spec: openapi.ImageSpec{
-			SizeGiB:        in.SizeGiB,
-			Virtualization: convertImageVirtualization(in.Virtualization),
-			Os: openapi.ImageOS{
-				Kernel:   convertOsKernel(in.OS.Kernel),
-				Family:   convertOsFamily(in.OS.Family),
-				Distro:   convertOsDistro(in.OS.Distro),
-				Codename: in.OS.Codename,
-				Variant:  in.OS.Variant,
-				Version:  in.OS.Version,
-			},
-			SoftwareVersions: convertPackages(in.Packages),
-		},
-	}
-
-	if in.GPU != nil {
-		gpu := &openapi.ImageGpu{
-			Vendor: convertGpuVendor(in.GPU.Vendor),
-			Driver: in.GPU.Driver,
-		}
-
-		if len(in.GPU.Models) > 0 {
-			gpu.Models = &in.GPU.Models
-		}
-
-		out.Spec.Gpu = gpu
-	}
-
-	return out
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
@@ -342,109 +143,29 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w htt
 		return
 	}
 
-	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), regionID)
+	result, err := region.NewClient(h.client, h.namespace).ListImages(r.Context(), organizationID, regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
-	}
-
-	result, err := provider.Images(r.Context())
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	// Apply ordering guarantees, ordered by name.
-	slices.SortStableFunc(result, func(a, b providers.Image) int {
-		return cmp.Compare(a.Name, b.Name)
-	})
-
-	out := make(openapi.Images, len(result))
-
-	for i := range result {
-		out[i] = convertImage(result[i])
 	}
 
 	h.setCacheable(w)
-	util.WriteJSONResponse(w, r, http.StatusOK, out)
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
-func (h *Handler) convertIdentity(ctx context.Context, in *unikornv1.Identity) *openapi.IdentityRead {
-	out := &openapi.IdentityRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
-		Spec: openapi.IdentitySpec{
-			RegionId: in.Labels[constants.RegionLabel],
-		},
-	}
-
-	//nolint:exhaustive,gocritic
-	switch in.Spec.Provider {
-	case unikornv1.ProviderOpenstack:
-		out.Spec.Type = openapi.Openstack
-
-		var openstackIdentity unikornv1.OpenstackIdentity
-
-		if err := h.client.Get(ctx, client.ObjectKey{Namespace: in.Namespace, Name: in.Name}, &openstackIdentity); err == nil {
-			var sshPrivateKey *string
-
-			if len(openstackIdentity.Spec.SSHPrivateKey) > 0 {
-				sshPrivateKey = ptr.To(string(openstackIdentity.Spec.SSHPrivateKey))
-			}
-
-			out.Spec.Openstack = &openapi.IdentitySpecOpenStack{
-				Cloud:         openstackIdentity.Spec.Cloud,
-				UserId:        openstackIdentity.Spec.UserID,
-				ProjectId:     openstackIdentity.Spec.ProjectID,
-				ServerGroupId: openstackIdentity.Spec.ServerGroupID,
-				SshKeyName:    openstackIdentity.Spec.SSHKeyName,
-				SshPrivateKey: sshPrivateKey,
-			}
-
-			if openstackIdentity.Spec.CloudConfig != nil {
-				cloudConfig := base64.URLEncoding.EncodeToString(openstackIdentity.Spec.CloudConfig)
-				out.Spec.Openstack.CloudConfig = &cloudConfig
-			}
-		}
-	}
-
-	return out
-}
-
-func (h *Handler) convertIdentityList(ctx context.Context, in unikornv1.IdentityList) openapi.IdentitiesRead {
-	out := make(openapi.IdentitiesRead, len(in.Items))
-
-	for i := range in.Items {
-		out[i] = *h.convertIdentity(ctx, &in.Items[i])
-	}
-
-	return out
-}
-
-//nolint:dupl
 func (h *Handler) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
 	if err := rbac.AllowOrganizationScope(r.Context(), "region:identities", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	var result unikornv1.IdentityList
-
-	options := &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(map[string]string{
-			coreconstants.OrganizationLabel: organizationID,
-		}),
-	}
-
-	if err := h.client.List(r.Context(), &result, options); err != nil {
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to list identities").WithError(err))
+	result, err := identity.New(h.client, h.namespace).List(r.Context(), organizationID)
+	if err != nil {
+		errors.HandleError(w, r, err)
 		return
 	}
 
-	slices.SortStableFunc(result.Items, func(a, b unikornv1.Identity) int {
-		return cmp.Compare(a.Name, b.Name)
-	})
-
-	util.WriteJSONResponse(w, r, http.StatusOK, h.convertIdentityList(r.Context(), result))
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter) {
@@ -460,38 +181,13 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), request.Spec.RegionId)
+	result, err := identity.New(h.client, h.namespace).Create(r.Context(), organizationID, projectID, request)
 	if err != nil {
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to get region provider").WithError(err))
+		errors.HandleError(w, r, err)
 		return
 	}
 
-	region, err := provider.Region(r.Context())
-	if err != nil {
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to get region").WithError(err))
-		return
-	}
-
-	info, err := authorization.FromContext(r.Context())
-	if err != nil {
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to get userinfo").WithError(err))
-		return
-	}
-
-	identity := &unikornv1.Identity{
-		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, h.namespace, info.Userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, request.Spec.RegionId).Get(),
-		Spec: unikornv1.IdentitySpec{
-			Tags:     conversion.GenerateTagList(request.Metadata.Tags),
-			Provider: region.Spec.Provider,
-		},
-	}
-
-	if err := h.client.Create(r.Context(), identity); err != nil {
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to create identity").WithError(err))
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusCreated, h.convertIdentity(r.Context(), identity))
+	util.WriteJSONResponse(w, r, http.StatusCreated, result)
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
@@ -500,13 +196,13 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 		return
 	}
 
-	identity, err := h.getIdentity(r.Context(), identityID)
+	result, err := identity.New(h.client, h.namespace).Get(r.Context(), organizationID, projectID, identityID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusOK, h.convertIdentity(r.Context(), identity))
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
@@ -515,100 +211,27 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		return
 	}
 
-	identity, err := h.getIdentity(r.Context(), identityID)
-	if err != nil {
+	if err := identity.New(h.client, h.namespace).Delete(r.Context(), organizationID, projectID, identityID); err != nil {
 		errors.HandleError(w, r, err)
-		return
-	}
-
-	if err := h.client.Delete(r.Context(), identity, foregroundDeleteOptions()); err != nil {
-		if kerrors.IsNotFound(err) {
-			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
-			return
-		}
-
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to delete identity").WithError(err))
-
 		return
 	}
 
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func convertIPv4List(in []unikornv1core.IPv4Address) openapi.Ipv4AddressList {
-	out := make(openapi.Ipv4AddressList, len(in))
-
-	for i, ip := range in {
-		out[i] = ip.String()
-	}
-
-	return out
-}
-
-func (h *Handler) convertNetwork(ctx context.Context, in *unikornv1.Network) *openapi.NetworkRead {
-	out := &openapi.NetworkRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
-		Spec: openapi.NetworkReadSpec{
-			RegionId:       in.Labels[constants.RegionLabel],
-			Prefix:         in.Spec.Prefix.String(),
-			DnsNameservers: convertIPv4List(in.Spec.DNSNameservers),
-		},
-	}
-
-	//nolint:exhaustive,gocritic
-	switch in.Spec.Provider {
-	case unikornv1.ProviderOpenstack:
-		out.Spec.Type = openapi.Openstack
-
-		var openstackNetwork unikornv1.OpenstackNetwork
-
-		if err := h.client.Get(ctx, client.ObjectKey{Namespace: in.Namespace, Name: in.Name}, &openstackNetwork); err == nil {
-			out.Spec.Openstack = &openapi.NetworkSpecOpenstack{
-				VlanId:    openstackNetwork.Spec.VlanID,
-				NetworkId: openstackNetwork.Spec.NetworkID,
-				SubnetId:  openstackNetwork.Spec.SubnetID,
-			}
-		}
-	}
-
-	return out
-}
-
-func (h *Handler) convertNetworkList(ctx context.Context, in unikornv1.NetworkList) openapi.NetworksRead {
-	out := make(openapi.NetworksRead, len(in.Items))
-
-	for i := range in.Items {
-		out[i] = *h.convertNetwork(ctx, &in.Items[i])
-	}
-
-	return out
-}
-
-//nolint:dupl
 func (h *Handler) GetApiV1OrganizationsOrganizationIDNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
 	if err := rbac.AllowOrganizationScope(r.Context(), "region:networks", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	var result unikornv1.NetworkList
-
-	options := &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(map[string]string{
-			coreconstants.OrganizationLabel: organizationID,
-		}),
-	}
-
-	if err := h.client.List(r.Context(), &result, options); err != nil {
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to list networks").WithError(err))
+	result, err := network.New(h.client, h.namespace).List(r.Context(), organizationID)
+	if err != nil {
+		errors.HandleError(w, r, err)
 		return
 	}
 
-	slices.SortStableFunc(result.Items, func(a, b unikornv1.Network) int {
-		return cmp.Compare(a.Name, b.Name)
-	})
-
-	util.WriteJSONResponse(w, r, http.StatusOK, h.convertNetworkList(r.Context(), result))
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
@@ -624,408 +247,42 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	identity, err := h.getIdentity(r.Context(), identityID)
+	result, err := network.New(h.client, h.namespace).Create(r.Context(), organizationID, projectID, identityID, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	info, err := authorization.FromContext(r.Context())
-	if err != nil {
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to get userinfo").WithError(err))
-		return
-	}
-
-	_, prefix, err := net.ParseCIDR(request.Spec.Prefix)
-	if err != nil {
-		errors.HandleError(w, r, errors.OAuth2InvalidRequest("unable to parse prefix").WithError(err))
-		return
-	}
-
-	dnsNameservers := make([]unikornv1core.IPv4Address, len(request.Spec.DnsNameservers))
-
-	for i, ip := range request.Spec.DnsNameservers {
-		temp := net.ParseIP(ip)
-		if temp == nil {
-			errors.HandleError(w, r, errors.OAuth2InvalidRequest("unable to parse dns nameserver"))
-			return
-		}
-
-		dnsNameservers[i] = unikornv1core.IPv4Address{
-			IP: temp,
-		}
-	}
-
-	network := &unikornv1.Network{
-		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, h.namespace, info.Userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identityID).Get(),
-		Spec: unikornv1.NetworkSpec{
-			Tags:     conversion.GenerateTagList(request.Metadata.Tags),
-			Provider: identity.Spec.Provider,
-			Prefix: &unikornv1core.IPv4Prefix{
-				IPNet: *prefix,
-			},
-			DNSNameservers: dnsNameservers,
-		},
-	}
-
-	// The resource belongs to its identity, for cascading deletion.
-	if err := controllerutil.SetOwnerReference(identity, network, h.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to set resource owner").WithError(err))
-		return
-	}
-
-	if err := h.client.Create(r.Context(), network); err != nil {
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to create network").WithError(err))
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusCreated, h.convertNetwork(r.Context(), network))
+	util.WriteJSONResponse(w, r, http.StatusCreated, result)
 }
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, physicalNetworkID openapi.NetworkIDParameter) {
+func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, networkID openapi.NetworkIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:networks", identityapi.Read, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	resource, err := h.getNetwork(r.Context(), physicalNetworkID)
+	result, err := network.New(h.client, h.namespace).Get(r.Context(), organizationID, projectID, networkID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusOK, h.convertNetwork(r.Context(), resource))
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
-//nolint:dupl
-func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, physicalNetworkID openapi.NetworkIDParameter) {
+func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, networkID openapi.NetworkIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:networks", identityapi.Delete, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	resource, err := h.getNetwork(r.Context(), physicalNetworkID)
-	if err != nil {
+	if err := network.New(h.client, h.namespace).Delete(r.Context(), organizationID, projectID, networkID); err != nil {
 		errors.HandleError(w, r, err)
-		return
-	}
-
-	if err := h.client.Delete(r.Context(), resource, foregroundDeleteOptions()); err != nil {
-		if kerrors.IsNotFound(err) {
-			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
-			return
-		}
-
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to delete network").WithError(err))
-
 		return
 	}
 
 	w.WriteHeader(http.StatusAccepted)
-}
-
-func (h *Handler) getQuota(ctx context.Context, identity *unikornv1.Identity) (*unikornv1.Quota, error) {
-	info, err := authorization.FromContext(ctx)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to get userinfo").WithError(err)
-	}
-
-	options := &client.ListOptions{
-		Namespace: h.namespace,
-		LabelSelector: labels.SelectorFromSet(map[string]string{
-			constants.IdentityLabel: identity.Name,
-		}),
-	}
-
-	resources := &unikornv1.QuotaList{}
-
-	if err := h.client.List(ctx, resources, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list quotas").WithError(err)
-	}
-
-	// Default scoping rule is that you can only see your own quota.
-	resources.Items = slices.DeleteFunc(resources.Items, func(resource unikornv1.Quota) bool {
-		return resource.Annotations[coreconstants.CreatorAnnotation] != info.Userinfo.Sub
-	})
-
-	if len(resources.Items) == 0 {
-		//nolint:nilnil
-		return nil, nil
-	}
-
-	// TODO: what if there's more than one!!
-	return &resources.Items[0], nil
-}
-
-func convertFlavorQuotas(in []unikornv1.FlavorQuota) *openapi.FlavorQuotaList {
-	if len(in) == 0 {
-		return nil
-	}
-
-	out := make(openapi.FlavorQuotaList, len(in))
-
-	for i := range in {
-		out[i] = openapi.FlavorQuota{
-			Id:    in[i].ID,
-			Count: in[i].Count,
-		}
-	}
-
-	return &out
-}
-
-func convertQuota(in *unikornv1.Quota) *openapi.QuotasSpec {
-	out := &openapi.QuotasSpec{
-		Flavors: convertFlavorQuotas(in.Spec.Flavors),
-	}
-
-	return out
-}
-
-func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "region:quotas", identityapi.Read, organizationID, projectID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	identity, err := h.getIdentity(r.Context(), identityID)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	resource, err := h.getQuota(r.Context(), identity)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	if resource == nil {
-		resource = &unikornv1.Quota{}
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusOK, convertQuota(resource))
-}
-
-func generateFlavorQuotas(in *openapi.FlavorQuotaList) []unikornv1.FlavorQuota {
-	if in == nil || len(*in) == 0 {
-		return nil
-	}
-
-	t := *in
-
-	out := make([]unikornv1.FlavorQuota, len(t))
-
-	for i := range t {
-		out[i] = unikornv1.FlavorQuota{
-			ID:    t[i].Id,
-			Count: t[i].Count,
-		}
-	}
-
-	return out
-}
-
-func (h *Handler) generateQuota(ctx context.Context, organizationID, projectID string, identity *unikornv1.Identity, in *openapi.QuotasSpec) (*unikornv1.Quota, error) {
-	info, err := authorization.FromContext(ctx)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to get userinfo").WithError(err)
-	}
-
-	metadata := &coreapi.ResourceWriteMetadata{
-		Name: fmt.Sprintf("identity-quota-%s", identity.Name),
-	}
-
-	resource := &unikornv1.Quota{
-		ObjectMeta: conversion.NewObjectMetadata(metadata, h.namespace, info.Userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identity.Name).Get(),
-		Spec: unikornv1.QuotaSpec{
-			// TODO: tags??
-			Flavors: generateFlavorQuotas(in.Flavors),
-		},
-	}
-
-	// Ensure the quota is owned by the identity so it is automatically cleaned
-	// up on identity deletion.
-	if err := controllerutil.SetOwnerReference(identity, resource, h.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
-		return nil, err
-	}
-
-	return resource, nil
-}
-
-func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDQuotas(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "region:quotas", identityapi.Update, organizationID, projectID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	request := &openapi.QuotasSpec{}
-
-	if err := util.ReadJSONBody(r, request); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	identity, err := h.getIdentity(r.Context(), identityID)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	required, err := h.generateQuota(r.Context(), organizationID, projectID, identity, request)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	current, err := h.getQuota(r.Context(), identity)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	if current == nil {
-		if err := h.client.Create(r.Context(), required); err != nil {
-			errors.HandleError(w, r, errors.OAuth2ServerError("unable to create quota").WithError(err))
-			return
-		}
-
-		w.WriteHeader(http.StatusAccepted)
-
-		return
-	}
-
-	updated := current.DeepCopy()
-	updated.Labels = required.Labels
-	updated.Annotations = required.Annotations
-	updated.Spec = required.Spec
-
-	if err := h.client.Patch(r.Context(), updated, client.MergeFrom(current)); err != nil {
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to updated quota").WithError(err))
-		return
-	}
-
-	w.WriteHeader(http.StatusAccepted)
-}
-
-func convertExternalNetwork(in providers.ExternalNetwork) openapi.ExternalNetwork {
-	out := openapi.ExternalNetwork{
-		Id:   in.ID,
-		Name: in.Name,
-	}
-
-	return out
-}
-
-func convertExternalNetworks(in providers.ExternalNetworks) openapi.ExternalNetworks {
-	out := make(openapi.ExternalNetworks, len(in))
-
-	for i := range in {
-		out[i] = convertExternalNetwork(in[i])
-	}
-
-	return out
-}
-
-func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
-	if err := rbac.AllowOrganizationScope(r.Context(), "region:externalnetworks", identityapi.Read, organizationID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	provider, err := region.NewClient(h.client, h.namespace).Provider(r.Context(), regionID)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := provider.ListExternalNetworks(r.Context())
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	h.setCacheable(w)
-	util.WriteJSONResponse(w, r, http.StatusOK, convertExternalNetworks(result))
-}
-
-func (h *Handler) convertSecurityGroup(in *unikornv1.SecurityGroup) *openapi.SecurityGroupRead {
-	out := &openapi.SecurityGroupRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
-		Spec: openapi.SecurityGroupReadSpec{
-			RegionId: in.Labels[constants.RegionLabel],
-		},
-	}
-
-	return out
-}
-
-func (h *Handler) convertSecurityGroupList(in *unikornv1.SecurityGroupList) *openapi.SecurityGroupsRead {
-	out := make(openapi.SecurityGroupsRead, len(in.Items))
-
-	for i := range in.Items {
-		out[i] = *h.convertSecurityGroup(&in.Items[i])
-	}
-
-	return &out
-}
-
-func (h *Handler) getSecurityGroup(ctx context.Context, id string) (*unikornv1.SecurityGroup, error) {
-	resource := &unikornv1.SecurityGroup{}
-
-	if err := h.client.Get(ctx, client.ObjectKey{Namespace: h.namespace, Name: id}, resource); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, errors.OAuth2ServerError("unable to get security group").WithError(err)
-	}
-
-	return resource, nil
-}
-
-func (h *Handler) getSecurityGroupList(ctx context.Context, organizationID string) (*unikornv1.SecurityGroupList, error) {
-	result := &unikornv1.SecurityGroupList{}
-
-	options := &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(map[string]string{
-			coreconstants.OrganizationLabel: organizationID,
-		}),
-	}
-
-	if err := h.client.List(ctx, result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list security groups").WithError(err)
-	}
-
-	slices.SortStableFunc(result.Items, func(a, b unikornv1.SecurityGroup) int {
-		return cmp.Compare(a.Name, b.Name)
-	})
-
-	return result, nil
-}
-
-func (h *Handler) generateSecurityGroup(ctx context.Context, organizationID, projectID string, identity *unikornv1.Identity, in *openapi.SecurityGroupWrite) (*unikornv1.SecurityGroup, error) {
-	info, err := authorization.FromContext(ctx)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to get userinfo").WithError(err)
-	}
-
-	resource := &unikornv1.SecurityGroup{
-		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, h.namespace, info.Userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
-			WithLabel(constants.IdentityLabel, identity.Name).Get(),
-		Spec: unikornv1.SecurityGroupSpec{
-			Tags:     conversion.GenerateTagList(in.Metadata.Tags),
-			Provider: identity.Spec.Provider,
-		},
-	}
-
-	// Ensure the security is owned by the identity so it is automatically cleaned
-	// up on identity deletion.
-	if err := controllerutil.SetOwnerReference(identity, resource, h.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
-		return nil, err
-	}
-
-	return resource, nil
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, params openapi.GetApiV1OrganizationsOrganizationIDSecuritygroupsParams) {
@@ -1034,23 +291,13 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.Respo
 		return
 	}
 
-	result, err := h.getSecurityGroupList(r.Context(), organizationID)
+	result, err := securitygroup.New(h.client, h.namespace).List(r.Context(), organizationID, params)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	tagSelector, err := handlerutil.DecodeTagSelectorParam(params.Tag)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result.Items = slices.DeleteFunc(result.Items, func(resource unikornv1.SecurityGroup) bool {
-		return !resource.Spec.Tags.ContainsAll(tagSelector)
-	})
-
-	util.WriteJSONResponse(w, r, http.StatusOK, h.convertSecurityGroupList(result))
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
@@ -1060,52 +307,29 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 	}
 
 	request := &openapi.SecurityGroupWrite{}
+
 	if err := util.ReadJSONBody(r, request); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	identity, err := h.getIdentity(r.Context(), identityID)
+	result, err := securitygroup.New(h.client, h.namespace).Create(r.Context(), organizationID, projectID, identityID, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	securityGroup, err := h.generateSecurityGroup(r.Context(), organizationID, projectID, identity, request)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	if err := h.client.Create(r.Context(), securityGroup); err != nil {
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to create security group").WithError(err))
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusCreated, h.convertSecurityGroup(securityGroup))
+	util.WriteJSONResponse(w, r, http.StatusCreated, result)
 }
 
-//nolint:dupl
 func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups", identityapi.Delete, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	resource, err := h.getSecurityGroup(r.Context(), securityGroupID)
-	if err != nil {
+	if err := securitygroup.New(h.client, h.namespace).Delete(r.Context(), organizationID, projectID, securityGroupID); err != nil {
 		errors.HandleError(w, r, err)
-		return
-	}
-
-	if err := h.client.Delete(r.Context(), resource, foregroundDeleteOptions()); err != nil {
-		if kerrors.IsNotFound(err) {
-			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
-			return
-		}
-
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to delete security group").WithError(err))
-
 		return
 	}
 
@@ -1118,15 +342,16 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 		return
 	}
 
-	resource, err := h.getSecurityGroup(r.Context(), securityGroupID)
+	result, err := securitygroup.New(h.client, h.namespace).Get(r.Context(), organizationID, projectID, securityGroupID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusOK, h.convertSecurityGroup(resource))
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
+//nolint:dupl
 func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups", identityapi.Update, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
@@ -1134,214 +359,19 @@ func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 	}
 
 	request := &openapi.SecurityGroupWrite{}
+
 	if err := util.ReadJSONBody(r, request); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	identity, err := h.getIdentity(r.Context(), identityID)
+	result, err := securitygroup.New(h.client, h.namespace).Update(r.Context(), organizationID, projectID, identityID, securityGroupID, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	required, err := h.generateSecurityGroup(r.Context(), organizationID, projectID, identity, request)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	current, err := h.getSecurityGroup(r.Context(), securityGroupID)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	updated := current.DeepCopy()
-	updated.Labels = required.Labels
-	updated.Annotations = required.Annotations
-	updated.Spec = required.Spec
-
-	if err := h.client.Patch(r.Context(), updated, client.MergeFrom(current)); err != nil {
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to updated security group").WithError(err))
-		return
-	}
-
-	w.WriteHeader(http.StatusAccepted)
-}
-
-func convertSecurityGroupRulePort(in unikornv1.SecurityGroupRulePort) openapi.SecurityGroupRulePort {
-	out := openapi.SecurityGroupRulePort{}
-
-	if in.Number != nil {
-		out.Number = in.Number
-	}
-
-	if in.Range != nil {
-		out.Range = &openapi.SecurityGroupRulePortRange{
-			Start: in.Range.Start,
-			End:   in.Range.End,
-		}
-	}
-
-	return out
-}
-
-func generateSecurityGroupRulePort(in openapi.SecurityGroupRulePort) *unikornv1.SecurityGroupRulePort {
-	out := unikornv1.SecurityGroupRulePort{}
-
-	if in.Number != nil {
-		out.Number = in.Number
-	}
-
-	if in.Range != nil {
-		out.Range = &unikornv1.SecurityGroupRulePortRange{
-			Start: in.Range.Start,
-			End:   in.Range.End,
-		}
-	}
-
-	return &out
-}
-
-func convertSecurityGroupRuleProtocol(in unikornv1.SecurityGroupRuleProtocol) openapi.NetworkProtocol {
-	switch in {
-	case unikornv1.TCP:
-		return openapi.Tcp
-	case unikornv1.UDP:
-		return openapi.Udp
-	}
-
-	return ""
-}
-
-func generateSecurityGroupRuleProtocol(in openapi.NetworkProtocol) *unikornv1.SecurityGroupRuleProtocol {
-	var out unikornv1.SecurityGroupRuleProtocol
-
-	switch in {
-	case openapi.Tcp:
-		out = unikornv1.TCP
-	case openapi.Udp:
-		out = unikornv1.UDP
-	}
-
-	return &out
-}
-
-func convertSecurityGroupRuleDirection(in unikornv1.SecurityGroupRuleDirection) openapi.NetworkDirection {
-	switch in {
-	case unikornv1.Ingress:
-		return openapi.Ingress
-	case unikornv1.Egress:
-		return openapi.Egress
-	}
-
-	return ""
-}
-
-func generateSecurityGroupRuleDirection(in openapi.NetworkDirection) *unikornv1.SecurityGroupRuleDirection {
-	var out unikornv1.SecurityGroupRuleDirection
-
-	switch in {
-	case openapi.Ingress:
-		out = unikornv1.Ingress
-	case openapi.Egress:
-		out = unikornv1.Egress
-	}
-
-	return &out
-}
-
-func (h *Handler) convertSecurityGroupRule(in *unikornv1.SecurityGroupRule) *openapi.SecurityGroupRuleRead {
-	out := &openapi.SecurityGroupRuleRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
-		Spec: openapi.SecurityGroupRuleSpec{
-			Direction: convertSecurityGroupRuleDirection(*in.Spec.Direction),
-			Protocol:  convertSecurityGroupRuleProtocol(*in.Spec.Protocol),
-			Cidr:      in.Spec.CIDR.String(),
-			Port:      convertSecurityGroupRulePort(*in.Spec.Port),
-		},
-	}
-
-	return out
-}
-
-func (h *Handler) convertSecurityGroupRuleList(in *unikornv1.SecurityGroupRuleList) *openapi.SecurityGroupRulesRead {
-	out := make(openapi.SecurityGroupRulesRead, len(in.Items))
-
-	for i := range in.Items {
-		out[i] = *h.convertSecurityGroupRule(&in.Items[i])
-	}
-
-	return &out
-}
-
-func (h *Handler) getSecurityGroupRule(ctx context.Context, id string) (*unikornv1.SecurityGroupRule, error) {
-	resource := &unikornv1.SecurityGroupRule{}
-
-	if err := h.client.Get(ctx, client.ObjectKey{Namespace: h.namespace, Name: id}, resource); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, errors.OAuth2ServerError("unable to get security group rule").WithError(err)
-	}
-
-	return resource, nil
-}
-
-func (h *Handler) getSecurityGroupRuleList(ctx context.Context, securityGroupID string) (*unikornv1.SecurityGroupRuleList, error) {
-	result := &unikornv1.SecurityGroupRuleList{}
-
-	options := &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(map[string]string{
-			constants.SecurityGroupLabel: securityGroupID,
-		}),
-	}
-
-	if err := h.client.List(ctx, result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list security group rules").WithError(err)
-	}
-
-	slices.SortStableFunc(result.Items, func(a, b unikornv1.SecurityGroupRule) int {
-		return cmp.Compare(a.Name, b.Name)
-	})
-
-	return result, nil
-}
-
-func (h *Handler) generateSecurityGroupRule(ctx context.Context, organizationID, projectID string, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup, in *openapi.SecurityGroupRuleWrite) (*unikornv1.SecurityGroupRule, error) {
-	info, err := authorization.FromContext(ctx)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to get userinfo").WithError(err)
-	}
-
-	_, prefix, err := net.ParseCIDR(in.Spec.Cidr)
-	if err != nil {
-		return nil, errors.OAuth2InvalidRequest("unable to parse prefix").WithError(err)
-	}
-
-	resource := &unikornv1.SecurityGroupRule{
-		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, h.namespace, info.Userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
-			WithLabel(constants.IdentityLabel, identity.Name).WithLabel(constants.SecurityGroupLabel, securityGroup.Name).Get(),
-		Spec: unikornv1.SecurityGroupRuleSpec{
-			Tags:      conversion.GenerateTagList(in.Metadata.Tags),
-			Direction: generateSecurityGroupRuleDirection(in.Spec.Direction),
-			Protocol:  generateSecurityGroupRuleProtocol(in.Spec.Protocol),
-			Port:      generateSecurityGroupRulePort(in.Spec.Port),
-			CIDR: &unikornv1core.IPv4Prefix{
-				IPNet: *prefix,
-			},
-		},
-	}
-
-	// Ensure the security is owned by the security group so it is automatically cleaned
-	// up on security group deletion.
-	if err := controllerutil.SetOwnerReference(securityGroup, resource, h.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
-		return nil, err
-	}
-
-	return resource, nil
+	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRules(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
@@ -1350,15 +380,17 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 		return
 	}
 
-	result, err := h.getSecurityGroupRuleList(r.Context(), securityGroupID)
+	// TODO: filtering???
+	result, err := securitygrouprule.New(h.client, h.namespace).List(r.Context(), organizationID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusOK, h.convertSecurityGroupRuleList(result))
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
+//nolint:dupl
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRules(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups", identityapi.Create, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
@@ -1366,35 +398,19 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 	}
 
 	request := &openapi.SecurityGroupRuleWrite{}
+
 	if err := util.ReadJSONBody(r, request); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	identity, err := h.getIdentity(r.Context(), identityID)
+	result, err := securitygrouprule.New(h.client, h.namespace).Create(r.Context(), organizationID, projectID, identityID, securityGroupID, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	securityGroup, err := h.getSecurityGroup(r.Context(), securityGroupID)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	securityGroupRule, err := h.generateSecurityGroupRule(r.Context(), organizationID, projectID, identity, securityGroup, request)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	if err := h.client.Create(r.Context(), securityGroupRule); err != nil {
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to create security group rule").WithError(err))
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusCreated, h.convertSecurityGroupRule(securityGroupRule))
+	util.WriteJSONResponse(w, r, http.StatusCreated, result)
 }
 
 func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRulesRuleID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter, ruleID openapi.RuleIDParameter) {
@@ -1403,20 +419,8 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		return
 	}
 
-	resource, err := h.getSecurityGroupRule(r.Context(), ruleID)
-	if err != nil {
+	if err := securitygrouprule.New(h.client, h.namespace).Delete(r.Context(), organizationID, projectID, ruleID); err != nil {
 		errors.HandleError(w, r, err)
-		return
-	}
-
-	if err := h.client.Delete(r.Context(), resource); err != nil {
-		if kerrors.IsNotFound(err) {
-			errors.HandleError(w, r, errors.HTTPNotFound().WithError(err))
-			return
-		}
-
-		errors.HandleError(w, r, errors.OAuth2ServerError("unable to delete security group rule").WithError(err))
-
 		return
 	}
 
@@ -1429,13 +433,13 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 		return
 	}
 
-	resource, err := h.getSecurityGroupRule(r.Context(), ruleID)
+	result, err := securitygrouprule.New(h.client, h.namespace).Get(r.Context(), organizationID, projectID, ruleID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusOK, h.convertSecurityGroupRule(resource))
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDServers(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, params openapi.GetApiV1OrganizationsOrganizationIDServersParams) {
@@ -1460,25 +464,13 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 	}
 
 	request := &openapi.ServerWrite{}
+
 	if err := util.ReadJSONBody(r, request); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	identity, err := h.getIdentity(r.Context(), identityID)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	// NOTE: exactly 1 is enforced at the API schema level.
-	network, err := h.getNetwork(r.Context(), request.Spec.Networks[0].Id)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := server.NewClient(h.client, h.namespace).Create(r.Context(), organizationID, projectID, identity, network, request)
+	result, err := server.NewClient(h.client, h.namespace).Create(r.Context(), organizationID, projectID, identityID, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -1487,6 +479,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 	util.WriteJSONResponse(w, r, http.StatusCreated, result)
 }
 
+//nolint:dupl
 func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:servers", identityapi.Create, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
@@ -1494,25 +487,13 @@ func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 	}
 
 	request := &openapi.ServerWrite{}
+
 	if err := util.ReadJSONBody(r, request); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	identity, err := h.getIdentity(r.Context(), identityID)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	// NOTE: exactly 1 is enforced at the API schema level.
-	network, err := h.getNetwork(r.Context(), request.Spec.Networks[0].Id)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := server.NewClient(h.client, h.namespace).Update(r.Context(), organizationID, projectID, identity, network, serverID, request)
+	result, err := server.NewClient(h.client, h.namespace).Update(r.Context(), organizationID, projectID, identityID, serverID, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -1527,7 +508,7 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		return
 	}
 
-	err := server.NewClient(h.client, h.namespace).Delete(r.Context(), serverID)
+	err := server.NewClient(h.client, h.namespace).Delete(r.Context(), organizationID, projectID, serverID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -1542,7 +523,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 		return
 	}
 
-	result, err := server.NewClient(h.client, h.namespace).Get(r.Context(), serverID)
+	result, err := server.NewClient(h.client, h.namespace).Get(r.Context(), organizationID, projectID, serverID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return

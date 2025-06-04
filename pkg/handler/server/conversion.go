@@ -26,6 +26,8 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler/identity"
+	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -151,35 +153,43 @@ type generator struct {
 	organizationID string
 	// projectID is the unique project identifier.
 	projectID string
-	// identity is the identity the resource is provisioned for.
-	identity *unikornv1.Identity
-	// network is the network tha resource is attacked to.
-	network *unikornv1.Network
+	// identity is the unique identity identifier.
+	identityID string
 }
 
-func newGenerator(client client.Client, namespace, organizationID, projectID string, identity *unikornv1.Identity, network *unikornv1.Network) *generator {
+func newGenerator(client client.Client, namespace, organizationID, projectID, identityID string) *generator {
 	return &generator{
 		client:         client,
 		namespace:      namespace,
 		organizationID: organizationID,
 		projectID:      projectID,
-		identity:       identity,
-		network:        network,
+		identityID:     identityID,
 	}
 }
 
 func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*unikornv1.Server, error) {
+	identity, err := identity.New(g.client, g.namespace).GetRaw(ctx, g.organizationID, g.projectID, g.identityID)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: The API enforces a single network.
+	network, err := network.New(g.client, g.namespace).GetRaw(ctx, g.organizationID, g.projectID, in.Spec.Networks[0].Id)
+	if err != nil {
+		return nil, err
+	}
+
 	info, err := authorization.FromContext(ctx)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("unable to get user info").WithError(err)
 	}
 
 	resource := &unikornv1.Server{
-		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, g.namespace, info.Userinfo.Sub).WithOrganization(g.organizationID).WithProject(g.projectID).WithLabel(constants.RegionLabel, g.identity.Labels[constants.RegionLabel]).
-			WithLabel(constants.IdentityLabel, g.identity.Name).Get(),
+		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, g.namespace, info.Userinfo.Sub).WithOrganization(g.organizationID).WithProject(g.projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
+			WithLabel(constants.IdentityLabel, identity.Name).Get(),
 		Spec: unikornv1.ServerSpec{
 			Tags:               conversion.GenerateTagList(in.Metadata.Tags),
-			Provider:           g.identity.Spec.Provider,
+			Provider:           identity.Spec.Provider,
 			FlavorID:           in.Spec.FlavorId,
 			Image:              g.generateImage(&in.Spec.Image),
 			PublicIPAllocation: g.generatePublicIPAllocation(in.Spec.PublicIPAllocation),
@@ -191,7 +201,7 @@ func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*uni
 
 	// Ensure the server is owned by the network so it is automatically cleaned
 	// up on cascading deletion.
-	if err := controllerutil.SetOwnerReference(g.network, resource, g.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
+	if err := controllerutil.SetOwnerReference(network, resource, g.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
 		return nil, err
 	}
 
