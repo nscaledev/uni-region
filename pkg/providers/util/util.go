@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package providers
+package util
 
 import (
 	"crypto/ed25519"
@@ -23,14 +23,6 @@ import (
 
 	"golang.org/x/crypto/ssh"
 )
-
-func (f Flavor) GPUCount() int {
-	if f.GPU != nil {
-		return f.GPU.LogicalCount
-	}
-
-	return 0
-}
 
 // GenerateSSHKeyPair creates an ephemeral SSH keypair, returning the
 // public and private keys in SSH fingerprint and PEM formats respectively.

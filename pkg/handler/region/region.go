@@ -30,8 +30,7 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
-	"github.com/unikorn-cloud/region/pkg/providers/kubernetes"
-	"github.com/unikorn-cloud/region/pkg/providers/openstack"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -46,10 +45,6 @@ var (
 
 	// ErrRegionNotFound is raised when a region doesn't exist.
 	ErrRegionNotFound = goerrors.New("region doesn't exist")
-
-	// ErrRegionProviderUnimplmented is raised when you haven't written
-	// it yet!
-	ErrRegionProviderUnimplmented = goerrors.New("region provider unimplmented")
 )
 
 type Client struct {
@@ -64,65 +59,8 @@ func NewClient(client client.Client, namespace string) *Client {
 	}
 }
 
-// list is a canonical lister function that allows filtering to be applied
-// in one place e.g. health, ownership, etc.
-func (c *Client) list(ctx context.Context) (*unikornv1.RegionList, error) {
-	var regions unikornv1.RegionList
-
-	if err := c.client.List(ctx, &regions, &client.ListOptions{Namespace: c.namespace}); err != nil {
-		return nil, err
-	}
-
-	return &regions, nil
-}
-
-func findRegion(regions *unikornv1.RegionList, regionID string) (*unikornv1.Region, error) {
-	for i := range regions.Items {
-		if regions.Items[i].Name == regionID {
-			return &regions.Items[i], nil
-		}
-	}
-
-	return nil, ErrRegionNotFound
-}
-
-//nolint:gochecknoglobals
-var cache = map[string]providers.Provider{}
-
-func (c *Client) newProvider(ctx context.Context, region *unikornv1.Region) (providers.Provider, error) {
-	switch region.Spec.Provider {
-	case unikornv1.ProviderKubernetes:
-		return kubernetes.New(ctx, c.client, region)
-	case unikornv1.ProviderOpenstack:
-		return openstack.New(ctx, c.client, region)
-	}
-
-	return nil, ErrRegionProviderUnimplmented
-}
-
-func (c *Client) Provider(ctx context.Context, regionID string) (providers.Provider, error) {
-	regions, err := c.list(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	region, err := findRegion(regions, regionID)
-	if err != nil {
-		return nil, err
-	}
-
-	if provider, ok := cache[region.Name]; ok {
-		return provider, nil
-	}
-
-	provider, err := c.newProvider(ctx, region)
-	if err != nil {
-		return nil, err
-	}
-
-	cache[region.Name] = provider
-
-	return provider, nil
+func (c *Client) Provider(ctx context.Context, regionID string) (types.Provider, error) {
+	return providers.New(ctx, c.client, c.namespace, regionID)
 }
 
 func convertRegionType(in unikornv1.Provider) openapi.RegionType {
@@ -199,8 +137,9 @@ func convertList(in *unikornv1.RegionList) openapi.Regions {
 }
 
 func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
-	regions, err := c.list(ctx)
-	if err != nil {
+	regions := &unikornv1.RegionList{}
+
+	if err := c.client.List(ctx, regions, &client.ListOptions{Namespace: c.namespace}); err != nil {
 		return nil, err
 	}
 
@@ -223,18 +162,18 @@ func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.Regio
 	return c.convertDetail(ctx, result)
 }
 
-func convertGpuVendor(in providers.GPUVendor) openapi.GpuVendor {
+func convertGpuVendor(in types.GPUVendor) openapi.GpuVendor {
 	switch in {
-	case providers.Nvidia:
+	case types.Nvidia:
 		return openapi.NVIDIA
-	case providers.AMD:
+	case types.AMD:
 		return openapi.AMD
 	}
 
 	return ""
 }
 
-func convertFlavor(in *providers.Flavor) *openapi.Flavor {
+func convertFlavor(in *types.Flavor) *openapi.Flavor {
 	out := &openapi.Flavor{
 		Metadata: coreapi.StaticResourceMetadata{
 			Id:   in.ID,
@@ -265,7 +204,7 @@ func convertFlavor(in *providers.Flavor) *openapi.Flavor {
 	return out
 }
 
-func convertFlavors(in []providers.Flavor) openapi.Flavors {
+func convertFlavors(in []types.Flavor) openapi.Flavors {
 	out := make(openapi.Flavors, len(in))
 
 	for i := range in {
@@ -288,7 +227,7 @@ func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID strin
 
 	// Apply ordering guarantees, ascending order with GPUs taking precedence over
 	// CPUs and memory.
-	slices.SortStableFunc(result, func(a, b providers.Flavor) int {
+	slices.SortStableFunc(result, func(a, b types.Flavor) int {
 		if v := cmp.Compare(a.GPUCount(), b.GPUCount()); v != 0 {
 			return v
 		}
@@ -303,52 +242,52 @@ func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID strin
 	return convertFlavors(result), nil
 }
 
-func convertImageVirtualization(in providers.ImageVirtualization) openapi.ImageVirtualization {
+func convertImageVirtualization(in types.ImageVirtualization) openapi.ImageVirtualization {
 	switch in {
-	case providers.Virtualized:
+	case types.Virtualized:
 		return openapi.Virtualized
-	case providers.Baremetal:
+	case types.Baremetal:
 		return openapi.Baremetal
-	case providers.Any:
+	case types.Any:
 		return openapi.Any
 	}
 
 	return ""
 }
 
-func convertOsKernel(in providers.OsKernel) openapi.OsKernel {
+func convertOsKernel(in types.OsKernel) openapi.OsKernel {
 	//nolint:gocritic
 	switch in {
-	case providers.Linux:
+	case types.Linux:
 		return openapi.Linux
 	}
 
 	return ""
 }
 
-func convertOsFamily(in providers.OsFamily) openapi.OsFamily {
+func convertOsFamily(in types.OsFamily) openapi.OsFamily {
 	switch in {
-	case providers.Debian:
+	case types.Debian:
 		return openapi.Debian
-	case providers.Redhat:
+	case types.Redhat:
 		return openapi.Redhat
 	}
 
 	return ""
 }
 
-func convertOsDistro(in providers.OsDistro) openapi.OsDistro {
+func convertOsDistro(in types.OsDistro) openapi.OsDistro {
 	switch in {
-	case providers.Rocky:
+	case types.Rocky:
 		return openapi.Rocky
-	case providers.Ubuntu:
+	case types.Ubuntu:
 		return openapi.Ubuntu
 	}
 
 	return ""
 }
 
-func convertPackages(in *providers.ImagePackages) *openapi.SoftwareVersions {
+func convertPackages(in *types.ImagePackages) *openapi.SoftwareVersions {
 	if in == nil {
 		return nil
 	}
@@ -362,7 +301,7 @@ func convertPackages(in *providers.ImagePackages) *openapi.SoftwareVersions {
 	return &out
 }
 
-func convertImage(in *providers.Image) *openapi.Image {
+func convertImage(in *types.Image) *openapi.Image {
 	out := &openapi.Image{
 		Metadata: coreapi.StaticResourceMetadata{
 			Id:           in.ID,
@@ -400,7 +339,7 @@ func convertImage(in *providers.Image) *openapi.Image {
 	return out
 }
 
-func convertImages(in []providers.Image) openapi.Images {
+func convertImages(in []types.Image) openapi.Images {
 	out := make(openapi.Images, len(in))
 
 	for i := range in {
@@ -422,14 +361,14 @@ func (c *Client) ListImages(ctx context.Context, organizationID, regionID string
 	}
 
 	// Apply ordering guarantees, ordered by name.
-	slices.SortStableFunc(result, func(a, b providers.Image) int {
+	slices.SortStableFunc(result, func(a, b types.Image) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 
 	return convertImages(result), nil
 }
 
-func convertExternalNetwork(in providers.ExternalNetwork) openapi.ExternalNetwork {
+func convertExternalNetwork(in types.ExternalNetwork) openapi.ExternalNetwork {
 	out := openapi.ExternalNetwork{
 		Id:   in.ID,
 		Name: in.Name,
@@ -438,7 +377,7 @@ func convertExternalNetwork(in providers.ExternalNetwork) openapi.ExternalNetwor
 	return out
 }
 
-func convertExternalNetworks(in providers.ExternalNetworks) openapi.ExternalNetworks {
+func convertExternalNetworks(in types.ExternalNetworks) openapi.ExternalNetworks {
 	out := make(openapi.ExternalNetworks, len(in))
 
 	for i := range in {

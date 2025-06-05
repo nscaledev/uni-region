@@ -24,7 +24,7 @@ import (
 	"github.com/spjmurray/go-util/pkg/set"
 
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-	"github.com/unikorn-cloud/region/pkg/providers"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -55,7 +55,7 @@ type Provider struct {
 	region *unikornv1.Region
 }
 
-var _ providers.Provider = &Provider{}
+var _ types.Provider = &Provider{}
 
 func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Provider, error) {
 	p := &Provider{
@@ -142,7 +142,7 @@ func (p *Provider) regionClient(ctx context.Context) (client.Client, error) {
 }
 
 // Flavors list all available flavors.
-func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
+func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	client, err := p.regionClient(ctx)
 	if err != nil {
 		return nil, err
@@ -159,7 +159,7 @@ func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
 		classes.Add(nodes.Items[i].Labels[NodeClassLabel])
 	}
 
-	flavors := make(providers.FlavorList, 0, len(p.region.Spec.Kubernetes.Nodes))
+	flavors := make(types.FlavorList, 0, len(p.region.Spec.Kubernetes.Nodes))
 
 	// TODO: we *should* be able to auto-discover a lot of what's required from
 	// the node information, however things like the allocatable memory in the status
@@ -169,7 +169,7 @@ func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
 			continue
 		}
 
-		flavor := providers.Flavor{
+		flavor := types.Flavor{
 			ID:     node.ID,
 			Name:   node.Name,
 			CPUs:   *node.CPU.Count,
@@ -178,8 +178,8 @@ func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
 		}
 
 		if node.GPU != nil {
-			flavor.GPU = &providers.GPU{
-				Vendor:        providers.GPUVendor(node.GPU.Vendor),
+			flavor.GPU = &types.GPU{
+				Vendor:        types.GPUVendor(node.GPU.Vendor),
 				Model:         node.GPU.Model,
 				Memory:        node.GPU.Memory,
 				PhysicalCount: node.GPU.PhysicalCount,
@@ -194,7 +194,7 @@ func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
 }
 
 // Images lists all available images.
-func (p *Provider) Images(ctx context.Context) (providers.ImageList, error) {
+func (p *Provider) Images(ctx context.Context) (types.ImageList, error) {
 	return nil, ErrUnimplmented
 }
 
@@ -220,7 +220,7 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 
 // ListExternalNetworks returns a list of external networks if the platform
 // supports such a concept.
-func (p *Provider) ListExternalNetworks(ctx context.Context) (providers.ExternalNetworks, error) {
+func (p *Provider) ListExternalNetworks(ctx context.Context) (types.ExternalNetworks, error) {
 	return nil, ErrUnimplmented
 }
 
@@ -251,5 +251,10 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 
 // DeleteServer deletes a server.
 func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+	return ErrUnimplmented
+}
+
+// UpdateServerHealth checks a server's health status and modifies the resource in place.
+func (p *Provider) UpdateServerHealth(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	return ErrUnimplmented
 }

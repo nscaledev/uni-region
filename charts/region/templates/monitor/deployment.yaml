@@ -17,6 +17,8 @@ spec:
       containers:
       - name: {{ .Release.Name }}-monitor
         image: {{ include "unikorn.regionMonitorImage" . }}
+        args:
+        - --namespace={{ .Release.Namespace }}
         resources:
           requests:
             cpu: 50m

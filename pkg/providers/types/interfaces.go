@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package providers
+package types
 
 import (
 	"context"
@@ -57,4 +57,6 @@ type Provider interface {
 	CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
 	// DeleteServer deletes a server.
 	DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
+	// UpdateServerHealth checks a server's health status and modifies the resource in place.
+	UpdateServerHealth(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
 }

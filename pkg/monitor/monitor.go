@@ -22,6 +22,8 @@ import (
 
 	"github.com/spf13/pflag"
 
+	serverhealth "github.com/unikorn-cloud/region/pkg/monitor/health/server"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -32,11 +34,15 @@ type Options struct {
 	// run with high frequency, reads are all cached.  It's mostly down to
 	// burning CPU unnecessarily.
 	pollPeriod time.Duration
+
+	// namespace we are running in.
+	namespace string
 }
 
 // AddFlags registers option flags with pflag.
 func (o *Options) AddFlags(flags *pflag.FlagSet) {
 	flags.DurationVar(&o.pollPeriod, "poll-period", time.Minute, "Period to poll for updates")
+	flags.StringVar(&o.namespace, "namespace", "", "Namespace the service is running in")
 }
 
 // Checker is an interface that monitors must implement.
@@ -52,7 +58,9 @@ func Run(ctx context.Context, c client.Client, o *Options) {
 	ticker := time.NewTicker(o.pollPeriod)
 	defer ticker.Stop()
 
-	checkers := []Checker{}
+	checkers := []Checker{
+		serverhealth.New(c, o.namespace),
+	}
 
 	for {
 		select {

@@ -34,12 +34,14 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
 	"github.com/gophercloud/utils/openstack/clientconfig"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/allocation/vlan"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
+	"github.com/unikorn-cloud/region/pkg/providers/util"
 
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -95,7 +97,7 @@ type Provider struct {
 	lock sync.Mutex
 }
 
-var _ providers.Provider = &Provider{}
+var _ types.Provider = &Provider{}
 
 func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Provider, error) {
 	var vlanSpec *unikornv1.VLANSpec
@@ -286,7 +288,7 @@ func (p *Provider) Region(ctx context.Context) (*unikornv1.Region, error) {
 }
 
 // Flavors list all available flavors.
-func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
+func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	computeService, err := p.compute(ctx)
 	if err != nil {
 		return nil, err
@@ -297,13 +299,13 @@ func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
 		return nil, err
 	}
 
-	result := make(providers.FlavorList, len(resources))
+	result := make(types.FlavorList, len(resources))
 
 	for i := range resources {
 		flavor := &resources[i]
 
 		// API memory is in MiB, disk is in GB
-		f := providers.Flavor{
+		f := types.Flavor{
 			ID:     flavor.ID,
 			Name:   flavor.Name,
 			CPUs:   flavor.VCPUs,
@@ -329,10 +331,10 @@ func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
 				}
 
 				if metadata.GPU != nil {
-					f.GPU = &providers.GPU{
+					f.GPU = &types.GPU{
 						// TODO: while these align, you should really put a
 						// proper conversion in here.
-						Vendor:        providers.GPUVendor(metadata.GPU.Vendor),
+						Vendor:        types.GPUVendor(metadata.GPU.Vendor),
 						Model:         metadata.GPU.Model,
 						Memory:        metadata.GPU.Memory,
 						PhysicalCount: metadata.GPU.PhysicalCount,
@@ -349,7 +351,7 @@ func (p *Provider) Flavors(ctx context.Context) (providers.FlavorList, error) {
 }
 
 // Images lists all available images.
-func (p *Provider) Images(ctx context.Context) (providers.ImageList, error) {
+func (p *Provider) Images(ctx context.Context) (types.ImageList, error) {
 	imageService, err := p.image(ctx)
 	if err != nil {
 		return nil, err
@@ -360,7 +362,7 @@ func (p *Provider) Images(ctx context.Context) (providers.ImageList, error) {
 		return nil, err
 	}
 
-	result := make(providers.ImageList, len(resources))
+	result := make(types.ImageList, len(resources))
 
 	for i := range resources {
 		image := &resources[i]
@@ -374,13 +376,13 @@ func (p *Provider) Images(ctx context.Context) (providers.ImageList, error) {
 			size = int((image.VirtualSize + (1 << 30) - 1) >> 30)
 		}
 
-		providerImage := providers.Image{
+		providerImage := types.Image{
 			ID:             image.ID,
 			Name:           image.Name,
 			Created:        image.CreatedAt,
 			Modified:       image.UpdatedAt,
 			SizeGiB:        size,
-			Virtualization: providers.ImageVirtualization(virtualization),
+			Virtualization: types.ImageVirtualization(virtualization),
 			OS:             p.imageOS(image),
 			Packages:       p.imagePackages(image),
 		}
@@ -393,8 +395,8 @@ func (p *Provider) Images(ctx context.Context) (providers.ImageList, error) {
 				return nil, fmt.Errorf("%w: GPU driver is not defined for image %s", ErrKeyUndefined, image.ID)
 			}
 
-			gpu := &providers.ImageGPU{
-				Vendor: providers.GPUVendor(gpuVendor),
+			gpu := &types.ImageGPU{
+				Vendor: types.GPUVendor(gpuVendor),
 				Driver: gpuDriver,
 			}
 
@@ -412,16 +414,16 @@ func (p *Provider) Images(ctx context.Context) (providers.ImageList, error) {
 }
 
 // imageOS extracts the image OS from the image properties.
-func (p *Provider) imageOS(image *images.Image) providers.ImageOS {
+func (p *Provider) imageOS(image *images.Image) types.ImageOS {
 	kernel, _ := image.Properties["unikorn:os:kernel"].(string)
 	family, _ := image.Properties["unikorn:os:family"].(string)
 	distro, _ := image.Properties["unikorn:os:distro"].(string)
 	version, _ := image.Properties["unikorn:os:version"].(string)
 
-	result := providers.ImageOS{
-		Kernel:  providers.OsKernel(kernel),
-		Family:  providers.OsFamily(family),
-		Distro:  providers.OsDistro(distro),
+	result := types.ImageOS{
+		Kernel:  types.OsKernel(kernel),
+		Family:  types.OsFamily(family),
+		Distro:  types.OsDistro(distro),
 		Version: version,
 	}
 
@@ -437,8 +439,8 @@ func (p *Provider) imageOS(image *images.Image) providers.ImageOS {
 }
 
 // imagePackages extracts the image packages from the image properties.
-func (p *Provider) imagePackages(image *images.Image) *providers.ImagePackages {
-	result := make(providers.ImagePackages)
+func (p *Provider) imagePackages(image *images.Image) *types.ImagePackages {
+	result := make(types.ImagePackages)
 
 	for key, value := range image.Properties {
 		// Check if the key starts with "unikorn:package"
@@ -698,7 +700,7 @@ func (p *Provider) createIdentityComputeResources(ctx context.Context, identity 
 	// This is primarily a debugging aid, and you need to opt in at the client service
 	// to actually inject it into anything.  Besides, you have the uesrname and password
 	// available anyway, so you can do a server recovery and steal all the data that way.
-	publicKey, privateKey, err := providers.GenerateSSHKeyPair()
+	publicKey, privateKey, err := util.GenerateSSHKeyPair()
 	if err != nil {
 		return err
 	}
@@ -1216,7 +1218,7 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 
 // ListExternalNetworks returns a list of external networks if the platform
 // supports such a concept.
-func (p *Provider) ListExternalNetworks(ctx context.Context) (providers.ExternalNetworks, error) {
+func (p *Provider) ListExternalNetworks(ctx context.Context) (types.ExternalNetworks, error) {
 	networkService, err := p.network(ctx)
 	if err != nil {
 		return nil, err
@@ -1227,10 +1229,10 @@ func (p *Provider) ListExternalNetworks(ctx context.Context) (providers.External
 		return nil, err
 	}
 
-	out := make(providers.ExternalNetworks, len(result))
+	out := make(types.ExternalNetworks, len(result))
 
 	for i, in := range result {
-		out[i] = providers.ExternalNetwork{
+		out[i] = types.ExternalNetwork{
 			ID:   in.ID,
 			Name: in.Name,
 		}
@@ -1663,6 +1665,33 @@ func (p *Provider) openstackNetworkID(ctx context.Context, identity *unikornv1.O
 	return *resources.Items[index].Spec.NetworkID, nil
 }
 
+// convertServerHealthStatus translates from an OpenStack server status into a Kubernetes one.
+// See the following for all possible states (currently).
+// https://docs.openstack.org/api-guide/compute/server_concepts.html
+func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, unikornv1core.ConditionReason, string) {
+	if server == nil {
+		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
+	}
+
+	switch server.Status {
+	case "ACTIVE":
+		return corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "server is healthy"
+	case "ERROR":
+		return corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server is in an error state"
+	case "UNKNOWN":
+		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
+	default:
+		return corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "server is in state " + server.Status
+	}
+}
+
+// SetServerHealthStatus attaches the healt status condition to a server.
+func setServerHealthStatus(server *unikornv1.Server, openstackserver *servers.Server) {
+	status, reason, message := convertServerHealthStatus(openstackserver)
+
+	server.StatusConditionWrite(unikornv1core.ConditionHealthy, status, reason, message)
+}
+
 // CreateServer creates or updates a server.
 //
 //nolint:cyclop
@@ -1721,6 +1750,8 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 	if err != nil {
 		return err
 	}
+
+	setServerHealthStatus(server, providerServer)
 
 	// wait for server to be active
 	if providerServer.Status != "ACTIVE" {
@@ -2073,6 +2104,42 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 	}
 
 	complete = true
+
+	return nil
+}
+
+// UpdateServerHealth checks a server's health status and modifies the resource in place.
+func (p *Provider) UpdateServerHealth(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	openstackServer, err := p.GetOpenstackServer(ctx, server)
+	if err != nil {
+		return err
+	}
+
+	// Rescope to the project...
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *openstackIdentity.Spec.UserID, *openstackIdentity.Spec.Password, *openstackIdentity.Spec.ProjectID)
+
+	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	if err != nil {
+		return err
+	}
+
+	var providerServer *servers.Server
+
+	if openstackServer.Spec.ServerID != nil {
+		temp, err := computeService.GetServer(ctx, *openstackServer.Spec.ServerID)
+		if err != nil {
+			return err
+		}
+
+		providerServer = temp
+	}
+
+	setServerHealthStatus(server, providerServer)
 
 	return nil
 }
