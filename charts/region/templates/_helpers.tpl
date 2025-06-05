@@ -1,8 +1,8 @@
 {{/*
 Create the container images
 */}}
-{{- define "unikorn.regionImage" -}}
-{{- .Values.image | default (printf "%s/unikorn-region-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
+{{- define "unikorn.serverImage" -}}
+{{- .Values.server.image | default (printf "%s/unikorn-region-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
 {{- end }}
 
 {{- define "unikorn.regionMonitorImage" -}}
