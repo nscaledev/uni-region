@@ -10,10 +10,10 @@ rules:
   - region.unikorn-cloud.org
   resources:
   - regions
+  - identities
+  - openstackidentities
   - servers
-  - networks
   - openstackservers
-  - openstacknetworks
   verbs:
   - list
   - watch
@@ -22,7 +22,6 @@ rules:
   - region.unikorn-cloud.org
   resources:
   - servers/status
-  - networks/status
   verbs:
   - patch
 # Get region credentials.
