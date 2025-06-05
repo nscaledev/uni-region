@@ -94,34 +94,70 @@ organization: nscaledev
 #             endID: 4094
 
 # REST server specific configuration.
-# Allows override of the global default image.
-# image:
+server:
+  # Allows override of the server image.
+  image: ~
+  # Allows resource limits to be set.
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
 
 # Monitor configuration.
 monitor:
   # Allow override of the controller image.
   image: ~
+  # Allows resource limits to be set.
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
 
 # Identity controller configuration.
 identityController:
   # Allow override of the controller image.
   image: ~
+  # Allows resource limits to be set.
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
 
 networkController:
   # Allow override of the controller image.
   image: ~
+  # Allows resource limits to be set.
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
 
 securityGroupController:
   # Allow override of the controller image.
   image: ~
+  # Allows resource limits to be set.
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
 
 securityGroupRuleController:
   # Allow override of the controller image.
   image: ~
+  # Allows resource limits to be set.
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
 
 serverController:
   # Allow override of the controller image.
   image: ~
+  # Allows resource limits to be set.
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
 
 # Sets the DNS hosts/X.509 Certs.
 region:
