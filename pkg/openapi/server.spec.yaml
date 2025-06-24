@@ -304,7 +304,7 @@ paths:
       inbound and outbound traffic.
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
-    - $ref: '#/components/parameters/tagSelectorParameter'
+    - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
     get:
       description: List security groups.
       security:
@@ -487,7 +487,7 @@ paths:
       Manages servers.
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
-    - $ref: '#/components/parameters/tagSelectorParameter'
+    - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
     get:
       description: List servers.
       security:
@@ -641,16 +641,6 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
-    tagSelectorParameter:
-      name: tag
-      in: query
-      description: |-
-        A set of tags to match against resources in the form "name=value",
-        thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
-      schema:
-        type: array
-        items:
-          type: string
   schemas:
     kubernetesNameParameter:
       description: A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.

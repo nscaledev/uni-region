@@ -615,9 +615,6 @@ type SecurityGroupIDParameter = KubernetesNameParameter
 // ServerIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type ServerIDParameter = KubernetesNameParameter
 
-// TagSelectorParameter defines model for tagSelectorParameter.
-type TagSelectorParameter = []string
-
 // ExternalNetworksResponse A list of openstack external networks.
 type ExternalNetworksResponse = ExternalNetworks
 
@@ -682,14 +679,14 @@ type ServerRequest = ServerWrite
 type GetApiV1OrganizationsOrganizationIDSecuritygroupsParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",
 	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
-	Tag *TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 }
 
 // GetApiV1OrganizationsOrganizationIDServersParams defines parameters for GetApiV1OrganizationsOrganizationIDServers.
 type GetApiV1OrganizationsOrganizationIDServersParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",
 	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
-	Tag *TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 }
 
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities for application/json ContentType.
