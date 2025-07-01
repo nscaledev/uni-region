@@ -26,7 +26,7 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
-	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
+	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
@@ -115,11 +115,6 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 		return nil, errors.OAuth2ServerError("unable to get identity").WithError(err)
 	}
 
-	info, err := authorization.FromContext(ctx)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to get userinfo").WithError(err)
-	}
-
 	_, prefix, err := net.ParseCIDR(request.Spec.Prefix)
 	if err != nil {
 		return nil, errors.OAuth2InvalidRequest("unable to parse prefix").WithError(err)
@@ -138,8 +133,8 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 		}
 	}
 
-	network := &unikornv1.Network{
-		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.namespace, info.Userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identityID).Get(),
+	out := &unikornv1.Network{
+		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.namespace).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identityID).Get(),
 		Spec: unikornv1.NetworkSpec{
 			Tags:     conversion.GenerateTagList(request.Metadata.Tags),
 			Provider: identity.Spec.Provider,
@@ -150,12 +145,16 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 		},
 	}
 
+	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
+		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
+	}
+
 	// The resource belongs to its identity, for cascading deletion.
-	if err := controllerutil.SetOwnerReference(identity, network, c.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
+	if err := controllerutil.SetOwnerReference(identity, out, c.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
 		return nil, errors.OAuth2ServerError("unable to set resource owner").WithError(err)
 	}
 
-	return network, nil
+	return out, nil
 }
 
 // GetRaw gives access to the raw Kubernetes resource.
