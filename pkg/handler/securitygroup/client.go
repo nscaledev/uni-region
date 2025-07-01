@@ -25,7 +25,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
-	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
+	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
@@ -85,13 +85,8 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 		return nil, err
 	}
 
-	info, err := authorization.FromContext(ctx)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to get userinfo").WithError(err)
-	}
-
-	resource := &unikornv1.SecurityGroup{
-		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, c.namespace, info.Userinfo.Sub).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
+	out := &unikornv1.SecurityGroup{
+		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, c.namespace).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, identity.Name).Get(),
 		Spec: unikornv1.SecurityGroupSpec{
 			Tags:     conversion.GenerateTagList(in.Metadata.Tags),
@@ -99,13 +94,17 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 		},
 	}
 
+	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
+		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
+	}
+
 	// Ensure the security is owned by the identity so it is automatically cleaned
 	// up on identity deletion.
-	if err := controllerutil.SetOwnerReference(identity, resource, c.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
+	if err := controllerutil.SetOwnerReference(identity, out, c.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
 		return nil, err
 	}
 
-	return resource, nil
+	return out, nil
 }
 
 // GetRaw gives access to the raw Kubernetes resource.
