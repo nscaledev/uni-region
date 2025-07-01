@@ -93,13 +93,22 @@ func accessTokenInjector(accessToken AccessTokenGetter) func(context.Context, *h
 }
 
 // Client returns a new OpenAPI client that can be used to access the API.
-func (c *Client) Client(ctx context.Context, accessToken AccessTokenGetter) (*openapi.ClientWithResponses, error) {
+func (c *Client) Client(ctx context.Context, accessToken AccessTokenGetter, mutators ...func(context.Context, *http.Request) error) (*openapi.ClientWithResponses, error) {
 	httpClient, err := c.HTTPClient(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	client, err := openapi.NewClientWithResponses(c.options.Host(), openapi.WithHTTPClient(httpClient), openapi.WithRequestEditorFn(accessTokenInjector(accessToken)))
+	options := []openapi.ClientOption{
+		openapi.WithHTTPClient(httpClient),
+		openapi.WithRequestEditorFn(accessTokenInjector(accessToken)),
+	}
+
+	for _, m := range mutators {
+		options = append(options, openapi.WithRequestEditorFn(m))
+	}
+
+	client, err := openapi.NewClientWithResponses(c.options.Host(), options...)
 	if err != nil {
 		return nil, err
 	}
