@@ -61,6 +61,11 @@ spec:
                 description: Kubernetes is provider specific configuration for the
                   region.
                 properties:
+                  domainName:
+                    description: |-
+                      DomainName is the domain services in this region should
+                      be provisioned under.
+                    type: string
                   kubeConfigSecret:
                     description: Kubeconfig for the remote region.
                     properties:
@@ -478,6 +483,7 @@ spec:
                       - Errored
                       - Deprovisioning
                       - Deprovisioned
+                      - Unknown
                       - Healthy
                       - Degraded
                       type: string

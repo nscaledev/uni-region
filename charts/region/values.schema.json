@@ -195,6 +195,9 @@
                   }
                 }
               },
+              "domainName": {
+                "type": "string"
+              },
               "nodes": {
                 "type": "array",
                 "items": {

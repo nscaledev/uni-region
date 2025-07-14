@@ -18,6 +18,9 @@ spec:
       namespace: {{ $.Release.Namespace }}
       {{- end }}
       name: {{ $kubernetes.kubeConfigSecret.name }}
+    {{- with $domainName := $kubernetes.domainName }}
+    domainName: {{ $domainName }}
+    {{- end }}
     {{- with $nodes := $kubernetes.nodes }}
     nodes:
       {{- toYaml $nodes | nindent 4 }}

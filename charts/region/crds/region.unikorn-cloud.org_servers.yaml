@@ -180,6 +180,7 @@ spec:
                       - Errored
                       - Deprovisioning
                       - Deprovisioned
+                      - Unknown
                       - Healthy
                       - Degraded
                       type: string

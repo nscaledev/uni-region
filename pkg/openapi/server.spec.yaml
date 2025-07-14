@@ -686,6 +686,9 @@ components:
         kubeconfig:
           description: The region's base64 encoded Kubernetes configuration file.
           type: string
+        domainName:
+          description: The region's requested domain name for consuming services.
+          type: string
     regionDetailSpec:
       description: Information about the region.
       type: object
