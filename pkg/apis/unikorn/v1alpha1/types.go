@@ -81,6 +81,9 @@ type RegionKubernetesSpec struct {
 	// +listType=map
 	// +listMapKey=id
 	Nodes []RegionKubernetesNodeSpec `json:"nodes,omitempty"`
+	// DomainName is the domain services in this region should
+	// be provisioned under.
+	DomainName string `json:"domainName,omitempty"`
 }
 
 type RegionKubernetesNodeSpec struct {

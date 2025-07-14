@@ -353,6 +353,9 @@ type OsKernel string
 
 // RegionDetailKubernetes Region specific information when the type is "kubernetes".
 type RegionDetailKubernetes struct {
+	// DomainName The region's requested domain name for consuming services.
+	DomainName *string `json:"domainName,omitempty"`
+
 	// Kubeconfig The region's base64 encoded Kubernetes configuration file.
 	Kubeconfig string `json:"kubeconfig"`
 }

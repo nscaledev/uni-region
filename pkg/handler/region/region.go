@@ -117,6 +117,10 @@ func (c *Client) convertDetail(ctx context.Context, in *unikornv1.Region) (*open
 		out.Spec.Kubernetes = &openapi.RegionDetailKubernetes{
 			Kubeconfig: base64.RawURLEncoding.EncodeToString(kubeconfig),
 		}
+
+		if in.Spec.Kubernetes.DomainName != "" {
+			out.Spec.Kubernetes.DomainName = &in.Spec.Kubernetes.DomainName
+		}
 	case unikornv1.ProviderOpenstack:
 		if in.Spec.Openstack.Network != nil && in.Spec.Openstack.Network.ProviderNetworks != nil {
 			out.Spec.Features.PhysicalNetworks = true
