@@ -21,6 +21,7 @@ spec:
         {{- include "unikorn.core.flags" . | nindent 8 }}
         {{- include "unikorn.cors.flags" . | nindent 8 }}
         {{- include "unikorn.otlp.flags" . | nindent 8 }}
+        {{- include "unikorn.mtls.flags" . | nindent 8 }}
         {{- include "unikorn.identity.flags" . | nindent 8 }}
         ports:
         - name: http
