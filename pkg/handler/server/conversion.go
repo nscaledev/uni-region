@@ -23,7 +23,7 @@ import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
-	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
+	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
@@ -173,13 +173,8 @@ func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*uni
 		return nil, err
 	}
 
-	info, err := authorization.FromContext(ctx)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to get user info").WithError(err)
-	}
-
-	resource := &unikornv1.Server{
-		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, g.namespace, info.Userinfo.Sub).WithOrganization(g.organizationID).WithProject(g.projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
+	out := &unikornv1.Server{
+		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, g.namespace).WithOrganization(g.organizationID).WithProject(g.projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, identity.Name).Get(),
 		Spec: unikornv1.ServerSpec{
 			Tags:     conversion.GenerateTagList(in.Metadata.Tags),
@@ -195,13 +190,17 @@ func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*uni
 		},
 	}
 
+	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
+		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
+	}
+
 	// Ensure the server is owned by the network so it is automatically cleaned
 	// up on cascading deletion.
-	if err := controllerutil.SetOwnerReference(network, resource, g.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
+	if err := controllerutil.SetOwnerReference(network, out, g.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
 		return nil, err
 	}
 
-	return resource, nil
+	return out, nil
 }
 
 func (g *generator) generatePublicIPAllocation(in *openapi.ServerPublicIPAllocation) *unikornv1.ServerPublicIPAllocationSpec {
