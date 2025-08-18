@@ -235,13 +235,14 @@ func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, security
 }
 
 // List returns an ordered list of all resources in scope.
-func (c *Client) List(ctx context.Context, organizationID string) (openapi.SecurityGroupRulesRead, error) {
+func (c *Client) List(ctx context.Context, organizationID, securityGroupID string) (openapi.SecurityGroupRulesRead, error) {
 	result := &unikornv1.SecurityGroupRuleList{}
 
 	options := &client.ListOptions{
 		Namespace: c.namespace,
 		LabelSelector: labels.SelectorFromSet(map[string]string{
 			coreconstants.OrganizationLabel: organizationID,
+			constants.SecurityGroupLabel:    securityGroupID,
 		}),
 	}
 
