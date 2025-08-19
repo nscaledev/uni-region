@@ -380,8 +380,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 		return
 	}
 
-	// TODO: filtering???
-	result, err := securitygrouprule.New(h.client, h.namespace).List(r.Context(), organizationID)
+	result, err := securitygrouprule.New(h.client, h.namespace).List(r.Context(), organizationID, securityGroupID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
