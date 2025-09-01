@@ -1,8 +1,5 @@
 # Region
 
-![Unikorn Logo](https://raw.githubusercontent.com/unikorn-cloud/assets/main/images/logos/light-on-dark/logo.svg#gh-dark-mode-only)
-![Unikorn Logo](https://raw.githubusercontent.com/unikorn-cloud/assets/main/images/logos/dark-on-light/logo.svg#gh-light-mode-only)
-
 Centralized region discovery and routing service.
 
 ## Architecture
@@ -43,7 +40,7 @@ For further info see the [Kubernetes provider documentation](pkg/providers/kuber
 
 The use the Kubernetes service you first need to install:
 
-* [The identity service](https://github.com/unikorn-cloud/identity) to provide API authentication and authorization.
+* [The identity service](https://github.com/nscaledev/uni-identity) to provide API authentication and authorization.
 
 ### Installing the Service
 
@@ -76,4 +73,4 @@ Regions define cloud instances to expose to clients.
 ## What Next?
 
 The region controller is useless as it is, and requires a service provider to use it to yield a consumable resource.
-Try out the [Kubernetes service](https://github.com/unikorn-cloud/kubernetes).
+Try out the [Kubernetes service](https://github.com/nscaledev/uni-kubernetes).
