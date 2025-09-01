@@ -12,8 +12,8 @@ require (
 	github.com/spf13/pflag v1.0.6
 	github.com/spjmurray/go-util v0.1.3
 	github.com/stretchr/testify v1.10.0
-	github.com/unikorn-cloud/core v1.5.1-0.20250828142307-5c4e91d7d37e
-	github.com/unikorn-cloud/identity v1.5.0
+	github.com/unikorn-cloud/core v1.6.0-rc1
+	github.com/unikorn-cloud/identity v1.6.0-rc1
 	go.opentelemetry.io/otel v1.35.0
 	go.opentelemetry.io/otel/sdk v1.35.0
 	go.opentelemetry.io/otel/trace v1.35.0
