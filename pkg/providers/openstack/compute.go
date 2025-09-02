@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
@@ -310,16 +311,17 @@ func (c *ComputeClient) CreateServer(ctx context.Context, name, imageID, flavorI
 }
 
 func (c *ComputeClient) RebootServer(ctx context.Context, id string, hard bool) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	// REVIEW_ME: Should we add more detail to the span name to indicate whether this is a hard or soft reboot?
-	_, span := tracer.Start(ctx, fmt.Sprintf("POST /compute/v2/servers/%s/action", id))
-	defer span.End()
-
 	rebootMethod := servers.SoftReboot
 	if hard {
 		rebootMethod = servers.HardReboot
 	}
+
+	action := fmt.Sprintf("%s reboot", strings.ToLower(string(rebootMethod)))
+
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("POST /compute/v2/servers/%s/action (%s)", id, action))
+	defer span.End()
 
 	opts := servers.RebootOpts{
 		Type: rebootMethod,
@@ -331,8 +333,7 @@ func (c *ComputeClient) RebootServer(ctx context.Context, id string, hard bool) 
 func (c *ComputeClient) StartServer(ctx context.Context, id string) error {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
-	// REVIEW_ME: Should we add more detail to the span name to indicate that this is a start action?
-	_, span := tracer.Start(ctx, fmt.Sprintf("POST /compute/v2/servers/%s/action", id))
+	_, span := tracer.Start(ctx, fmt.Sprintf("POST /compute/v2/servers/%s/action (start)", id))
 	defer span.End()
 
 	return servers.Start(ctx, c.client, id).ExtractErr()
@@ -341,8 +342,7 @@ func (c *ComputeClient) StartServer(ctx context.Context, id string) error {
 func (c *ComputeClient) StopServer(ctx context.Context, id string) error {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
-	// REVIEW_ME: Should we add more detail to the span name to indicate that this is a stop action?
-	_, span := tracer.Start(ctx, fmt.Sprintf("POST /compute/v2/servers/%s/action", id))
+	_, span := tracer.Start(ctx, fmt.Sprintf("POST /compute/v2/servers/%s/action (stop)", id))
 	defer span.End()
 
 	return servers.Stop(ctx, c.client, id).ExtractErr()
