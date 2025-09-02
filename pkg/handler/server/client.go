@@ -19,7 +19,10 @@ package server
 import (
 	"cmp"
 	"context"
+	"net/http"
 	"slices"
+
+	"github.com/gophercloud/gophercloud/v2"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
@@ -27,6 +30,9 @@ import (
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler/identity"
+	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
@@ -110,6 +116,8 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 		return nil, err
 	}
 
+	resource.Status.Phase = unikornv1.ServerPhasePending
+
 	if err := c.client.Create(ctx, resource); err != nil {
 		return nil, errors.OAuth2ServerError("unable to create server").WithError(err)
 	}
@@ -153,6 +161,123 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	}
 
 	return convert(updated), nil
+}
+
+func (c *Client) reboot(ctx context.Context, organizationID, projectID, identityID, serverID string, hard bool) error {
+	current, err := c.get(ctx, organizationID, projectID, serverID)
+	if err != nil {
+		return err
+	}
+
+	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
+	if err != nil {
+		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	if err != nil {
+		return err
+	}
+
+	// REVIEW_ME: Do we want to track who rebooted the server, and when?
+	// REVIEW_ME: This action only reboots the server with the existing configuration, so updating the labels (creator/principal) seems a bit weird.
+
+	if err := provider.RebootServer(ctx, identity, current, hard); err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			// REVIEW_ME: Should this return 409 instead? But we will probably need to add a new error type for that.
+			return errors.OAuth2InvalidRequest("server cannot be rebooted in its current state").WithError(err)
+		}
+
+		if hard {
+			return errors.OAuth2ServerError("failed to hard reboot server").WithError(err)
+		}
+
+		return errors.OAuth2ServerError("failed to soft reboot server").WithError(err)
+	}
+
+	return nil
+}
+
+func (c *Client) SoftReboot(ctx context.Context, organizationID, projectID, identityID, serverID string) error {
+	return c.reboot(ctx, organizationID, projectID, identityID, serverID, false)
+}
+
+func (c *Client) HardReboot(ctx context.Context, organizationID, projectID, identityID, serverID string) error {
+	return c.reboot(ctx, organizationID, projectID, identityID, serverID, true)
+}
+
+//nolint:dupl
+func (c *Client) Start(ctx context.Context, organizationID, projectID, identityID, serverID string) error {
+	current, err := c.get(ctx, organizationID, projectID, serverID)
+	if err != nil {
+		return err
+	}
+
+	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
+	if err != nil {
+		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	if err != nil {
+		return err
+	}
+
+	if err := provider.StartServer(ctx, identity, current); err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			// REVIEW_ME: Should this return 409 instead? But we will probably need to add a new error type for that.
+			return errors.OAuth2InvalidRequest("server cannot be started in its current state").WithError(err)
+		}
+
+		return errors.OAuth2ServerError("failed to start server").WithError(err)
+	}
+
+	// REVIEW_ME: Do we want to track who started the server, and when?
+	updated := current.DeepCopy()
+	updated.Status.Phase = unikornv1.ServerPhasePending
+
+	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+		return errors.OAuth2ServerError("failed to patch server").WithError(err)
+	}
+
+	return nil
+}
+
+//nolint:dupl
+func (c *Client) Stop(ctx context.Context, organizationID, projectID, identityID, serverID string) error {
+	current, err := c.get(ctx, organizationID, projectID, serverID)
+	if err != nil {
+		return err
+	}
+
+	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
+	if err != nil {
+		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	if err != nil {
+		return err
+	}
+
+	if err := provider.StopServer(ctx, identity, current); err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			// REVIEW_ME: Should this return 409 instead? But we will probably need to add a new error type for that.
+			return errors.OAuth2InvalidRequest("server cannot be stopped in its current state").WithError(err)
+		}
+
+		return errors.OAuth2ServerError("failed to stop server").WithError(err)
+	}
+
+	// REVIEW_ME: Do we want to track who stopped the server, and when?
+	updated := current.DeepCopy()
+	updated.Status.Phase = unikornv1.ServerPhaseStopping
+
+	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+		return errors.OAuth2ServerError("failed to patch server").WithError(err)
+	}
+
+	return nil
 }
 
 // Delete a resource.

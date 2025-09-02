@@ -249,12 +249,27 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 	return ErrUnimplmented
 }
 
+// RebootServer reboots a server.
+func (p *Provider) RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error {
+	return ErrUnimplmented
+}
+
+// StartServer starts a server.
+func (p *Provider) StartServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+	return ErrUnimplmented
+}
+
+// StopServer stops a server.
+func (p *Provider) StopServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+	return ErrUnimplmented
+}
+
 // DeleteServer deletes a server.
 func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	return ErrUnimplmented
 }
 
-// UpdateServerHealth checks a server's health status and modifies the resource in place.
-func (p *Provider) UpdateServerHealth(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+// UpdateServerState checks a server's state and modifies the resource in place.
+func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	return ErrUnimplmented
 }

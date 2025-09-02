@@ -59,6 +59,14 @@ const (
 	Openstack  RegionType = "openstack"
 )
 
+// Defines values for ServerStatusPhase.
+const (
+	Pending  ServerStatusPhase = "Pending"
+	Running  ServerStatusPhase = "Running"
+	Stopped  ServerStatusPhase = "Stopped"
+	Stopping ServerStatusPhase = "Stopping"
+)
+
 // ExternalNetwork An Openstack external network.
 type ExternalNetwork struct {
 	// Id The resource ID.
@@ -572,12 +580,18 @@ type ServerSpec struct {
 
 // ServerStatus A server's status.
 type ServerStatus struct {
+	// Phase The lifecycle phase of the server.
+	Phase ServerStatusPhase `json:"phase"`
+
 	// PrivateIP The private IP address of the server.
 	PrivateIP *string `json:"privateIP,omitempty"`
 
 	// PublicIP The public IP address of the server.
 	PublicIP *string `json:"publicIP,omitempty"`
 }
+
+// ServerStatusPhase The lifecycle phase of the server.
+type ServerStatusPhase string
 
 // ServerWrite A server request.
 type ServerWrite struct {

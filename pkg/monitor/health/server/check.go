@@ -73,7 +73,7 @@ func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server) err
 
 	updated := server.DeepCopy()
 
-	if err := provider.UpdateServerHealth(ctx, identity, updated); err != nil {
+	if err := provider.UpdateServerState(ctx, identity, updated); err != nil {
 		return err
 	}
 

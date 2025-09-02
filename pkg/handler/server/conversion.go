@@ -58,6 +58,7 @@ func convert(in *unikornv1.Server) *openapi.ServerRead {
 			UserData:           convertUserData(in.Spec.UserData),
 		},
 		Status: openapi.ServerStatus{
+			Phase:     convertServerStatusPhase(in.Status.Phase),
 			PrivateIP: in.Status.PrivateIP,
 			PublicIP:  in.Status.PublicIP,
 		},
@@ -136,6 +137,21 @@ func convertUserData(in []byte) *[]byte {
 	}
 
 	return &in
+}
+
+func convertServerStatusPhase(in unikornv1.ServerPhase) openapi.ServerStatusPhase {
+	switch in {
+	case unikornv1.ServerPhasePending:
+		return openapi.Pending
+	case unikornv1.ServerPhaseRunning:
+		return openapi.Running
+	case unikornv1.ServerPhaseStopping:
+		return openapi.Stopping
+	case unikornv1.ServerPhaseStopped:
+		return openapi.Stopped
+	default:
+		return ""
+	}
 }
 
 type generator struct {

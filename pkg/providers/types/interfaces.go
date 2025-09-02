@@ -55,8 +55,14 @@ type Provider interface {
 	DeleteSecurityGroupRule(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup, rule *unikornv1.SecurityGroupRule) error
 	// CreateServer creates a new server.
 	CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
+	// RebootServer soft reboots a server.
+	RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error
+	// StartServer starts a server.
+	StartServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
+	// StopServer stops a server.
+	StopServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
 	// DeleteServer deletes a server.
 	DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
-	// UpdateServerHealth checks a server's health status and modifies the resource in place.
-	UpdateServerHealth(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
+	// UpdateServerState checks a server's state and modifies the resource in place.
+	UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
 }

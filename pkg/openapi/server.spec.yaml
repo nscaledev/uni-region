@@ -582,6 +582,102 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/start:
+    description: |-
+      Manages servers.
+    parameters:
+      - $ref: '#/components/parameters/organizationIDParameter'
+      - $ref: '#/components/parameters/projectIDParameter'
+      - $ref: '#/components/parameters/identityIDParameter'
+      - $ref: '#/components/parameters/serverIDParameter'
+    post:
+      x-no-body: true
+      description: Start a server that was previously stopped via the stop endpoint.
+      security:
+        - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/stop:
+    description: |-
+      Manages servers.
+    parameters:
+      - $ref: '#/components/parameters/organizationIDParameter'
+      - $ref: '#/components/parameters/projectIDParameter'
+      - $ref: '#/components/parameters/identityIDParameter'
+      - $ref: '#/components/parameters/serverIDParameter'
+    post:
+      x-no-body: true
+      description: Stop a running server. The server can be restarted later via the start endpoint.
+      security:
+        - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/softreboot:
+    description: |-
+      Manages servers.
+    parameters:
+      - $ref: '#/components/parameters/organizationIDParameter'
+      - $ref: '#/components/parameters/projectIDParameter'
+      - $ref: '#/components/parameters/identityIDParameter'
+      - $ref: '#/components/parameters/serverIDParameter'
+    post:
+      x-no-body: true
+      description: Soft reboot a server.
+      security:
+        - oauth2Authentication: [ ]
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/hardreboot:
+    description: |-
+      Manages servers.
+    parameters:
+      - $ref: '#/components/parameters/organizationIDParameter'
+      - $ref: '#/components/parameters/projectIDParameter'
+      - $ref: '#/components/parameters/identityIDParameter'
+      - $ref: '#/components/parameters/serverIDParameter'
+    post:
+      x-no-body: true
+      description: Hard reboot a server.
+      security:
+        - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 components:
   parameters:
     organizationIDParameter:
@@ -1289,7 +1385,17 @@ components:
     serverStatus:
       description: A server's status.
       type: object
+      required:
+      - phase
       properties:
+        phase:
+          description: The lifecycle phase of the server.
+          enum:
+          - Pending
+          - Running
+          - Stopping
+          - Stopped
+          type: string
         privateIP:
           description: The private IP address of the server.
           type: string
@@ -1742,9 +1848,10 @@ components:
               publicIPAllocation:
                 enabled: true
               networks:
-                - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
               userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
             status:
+              phase: Running
               privateIP: 192.168.1.50
               publicIP: 142.250.66.196
     serversResponse:
@@ -1778,6 +1885,7 @@ components:
               - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
               userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
             status:
+              phase: Running
               privateIP: 192.168.1.50
               publicIP: 142.250.66.196
   securitySchemes:

@@ -309,6 +309,45 @@ func (c *ComputeClient) CreateServer(ctx context.Context, name, imageID, flavorI
 	return servers.Create(ctx, c.client, createOpts, schedulerHintOpts).Extract()
 }
 
+func (c *ComputeClient) RebootServer(ctx context.Context, id string, hard bool) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	// REVIEW_ME: Should we add more detail to the span name to indicate whether this is a hard or soft reboot?
+	_, span := tracer.Start(ctx, fmt.Sprintf("POST /compute/v2/servers/%s/action", id))
+	defer span.End()
+
+	rebootMethod := servers.SoftReboot
+	if hard {
+		rebootMethod = servers.HardReboot
+	}
+
+	opts := servers.RebootOpts{
+		Type: rebootMethod,
+	}
+
+	return servers.Reboot(ctx, c.client, id, opts).ExtractErr()
+}
+
+func (c *ComputeClient) StartServer(ctx context.Context, id string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	// REVIEW_ME: Should we add more detail to the span name to indicate that this is a start action?
+	_, span := tracer.Start(ctx, fmt.Sprintf("POST /compute/v2/servers/%s/action", id))
+	defer span.End()
+
+	return servers.Start(ctx, c.client, id).ExtractErr()
+}
+
+func (c *ComputeClient) StopServer(ctx context.Context, id string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	// REVIEW_ME: Should we add more detail to the span name to indicate that this is a stop action?
+	_, span := tracer.Start(ctx, fmt.Sprintf("POST /compute/v2/servers/%s/action", id))
+	defer span.End()
+
+	return servers.Stop(ctx, c.client, id).ExtractErr()
+}
+
 func (c *ComputeClient) DeleteServer(ctx context.Context, id string) error {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
