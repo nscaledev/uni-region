@@ -236,7 +236,7 @@ func (c *Client) Start(ctx context.Context, organizationID, projectID, identityI
 	updated := current.DeepCopy()
 	updated.Status.Phase = unikornv1.ServerPhasePending
 
-	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+	if err := c.client.Status().Patch(ctx, updated, client.MergeFrom(current)); err != nil {
 		return errors.OAuth2ServerError("failed to patch server").WithError(err)
 	}
 
@@ -273,7 +273,7 @@ func (c *Client) Stop(ctx context.Context, organizationID, projectID, identityID
 	updated := current.DeepCopy()
 	updated.Status.Phase = unikornv1.ServerPhaseStopping
 
-	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+	if err := c.client.Status().Patch(ctx, updated, client.MergeFrom(current)); err != nil {
 		return errors.OAuth2ServerError("failed to patch server").WithError(err)
 	}
 
