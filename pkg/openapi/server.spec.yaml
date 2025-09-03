@@ -586,15 +586,15 @@ paths:
     description: |-
       Manages servers.
     parameters:
-      - $ref: '#/components/parameters/organizationIDParameter'
-      - $ref: '#/components/parameters/projectIDParameter'
-      - $ref: '#/components/parameters/identityIDParameter'
-      - $ref: '#/components/parameters/serverIDParameter'
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/identityIDParameter'
+    - $ref: '#/components/parameters/serverIDParameter'
     post:
       x-no-body: true
       description: Start a server that was previously stopped via the stop endpoint.
       security:
-        - oauth2Authentication: []
+      - oauth2Authentication: []
       responses:
         '202':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
@@ -610,15 +610,15 @@ paths:
     description: |-
       Manages servers.
     parameters:
-      - $ref: '#/components/parameters/organizationIDParameter'
-      - $ref: '#/components/parameters/projectIDParameter'
-      - $ref: '#/components/parameters/identityIDParameter'
-      - $ref: '#/components/parameters/serverIDParameter'
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/identityIDParameter'
+    - $ref: '#/components/parameters/serverIDParameter'
     post:
       x-no-body: true
       description: Stop a running server. The server can be restarted later via the start endpoint.
       security:
-        - oauth2Authentication: []
+      - oauth2Authentication: []
       responses:
         '202':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
@@ -634,15 +634,15 @@ paths:
     description: |-
       Manages servers.
     parameters:
-      - $ref: '#/components/parameters/organizationIDParameter'
-      - $ref: '#/components/parameters/projectIDParameter'
-      - $ref: '#/components/parameters/identityIDParameter'
-      - $ref: '#/components/parameters/serverIDParameter'
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/identityIDParameter'
+    - $ref: '#/components/parameters/serverIDParameter'
     post:
       x-no-body: true
       description: Soft reboot a server.
       security:
-        - oauth2Authentication: [ ]
+      - oauth2Authentication: [ ]
       responses:
         '202':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
@@ -658,15 +658,15 @@ paths:
     description: |-
       Manages servers.
     parameters:
-      - $ref: '#/components/parameters/organizationIDParameter'
-      - $ref: '#/components/parameters/projectIDParameter'
-      - $ref: '#/components/parameters/identityIDParameter'
-      - $ref: '#/components/parameters/serverIDParameter'
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/identityIDParameter'
+    - $ref: '#/components/parameters/serverIDParameter'
     post:
       x-no-body: true
       description: Hard reboot a server.
       security:
-        - oauth2Authentication: []
+      - oauth2Authentication: []
       responses:
         '202':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
