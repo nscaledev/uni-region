@@ -163,7 +163,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	return convert(updated), nil
 }
 
-func (c *Client) reboot(ctx context.Context, organizationID, projectID, identityID, serverID string, hard bool) error {
+func (c *Client) Reboot(ctx context.Context, organizationID, projectID, identityID, serverID string, hard bool) error {
 	current, err := c.get(ctx, organizationID, projectID, serverID)
 	if err != nil {
 		return err
@@ -196,14 +196,6 @@ func (c *Client) reboot(ctx context.Context, organizationID, projectID, identity
 	}
 
 	return nil
-}
-
-func (c *Client) SoftReboot(ctx context.Context, organizationID, projectID, identityID, serverID string) error {
-	return c.reboot(ctx, organizationID, projectID, identityID, serverID, false)
-}
-
-func (c *Client) HardReboot(ctx context.Context, organizationID, projectID, identityID, serverID string) error {
-	return c.reboot(ctx, organizationID, projectID, identityID, serverID, true)
 }
 
 //nolint:dupl

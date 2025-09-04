@@ -537,7 +537,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	if err := server.NewClient(h.client, h.namespace).SoftReboot(r.Context(), organizationID, projectID, identityID, serverID); err != nil {
+	if err := server.NewClient(h.client, h.namespace).Reboot(r.Context(), organizationID, projectID, identityID, serverID, true); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -551,7 +551,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	if err := server.NewClient(h.client, h.namespace).HardReboot(r.Context(), organizationID, projectID, identityID, serverID); err != nil {
+	if err := server.NewClient(h.client, h.namespace).Reboot(r.Context(), organizationID, projectID, identityID, serverID, false); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
