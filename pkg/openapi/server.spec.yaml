@@ -1382,6 +1382,14 @@ components:
         id:
           description: The security group ID.
           type: string
+    instanceLifecyclePhase:
+      description: The lifecycle phase of an instance.
+      enum:
+        - Pending
+        - Running
+        - Stopping
+        - Stopped
+      type: string
     serverStatus:
       description: A server's status.
       type: object
@@ -1389,13 +1397,7 @@ components:
       - phase
       properties:
         phase:
-          description: The lifecycle phase of the server.
-          enum:
-          - Pending
-          - Running
-          - Stopping
-          - Stopped
-          type: string
+          $ref: '#/components/schemas/instanceLifecyclePhase'
         privateIP:
           description: The private IP address of the server.
           type: string
