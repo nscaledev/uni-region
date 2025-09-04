@@ -1384,12 +1384,12 @@ components:
           type: string
     instanceLifecyclePhase:
       description: The lifecycle phase of an instance.
-      enum:
-        - Pending
-        - Running
-        - Stopping
-        - Stopped
       type: string
+      enum:
+      - Pending
+      - Running
+      - Stopping
+      - Stopped
     serverStatus:
       description: A server's status.
       type: object
