@@ -75,6 +75,18 @@ type ServerInterface interface {
 	// (PUT /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID})
 	PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, serverID ServerIDParameter)
 
+	// (POST /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/hardreboot)
+	PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDHardreboot(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, serverID ServerIDParameter)
+
+	// (POST /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/softreboot)
+	PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDSoftreboot(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, serverID ServerIDParameter)
+
+	// (POST /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/start)
+	PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDStart(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, serverID ServerIDParameter)
+
+	// (POST /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/stop)
+	PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDStop(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, serverID ServerIDParameter)
+
 	// (GET /api/v1/organizations/{organizationID}/regions)
 	GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter)
 
@@ -198,6 +210,26 @@ func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdent
 
 // (PUT /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID})
 func (_ Unimplemented) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, serverID ServerIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/hardreboot)
+func (_ Unimplemented) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDHardreboot(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, serverID ServerIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/softreboot)
+func (_ Unimplemented) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDSoftreboot(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, serverID ServerIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/start)
+func (_ Unimplemented) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDStart(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, serverID ServerIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/stop)
+func (_ Unimplemented) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDStop(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, serverID ServerIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1306,6 +1338,238 @@ func (siw *ServerInterfaceWrapper) PutApiV1OrganizationsOrganizationIDProjectsPr
 	handler.ServeHTTP(w, r)
 }
 
+// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDHardreboot operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDHardreboot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "organizationID" -------------
+	var organizationID OrganizationIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "organizationID", chi.URLParam(r, "organizationID"), &organizationID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "projectID" -------------
+	var projectID ProjectIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectID", chi.URLParam(r, "projectID"), &projectID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "identityID" -------------
+	var identityID IdentityIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "identityID", chi.URLParam(r, "identityID"), &identityID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "identityID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "serverID" -------------
+	var serverID ServerIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverID", chi.URLParam(r, "serverID"), &serverID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDHardreboot(w, r, organizationID, projectID, identityID, serverID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDSoftreboot operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDSoftreboot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "organizationID" -------------
+	var organizationID OrganizationIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "organizationID", chi.URLParam(r, "organizationID"), &organizationID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "projectID" -------------
+	var projectID ProjectIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectID", chi.URLParam(r, "projectID"), &projectID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "identityID" -------------
+	var identityID IdentityIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "identityID", chi.URLParam(r, "identityID"), &identityID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "identityID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "serverID" -------------
+	var serverID ServerIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverID", chi.URLParam(r, "serverID"), &serverID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDSoftreboot(w, r, organizationID, projectID, identityID, serverID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDStart operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDStart(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "organizationID" -------------
+	var organizationID OrganizationIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "organizationID", chi.URLParam(r, "organizationID"), &organizationID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "projectID" -------------
+	var projectID ProjectIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectID", chi.URLParam(r, "projectID"), &projectID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "identityID" -------------
+	var identityID IdentityIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "identityID", chi.URLParam(r, "identityID"), &identityID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "identityID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "serverID" -------------
+	var serverID ServerIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverID", chi.URLParam(r, "serverID"), &serverID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDStart(w, r, organizationID, projectID, identityID, serverID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDStop operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDStop(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "organizationID" -------------
+	var organizationID OrganizationIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "organizationID", chi.URLParam(r, "organizationID"), &organizationID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "projectID" -------------
+	var projectID ProjectIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectID", chi.URLParam(r, "projectID"), &projectID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "identityID" -------------
+	var identityID IdentityIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "identityID", chi.URLParam(r, "identityID"), &identityID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "identityID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "serverID" -------------
+	var serverID ServerIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverID", chi.URLParam(r, "serverID"), &serverID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDStop(w, r, organizationID, projectID, identityID, serverID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetApiV1OrganizationsOrganizationIDRegions operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWriter, r *http.Request) {
 
@@ -1753,6 +2017,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}", wrapper.PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/hardreboot", wrapper.PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDHardreboot)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/softreboot", wrapper.PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDSoftreboot)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/start", wrapper.PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDStart)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/stop", wrapper.PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDStop)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/regions", wrapper.GetApiV1OrganizationsOrganizationIDRegions)

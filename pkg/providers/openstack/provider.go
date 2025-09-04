@@ -1692,6 +1692,31 @@ func setServerHealthStatus(server *unikornv1.Server, openstackserver *servers.Se
 	server.StatusConditionWrite(unikornv1core.ConditionHealthy, status, reason, message)
 }
 
+// https://docs.openstack.org/api-guide/compute/server_concepts.html
+func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserver *servers.Server) {
+	// Default to `Pending` if the phase is not already set. This should only happen to old servers created before we had phases.
+	if server.Status.Phase == "" {
+		server.Status.Phase = unikornv1.ServerPhasePending
+	}
+
+	if openstackserver == nil {
+		return
+	}
+
+	switch openstackserver.PowerState {
+	case servers.NOSTATE:
+		// No state information available. We will keep the phase as it is.
+	case servers.RUNNING:
+		server.Status.Phase = unikornv1.ServerPhaseRunning
+	case servers.SHUTDOWN:
+		server.Status.Phase = unikornv1.ServerPhaseStopped
+	case servers.CRASHED:
+		// REVIEW_ME: What should we do when the server crashes?
+	case servers.PAUSED, servers.SUSPENDED:
+		log.FromContext(ctx).Info("caught unsupported server power state", "powerState", openstackserver.PowerState.String())
+	}
+}
+
 // CreateServer creates or updates a server.
 //
 //nolint:cyclop
@@ -1752,7 +1777,9 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 	}
 
 	setServerHealthStatus(server, providerServer)
+	setServerPhase(ctx, server, providerServer)
 
+	// REVIEW_ME: Do we need to wait for `server.status.phase` to be `Running`?
 	// wait for server to be active
 	if providerServer.Status != "ACTIVE" {
 		return fmt.Errorf("%w: expected ACTIVE status for server %s, got %s", provisioners.ErrYield, server.Name, providerServer.Status)
@@ -2012,6 +2039,110 @@ func (p *Provider) getServerFixedIP(server *servers.Server) (*string, error) {
 	return nil, fmt.Errorf("%w: no ip address found for server %s", ErrResourceNotFound, server.ID)
 }
 
+func (p *Provider) RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	openstackServer, err := p.GetOpenstackServer(ctx, server)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			return err
+		}
+
+		return nil
+	}
+
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	if err != nil {
+		return err
+	}
+
+	if openstackServer.Spec.ServerID != nil {
+		if err := computeService.RebootServer(ctx, *openstackServer.Spec.ServerID, hard); err != nil {
+			// ignore not found errors
+			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+//nolint:dupl
+func (p *Provider) StartServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	openstackServer, err := p.GetOpenstackServer(ctx, server)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			return err
+		}
+
+		return nil
+	}
+
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	if err != nil {
+		return err
+	}
+
+	if openstackServer.Spec.ServerID != nil {
+		if err := computeService.StartServer(ctx, *openstackServer.Spec.ServerID); err != nil {
+			// ignore not found errors
+			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+//nolint:dupl
+func (p *Provider) StopServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	openstackServer, err := p.GetOpenstackServer(ctx, server)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			return err
+		}
+
+		return nil
+	}
+
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	if err != nil {
+		return err
+	}
+
+	if openstackServer.Spec.ServerID != nil {
+		if err := computeService.StopServer(ctx, *openstackServer.Spec.ServerID); err != nil {
+			// ignore not found errors
+			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // DeleteServer deletes a server.
 //
 //nolint:gocognit,cyclop
@@ -2108,8 +2239,8 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 	return nil
 }
 
-// UpdateServerHealth checks a server's health status and modifies the resource in place.
-func (p *Provider) UpdateServerHealth(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+// UpdateServerState checks a server's state and modifies the resource in place.
+func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return err
@@ -2140,6 +2271,7 @@ func (p *Provider) UpdateServerHealth(ctx context.Context, identity *unikornv1.I
 	}
 
 	setServerHealthStatus(server, providerServer)
+	setServerPhase(ctx, server, providerServer)
 
 	return nil
 }

@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
@@ -307,6 +308,44 @@ func (c *ComputeClient) CreateServer(ctx context.Context, name, imageID, flavorI
 	}
 
 	return servers.Create(ctx, c.client, createOpts, schedulerHintOpts).Extract()
+}
+
+func (c *ComputeClient) RebootServer(ctx context.Context, id string, hard bool) error {
+	rebootMethod := servers.SoftReboot
+	if hard {
+		rebootMethod = servers.HardReboot
+	}
+
+	action := fmt.Sprintf("%s reboot", strings.ToLower(string(rebootMethod)))
+
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("POST /compute/v2/servers/%s/action (%s)", id, action))
+	defer span.End()
+
+	opts := servers.RebootOpts{
+		Type: rebootMethod,
+	}
+
+	return servers.Reboot(ctx, c.client, id, opts).ExtractErr()
+}
+
+func (c *ComputeClient) StartServer(ctx context.Context, id string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("POST /compute/v2/servers/%s/action (start)", id))
+	defer span.End()
+
+	return servers.Start(ctx, c.client, id).ExtractErr()
+}
+
+func (c *ComputeClient) StopServer(ctx context.Context, id string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("POST /compute/v2/servers/%s/action (stop)", id))
+	defer span.End()
+
+	return servers.Stop(ctx, c.client, id).ExtractErr()
 }
 
 func (c *ComputeClient) DeleteServer(ctx context.Context, id string) error {

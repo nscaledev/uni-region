@@ -32,10 +32,17 @@ rules:
 - apiGroups:
   - region.unikorn-cloud.org
   resources:
+  - servers/status
+  verbs:
+  - patch
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
   - openstackidentities
   - openstacknetworks
   - openstacksecuritygroups
   - openstacksecuritygrouprules
+  - openstackservers
   verbs:
   - list
   - watch
