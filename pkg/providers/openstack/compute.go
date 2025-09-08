@@ -30,6 +30,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/keypairs"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/quotasets"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/remoteconsoles"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"go.opentelemetry.io/otel"
@@ -364,4 +365,33 @@ func (c *ComputeClient) GetServer(ctx context.Context, id string) (*servers.Serv
 	defer span.End()
 
 	return servers.Get(ctx, c.client, id).Extract()
+}
+
+func (c *ComputeClient) CreateRemoteConsole(ctx context.Context, id string) (*remoteconsoles.RemoteConsole, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("POST /compute/v2/servers/%s/remote-consoles", id))
+	defer span.End()
+
+	opts := remoteconsoles.CreateOpts{
+		Protocol: remoteconsoles.ConsoleProtocolVNC,
+		Type:     remoteconsoles.ConsoleTypeNoVNC,
+	}
+
+	return remoteconsoles.Create(ctx, c.client, id, opts).Extract()
+}
+
+func (c *ComputeClient) ShowConsoleOutput(ctx context.Context, id string, lines *int) (string, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("GET /compute/v2/servers/%s/console-output", id))
+	defer span.End()
+
+	opts := &servers.ShowConsoleOutputOpts{}
+
+	if lines != nil {
+		opts.Length = *lines
+	}
+
+	return servers.ShowConsoleOutput(ctx, c.client, id, opts).Extract()
 }

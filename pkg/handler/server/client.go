@@ -327,3 +327,69 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, serverID
 
 	return nil
 }
+
+func (c *Client) CreateConsoleSession(ctx context.Context, organizationID, projectID, identityID, serverID string) (*openapi.ConsoleSessionResponse, error) {
+	current, err := c.get(ctx, organizationID, projectID, serverID)
+	if err != nil {
+		return nil, err
+	}
+
+	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	if err != nil {
+		return nil, err
+	}
+
+	url, err := provider.CreateConsoleSession(ctx, identity, current)
+	if err != nil {
+		// REVIEW_ME: This looks odd. Shouldn't the ErrResourceDependency error be moved to the provider package?
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) || goerrors.Is(err, openstack.ErrResourceDependency) {
+			return nil, errors.HTTPNotFound().WithError(err)
+		}
+
+		return nil, errors.OAuth2ServerError("failed to create console session").WithError(err)
+	}
+
+	response := &openapi.ConsoleSessionResponse{
+		Url: url,
+	}
+
+	return response, nil
+}
+
+func (c *Client) GetConsoleOutput(ctx context.Context, organizationID, projectID, identityID, serverID string, lines *int) (*openapi.ConsoleOutputResponse, error) {
+	current, err := c.get(ctx, organizationID, projectID, serverID)
+	if err != nil {
+		return nil, err
+	}
+
+	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	if err != nil {
+		return nil, err
+	}
+
+	contents, err := provider.GetConsoleOutput(ctx, identity, current, lines)
+	if err != nil {
+		// REVIEW_ME: This looks odd. Shouldn't the ErrResourceDependency error be moved to the provider package?
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) || goerrors.Is(err, openstack.ErrResourceDependency) {
+			return nil, errors.HTTPNotFound().WithError(err)
+		}
+
+		return nil, errors.OAuth2ServerError("failed to create console session").WithError(err)
+	}
+
+	response := &openapi.ConsoleOutputResponse{
+		Contents: contents,
+	}
+
+	return response, nil
+}

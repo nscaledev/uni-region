@@ -67,6 +67,24 @@ const (
 	Openstack  RegionType = "openstack"
 )
 
+// ConsoleOutput Console output
+type ConsoleOutput struct {
+	// Contents Console output.
+	Contents string `json:"contents"`
+}
+
+// ConsoleOutputParams Console output parameters.
+type ConsoleOutputParams struct {
+	// Lines The number of most recent lines to retrieve from the console output. If not specified, all available lines will be returned.
+	Lines *int `json:"lines,omitempty"`
+}
+
+// ConsoleSession A console session response.
+type ConsoleSession struct {
+	// Url The URL to access the console session.
+	Url string `json:"url"`
+}
+
 // ExternalNetwork An Openstack external network.
 type ExternalNetwork struct {
 	// Id The resource ID.
@@ -608,6 +626,12 @@ type SecurityGroupIDParameter = KubernetesNameParameter
 // ServerIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type ServerIDParameter = KubernetesNameParameter
 
+// ConsoleOutputResponse Console output
+type ConsoleOutputResponse = ConsoleOutput
+
+// ConsoleSessionResponse A console session response.
+type ConsoleSessionResponse = ConsoleSession
+
 // ExternalNetworksResponse A list of openstack external networks.
 type ExternalNetworksResponse = ExternalNetworks
 
@@ -646,6 +670,9 @@ type ServerResponse = ServerRead
 
 // ServersResponse A list of servers.
 type ServersResponse = ServersRead
+
+// ConsoleOutputRequest Console output parameters.
+type ConsoleOutputRequest = ConsoleOutputParams
 
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
@@ -690,3 +717,6 @@ type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSe
 
 // PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody defines body for PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID for application/json ContentType.
 type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody = ServerWrite
+
+// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutput for application/json ContentType.
+type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputJSONRequestBody = ConsoleOutputParams

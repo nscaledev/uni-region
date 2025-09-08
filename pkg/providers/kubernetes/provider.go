@@ -268,3 +268,13 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	return ErrUnimplmented
 }
+
+// CreateConsoleSession creates a new console session for a server.
+func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) (string, error) {
+	return "", ErrUnimplmented
+}
+
+// GetConsoleOutput retrieves the console output for a server.
+func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, lines *int) (string, error) {
+	return "", ErrUnimplmented
+}

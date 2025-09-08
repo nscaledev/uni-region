@@ -597,6 +597,54 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/consolesessions:
+    description: |-
+      Manages servers.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/identityIDParameter'
+    - $ref: '#/components/parameters/serverIDParameter'
+    get:
+      description: Create a new console session for a server.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/consoleSessionResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/consoleoutput:
+    description: |-
+      Manages servers.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/identityIDParameter'
+    - $ref: '#/components/parameters/serverIDParameter'
+    post:
+      description: Get the console output for a server.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/consoleOutputRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/consoleOutputResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 components:
   parameters:
     organizationIDParameter:
@@ -1321,6 +1369,32 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/serverRead'
+    consoleSession:
+      description: A console session response.
+      type: object
+      required:
+      - url
+      properties:
+        url: 
+          description: The URL to access the console session.
+          type: string
+    consoleOutputParams:
+      description: Console output parameters.
+      type: object
+      properties:
+        lines:
+          description: The number of most recent lines to retrieve from the console output. If not specified, all available lines will be returned.
+          type: integer
+          minimum: 1
+    consoleOutput:
+      description: Console output
+      type: object
+      required:
+      - contents
+      properties:
+        contents:
+          description: Console output.
+          type: string
   requestBodies:
     identityRequest:
       description: A request for an identity.
@@ -1401,6 +1475,14 @@ components:
                 allowedAddressPairs:
                 - cidr: 192.168.192.0/24
               userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
+    consoleOutputRequest:
+      description: A request for console output.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/consoleOutputParams'
+          example:
+            lines: 50
   responses:
     regionsResponse:
       description: A list of regions.
@@ -1715,6 +1797,24 @@ components:
               phase: Running
               privateIP: 192.168.1.50
               publicIP: 142.250.66.196
+    consoleSessionResponse:
+      description: A console session response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/consoleSession'
+          example:
+            url: https://compute.glo1.dev.nscale.com:6080/vnc_lite.html?path=%3Ftoken%3Dc64ef8be-2e90-4914-83a8-61728664b770
+    consoleOutputResponse:
+      description: A console output response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/consoleOutput'
+          example:
+            contents: |-
+              Linux version 5.15.0-1086-kvm (buildd@lcy02-amd64-053) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #91-Ubuntu SMP Mon Aug 4 18:41:47 UTC 2025 (Ubuntu 5.15.0-1086.91-kvm 5.15.185)
+              Command line: BOOT_IMAGE=/boot/vmlinuz-5.15.0-1086-kvm root=PARTUUID=16a95af3-5f57-4321-a6af-d006cccb7d04 ro console=tty1 console=ttyS0 panic=-1
   securitySchemes:
     oauth2Authentication:
       description: Operation requires OAuth 2.0 bearer token authentication.
