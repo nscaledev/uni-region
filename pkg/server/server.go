@@ -36,6 +36,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/middleware/timeout"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/middleware/audit"
+	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	openapimiddleware "github.com/unikorn-cloud/identity/pkg/middleware/openapi"
 	openapimiddlewareremote "github.com/unikorn-cloud/identity/pkg/middleware/openapi/remote"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -63,6 +64,9 @@ type Server struct {
 	// IdentityOptions allow configuration of the authorization middleware.
 	IdentityOptions *identityclient.Options
 
+	// AuthOptions is for configuring authentication and authorization
+	AuthOptions authorization.Options
+
 	// CORSOptions are for remote resource sharing.
 	CORSOptions cors.Options
 
@@ -81,6 +85,7 @@ func (s *Server) AddFlags(goflags *flag.FlagSet, flags *pflag.FlagSet) {
 	s.HandlerOptions.AddFlags(flags)
 	s.ClientOptions.AddFlags(flags)
 	s.IdentityOptions.AddFlags(flags)
+	s.AuthOptions.AddFlags(flags)
 	s.CORSOptions.AddFlags(flags)
 	s.OTelOptions.AddFlags(flags)
 }
@@ -132,6 +137,7 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
 
 	authorizer := openapimiddlewareremote.NewAuthorizer(client, s.IdentityOptions, &s.ClientOptions)
+	authenticator := openapimiddlewareremote.NewRemoteAuthenticator(s.AuthOptions)
 
 	// Middleware specified here is applied to all requests post-routing.
 	// NOTE: these are applied in reverse order!!
@@ -140,7 +146,7 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 		ErrorHandlerFunc: handler.HandleError,
 		Middlewares: []openapi.MiddlewareFunc{
 			audit.Middleware(schema, constants.Application, constants.Version),
-			openapimiddleware.Middleware(authorizer, schema),
+			openapimiddleware.Middleware(authorizer, authenticator, schema),
 		},
 	}
 

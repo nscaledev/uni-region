@@ -183,7 +183,7 @@ ingress:
 identity:
   # OIDC issuer used to discover OIDC configuration and verify access tokens.
   host: identity.unikorn-cloud.org
-  externalIssuers: ~
+  externalOIDCHost: ~
 
 # CA certificate to use to verify connections to the issuer, used in development only.
 # ca:
