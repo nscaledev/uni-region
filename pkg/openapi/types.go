@@ -24,6 +24,14 @@ const (
 	Virtualized ImageVirtualization = "virtualized"
 )
 
+// Defines values for InstanceLifecyclePhase.
+const (
+	Pending  InstanceLifecyclePhase = "Pending"
+	Running  InstanceLifecyclePhase = "Running"
+	Stopped  InstanceLifecyclePhase = "Stopped"
+	Stopping InstanceLifecyclePhase = "Stopping"
+)
+
 // Defines values for NetworkDirection.
 const (
 	Egress  NetworkDirection = "egress"
@@ -57,14 +65,6 @@ const (
 const (
 	Kubernetes RegionType = "kubernetes"
 	Openstack  RegionType = "openstack"
-)
-
-// Defines values for ServerStatusPhase.
-const (
-	Pending  ServerStatusPhase = "Pending"
-	Running  ServerStatusPhase = "Running"
-	Stopped  ServerStatusPhase = "Stopped"
-	Stopping ServerStatusPhase = "Stopping"
 )
 
 // ExternalNetwork An Openstack external network.
@@ -271,6 +271,9 @@ type ImageVirtualization string
 
 // Images A list of images that are compatible with this platform.
 type Images = []Image
+
+// InstanceLifecyclePhase The lifecycle phase of an instance.
+type InstanceLifecyclePhase string
 
 // Ipv4Address An IPv4 address.
 type Ipv4Address = string
@@ -580,8 +583,8 @@ type ServerSpec struct {
 
 // ServerStatus A server's status.
 type ServerStatus struct {
-	// Phase The lifecycle phase of the server.
-	Phase ServerStatusPhase `json:"phase"`
+	// Phase The lifecycle phase of an instance.
+	Phase InstanceLifecyclePhase `json:"phase"`
 
 	// PrivateIP The private IP address of the server.
 	PrivateIP *string `json:"privateIP,omitempty"`
@@ -589,9 +592,6 @@ type ServerStatus struct {
 	// PublicIP The public IP address of the server.
 	PublicIP *string `json:"publicIP,omitempty"`
 }
-
-// ServerStatusPhase The lifecycle phase of the server.
-type ServerStatusPhase string
 
 // ServerWrite A server request.
 type ServerWrite struct {

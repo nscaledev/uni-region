@@ -737,20 +737,20 @@ type ServerPublicIPAllocationSpec struct {
 }
 
 // +kubebuilder:validation:Enum=Pending;Running;Stopping;Stopped
-type ServerPhase string
+type InstanceLifecyclePhase string
 
 const (
-	ServerPhasePending  ServerPhase = "Pending"
-	ServerPhaseRunning  ServerPhase = "Running"
-	ServerPhaseStopping ServerPhase = "Stopping"
-	ServerPhaseStopped  ServerPhase = "Stopped"
+	InstanceLifecyclePhasePending  InstanceLifecyclePhase = "Pending"
+	InstanceLifecyclePhaseRunning  InstanceLifecyclePhase = "Running"
+	InstanceLifecyclePhaseStopping InstanceLifecyclePhase = "Stopping"
+	InstanceLifecyclePhaseStopped  InstanceLifecyclePhase = "Stopped"
 )
 
 type ServerStatus struct {
 	// Current service state of a cluster manager.
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
 	// Phase is the current lifecycle phase of the server.
-	Phase ServerPhase `json:"phase"`
+	Phase InstanceLifecyclePhase `json:"phase"`
 	// PrivateIP is the private IP address of the server.
 	PrivateIP *string `json:"privateIP,omitempty"`
 	// PublicIP is the public IP address of the server.

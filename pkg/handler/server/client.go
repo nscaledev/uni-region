@@ -116,7 +116,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 		return nil, err
 	}
 
-	resource.Status.Phase = unikornv1.ServerPhasePending
+	resource.Status.Phase = unikornv1.InstanceLifecyclePhasePending
 
 	if err := c.client.Create(ctx, resource); err != nil {
 		return nil, errors.OAuth2ServerError("unable to create server").WithError(err)
@@ -163,7 +163,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	return convert(updated), nil
 }
 
-func (c *Client) reboot(ctx context.Context, organizationID, projectID, identityID, serverID string, hard bool) error {
+func (c *Client) Reboot(ctx context.Context, organizationID, projectID, identityID, serverID string, hard bool) error {
 	current, err := c.get(ctx, organizationID, projectID, serverID)
 	if err != nil {
 		return err
@@ -198,14 +198,6 @@ func (c *Client) reboot(ctx context.Context, organizationID, projectID, identity
 	return nil
 }
 
-func (c *Client) SoftReboot(ctx context.Context, organizationID, projectID, identityID, serverID string) error {
-	return c.reboot(ctx, organizationID, projectID, identityID, serverID, false)
-}
-
-func (c *Client) HardReboot(ctx context.Context, organizationID, projectID, identityID, serverID string) error {
-	return c.reboot(ctx, organizationID, projectID, identityID, serverID, true)
-}
-
 //nolint:dupl
 func (c *Client) Start(ctx context.Context, organizationID, projectID, identityID, serverID string) error {
 	current, err := c.get(ctx, organizationID, projectID, serverID)
@@ -234,7 +226,7 @@ func (c *Client) Start(ctx context.Context, organizationID, projectID, identityI
 
 	// REVIEW_ME: Do we want to track who started the server, and when?
 	updated := current.DeepCopy()
-	updated.Status.Phase = unikornv1.ServerPhasePending
+	updated.Status.Phase = unikornv1.InstanceLifecyclePhasePending
 
 	if err := c.client.Status().Patch(ctx, updated, client.MergeFrom(current)); err != nil {
 		return errors.OAuth2ServerError("failed to patch server").WithError(err)
@@ -271,7 +263,7 @@ func (c *Client) Stop(ctx context.Context, organizationID, projectID, identityID
 
 	// REVIEW_ME: Do we want to track who stopped the server, and when?
 	updated := current.DeepCopy()
-	updated.Status.Phase = unikornv1.ServerPhaseStopping
+	updated.Status.Phase = unikornv1.InstanceLifecyclePhaseStopping
 
 	if err := c.client.Status().Patch(ctx, updated, client.MergeFrom(current)); err != nil {
 		return errors.OAuth2ServerError("failed to patch server").WithError(err)
