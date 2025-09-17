@@ -58,7 +58,7 @@ func convert(in *unikornv1.Server) *openapi.ServerRead {
 			UserData:           convertUserData(in.Spec.UserData),
 		},
 		Status: openapi.ServerStatus{
-			Phase:     convertServerStatusPhase(in.Status.Phase),
+			Phase:     convertInstanceLifecyclePhase(in.Status.Phase),
 			PrivateIP: in.Status.PrivateIP,
 			PublicIP:  in.Status.PublicIP,
 		},
@@ -139,15 +139,15 @@ func convertUserData(in []byte) *[]byte {
 	return &in
 }
 
-func convertServerStatusPhase(in unikornv1.ServerPhase) openapi.ServerStatusPhase {
+func convertInstanceLifecyclePhase(in unikornv1.InstanceLifecyclePhase) openapi.InstanceLifecyclePhase {
 	switch in {
-	case unikornv1.ServerPhasePending:
+	case unikornv1.InstanceLifecyclePhasePending:
 		return openapi.Pending
-	case unikornv1.ServerPhaseRunning:
+	case unikornv1.InstanceLifecyclePhaseRunning:
 		return openapi.Running
-	case unikornv1.ServerPhaseStopping:
+	case unikornv1.InstanceLifecyclePhaseStopping:
 		return openapi.Stopping
-	case unikornv1.ServerPhaseStopped:
+	case unikornv1.InstanceLifecyclePhaseStopped:
 		return openapi.Stopped
 	default:
 		return ""
