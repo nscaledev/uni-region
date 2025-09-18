@@ -194,7 +194,7 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 }
 
 // Images lists all available images.
-func (p *Provider) Images(ctx context.Context) (types.ImageList, error) {
+func (p *Provider) Images(ctx context.Context, organizationID string) (types.ImageList, error) {
 	return nil, ErrUnimplmented
 }
 

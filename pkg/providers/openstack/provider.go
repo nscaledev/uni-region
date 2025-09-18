@@ -351,7 +351,7 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 }
 
 // Images lists all available images.
-func (p *Provider) Images(ctx context.Context) (types.ImageList, error) {
+func (p *Provider) Images(ctx context.Context, organizationID string) (types.ImageList, error) {
 	imageService, err := p.image(ctx)
 	if err != nil {
 		return nil, err
@@ -361,6 +361,12 @@ func (p *Provider) Images(ctx context.Context) (types.ImageList, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Filter images that either have no organisation ID or match the requested one.
+	resources = slices.DeleteFunc(resources, func(image images.Image) bool {
+		value := image.Properties["unikorn:organization:id"]
+		return value != nil && value != organizationID
+	})
 
 	result := make(types.ImageList, len(resources))
 

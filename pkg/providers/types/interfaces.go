@@ -33,7 +33,7 @@ type Provider interface {
 	// Flavors list all available flavors.
 	Flavors(ctx context.Context) (FlavorList, error)
 	// Images lists all available images.
-	Images(ctx context.Context) (ImageList, error)
+	Images(ctx context.Context, organizationID string) (ImageList, error)
 	// CreateIdentity creates a new identity for cloud infrastructure.
 	CreateIdentity(ctx context.Context, identity *unikornv1.Identity) error
 	// DeleteIdentity cleans up an identity for cloud infrastructure.
