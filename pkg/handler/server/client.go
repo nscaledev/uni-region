@@ -35,6 +35,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -111,6 +112,29 @@ func (c *Client) List(ctx context.Context, organizationID string, params openapi
 
 // Create instantiates a new resource.
 func (c *Client) Create(ctx context.Context, organizationID, projectID, identityID string, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
+	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	if err != nil {
+		return nil, err
+	}
+
+	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, identity.Labels[constants.RegionLabel])
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	images, err := provider.Images(ctx, organizationID)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to fetch images from provider").WithError(err)
+	}
+
+	imageIndexFunc := func(image types.Image) bool {
+		return image.ID == request.Spec.ImageId
+	}
+
+	if index := slices.IndexFunc(images, imageIndexFunc); index < 0 {
+		return nil, errors.HTTPNotFound()
+	}
+
 	resource, err := newGenerator(c.client, c.namespace, organizationID, projectID, identityID).generate(ctx, request)
 	if err != nil {
 		return nil, err
@@ -137,6 +161,32 @@ func (c *Client) Get(ctx context.Context, organizationID, projectID, serverID st
 
 // Update a resource.
 func (c *Client) Update(ctx context.Context, organizationID, projectID, identityID, serverID string, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
+	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	if err != nil {
+		return nil, err
+	}
+
+	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, identity.Labels[constants.RegionLabel])
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	// REVIEW_ME: Is the `unikorn:organization:id` property immutable on the image?
+	// REVIEW_ME: If not, should we allow users to keep using the same image even if it has been moved to another organization?
+
+	images, err := provider.Images(ctx, organizationID)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to fetch images from provider").WithError(err)
+	}
+
+	imageIndexFunc := func(image types.Image) bool {
+		return image.ID == request.Spec.ImageId
+	}
+
+	if index := slices.IndexFunc(images, imageIndexFunc); index < 0 {
+		return nil, errors.HTTPNotFound()
+	}
+
 	current, err := c.get(ctx, organizationID, projectID, serverID)
 	if err != nil {
 		return nil, err
