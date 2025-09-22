@@ -403,7 +403,7 @@ func (p *Provider) imagePackages(image *images.Image) *types.ImagePackages {
 
 func (p *Provider) isImageBelongsToOrganization(image *images.Image, organizationID string) bool {
 	value := image.Properties["unikorn:organization:id"]
-	return value != nil && value != organizationID
+	return value == nil || value == organizationID
 }
 
 func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
@@ -463,7 +463,7 @@ func (p *Provider) ListImages(ctx context.Context, organizationID string) (types
 
 	// Filter images that either have no organisation ID or match the requested one.
 	resources = slices.DeleteFunc(resources, func(image images.Image) bool {
-		return p.isImageBelongsToOrganization(&image, organizationID)
+		return !p.isImageBelongsToOrganization(&image, organizationID)
 	})
 
 	result := make(types.ImageList, len(resources))
@@ -492,7 +492,7 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 		return nil, err
 	}
 
-	if p.isImageBelongsToOrganization(resource, organizationID) {
+	if !p.isImageBelongsToOrganization(resource, organizationID) {
 		return nil, fmt.Errorf("%w: image %s", ErrResourceNotFound, imageID)
 	}
 
