@@ -167,9 +167,6 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
 
-	// REVIEW_ME: Is the `unikorn:organization:id` property immutable on the image?
-	// REVIEW_ME: If not, should we allow users to keep using the same image even if it has been moved to another organization?
-
 	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
 		if goerrors.Is(err, openstack.ErrResourceNotFound) {
 			return nil, errors.HTTPNotFound()
