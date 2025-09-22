@@ -32,8 +32,10 @@ type Provider interface {
 	Region(ctx context.Context) (*unikornv1.Region, error)
 	// Flavors list all available flavors.
 	Flavors(ctx context.Context) (FlavorList, error)
-	// Images lists all available images.
-	Images(ctx context.Context, organizationID string) (ImageList, error)
+	// ListImages lists all available images.
+	ListImages(ctx context.Context, organizationID string) (ImageList, error)
+	// GetImage retrieves a specific image by its ID.
+	GetImage(ctx context.Context, organizationID, imageID string) (*Image, error)
 	// CreateIdentity creates a new identity for cloud infrastructure.
 	CreateIdentity(ctx context.Context, identity *unikornv1.Identity) error
 	// DeleteIdentity cleans up an identity for cloud infrastructure.
