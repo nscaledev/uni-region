@@ -34,7 +34,7 @@ import (
 )
 
 var (
-	ErrResouceDependency = errors.New("resource dependency error")
+	ErrResourceDependency = errors.New("resource dependency error")
 )
 
 // Provisioner encapsulates control plane provisioning.
@@ -94,7 +94,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 	case unikornv1core.ConditionReasonProvisioning:
 		return provisioners.ErrYield
 	default:
-		return fmt.Errorf("%w: identity in unexpected condition %v", ErrResouceDependency, status.Reason)
+		return fmt.Errorf("%w: identity in unexpected condition %v", ErrResourceDependency, status.Reason)
 	}
 
 	if err := provider.CreateServer(ctx, identity, p.server); err != nil {

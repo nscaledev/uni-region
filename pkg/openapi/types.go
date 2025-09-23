@@ -632,6 +632,18 @@ type SecurityGroupIDParameter = KubernetesNameParameter
 // ServerIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type ServerIDParameter = KubernetesNameParameter
 
+// ConsoleOutputResponse A console output response.
+type ConsoleOutputResponse struct {
+	// Contents The contents of the console output.
+	Contents string `json:"contents"`
+}
+
+// ConsoleSessionResponse A console session response.
+type ConsoleSessionResponse struct {
+	// Url The URL to access the console session.
+	Url string `json:"url"`
+}
+
 // ExternalNetworksResponse A list of openstack external networks.
 type ExternalNetworksResponse = ExternalNetworks
 
@@ -677,6 +689,12 @@ type ServerResponse = ServerRead
 // ServersResponse A list of servers.
 type ServersResponse = ServersRead
 
+// ConsoleOutputRequest defines model for consoleOutputRequest.
+type ConsoleOutputRequest struct {
+	// Lines The number of most recent lines to retrieve from the console output. If not specified, all available lines will be returned.
+	Lines *int `json:"lines,omitempty"`
+}
+
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
 
@@ -691,6 +709,12 @@ type SecurityGroupRuleRequest = SecurityGroupRuleWrite
 
 // ServerRequest A server request.
 type ServerRequest = ServerWrite
+
+// GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputJSONBody defines parameters for GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutput.
+type GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputJSONBody struct {
+	// Lines The number of most recent lines to retrieve from the console output. If not specified, all available lines will be returned.
+	Lines *int `json:"lines,omitempty"`
+}
 
 // GetApiV1OrganizationsOrganizationIDSecuritygroupsParams defines parameters for GetApiV1OrganizationsOrganizationIDSecuritygroups.
 type GetApiV1OrganizationsOrganizationIDSecuritygroupsParams struct {
@@ -726,3 +750,6 @@ type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSe
 
 // PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody defines body for PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID for application/json ContentType.
 type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody = ServerWrite
+
+// GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputJSONRequestBody defines body for GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutput for application/json ContentType.
+type GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputJSONRequestBody GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputJSONBody

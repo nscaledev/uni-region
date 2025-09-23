@@ -531,6 +531,47 @@ func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
 }
 
+func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutput(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter) {
+	// FIXME: Do we need a new RBAC permission for reading console output?
+	if err := rbac.AllowProjectScope(r.Context(), "region:servers", identityapi.Read, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	request := &openapi.ConsoleOutputRequest{}
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := server.NewClient(h.client, h.namespace).GetConsoleOutput(r.Context(), organizationID, projectID, identityID, serverID, request.Lines)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
+// FIXME: Remove this nolint comment when the rbac check is implemented.
+//
+//nolint:wsl
+func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsolesessions(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter) {
+	// FIXME: We probably need a new RBAC permission for console access. Also, we need to check if we can identify which user is currently logged in.
+	// if err := rbac.AllowProjectScope(r.Context(), TBC1, TBC2, organizationID, projectID); err != nil {
+	// 	 errors.HandleError(w, r, err)
+	// 	 return
+	// }
+
+	result, err := server.NewClient(h.client, h.namespace).CreateConsoleSession(r.Context(), organizationID, projectID, identityID, serverID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDHardreboot(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:servers", identityapi.Update, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
