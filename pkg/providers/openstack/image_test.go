@@ -49,6 +49,7 @@ const (
 	gpuDriverVersionProperty  = "unikorn:gpu_driver_version"
 	virtualizationProperty    = "unikorn:virtualization"
 	digestProperty            = "unikorn:digest"
+	organizationIDProperty    = "unikorn:organization:id"
 
 	osKernelLinux = "linux"
 
@@ -80,10 +81,22 @@ func basicImageFixture() *images.Image {
 	}
 }
 
+func imageFixtureWithID(id string) *images.Image {
+	image := basicImageFixture()
+	image.ID = id
+
+	return image
+}
+
+func withOrganizationID(image *images.Image, organizationID string) *images.Image {
+	image.Properties[organizationIDProperty] = organizationID
+
+	return image
+}
+
 func signedBasicImageFixture(id string, signature string) imageFixtureGenerator {
 	return func() *images.Image {
-		image := basicImageFixture()
-		image.ID = id
+		image := imageFixtureWithID(id)
 		image.Properties[digestProperty] = signature
 
 		return image

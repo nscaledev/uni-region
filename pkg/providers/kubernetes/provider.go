@@ -193,8 +193,13 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	return flavors, nil
 }
 
-// Images lists all available images.
-func (p *Provider) Images(ctx context.Context) (types.ImageList, error) {
+// ListImages lists all available images.
+func (p *Provider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
+	return nil, ErrUnimplmented
+}
+
+// GetImage retrieves a specific image by its ID.
+func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
 	return nil, ErrUnimplmented
 }
 

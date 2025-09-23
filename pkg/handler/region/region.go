@@ -359,7 +359,7 @@ func (c *Client) ListImages(ctx context.Context, organizationID, regionID string
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
 
-	result, err := provider.Images(ctx)
+	result, err := provider.ListImages(ctx, organizationID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to list images").WithError(err)
 	}
