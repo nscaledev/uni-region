@@ -19,6 +19,7 @@ package server
 import (
 	"cmp"
 	"context"
+	goerrors "errors"
 	"net/http"
 	"slices"
 
@@ -35,6 +36,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers/openstack"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -111,6 +113,24 @@ func (c *Client) List(ctx context.Context, organizationID string, params openapi
 
 // Create instantiates a new resource.
 func (c *Client) Create(ctx context.Context, organizationID, projectID, identityID string, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
+	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	if err != nil {
+		return nil, err
+	}
+
+	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, identity.Labels[constants.RegionLabel])
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
+		if goerrors.Is(err, openstack.ErrResourceNotFound) {
+			return nil, errors.HTTPNotFound()
+		}
+
+		return nil, errors.OAuth2ServerError("failed to retrieve image from provider").WithError(err)
+	}
+
 	resource, err := newGenerator(c.client, c.namespace, organizationID, projectID, identityID).generate(ctx, request)
 	if err != nil {
 		return nil, err
@@ -137,6 +157,24 @@ func (c *Client) Get(ctx context.Context, organizationID, projectID, serverID st
 
 // Update a resource.
 func (c *Client) Update(ctx context.Context, organizationID, projectID, identityID, serverID string, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
+	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	if err != nil {
+		return nil, err
+	}
+
+	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, identity.Labels[constants.RegionLabel])
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
+		if goerrors.Is(err, openstack.ErrResourceNotFound) {
+			return nil, errors.HTTPNotFound()
+		}
+
+		return nil, errors.OAuth2ServerError("failed to retrieve image from provider").WithError(err)
+	}
+
 	current, err := c.get(ctx, organizationID, projectID, serverID)
 	if err != nil {
 		return nil, err

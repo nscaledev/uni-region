@@ -172,8 +172,12 @@ func (c *ImageClient) imageValid(image *images.Image, schema *jsonschema.Schema)
 	return true
 }
 
-// images does a memoized lookup of images.
-func (c *ImageClient) images(ctx context.Context) ([]images.Image, error) {
+func ImageSchema() (*jsonschema.Schema, error) {
+	return jsonschema.NewCompiler().Compile(imagePropertySchemaV2)
+}
+
+// ListImages returns a list of images.
+func (c *ImageClient) ListImages(ctx context.Context) ([]images.Image, error) {
 	if result, ok := c.imageCache.Get(); ok {
 		return result, nil
 	}
@@ -182,6 +186,11 @@ func (c *ImageClient) images(ctx context.Context) ([]images.Image, error) {
 
 	_, span := tracer.Start(ctx, "GET /image/v2/images", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
+
+	schema, err := ImageSchema()
+	if err != nil {
+		return nil, err
+	}
 
 	opts := &images.ListOpts{
 		Visibility: images.ImageVisibilityPublic,
@@ -197,27 +206,6 @@ func (c *ImageClient) images(ctx context.Context) ([]images.Image, error) {
 		return nil, err
 	}
 
-	c.imageCache.Set(result)
-
-	return result, nil
-}
-
-func ImageSchema() (*jsonschema.Schema, error) {
-	return jsonschema.NewCompiler().Compile(imagePropertySchemaV2)
-}
-
-// Images returns a list of images.
-func (c *ImageClient) Images(ctx context.Context) ([]images.Image, error) {
-	result, err := c.images(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	schema, err := ImageSchema()
-	if err != nil {
-		return nil, err
-	}
-
 	// Filter out images that aren't compatible.
 	result = slices.DeleteFunc(result, func(image images.Image) bool {
 		return !c.imageValid(&image, schema)
@@ -228,5 +216,25 @@ func (c *ImageClient) Images(ctx context.Context) ([]images.Image, error) {
 		return a.CreatedAt.Compare(b.CreatedAt)
 	})
 
+	c.imageCache.Set(result)
+
 	return result, nil
+}
+
+func (c *ImageClient) GetImage(ctx context.Context, id string) (*images.Image, error) {
+	result, err := c.ListImages(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	imageIndexFunc := func(image images.Image) bool {
+		return image.ID == id
+	}
+
+	index := slices.IndexFunc(result, imageIndexFunc)
+	if index < 0 {
+		return nil, fmt.Errorf("%w: image %s", ErrResourceNotFound, id)
+	}
+
+	return &result[index], nil
 }

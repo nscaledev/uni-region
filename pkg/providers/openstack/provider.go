@@ -350,69 +350,6 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	return result, nil
 }
 
-// Images lists all available images.
-func (p *Provider) Images(ctx context.Context) (types.ImageList, error) {
-	imageService, err := p.image(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	resources, err := imageService.Images(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make(types.ImageList, len(resources))
-
-	for i := range resources {
-		image := &resources[i]
-
-		virtualization, _ := image.Properties["unikorn:virtualization"].(string)
-
-		size := image.MinDiskGigabytes
-
-		if size == 0 {
-			// Round up to the nearest GiB.
-			size = int((image.VirtualSize + (1 << 30) - 1) >> 30)
-		}
-
-		providerImage := types.Image{
-			ID:             image.ID,
-			Name:           image.Name,
-			Created:        image.CreatedAt,
-			Modified:       image.UpdatedAt,
-			SizeGiB:        size,
-			Virtualization: types.ImageVirtualization(virtualization),
-			OS:             p.imageOS(image),
-			Packages:       p.imagePackages(image),
-		}
-
-		if gpuVendor, ok := image.Properties["unikorn:gpu_vendor"].(string); ok {
-			gpuDriver, ok := image.Properties["unikorn:gpu_driver_version"].(string)
-			if !ok {
-				// TODO: it's perhaps better to just skip this one, rather than
-				// kill the entire service??
-				return nil, fmt.Errorf("%w: GPU driver is not defined for image %s", ErrKeyUndefined, image.ID)
-			}
-
-			gpu := &types.ImageGPU{
-				Vendor: types.GPUVendor(gpuVendor),
-				Driver: gpuDriver,
-			}
-
-			if models, ok := image.Properties["unikorn:gpu_models"].(string); ok {
-				gpu.Models = strings.Split(models, ",")
-			}
-
-			providerImage.GPU = gpu
-		}
-
-		result[i] = providerImage
-	}
-
-	return result, nil
-}
-
 // imageOS extracts the image OS from the image properties.
 func (p *Provider) imageOS(image *images.Image) types.ImageOS {
 	kernel, _ := image.Properties["unikorn:os:kernel"].(string)
@@ -462,6 +399,104 @@ func (p *Provider) imagePackages(image *images.Image) *types.ImagePackages {
 	}
 
 	return &result
+}
+
+func (p *Provider) isImageBelongsToOrganization(image *images.Image, organizationID string) bool {
+	value := image.Properties["unikorn:organization:id"]
+	return value == nil || value == organizationID
+}
+
+func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
+	virtualization, _ := image.Properties["unikorn:virtualization"].(string)
+
+	size := image.MinDiskGigabytes
+
+	if size == 0 {
+		// Round up to the nearest GiB.
+		size = int((image.VirtualSize + (1 << 30) - 1) >> 30)
+	}
+
+	providerImage := types.Image{
+		ID:             image.ID,
+		Name:           image.Name,
+		Created:        image.CreatedAt,
+		Modified:       image.UpdatedAt,
+		SizeGiB:        size,
+		Virtualization: types.ImageVirtualization(virtualization),
+		OS:             p.imageOS(image),
+		Packages:       p.imagePackages(image),
+	}
+
+	if gpuVendor, ok := image.Properties["unikorn:gpu_vendor"].(string); ok {
+		gpuDriver, ok := image.Properties["unikorn:gpu_driver_version"].(string)
+		if !ok {
+			// TODO: it's perhaps better to just skip this one, rather than kill the entire service??
+			return nil, fmt.Errorf("%w: GPU driver is not defined for image %s", ErrKeyUndefined, image.ID)
+		}
+
+		gpu := &types.ImageGPU{
+			Vendor: types.GPUVendor(gpuVendor),
+			Driver: gpuDriver,
+		}
+
+		if models, ok := image.Properties["unikorn:gpu_models"].(string); ok {
+			gpu.Models = strings.Split(models, ",")
+		}
+
+		providerImage.GPU = gpu
+	}
+
+	return &providerImage, nil
+}
+
+// ListImages lists all available images.
+func (p *Provider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
+	imageService, err := p.image(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	resources, err := imageService.ListImages(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter images that either have no organisation ID or match the requested one.
+	resources = slices.DeleteFunc(resources, func(image images.Image) bool {
+		return !p.isImageBelongsToOrganization(&image, organizationID)
+	})
+
+	result := make(types.ImageList, len(resources))
+
+	for i := range resources {
+		providerImage, err := p.convertImage(&resources[i])
+		if err != nil {
+			return nil, err
+		}
+
+		result[i] = *providerImage
+	}
+
+	return result, nil
+}
+
+// GetImage retrieves a specific image by its ID.
+func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
+	imageService, err := p.image(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	resource, err := imageService.GetImage(ctx, imageID)
+	if err != nil {
+		return nil, err
+	}
+
+	if !p.isImageBelongsToOrganization(resource, organizationID) {
+		return nil, fmt.Errorf("%w: image %s", ErrResourceNotFound, imageID)
+	}
+
+	return p.convertImage(resource)
 }
 
 const (
