@@ -29,10 +29,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -76,7 +73,7 @@ func (p *Provisioner) getIdentity(ctx context.Context, cli client.Client) (*unik
 func (p *Provisioner) Provision(ctx context.Context) error {
 	log := log.FromContext(ctx)
 
-	cli, err := coreclient.ProvisionerClientFromContext(ctx)
+	cli, err := coreclient.FromContext(ctx)
 	if err != nil {
 		return err
 	}
@@ -119,12 +116,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	// Wait for any owned resources to be cleaned up first.
-	if controllerutil.ContainsFinalizer(p.securitygroup, metav1.FinalizerDeleteDependents) {
-		return provisioners.ErrYield
-	}
-
-	cli, err := coreclient.ProvisionerClientFromContext(ctx)
+	cli, err := coreclient.FromContext(ctx)
 	if err != nil {
 		return err
 	}

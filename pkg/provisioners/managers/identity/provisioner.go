@@ -26,10 +26,6 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // Provisioner encapsulates control plane provisioning.
@@ -56,7 +52,7 @@ func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
-	cli, err := coreclient.ProvisionerClientFromContext(ctx)
+	cli, err := coreclient.FromContext(ctx)
 	if err != nil {
 		return err
 	}
@@ -75,12 +71,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	// Wait for any owned resources to be cleaned up first.
-	if controllerutil.ContainsFinalizer(p.identity, metav1.FinalizerDeleteDependents) {
-		return provisioners.ErrYield
-	}
-
-	cli, err := coreclient.ProvisionerClientFromContext(ctx)
+	cli, err := coreclient.FromContext(ctx)
 	if err != nil {
 		return err
 	}
