@@ -431,14 +431,26 @@ type SecurityGroupRead struct {
 	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
 
 	// Spec A security group's specification.
-	Spec SecurityGroupReadSpec `json:"spec"`
+	Spec SecurityGroupSpec `json:"spec"`
 }
 
-// SecurityGroupReadSpec A security group's specification.
-type SecurityGroupReadSpec struct {
-	// RegionId The region an identity is provisioned in.
-	RegionId string `json:"regionId"`
+// SecurityGroupRule A security group rule's specification.
+type SecurityGroupRule struct {
+	// Cidr An IPv4 address.
+	Cidr Ipv4Address `json:"cidr"`
+
+	// Direction The direction of the rule.
+	Direction NetworkDirection `json:"direction"`
+
+	// Port The port definition to allow traffic.
+	Port SecurityGroupRulePort `json:"port"`
+
+	// Protocol The protocol to allow.
+	Protocol NetworkProtocol `json:"protocol"`
 }
+
+// SecurityGroupRuleList A set of security group rules to apply.
+type SecurityGroupRuleList = []SecurityGroupRule
 
 // SecurityGroupRulePort The port definition to allow traffic.
 type SecurityGroupRulePort struct {
@@ -458,41 +470,11 @@ type SecurityGroupRulePortRange struct {
 	Start int `json:"start"`
 }
 
-// SecurityGroupRuleRead A security group rule.
-type SecurityGroupRuleRead struct {
-	// Metadata Metadata required by project scoped resource reads.
-	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
-
-	// Spec A security group rule's specification.
-	Spec SecurityGroupRuleSpec `json:"spec"`
+// SecurityGroupSpec A security group's specification.
+type SecurityGroupSpec struct {
+	// Rules A set of security group rules to apply.
+	Rules SecurityGroupRuleList `json:"rules"`
 }
-
-// SecurityGroupRuleSpec A security group rule's specification.
-type SecurityGroupRuleSpec struct {
-	// Cidr An IPv4 address.
-	Cidr Ipv4Address `json:"cidr"`
-
-	// Direction The direction of the rule.
-	Direction NetworkDirection `json:"direction"`
-
-	// Port The port definition to allow traffic.
-	Port SecurityGroupRulePort `json:"port"`
-
-	// Protocol The protocol to allow.
-	Protocol NetworkProtocol `json:"protocol"`
-}
-
-// SecurityGroupRuleWrite A security group rule request.
-type SecurityGroupRuleWrite struct {
-	// Metadata Metadata required for all API resource reads and writes.
-	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
-
-	// Spec A security group rule's specification.
-	Spec SecurityGroupRuleSpec `json:"spec"`
-}
-
-// SecurityGroupRulesRead A list of security group rules.
-type SecurityGroupRulesRead = []SecurityGroupRuleRead
 
 // SecurityGroupWrite A security group request.
 type SecurityGroupWrite struct {
@@ -500,11 +482,8 @@ type SecurityGroupWrite struct {
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
 
 	// Spec A security group's specification.
-	Spec *SecurityGroupWriteSpec `json:"spec,omitempty"`
+	Spec SecurityGroupSpec `json:"spec"`
 }
-
-// SecurityGroupWriteSpec A security group's specification.
-type SecurityGroupWriteSpec = map[string]interface{}
 
 // SecurityGroupsRead A list of security groups.
 type SecurityGroupsRead = []SecurityGroupRead
@@ -623,9 +602,6 @@ type ProjectIDParameter = KubernetesNameParameter
 // RegionIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type RegionIDParameter = KubernetesNameParameter
 
-// RuleIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
-type RuleIDParameter = KubernetesNameParameter
-
 // SecurityGroupIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type SecurityGroupIDParameter = KubernetesNameParameter
 
@@ -662,12 +638,6 @@ type RegionsResponse = Regions
 // SecurityGroupResponse A security group.
 type SecurityGroupResponse = SecurityGroupRead
 
-// SecurityGroupRuleResponse A security group rule.
-type SecurityGroupRuleResponse = SecurityGroupRuleRead
-
-// SecurityGroupRulesResponse A list of security group rules.
-type SecurityGroupRulesResponse = SecurityGroupRulesRead
-
 // SecurityGroupsResponse A list of security groups.
 type SecurityGroupsResponse = SecurityGroupsRead
 
@@ -685,9 +655,6 @@ type NetworkRequest = NetworkWrite
 
 // SecurityGroupRequest A security group request.
 type SecurityGroupRequest = SecurityGroupWrite
-
-// SecurityGroupRuleRequest A security group rule request.
-type SecurityGroupRuleRequest = SecurityGroupRuleWrite
 
 // ServerRequest A server request.
 type ServerRequest = ServerWrite
@@ -717,9 +684,6 @@ type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSe
 
 // PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDJSONRequestBody defines body for PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID for application/json ContentType.
 type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDJSONRequestBody = SecurityGroupWrite
-
-// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRulesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRules for application/json ContentType.
-type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupIDRulesJSONRequestBody = SecurityGroupRuleWrite
 
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServers for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersJSONRequestBody = ServerWrite

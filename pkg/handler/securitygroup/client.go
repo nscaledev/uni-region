@@ -19,8 +19,10 @@ package securitygroup
 import (
 	"cmp"
 	"context"
+	"net"
 	"slices"
 
+	unikorncorev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
@@ -55,12 +57,77 @@ func New(client client.Client, namespace string) *Client {
 	}
 }
 
+// convertProtocol from a Kubernetes representation into an API one.
+func convertProtocol(in unikornv1.SecurityGroupRuleProtocol) openapi.NetworkProtocol {
+	switch in {
+	case unikornv1.TCP:
+		return openapi.Tcp
+	case unikornv1.UDP:
+		return openapi.Udp
+	}
+
+	return ""
+}
+
+// convertDirection from a Kubernetes representation into an API one.
+func convertDirection(in unikornv1.SecurityGroupRuleDirection) openapi.NetworkDirection {
+	switch in {
+	case unikornv1.Ingress:
+		return openapi.Ingress
+	case unikornv1.Egress:
+		return openapi.Egress
+	}
+
+	return ""
+}
+
+// convertPort from a Kubernetes representation into an API one.
+func convertPort(in unikornv1.SecurityGroupRulePort) openapi.SecurityGroupRulePort {
+	out := openapi.SecurityGroupRulePort{}
+
+	if in.Number != nil {
+		out.Number = in.Number
+	}
+
+	if in.Range != nil {
+		out.Range = &openapi.SecurityGroupRulePortRange{
+			Start: in.Range.Start,
+			End:   in.Range.End,
+		}
+	}
+
+	return out
+}
+
+// convertRule converts a single resource from the Kubernetes representation into the API one.
+func convertRule(in *unikornv1.SecurityGroupRule) *openapi.SecurityGroupRule {
+	out := &openapi.SecurityGroupRule{
+		Direction: convertDirection(*in.Direction),
+		Protocol:  convertProtocol(*in.Protocol),
+		Cidr:      in.CIDR.String(),
+		Port:      convertPort(*in.Port),
+	}
+
+	return out
+}
+
+// convertRuleList converts a list of resources from the Kubernetes representation into the API one.
+func convertRuleList(in []unikornv1.SecurityGroupRule) openapi.SecurityGroupRuleList {
+	out := make(openapi.SecurityGroupRuleList, len(in))
+
+	for i := range in {
+		out[i] = *convertRule(&in[i])
+	}
+
+	return out
+}
+
 // convert converts a single resource from the Kubernetes representation into the API one.
 func convert(in *unikornv1.SecurityGroup) *openapi.SecurityGroupRead {
 	out := &openapi.SecurityGroupRead{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
-		Spec: openapi.SecurityGroupReadSpec{
-			RegionId: in.Labels[constants.RegionLabel],
+		Spec: openapi.SecurityGroupSpec{
+			Rules: convertRuleList(in.Spec.Rules),
 		},
 	}
 
@@ -78,6 +145,86 @@ func convertList(in *unikornv1.SecurityGroupList) openapi.SecurityGroupsRead {
 	return out
 }
 
+// generateProtocol from an API representation into a Kubernetes one.
+func generateProtocol(in openapi.NetworkProtocol) *unikornv1.SecurityGroupRuleProtocol {
+	var out unikornv1.SecurityGroupRuleProtocol
+
+	switch in {
+	case openapi.Tcp:
+		out = unikornv1.TCP
+	case openapi.Udp:
+		out = unikornv1.UDP
+	}
+
+	return &out
+}
+
+// generateDirection from an API representation into a Kubernetes one.
+func generateDirection(in openapi.NetworkDirection) *unikornv1.SecurityGroupRuleDirection {
+	var out unikornv1.SecurityGroupRuleDirection
+
+	switch in {
+	case openapi.Ingress:
+		out = unikornv1.Ingress
+	case openapi.Egress:
+		out = unikornv1.Egress
+	}
+
+	return &out
+}
+
+// generatePort from an API representation into a Kubernetes one.
+func generatePort(in openapi.SecurityGroupRulePort) *unikornv1.SecurityGroupRulePort {
+	out := unikornv1.SecurityGroupRulePort{}
+
+	if in.Number != nil {
+		out.Number = in.Number
+	}
+
+	if in.Range != nil {
+		out.Range = &unikornv1.SecurityGroupRulePortRange{
+			Start: in.Range.Start,
+			End:   in.Range.End,
+		}
+	}
+
+	return &out
+}
+
+// generateRule a new resource from a request.
+func generateRule(in *openapi.SecurityGroupRule) (*unikornv1.SecurityGroupRule, error) {
+	_, prefix, err := net.ParseCIDR(in.Cidr)
+	if err != nil {
+		return nil, errors.OAuth2InvalidRequest("unable to parse prefix").WithError(err)
+	}
+
+	out := &unikornv1.SecurityGroupRule{
+		Direction: generateDirection(in.Direction),
+		Protocol:  generateProtocol(in.Protocol),
+		Port:      generatePort(in.Port),
+		CIDR: &unikorncorev1.IPv4Prefix{
+			IPNet: *prefix,
+		},
+	}
+
+	return out, nil
+}
+
+func generateRuleList(in openapi.SecurityGroupRuleList) ([]unikornv1.SecurityGroupRule, error) {
+	out := make([]unikornv1.SecurityGroupRule, len(in))
+
+	for i := range in {
+		t, err := generateRule(&in[i])
+		if err != nil {
+			return nil, err
+		}
+
+		out[i] = *t
+	}
+
+	return out, nil
+}
+
 // generate a new resource from a request.
 func (c *Client) generate(ctx context.Context, organizationID, projectID, identityID string, in *openapi.SecurityGroupWrite) (*unikornv1.SecurityGroup, error) {
 	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
@@ -85,12 +232,16 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 		return nil, err
 	}
 
+	rules, err := generateRuleList(in.Spec.Rules)
+	if err != nil {
+		return nil, err
+	}
+
 	out := &unikornv1.SecurityGroup{
-		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, c.namespace).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
-			WithLabel(constants.IdentityLabel, identity.Name).Get(),
+		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, c.namespace).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identity.Name).Get(),
 		Spec: unikornv1.SecurityGroupSpec{
-			Tags:     conversion.GenerateTagList(in.Metadata.Tags),
-			Provider: identity.Spec.Provider,
+			Tags:  conversion.GenerateTagList(in.Metadata.Tags),
+			Rules: rules,
 		},
 	}
 

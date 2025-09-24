@@ -15,7 +15,6 @@ CONTROLLERS = \
   unikorn-identity-controller \
   unikorn-network-controller \
   unikorn-security-group-controller \
-  unikorn-security-group-rule-controller \
   unikorn-server-controller \
   unikorn-region-monitor
 

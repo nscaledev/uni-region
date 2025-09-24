@@ -239,16 +239,6 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 	return ErrUnimplmented
 }
 
-// CreateSecurityGroupRule creates a new security group rule.
-func (p *Provider) CreateSecurityGroupRule(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup, rule *unikornv1.SecurityGroupRule) error {
-	return ErrUnimplmented
-}
-
-// DeleteSecurityGroupRule deletes a security group rule.
-func (p *Provider) DeleteSecurityGroupRule(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup, rule *unikornv1.SecurityGroupRule) error {
-	return ErrUnimplmented
-}
-
 // CreateServer creates a new server.
 func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	return ErrUnimplmented
