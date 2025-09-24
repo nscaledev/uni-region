@@ -51,10 +51,6 @@ type Provider interface {
 	CreateSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error
 	// DeleteSecurityGroup deletes a security group.
 	DeleteSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error
-	// CreateSecurityGroupRule creates a new security group rule.
-	CreateSecurityGroupRule(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup, rule *unikornv1.SecurityGroupRule) error
-	// DeleteSecurityGroupRule deletes a security group rule.
-	DeleteSecurityGroupRule(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup, rule *unikornv1.SecurityGroupRule) error
 	// CreateServer creates a new server.
 	CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
 	// RebootServer soft reboots a server.

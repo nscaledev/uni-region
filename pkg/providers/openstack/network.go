@@ -323,6 +323,25 @@ func (c *NetworkClient) DeleteSecurityGroup(ctx context.Context, securityGroupID
 	return groups.Delete(ctx, c.client, securityGroupID).Err
 }
 
+// ListSecurityGroupRules does exactly that.
+func (c *NetworkClient) ListSecurityGroupRules(ctx context.Context, securityGroupID string) ([]rules.SecGroupRule, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("GET /network/v2.0/securitygroups/%s/rules", securityGroupID), trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	opts := rules.ListOpts{
+		SecGroupID: securityGroupID,
+	}
+
+	pager, err := rules.List(c.client, opts).AllPages(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return rules.ExtractRules(pager)
+}
+
 // CreateSecurityGroupRule adds a security group rule to a security group.
 func (c *NetworkClient) CreateSecurityGroupRule(ctx context.Context, securityGroupID string, direction rules.RuleDirection, protocol rules.RuleProtocol, portStart, portEnd int, cidr *unikornv1core.IPv4Prefix) (*rules.SecGroupRule, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)

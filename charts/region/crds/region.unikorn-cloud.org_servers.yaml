@@ -23,9 +23,6 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: age
       type: date
-    - jsonPath: .status.phase
-      name: phase
-      type: string
     - jsonPath: .status.privateIP
       name: privateIP
       type: string
