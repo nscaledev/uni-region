@@ -217,8 +217,6 @@ spec:
               publicIP:
                 description: PublicIP is the public IP address of the server.
                 type: string
-            required:
-            - phase
             type: object
         required:
         - spec

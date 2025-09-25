@@ -26,7 +26,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gophercloud/gophercloud/v2"
+	gophercloud "github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
@@ -1332,7 +1332,10 @@ func listOpenstackSecurityGroupRules(ctx context.Context, networkService *Networ
 
 // generateSecurityGroupRules maps all rules to a unique ID.
 func generateSecurityGroupRules(securityGroup *unikornv1.SecurityGroup) (map[string]*unikornv1.SecurityGroupRule, error) {
-	out := map[string]*unikornv1.SecurityGroupRule{}
+	out := map[string]*unikornv1.SecurityGroupRule{
+		// Secret hidden rule that comes by default, don't delete it by accident!
+		securityGroupRuleID("egress", "", 0, 0, ""): nil,
+	}
 
 	for i := range securityGroup.Spec.Rules {
 		rule := &securityGroup.Spec.Rules[i]
@@ -1521,6 +1524,8 @@ func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.
 }
 
 // DeleteSecurityGroup deletes a security group.
+//
+//nolint:cyclop
 func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
@@ -1563,10 +1568,16 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 
 	if openstackSecurityGroup.Spec.SecurityGroupID != nil {
 		if err := networkService.DeleteSecurityGroup(ctx, *openstackSecurityGroup.Spec.SecurityGroupID); err != nil {
-			return err
-		}
+			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+				return err
+			}
 
-		openstackSecurityGroup.Spec.SecurityGroupID = nil
+			openstackSecurityGroup.Spec.SecurityGroupID = nil
+		}
+	}
+
+	if openstackSecurityGroup.Spec.SecurityGroupID != nil {
+		return fmt.Errorf("%w: awaiting security group deletion", provisioners.ErrYield)
 	}
 
 	if err := p.client.Delete(ctx, openstackSecurityGroup); err != nil {
@@ -2169,15 +2180,19 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
+	// Delete the floating IP and await its removal.
 	if openstackServer.Spec.PublicIPAllocationID != nil {
 		if err := networkService.DeleteFloatingIP(ctx, *openstackServer.Spec.PublicIPAllocationID); err != nil {
-			// ignore not found errors
 			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 				return err
 			}
-		}
 
-		openstackServer.Spec.PublicIPAllocationID = nil
+			openstackServer.Spec.PublicIPAllocationID = nil
+		}
+	}
+
+	if openstackServer.Spec.PublicIPAllocationID != nil {
+		return fmt.Errorf("%w: awaiting floating IP deletion", provisioners.ErrYield)
 	}
 
 	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
@@ -2185,17 +2200,22 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
+	// Delete the server and await its removal.
 	if openstackServer.Spec.ServerID != nil {
 		if err := computeService.DeleteServer(ctx, *openstackServer.Spec.ServerID); err != nil {
-			// ignore not found errors
 			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 				return err
 			}
-		}
 
-		openstackServer.Spec.ServerID = nil
+			openstackServer.Spec.ServerID = nil
+		}
 	}
 
+	if openstackServer.Spec.ServerID != nil {
+		return fmt.Errorf("%w: awaiting server deletion", provisioners.ErrYield)
+	}
+
+	// Delete the ports and await their removal.
 	if len(openstackServer.Spec.PortIDs) > 0 {
 		for _, portID := range openstackServer.Spec.PortIDs {
 			if err := networkService.DeletePort(ctx, portID); err != nil {
@@ -2203,10 +2223,14 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 				if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 					return err
 				}
+
+				openstackServer.Spec.PortIDs = slices.DeleteFunc(openstackServer.Spec.PortIDs, func(id string) bool { return id == portID })
 			}
 		}
+	}
 
-		openstackServer.Spec.PortIDs = nil
+	if len(openstackServer.Spec.PortIDs) > 0 {
+		return fmt.Errorf("%w: awaiting port deletion", provisioners.ErrYield)
 	}
 
 	if err := p.deleteServerCredentialSecret(ctx, openstackServer); err != nil {

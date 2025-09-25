@@ -168,10 +168,10 @@ github.com/test-go/testify v1.1.4 h1:Tf9lntrKUMHiXQ07qBScBTSA0dhYQlu83hswqelv1iE
 github.com/test-go/testify v1.1.4/go.mod h1:rH7cfJo/47vWGdi4GPj16x3/t1xGOj2YxzmNQzk2ghU=
 github.com/ugorji/go/codec v1.2.12 h1:9LC83zGrHhuUA9l16C9AHXAqEV/2wBQ4nkvumAE65EE=
 github.com/ugorji/go/codec v1.2.12/go.mod h1:UNopzCgEMSXjBc6AOMqYvWC1ktqTAfzJZUZgYf6w6lg=
-github.com/unikorn-cloud/core v1.7.0 h1:X248cvQ7guJu9tQ2qLNlmZzlooTKIEokjlEsk75XY6Y=
-github.com/unikorn-cloud/core v1.7.0/go.mod h1:fMkv/mXFw7N6V+SV1Pd9WSs6HqP02IdM2iECNxewZ9Q=
-github.com/unikorn-cloud/identity v1.7.0 h1:k4J+fbxlAqmFIRbXfEPJRF2zGY/useay2zRg12W4jJM=
-github.com/unikorn-cloud/identity v1.7.0/go.mod h1:MNlj8LyEHAWWZ+CLoBnjgk5AViTY7OVyGDQ2M1N/dTo=
+github.com/unikorn-cloud/core v1.7.1-0.20250925125816-d2484bd7848d h1:yCyLzFf4yyyVU3HY197BfFEBcHw0AMvaS3iAMJfL3gM=
+github.com/unikorn-cloud/core v1.7.1-0.20250925125816-d2484bd7848d/go.mod h1:+eILRQ0z60IzauRIqzS9MvirzIhMLdSK+wI/CRgvXe8=
+github.com/unikorn-cloud/identity v1.7.1-0.20250924144813-5629afb944f9 h1:G1ZIdurXxeJXMSzwn780EM2RoDi/2o0ZfDTSoac/98k=
+github.com/unikorn-cloud/identity v1.7.1-0.20250924144813-5629afb944f9/go.mod h1:9v0e908IVxZ6IXT62a6QuoNfnLZiu8b+K+IBYsaAW2I=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
 github.com/x448/float16 v0.8.4/go.mod h1:14CWIYCyZA/cWjXOioeEpHeN/83MdbZDRQHoFcYsOfg=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

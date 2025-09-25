@@ -14,11 +14,19 @@ rules:
   - openstackidentities
   - networks
   - openstacknetworks
-  - securitygroups
   - openstacksecuritygroups
   verbs:
   - list
   - watch
+# Manage references.
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - securitygroups
+  verbs:
+  - list
+  - watch
+  - update
 - apiGroups:
   - region.unikorn-cloud.org
   resources:

@@ -692,7 +692,7 @@ type ServerStatus struct {
 	// Current service state of a cluster manager.
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
 	// Phase is the current lifecycle phase of the server.
-	Phase InstanceLifecyclePhase `json:"phase"`
+	Phase InstanceLifecyclePhase `json:"phase,omitempty"`
 	// PrivateIP is the private IP address of the server.
 	PrivateIP *string `json:"privateIP,omitempty"`
 	// PublicIP is the public IP address of the server.
