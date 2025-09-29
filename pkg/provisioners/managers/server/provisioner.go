@@ -19,11 +19,9 @@ package server
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
-	"github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -33,8 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // Provisioner encapsulates control plane provisioning.
@@ -70,124 +66,32 @@ func (p *Provisioner) securityGroupIDs() []string {
 	return securityGroupIDs
 }
 
-func (p *Provisioner) securityGroupSelector() labels.Selector {
+func (p *Provisioner) securityGroupListOptions() *client.ListOptions {
 	selector := map[string]string{
 		constants.IdentityLabel: p.server.Labels[constants.IdentityLabel],
 	}
 
-	return labels.SelectorFromSet(selector)
-}
-
-// listSecurityGroupsForIdentity lists all security groups that may be used by the server.
-func (p *Provisioner) listSecurityGroupsForIdentity(ctx context.Context, cli client.Client) (map[string]*unikornv1.SecurityGroup, error) {
-	securityGroups := &unikornv1.SecurityGroupList{}
-
-	options := &client.ListOptions{
+	return &client.ListOptions{
 		Namespace:     p.server.Namespace,
-		LabelSelector: p.securityGroupSelector(),
+		LabelSelector: labels.SelectorFromSet(selector),
 	}
-
-	if err := cli.List(ctx, securityGroups, options); err != nil {
-		return nil, err
-	}
-
-	out := map[string]*unikornv1.SecurityGroup{}
-
-	for i := range securityGroups.Items {
-		securityGroup := &securityGroups.Items[i]
-
-		out[securityGroup.Name] = securityGroup
-	}
-
-	return out, nil
-}
-
-// addSecurityGroupReferences adds references to security groups that are in use
-// by the server.
-func (p *Provisioner) addSecurityGroupReferences(ctx context.Context, cli client.Client, securityGroups map[string]*unikornv1.SecurityGroup, reference string) error {
-	securityGroupIDs := p.securityGroupIDs()
-
-	// Find all security groups that are linked to the cluster and ensure they have an reference.
-	for _, id := range securityGroupIDs {
-		securityGroup, ok := securityGroups[id]
-		if !ok {
-			// This should not happen and should be caught at the API layer.
-			return fmt.Errorf("%w: server references unknown security group %s", errors.ErrConsistency, id)
-		}
-
-		if updated := controllerutil.AddFinalizer(securityGroup, reference); !updated {
-			continue
-		}
-
-		if err := cli.Update(ctx, securityGroup); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// removeSecurityGroupReferences removes references to security groups that aren't
-// in use by the server.
-func (p *Provisioner) removeSecurityGroupReferences(ctx context.Context, cli client.Client, securityGroups map[string]*unikornv1.SecurityGroup, reference string) error {
-	securityGroupIDs := p.securityGroupIDs()
-
-	// Find any security groups we no longer reference and remove any references.
-	for id, securityGroup := range securityGroups {
-		if slices.Contains(securityGroupIDs, id) {
-			continue
-		}
-
-		if updated := controllerutil.RemoveFinalizer(securityGroup, reference); !updated {
-			continue
-		}
-
-		if err := cli.Update(ctx, securityGroup); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (p *Provisioner) removeAllSecurityGroupReferences(ctx context.Context, cli client.Client) error {
-	reference, err := manager.GenerateResourceReference(cli, p.server)
-	if err != nil {
-		return err
-	}
-
-	options := &client.ListOptions{
-		Namespace:     p.server.Namespace,
-		LabelSelector: p.securityGroupSelector(),
-	}
-
-	return manager.ClearResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, options, reference)
 }
 
 // Provision implements the Provision interface.
-//
-//nolint:cyclop
 func (p *Provisioner) Provision(ctx context.Context) error {
-	log := log.FromContext(ctx)
-
 	cli, err := coreclient.FromContext(ctx)
 	if err != nil {
 		return err
 	}
 
+	// Add references to any resources we consume.
 	reference, err := manager.GenerateResourceReference(cli, p.server)
 	if err != nil {
 		return err
 	}
 
-	securityGroups, err := p.listSecurityGroupsForIdentity(ctx, cli)
-	if err != nil {
-		return err
-	}
-
-	// Ensure any references to security groups are added before we create the server.
-	if err := p.addSecurityGroupReferences(ctx, cli, securityGroups, reference); err != nil {
-		return err
+	if err := manager.AddResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, p.securityGroupListOptions(), reference, p.securityGroupIDs()); err != nil {
+		return fmt.Errorf("%w: failed to add security group references", err)
 	}
 
 	provider, err := region.NewClient(cli, p.server.Namespace).Provider(ctx, p.server.Labels[constants.RegionLabel])
@@ -195,38 +99,24 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
+	// Inhibit provisioning until consumed resources are ready.
 	identity, err := p.getIdentity(ctx, cli)
 	if err != nil {
 		return err
 	}
 
-	// Inhibit provisioning until the identity is ready, as we may need the identity information
-	// to create the security group e.g. the project ID in the case of OpenStack.
-	status, err := identity.StatusConditionRead(unikornv1core.ConditionAvailable)
-	if err != nil {
-		log.Info("waiting for identity status update")
-
-		return provisioners.ErrYield
+	if err := manager.ResourceReady(ctx, identity); err != nil {
+		return err
 	}
 
-	//nolint:exhaustive
-	switch status.Reason {
-	case unikornv1core.ConditionReasonProvisioned:
-		break
-	case unikornv1core.ConditionReasonProvisioning:
-		return provisioners.ErrYield
-	default:
-		return fmt.Errorf("%w: identity in unexpected condition %v", errors.ErrConsistency, status.Reason)
-	}
-
+	// Do the provisioning.
 	if err := provider.CreateServer(ctx, identity, p.server); err != nil {
 		return err
 	}
 
-	// Release any references to security groups that are no longer attached to the
-	// server.
-	if err := p.removeSecurityGroupReferences(ctx, cli, securityGroups, reference); err != nil {
-		return err
+	// Release any references to any resources we no longer consume.
+	if err := manager.RemoveResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, p.securityGroupListOptions(), reference, p.securityGroupIDs()); err != nil {
+		return fmt.Errorf("%w: failed to remove security group references", err)
 	}
 
 	return nil
@@ -254,8 +144,13 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 	}
 
 	// Once we know the server is gone, allow deletion of the security group.
-	if err := p.removeAllSecurityGroupReferences(ctx, cli); err != nil {
+	reference, err := manager.GenerateResourceReference(cli, p.server)
+	if err != nil {
 		return err
+	}
+
+	if err := manager.ClearResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, p.securityGroupListOptions(), reference); err != nil {
+		return fmt.Errorf("%w: failed to clear security group references", err)
 	}
 
 	return nil

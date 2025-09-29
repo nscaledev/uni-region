@@ -12,7 +12,7 @@ require (
 	github.com/spf13/pflag v1.0.6
 	github.com/spjmurray/go-util v0.1.3
 	github.com/stretchr/testify v1.10.0
-	github.com/unikorn-cloud/core v1.7.1-0.20250925125816-d2484bd7848d
+	github.com/unikorn-cloud/core v1.7.1-0.20250929135440-f20f4911a87f
 	github.com/unikorn-cloud/identity v1.7.1-0.20250924144813-5629afb944f9
 	go.opentelemetry.io/otel v1.35.0
 	go.opentelemetry.io/otel/sdk v1.35.0
@@ -36,6 +36,7 @@ require (
 	github.com/coreos/go-oidc/v3 v3.14.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emicklei/go-restful/v3 v3.12.2 // indirect
+	github.com/evanphx/json-patch v5.9.0+incompatible // indirect
 	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
