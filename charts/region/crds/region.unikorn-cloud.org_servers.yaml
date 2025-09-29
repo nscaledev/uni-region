@@ -23,9 +23,6 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: age
       type: date
-    - jsonPath: .status.phase
-      name: phase
-      type: string
     - jsonPath: .status.privateIP
       name: privateIP
       type: string
@@ -220,8 +217,6 @@ spec:
               publicIP:
                 description: PublicIP is the public IP address of the server.
                 type: string
-            required:
-            - phase
             type: object
         required:
         - spec
