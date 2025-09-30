@@ -22,6 +22,7 @@ rules:
 - apiGroups:
   - region.unikorn-cloud.org
   resources:
+  - networks
   - securitygroups
   verbs:
   - list
