@@ -55,18 +55,30 @@ func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 	return p.server
 }
 
+func (p *Provisioner) networkIDs() []string {
+	ids := make([]string, len(p.server.Spec.Networks))
+
+	// TODO: ensure the API rejects repeats.
+	for i := range p.server.Spec.Networks {
+		ids[i] = p.server.Spec.Networks[i].ID
+	}
+
+	return ids
+}
+
 func (p *Provisioner) securityGroupIDs() []string {
-	securityGroupIDs := make([]string, len(p.server.Spec.SecurityGroups))
+	ids := make([]string, len(p.server.Spec.SecurityGroups))
 
 	// TODO: ensure the API rejects repeats.
 	for i := range p.server.Spec.SecurityGroups {
-		securityGroupIDs[i] = p.server.Spec.SecurityGroups[i].ID
+		ids[i] = p.server.Spec.SecurityGroups[i].ID
 	}
 
-	return securityGroupIDs
+	return ids
 }
 
-func (p *Provisioner) securityGroupListOptions() *client.ListOptions {
+// identityListOptions lists all resources associated with an identity.
+func (p *Provisioner) identityListOptions() *client.ListOptions {
 	selector := map[string]string{
 		constants.IdentityLabel: p.server.Labels[constants.IdentityLabel],
 	}
@@ -78,6 +90,8 @@ func (p *Provisioner) securityGroupListOptions() *client.ListOptions {
 }
 
 // Provision implements the Provision interface.
+//
+//nolint:cyclop
 func (p *Provisioner) Provision(ctx context.Context) error {
 	cli, err := coreclient.FromContext(ctx)
 	if err != nil {
@@ -90,7 +104,11 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
-	if err := manager.AddResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, p.securityGroupListOptions(), reference, p.securityGroupIDs()); err != nil {
+	if err := manager.AddResourceReferences(ctx, cli, &unikornv1.NetworkList{}, p.identityListOptions(), reference, p.networkIDs()); err != nil {
+		return fmt.Errorf("%w: failed to add network references", err)
+	}
+
+	if err := manager.AddResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, p.identityListOptions(), reference, p.securityGroupIDs()); err != nil {
 		return fmt.Errorf("%w: failed to add security group references", err)
 	}
 
@@ -115,7 +133,11 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 	}
 
 	// Release any references to any resources we no longer consume.
-	if err := manager.RemoveResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, p.securityGroupListOptions(), reference, p.securityGroupIDs()); err != nil {
+	if err := manager.RemoveResourceReferences(ctx, cli, &unikornv1.NetworkList{}, p.identityListOptions(), reference, p.networkIDs()); err != nil {
+		return fmt.Errorf("%w: failed to remove network references", err)
+	}
+
+	if err := manager.RemoveResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, p.identityListOptions(), reference, p.securityGroupIDs()); err != nil {
 		return fmt.Errorf("%w: failed to remove security group references", err)
 	}
 
@@ -149,7 +171,11 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
-	if err := manager.ClearResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, p.securityGroupListOptions(), reference); err != nil {
+	if err := manager.ClearResourceReferences(ctx, cli, &unikornv1.NetworkList{}, p.identityListOptions(), reference); err != nil {
+		return fmt.Errorf("%w: failed to clear network references", err)
+	}
+
+	if err := manager.ClearResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, p.identityListOptions(), reference); err != nil {
 		return fmt.Errorf("%w: failed to clear security group references", err)
 	}
 
