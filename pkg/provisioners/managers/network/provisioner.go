@@ -19,18 +19,16 @@ package network
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
-	coremanager "github.com/unikorn-cloud/core/pkg/manager"
+	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 var (
@@ -46,7 +44,7 @@ type Provisioner struct {
 }
 
 // New returns a new initialized provisioner object.
-func New(_ coremanager.ControllerOptions) provisioners.ManagerProvisioner {
+func New(_ manager.ControllerOptions) provisioners.ManagerProvisioner {
 	return &Provisioner{
 		network: &unikornv1.Network{},
 	}
@@ -71,8 +69,6 @@ func (p *Provisioner) getIdentity(ctx context.Context, cli client.Client) (*unik
 
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
-	log := log.FromContext(ctx)
-
 	cli, err := coreclient.FromContext(ctx)
 	if err != nil {
 		return err
@@ -90,23 +86,8 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 	// Inhibit provisioning until the identity is ready, as we may need the identity information
 	// to create the physical network e.g. the project ID in the case of OpenStack.
-	// TODO: the kinda mirrors what the Kubernetes service is doing when waiting for an identity
-	// and physical network, perhaps we can formalize and share the concepts?
-	status, err := identity.StatusConditionRead(unikornv1core.ConditionAvailable)
-	if err != nil {
-		log.Info("waiting for identity status update")
-
-		return provisioners.ErrYield
-	}
-
-	//nolint:exhaustive
-	switch status.Reason {
-	case unikornv1core.ConditionReasonProvisioned:
-		break
-	case unikornv1core.ConditionReasonProvisioning:
-		return provisioners.ErrYield
-	default:
-		return fmt.Errorf("%w: identity in unexpected condition %v", ErrResouceDependency, status.Reason)
+	if err := manager.ResourceReady(ctx, identity); err != nil {
+		return err
 	}
 
 	if err := provider.CreateNetwork(ctx, identity, p.network); err != nil {
