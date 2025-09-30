@@ -73,12 +73,6 @@ type ConsoleOutput struct {
 	Contents string `json:"contents"`
 }
 
-// ConsoleOutputParams Console output parameters.
-type ConsoleOutputParams struct {
-	// Lines The number of most recent lines to retrieve from the console output. If not specified, all available lines will be returned.
-	Lines *int `json:"lines,omitempty"`
-}
-
 // ConsoleSession A console session response.
 type ConsoleSession struct {
 	// Url The URL to access the console session.
@@ -608,6 +602,9 @@ type SoftwareVersions map[string]externalRef0.Semver
 // IdentityIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type IdentityIDParameter = KubernetesNameParameter
 
+// LengthParameter defines model for lengthParameter.
+type LengthParameter = int
+
 // NetworkIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type NetworkIDParameter = KubernetesNameParameter
 
@@ -671,9 +668,6 @@ type ServerResponse = ServerRead
 // ServersResponse A list of servers.
 type ServersResponse = ServersRead
 
-// ConsoleOutputRequest Console output parameters.
-type ConsoleOutputRequest = ConsoleOutputParams
-
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
 
@@ -685,6 +679,12 @@ type SecurityGroupRequest = SecurityGroupWrite
 
 // ServerRequest A server request.
 type ServerRequest = ServerWrite
+
+// GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams defines parameters for GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutput.
+type GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams struct {
+	// Length The requested output length.
+	Length *LengthParameter `form:"length,omitempty" json:"length,omitempty"`
+}
 
 // GetApiV1OrganizationsOrganizationIDSecuritygroupsParams defines parameters for GetApiV1OrganizationsOrganizationIDSecuritygroups.
 type GetApiV1OrganizationsOrganizationIDSecuritygroupsParams struct {
@@ -717,6 +717,3 @@ type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSe
 
 // PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody defines body for PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID for application/json ContentType.
 type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody = ServerWrite
-
-// PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutput for application/json ContentType.
-type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputJSONRequestBody = ConsoleOutputParams

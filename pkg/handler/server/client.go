@@ -361,7 +361,7 @@ func (c *Client) CreateConsoleSession(ctx context.Context, organizationID, proje
 	return response, nil
 }
 
-func (c *Client) GetConsoleOutput(ctx context.Context, organizationID, projectID, identityID, serverID string, lines *int) (*openapi.ConsoleOutputResponse, error) {
+func (c *Client) GetConsoleOutput(ctx context.Context, organizationID, projectID, identityID, serverID string, params openapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams) (*openapi.ConsoleOutputResponse, error) {
 	current, err := c.get(ctx, organizationID, projectID, serverID)
 	if err != nil {
 		return nil, err
@@ -377,7 +377,7 @@ func (c *Client) GetConsoleOutput(ctx context.Context, organizationID, projectID
 		return nil, err
 	}
 
-	contents, err := provider.GetConsoleOutput(ctx, identity, current, lines)
+	contents, err := provider.GetConsoleOutput(ctx, identity, current, params.Length)
 	if err != nil {
 		// REVIEW_ME: This looks odd. Shouldn't the ErrResourceDependency error be moved to the provider package?
 		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) || goerrors.Is(err, openstack.ErrResourceDependency) {

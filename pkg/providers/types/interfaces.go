@@ -66,5 +66,5 @@ type Provider interface {
 	// CreateConsoleSession creates a new console session for a server.
 	CreateConsoleSession(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) (string, error)
 	// GetConsoleOutput retrieves the console output for a server.
-	GetConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, lines *int) (string, error)
+	GetConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, length *int) (string, error)
 }

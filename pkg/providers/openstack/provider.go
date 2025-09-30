@@ -2318,7 +2318,7 @@ func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1
 	return result.URL, nil
 }
 
-func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, lines *int) (string, error) {
+func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, length *int) (string, error) {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return "", err
@@ -2341,7 +2341,7 @@ func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Ide
 		return "", err
 	}
 
-	result, err := computeService.ShowConsoleOutput(ctx, *openstackServer.Spec.ServerID, lines)
+	result, err := computeService.ShowConsoleOutput(ctx, *openstackServer.Spec.ServerID, length)
 	if err != nil {
 		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			return "", fmt.Errorf("%w: server is being deprovisioned", ErrResourceDependency)

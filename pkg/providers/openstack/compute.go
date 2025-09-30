@@ -381,7 +381,7 @@ func (c *ComputeClient) CreateRemoteConsole(ctx context.Context, id string) (*re
 	return remoteconsoles.Create(ctx, c.client, id, opts).Extract()
 }
 
-func (c *ComputeClient) ShowConsoleOutput(ctx context.Context, id string, lines *int) (string, error) {
+func (c *ComputeClient) ShowConsoleOutput(ctx context.Context, id string, length *int) (string, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, fmt.Sprintf("GET /compute/v2/servers/%s/console-output", id))
@@ -389,8 +389,8 @@ func (c *ComputeClient) ShowConsoleOutput(ctx context.Context, id string, lines 
 
 	opts := &servers.ShowConsoleOutputOpts{}
 
-	if lines != nil {
-		opts.Length = *lines
+	if length != nil {
+		opts.Length = *length
 	}
 
 	return servers.ShowConsoleOutput(ctx, c.client, id, opts).Extract()
