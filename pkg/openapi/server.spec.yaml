@@ -628,12 +628,11 @@ paths:
     - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/identityIDParameter'
     - $ref: '#/components/parameters/serverIDParameter'
-    post:
+    - $ref: '#/components/parameters/lengthParameter'
+    get:
       description: Get the console output for a server.
       security:
       - oauth2Authentication: []
-      requestBody:
-        $ref: '#/components/requestBodies/consoleOutputRequest'
       responses:
         '200':
           $ref: '#/components/responses/consoleOutputResponse'
@@ -697,6 +696,12 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
+    lengthParameter:
+      name: length
+      in: query
+      description: The requested output length.
+      schema:
+        type: integer
   schemas:
     kubernetesNameParameter:
       description: A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
@@ -1378,14 +1383,6 @@ components:
         url: 
           description: The URL to access the console session.
           type: string
-    consoleOutputParams:
-      description: Console output parameters.
-      type: object
-      properties:
-        lines:
-          description: The number of most recent lines to retrieve from the console output. If not specified, all available lines will be returned.
-          type: integer
-          minimum: 1
     consoleOutput:
       description: Console output
       type: object
@@ -1475,14 +1472,6 @@ components:
                 allowedAddressPairs:
                 - cidr: 192.168.192.0/24
               userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
-    consoleOutputRequest:
-      description: A request for console output.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/consoleOutputParams'
-          example:
-            lines: 50
   responses:
     regionsResponse:
       description: A list of regions.

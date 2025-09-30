@@ -275,6 +275,6 @@ func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1
 }
 
 // GetConsoleOutput retrieves the console output for a server.
-func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, lines *int) (string, error) {
+func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, length *int) (string, error) {
 	return "", ErrUnimplmented
 }
