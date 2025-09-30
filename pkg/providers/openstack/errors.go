@@ -28,5 +28,5 @@ var (
 
 	// ErrResourceDependency is returned when a resource is in unexpected
 	// state or condition.
-	ErrResouceDependency = errors.New("resource dependency error")
+	ErrResourceDependency = errors.New("resource dependency error")
 )

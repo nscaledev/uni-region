@@ -1653,7 +1653,7 @@ func (p *Provider) openstackNetworkID(ctx context.Context, identity *unikornv1.O
 	}
 
 	if resources.Items[index].Spec.NetworkID == nil {
-		return "", fmt.Errorf("%w: network %s not provisioned", ErrResouceDependency, id)
+		return "", fmt.Errorf("%w: network %s not provisioned", ErrResourceDependency, id)
 	}
 
 	return *resources.Items[index].Spec.NetworkID, nil
@@ -2281,4 +2281,74 @@ func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Id
 	setServerPhase(ctx, server, providerServer)
 
 	return nil
+}
+
+func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) (string, error) {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return "", err
+	}
+
+	openstackServer, err := p.GetOpenstackServer(ctx, server)
+	if err != nil {
+		return "", err
+	}
+
+	if openstackServer.Spec.ServerID == nil {
+		// REVIEW_ME: Should we return ErrResourceDependency or ErrResourceNotFound or something else here?
+		return "", fmt.Errorf("%w: server is being deprovisioned", ErrResourceDependency)
+	}
+
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	if err != nil {
+		return "", err
+	}
+
+	result, err := computeService.CreateRemoteConsole(ctx, *openstackServer.Spec.ServerID)
+	if err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return "", fmt.Errorf("%w: server is being deprovisioned", ErrResourceDependency)
+		}
+
+		return "", err
+	}
+
+	return result.URL, nil
+}
+
+func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, lines *int) (string, error) {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return "", err
+	}
+
+	openstackServer, err := p.GetOpenstackServer(ctx, server)
+	if err != nil {
+		return "", err
+	}
+
+	if openstackServer.Spec.ServerID == nil {
+		// REVIEW_ME: Should we return ErrResourceDependency or ErrResourceNotFound or something else here?
+		return "", fmt.Errorf("%w: server is being deprovisioned", ErrResourceDependency)
+	}
+
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	if err != nil {
+		return "", err
+	}
+
+	result, err := computeService.ShowConsoleOutput(ctx, *openstackServer.Spec.ServerID, lines)
+	if err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return "", fmt.Errorf("%w: server is being deprovisioned", ErrResourceDependency)
+		}
+
+		return "", err
+	}
+
+	return result, nil
 }

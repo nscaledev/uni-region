@@ -18,7 +18,6 @@ package securitygroup
 
 import (
 	"context"
-	"errors"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
@@ -29,10 +28,6 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
-)
-
-var (
-	ErrResouceDependency = errors.New("resource dependency error")
 )
 
 // Provisioner encapsulates control plane provisioning.
