@@ -1,27 +1,24 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-identity-controller
+  name: {{ .Release.Name }}-project-consumer
   labels:
     {{- include "unikorn.labels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: {{ .Release.Name }}-identity-controller
+      app: {{ .Release.Name }}-project-consumer
   template:
     metadata:
       labels:
-        app: {{ .Release.Name }}-identity-controller
+        app: {{ .Release.Name }}-project-consumer
     spec:
       containers:
-      - name: {{ .Release.Name }}-identity-controller
-        image: {{ include "unikorn.identityControllerImage" . }}
+      - name: {{ .Release.Name }}-project-consumer
+        image: {{ include "unikorn.projectConsumerImage" . }}
         args:
         {{- include "unikorn.core.flags" . | nindent 8 }}
-        {{- include "unikorn.otlp.flags" . | nindent 8 }}
-        {{- include "unikorn.mtls.flags" . | nindent 8 }}
-        {{- include "unikorn.identity.flags" . | nindent 8 }}
         ports:
         - name: http
           containerPort: 6080
@@ -30,9 +27,9 @@ spec:
         - name: pprof
           containerPort: 6060
         resources:
-          {{- .Values.identityController.resources | toYaml | nindent 10 }}
+          {{- .Values.projectConsumer.resources | toYaml | nindent 10 }}
         securityContext:
           readOnlyRootFilesystem: true
-      serviceAccountName: {{ .Release.Name }}-identity-controller
+      serviceAccountName: {{ .Release.Name }}-project-consumer
       securityContext:
         runAsNonRoot: true

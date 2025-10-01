@@ -12,6 +12,7 @@ REVISION := $(shell git rev-parse HEAD)
 # want to be amd64.
 CONTROLLERS = \
   unikorn-region-controller \
+  unikorn-region-project-consumer \
   unikorn-identity-controller \
   unikorn-network-controller \
   unikorn-security-group-controller \

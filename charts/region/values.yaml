@@ -113,6 +113,16 @@ monitor:
       cpu: 100m
       memory: 100Mi
 
+# Project event consumer.
+projectConsumer:
+  # Allow override of the controller image.
+  image: ~
+  # Allows resource limits to be set.
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
+
 # Identity controller configuration.
 identityController:
   # Allow override of the controller image.
