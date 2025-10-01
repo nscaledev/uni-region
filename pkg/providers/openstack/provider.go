@@ -879,7 +879,7 @@ func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Ident
 
 // DeleteIdentity cleans up an identity for cloud infrastructure.
 //
-//nolint:cyclop
+//nolint:cyclop,gocognit
 func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Identity) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
@@ -889,23 +889,6 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Ident
 
 		return nil
 	}
-
-	complete := false
-
-	// Always attempt to record where we are up to for idempotency.
-	record := func() {
-		if complete {
-			return
-		}
-
-		log := log.FromContext(ctx)
-
-		if err := p.client.Update(ctx, openstackIdentity); err != nil {
-			log.Error(err, "failed to update openstack identity")
-		}
-	}
-
-	defer record()
 
 	// User never even created, so nothing else will have been.
 	if openstackIdentity.Spec.UserID == nil {
@@ -922,19 +905,18 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Ident
 
 	if openstackIdentity.Spec.SSHKeyName != nil {
 		if err := computeService.DeleteKeypair(ctx, keyPairName); err != nil {
-			return err
+			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+				return err
+			}
 		}
-
-		openstackIdentity.Spec.SSHKeyName = nil
-		openstackIdentity.Spec.SSHPrivateKey = nil
 	}
 
 	if openstackIdentity.Spec.ServerGroupID != nil {
 		if err := computeService.DeleteServerGroup(ctx, *openstackIdentity.Spec.ServerGroupID); err != nil {
-			return err
+			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+				return err
+			}
 		}
-
-		openstackIdentity.Spec.ServerGroupID = nil
 	}
 
 	identityService, err := p.identity(ctx)
@@ -944,25 +926,23 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Ident
 
 	if openstackIdentity.Spec.UserID != nil {
 		if err := identityService.DeleteUser(ctx, *openstackIdentity.Spec.UserID); err != nil {
-			return err
+			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+				return err
+			}
 		}
-
-		openstackIdentity.Spec.UserID = nil
 	}
 
 	if openstackIdentity.Spec.ProjectID != nil {
 		if err := identityService.DeleteProject(ctx, *openstackIdentity.Spec.ProjectID); err != nil {
-			return err
+			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+				return err
+			}
 		}
-
-		openstackIdentity.Spec.ProjectID = nil
 	}
 
 	if err := p.client.Delete(ctx, openstackIdentity); err != nil {
 		return err
 	}
-
-	complete = true
 
 	return nil
 }
