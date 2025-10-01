@@ -19,14 +19,35 @@ package identity
 import (
 	"context"
 
+	"github.com/spf13/pflag"
+
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	coremanager "github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
+	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 )
+
+// Options allows access to CLI options in the provisioner.
+type Options struct {
+	// identityOptions allow the identity host and CA to be set.
+	identityOptions *identityclient.Options
+	// clientOptions give access to client certificate information as
+	// we need to talk to identity to get a token, and then to region
+	// to ensure cloud identities and networks are provisioned, as well
+	// as deptovisioning them.
+	clientOptions coreclient.HTTPClientOptions
+}
+
+func (o *Options) AddFlags(f *pflag.FlagSet) {
+	o.identityOptions = identityclient.NewOptions()
+
+	o.identityOptions.AddFlags(f)
+	o.clientOptions.AddFlags(f)
+}
 
 // Provisioner encapsulates control plane provisioning.
 type Provisioner struct {
@@ -34,12 +55,17 @@ type Provisioner struct {
 
 	// identity is the identity we're provisioning.
 	identity *unikornv1.Identity
+
+	// options are CLI options.
+	options *Options
 }
 
 // New returns a new initialized provisioner object.
-func New(_ coremanager.ControllerOptions) provisioners.ManagerProvisioner {
+func New(options coremanager.ControllerOptions) provisioners.ManagerProvisioner {
 	return &Provisioner{
 		identity: &unikornv1.Identity{},
+		//nolint:forcetypeassert
+		options: options.(*Options),
 	}
 }
 
@@ -54,6 +80,10 @@ func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 func (p *Provisioner) Provision(ctx context.Context) error {
 	cli, err := coreclient.FromContext(ctx)
 	if err != nil {
+		return err
+	}
+
+	if err := identityclient.NewReferences(constants.ServiceDescriptor(), p.options.identityOptions, &p.options.clientOptions).AddReferenceToProject(ctx, p.identity); err != nil {
 		return err
 	}
 
@@ -82,6 +112,10 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 	}
 
 	if err := provider.DeleteIdentity(ctx, p.identity); err != nil {
+		return err
+	}
+
+	if err := identityclient.NewReferences(constants.ServiceDescriptor(), p.options.identityOptions, &p.options.clientOptions).RemoveReferenceFromProject(ctx, p.identity); err != nil {
 		return err
 	}
 

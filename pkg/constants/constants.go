@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"os"
 	"path"
+
+	"github.com/unikorn-cloud/identity/pkg/client"
 )
 
 var (
@@ -42,6 +44,13 @@ var (
 // call out ot other micro services.
 func VersionString() string {
 	return fmt.Sprintf("%s/%s (revision/%s)", Application, Version, Revision)
+}
+
+func ServiceDescriptor() client.ServiceDescriptor {
+	return client.ServiceDescriptor{
+		ServiceName:    Application,
+		ServiceVersion: Version,
+	}
 }
 
 const (

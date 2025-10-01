@@ -44,7 +44,7 @@ func (*Factory) Metadata() (string, string, string) {
 
 // Options returns any options to be added to the CLI flags and passed to the reconciler.
 func (*Factory) Options() coremanager.ControllerOptions {
-	return nil
+	return &identity.Options{}
 }
 
 // Reconciler returns a new reconciler instance.
