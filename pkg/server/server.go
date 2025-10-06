@@ -19,7 +19,6 @@ package server
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"net/http"
 	"net/http/pprof"
@@ -29,8 +28,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace"
 
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
-	"github.com/unikorn-cloud/core/pkg/manager/otel"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
+	"github.com/unikorn-cloud/core/pkg/options"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/cors"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/opentelemetry"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/timeout"
@@ -43,16 +42,14 @@ import (
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 type Server struct {
-	// Options are server specific options e.g. listener address etc.
-	Options Options
+	// CoreOptions are all common across everything e.g. namespace.
+	CoreOptions options.CoreOptions
 
-	// ZapOptions configure logging.
-	ZapOptions zap.Options
+	// ServerOptions are server specific options e.g. listener address etc.
+	ServerOptions options.ServerOptions
 
 	// HandlerOptions sets options for the HTTP handler.
 	HandlerOptions handler.Options
@@ -65,35 +62,30 @@ type Server struct {
 
 	// CORSOptions are for remote resource sharing.
 	CORSOptions cors.Options
-
-	// OTelOptions are for tracing.
-	OTelOptions otel.Options
 }
 
-func (s *Server) AddFlags(goflags *flag.FlagSet, flags *pflag.FlagSet) {
+func (s *Server) AddFlags(flags *pflag.FlagSet) {
 	if s.IdentityOptions == nil {
 		s.IdentityOptions = identityclient.NewOptions()
 	}
 
-	s.ZapOptions.BindFlags(goflags)
-
-	s.Options.AddFlags(flags)
+	s.CoreOptions.AddFlags(flags)
+	s.ServerOptions.AddFlags(flags)
 	s.HandlerOptions.AddFlags(flags)
 	s.ClientOptions.AddFlags(flags)
 	s.IdentityOptions.AddFlags(flags)
 	s.CORSOptions.AddFlags(flags)
-	s.OTelOptions.AddFlags(flags)
 }
 
 func (s *Server) SetupLogging() {
-	log.SetLogger(zap.New(zap.UseFlagOptions(&s.ZapOptions)))
+	s.CoreOptions.SetupLogging()
 }
 
 // SetupOpenTelemetry adds a span processor that will print root spans to the
 // logs by default, and optionally ship the spans to an OTLP listener.
 // TODO: move config into an otel specific options struct.
 func (s *Server) SetupOpenTelemetry(ctx context.Context) error {
-	return s.OTelOptions.Setup(ctx, trace.WithSpanProcessor(&opentelemetry.LoggingSpanProcessor{}))
+	return s.CoreOptions.SetupOpenTelemetry(ctx, trace.WithSpanProcessor(&opentelemetry.LoggingSpanProcessor{}))
 }
 
 func (s *Server) GetServer(client client.Client) (*http.Server, error) {
@@ -107,9 +99,9 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 	go func() {
 		pprofServer := http.Server{
 			Addr:              ":6060",
-			ReadTimeout:       s.Options.ReadTimeout,
-			ReadHeaderTimeout: s.Options.ReadHeaderTimeout,
-			WriteTimeout:      s.Options.WriteTimeout,
+			ReadTimeout:       s.ServerOptions.ReadTimeout,
+			ReadHeaderTimeout: s.ServerOptions.ReadHeaderTimeout,
+			WriteTimeout:      s.ServerOptions.WriteTimeout,
 			Handler:           pprofHandler,
 		}
 
@@ -125,7 +117,7 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 
 	// Middleware specified here is applied to all requests pre-routing.
 	router := chi.NewRouter()
-	router.Use(timeout.Middleware(s.Options.RequestTimeout))
+	router.Use(timeout.Middleware(s.ServerOptions.RequestTimeout))
 	router.Use(opentelemetry.Middleware(constants.Application, constants.Version))
 	router.Use(cors.Middleware(schema, &s.CORSOptions))
 	router.NotFound(http.HandlerFunc(handler.NotFound))
@@ -146,16 +138,16 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 
 	identity := identityclient.New(client, s.IdentityOptions, &s.ClientOptions)
 
-	handlerInterface, err := handler.New(client, s.Options.Namespace, &s.HandlerOptions, identity)
+	handlerInterface, err := handler.New(client, s.CoreOptions.Namespace, &s.HandlerOptions, identity)
 	if err != nil {
 		return nil, err
 	}
 
 	server := &http.Server{
-		Addr:              s.Options.ListenAddress,
-		ReadTimeout:       s.Options.ReadTimeout,
-		ReadHeaderTimeout: s.Options.ReadHeaderTimeout,
-		WriteTimeout:      s.Options.WriteTimeout,
+		Addr:              s.ServerOptions.ListenAddress,
+		ReadTimeout:       s.ServerOptions.ReadTimeout,
+		ReadHeaderTimeout: s.ServerOptions.ReadHeaderTimeout,
+		WriteTimeout:      s.ServerOptions.WriteTimeout,
 		Handler:           openapi.HandlerWithOptions(handlerInterface, chiServerOptions),
 	}
 
