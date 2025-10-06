@@ -35,9 +35,9 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/middleware/opentelemetry"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/timeout"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
+	idmiddleware "github.com/unikorn-cloud/identity/pkg/middleware"
 	"github.com/unikorn-cloud/identity/pkg/middleware/audit"
 	openapimiddleware "github.com/unikorn-cloud/identity/pkg/middleware/openapi"
-	openapimiddlewareremote "github.com/unikorn-cloud/identity/pkg/middleware/openapi/remote"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -63,6 +63,9 @@ type Server struct {
 	// IdentityOptions allow configuration of the authorization middleware.
 	IdentityOptions *identityclient.Options
 
+	// ExternalOIDCOptions holds config for using an external OIDC provider to authenticate
+	ExternalOIDCOptions *identityclient.Options
+
 	// CORSOptions are for remote resource sharing.
 	CORSOptions cors.Options
 
@@ -74,6 +77,7 @@ func (s *Server) AddFlags(goflags *flag.FlagSet, flags *pflag.FlagSet) {
 	if s.IdentityOptions == nil {
 		s.IdentityOptions = identityclient.NewOptions()
 	}
+	s.ExternalOIDCOptions = identityclient.NewExternalOptions()
 
 	s.ZapOptions.BindFlags(goflags)
 
@@ -81,6 +85,7 @@ func (s *Server) AddFlags(goflags *flag.FlagSet, flags *pflag.FlagSet) {
 	s.HandlerOptions.AddFlags(flags)
 	s.ClientOptions.AddFlags(flags)
 	s.IdentityOptions.AddFlags(flags)
+	s.ExternalOIDCOptions.AddFlags(flags)
 	s.CORSOptions.AddFlags(flags)
 	s.OTelOptions.AddFlags(flags)
 }
@@ -131,7 +136,7 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 	router.NotFound(http.HandlerFunc(handler.NotFound))
 	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
 
-	authorizer := openapimiddlewareremote.NewAuthorizer(client, s.IdentityOptions, &s.ClientOptions)
+	authorizer := idmiddleware.NewAuthorizer(client, &s.ClientOptions, s.IdentityOptions, s.ExternalOIDCOptions)
 
 	// Middleware specified here is applied to all requests post-routing.
 	// NOTE: these are applied in reverse order!!
