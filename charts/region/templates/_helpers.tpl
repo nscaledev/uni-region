@@ -5,6 +5,10 @@ Create the container images
 {{- .Values.server.image | default (printf "%s/unikorn-region-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
 {{- end }}
 
+{{- define "unikorn.projectConsumerImage" -}}
+{{- .Values.projectConsumer.image | default (printf "%s/unikorn-region-project-consumer:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
+{{- end }}
+
 {{- define "unikorn.regionMonitorImage" -}}
 {{- .Values.monitor.image | default (printf "%s/unikorn-region-monitor:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
 {{- end }}
