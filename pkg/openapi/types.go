@@ -614,6 +614,9 @@ type OrganizationIDParameter = string
 // ProjectIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type ProjectIDParameter = KubernetesNameParameter
 
+// ReferenceParameter defines model for referenceParameter.
+type ReferenceParameter = string
+
 // RegionIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type RegionIDParameter = KubernetesNameParameter
 
