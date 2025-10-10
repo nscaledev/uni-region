@@ -270,7 +270,7 @@ func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, security
 		return nil, errors.OAuth2ServerError("unable to get security group").WithError(err)
 	}
 
-	if err := util.AssertProjectOwnership(resource, organizationID, projectID); err != nil {
+	if err := coreutil.AssertProjectOwnership(resource, organizationID, projectID); err != nil {
 		return nil, err
 	}
 
