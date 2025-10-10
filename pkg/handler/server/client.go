@@ -135,10 +135,15 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 		return nil, err
 	}
 
-	resource.Status.Phase = unikornv1.InstanceLifecyclePhasePending
-
 	if err := c.client.Create(ctx, resource); err != nil {
 		return nil, errors.OAuth2ServerError("unable to create server").WithError(err)
+	}
+
+	cloned := resource.DeepCopy()
+	cloned.Status.Phase = unikornv1.InstanceLifecyclePhasePending
+
+	if err := c.client.Status().Patch(ctx, cloned, client.MergeFrom(resource)); err != nil {
+		return nil, errors.OAuth2ServerError("failed to patch server").WithError(err)
 	}
 
 	return convert(resource), nil
