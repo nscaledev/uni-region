@@ -238,6 +238,12 @@ type ClientInterface interface {
 
 	PutApiV2NetworksNetworkID(ctx context.Context, networkID NetworkIDParameter, body PutApiV2NetworksNetworkIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// DeleteApiV2NetworksNetworkIDReferencesReference request
+	DeleteApiV2NetworksNetworkIDReferencesReference(ctx context.Context, networkID NetworkIDParameter, reference ReferenceParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutApiV2NetworksNetworkIDReferencesReference request
+	PutApiV2NetworksNetworkIDReferencesReference(ctx context.Context, networkID NetworkIDParameter, reference ReferenceParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApiV2RegionsRegionIDImages request
 	GetApiV2RegionsRegionIDImages(ctx context.Context, regionID RegionIDParameter, params *GetApiV2RegionsRegionIDImagesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -932,6 +938,30 @@ func (c *Client) PutApiV2NetworksNetworkIDWithBody(ctx context.Context, networkI
 
 func (c *Client) PutApiV2NetworksNetworkID(ctx context.Context, networkID NetworkIDParameter, body PutApiV2NetworksNetworkIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPutApiV2NetworksNetworkIDRequest(c.Server, networkID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteApiV2NetworksNetworkIDReferencesReference(ctx context.Context, networkID NetworkIDParameter, reference ReferenceParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApiV2NetworksNetworkIDReferencesReferenceRequest(c.Server, networkID, reference)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiV2NetworksNetworkIDReferencesReference(ctx context.Context, networkID NetworkIDParameter, reference ReferenceParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiV2NetworksNetworkIDReferencesReferenceRequest(c.Server, networkID, reference)
 	if err != nil {
 		return nil, err
 	}
@@ -3414,6 +3444,88 @@ func NewPutApiV2NetworksNetworkIDRequestWithBody(server string, networkID Networ
 	return req, nil
 }
 
+// NewDeleteApiV2NetworksNetworkIDReferencesReferenceRequest generates requests for DeleteApiV2NetworksNetworkIDReferencesReference
+func NewDeleteApiV2NetworksNetworkIDReferencesReferenceRequest(server string, networkID NetworkIDParameter, reference ReferenceParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "networkID", runtime.ParamLocationPath, networkID)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "reference", runtime.ParamLocationPath, reference)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/networks/%s/references/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutApiV2NetworksNetworkIDReferencesReferenceRequest generates requests for PutApiV2NetworksNetworkIDReferencesReference
+func NewPutApiV2NetworksNetworkIDReferencesReferenceRequest(server string, networkID NetworkIDParameter, reference ReferenceParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "networkID", runtime.ParamLocationPath, networkID)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "reference", runtime.ParamLocationPath, reference)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/networks/%s/references/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetApiV2RegionsRegionIDImagesRequest generates requests for GetApiV2RegionsRegionIDImages
 func NewGetApiV2RegionsRegionIDImagesRequest(server string, regionID RegionIDParameter, params *GetApiV2RegionsRegionIDImagesParams) (*http.Request, error) {
 	var err error
@@ -4535,6 +4647,12 @@ type ClientWithResponsesInterface interface {
 	PutApiV2NetworksNetworkIDWithBodyWithResponse(ctx context.Context, networkID NetworkIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiV2NetworksNetworkIDResponse, error)
 
 	PutApiV2NetworksNetworkIDWithResponse(ctx context.Context, networkID NetworkIDParameter, body PutApiV2NetworksNetworkIDJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiV2NetworksNetworkIDResponse, error)
+
+	// DeleteApiV2NetworksNetworkIDReferencesReferenceWithResponse request
+	DeleteApiV2NetworksNetworkIDReferencesReferenceWithResponse(ctx context.Context, networkID NetworkIDParameter, reference ReferenceParameter, reqEditors ...RequestEditorFn) (*DeleteApiV2NetworksNetworkIDReferencesReferenceResponse, error)
+
+	// PutApiV2NetworksNetworkIDReferencesReferenceWithResponse request
+	PutApiV2NetworksNetworkIDReferencesReferenceWithResponse(ctx context.Context, networkID NetworkIDParameter, reference ReferenceParameter, reqEditors ...RequestEditorFn) (*PutApiV2NetworksNetworkIDReferencesReferenceResponse, error)
 
 	// GetApiV2RegionsRegionIDImagesWithResponse request
 	GetApiV2RegionsRegionIDImagesWithResponse(ctx context.Context, regionID RegionIDParameter, params *GetApiV2RegionsRegionIDImagesParams, reqEditors ...RequestEditorFn) (*GetApiV2RegionsRegionIDImagesResponse, error)
@@ -5715,6 +5833,57 @@ func (r PutApiV2NetworksNetworkIDResponse) StatusCode() int {
 	return 0
 }
 
+type DeleteApiV2NetworksNetworkIDReferencesReferenceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteApiV2NetworksNetworkIDReferencesReferenceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteApiV2NetworksNetworkIDReferencesReferenceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PutApiV2NetworksNetworkIDReferencesReferenceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r PutApiV2NetworksNetworkIDReferencesReferenceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutApiV2NetworksNetworkIDReferencesReferenceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetApiV2RegionsRegionIDImagesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -6681,6 +6850,24 @@ func (c *ClientWithResponses) PutApiV2NetworksNetworkIDWithResponse(ctx context.
 		return nil, err
 	}
 	return ParsePutApiV2NetworksNetworkIDResponse(rsp)
+}
+
+// DeleteApiV2NetworksNetworkIDReferencesReferenceWithResponse request returning *DeleteApiV2NetworksNetworkIDReferencesReferenceResponse
+func (c *ClientWithResponses) DeleteApiV2NetworksNetworkIDReferencesReferenceWithResponse(ctx context.Context, networkID NetworkIDParameter, reference ReferenceParameter, reqEditors ...RequestEditorFn) (*DeleteApiV2NetworksNetworkIDReferencesReferenceResponse, error) {
+	rsp, err := c.DeleteApiV2NetworksNetworkIDReferencesReference(ctx, networkID, reference, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteApiV2NetworksNetworkIDReferencesReferenceResponse(rsp)
+}
+
+// PutApiV2NetworksNetworkIDReferencesReferenceWithResponse request returning *PutApiV2NetworksNetworkIDReferencesReferenceResponse
+func (c *ClientWithResponses) PutApiV2NetworksNetworkIDReferencesReferenceWithResponse(ctx context.Context, networkID NetworkIDParameter, reference ReferenceParameter, reqEditors ...RequestEditorFn) (*PutApiV2NetworksNetworkIDReferencesReferenceResponse, error) {
+	rsp, err := c.PutApiV2NetworksNetworkIDReferencesReference(ctx, networkID, reference, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiV2NetworksNetworkIDReferencesReferenceResponse(rsp)
 }
 
 // GetApiV2RegionsRegionIDImagesWithResponse request returning *GetApiV2RegionsRegionIDImagesResponse
@@ -9255,6 +9442,107 @@ func ParsePutApiV2NetworksNetworkIDResponse(rsp *http.Response) (*PutApiV2Networ
 		}
 		response.JSON202 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteApiV2NetworksNetworkIDReferencesReferenceResponse parses an HTTP response from a DeleteApiV2NetworksNetworkIDReferencesReferenceWithResponse call
+func ParseDeleteApiV2NetworksNetworkIDReferencesReferenceResponse(rsp *http.Response) (*DeleteApiV2NetworksNetworkIDReferencesReferenceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteApiV2NetworksNetworkIDReferencesReferenceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutApiV2NetworksNetworkIDReferencesReferenceResponse parses an HTTP response from a PutApiV2NetworksNetworkIDReferencesReferenceWithResponse call
+func ParsePutApiV2NetworksNetworkIDReferencesReferenceResponse(rsp *http.Response) (*PutApiV2NetworksNetworkIDReferencesReferenceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutApiV2NetworksNetworkIDReferencesReferenceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest externalRef0.BadRequestResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

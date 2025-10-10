@@ -90,6 +90,26 @@ func (h *Handler) DeleteApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusAccepted)
 }
 
+func (h *Handler) PutApiV2NetworksNetworkIDReferencesReference(w http.ResponseWriter, r *http.Request, networkID openapi.NetworkIDParameter, reference openapi.ReferenceParameter) {
+	if err := h.networkClient().ReferenceCreateV2(r.Context(), networkID, reference); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	h.setUncacheable(w)
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (h *Handler) DeleteApiV2NetworksNetworkIDReferencesReference(w http.ResponseWriter, r *http.Request, networkID openapi.NetworkIDParameter, reference openapi.ReferenceParameter) {
+	if err := h.networkClient().ReferenceDeleteV2(r.Context(), networkID, reference); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	h.setUncacheable(w)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) GetApiV2Securitygroups(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2SecuritygroupsParams) {
 	result, err := h.securityGroupClient().ListV2(r.Context(), params)
 	if err != nil {
