@@ -150,7 +150,7 @@ func convertInstanceLifecyclePhase(in unikornv1.InstanceLifecyclePhase) openapi.
 	case unikornv1.InstanceLifecyclePhaseStopped:
 		return openapi.Stopped
 	default:
-		return ""
+		return openapi.Pending
 	}
 }
 
