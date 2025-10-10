@@ -476,3 +476,58 @@ func (c *Client) DeleteV2(ctx context.Context, networkID string) error {
 	// rest.
 	return identity.New(c.ClientArgs).Delete(ctx, organizationID, projectID, resource.Labels[constants.IdentityLabel])
 }
+
+// ReferenceCreateV2 adds a external reference to the resource that blocks deletion
+// until it has been removed.
+func (c *Client) ReferenceCreateV2(ctx context.Context, networkID, reference string) error {
+	resource, err := c.GetV2Raw(ctx, networkID)
+	if err != nil {
+		return err
+	}
+
+	organizationID := resource.Labels[coreconstants.OrganizationLabel]
+	projectID := resource.Labels[coreconstants.ProjectLabel]
+
+	if err := rbac.AllowProjectScope(ctx, "region:networks:v2/references", identityapi.Create, organizationID, projectID); err != nil {
+		return err
+	}
+
+	if resource.DeletionTimestamp != nil {
+		return errors.OAuth2InvalidRequest("unable to add reference, resource is being deleted")
+	}
+
+	if ok := controllerutil.AddFinalizer(resource, reference); !ok {
+		return nil
+	}
+
+	if err := c.Client.Update(ctx, resource); err != nil {
+		return fmt.Errorf("%w: failed to update network", err)
+	}
+
+	return nil
+}
+
+// ReferenceDeleteV2 removes an external reference from the resource.
+func (c *Client) ReferenceDeleteV2(ctx context.Context, networkID, reference string) error {
+	resource, err := c.GetV2Raw(ctx, networkID)
+	if err != nil {
+		return err
+	}
+
+	organizationID := resource.Labels[coreconstants.OrganizationLabel]
+	projectID := resource.Labels[coreconstants.ProjectLabel]
+
+	if err := rbac.AllowProjectScope(ctx, "region:networks:v2/references", identityapi.Delete, organizationID, projectID); err != nil {
+		return err
+	}
+
+	if ok := controllerutil.RemoveFinalizer(resource, reference); !ok {
+		return nil
+	}
+
+	if err := c.Client.Update(ctx, resource); err != nil {
+		return fmt.Errorf("%w: failed to update project", err)
+	}
+
+	return nil
+}
