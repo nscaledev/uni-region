@@ -25,6 +25,7 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
+	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -147,7 +148,7 @@ func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, identity
 		return nil, errors.OAuth2ServerError("unable to lookup identity").WithError(err)
 	}
 
-	if err := util.AssertProjectOwnership(resource, organizationID, projectID); err != nil {
+	if err := coreutil.AssertProjectOwnership(resource, organizationID, projectID); err != nil {
 		return nil, err
 	}
 

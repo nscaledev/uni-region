@@ -28,13 +28,12 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
-	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/core/pkg/server/util"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
-	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers/openstack"
 
@@ -94,7 +93,7 @@ func (c *Client) List(ctx context.Context, organizationID string, params openapi
 		return nil, errors.OAuth2ServerError("unable to list servers").WithError(err)
 	}
 
-	tagSelector, err := coreutil.DecodeTagSelectorParam(params.Tag)
+	tagSelector, err := util.DecodeTagSelectorParam(params.Tag)
 	if err != nil {
 		return nil, err
 	}
