@@ -239,3 +239,44 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, networkI
 
 	return nil
 }
+
+// ReferenceCreate adds a external reference to the resource that blocks deletion
+// until it has been removed.
+func (c *Client) ReferenceCreate(ctx context.Context, organizationID, projectID, networkID, reference string) error {
+	resource, err := c.GetRaw(ctx, organizationID, projectID, networkID)
+	if err != nil {
+		return err
+	}
+
+	if resource.DeletionTimestamp != nil {
+		return errors.OAuth2InvalidRequest("unable to add reference, resource is being deleted")
+	}
+
+	if ok := controllerutil.AddFinalizer(resource, reference); !ok {
+		return nil
+	}
+
+	if err := c.client.Update(ctx, resource); err != nil {
+		return errors.OAuth2ServerError("failed to update project").WithError(err)
+	}
+
+	return nil
+}
+
+// ReferenceDelete removes an external reference from the resource.
+func (c *Client) ReferenceDelete(ctx context.Context, organizationID, projectID, networkID, reference string) error {
+	resource, err := c.GetRaw(ctx, organizationID, projectID, networkID)
+	if err != nil {
+		return err
+	}
+
+	if ok := controllerutil.RemoveFinalizer(resource, reference); !ok {
+		return nil
+	}
+
+	if err := c.client.Update(ctx, resource); err != nil {
+		return errors.OAuth2ServerError("failed to update project").WithError(err)
+	}
+
+	return nil
+}
