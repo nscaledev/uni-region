@@ -176,8 +176,7 @@ func (c *Client) List(ctx context.Context, organizationID string) (openapi.Ident
 	return c.convertList(ctx, result), nil
 }
 
-// Create instantiates a new resource.
-func (c *Client) Create(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*openapi.IdentityRead, error) {
+func (c *Client) CreateRaw(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*unikornv1.Identity, error) {
 	resource, err := c.generate(ctx, organizationID, projectID, request)
 	if err != nil {
 		return nil, err
@@ -185,6 +184,16 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID string, r
 
 	if err := c.client.Create(ctx, resource); err != nil {
 		return nil, errors.OAuth2ServerError("unable to create identity").WithError(err)
+	}
+
+	return resource, nil
+}
+
+// Create instantiates a new resource.
+func (c *Client) Create(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*openapi.IdentityRead, error) {
+	resource, err := c.CreateRaw(ctx, organizationID, projectID, request)
+	if err != nil {
+		return nil, err
 	}
 
 	return c.convert(ctx, resource), nil

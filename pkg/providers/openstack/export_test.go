@@ -16,10 +16,14 @@ limitations under the License.
 
 package openstack
 
-import (
-	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
-)
+//nolint:gochecknoglobals
+var GetPublicOrOrganizationOwnedImages = getPublicOrOrganizationOwnedImages
 
-func GetPublicOrOrganizationOwnedImages(resources []images.Image, organizationID string) []images.Image {
-	return getPublicOrOrganizationOwnedImages(resources, organizationID)
-}
+//nolint:gochecknoglobals
+var GatewayIP = gatewayIP
+
+//nolint:gochecknoglobals
+var DHCPRange = dhcpRange
+
+//nolint:gochecknoglobals
+var StorageRange = storageRange

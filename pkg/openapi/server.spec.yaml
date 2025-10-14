@@ -644,6 +644,114 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/organizations/{organizationID}/networks:
+    description: |-
+      Manages region scoped layer 3 networks.  Networks by default come with a default route to
+      the internet that performs masquerading.  This version of the API requires at least a
+      /24 CIDR range, of which the top /25 is reserved for storage integration.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    get:
+      description: List networks.
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: '#/components/parameters/projectIDQueryParameter'
+      - $ref: '#/components/parameters/regionIDQueryParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/networksV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/organizations/{organizationID}/projects/{projectID}/networks:
+    description: |-
+      Manages region scoped layer 3 networks.  Networks by default come with a default route to
+      the internet that performs masquerading.  This version of the API requires at least a
+      /24 CIDR range, of which the top /25 is reserved for storage integration.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    get:
+      description: List networks.
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: '#/components/parameters/regionIDQueryParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/networksV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    post:
+      description: Create a new network.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/networkV2Request'
+      responses:
+        '200':
+          $ref: '#/components/responses/networkV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/organizations/{organizationID}/projects/{projectID}/networks/{networkID}:
+    description: |-
+      Manages region scoped layer 3 networks.  Networks by default come with a default route to
+      the internet that performs masquerading.  This version of the API requires at least a
+      /24 CIDR range, of which the top /25 is reserved for storage integration.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/networkIDParameter'
+    get:
+      description: Get a network.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/networkV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    delete:
+      description: Delete a network.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 components:
   parameters:
     organizationIDParameter:
@@ -702,6 +810,22 @@ components:
       description: The requested output length.
       schema:
         type: integer
+    projectIDQueryParameter:
+      name: projectID
+      in: query
+      description: Allows resources to be filtered by project.
+      schema:
+        type: array
+        items:
+          type: string
+    regionIDQueryParameter:
+      name: regionID
+      in: query
+      description: Allows resources to be filtered by region.
+      schema:
+        type: array
+        items:
+          type: string
   schemas:
     kubernetesNameParameter:
       description: A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
@@ -1051,6 +1175,7 @@ components:
     ipv4Address:
       description: An IPv4 address.
       type: string
+      format: ipv4
     ipv4AddressList:
       description: A list of IPv4 addresses.
       type: array
@@ -1130,6 +1255,49 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/networkRead'
+    networkV2Spec:
+      description: A physical network's specification.
+      type: object
+      required:
+      - regionId
+      - prefix
+      - dnsNameservers
+      properties:
+        prefix:
+          description: An IPv4 prefix for the network.
+          type: string
+        dnsNameservers:
+          $ref: '#/components/schemas/ipv4AddressList'
+        regionId:
+          description: The region an identity is provisioned in.
+          type: string
+    networkV2Read:
+      description: A network.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+        spec:
+          $ref: '#/components/schemas/networkV2Spec'
+    networksV2Read:
+      description: A list of networks.
+      type: array
+      items:
+        $ref: '#/components/schemas/networkV2Read'
+    networkV2Write:
+      description: A network request.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/networkV2Spec'
     externalNetwork:
       description: An Openstack external network.
       type: object
@@ -1426,6 +1594,24 @@ components:
               prefix: 192.168.0.0/24
               dnsNameservers:
               - 8.8.8.8
+    networkV2Request:
+      description: A request for a network.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/networkV2Write'
+          example:
+            metadata:
+              name: network-name
+              description: A verbose description
+              tags:
+              - name: cluster-id
+                value: 9361402c-f998-49cc-ab21-9bb99afcfde8
+            spec:
+              regionId: c7568e2d-f9ab-453d-9a3a-51375f78426b
+              prefix: 192.168.0.0/24
+              dnsNameservers:
+              - 8.8.8.8
     securityGroupRequest:
       description: A request for a security group.
       content:
@@ -1663,6 +1849,48 @@ components:
               openstack:
                 vlanId: 1024
                 networkId: 824e8c4c-5858-4b02-9906-390e34561bf3
+    networkV2Response:
+      description: A layer 3 network.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/networkV2Read'
+          example:
+            metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: my-network
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2024-05-31T14:11:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: provisioned
+              healthStatus: healthy
+            spec:
+              regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
+              prefix: 192.168.0.0/24
+              dnsNameservers:
+              - 8.8.8.8
+    networksV2Response:
+      description: A list of layer 3 networks.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/networksV2Read'
+          example:
+          - metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: my-network
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2024-05-31T14:11:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: provisioned
+              healthStatus: healthy
+            spec:
+              regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
+              prefix: 192.168.0.0/24
+              dnsNameservers:
+              - 8.8.8.8
     externalNetworksResponse:
       description: A list of valid external networks.
       content:

@@ -19,6 +19,7 @@ limitations under the License.
 package handler
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -48,19 +49,41 @@ type Handler struct {
 	// options allows behaviour to be defined on the CLI.
 	options *Options
 
+	// issuer provides privilge escallation for the API so the end user doesn't
+	// have to be granted unnecessary privilige.
+	issuer *identityclient.TokenIssuer
+
 	// identity is an identity client for RBAC access.
 	identity *identityclient.Client
 }
 
-func New(client client.Client, namespace string, options *Options, identity *identityclient.Client) (*Handler, error) {
+func New(client client.Client, namespace string, options *Options, issuer *identityclient.TokenIssuer, identity *identityclient.Client) (*Handler, error) {
 	h := &Handler{
 		client:    client,
 		namespace: namespace,
 		options:   options,
+		issuer:    issuer,
 		identity:  identity,
 	}
 
 	return h, nil
+}
+
+// getIdentityAPIClient gets a client to talk to the identity service, this must not
+// be cached as the token is only short lived.  Said problem goes away when we use
+// SPIFFE as a workload identity layer.
+func (h *Handler) getIdentityAPIClient(ctx context.Context) (identityapi.ClientWithResponsesInterface, error) {
+	token, err := h.issuer.Issue(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := h.identity.APIClient(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
 }
 
 func (h *Handler) setCacheable(w http.ResponseWriter) {
@@ -218,13 +241,17 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 	w.WriteHeader(http.StatusAccepted)
 }
 
+func (h *Handler) networkClient() *network.Client {
+	return network.New(h.client, h.namespace, h.getIdentityAPIClient)
+}
+
 func (h *Handler) GetApiV1OrganizationsOrganizationIDNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
 	if err := rbac.AllowOrganizationScope(r.Context(), "region:networks", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	result, err := network.New(h.client, h.namespace).List(r.Context(), organizationID)
+	result, err := h.networkClient().List(r.Context(), organizationID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -246,7 +273,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	result, err := network.New(h.client, h.namespace).Create(r.Context(), organizationID, projectID, identityID, request)
+	result, err := h.networkClient().Create(r.Context(), organizationID, projectID, identityID, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -261,7 +288,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 		return
 	}
 
-	result, err := network.New(h.client, h.namespace).Get(r.Context(), organizationID, projectID, networkID)
+	result, err := h.networkClient().Get(r.Context(), organizationID, projectID, networkID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -276,7 +303,7 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		return
 	}
 
-	if err := network.New(h.client, h.namespace).Delete(r.Context(), organizationID, projectID, networkID); err != nil {
+	if err := h.networkClient().Delete(r.Context(), organizationID, projectID, networkID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}

@@ -136,9 +136,10 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 		},
 	}
 
+	issuer := identityclient.NewTokenIssuer(client, s.IdentityOptions, &s.ClientOptions, constants.ServiceDescriptor())
 	identity := identityclient.New(client, s.IdentityOptions, &s.ClientOptions)
 
-	handlerInterface, err := handler.New(client, s.CoreOptions.Namespace, &s.HandlerOptions, identity)
+	handlerInterface, err := handler.New(client, s.CoreOptions.Namespace, &s.HandlerOptions, issuer, identity)
 	if err != nil {
 		return nil, err
 	}

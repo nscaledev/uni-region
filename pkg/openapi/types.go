@@ -344,6 +344,36 @@ type NetworkSpecOpenstack struct {
 	VlanId *int `json:"vlanId,omitempty"`
 }
 
+// NetworkV2Read A network.
+type NetworkV2Read struct {
+	// Metadata Metadata required by project scoped resource reads.
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+
+	// Spec A physical network's specification.
+	Spec NetworkV2Spec `json:"spec"`
+}
+
+// NetworkV2Spec A physical network's specification.
+type NetworkV2Spec struct {
+	// DnsNameservers A list of IPv4 addresses.
+	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
+
+	// Prefix An IPv4 prefix for the network.
+	Prefix string `json:"prefix"`
+
+	// RegionId The region an identity is provisioned in.
+	RegionId string `json:"regionId"`
+}
+
+// NetworkV2Write A network request.
+type NetworkV2Write struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A physical network's specification.
+	Spec NetworkV2Spec `json:"spec"`
+}
+
 // NetworkWrite A network request.
 type NetworkWrite struct {
 	// Metadata Metadata required for all API resource reads and writes.
@@ -364,6 +394,9 @@ type NetworkWriteSpec struct {
 
 // NetworksRead A list of networks.
 type NetworksRead = []NetworkRead
+
+// NetworksV2Read A list of networks.
+type NetworksV2Read = []NetworkV2Read
 
 // OsDistro A distribution name.
 type OsDistro string
@@ -614,8 +647,14 @@ type OrganizationIDParameter = string
 // ProjectIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type ProjectIDParameter = KubernetesNameParameter
 
+// ProjectIDQueryParameter defines model for projectIDQueryParameter.
+type ProjectIDQueryParameter = []string
+
 // RegionIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type RegionIDParameter = KubernetesNameParameter
+
+// RegionIDQueryParameter defines model for regionIDQueryParameter.
+type RegionIDQueryParameter = []string
 
 // SecurityGroupIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type SecurityGroupIDParameter = KubernetesNameParameter
@@ -647,8 +686,14 @@ type ImagesResponse = Images
 // NetworkResponse A network.
 type NetworkResponse = NetworkRead
 
+// NetworkV2Response A network.
+type NetworkV2Response = NetworkV2Read
+
 // NetworksResponse A list of networks.
 type NetworksResponse = NetworksRead
+
+// NetworksV2Response A list of networks.
+type NetworksV2Response = NetworksV2Read
 
 // RegionDetailResponse A region.
 type RegionDetailResponse = RegionDetailRead
@@ -673,6 +718,9 @@ type IdentityRequest = IdentityWrite
 
 // NetworkRequest A network request.
 type NetworkRequest = NetworkWrite
+
+// NetworkV2Request A network request.
+type NetworkV2Request = NetworkV2Write
 
 // SecurityGroupRequest A security group request.
 type SecurityGroupRequest = SecurityGroupWrite
@@ -700,6 +748,29 @@ type GetApiV1OrganizationsOrganizationIDServersParams struct {
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 }
 
+// GetApiV2OrganizationsOrganizationIDNetworksParams defines parameters for GetApiV2OrganizationsOrganizationIDNetworks.
+type GetApiV2OrganizationsOrganizationIDNetworksParams struct {
+	// Tag A set of tags to match against resources in the form "name=value",
+	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+
+	// ProjectID Allows resources to be filtered by project.
+	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+}
+
+// GetApiV2OrganizationsOrganizationIDProjectsProjectIDNetworksParams defines parameters for GetApiV2OrganizationsOrganizationIDProjectsProjectIDNetworks.
+type GetApiV2OrganizationsOrganizationIDProjectsProjectIDNetworksParams struct {
+	// Tag A set of tags to match against resources in the form "name=value",
+	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+}
+
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody = IdentityWrite
 
@@ -717,3 +788,6 @@ type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSe
 
 // PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody defines body for PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID for application/json ContentType.
 type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody = ServerWrite
+
+// PostApiV2OrganizationsOrganizationIDProjectsProjectIDNetworksJSONRequestBody defines body for PostApiV2OrganizationsOrganizationIDProjectsProjectIDNetworks for application/json ContentType.
+type PostApiV2OrganizationsOrganizationIDProjectsProjectIDNetworksJSONRequestBody = NetworkV2Write
