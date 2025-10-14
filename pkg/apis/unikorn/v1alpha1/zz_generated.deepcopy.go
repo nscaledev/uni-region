@@ -1656,6 +1656,11 @@ func (in *ServerStatus) DeepCopyInto(out *ServerStatus) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.Phase != nil {
+		in, out := &in.Phase, &out.Phase
+		*out = new(InstanceLifecyclePhase)
+		**out = **in
+	}
 	if in.PrivateIP != nil {
 		in, out := &in.PrivateIP, &out.PrivateIP
 		*out = new(string)

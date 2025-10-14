@@ -1326,6 +1326,7 @@ components:
       description: The lifecycle phase of an instance.
       type: string
       enum:
+      - Unknown
       - Pending
       - Running
       - Stopping

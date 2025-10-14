@@ -49,6 +49,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -1669,8 +1670,8 @@ func setServerHealthStatus(server *unikornv1.Server, openstackserver *servers.Se
 // https://docs.openstack.org/api-guide/compute/server_concepts.html
 func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserver *servers.Server) {
 	// Default to `Pending` if the phase is not already set. This should only happen to old servers created before we had phases.
-	if server.Status.Phase == "" {
-		server.Status.Phase = unikornv1.InstanceLifecyclePhasePending
+	if server.Status.Phase == nil {
+		server.Status.Phase = ptr.To(unikornv1.InstanceLifecyclePhasePending)
 	}
 
 	if openstackserver == nil {
@@ -1681,9 +1682,9 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 	case servers.NOSTATE:
 		// No state information available. We will keep the phase as it is.
 	case servers.RUNNING:
-		server.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+		server.Status.Phase = ptr.To(unikornv1.InstanceLifecyclePhaseRunning)
 	case servers.SHUTDOWN:
-		server.Status.Phase = unikornv1.InstanceLifecyclePhaseStopped
+		server.Status.Phase = ptr.To(unikornv1.InstanceLifecyclePhaseStopped)
 	case servers.CRASHED:
 		// REVIEW_ME: What should we do when the server crashes?
 	case servers.PAUSED, servers.SUSPENDED:

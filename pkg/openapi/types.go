@@ -30,6 +30,7 @@ const (
 	Running  InstanceLifecyclePhase = "Running"
 	Stopped  InstanceLifecyclePhase = "Stopped"
 	Stopping InstanceLifecyclePhase = "Stopping"
+	Unknown  InstanceLifecyclePhase = "Unknown"
 )
 
 // Defines values for NetworkDirection.
