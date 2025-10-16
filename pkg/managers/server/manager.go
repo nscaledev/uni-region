@@ -36,7 +36,7 @@ import (
 // Factory provides methods that can build a type specific controller.
 type Factory struct{}
 
-var _ coremanager.ControllerFactory = &Factory{}
+var _ coremanager.ControllerFactory[*coremanager.NullControllerOptions] = &Factory{}
 
 // Metadata returns the application, version and revision.
 func (*Factory) Metadata() util.ServiceDescriptor {
@@ -44,12 +44,12 @@ func (*Factory) Metadata() util.ServiceDescriptor {
 }
 
 // Options returns any options to be added to the CLI flags and passed to the reconciler.
-func (*Factory) Options() coremanager.ControllerOptions {
-	return nil
+func (*Factory) Options() *coremanager.NullControllerOptions {
+	return &coremanager.NullControllerOptions{}
 }
 
 // Reconciler returns a new reconciler instance.
-func (*Factory) Reconciler(options *options.Options, controllerOptions coremanager.ControllerOptions, manager manager.Manager) reconcile.Reconciler {
+func (*Factory) Reconciler(options *options.Options, controllerOptions *coremanager.NullControllerOptions, manager manager.Manager) reconcile.Reconciler {
 	return coremanager.NewReconciler(options, controllerOptions, manager, server.New)
 }
 
