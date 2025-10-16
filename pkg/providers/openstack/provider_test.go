@@ -17,6 +17,7 @@ limitations under the License.
 package openstack_test
 
 import (
+	"net"
 	"testing"
 
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
@@ -48,4 +49,48 @@ func TestImageFiltering(t *testing.T) {
 	require.Contains(t, images, public2)
 	require.Contains(t, images, private1)
 	require.NotContains(t, images, private2)
+}
+
+// TestGatewayIP tests we allocate .1 as the gateway so we can set the DHCP
+// range in relative safety.
+func TestGatewayIP(t *testing.T) {
+	t.Parallel()
+
+	prefix := net.IPNet{
+		IP:   net.IP{192, 168, 10, 0},
+		Mask: net.IPMask{255, 255, 255, 0},
+	}
+
+	gateway := openstack.GatewayIP(prefix)
+	require.Equal(t, "192.168.10.1", gateway)
+}
+
+// TestDHCPRange checks that the DHCP range function correctly removes a /25
+// from the end of the provided prefix.
+func TestDHCPRange(t *testing.T) {
+	t.Parallel()
+
+	prefix := net.IPNet{
+		IP:   net.IP{192, 168, 10, 0},
+		Mask: net.IPMask{255, 255, 255, 0},
+	}
+
+	start, end := openstack.DHCPRange(prefix)
+	require.Equal(t, "192.168.10.2", start)
+	require.Equal(t, "192.168.10.127", end)
+}
+
+// TestStorageRange checks that the DHCP range function correctly starting at
+// the top /25 and ending before the broadcast address.
+func TestStorageRange(t *testing.T) {
+	t.Parallel()
+
+	prefix := net.IPNet{
+		IP:   net.IP{192, 168, 10, 0},
+		Mask: net.IPMask{255, 255, 255, 0},
+	}
+
+	start, end := openstack.StorageRange(prefix)
+	require.Equal(t, "192.168.10.128", start)
+	require.Equal(t, "192.168.10.254", end)
 }

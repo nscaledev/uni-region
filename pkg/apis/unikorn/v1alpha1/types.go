@@ -409,7 +409,8 @@ type NetworkSpec struct {
 	// may populate to store metadata for the resource.
 	Tags unikornv1core.TagList `json:"tags,omitempty"`
 	// Provider defines the provider type.
-	Provider Provider `json:"provider"`
+	// TODO: V1 hackery only, delete me.
+	Provider Provider `json:"provider,omitempty"`
 	// Prefix is the IPv4 address prefix.
 	Prefix *unikornv1core.IPv4Prefix `json:"prefix"`
 	// DNSNameservers are a set of DNS nameservrs for the network.

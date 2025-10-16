@@ -199,20 +199,11 @@ func (c *NetworkClient) DeleteNetwork(ctx context.Context, id string) error {
 	return networks.Delete(ctx, c.client, id).ExtractErr()
 }
 
-func (c *NetworkClient) CreateSubnet(ctx context.Context, name, networkID, prefix string, dnsNameservers []string) (*subnets.Subnet, error) {
+func (c *NetworkClient) CreateSubnet(ctx context.Context, opts *subnets.CreateOpts) (*subnets.Subnet, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, "POST /network/v2.0/subnets", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
-
-	opts := &subnets.CreateOpts{
-		Name:           name,
-		Description:    "unikorn managed subnet",
-		NetworkID:      networkID,
-		IPVersion:      gophercloud.IPv4,
-		CIDR:           prefix,
-		DNSNameservers: dnsNameservers,
-	}
 
 	subnet, err := subnets.Create(ctx, c.client, opts).Extract()
 	if err != nil {

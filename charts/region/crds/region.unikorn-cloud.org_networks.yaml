@@ -87,7 +87,6 @@ spec:
             required:
             - dnsNameservers
             - prefix
-            - provider
             type: object
           status:
             properties:

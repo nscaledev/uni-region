@@ -27,6 +27,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -47,13 +48,16 @@ type Client struct {
 	client client.Client
 	// namespace we are running in.
 	namespace string
+	// identity allows quota allocation.
+	identity identityclient.APIClientGetter
 }
 
 // New creates a new client.
-func New(client client.Client, namespace string) *Client {
+func New(client client.Client, namespace string, identity identityclient.APIClientGetter) *Client {
 	return &Client{
 		client:    client,
 		namespace: namespace,
+		identity:  identity,
 	}
 }
 
@@ -109,6 +113,57 @@ func (c *Client) convertList(ctx context.Context, in unikornv1.NetworkList) open
 	return out
 }
 
+func parseIPV4Prefix(in string) (*net.IPNet, error) {
+	_, prefix, err := net.ParseCIDR(in)
+	if err != nil {
+		return nil, errors.OAuth2InvalidRequest("unable to parse IPv4 prefix").WithError(err)
+	}
+
+	return prefix, err
+}
+
+func generateIPV4Prefix(in *net.IPNet) *unikornv1core.IPv4Prefix {
+	return &unikornv1core.IPv4Prefix{
+		IPNet: *in,
+	}
+}
+
+func parseIPV4Address(in string) (net.IP, error) {
+	ip := net.ParseIP(in)
+	if ip == nil {
+		return nil, errors.OAuth2InvalidRequest("unable to parse IPv4 address")
+	}
+
+	return ip, nil
+}
+
+func parseIPV4AddressList(in []string) ([]net.IP, error) {
+	out := make([]net.IP, len(in))
+
+	for i := range in {
+		ip, err := parseIPV4Address(in[i])
+		if err != nil {
+			return nil, err
+		}
+
+		out[i] = ip
+	}
+
+	return out, nil
+}
+
+func generateIPV4AddressList(in []net.IP) []unikornv1core.IPv4Address {
+	out := make([]unikornv1core.IPv4Address, len(in))
+
+	for i := range in {
+		out[i] = unikornv1core.IPv4Address{
+			IP: in[i],
+		}
+	}
+
+	return out
+}
+
 // generate a new resource from a request.
 func (c *Client) generate(ctx context.Context, organizationID, projectID, identityID string, request *openapi.NetworkWrite) (*unikornv1.Network, error) {
 	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
@@ -116,33 +171,23 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 		return nil, errors.OAuth2ServerError("unable to get identity").WithError(err)
 	}
 
-	_, prefix, err := net.ParseCIDR(request.Spec.Prefix)
+	prefix, err := parseIPV4Prefix(request.Spec.Prefix)
 	if err != nil {
 		return nil, errors.OAuth2InvalidRequest("unable to parse prefix").WithError(err)
 	}
 
-	dnsNameservers := make([]unikornv1core.IPv4Address, len(request.Spec.DnsNameservers))
-
-	for i, ip := range request.Spec.DnsNameservers {
-		temp := net.ParseIP(ip)
-		if temp == nil {
-			return nil, errors.OAuth2InvalidRequest("unable to parse dns nameserver")
-		}
-
-		dnsNameservers[i] = unikornv1core.IPv4Address{
-			IP: temp,
-		}
+	dnsNameservers, err := parseIPV4AddressList(request.Spec.DnsNameservers)
+	if err != nil {
+		return nil, err
 	}
 
 	out := &unikornv1.Network{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.namespace).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identityID).Get(),
 		Spec: unikornv1.NetworkSpec{
-			Tags:     conversion.GenerateTagList(request.Metadata.Tags),
-			Provider: identity.Spec.Provider,
-			Prefix: &unikornv1core.IPv4Prefix{
-				IPNet: *prefix,
-			},
-			DNSNameservers: dnsNameservers,
+			Tags:           conversion.GenerateTagList(request.Metadata.Tags),
+			Provider:       identity.Spec.Provider,
+			Prefix:         generateIPV4Prefix(prefix),
+			DNSNameservers: generateIPV4AddressList(dnsNameservers),
 		},
 	}
 

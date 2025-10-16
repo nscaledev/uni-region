@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
+	"net"
 	"net/http"
 	"reflect"
 	"slices"
@@ -32,6 +34,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/rules"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 	"github.com/gophercloud/utils/openstack/clientconfig"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
@@ -49,6 +52,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -1028,6 +1032,55 @@ func (p *Provider) createNetwork(ctx context.Context, networkService *NetworkCli
 	return nil
 }
 
+// gatewayIP selects .1 from our prefix.
+func gatewayIP(prefix net.IPNet) string {
+	ba := big.NewInt(0).SetBytes(prefix.IP)
+
+	ip := net.IP(big.NewInt(0).Add(ba, big.NewInt(1)).Bytes())
+
+	return ip.String()
+}
+
+// dhcpRange returns a range from the prefix starting at .2 and extending
+// to the address before the last /25.
+func dhcpRange(prefix net.IPNet) (string, string) {
+	ba := big.NewInt(0).SetBytes(prefix.IP)
+
+	// Start.
+	bs := big.NewInt(0).Add(ba, big.NewInt(2))
+
+	// End.
+	ones, bits := prefix.Mask.Size()
+	size := 1 << (bits - ones)
+
+	be := big.NewInt(0).Add(ba, big.NewInt(int64(size-(1<<7)-1)))
+
+	start := net.IP(bs.Bytes())
+	end := net.IP(be.Bytes())
+
+	return start.String(), end.String()
+}
+
+// storageRange returns a range from prefix that starts at the top /25
+// and ends at the end of the range (less the broadcast address).
+func storageRange(prefix net.IPNet) (string, string) {
+	ba := big.NewInt(0).SetBytes(prefix.IP)
+
+	// Start.
+	ones, bits := prefix.Mask.Size()
+	size := 1 << (bits - ones)
+
+	bs := big.NewInt(0).Add(ba, big.NewInt(int64(size)-(1<<7)))
+
+	// End.
+	be := big.NewInt(0).Sub(big.NewInt(0).Add(ba, big.NewInt(int64(size))), big.NewInt(2))
+
+	start := net.IP(bs.Bytes())
+	end := net.IP(be.Bytes())
+
+	return start.String(), end.String()
+}
+
 func (p *Provider) createSubnet(ctx context.Context, networkService *NetworkClient, network *unikornv1.Network, openstackNetwork *unikornv1.OpenstackNetwork) error {
 	if openstackNetwork.Spec.SubnetID != nil {
 		return nil
@@ -1039,7 +1092,42 @@ func (p *Provider) createSubnet(ctx context.Context, networkService *NetworkClie
 		dnsNameservers[i] = ip.String()
 	}
 
-	subnet, err := networkService.CreateSubnet(ctx, "unikorn-openstack-region-provider-subnet", *openstackNetwork.Spec.NetworkID, network.Spec.Prefix.String(), dnsNameservers)
+	apiVersion := 1
+
+	if v, ok := network.Labels[constants.ResourceAPIVersionLabel]; ok {
+		t, err := constants.UnmarshalAPIVersion(v)
+		if err != nil {
+			return err
+		}
+
+		apiVersion = t
+	}
+
+	opts := &subnets.CreateOpts{
+		NetworkID:      *openstackNetwork.Spec.NetworkID,
+		Name:           "openstack-region-provider-subnet",
+		Description:    "subnet for network " + network.Name,
+		IPVersion:      gophercloud.IPv4,
+		CIDR:           network.Spec.Prefix.String(),
+		DNSNameservers: dnsNameservers,
+	}
+
+	if apiVersion >= 2 {
+		gateway := gatewayIP(network.Spec.Prefix.IPNet)
+
+		opts.GatewayIP = ptr.To(gateway)
+
+		start, end := dhcpRange(network.Spec.Prefix.IPNet)
+
+		opts.AllocationPools = []subnets.AllocationPool{
+			{
+				Start: start,
+				End:   end,
+			},
+		}
+	}
+
+	subnet, err := networkService.CreateSubnet(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -1144,7 +1232,7 @@ func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identi
 
 // DeleteNetwork deletes a physical network.
 //
-//nolint:cyclop
+//nolint:cyclop,gocognit
 func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
@@ -1195,7 +1283,9 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 
 	if openstackNetwork.Spec.RouterID != nil {
 		if err := networkService.DeleteRouter(ctx, *openstackNetwork.Spec.RouterID); err != nil {
-			return err
+			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+				return err
+			}
 		}
 
 		openstackNetwork.Spec.RouterID = nil
@@ -1203,7 +1293,9 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 
 	if openstackNetwork.Spec.SubnetID != nil {
 		if err := networkService.DeleteSubnet(ctx, *openstackNetwork.Spec.SubnetID); err != nil {
-			return err
+			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+				return err
+			}
 		}
 
 		openstackNetwork.Spec.SubnetID = nil
@@ -1211,7 +1303,9 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 
 	if openstackNetwork.Spec.NetworkID != nil {
 		if err := networkService.DeleteNetwork(ctx, *openstackNetwork.Spec.NetworkID); err != nil {
-			return err
+			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+				return err
+			}
 		}
 
 		openstackNetwork.Spec.NetworkID = nil
