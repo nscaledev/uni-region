@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -32,7 +33,9 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/rules"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/networks"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 	"github.com/gophercloud/utils/openstack/clientconfig"
@@ -961,37 +964,6 @@ func (p *Provider) GetOpenstackNetwork(ctx context.Context, network *unikornv1.N
 	return &result, nil
 }
 
-func (p *Provider) GetOrCreateOpenstackNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) (*unikornv1.OpenstackNetwork, bool, error) {
-	create := false
-
-	openstackNetwork, err := p.GetOpenstackNetwork(ctx, network)
-	if err != nil {
-		if !kerrors.IsNotFound(err) {
-			return nil, false, err
-		}
-
-		openstackNetwork = &unikornv1.OpenstackNetwork{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: network.Namespace,
-				Name:      network.Name,
-				Labels: map[string]string{
-					constants.IdentityLabel: identity.Name,
-					constants.NetworkLabel:  network.Name,
-				},
-				Annotations: network.Annotations,
-			},
-		}
-
-		for k, v := range network.Labels {
-			openstackNetwork.Labels[k] = v
-		}
-
-		create = true
-	}
-
-	return openstackNetwork, create, nil
-}
-
 func (p *Provider) allocateVLAN(ctx context.Context, network *unikornv1.OpenstackNetwork) error {
 	if !p.region.Spec.Openstack.Network.UseProviderNetworks() {
 		return nil
@@ -1007,27 +979,6 @@ func (p *Provider) allocateVLAN(ctx context.Context, network *unikornv1.Openstac
 	}
 
 	network.Spec.VlanID = &vlanID
-
-	return nil
-}
-
-func (p *Provider) createNetwork(ctx context.Context, networkService *NetworkClient, network *unikornv1.OpenstackNetwork) error {
-	if network.Spec.NetworkID != nil {
-		return nil
-	}
-
-	vlanID := -1
-
-	if network.Spec.VlanID != nil {
-		vlanID = *network.Spec.VlanID
-	}
-
-	openstackNetwork, err := networkService.CreateNetwork(ctx, "unikorn-openstack-region-network", vlanID)
-	if err != nil {
-		return err
-	}
-
-	network.Spec.NetworkID = &openstackNetwork.ID
 
 	return nil
 }
@@ -1081,6 +1032,21 @@ func storageRange(prefix net.IPNet) (string, string) {
 	return start.String(), end.String()
 }
 
+func (p *Provider) createNetwork(ctx context.Context, networkService *NetworkClient, network *unikornv1.OpenstackNetwork) error {
+	if network.Spec.NetworkID != nil {
+		return nil
+	}
+
+	openstackNetwork, err := networkService.CreateNetwork(ctx, network.Name, network.Spec.VlanID)
+	if err != nil {
+		return err
+	}
+
+	network.Spec.NetworkID = &openstackNetwork.ID
+
+	return nil
+}
+
 func (p *Provider) createSubnet(ctx context.Context, networkService *NetworkClient, network *unikornv1.Network, openstackNetwork *unikornv1.OpenstackNetwork) error {
 	if openstackNetwork.Spec.SubnetID != nil {
 		return nil
@@ -1092,39 +1058,13 @@ func (p *Provider) createSubnet(ctx context.Context, networkService *NetworkClie
 		dnsNameservers[i] = ip.String()
 	}
 
-	apiVersion := 1
-
-	if v, ok := network.Labels[constants.ResourceAPIVersionLabel]; ok {
-		t, err := constants.UnmarshalAPIVersion(v)
-		if err != nil {
-			return err
-		}
-
-		apiVersion = t
-	}
-
 	opts := &subnets.CreateOpts{
 		NetworkID:      *openstackNetwork.Spec.NetworkID,
-		Name:           "openstack-region-provider-subnet",
+		Name:           network.Name,
 		Description:    "subnet for network " + network.Name,
 		IPVersion:      gophercloud.IPv4,
 		CIDR:           network.Spec.Prefix.String(),
 		DNSNameservers: dnsNameservers,
-	}
-
-	if apiVersion >= 2 {
-		gateway := gatewayIP(network.Spec.Prefix.IPNet)
-
-		opts.GatewayIP = ptr.To(gateway)
-
-		start, end := dhcpRange(network.Spec.Prefix.IPNet)
-
-		opts.AllocationPools = []subnets.AllocationPool{
-			{
-				Start: start,
-				End:   end,
-			},
-		}
 	}
 
 	subnet, err := networkService.CreateSubnet(ctx, opts)
@@ -1142,7 +1082,7 @@ func (p *Provider) createRouter(ctx context.Context, networkService *NetworkClie
 		return nil
 	}
 
-	router, err := networkService.CreateRouter(ctx, "unikorn-openstack-region-provider-router")
+	router, err := networkService.CreateRouter(ctx, openstackNetwork.Name)
 	if err != nil {
 		return err
 	}
@@ -1166,16 +1106,9 @@ func (p *Provider) addRouterSubnetInterface(ctx context.Context, networkService 
 	return nil
 }
 
-// CreateNetwork creates a physical network for an identity.
-//
-//nolint:cyclop
-func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
+// createNetworkLegacy is the old (broken) way of provisioning networks.
+func (p *Provider) createNetworkLegacy(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network, openstackNetwork *unikornv1.OpenstackNetwork) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
-	if err != nil {
-		return err
-	}
-
-	openstackNetwork, create, err := p.GetOrCreateOpenstackNetwork(ctx, identity, network)
 	if err != nil {
 		return err
 	}
@@ -1183,14 +1116,6 @@ func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identi
 	// Always attempt to record where we are up to for idempotency.
 	record := func() {
 		log := log.FromContext(ctx)
-
-		if create {
-			if err := p.client.Create(ctx, openstackNetwork); err != nil {
-				log.Error(err, "failed to create openstack physical network")
-			}
-
-			return
-		}
 
 		if err := p.client.Update(ctx, openstackNetwork); err != nil {
 			log.Error(err, "failed to update openstack physical network")
@@ -1230,22 +1155,298 @@ func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identi
 	return nil
 }
 
-// DeleteNetwork deletes a physical network.
-//
-//nolint:cyclop,gocognit
-func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
+func (p *Provider) reconcileNetwork(ctx context.Context, networkService *NetworkClient, network *unikornv1.Network) (*networks.Network, error) {
+	log := log.FromContext(ctx)
+
+	result, err := networkService.GetNetwork(ctx, network.Name)
+	if err == nil {
+		log.V(1).Info("L2 network already exists")
+
+		return &result.Network, nil
+	}
+
+	if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+
+	log.V(1).Info("creating L2 network")
+
+	var vlanID *int
+
+	if p.region.Spec.Openstack.Network.UseProviderNetworks() {
+		v, err := p.vlanAllocator.Allocate(ctx, network.Name)
+		if err != nil {
+			return nil, err
+		}
+
+		log.V(1).Info("allocated VLAN", "id", v)
+
+		vlanID = &v
+	}
+
+	result2, err := networkService.CreateNetwork(ctx, network.Name, vlanID)
+	if err != nil {
+		if vlanID != nil {
+			if rerr := p.vlanAllocator.Free(ctx, *vlanID); rerr != nil {
+				log.Error(rerr, "failed to free vlan", "id", *vlanID)
+			}
+		}
+
+		return nil, err
+	}
+
+	return result2, nil
+}
+
+func (p *Provider) reconcileSubnet(ctx context.Context, networkService *NetworkClient, network *unikornv1.Network, openstackNetwork *networks.Network) (*subnets.Subnet, error) {
+	log := log.FromContext(ctx)
+
+	result, err := networkService.GetSubnet(ctx, network.Name)
+	if err == nil {
+		log.V(1).Info("L3 subnet already exists")
+
+		return result, nil
+	}
+
+	if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+
+	log.V(1).Info("creating L3 subnet")
+
+	dnsNameservers := make([]string, len(network.Spec.DNSNameservers))
+
+	for i, ip := range network.Spec.DNSNameservers {
+		dnsNameservers[i] = ip.String()
+	}
+
+	start, end := dhcpRange(network.Spec.Prefix.IPNet)
+
+	opts := &subnets.CreateOpts{
+		NetworkID:      openstackNetwork.ID,
+		Name:           networkName(network.Name),
+		IPVersion:      gophercloud.IPv4,
+		CIDR:           network.Spec.Prefix.String(),
+		GatewayIP:      ptr.To(gatewayIP(network.Spec.Prefix.IPNet)),
+		DNSNameservers: dnsNameservers,
+		AllocationPools: []subnets.AllocationPool{
+			{
+				Start: start,
+				End:   end,
+			},
+		},
+	}
+
+	result, err = networkService.CreateSubnet(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func (p *Provider) reconcileRouter(ctx context.Context, networkService *NetworkClient, network *unikornv1.Network) (*routers.Router, error) {
+	log := log.FromContext(ctx)
+
+	result, err := networkService.GetRouter(ctx, network.Name)
+	if err == nil {
+		log.V(1).Info("router already exists")
+
+		return result, nil
+	}
+
+	if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+
+	log.V(1).Info("creating router")
+
+	result, err = networkService.CreateRouter(ctx, network.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func subnetInPorts(ports []ports.Port, subnetID string) bool {
+	for _, port := range ports {
+		for _, ip := range port.FixedIPs {
+			if ip.SubnetID == subnetID {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func (p *Provider) reconcileRouterInterface(ctx context.Context, networkService *NetworkClient, router *routers.Router, subnet *subnets.Subnet) error {
+	log := log.FromContext(ctx)
+
+	ports, err := networkService.ListRouterPorts(ctx, router.ID)
+	if err != nil {
+		return err
+	}
+
+	if subnetInPorts(ports, subnet.ID) {
+		log.V(1).Info("router has existing port on subnet")
+
+		return nil
+	}
+
+	log.V(1).Info("adding subnet to router")
+
+	if err := networkService.AddRouterInterface(ctx, router.ID, subnet.ID); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// CreateNetwork creates a physical network for an identity.
+func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
+	if openstackNetwork, err := p.GetOpenstackNetwork(ctx, network); err == nil {
+		return p.createNetworkLegacy(ctx, identity, network, openstackNetwork)
+	}
+
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return err
 	}
 
-	openstackNetwork, err := p.GetOpenstackNetwork(ctx, network)
+	// Rescope to the project...
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
 	if err != nil {
-		if !kerrors.IsNotFound(err) {
+		return err
+	}
+
+	openstackNetwork, err := p.reconcileNetwork(ctx, networkService, network)
+	if err != nil {
+		return err
+	}
+
+	subnet, err := p.reconcileSubnet(ctx, networkService, network, openstackNetwork)
+	if err != nil {
+		return err
+	}
+
+	router, err := p.reconcileRouter(ctx, networkService, network)
+	if err != nil {
+		return err
+	}
+
+	if err := p.reconcileRouterInterface(ctx, networkService, router, subnet); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// DeleteNetwork deletes a physical network.
+//
+//nolint:gocognit,cyclop
+func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
+	log := log.FromContext(ctx)
+
+	if openstackNetwork, err := p.GetOpenstackNetwork(ctx, network); err == nil {
+		return p.deleteNetworkLegacy(ctx, identity, openstackNetwork)
+	}
+
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	// Rescope to the project...
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	if err != nil {
+		return err
+	}
+
+	openstackNetwork, err := networkService.GetNetwork(ctx, network.Name)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return err
+	}
+
+	subnet, err := networkService.GetSubnet(ctx, network.Name)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return err
+	}
+
+	router, err := networkService.GetRouter(ctx, network.Name)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return err
+	}
+
+	//nolint:nestif
+	if router != nil {
+		ports, err := networkService.ListRouterPorts(ctx, router.ID)
+		if err != nil {
 			return err
 		}
 
-		return nil
+		if subnetInPorts(ports, subnet.ID) {
+			log.V(1).Info("removing subnet from router")
+
+			if err := networkService.RemoveRouterInterface(ctx, router.ID, subnet.ID); err != nil {
+				return err
+			}
+		}
+
+		log.V(1).Info("deleting router")
+
+		if err := networkService.DeleteRouter(ctx, router.ID); err != nil {
+			return err
+		}
+	}
+
+	if subnet != nil {
+		log.V(1).Info("deleting subnet")
+
+		if err := networkService.DeleteSubnet(ctx, subnet.ID); err != nil {
+			return err
+		}
+	}
+
+	//nolint:nestif
+	if openstackNetwork != nil {
+		log.V(1).Info("deleting network")
+
+		if err := networkService.DeleteNetwork(ctx, openstackNetwork.ID); err != nil {
+			return err
+		}
+
+		if p.region.Spec.Openstack.Network.UseProviderNetworks() {
+			log.V(1).Info("freeing vlan", "id", openstackNetwork.SegmentationID)
+
+			vlanID, err := strconv.Atoi(openstackNetwork.SegmentationID)
+			if err != nil {
+				log.Error(err, "failed to free vlan", "id", vlanID)
+
+				return nil
+			}
+
+			if err := p.vlanAllocator.Free(ctx, vlanID); err != nil {
+				log.Error(err, "failed to free vlan", "id", vlanID)
+
+				return nil
+			}
+		}
+	}
+
+	return nil
+}
+
+//nolint:cyclop,gocognit
+func (p *Provider) deleteNetworkLegacy(ctx context.Context, identity *unikornv1.Identity, openstackNetwork *unikornv1.OpenstackNetwork) error {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return err
 	}
 
 	complete := false

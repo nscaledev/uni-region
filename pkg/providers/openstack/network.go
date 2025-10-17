@@ -19,7 +19,7 @@ package openstack
 
 import (
 	"context"
-	"errors"
+	goerrors "errors"
 	"fmt"
 	"slices"
 	"time"
@@ -39,6 +39,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -47,8 +48,7 @@ import (
 )
 
 var (
-	// ErrUnsufficentResource is retuend when we've run out of space.
-	ErrUnsufficentResource = errors.New("unsufficient resource for request")
+	ErrNotFound = goerrors.New("resource not found")
 )
 
 // NetworkClient wraps the generic client because gophercloud is unsafe.
@@ -156,10 +156,52 @@ func (c *NetworkClient) ExternalNetworks(ctx context.Context) ([]networks.Networ
 	return result, nil
 }
 
+// networkName creates a unique name for the openstack network.
+func networkName(networkID string) string {
+	return "network-" + networkID
+}
+
+type NetworkExt struct {
+	networks.Network
+	provider.NetworkProviderExt
+}
+
+func (c *NetworkClient) GetNetwork(ctx context.Context, networkID string) (*NetworkExt, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "GET /network/v2.0/networks", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	opts := &networks.ListOpts{
+		Name: networkName(networkID),
+	}
+
+	page, err := networks.List(c.client, opts).AllPages(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []NetworkExt
+
+	if err := networks.ExtractNetworksInto(page, &result); err != nil {
+		return nil, err
+	}
+
+	if len(result) == 0 {
+		return nil, ErrNotFound
+	}
+
+	if len(result) > 1 {
+		return nil, errors.ErrConsistency
+	}
+
+	return &result[0], nil
+}
+
 // CreateNetwork creates a virtual or VLAN provider network for a project.
 // This requires https://github.com/unikorn-cloud/python-unikorn-openstack-policy
 // to be installed, see the README for further details on how this has to work.
-func (c *NetworkClient) CreateNetwork(ctx context.Context, name string, vlanID int) (*networks.Network, error) {
+func (c *NetworkClient) CreateNetwork(ctx context.Context, networkID string, vlanID *int) (*networks.Network, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, "POST /network/v2.0/networks", trace.WithSpanKind(trace.SpanKindClient))
@@ -167,17 +209,17 @@ func (c *NetworkClient) CreateNetwork(ctx context.Context, name string, vlanID i
 
 	opts := &provider.CreateOptsExt{
 		CreateOptsBuilder: &networks.CreateOpts{
-			Name:        name,
+			Name:        networkName(networkID),
 			Description: "unikorn managed provider network",
 		},
 	}
 
-	if c.options.UseProviderNetworks() {
+	if vlanID != nil {
 		opts.Segments = []provider.Segment{
 			{
 				NetworkType:     "vlan",
 				PhysicalNetwork: *c.options.ProviderNetworks.Network,
-				SegmentationID:  vlanID,
+				SegmentationID:  *vlanID,
 			},
 		}
 	}
@@ -197,6 +239,37 @@ func (c *NetworkClient) DeleteNetwork(ctx context.Context, id string) error {
 	defer span.End()
 
 	return networks.Delete(ctx, c.client, id).ExtractErr()
+}
+
+func (c *NetworkClient) GetSubnet(ctx context.Context, networkID string) (*subnets.Subnet, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "GET /network/v2.0/subnets", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	opts := &subnets.ListOpts{
+		Name: networkName(networkID),
+	}
+
+	page, err := subnets.List(c.client, opts).AllPages(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := subnets.ExtractSubnets(page)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(result) == 0 {
+		return nil, ErrNotFound
+	}
+
+	if len(result) > 1 {
+		return nil, errors.ErrConsistency
+	}
+
+	return &result[0], nil
 }
 
 func (c *NetworkClient) CreateSubnet(ctx context.Context, opts *subnets.CreateOpts) (*subnets.Subnet, error) {
@@ -222,7 +295,38 @@ func (c *NetworkClient) DeleteSubnet(ctx context.Context, id string) error {
 	return subnets.Delete(ctx, c.client, id).ExtractErr()
 }
 
-func (c *NetworkClient) CreateRouter(ctx context.Context, name string) (*routers.Router, error) {
+func (c *NetworkClient) GetRouter(ctx context.Context, networkID string) (*routers.Router, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "GET /network/v2.0/routers", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	opts := routers.ListOpts{
+		Name: networkName(networkID),
+	}
+
+	page, err := routers.List(c.client, opts).AllPages(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := routers.ExtractRouters(page)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(result) == 0 {
+		return nil, ErrNotFound
+	}
+
+	if len(result) > 1 {
+		return nil, errors.ErrConsistency
+	}
+
+	return &result[0], nil
+}
+
+func (c *NetworkClient) CreateRouter(ctx context.Context, networkID string) (*routers.Router, error) {
 	externalNetworks, err := c.ExternalNetworks(ctx)
 	if err != nil {
 		return nil, err
@@ -234,8 +338,7 @@ func (c *NetworkClient) CreateRouter(ctx context.Context, name string) (*routers
 	defer span.End()
 
 	opts := &routers.CreateOpts{
-		Name:        name,
-		Description: "unikorn managed router",
+		Name: networkName(networkID),
 		GatewayInfo: &routers.GatewayInfo{
 			NetworkID: externalNetworks[0].ID,
 		},
@@ -413,6 +516,30 @@ func (c *NetworkClient) ListServerPorts(ctx context.Context, serverID string) ([
 
 	listOpts := ports.ListOpts{
 		DeviceID: serverID,
+	}
+
+	allPages, err := ports.List(c.client, listOpts).AllPages(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	allPorts, err := ports.ExtractPorts(allPages)
+	if err != nil {
+		return nil, err
+	}
+
+	return allPorts, nil
+}
+
+func (c *NetworkClient) ListRouterPorts(ctx context.Context, routerID string) ([]ports.Port, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "GET /network/v2.0/ports", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	listOpts := ports.ListOpts{
+		DeviceID:    routerID,
+		DeviceOwner: "network:router_interface",
 	}
 
 	allPages, err := ports.List(c.client, listOpts).AllPages(ctx)
