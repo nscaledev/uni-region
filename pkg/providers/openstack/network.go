@@ -387,16 +387,50 @@ func (c *NetworkClient) RemoveRouterInterface(ctx context.Context, routerID, sub
 	return routers.RemoveInterface(ctx, c.client, routerID, opts).Err
 }
 
+func securityGroupName(securityGroupID string) string {
+	return "securitygroup-" + securityGroupID
+}
+
+func (c *NetworkClient) GetSecurityGroup(ctx context.Context, securityGroupID string) (*groups.SecGroup, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "GET /network/v2.0/securitygroups", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	opts := groups.ListOpts{
+		Name: securityGroupName(securityGroupID),
+	}
+
+	page, err := groups.List(c.client, opts).AllPages(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := groups.ExtractGroups(page)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(result) == 0 {
+		return nil, ErrNotFound
+	}
+
+	if len(result) > 1 {
+		return nil, errors.ErrConsistency
+	}
+
+	return &result[0], nil
+}
+
 // CreateSecurityGroup creates a new security group.
-func (c *NetworkClient) CreateSecurityGroup(ctx context.Context, name string) (*groups.SecGroup, error) {
+func (c *NetworkClient) CreateSecurityGroup(ctx context.Context, securityGroupID string) (*groups.SecGroup, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, "POST /network/v2.0/securitygroups", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
 	opts := &groups.CreateOpts{
-		Name:        name,
-		Description: "unikorn managed security group",
+		Name: securityGroupName(securityGroupID),
 	}
 
 	securityGroup, err := groups.Create(ctx, c.client, opts).Extract()
