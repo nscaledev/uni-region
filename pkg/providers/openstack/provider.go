@@ -34,6 +34,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/rules"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/networks"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
@@ -1586,8 +1587,8 @@ func securityGroupRuleIDFromSecurityGroupRule(rule *unikornv1.SecurityGroupRule)
 
 // listOpenstackSecurityGroupRules lists all rules for the security group and maps them to a
 // unique ID.
-func listOpenstackSecurityGroupRules(ctx context.Context, networkService *NetworkClient, openstackSecurityGroup *unikornv1.OpenstackSecurityGroup) (map[string]*rules.SecGroupRule, error) {
-	resources, err := networkService.ListSecurityGroupRules(ctx, *openstackSecurityGroup.Spec.SecurityGroupID)
+func listOpenstackSecurityGroupRules(ctx context.Context, networkService *NetworkClient, securityGroupID string) (map[string]*rules.SecGroupRule, error) {
+	resources, err := networkService.ListSecurityGroupRules(ctx, securityGroupID)
 	if err != nil {
 		return nil, err
 	}
@@ -1627,10 +1628,9 @@ func generateSecurityGroupRules(securityGroup *unikornv1.SecurityGroup) (map[str
 }
 
 // createSecurityGroupRule creates a security group rule from out specification.
-func createSecurityGroupRule(ctx context.Context, networkService *NetworkClient, openstackSecurityGroup *unikornv1.OpenstackSecurityGroup, rule *unikornv1.SecurityGroupRule) error {
+func createSecurityGroupRule(ctx context.Context, networkService *NetworkClient, securityGroupID string, rule *unikornv1.SecurityGroupRule) error {
 	direction := rules.RuleDirection(*rule.Direction)
 	protocol := rules.RuleProtocol(*rule.Protocol)
-	securityGroupID := *openstackSecurityGroup.Spec.SecurityGroupID
 
 	portStart, portEnd, err := securityGroupRulePortRange(rule.Port)
 	if err != nil {
@@ -1647,10 +1647,10 @@ func createSecurityGroupRule(ctx context.Context, networkService *NetworkClient,
 // reconcileSecurityGroupRules generates two sets of IDs from existing and requested security group
 // rules, does a boolean difference, and uses that to either create or delete rules from the security
 // group.
-func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, networkService *NetworkClient, securityGroup *unikornv1.SecurityGroup, openstackSecurityGroup *unikornv1.OpenstackSecurityGroup) error {
+func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, networkService *NetworkClient, securityGroup *unikornv1.SecurityGroup, securityGroupID string) error {
 	log := log.FromContext(ctx)
 
-	existing, err := listOpenstackSecurityGroupRules(ctx, networkService, openstackSecurityGroup)
+	existing, err := listOpenstackSecurityGroupRules(ctx, networkService, securityGroupID)
 	if err != nil {
 		return err
 	}
@@ -1660,18 +1660,16 @@ func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, networkServi
 		return err
 	}
 
-	securityGroupID := *openstackSecurityGroup.Spec.SecurityGroupID
-
 	// Anything that exists but has not been requested needs deleting.
 	for id := range existing {
 		if _, ok := requested[id]; ok {
-			log.Info("security group rule already exists", "rule", id, "securitygroupid", securityGroupID, "securitygroupruleid", existing[id].ID)
+			log.V(1).Info("security group rule already exists", "rule", id, "securitygroupid", securityGroupID, "securitygroupruleid", existing[id].ID)
 			continue
 		}
 
-		log.Info("deleting security group rule", "rule", id, "securitygroupid", securityGroupID, "securitygroupruleid", existing[id].ID)
+		log.V(1).Info("deleting security group rule", "rule", id, "securitygroupid", securityGroupID, "securitygroupruleid", existing[id].ID)
 
-		if err := networkService.DeleteSecurityGroupRule(ctx, *openstackSecurityGroup.Spec.SecurityGroupID, existing[id].ID); err != nil {
+		if err := networkService.DeleteSecurityGroupRule(ctx, securityGroupID, existing[id].ID); err != nil {
 			return err
 		}
 	}
@@ -1682,9 +1680,9 @@ func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, networkServi
 			continue
 		}
 
-		log.Info("creating security group rule", "rule", id, "securitygroupid", securityGroupID)
+		log.V(1).Info("creating security group rule", "rule", id, "securitygroupid", securityGroupID)
 
-		if err := createSecurityGroupRule(ctx, networkService, openstackSecurityGroup, requested[id]); err != nil {
+		if err := createSecurityGroupRule(ctx, networkService, securityGroupID, requested[id]); err != nil {
 			return err
 		}
 	}
@@ -1748,14 +1746,62 @@ func (p *Provider) createSecurityGroup(ctx context.Context, networkService *Netw
 	return nil
 }
 
+func (p *Provider) reconcileSecurityGroup(ctx context.Context, networkService *NetworkClient, securityGroup *unikornv1.SecurityGroup) (*groups.SecGroup, error) {
+	log := log.FromContext(ctx)
+
+	result, err := networkService.GetSecurityGroup(ctx, securityGroup.Name)
+	if err == nil {
+		log.V(1).Info("security group already exists")
+
+		return result, nil
+	}
+
+	if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+
+	log.V(1).Info("creating security group")
+
+	result, err = networkService.CreateSecurityGroup(ctx, securityGroup.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
 // CreateSecurityGroup creates a new security group.
 func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
+	if openstackSecurityGroup, err := p.GetOpenstackSecurityGroup(ctx, securityGroup); err == nil {
+		return p.createSecurityGroupLegacy(ctx, identity, securityGroup, openstackSecurityGroup)
+	}
+
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return err
 	}
 
-	openstackSecurityGroup, create, err := p.GetOrCreateOpenstackSecurityGroup(ctx, identity, securityGroup)
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	if err != nil {
+		return err
+	}
+
+	openstackSecurityGroup, err := p.reconcileSecurityGroup(ctx, networkService, securityGroup)
+	if err != nil {
+		return err
+	}
+
+	if err := p.reconcileSecurityGroupRules(ctx, networkService, securityGroup, openstackSecurityGroup.ID); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (p *Provider) createSecurityGroupLegacy(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup, openstackSecurityGroup *unikornv1.OpenstackSecurityGroup) error {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return err
 	}
@@ -1763,14 +1809,6 @@ func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.
 	// Always attempt to record where we are up to for idempotency.
 	record := func() {
 		log := log.FromContext(ctx)
-
-		if create {
-			if err := p.client.Create(ctx, openstackSecurityGroup); err != nil {
-				log.Error(err, "failed to create openstack security group")
-			}
-
-			return
-		}
 
 		if err := p.client.Update(ctx, openstackSecurityGroup); err != nil {
 			log.Error(err, "failed to update openstack security group")
@@ -1791,7 +1829,7 @@ func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.
 		return err
 	}
 
-	if err := p.reconcileSecurityGroupRules(ctx, networkService, securityGroup, openstackSecurityGroup); err != nil {
+	if err := p.reconcileSecurityGroupRules(ctx, networkService, securityGroup, *openstackSecurityGroup.Spec.SecurityGroupID); err != nil {
 		return err
 	}
 
@@ -1799,21 +1837,45 @@ func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.
 }
 
 // DeleteSecurityGroup deletes a security group.
-//
-//nolint:cyclop
 func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
+	log := log.FromContext(ctx)
+
+	if openstackSecurityGroup, err := p.GetOpenstackSecurityGroup(ctx, securityGroup); err == nil {
+		return p.deleteSecurityGroupLegacy(ctx, identity, openstackSecurityGroup)
+	}
+
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return err
 	}
 
-	openstackSecurityGroup, err := p.GetOpenstackSecurityGroup(ctx, securityGroup)
+	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
 	if err != nil {
-		if !kerrors.IsNotFound(err) {
+		return err
+	}
+
+	openstackSecurityGroup, err := networkService.GetSecurityGroup(ctx, securityGroup.Name)
+	if err != nil && errors.Is(err, ErrNotFound) {
+		return err
+	}
+
+	if openstackSecurityGroup != nil {
+		log.V(1).Info("deleting security group")
+
+		if err := networkService.DeleteSecurityGroup(ctx, openstackSecurityGroup.ID); err != nil {
 			return err
 		}
+	}
 
-		return nil
+	return nil
+}
+
+func (p *Provider) deleteSecurityGroupLegacy(ctx context.Context, identity *unikornv1.Identity, openstackSecurityGroup *unikornv1.OpenstackSecurityGroup) error {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return err
 	}
 
 	complete := false
