@@ -36,6 +36,8 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
+	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	"github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -269,12 +271,45 @@ func (c *ComputeClient) UpdateQuotas(ctx context.Context, projectID string) erro
 	return quotasets.Update(ctx, c.client, projectID, opts).Err
 }
 
+func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server) (*servers.Server, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "GET /compute/v2/servers")
+	defer span.End()
+
+	name := server.Labels[coreconstants.NameLabel]
+
+	opts := servers.ListOpts{
+		Name: name,
+	}
+
+	page, err := servers.List(c.client, opts).AllPages(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := servers.ExtractServers(page)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(result) == 0 {
+		return nil, ErrNotFound
+	}
+
+	if len(result) > 1 {
+		return nil, errors.ErrConsistency
+	}
+
+	return &result[0], nil
+}
+
 type NetworkOptions struct {
 	NetworkID string
 	PortID    string
 }
 
-func (c *ComputeClient) CreateServer(ctx context.Context, name, imageID, flavorID, keyName string, networks []NetworkOptions, serverGroupID *string, metadata map[string]string, userData []byte) (*servers.Server, error) {
+func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Server, keyName string, networks []NetworkOptions, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, "POST /compute/v2/servers/")
@@ -294,13 +329,15 @@ func (c *ComputeClient) CreateServer(ctx context.Context, name, imageID, flavorI
 		}
 	}
 
+	name := server.Labels[coreconstants.NameLabel]
+
 	serverCreateOpts := servers.CreateOpts{
 		Name:      name,
-		ImageRef:  imageID,
-		FlavorRef: flavorID,
+		ImageRef:  server.Spec.Image.ID,
+		FlavorRef: server.Spec.FlavorID,
 		Networks:  networksOps,
 		Metadata:  metadata,
-		UserData:  userData,
+		UserData:  server.Spec.UserData,
 	}
 
 	createOpts := keypairs.CreateOptsExt{
@@ -356,15 +393,6 @@ func (c *ComputeClient) DeleteServer(ctx context.Context, id string) error {
 	defer span.End()
 
 	return servers.Delete(ctx, c.client, id).ExtractErr()
-}
-
-func (c *ComputeClient) GetServer(ctx context.Context, id string) (*servers.Server, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, fmt.Sprintf("GET /compute/v2/servers/%s", id))
-	defer span.End()
-
-	return servers.Get(ctx, c.client, id).Extract()
 }
 
 func (c *ComputeClient) CreateRemoteConsole(ctx context.Context, id string) (*remoteconsoles.RemoteConsole, error) {
