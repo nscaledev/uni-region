@@ -731,3 +731,44 @@ type OpenstackServerSpec struct {
 
 type OpenstackServerStatus struct {
 }
+
+type ServerStroageList struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	StorageList       []ServerStroage
+}
+
+// schristoff:  StorageSpec
+type ServerStroage struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              ServerStorageSpec    `json:"spec"`
+	Request           ServerStorageRequest `json:"request"`
+	// ??
+	TenantID string
+}
+
+type ServerStorageSpec struct {
+	StorageID  *string
+	VLAN       VLANSegment
+	Status     ServerStorageStatus `json:"status,omitempty"`
+	QuotaLimit *string
+	RootSquash bool
+}
+
+// ServerStorageStatus current reported status of storage
+// we should be in "Pending" (present tense) until an action is completed
+// successfully or has timed out and then we enter past tense
+// +kubebuilder:validation:Enum=Created;Pending;Failed;Destroyed
+type ServerStorageStatus string
+
+const (
+	Created ServerStorageStatus = "Created"
+	Pending ServerStorageStatus = "Pending"
+	Failed  ServerStorageStatus = "Failed"
+	Destroy ServerStorageStatus = "Destroyed"
+)
+
+// ServerStorageRequest stores the end user desired state of storage
+type ServerStorageRequest struct {
+}
