@@ -272,11 +272,21 @@ func (c *NetworkClient) GetSubnet(ctx context.Context, network *unikornv1.Networ
 	return &result[0], nil
 }
 
-func (c *NetworkClient) CreateSubnet(ctx context.Context, opts *subnets.CreateOpts) (*subnets.Subnet, error) {
+func (c *NetworkClient) CreateSubnet(ctx context.Context, network *unikornv1.Network, networkID, prefix, gatewayIP string, dnsNameservers []string, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, "POST /network/v2.0/subnets", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
+
+	opts := &subnets.CreateOpts{
+		Name:            networkName(network),
+		NetworkID:       networkID,
+		IPVersion:       gophercloud.IPv4,
+		CIDR:            prefix,
+		GatewayIP:       ptr.To(gatewayIP),
+		DNSNameservers:  dnsNameservers,
+		AllocationPools: allocationPools,
+	}
 
 	subnet, err := subnets.Create(ctx, c.client, opts).Extract()
 	if err != nil {
