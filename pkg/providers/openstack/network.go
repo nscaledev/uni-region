@@ -38,7 +38,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
-	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -481,7 +480,7 @@ func (c *NetworkClient) ListSecurityGroupRules(ctx context.Context, securityGrou
 }
 
 // CreateSecurityGroupRule adds a security group rule to a security group.
-func (c *NetworkClient) CreateSecurityGroupRule(ctx context.Context, securityGroupID string, direction rules.RuleDirection, protocol rules.RuleProtocol, portStart, portEnd int, cidr *unikornv1core.IPv4Prefix) (*rules.SecGroupRule, error) {
+func (c *NetworkClient) CreateSecurityGroupRule(ctx context.Context, securityGroupID string, direction rules.RuleDirection, protocol rules.RuleProtocol, portStart, portEnd int, prefix string) (*rules.SecGroupRule, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, fmt.Sprintf("POST /network/v2.0/securitygroups/%s/rules", securityGroupID), trace.WithSpanKind(trace.SpanKindClient))
@@ -495,7 +494,7 @@ func (c *NetworkClient) CreateSecurityGroupRule(ctx context.Context, securityGro
 		PortRangeMax:   portEnd,
 		Protocol:       protocol,
 		SecGroupID:     securityGroupID,
-		RemoteIPPrefix: cidr.String(),
+		RemoteIPPrefix: prefix,
 	}
 
 	rule, err := rules.Create(ctx, c.client, opts).Extract()

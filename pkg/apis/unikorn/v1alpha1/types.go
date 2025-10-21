@@ -567,11 +567,11 @@ type SecurityGroupRulePort struct {
 
 type SecurityGroupRule struct {
 	// Direction is the direction of the rule.
-	Direction *SecurityGroupRuleDirection `json:"direction"`
+	Direction SecurityGroupRuleDirection `json:"direction"`
 	// Protocol is the protocol of the rule.
-	Protocol *SecurityGroupRuleProtocol `json:"protocol"`
+	Protocol SecurityGroupRuleProtocol `json:"protocol"`
 	// Port is the port or range of ports.
-	Port *SecurityGroupRulePort `json:"port"`
+	Port SecurityGroupRulePort `json:"port"`
 	// CIDR is the CIDR block to allow traffic from.
 	CIDR *unikornv1core.IPv4Prefix `json:"cidr"`
 }
