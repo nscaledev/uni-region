@@ -102,10 +102,10 @@ func convertPort(in unikornv1.SecurityGroupRulePort) openapi.SecurityGroupRulePo
 // convertRule converts a single resource from the Kubernetes representation into the API one.
 func convertRule(in *unikornv1.SecurityGroupRule) *openapi.SecurityGroupRule {
 	out := &openapi.SecurityGroupRule{
-		Direction: convertDirection(*in.Direction),
-		Protocol:  convertProtocol(*in.Protocol),
+		Direction: convertDirection(in.Direction),
+		Protocol:  convertProtocol(in.Protocol),
 		Cidr:      in.CIDR.String(),
-		Port:      convertPort(*in.Port),
+		Port:      convertPort(in.Port),
 	}
 
 	return out
@@ -146,7 +146,7 @@ func convertList(in *unikornv1.SecurityGroupList) openapi.SecurityGroupsRead {
 }
 
 // generateProtocol from an API representation into a Kubernetes one.
-func generateProtocol(in openapi.NetworkProtocol) *unikornv1.SecurityGroupRuleProtocol {
+func generateProtocol(in openapi.NetworkProtocol) unikornv1.SecurityGroupRuleProtocol {
 	var out unikornv1.SecurityGroupRuleProtocol
 
 	switch in {
@@ -156,11 +156,11 @@ func generateProtocol(in openapi.NetworkProtocol) *unikornv1.SecurityGroupRulePr
 		out = unikornv1.UDP
 	}
 
-	return &out
+	return out
 }
 
 // generateDirection from an API representation into a Kubernetes one.
-func generateDirection(in openapi.NetworkDirection) *unikornv1.SecurityGroupRuleDirection {
+func generateDirection(in openapi.NetworkDirection) unikornv1.SecurityGroupRuleDirection {
 	var out unikornv1.SecurityGroupRuleDirection
 
 	switch in {
@@ -170,11 +170,11 @@ func generateDirection(in openapi.NetworkDirection) *unikornv1.SecurityGroupRule
 		out = unikornv1.Egress
 	}
 
-	return &out
+	return out
 }
 
 // generatePort from an API representation into a Kubernetes one.
-func generatePort(in openapi.SecurityGroupRulePort) *unikornv1.SecurityGroupRulePort {
+func generatePort(in openapi.SecurityGroupRulePort) unikornv1.SecurityGroupRulePort {
 	out := unikornv1.SecurityGroupRulePort{}
 
 	if in.Number != nil {
@@ -188,7 +188,7 @@ func generatePort(in openapi.SecurityGroupRulePort) *unikornv1.SecurityGroupRule
 		}
 	}
 
-	return &out
+	return out
 }
 
 // generateRule a new resource from a request.

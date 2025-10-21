@@ -23,8 +23,7 @@ import (
 	networks "github.com/gophercloud/gophercloud/v2/openstack/networking/v2/networks"
 	ports "github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
 	subnets "github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
-	v1alpha1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
-	v1alpha10 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	v1alpha1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	openstack "github.com/unikorn-cloud/region/pkg/providers/openstack"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -91,7 +90,7 @@ func (m *MockNetworkInterface) EXPECT() *MockNetworkInterfaceMockRecorder {
 }
 
 // CreateNetwork mocks base method.
-func (m *MockNetworkInterface) CreateNetwork(ctx context.Context, network *v1alpha10.Network, vlanID *int) (*networks.Network, error) {
+func (m *MockNetworkInterface) CreateNetwork(ctx context.Context, network *v1alpha1.Network, vlanID *int) (*networks.Network, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateNetwork", ctx, network, vlanID)
 	ret0, _ := ret[0].(*networks.Network)
@@ -120,7 +119,7 @@ func (mr *MockNetworkInterfaceMockRecorder) DeleteNetwork(ctx, id any) *gomock.C
 }
 
 // GetNetwork mocks base method.
-func (m *MockNetworkInterface) GetNetwork(ctx context.Context, network *v1alpha10.Network) (*openstack.NetworkExt, error) {
+func (m *MockNetworkInterface) GetNetwork(ctx context.Context, network *v1alpha1.Network) (*openstack.NetworkExt, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetNetwork", ctx, network)
 	ret0, _ := ret[0].(*openstack.NetworkExt)
@@ -158,7 +157,7 @@ func (m *MockSubnetInterface) EXPECT() *MockSubnetInterfaceMockRecorder {
 }
 
 // CreateSubnet mocks base method.
-func (m *MockSubnetInterface) CreateSubnet(ctx context.Context, network *v1alpha10.Network, networkID, prefix, gatewayID string, dnsNameservers []string, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error) {
+func (m *MockSubnetInterface) CreateSubnet(ctx context.Context, network *v1alpha1.Network, networkID, prefix, gatewayID string, dnsNameservers []string, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateSubnet", ctx, network, networkID, prefix, gatewayID, dnsNameservers, allocationPools)
 	ret0, _ := ret[0].(*subnets.Subnet)
@@ -187,7 +186,7 @@ func (mr *MockSubnetInterfaceMockRecorder) DeleteSubnet(ctx, id any) *gomock.Cal
 }
 
 // GetSubnet mocks base method.
-func (m *MockSubnetInterface) GetSubnet(ctx context.Context, network *v1alpha10.Network) (*subnets.Subnet, error) {
+func (m *MockSubnetInterface) GetSubnet(ctx context.Context, network *v1alpha1.Network) (*subnets.Subnet, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetSubnet", ctx, network)
 	ret0, _ := ret[0].(*subnets.Subnet)
@@ -239,7 +238,7 @@ func (mr *MockRouterInterfaceMockRecorder) AddRouterInterface(ctx, routerID, sub
 }
 
 // CreateRouter mocks base method.
-func (m *MockRouterInterface) CreateRouter(ctx context.Context, network *v1alpha10.Network) (*routers.Router, error) {
+func (m *MockRouterInterface) CreateRouter(ctx context.Context, network *v1alpha1.Network) (*routers.Router, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateRouter", ctx, network)
 	ret0, _ := ret[0].(*routers.Router)
@@ -268,7 +267,7 @@ func (mr *MockRouterInterfaceMockRecorder) DeleteRouter(ctx, id any) *gomock.Cal
 }
 
 // GetRouter mocks base method.
-func (m *MockRouterInterface) GetRouter(ctx context.Context, network *v1alpha10.Network) (*routers.Router, error) {
+func (m *MockRouterInterface) GetRouter(ctx context.Context, network *v1alpha1.Network) (*routers.Router, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetRouter", ctx, network)
 	ret0, _ := ret[0].(*routers.Router)
@@ -320,7 +319,7 @@ func (m *MockSecurityGroupInterface) EXPECT() *MockSecurityGroupInterfaceMockRec
 }
 
 // CreateSecurityGroup mocks base method.
-func (m *MockSecurityGroupInterface) CreateSecurityGroup(ctx context.Context, securityGroup *v1alpha10.SecurityGroup) (*groups.SecGroup, error) {
+func (m *MockSecurityGroupInterface) CreateSecurityGroup(ctx context.Context, securityGroup *v1alpha1.SecurityGroup) (*groups.SecGroup, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateSecurityGroup", ctx, securityGroup)
 	ret0, _ := ret[0].(*groups.SecGroup)
@@ -335,18 +334,18 @@ func (mr *MockSecurityGroupInterfaceMockRecorder) CreateSecurityGroup(ctx, secur
 }
 
 // CreateSecurityGroupRule mocks base method.
-func (m *MockSecurityGroupInterface) CreateSecurityGroupRule(ctx context.Context, securityGroupID string, direction rules.RuleDirection, protocol rules.RuleProtocol, portStart, portEnd int, cidr *v1alpha1.IPv4Prefix) (*rules.SecGroupRule, error) {
+func (m *MockSecurityGroupInterface) CreateSecurityGroupRule(ctx context.Context, securityGroupID string, direction rules.RuleDirection, protocol rules.RuleProtocol, portStart, portEnd int, prefix string) (*rules.SecGroupRule, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateSecurityGroupRule", ctx, securityGroupID, direction, protocol, portStart, portEnd, cidr)
+	ret := m.ctrl.Call(m, "CreateSecurityGroupRule", ctx, securityGroupID, direction, protocol, portStart, portEnd, prefix)
 	ret0, _ := ret[0].(*rules.SecGroupRule)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateSecurityGroupRule indicates an expected call of CreateSecurityGroupRule.
-func (mr *MockSecurityGroupInterfaceMockRecorder) CreateSecurityGroupRule(ctx, securityGroupID, direction, protocol, portStart, portEnd, cidr any) *gomock.Call {
+func (mr *MockSecurityGroupInterfaceMockRecorder) CreateSecurityGroupRule(ctx, securityGroupID, direction, protocol, portStart, portEnd, prefix any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSecurityGroupRule", reflect.TypeOf((*MockSecurityGroupInterface)(nil).CreateSecurityGroupRule), ctx, securityGroupID, direction, protocol, portStart, portEnd, cidr)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSecurityGroupRule", reflect.TypeOf((*MockSecurityGroupInterface)(nil).CreateSecurityGroupRule), ctx, securityGroupID, direction, protocol, portStart, portEnd, prefix)
 }
 
 // DeleteSecurityGroup mocks base method.
@@ -378,7 +377,7 @@ func (mr *MockSecurityGroupInterfaceMockRecorder) DeleteSecurityGroupRule(ctx, s
 }
 
 // GetSecurityGroup mocks base method.
-func (m *MockSecurityGroupInterface) GetSecurityGroup(ctx context.Context, securityGroup *v1alpha10.SecurityGroup) (*groups.SecGroup, error) {
+func (m *MockSecurityGroupInterface) GetSecurityGroup(ctx context.Context, securityGroup *v1alpha1.SecurityGroup) (*groups.SecGroup, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetSecurityGroup", ctx, securityGroup)
 	ret0, _ := ret[0].(*groups.SecGroup)
@@ -639,7 +638,7 @@ func (mr *MockNetworkingInterfaceMockRecorder) CreateFloatingIP(ctx, portID any)
 }
 
 // CreateNetwork mocks base method.
-func (m *MockNetworkingInterface) CreateNetwork(ctx context.Context, network *v1alpha10.Network, vlanID *int) (*networks.Network, error) {
+func (m *MockNetworkingInterface) CreateNetwork(ctx context.Context, network *v1alpha1.Network, vlanID *int) (*networks.Network, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateNetwork", ctx, network, vlanID)
 	ret0, _ := ret[0].(*networks.Network)
@@ -669,7 +668,7 @@ func (mr *MockNetworkingInterfaceMockRecorder) CreatePort(ctx, networkID, server
 }
 
 // CreateRouter mocks base method.
-func (m *MockNetworkingInterface) CreateRouter(ctx context.Context, network *v1alpha10.Network) (*routers.Router, error) {
+func (m *MockNetworkingInterface) CreateRouter(ctx context.Context, network *v1alpha1.Network) (*routers.Router, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateRouter", ctx, network)
 	ret0, _ := ret[0].(*routers.Router)
@@ -684,7 +683,7 @@ func (mr *MockNetworkingInterfaceMockRecorder) CreateRouter(ctx, network any) *g
 }
 
 // CreateSecurityGroup mocks base method.
-func (m *MockNetworkingInterface) CreateSecurityGroup(ctx context.Context, securityGroup *v1alpha10.SecurityGroup) (*groups.SecGroup, error) {
+func (m *MockNetworkingInterface) CreateSecurityGroup(ctx context.Context, securityGroup *v1alpha1.SecurityGroup) (*groups.SecGroup, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateSecurityGroup", ctx, securityGroup)
 	ret0, _ := ret[0].(*groups.SecGroup)
@@ -699,22 +698,22 @@ func (mr *MockNetworkingInterfaceMockRecorder) CreateSecurityGroup(ctx, security
 }
 
 // CreateSecurityGroupRule mocks base method.
-func (m *MockNetworkingInterface) CreateSecurityGroupRule(ctx context.Context, securityGroupID string, direction rules.RuleDirection, protocol rules.RuleProtocol, portStart, portEnd int, cidr *v1alpha1.IPv4Prefix) (*rules.SecGroupRule, error) {
+func (m *MockNetworkingInterface) CreateSecurityGroupRule(ctx context.Context, securityGroupID string, direction rules.RuleDirection, protocol rules.RuleProtocol, portStart, portEnd int, prefix string) (*rules.SecGroupRule, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateSecurityGroupRule", ctx, securityGroupID, direction, protocol, portStart, portEnd, cidr)
+	ret := m.ctrl.Call(m, "CreateSecurityGroupRule", ctx, securityGroupID, direction, protocol, portStart, portEnd, prefix)
 	ret0, _ := ret[0].(*rules.SecGroupRule)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateSecurityGroupRule indicates an expected call of CreateSecurityGroupRule.
-func (mr *MockNetworkingInterfaceMockRecorder) CreateSecurityGroupRule(ctx, securityGroupID, direction, protocol, portStart, portEnd, cidr any) *gomock.Call {
+func (mr *MockNetworkingInterfaceMockRecorder) CreateSecurityGroupRule(ctx, securityGroupID, direction, protocol, portStart, portEnd, prefix any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSecurityGroupRule", reflect.TypeOf((*MockNetworkingInterface)(nil).CreateSecurityGroupRule), ctx, securityGroupID, direction, protocol, portStart, portEnd, cidr)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSecurityGroupRule", reflect.TypeOf((*MockNetworkingInterface)(nil).CreateSecurityGroupRule), ctx, securityGroupID, direction, protocol, portStart, portEnd, prefix)
 }
 
 // CreateSubnet mocks base method.
-func (m *MockNetworkingInterface) CreateSubnet(ctx context.Context, network *v1alpha10.Network, networkID, prefix, gatewayID string, dnsNameservers []string, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error) {
+func (m *MockNetworkingInterface) CreateSubnet(ctx context.Context, network *v1alpha1.Network, networkID, prefix, gatewayID string, dnsNameservers []string, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateSubnet", ctx, network, networkID, prefix, gatewayID, dnsNameservers, allocationPools)
 	ret0, _ := ret[0].(*subnets.Subnet)
@@ -857,7 +856,7 @@ func (mr *MockNetworkingInterfaceMockRecorder) GetFloatingIP(ctx, portID any) *g
 }
 
 // GetNetwork mocks base method.
-func (m *MockNetworkingInterface) GetNetwork(ctx context.Context, network *v1alpha10.Network) (*openstack.NetworkExt, error) {
+func (m *MockNetworkingInterface) GetNetwork(ctx context.Context, network *v1alpha1.Network) (*openstack.NetworkExt, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetNetwork", ctx, network)
 	ret0, _ := ret[0].(*openstack.NetworkExt)
@@ -887,7 +886,7 @@ func (mr *MockNetworkingInterfaceMockRecorder) GetPort(ctx, serverID any) *gomoc
 }
 
 // GetRouter mocks base method.
-func (m *MockNetworkingInterface) GetRouter(ctx context.Context, network *v1alpha10.Network) (*routers.Router, error) {
+func (m *MockNetworkingInterface) GetRouter(ctx context.Context, network *v1alpha1.Network) (*routers.Router, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetRouter", ctx, network)
 	ret0, _ := ret[0].(*routers.Router)
@@ -902,7 +901,7 @@ func (mr *MockNetworkingInterfaceMockRecorder) GetRouter(ctx, network any) *gomo
 }
 
 // GetSecurityGroup mocks base method.
-func (m *MockNetworkingInterface) GetSecurityGroup(ctx context.Context, securityGroup *v1alpha10.SecurityGroup) (*groups.SecGroup, error) {
+func (m *MockNetworkingInterface) GetSecurityGroup(ctx context.Context, securityGroup *v1alpha1.SecurityGroup) (*groups.SecGroup, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetSecurityGroup", ctx, securityGroup)
 	ret0, _ := ret[0].(*groups.SecGroup)
@@ -917,7 +916,7 @@ func (mr *MockNetworkingInterfaceMockRecorder) GetSecurityGroup(ctx, securityGro
 }
 
 // GetSubnet mocks base method.
-func (m *MockNetworkingInterface) GetSubnet(ctx context.Context, network *v1alpha10.Network) (*subnets.Subnet, error) {
+func (m *MockNetworkingInterface) GetSubnet(ctx context.Context, network *v1alpha1.Network) (*subnets.Subnet, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetSubnet", ctx, network)
 	ret0, _ := ret[0].(*subnets.Subnet)
@@ -1222,7 +1221,7 @@ func (mr *MockServerInterfaceMockRecorder) CreateRemoteConsole(ctx, id any) *gom
 }
 
 // CreateServer mocks base method.
-func (m *MockServerInterface) CreateServer(ctx context.Context, server *v1alpha10.Server, keyName string, networks []openstack.NetworkOptions, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
+func (m *MockServerInterface) CreateServer(ctx context.Context, server *v1alpha1.Server, keyName string, networks []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateServer", ctx, server, keyName, networks, serverGroupID, metadata)
 	ret0, _ := ret[0].(*servers.Server)
@@ -1251,7 +1250,7 @@ func (mr *MockServerInterfaceMockRecorder) DeleteServer(ctx, id any) *gomock.Cal
 }
 
 // GetServer mocks base method.
-func (m *MockServerInterface) GetServer(ctx context.Context, server *v1alpha10.Server) (*servers.Server, error) {
+func (m *MockServerInterface) GetServer(ctx context.Context, server *v1alpha1.Server) (*servers.Server, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetServer", ctx, server)
 	ret0, _ := ret[0].(*servers.Server)
@@ -1375,7 +1374,7 @@ func (mr *MockComputeInterfaceMockRecorder) CreateRemoteConsole(ctx, id any) *go
 }
 
 // CreateServer mocks base method.
-func (m *MockComputeInterface) CreateServer(ctx context.Context, server *v1alpha10.Server, keyName string, networks []openstack.NetworkOptions, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
+func (m *MockComputeInterface) CreateServer(ctx context.Context, server *v1alpha1.Server, keyName string, networks []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateServer", ctx, server, keyName, networks, serverGroupID, metadata)
 	ret0, _ := ret[0].(*servers.Server)
@@ -1462,7 +1461,7 @@ func (mr *MockComputeInterfaceMockRecorder) GetFlavors(ctx any) *gomock.Call {
 }
 
 // GetServer mocks base method.
-func (m *MockComputeInterface) GetServer(ctx context.Context, server *v1alpha10.Server) (*servers.Server, error) {
+func (m *MockComputeInterface) GetServer(ctx context.Context, server *v1alpha1.Server) (*servers.Server, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetServer", ctx, server)
 	ret0, _ := ret[0].(*servers.Server)

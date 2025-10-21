@@ -33,7 +33,6 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 
-	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 )
 
@@ -67,7 +66,7 @@ type SecurityGroupInterface interface {
 	CreateSecurityGroup(ctx context.Context, securityGroup *unikornv1.SecurityGroup) (*groups.SecGroup, error)
 	DeleteSecurityGroup(ctx context.Context, securityGroupID string) error
 	ListSecurityGroupRules(ctx context.Context, securityGroupID string) ([]rules.SecGroupRule, error)
-	CreateSecurityGroupRule(ctx context.Context, securityGroupID string, direction rules.RuleDirection, protocol rules.RuleProtocol, portStart, portEnd int, cidr *unikornv1core.IPv4Prefix) (*rules.SecGroupRule, error)
+	CreateSecurityGroupRule(ctx context.Context, securityGroupID string, direction rules.RuleDirection, protocol rules.RuleProtocol, portStart, portEnd int, prefix string) (*rules.SecGroupRule, error)
 	DeleteSecurityGroupRule(ctx context.Context, securityGroupID, ruleID string) error
 }
 
@@ -116,7 +115,7 @@ type ComputeQuotaInterface interface {
 
 type ServerInterface interface {
 	GetServer(ctx context.Context, server *unikornv1.Server) (*servers.Server, error)
-	CreateServer(ctx context.Context, server *unikornv1.Server, keyName string, networks []NetworkOptions, serverGroupID *string, metadata map[string]string) (*servers.Server, error)
+	CreateServer(ctx context.Context, server *unikornv1.Server, keyName string, networks []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error)
 	DeleteServer(ctx context.Context, id string) error
 	RebootServer(ctx context.Context, id string, hard bool) error
 	StartServer(ctx context.Context, id string) error

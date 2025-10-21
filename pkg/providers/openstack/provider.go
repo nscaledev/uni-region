@@ -1377,12 +1377,12 @@ func securityGroupRuleID(direction, protocol string, startPort, endPort int, pre
 // securityGroupRuleIDFromSecurityGroupRule generates a deterministic, but unique, ID for a security group rule.
 func securityGroupRuleIDFromSecurityGroupRule(rule *unikornv1.SecurityGroupRule) (string, error) {
 	// The data is a tuple of direction, protocol, port and prefix.
-	start, end, err := securityGroupRulePortRange(rule.Port)
+	start, end, err := securityGroupRulePortRange(&rule.Port)
 	if err != nil {
 		return "", err
 	}
 
-	return securityGroupRuleID(string(*rule.Direction), string(*rule.Protocol), start, end, rule.CIDR.String()), nil
+	return securityGroupRuleID(string(rule.Direction), string(rule.Protocol), start, end, rule.CIDR.String()), nil
 }
 
 func listOpenstackSecurityGroupRules(ctx context.Context, client SecurityGroupInterface, securityGroupID string) (map[string]*rules.SecGroupRule, error) {
@@ -1428,10 +1428,10 @@ func generateSecurityGroupRules(securityGroup *unikornv1.SecurityGroup) (map[str
 // reconcileSecurityGroupRules generates two sets of IDs from existing and requested security group
 // rules, does a boolean difference, and uses that to either create or delete rules from the security
 // group.
-func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup, securityGroupID string) error {
+func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup, openstackSecurityGroup *groups.SecGroup) error {
 	log := log.FromContext(ctx)
 
-	existing, err := listOpenstackSecurityGroupRules(ctx, client, securityGroupID)
+	existing, err := listOpenstackSecurityGroupRules(ctx, client, openstackSecurityGroup.ID)
 	if err != nil {
 		return err
 	}
@@ -1444,13 +1444,13 @@ func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, client Secur
 	// Anything that exists but has not been requested needs deleting.
 	for id := range existing {
 		if _, ok := requested[id]; ok {
-			log.V(1).Info("security group rule already exists", "rule", id, "securitygroupid", securityGroupID, "securitygroupruleid", existing[id].ID)
+			log.V(1).Info("security group rule already exists", "rule", id, "securitygroupid", openstackSecurityGroup.ID, "securitygroupruleid", existing[id].ID)
 			continue
 		}
 
-		log.V(1).Info("deleting security group rule", "rule", id, "securitygroupid", securityGroupID, "securitygroupruleid", existing[id].ID)
+		log.V(1).Info("deleting security group rule", "rule", id, "securitygroupid", openstackSecurityGroup.ID, "securitygroupruleid", existing[id].ID)
 
-		if err := client.DeleteSecurityGroupRule(ctx, securityGroupID, existing[id].ID); err != nil {
+		if err := client.DeleteSecurityGroupRule(ctx, openstackSecurityGroup.ID, existing[id].ID); err != nil {
 			return err
 		}
 	}
@@ -1461,19 +1461,19 @@ func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, client Secur
 			continue
 		}
 
-		log.V(1).Info("creating security group rule", "rule", id, "securitygroupid", securityGroupID)
+		log.V(1).Info("creating security group rule", "rule", id, "securitygroupid", openstackSecurityGroup.ID)
 
 		rule := requested[id]
 
-		direction := rules.RuleDirection(*rule.Direction)
-		protocol := rules.RuleProtocol(*rule.Protocol)
+		direction := rules.RuleDirection(rule.Direction)
+		protocol := rules.RuleProtocol(rule.Protocol)
 
-		portStart, portEnd, err := securityGroupRulePortRange(rule.Port)
+		portStart, portEnd, err := securityGroupRulePortRange(&rule.Port)
 		if err != nil {
 			return err
 		}
 
-		if _, err := client.CreateSecurityGroupRule(ctx, securityGroupID, direction, protocol, portStart, portEnd, rule.CIDR); err != nil {
+		if _, err := client.CreateSecurityGroupRule(ctx, openstackSecurityGroup.ID, direction, protocol, portStart, portEnd, rule.CIDR.String()); err != nil {
 			return err
 		}
 	}
@@ -1524,7 +1524,7 @@ func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.
 		return err
 	}
 
-	if err := p.reconcileSecurityGroupRules(ctx, networking, securityGroup, openstackSecurityGroup.ID); err != nil {
+	if err := p.reconcileSecurityGroupRules(ctx, networking, securityGroup, openstackSecurityGroup); err != nil {
 		return err
 	}
 
@@ -1757,10 +1757,10 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 		return openstackServer, nil
 	}
 
-	networks := []NetworkOptions{
+	networks := []servers.Network{
 		{
-			PortID:    port.ID,
-			NetworkID: port.NetworkID,
+			Port: port.ID,
+			UUID: port.NetworkID,
 		},
 	}
 

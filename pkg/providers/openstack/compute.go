@@ -258,12 +258,7 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 	return &result[0], nil
 }
 
-type NetworkOptions struct {
-	NetworkID string
-	PortID    string
-}
-
-func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Server, keyName string, networks []NetworkOptions, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
+func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Server, keyName string, networks []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, "POST /compute/v2/servers/")
@@ -275,21 +270,13 @@ func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Serv
 		schedulerHintOpts.Group = *serverGroupID
 	}
 
-	networksOps := make([]servers.Network, len(networks))
-	for i, n := range networks {
-		networksOps[i] = servers.Network{
-			UUID: n.NetworkID,
-			Port: n.PortID,
-		}
-	}
-
 	name := server.Labels[coreconstants.NameLabel]
 
 	serverCreateOpts := servers.CreateOpts{
 		Name:      name,
 		ImageRef:  server.Spec.Image.ID,
 		FlavorRef: server.Spec.FlavorID,
-		Networks:  networksOps,
+		Networks:  networks,
 		Metadata:  metadata,
 		UserData:  server.Spec.UserData,
 	}
