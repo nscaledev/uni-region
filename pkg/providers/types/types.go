@@ -86,6 +86,8 @@ type Image struct {
 	ID string
 	// Name of the image.
 	Name string
+	// OrganizationID is the organization the image belongs to.
+	OrganizationID *string
 	// Created is when the image was created.
 	Created time.Time
 	// Modified is when the image was modified.
@@ -100,6 +102,8 @@ type Image struct {
 	OS ImageOS
 	// Packages is a list of pre-installed packages and its versions. Versions must be a semver (starts with a vN.N.N)
 	Packages *ImagePackages
+	// Active indicates whether the image is active and ready for use.
+	Active bool
 }
 
 // ImageGPU defines image specific GPU compatibility information.
