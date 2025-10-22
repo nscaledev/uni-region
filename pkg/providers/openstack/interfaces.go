@@ -42,7 +42,7 @@ type ExternalNetworkInterfsce interface {
 
 type NetworkInterface interface {
 	GetNetwork(ctx context.Context, network *unikornv1.Network) (*NetworkExt, error)
-	CreateNetwork(ctx context.Context, network *unikornv1.Network, vlanID *int) (*networks.Network, error)
+	CreateNetwork(ctx context.Context, network *unikornv1.Network, vlanID *int) (*NetworkExt, error)
 	DeleteNetwork(ctx context.Context, id string) error
 }
 
@@ -79,8 +79,8 @@ type FloatingIPInterface interface {
 type PortInterface interface {
 	ListServerPorts(ctx context.Context, serverID string) ([]ports.Port, error)
 	ListRouterPorts(ctx context.Context, routerID string) ([]ports.Port, error)
-	GetPort(ctx context.Context, serverID string) (*ports.Port, error)
-	CreatePort(ctx context.Context, networkID, serverID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error)
+	GetServerPort(ctx context.Context, server *unikornv1.Server) (*ports.Port, error)
+	CreateServerPort(ctx context.Context, server *unikornv1.Server, networkID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error)
 	UpdatePort(ctx context.Context, portID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error)
 	DeletePort(ctx context.Context, portID string) error
 }

@@ -41,6 +41,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/openstack/mock"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -117,15 +118,12 @@ func TestStorageRange(t *testing.T) {
 }
 
 const (
-	organizationID  = "spectre"
-	projectID       = "manhattan"
-	regionID        = "africa"
-	identityID      = "1792e5ca-5127-4a16-bfb6-bb8a309d0688"
-	networkID       = "ae699252-5356-4824-be96-1d09d84dc033"
-	securityGroupID = "35f467b2-badd-4437-8e2a-645ad25f997b"
-	serverID        = "21fb10d9-e319-424c-bfd2-ec43526c179e"
-	serverName      = "server-abcdef"
-	sshKeyName      = "skeleton"
+	organizationID = "spectre"
+	projectID      = "manhattan"
+	regionID       = "africa"
+	identityID     = "1792e5ca-5127-4a16-bfb6-bb8a309d0688"
+	serverName     = "server-abcdef"
+	sshKeyName     = "skeleton"
 )
 
 // regionFixture creates a region definition.
@@ -141,7 +139,7 @@ func regionFixture() *regionv1.Region {
 func networkFixture() *regionv1.Network {
 	return &regionv1.Network{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: networkID,
+			Name: string(uuid.NewUUID()),
 		},
 		Spec: regionv1.NetworkSpec{
 			Prefix: &corev1.IPv4Prefix{
@@ -161,44 +159,110 @@ func networkFixture() *regionv1.Network {
 
 // networkMatcher is used to check mock function call parameters, as the object
 // may have been copied, and it may have been mutated.
-func networkMatcher() gomock.Matcher {
+func networkMatcher(network *regionv1.Network) gomock.Matcher {
 	return gomock.Cond(func(x *regionv1.Network) bool {
-		return x.Name == networkID
+		return x.Name == network.Name
 	})
 }
 
-// securityGroupFixture creates a basic security group definition.
-func securityGroupFixture() *regionv1.SecurityGroup {
-	return &regionv1.SecurityGroup{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: securityGroupID,
+func openstackNetworkFixture(network *regionv1.Network) *openstack.NetworkExt {
+	return &openstack.NetworkExt{
+		Network: networks.Network{
+			ID:   string(uuid.NewUUID()),
+			Name: openstack.NetworkName(network),
 		},
-		Spec: regionv1.SecurityGroupSpec{
-			Rules: []regionv1.SecurityGroupRule{
+	}
+}
+
+func openstackSubnetFixture(network *regionv1.Network, openstackNetwork *openstack.NetworkExt) *subnets.Subnet {
+	return &subnets.Subnet{
+		ID:        string(uuid.NewUUID()),
+		Name:      openstack.NetworkName(network),
+		NetworkID: openstackNetwork.ID,
+	}
+}
+
+func openstackRouterFixture(network *regionv1.Network) *routers.Router {
+	return &routers.Router{
+		ID:   string(uuid.NewUUID()),
+		Name: openstack.NetworkName(network),
+	}
+}
+
+func openstackRouterPortsFixture(openstackRouter *routers.Router, openstackSubnet *subnets.Subnet) []ports.Port {
+	return []ports.Port{
+		{
+			ID:          string(uuid.NewUUID()),
+			DeviceOwner: "network:router_interface",
+			DeviceID:    openstackRouter.ID,
+			FixedIPs: []ports.IP{
 				{
-					Direction: regionv1.Ingress,
-					Protocol:  regionv1.TCP,
-					Port: regionv1.SecurityGroupRulePort{
-						Number: ptr.To(22),
-					},
-					CIDR: &corev1.IPv4Prefix{
-						IPNet: net.IPNet{
-							IP:   net.IP{172, 16, 0, 0},
-							Mask: net.IPMask{255, 240, 0, 0},
-						},
-					},
+					SubnetID: openstackSubnet.ID,
 				},
 			},
 		},
 	}
 }
 
+func securityGroupRuleFixtureSingle(t *testing.T, dir regionv1.SecurityGroupRuleDirection, proto regionv1.SecurityGroupRuleProtocol, port int, prefix string) regionv1.SecurityGroupRule {
+	t.Helper()
+
+	_, cidr, err := net.ParseCIDR(prefix)
+	require.NoError(t, err)
+
+	return regionv1.SecurityGroupRule{
+		Direction: dir,
+		Protocol:  proto,
+		Port: regionv1.SecurityGroupRulePort{
+			Number: ptr.To(port),
+		},
+		CIDR: &corev1.IPv4Prefix{
+			IPNet: *cidr,
+		},
+	}
+}
+
+// securityGroupFixture creates a basic security group definition.
+func securityGroupFixture(rules ...regionv1.SecurityGroupRule) *regionv1.SecurityGroup {
+	return &regionv1.SecurityGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: string(uuid.NewUUID()),
+		},
+		Spec: regionv1.SecurityGroupSpec{
+			Rules: rules,
+		},
+	}
+}
+
 // securityGroupMatcher is used to check mock function call parameters, as the object
 // may have been copied, and it may have been mutated.
-func securityGroupMatcher() gomock.Matcher {
+func securityGroupMatcher(securityGroup *regionv1.SecurityGroup) gomock.Matcher {
 	return gomock.Cond(func(x *regionv1.SecurityGroup) bool {
-		return x.Name == securityGroupID
+		return x.Name == securityGroup.Name
 	})
+}
+
+func openstackSecurityGroupRuleFixtureSingle(dir rules.RuleDirection, proto rules.RuleProtocol, port int, prefix string) rules.SecGroupRule {
+	return rules.SecGroupRule{
+		ID:             string(uuid.NewUUID()),
+		Direction:      string(dir),
+		Protocol:       string(proto),
+		PortRangeMin:   port,
+		PortRangeMax:   port,
+		RemoteIPPrefix: prefix,
+	}
+}
+
+func openstackSecurityGroupRuleFixtureDefault() rules.SecGroupRule {
+	return openstackSecurityGroupRuleFixtureSingle(rules.DirEgress, rules.ProtocolAny, 0, "")
+}
+
+func openstackSecurityGroupFixture(securityGroup *regionv1.SecurityGroup, rules ...rules.SecGroupRule) *groups.SecGroup {
+	return &groups.SecGroup{
+		ID:    string(uuid.NewUUID()),
+		Name:  openstack.SecurityGroupName(securityGroup),
+		Rules: rules,
+	}
 }
 
 // withFloatingIP allows a server to have a floating IP set.
@@ -208,28 +272,32 @@ func withFloatingIP(s *regionv1.Server) {
 	}
 }
 
+func withSecurityGroup(securityGroup *regionv1.SecurityGroup) func(*regionv1.Server) {
+	return func(s *regionv1.Server) {
+		s.Spec.SecurityGroups = append(s.Spec.SecurityGroups, regionv1.ServerSecurityGroupSpec{
+			ID: securityGroup.Name,
+		})
+	}
+}
+
+func withNetwork(network *regionv1.Network) func(*regionv1.Server) {
+	return func(s *regionv1.Server) {
+		s.Spec.Networks = append(s.Spec.Networks, regionv1.ServerNetworkSpec{
+			ID: network.Name,
+		})
+	}
+}
+
 // serverFixture creates a basic server definition.
 func serverFixture(opts ...func(*regionv1.Server)) *regionv1.Server {
 	s := &regionv1.Server{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: serverID,
+			Name: string(uuid.NewUUID()),
 			Labels: map[string]string{
 				coreconstants.NameLabel:         serverName,
 				coreconstants.OrganizationLabel: organizationID,
 				coreconstants.ProjectLabel:      projectID,
 				constants.RegionLabel:           regionID,
-			},
-		},
-		Spec: regionv1.ServerSpec{
-			Networks: []regionv1.ServerNetworkSpec{
-				{
-					ID: networkID,
-				},
-			},
-			SecurityGroups: []regionv1.ServerSecurityGroupSpec{
-				{
-					ID: securityGroupID,
-				},
 			},
 		},
 	}
@@ -239,6 +307,36 @@ func serverFixture(opts ...func(*regionv1.Server)) *regionv1.Server {
 	}
 
 	return s
+}
+
+func openstackServerPortFixture(server *regionv1.Server, openstackNetwork *openstack.NetworkExt, openstackSubnet *subnets.Subnet) *ports.Port {
+	return &ports.Port{
+		ID:          string(uuid.NewUUID()),
+		Name:        openstack.ServerName(server),
+		DeviceOwner: "compute:nova",
+		NetworkID:   openstackNetwork.ID,
+		FixedIPs: []ports.IP{
+			{
+				SubnetID:  openstackSubnet.ID,
+				IPAddress: "192.168.0.42",
+			},
+		},
+	}
+}
+
+func openstackFloatingIPFixture(port *ports.Port) *floatingips.FloatingIP {
+	return &floatingips.FloatingIP{
+		ID:         string(uuid.NewUUID()),
+		FloatingIP: "12.34.56.78",
+		PortID:     port.ID,
+	}
+}
+
+func openstackServerFixture(server *regionv1.Server) *servers.Server {
+	return &servers.Server{
+		ID:   string(uuid.NewUUID()),
+		Name: server.Labels[coreconstants.NameLabel],
+	}
 }
 
 // getClient is a terse way to create a Kubernetes client.
@@ -251,41 +349,58 @@ func getClient(t *testing.T, objects []client.Object) client.Client {
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
 }
 
-// TestCreateNetwork tests a resource is created when one isn't present.
-func TestCreateNetwork(t *testing.T) {
+// TestReconcileNetwork tests a resource is created when one isn't present.
+func TestReconcileNetwork(t *testing.T) {
 	t.Parallel()
 
 	client := getClient(t, nil)
 
 	c := gomock.NewController(t)
-	defer c.Finish()
+	t.Cleanup(c.Finish)
 
 	network := networkFixture()
 
-	networking := mock.NewMockNetworkInterface(c)
-	networking.EXPECT().GetNetwork(t.Context(), network).Return(nil, openstack.ErrNotFound)
-	networking.EXPECT().CreateNetwork(t.Context(), network, nil).Return(nil, nil)
+	openStackNetwork := openstackNetworkFixture(network)
 
-	p := openstack.NewTestProvider(client, regionFixture())
+	t.Run("ItDoesntExist", func(t *testing.T) {
+		t.Parallel()
 
-	_, err := openstack.ReconcileNetwork(t.Context(), p, networking, network)
-	require.NoError(t, err)
+		networking := mock.NewMockNetworkInterface(c)
+		networking.EXPECT().GetNetwork(t.Context(), network).Return(nil, openstack.ErrNotFound)
+		networking.EXPECT().CreateNetwork(t.Context(), network, nil).Return(openStackNetwork, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileNetwork(t.Context(), p, networking, network)
+		require.NoError(t, err)
+	})
+
+	t.Run("IfExists", func(t *testing.T) {
+		t.Parallel()
+
+		networking := mock.NewMockNetworkInterface(c)
+		networking.EXPECT().GetNetwork(t.Context(), network).Return(openStackNetwork, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileNetwork(t.Context(), p, networking, network)
+		require.NoError(t, err)
+	})
 }
 
-// TestCreateSubnet tests a resource is created when one isn't present.
-func TestCreateSubnet(t *testing.T) {
+// TestReconcileSubnet tests a resource is created when one isn't present.
+func TestReconcileSubnet(t *testing.T) {
 	t.Parallel()
 
 	client := getClient(t, nil)
 
 	c := gomock.NewController(t)
-	defer c.Finish()
+	t.Cleanup(c.Finish)
 
 	network := networkFixture()
 
-	openstackNetwork := &networks.Network{
-		ID: "foo",
-	}
+	openstackNetwork := openstackNetworkFixture(network)
+	openstackSubnet := openstackSubnetFixture(network, openstackNetwork)
 
 	allocationPools := []subnets.AllocationPool{
 		{
@@ -294,223 +409,424 @@ func TestCreateSubnet(t *testing.T) {
 		},
 	}
 
-	networking := mock.NewMockSubnetInterface(c)
-	networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, openstack.ErrNotFound)
-	networking.EXPECT().CreateSubnet(t.Context(), network, "foo", "192.168.0.0/24", gomock.Any(), []string{"8.8.4.4"}, allocationPools).Return(nil, nil)
+	t.Run("ItDoesntExist", func(t *testing.T) {
+		t.Parallel()
 
-	p := openstack.NewTestProvider(client, regionFixture())
+		networking := mock.NewMockSubnetInterface(c)
+		networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, openstack.ErrNotFound)
+		networking.EXPECT().CreateSubnet(t.Context(), network, openstackNetwork.ID, "192.168.0.0/24", gomock.Any(), []string{"8.8.4.4"}, allocationPools).Return(nil, nil)
 
-	_, err := openstack.ReconcileSubnet(t.Context(), p, networking, network, openstackNetwork)
-	require.NoError(t, err)
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileSubnet(t.Context(), p, networking, network, openstackNetwork)
+		require.NoError(t, err)
+	})
+
+	t.Run("ItExists", func(t *testing.T) {
+		t.Parallel()
+
+		networking := mock.NewMockSubnetInterface(c)
+		networking.EXPECT().GetSubnet(t.Context(), network).Return(openstackSubnet, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileSubnet(t.Context(), p, networking, network, openstackNetwork)
+		require.NoError(t, err)
+	})
 }
 
-// TestCreateRouter tests a resource is created when one isn't present.
-func TestCreateRouter(t *testing.T) {
+// TestReconcileRouter tests a resource is created when one isn't present.
+func TestReconcileRouter(t *testing.T) {
 	t.Parallel()
 
 	client := getClient(t, nil)
 
 	c := gomock.NewController(t)
-	defer c.Finish()
+	t.Cleanup(c.Finish)
 
 	network := networkFixture()
 
-	networking := mock.NewMockRouterInterface(c)
-	networking.EXPECT().GetRouter(t.Context(), network).Return(nil, openstack.ErrNotFound)
-	networking.EXPECT().CreateRouter(t.Context(), network).Return(nil, nil)
+	openstackRouter := openstackRouterFixture(network)
 
-	p := openstack.NewTestProvider(client, regionFixture())
+	t.Run("ItDoesntExist", func(t *testing.T) {
+		t.Parallel()
 
-	_, err := openstack.ReconcileRouter(t.Context(), p, networking, network)
-	require.NoError(t, err)
+		networking := mock.NewMockRouterInterface(c)
+		networking.EXPECT().GetRouter(t.Context(), network).Return(nil, openstack.ErrNotFound)
+		networking.EXPECT().CreateRouter(t.Context(), network).Return(openstackRouter, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileRouter(t.Context(), p, networking, network)
+		require.NoError(t, err)
+	})
+
+	t.Run("ItExists", func(t *testing.T) {
+		t.Parallel()
+
+		networking := mock.NewMockRouterInterface(c)
+		networking.EXPECT().GetRouter(t.Context(), network).Return(openstackRouter, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileRouter(t.Context(), p, networking, network)
+		require.NoError(t, err)
+	})
 }
 
-// TestCreateRouterInterface tests a resource is created when one isn't present.
-func TestCreateRouterInterface(t *testing.T) {
+// TestReconcileRouterInterface tests a resource is created when one isn't present.
+func TestReconcileRouterInterface(t *testing.T) {
 	t.Parallel()
 
 	client := getClient(t, nil)
 
 	c := gomock.NewController(t)
-	defer c.Finish()
+	t.Cleanup(c.Finish)
 
-	router := &routers.Router{
-		ID: "foo",
-	}
+	network := networkFixture()
 
-	subnet := &subnets.Subnet{
-		ID: "bar",
-	}
+	openstackNetwork := openstackNetworkFixture(network)
+	openstackSubnet := openstackSubnetFixture(network, openstackNetwork)
+	openstackRouter := openstackRouterFixture(network)
+	openstackRouterPorts := openstackRouterPortsFixture(openstackRouter, openstackSubnet)
 
-	networking := mock.NewMockNetworkingInterface(c)
-	networking.EXPECT().ListRouterPorts(t.Context(), "foo").Return([]ports.Port{}, nil)
-	networking.EXPECT().AddRouterInterface(t.Context(), "foo", "bar").Return(nil)
+	t.Run("ItDoesntExist", func(t *testing.T) {
+		t.Parallel()
 
-	p := openstack.NewTestProvider(client, regionFixture())
+		networking := mock.NewMockNetworkingInterface(c)
+		networking.EXPECT().ListRouterPorts(t.Context(), openstackRouter.ID).Return([]ports.Port{}, nil)
+		networking.EXPECT().AddRouterInterface(t.Context(), openstackRouter.ID, openstackSubnet.ID).Return(nil)
 
-	require.NoError(t, openstack.ReconcileRouterInterface(t.Context(), p, networking, router, subnet))
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		require.NoError(t, openstack.ReconcileRouterInterface(t.Context(), p, networking, openstackRouter, openstackSubnet))
+	})
+
+	t.Run("ItExists", func(t *testing.T) {
+		t.Parallel()
+
+		networking := mock.NewMockNetworkingInterface(c)
+		networking.EXPECT().ListRouterPorts(t.Context(), openstackRouter.ID).Return(openstackRouterPorts, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		require.NoError(t, openstack.ReconcileRouterInterface(t.Context(), p, networking, openstackRouter, openstackSubnet))
+	})
 }
 
-// TestCreateSecurityGroup tests a resource is created when one isn't present.
-func TestCreateSecurityGroup(t *testing.T) {
+// TestReconcileSecurityGroup tests a resource is created when one isn't present.
+func TestReconcileSecurityGroup(t *testing.T) {
 	t.Parallel()
 
 	client := getClient(t, nil)
 
 	c := gomock.NewController(t)
-	defer c.Finish()
+	t.Cleanup(c.Finish)
 
-	securityGroup := securityGroupFixture()
+	securityGroup := securityGroupFixture(
+		securityGroupRuleFixtureSingle(t, regionv1.Ingress, regionv1.TCP, 22, "172.16.0.0/12"),
+	)
 
-	networking := mock.NewMockSecurityGroupInterface(c)
-	networking.EXPECT().GetSecurityGroup(t.Context(), securityGroup).Return(nil, openstack.ErrNotFound)
-	networking.EXPECT().CreateSecurityGroup(t.Context(), securityGroup).Return(nil, nil)
+	openstackSecurityGroup := openstackSecurityGroupFixture(securityGroup)
 
-	p := openstack.NewTestProvider(client, regionFixture())
+	t.Run("ItDoesntExist", func(t *testing.T) {
+		t.Parallel()
 
-	_, err := openstack.ReconcileSecurityGroup(t.Context(), p, networking, securityGroup)
-	require.NoError(t, err)
+		networking := mock.NewMockSecurityGroupInterface(c)
+		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroup).Return(nil, openstack.ErrNotFound)
+		networking.EXPECT().CreateSecurityGroup(t.Context(), securityGroup).Return(openstackSecurityGroup, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileSecurityGroup(t.Context(), p, networking, securityGroup)
+		require.NoError(t, err)
+	})
+
+	t.Run("ItExists", func(t *testing.T) {
+		t.Parallel()
+
+		networking := mock.NewMockSecurityGroupInterface(c)
+		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroup).Return(openstackSecurityGroup, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileSecurityGroup(t.Context(), p, networking, securityGroup)
+		require.NoError(t, err)
+	})
 }
 
-// TestCreateSecurityGroupRules tests a resource is created when one isn't present.
-func TestCreateSecurityGroupRules(t *testing.T) {
+// TestReconcileSecurityGroupRules tests a resource is created when one isn't present.
+func TestReconcileSecurityGroupRules(t *testing.T) {
 	t.Parallel()
 
 	client := getClient(t, nil)
 
 	c := gomock.NewController(t)
-	defer c.Finish()
+	t.Cleanup(c.Finish)
 
-	securityGroup := securityGroupFixture()
+	t.Run("ItDoesntExist", func(t *testing.T) {
+		t.Parallel()
 
-	openstackSecurityGroup := &groups.SecGroup{
-		ID: "foo",
-	}
+		securityGroup := securityGroupFixture(
+			securityGroupRuleFixtureSingle(t, regionv1.Ingress, regionv1.TCP, 22, "172.16.0.0/12"),
+		)
 
-	openstackSecurityGroupRules := []rules.SecGroupRule{
-		{
-			Direction: "egress",
-		},
-	}
+		openstackSecurityGroup := openstackSecurityGroupFixture(securityGroup, openstackSecurityGroupRuleFixtureDefault())
 
-	networking := mock.NewMockSecurityGroupInterface(c)
-	networking.EXPECT().ListSecurityGroupRules(t.Context(), "foo").Return(openstackSecurityGroupRules, nil)
-	networking.EXPECT().CreateSecurityGroupRule(t.Context(), "foo", rules.DirIngress, rules.ProtocolTCP, 22, 22, "172.16.0.0/12").Return(nil, nil)
+		networking := mock.NewMockSecurityGroupInterface(c)
+		networking.EXPECT().ListSecurityGroupRules(t.Context(), openstackSecurityGroup.ID).Return(openstackSecurityGroup.Rules, nil)
+		networking.EXPECT().CreateSecurityGroupRule(t.Context(), openstackSecurityGroup.ID, rules.DirIngress, rules.ProtocolTCP, 22, 22, "172.16.0.0/12").Return(nil, nil)
 
-	p := openstack.NewTestProvider(client, regionFixture())
+		p := openstack.NewTestProvider(client, regionFixture())
 
-	require.NoError(t, openstack.ReconcileSecurityGroupRules(t.Context(), p, networking, securityGroup, openstackSecurityGroup))
+		require.NoError(t, openstack.ReconcileSecurityGroupRules(t.Context(), p, networking, securityGroup, openstackSecurityGroup))
+	})
+
+	t.Run("ItExists", func(t *testing.T) {
+		t.Parallel()
+
+		securityGroup := securityGroupFixture(
+			securityGroupRuleFixtureSingle(t, regionv1.Ingress, regionv1.TCP, 22, "172.16.0.0/12"),
+		)
+
+		openstackSecurityGroup := openstackSecurityGroupFixture(securityGroup,
+			openstackSecurityGroupRuleFixtureDefault(),
+			openstackSecurityGroupRuleFixtureSingle(rules.DirIngress, rules.ProtocolTCP, 22, "172.16.0.0/12"),
+		)
+
+		networking := mock.NewMockSecurityGroupInterface(c)
+		networking.EXPECT().ListSecurityGroupRules(t.Context(), openstackSecurityGroup.ID).Return(openstackSecurityGroup.Rules, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		require.NoError(t, openstack.ReconcileSecurityGroupRules(t.Context(), p, networking, securityGroup, openstackSecurityGroup))
+	})
+
+	t.Run("ItShouldntExist", func(t *testing.T) {
+		t.Parallel()
+
+		securityGroup := securityGroupFixture()
+
+		openstackSecurityGroup := openstackSecurityGroupFixture(securityGroup,
+			openstackSecurityGroupRuleFixtureDefault(),
+			openstackSecurityGroupRuleFixtureSingle(rules.DirIngress, rules.ProtocolTCP, 22, "172.16.0.0/12"),
+		)
+
+		networking := mock.NewMockSecurityGroupInterface(c)
+		networking.EXPECT().ListSecurityGroupRules(t.Context(), openstackSecurityGroup.ID).Return(openstackSecurityGroup.Rules, nil)
+		networking.EXPECT().DeleteSecurityGroupRule(t.Context(), openstackSecurityGroup.ID, openstackSecurityGroup.Rules[1].ID).Return(nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		require.NoError(t, openstack.ReconcileSecurityGroupRules(t.Context(), p, networking, securityGroup, openstackSecurityGroup))
+	})
 }
 
-// TestCreateServerPort tests a resource is created when one isn't present.
-func TestCreateServerPort(t *testing.T) {
+// TestReconcileServerPort tests a resource is created when one isn't present.
+// TODO: allowed address pairs for NFV.
+func TestReconcileServerPort(t *testing.T) {
 	t.Parallel()
 
 	network := networkFixture()
 	securityGroup := securityGroupFixture()
+	securityGroup2 := securityGroupFixture()
 
 	objects := []client.Object{
 		network,
 		securityGroup,
+		securityGroup2,
 	}
 
 	client := getClient(t, objects)
 
 	c := gomock.NewController(t)
-	defer c.Finish()
+	t.Cleanup(c.Finish)
+
+	// Must clone me in tests as they will update the status,
+	server := serverFixture(withNetwork(network), withSecurityGroup(securityGroup))
+
+	openstackNetwork := openstackNetworkFixture(network)
+	openstackSubnet := openstackSubnetFixture(network, openstackNetwork)
+	openstackSecurityGroup := openstackSecurityGroupFixture(securityGroup)
+	openstackSecurityGroup2 := openstackSecurityGroupFixture(securityGroup2)
+	openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
+
+	t.Run("ItDoesntExist", func(t *testing.T) {
+		t.Parallel()
+
+		server := server.DeepCopy()
+
+		networking := mock.NewMockNetworkingInterface(c)
+		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
+		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
+		networking.EXPECT().GetServerPort(t.Context(), server).Return(nil, openstack.ErrNotFound)
+		networking.EXPECT().CreateServerPort(t.Context(), server, openstackNetwork.ID, []string{openstackSecurityGroup.ID}, []ports.AddressPair{}).Return(openstackServerPort, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServerPort(t.Context(), p, networking, server)
+		require.NoError(t, err)
+	})
+
+	t.Run("ItExists", func(t *testing.T) {
+		t.Parallel()
+
+		server := server.DeepCopy()
+
+		networking := mock.NewMockNetworkingInterface(c)
+		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
+		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
+		networking.EXPECT().GetServerPort(t.Context(), server).Return(openstackServerPort, nil)
+		// TODO: this shouldn't happen as it's not been modified.
+		networking.EXPECT().UpdatePort(t.Context(), openstackServerPort.ID, []string{openstackSecurityGroup.ID}, []ports.AddressPair{}).Return(openstackServerPort, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServerPort(t.Context(), p, networking, server)
+		require.NoError(t, err)
+	})
+
+	t.Run("ItUpdatesSecurityGroups", func(t *testing.T) {
+		t.Parallel()
+
+		server := server.DeepCopy()
+		server.Spec.SecurityGroups = append(server.Spec.SecurityGroups, regionv1.ServerSecurityGroupSpec{
+			ID: securityGroup2.Name,
+		})
+
+		networking := mock.NewMockNetworkingInterface(c)
+		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
+		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
+		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup2)).Return(openstackSecurityGroup2, nil)
+		networking.EXPECT().GetServerPort(t.Context(), server).Return(openstackServerPort, nil)
+		networking.EXPECT().UpdatePort(t.Context(), openstackServerPort.ID, []string{openstackSecurityGroup.ID, openstackSecurityGroup2.ID}, []ports.AddressPair{}).Return(openstackServerPort, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServerPort(t.Context(), p, networking, server)
+		require.NoError(t, err)
+	})
+}
+
+// TestReconcileFloatingIP tests a resource is created when one isn't present.
+func TestReconcileFloatingIP(t *testing.T) {
+	t.Parallel()
+
+	client := getClient(t, nil)
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	// Must clone me in tests as they will update the status,
+	server := serverFixture(withFloatingIP)
+	network := networkFixture()
+
+	openstackNetwork := openstackNetworkFixture(network)
+	openstackSubnet := openstackSubnetFixture(network, openstackNetwork)
+	openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
+	openstackFloatingIP := openstackFloatingIPFixture(openstackServerPort)
+
+	t.Run("ItDoesntExist", func(t *testing.T) {
+		t.Parallel()
+
+		server := server.DeepCopy()
+
+		networking := mock.NewMockFloatingIPInterface(c)
+		networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(nil, openstack.ErrNotFound)
+		networking.EXPECT().CreateFloatingIP(t.Context(), openstackServerPort.ID).Return(openstackFloatingIP, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		require.NoError(t, openstack.ReconcileFloatingIP(t.Context(), p, networking, server, openstackServerPort))
+		require.NotNil(t, server.Status.PublicIP)
+		require.Equal(t, openstackFloatingIP.FloatingIP, *server.Status.PublicIP)
+	})
+
+	t.Run("ItExists", func(t *testing.T) {
+		t.Parallel()
+
+		server := server.DeepCopy()
+
+		networking := mock.NewMockFloatingIPInterface(c)
+		networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(openstackFloatingIP, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		require.NoError(t, openstack.ReconcileFloatingIP(t.Context(), p, networking, server, openstackServerPort))
+		require.NotNil(t, server.Status.PublicIP)
+		require.Equal(t, openstackFloatingIP.FloatingIP, *server.Status.PublicIP)
+	})
+
+	t.Run("ItShouldntExist", func(t *testing.T) {
+		t.Parallel()
+
+		server := server.DeepCopy()
+		server.Spec.PublicIPAllocation = nil
+
+		networking := mock.NewMockFloatingIPInterface(c)
+		networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(openstackFloatingIP, nil)
+		networking.EXPECT().DeleteFloatingIP(t.Context(), openstackFloatingIP.ID).Return(nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		require.NoError(t, openstack.ReconcileFloatingIP(t.Context(), p, networking, server, openstackServerPort))
+		require.Nil(t, server.Status.PublicIP)
+	})
+}
+
+// TestReconcileServer tests a resource is created when one isn't present.
+func TestReconcileServer(t *testing.T) {
+	t.Parallel()
+
+	client := getClient(t, nil)
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
 
 	server := serverFixture()
+	network := networkFixture()
 
-	openstackNetwork := &openstack.NetworkExt{
-		Network: networks.Network{
-			ID: "foo",
-		},
-	}
-
-	openstackSecurityGroup := &groups.SecGroup{
-		ID: "bar",
-	}
-
-	networking := mock.NewMockNetworkingInterface(c)
-	networking.EXPECT().GetNetwork(t.Context(), networkMatcher()).Return(openstackNetwork, nil)
-	networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher()).Return(openstackSecurityGroup, nil)
-	networking.EXPECT().GetPort(t.Context(), serverID).Return(nil, openstack.ErrNotFound)
-	networking.EXPECT().CreatePort(t.Context(), "foo", serverID, []string{"bar"}, []ports.AddressPair{}).Return(nil, nil)
-
-	p := openstack.NewTestProvider(client, regionFixture())
-
-	_, err := openstack.ReconcileServerPort(t.Context(), p, networking, server)
-	require.NoError(t, err)
-}
-
-// TestCreateFloatingIP tests a resource is created when one isn't present.
-func TestCreateFloatingIP(t *testing.T) {
-	t.Parallel()
-
-	client := getClient(t, nil)
-
-	c := gomock.NewController(t)
-	defer c.Finish()
-
-	server := serverFixture(withFloatingIP)
-
-	openstackPort := &ports.Port{
-		ID: "foo",
-	}
-
-	openstackFloatingIP := &floatingips.FloatingIP{
-		FloatingIP: "192.168.0.42",
-	}
-
-	networking := mock.NewMockFloatingIPInterface(c)
-	networking.EXPECT().GetFloatingIP(t.Context(), "foo").Return(nil, openstack.ErrNotFound)
-	networking.EXPECT().CreateFloatingIP(t.Context(), "foo").Return(openstackFloatingIP, nil)
-
-	p := openstack.NewTestProvider(client, regionFixture())
-
-	require.NoError(t, openstack.ReconcileFloatingIP(t.Context(), p, networking, server, openstackPort))
-	require.NotNil(t, server.Status.PublicIP)
-	require.Equal(t, "192.168.0.42", *server.Status.PublicIP)
-}
-
-// TestCreateServer tests a resource is created when one isn't present.
-func TestCreateServer(t *testing.T) {
-	t.Parallel()
-
-	client := getClient(t, nil)
-
-	c := gomock.NewController(t)
-	defer c.Finish()
-
-	server := serverFixture(withFloatingIP)
-
-	openstackPort := &ports.Port{
-		ID:        "foo",
-		NetworkID: networkID,
-	}
+	openstackNetwork := openstackNetworkFixture(network)
+	openstackSubnet := openstackSubnetFixture(network, openstackNetwork)
+	openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
+	openstackServer := openstackServerFixture(server)
 
 	openstackNetworks := []servers.Network{
 		{
-			UUID: networkID,
-			Port: "foo",
+			UUID: openstackNetwork.ID,
+			Port: openstackServerPort.ID,
 		},
 	}
 
 	metadata := map[string]string{
-		"serverID":       serverID,
+		"serverID":       server.Name,
 		"organizationID": organizationID,
 		"projectID":      projectID,
 		"regionID":       regionID,
 	}
 
-	openstackServer := &servers.Server{}
+	t.Run("ItDoesntExist", func(t *testing.T) {
+		t.Parallel()
 
-	compute := mock.NewMockServerInterface(c)
-	compute.EXPECT().GetServer(t.Context(), server).Return(nil, openstack.ErrNotFound)
-	compute.EXPECT().CreateServer(t.Context(), server, sshKeyName, openstackNetworks, nil, metadata).Return(openstackServer, nil)
+		compute := mock.NewMockServerInterface(c)
+		compute.EXPECT().GetServer(t.Context(), server).Return(nil, openstack.ErrNotFound)
+		compute.EXPECT().CreateServer(t.Context(), server, sshKeyName, openstackNetworks, nil, metadata).Return(openstackServer, nil)
 
-	p := openstack.NewTestProvider(client, regionFixture())
+		p := openstack.NewTestProvider(client, regionFixture())
 
-	_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackPort, sshKeyName)
-	require.NoError(t, err)
+		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
+		require.NoError(t, err)
+	})
+
+	t.Run("ItExists", func(t *testing.T) {
+		t.Parallel()
+
+		compute := mock.NewMockServerInterface(c)
+		compute.EXPECT().GetServer(t.Context(), server).Return(openstackServer, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
+		require.NoError(t, err)
+	})
 }

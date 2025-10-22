@@ -22,7 +22,6 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
-	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/networks"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 
@@ -43,6 +42,15 @@ var DHCPRange = dhcpRange
 //nolint:gochecknoglobals
 var StorageRange = storageRange
 
+//nolint:gochecknoglobals
+var NetworkName = networkName
+
+//nolint:gochecknoglobals
+var SecurityGroupName = securityGroupName
+
+//nolint:gochecknoglobals
+var ServerName = serverName
+
 func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {
 	return &Provider{
 		client: client,
@@ -50,11 +58,11 @@ func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {
 	}
 }
 
-func ReconcileNetwork(ctx context.Context, p *Provider, client NetworkInterface, network *unikornv1.Network) (*networks.Network, error) {
+func ReconcileNetwork(ctx context.Context, p *Provider, client NetworkInterface, network *unikornv1.Network) (*NetworkExt, error) {
 	return p.reconcileNetwork(ctx, client, network)
 }
 
-func ReconcileSubnet(ctx context.Context, p *Provider, client SubnetInterface, network *unikornv1.Network, openstackNetwork *networks.Network) (*subnets.Subnet, error) {
+func ReconcileSubnet(ctx context.Context, p *Provider, client SubnetInterface, network *unikornv1.Network, openstackNetwork *NetworkExt) (*subnets.Subnet, error) {
 	return p.reconcileSubnet(ctx, client, network, openstackNetwork)
 }
 

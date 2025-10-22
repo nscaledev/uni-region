@@ -90,10 +90,10 @@ func (m *MockNetworkInterface) EXPECT() *MockNetworkInterfaceMockRecorder {
 }
 
 // CreateNetwork mocks base method.
-func (m *MockNetworkInterface) CreateNetwork(ctx context.Context, network *v1alpha1.Network, vlanID *int) (*networks.Network, error) {
+func (m *MockNetworkInterface) CreateNetwork(ctx context.Context, network *v1alpha1.Network, vlanID *int) (*openstack.NetworkExt, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateNetwork", ctx, network, vlanID)
-	ret0, _ := ret[0].(*networks.Network)
+	ret0, _ := ret[0].(*openstack.NetworkExt)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -496,19 +496,19 @@ func (m *MockPortInterface) EXPECT() *MockPortInterfaceMockRecorder {
 	return m.recorder
 }
 
-// CreatePort mocks base method.
-func (m *MockPortInterface) CreatePort(ctx context.Context, networkID, serverID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error) {
+// CreateServerPort mocks base method.
+func (m *MockPortInterface) CreateServerPort(ctx context.Context, server *v1alpha1.Server, networkID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreatePort", ctx, networkID, serverID, securityGroupIDs, allowedAddressPairs)
+	ret := m.ctrl.Call(m, "CreateServerPort", ctx, server, networkID, securityGroupIDs, allowedAddressPairs)
 	ret0, _ := ret[0].(*ports.Port)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// CreatePort indicates an expected call of CreatePort.
-func (mr *MockPortInterfaceMockRecorder) CreatePort(ctx, networkID, serverID, securityGroupIDs, allowedAddressPairs any) *gomock.Call {
+// CreateServerPort indicates an expected call of CreateServerPort.
+func (mr *MockPortInterfaceMockRecorder) CreateServerPort(ctx, server, networkID, securityGroupIDs, allowedAddressPairs any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePort", reflect.TypeOf((*MockPortInterface)(nil).CreatePort), ctx, networkID, serverID, securityGroupIDs, allowedAddressPairs)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateServerPort", reflect.TypeOf((*MockPortInterface)(nil).CreateServerPort), ctx, server, networkID, securityGroupIDs, allowedAddressPairs)
 }
 
 // DeletePort mocks base method.
@@ -525,19 +525,19 @@ func (mr *MockPortInterfaceMockRecorder) DeletePort(ctx, portID any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeletePort", reflect.TypeOf((*MockPortInterface)(nil).DeletePort), ctx, portID)
 }
 
-// GetPort mocks base method.
-func (m *MockPortInterface) GetPort(ctx context.Context, serverID string) (*ports.Port, error) {
+// GetServerPort mocks base method.
+func (m *MockPortInterface) GetServerPort(ctx context.Context, server *v1alpha1.Server) (*ports.Port, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetPort", ctx, serverID)
+	ret := m.ctrl.Call(m, "GetServerPort", ctx, server)
 	ret0, _ := ret[0].(*ports.Port)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetPort indicates an expected call of GetPort.
-func (mr *MockPortInterfaceMockRecorder) GetPort(ctx, serverID any) *gomock.Call {
+// GetServerPort indicates an expected call of GetServerPort.
+func (mr *MockPortInterfaceMockRecorder) GetServerPort(ctx, server any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPort", reflect.TypeOf((*MockPortInterface)(nil).GetPort), ctx, serverID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetServerPort", reflect.TypeOf((*MockPortInterface)(nil).GetServerPort), ctx, server)
 }
 
 // ListRouterPorts mocks base method.
@@ -638,10 +638,10 @@ func (mr *MockNetworkingInterfaceMockRecorder) CreateFloatingIP(ctx, portID any)
 }
 
 // CreateNetwork mocks base method.
-func (m *MockNetworkingInterface) CreateNetwork(ctx context.Context, network *v1alpha1.Network, vlanID *int) (*networks.Network, error) {
+func (m *MockNetworkingInterface) CreateNetwork(ctx context.Context, network *v1alpha1.Network, vlanID *int) (*openstack.NetworkExt, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateNetwork", ctx, network, vlanID)
-	ret0, _ := ret[0].(*networks.Network)
+	ret0, _ := ret[0].(*openstack.NetworkExt)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -650,21 +650,6 @@ func (m *MockNetworkingInterface) CreateNetwork(ctx context.Context, network *v1
 func (mr *MockNetworkingInterfaceMockRecorder) CreateNetwork(ctx, network, vlanID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateNetwork", reflect.TypeOf((*MockNetworkingInterface)(nil).CreateNetwork), ctx, network, vlanID)
-}
-
-// CreatePort mocks base method.
-func (m *MockNetworkingInterface) CreatePort(ctx context.Context, networkID, serverID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreatePort", ctx, networkID, serverID, securityGroupIDs, allowedAddressPairs)
-	ret0, _ := ret[0].(*ports.Port)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreatePort indicates an expected call of CreatePort.
-func (mr *MockNetworkingInterfaceMockRecorder) CreatePort(ctx, networkID, serverID, securityGroupIDs, allowedAddressPairs any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePort", reflect.TypeOf((*MockNetworkingInterface)(nil).CreatePort), ctx, networkID, serverID, securityGroupIDs, allowedAddressPairs)
 }
 
 // CreateRouter mocks base method.
@@ -710,6 +695,21 @@ func (m *MockNetworkingInterface) CreateSecurityGroupRule(ctx context.Context, s
 func (mr *MockNetworkingInterfaceMockRecorder) CreateSecurityGroupRule(ctx, securityGroupID, direction, protocol, portStart, portEnd, prefix any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSecurityGroupRule", reflect.TypeOf((*MockNetworkingInterface)(nil).CreateSecurityGroupRule), ctx, securityGroupID, direction, protocol, portStart, portEnd, prefix)
+}
+
+// CreateServerPort mocks base method.
+func (m *MockNetworkingInterface) CreateServerPort(ctx context.Context, server *v1alpha1.Server, networkID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateServerPort", ctx, server, networkID, securityGroupIDs, allowedAddressPairs)
+	ret0, _ := ret[0].(*ports.Port)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateServerPort indicates an expected call of CreateServerPort.
+func (mr *MockNetworkingInterfaceMockRecorder) CreateServerPort(ctx, server, networkID, securityGroupIDs, allowedAddressPairs any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateServerPort", reflect.TypeOf((*MockNetworkingInterface)(nil).CreateServerPort), ctx, server, networkID, securityGroupIDs, allowedAddressPairs)
 }
 
 // CreateSubnet mocks base method.
@@ -870,21 +870,6 @@ func (mr *MockNetworkingInterfaceMockRecorder) GetNetwork(ctx, network any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNetwork", reflect.TypeOf((*MockNetworkingInterface)(nil).GetNetwork), ctx, network)
 }
 
-// GetPort mocks base method.
-func (m *MockNetworkingInterface) GetPort(ctx context.Context, serverID string) (*ports.Port, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetPort", ctx, serverID)
-	ret0, _ := ret[0].(*ports.Port)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetPort indicates an expected call of GetPort.
-func (mr *MockNetworkingInterfaceMockRecorder) GetPort(ctx, serverID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPort", reflect.TypeOf((*MockNetworkingInterface)(nil).GetPort), ctx, serverID)
-}
-
 // GetRouter mocks base method.
 func (m *MockNetworkingInterface) GetRouter(ctx context.Context, network *v1alpha1.Network) (*routers.Router, error) {
 	m.ctrl.T.Helper()
@@ -913,6 +898,21 @@ func (m *MockNetworkingInterface) GetSecurityGroup(ctx context.Context, security
 func (mr *MockNetworkingInterfaceMockRecorder) GetSecurityGroup(ctx, securityGroup any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSecurityGroup", reflect.TypeOf((*MockNetworkingInterface)(nil).GetSecurityGroup), ctx, securityGroup)
+}
+
+// GetServerPort mocks base method.
+func (m *MockNetworkingInterface) GetServerPort(ctx context.Context, server *v1alpha1.Server) (*ports.Port, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetServerPort", ctx, server)
+	ret0, _ := ret[0].(*ports.Port)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetServerPort indicates an expected call of GetServerPort.
+func (mr *MockNetworkingInterfaceMockRecorder) GetServerPort(ctx, server any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetServerPort", reflect.TypeOf((*MockNetworkingInterface)(nil).GetServerPort), ctx, server)
 }
 
 // GetSubnet mocks base method.
