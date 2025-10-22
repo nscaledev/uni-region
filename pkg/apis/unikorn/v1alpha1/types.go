@@ -750,6 +750,8 @@ type ServerStorage struct {
 	Request           ServerStorageRequest `json:"request"`
 	// ??
 	TenantID string
+	// Pause, if true, will inhibit reconciliation.
+	Pause bool `json:"pause,omitempty"`
 }
 
 type ServerStorageSpec struct {
@@ -758,6 +760,10 @@ type ServerStorageSpec struct {
 	Status     ServerStorageStatus `json:"status,omitempty"`
 	QuotaLimit *string
 	RootSquash bool
+	// schristoff: Standard rn is this goes in a status struct and chills
+	// but we already have a status
+	// so figure out what to do here
+	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
 }
 
 // ServerStorageStatus current reported status of storage
