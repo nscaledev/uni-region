@@ -27,11 +27,13 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack"
+	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/imagedata"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/kaptinlin/jsonschema"
 	"go.opentelemetry.io/otel"
@@ -176,6 +178,52 @@ func ImageSchema() (*jsonschema.Schema, error) {
 	return jsonschema.NewCompiler().Compile(imagePropertySchemaV2)
 }
 
+// CreateImage creates a new image.
+func (c *ImageClient) CreateImage(ctx context.Context, opts *images.CreateOpts, invalidateCache bool) (*images.Image, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "POST /image/v2/images", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	result, err := images.Create(ctx, c.client, opts).Extract()
+	if err != nil {
+		return nil, err
+	}
+
+	if invalidateCache {
+		c.imageCache.Invalidate()
+	}
+
+	return result, nil
+}
+
+func (c *ImageClient) UploadImageData(ctx context.Context, id string, reader io.Reader) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "PUT /image/v2/images/{image_id}/file", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	return imagedata.Upload(ctx, c.client, id, reader).ExtractErr()
+}
+
+func (c *ImageClient) UpdateImage(ctx context.Context, id string, opts images.UpdateOpts, invalidateCache bool) (*images.Image, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "PATCH /image/v2/images/{image_id}", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	result, err := images.Update(ctx, c.client, id, opts).Extract()
+	if err != nil {
+		return nil, err
+	}
+
+	if invalidateCache {
+		c.imageCache.Invalidate()
+	}
+
+	return result, nil
+}
+
 // ListImages returns a list of images.
 func (c *ImageClient) ListImages(ctx context.Context) ([]images.Image, error) {
 	if result, ok := c.imageCache.Get(); ok {
@@ -221,6 +269,7 @@ func (c *ImageClient) ListImages(ctx context.Context) ([]images.Image, error) {
 	return result, nil
 }
 
+// GetImage retrieves a specific image by its ID.
 func (c *ImageClient) GetImage(ctx context.Context, id string) (*images.Image, error) {
 	result, err := c.ListImages(ctx)
 	if err != nil {

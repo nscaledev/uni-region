@@ -17,9 +17,12 @@ limitations under the License.
 package openstack
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -497,7 +500,12 @@ func getPublicOrOrganizationOwnedImages(resources []images.Image, organizationID
 }
 
 func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
-	virtualization, _ := image.Properties["unikorn:virtualization"].(string)
+	var organizationID *string
+
+	temp, _ := image.Properties["unikorn:organization:id"].(string)
+	if temp == "" {
+		organizationID = &temp
+	}
 
 	size := image.MinDiskGigabytes
 
@@ -506,9 +514,12 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 		size = int((image.VirtualSize + (1 << 30) - 1) >> 30)
 	}
 
+	virtualization, _ := image.Properties["unikorn:virtualization"].(string)
+
 	providerImage := types.Image{
 		ID:             image.ID,
 		Name:           image.Name,
+		OrganizationID: organizationID,
 		Created:        image.CreatedAt,
 		Modified:       image.UpdatedAt,
 		SizeGiB:        size,
@@ -537,6 +548,116 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 	}
 
 	return &providerImage, nil
+}
+
+func SetProperty[T ~string](properties map[string]string, key string, value T) {
+	properties[key] = string(value)
+}
+
+func SetNonNilProperty[T ~string](properties map[string]string, key string, value *T) {
+	if value != nil {
+		properties[key] = string(*value)
+	}
+}
+
+// CreateImage creates a new image.
+func (p *Provider) CreateImage(ctx context.Context, image *types.Image) (*types.Image, error) {
+	imageService, err := p.image(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	properties := make(map[string]string)
+	SetProperty(properties, "unikorn:os:kernal", image.OS.Kernel)
+	SetProperty(properties, "unikorn:os:family", image.OS.Family)
+	SetProperty(properties, "unikorn:os:distro", image.OS.Distro)
+	SetNonNilProperty(properties, "unikorn:os:variant", image.OS.Variant)
+	SetNonNilProperty(properties, "unikorn:os:codename", image.OS.Codename)
+
+	if image.Packages != nil {
+		for name, version := range *image.Packages {
+			key := fmt.Sprintf("unikorn:package:%s", name)
+			SetProperty(properties, key, version)
+		}
+	}
+
+	if image.GPU != nil {
+		if image.GPU.Vendor == "" {
+			return nil, fmt.Errorf("%w: GPU vendor must be defined when GPU information is provided", ErrKeyUndefined)
+		}
+
+		if len(image.GPU.Models) == 0 {
+			return nil, fmt.Errorf("%w: GPU models must be defined when GPU information is provided", ErrKeyUndefined)
+		}
+
+		if image.GPU.Driver == "" {
+			return nil, fmt.Errorf("%w: GPU driver must be defined when GPU information is provided", ErrKeyUndefined)
+		}
+
+		var modelsBuffer bytes.Buffer
+
+		csvWriter := csv.NewWriter(&modelsBuffer)
+		if err = csvWriter.Write(image.GPU.Models); err != nil {
+			return nil, err
+		}
+
+		csvWriter.Flush()
+
+		SetProperty(properties, "unikorn:gpu_vendor", image.GPU.Vendor)
+		SetProperty(properties, "unikorn:gpu_models", modelsBuffer.String())
+		SetProperty(properties, "unikorn:gpu_driver_version", image.GPU.Driver)
+	}
+
+	SetProperty(properties, "unikorn:virtualization", image.Virtualization)
+	// SetProperty(properties, "unikorn:digest", TODO)
+	SetNonNilProperty(properties, "unikorn:organization:id", image.OrganizationID)
+
+	opts := &images.CreateOpts{
+		Name:       image.Name,
+		ID:         image.ID,
+		Visibility: ptr.To(images.ImageVisibilityPrivate),
+		Hidden:     ptr.To(false),
+		Protected:  ptr.To(false),
+		Properties: properties,
+	}
+
+	resource, err := imageService.CreateImage(ctx, opts, false)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.convertImage(resource)
+}
+
+// UploadImage uploads data to an image.
+func (p *Provider) UploadImage(ctx context.Context, imageID string, reader io.Reader) error {
+	imageService, err := p.image(ctx)
+	if err != nil {
+		return err
+	}
+
+	return imageService.UploadImageData(ctx, imageID, reader)
+}
+
+// FinalizeImage finalizes an image after upload.
+func (p *Provider) FinalizeImage(ctx context.Context, imageID string) (*types.Image, error) {
+	imageService, err := p.image(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	opts := images.UpdateOpts{
+		images.UpdateVisibility{
+			Visibility: images.ImageVisibilityPublic,
+		},
+	}
+
+	resource, err := imageService.UpdateImage(ctx, imageID, opts, true)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.convertImage(resource)
 }
 
 // ListImages lists all available images.

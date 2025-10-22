@@ -86,6 +86,8 @@ type Image struct {
 	ID string
 	// Name of the image.
 	Name string
+	// OrganizationID is the organization the image belongs to.
+	OrganizationID *string
 	// Created is when the image was created.
 	Created time.Time
 	// Modified is when the image was modified.

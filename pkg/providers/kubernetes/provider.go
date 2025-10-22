@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/spjmurray/go-util/pkg/set"
 
@@ -191,6 +192,21 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	}
 
 	return flavors, nil
+}
+
+// CreateImage creates a new image.
+func (p *Provider) CreateImage(ctx context.Context, image *types.Image) (*types.Image, error) {
+	return nil, ErrUnimplmented
+}
+
+// UploadImage uploads data to an image.
+func (p *Provider) UploadImage(ctx context.Context, imageID string, reader io.Reader) error {
+	return ErrUnimplmented
+}
+
+// FinalizeImage finalizes an image after upload.
+func (p *Provider) FinalizeImage(ctx context.Context, imageID string) (*types.Image, error) {
+	return nil, ErrUnimplmented
 }
 
 // ListImages lists all available images.

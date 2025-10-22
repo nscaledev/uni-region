@@ -15,6 +15,9 @@ import (
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 
+	// (POST /api/v1/organizaitons/{organizationID}/regions/{regionID}/images/{imageID})
+	PostApiV1OrganizaitonsOrganizationIDRegionsRegionIDImagesImageID(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, regionID RegionIDParameter, imageID ImageIDParameter)
+
 	// (GET /api/v1/organizations/{organizationID}/identities)
 	GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter)
 
@@ -96,6 +99,9 @@ type ServerInterface interface {
 	// (GET /api/v1/organizations/{organizationID}/regions/{regionID}/images)
 	GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, regionID RegionIDParameter)
 
+	// (POST /api/v1/organizations/{organizationID}/regions/{regionID}/images)
+	PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, regionID RegionIDParameter)
+
 	// (GET /api/v1/organizations/{organizationID}/securitygroups)
 	GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, params GetApiV1OrganizationsOrganizationIDSecuritygroupsParams)
 
@@ -121,6 +127,11 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// (POST /api/v1/organizaitons/{organizationID}/regions/{regionID}/images/{imageID})
+func (_ Unimplemented) PostApiV1OrganizaitonsOrganizationIDRegionsRegionIDImagesImageID(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, regionID RegionIDParameter, imageID ImageIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // (GET /api/v1/organizations/{organizationID}/identities)
 func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter) {
@@ -257,6 +268,11 @@ func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// (POST /api/v1/organizations/{organizationID}/regions/{regionID}/images)
+func (_ Unimplemented) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, regionID RegionIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (GET /api/v1/organizations/{organizationID}/securitygroups)
 func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, params GetApiV1OrganizationsOrganizationIDSecuritygroupsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -300,6 +316,55 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// PostApiV1OrganizaitonsOrganizationIDRegionsRegionIDImagesImageID operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV1OrganizaitonsOrganizationIDRegionsRegionIDImagesImageID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "organizationID" -------------
+	var organizationID OrganizationIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "organizationID", chi.URLParam(r, "organizationID"), &organizationID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "regionID" -------------
+	var regionID RegionIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "regionID", chi.URLParam(r, "regionID"), &regionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "regionID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "imageID" -------------
+	var imageID ImageIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "imageID", chi.URLParam(r, "imageID"), &imageID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "imageID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiV1OrganizaitonsOrganizationIDRegionsRegionIDImagesImageID(w, r, organizationID, regionID, imageID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // GetApiV1OrganizationsOrganizationIDIdentities operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseWriter, r *http.Request) {
@@ -1662,6 +1727,46 @@ func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDRegionsReg
 	handler.ServeHTTP(w, r)
 }
 
+// PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "organizationID" -------------
+	var organizationID OrganizationIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "organizationID", chi.URLParam(r, "organizationID"), &organizationID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "regionID" -------------
+	var regionID RegionIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "regionID", chi.URLParam(r, "regionID"), &regionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "regionID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w, r, organizationID, regionID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetApiV1OrganizationsOrganizationIDSecuritygroups operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.ResponseWriter, r *http.Request) {
 
@@ -2115,6 +2220,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/organizaitons/{organizationID}/regions/{regionID}/images/{imageID}", wrapper.PostApiV1OrganizaitonsOrganizationIDRegionsRegionIDImagesImageID)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/identities", wrapper.GetApiV1OrganizationsOrganizationIDIdentities)
 	})
 	r.Group(func(r chi.Router) {
@@ -2194,6 +2302,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/regions/{regionID}/images", wrapper.GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/organizations/{organizationID}/regions/{regionID}/images", wrapper.PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/securitygroups", wrapper.GetApiV1OrganizationsOrganizationIDSecuritygroups)

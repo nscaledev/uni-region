@@ -20,6 +20,7 @@ package handler
 
 import (
 	"context"
+	goerrors "errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -172,6 +173,63 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w htt
 	}
 
 	h.setCacheable(w)
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
+func (h *Handler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
+	if err := rbac.AllowOrganizationScope(r.Context(), "region:images", identityapi.Create, organizationID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	var request openapi.ImageCreateRequest
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := region.NewClient(h.client, h.namespace).CreateImage(r.Context(), organizationID, regionID, &request)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
+func (h *Handler) PostApiV1OrganizaitonsOrganizationIDRegionsRegionIDImagesImageID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter, imageID openapi.ImageIDParameter) {
+	if err := rbac.AllowOrganizationScope(r.Context(), "region:images", identityapi.Create, organizationID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	// FIXME: Uncomment this line and decide on a maximum size for the upload content.
+	// r.GetBody = http.MaxBytesReader(w, r.Body, TO_BE_DECIDED)
+
+	// Even though we are passing 0 into this ParseMultipartForm function call, the underlying implementation adds an extra 10MiB buffer by default.
+	// Only the first 10MiB of the file will be read into memory, and any additional data beyond that will be streamed to disk.
+	if err := r.ParseMultipartForm(0); err != nil {
+		if e := (*http.MaxBytesError)(nil); goerrors.As(err, &e) {
+			// FIXME: We should return RequestEntityTooLarge instead of BadRequest here, but that would require changes to the core package.
+			message := fmt.Sprintf("The request body exceeds the maximum allowed size of %d bytes", e.Limit)
+			err = errors.HTTPRequestEntityTooLarge(message).WithError(err)
+			errors.HandleError(w, r, err)
+
+			return
+		}
+
+		err = errors.OAuth2ServerError("The server encountered an unexpected error while processing the request").WithError(err)
+		errors.HandleError(w, r, err)
+
+		return
+	}
+
+	result, err := region.NewClient(h.client, h.namespace).UploadImage(r.Context(), organizationID, regionID, imageID, r)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
