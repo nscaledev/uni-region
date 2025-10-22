@@ -732,14 +732,18 @@ type OpenstackServerSpec struct {
 type OpenstackServerStatus struct {
 }
 
-type ServerStroageList struct {
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type ServerStorageList struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	StorageList       []ServerStroage
+	Items             []ServerStorage `json:"items"`
 }
 
 // schristoff:  StorageSpec
-type ServerStroage struct {
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type ServerStorage struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Spec              ServerStorageSpec    `json:"spec"`

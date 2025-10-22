@@ -58,6 +58,7 @@ func init() {
 	SchemeBuilder.Register(&OpenstackSecurityGroup{}, &OpenstackSecurityGroupList{})
 	SchemeBuilder.Register(&Server{}, &ServerList{})
 	SchemeBuilder.Register(&OpenstackServer{}, &OpenstackServerList{})
+	SchemeBuilder.Register(&ServerStorage{}, &ServerStorageList{})
 }
 
 // Resource maps a resource type to a group resource.
