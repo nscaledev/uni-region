@@ -122,12 +122,17 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
 
-	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
-		if goerrors.Is(err, openstack.ErrResourceNotFound) {
+	image, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId)
+	if err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			return nil, errors.HTTPNotFound()
 		}
 
 		return nil, errors.OAuth2ServerError("failed to retrieve image from provider").WithError(err)
+	}
+
+	if !image.Active {
+		return nil, errors.HTTPNotFound()
 	}
 
 	resource, err := newGenerator(c.client, c.namespace, organizationID, projectID, identityID).generate(ctx, request)
@@ -166,12 +171,17 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
 
-	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
-		if goerrors.Is(err, openstack.ErrResourceNotFound) {
+	image, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId)
+	if err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			return nil, errors.HTTPNotFound()
 		}
 
 		return nil, errors.OAuth2ServerError("failed to retrieve image from provider").WithError(err)
+	}
+
+	if !image.Active {
+		return nil, errors.HTTPNotFound()
 	}
 
 	current, err := c.get(ctx, organizationID, projectID, serverID)

@@ -92,6 +92,64 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    post:
+      description: |-
+        Create a compute image.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/imageCreateRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/imageResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v1/organizations/{organizationID}/regions/{regionID}/images/{imageID}:
+    description: Compute image services.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/regionIDParameter'
+    - $ref: '#/components/parameters/imageIDParameter'
+    post:
+      description: |-
+        Upload image data to a compute image.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/imageUploadRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/imageResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    delete:
+      description: |-
+        Delete a compute image.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/regions/{regionID}/externalnetworks:
     description: |-
       Allows access to "external networks" for providers that support them.
@@ -783,6 +841,13 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
+    imageIDParameter:
+      name: imageID
+      in: path
+      description: The image ID.
+      required: true
+      schema:
+        $ref: '#/components/schemas/kubernetesNameParameter'
     networkIDParameter:
       name: networkID
       in: path
@@ -914,6 +979,26 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/regionRead'
+    imageMetadata:
+      description: Metadata required by image reads.
+      required:
+      - id
+      - name
+      - creationTime
+      properties:
+        id:
+          description: The unique resource ID.
+          type: string
+        name:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/kubernetesLabelValue'
+        creationTime:
+          description: The time the resource was created.
+          type: string
+          format: date-time
+        modifiedTime:
+          description: The time a resource was updated.
+          type: string
+          format: date-time
     imageVirtualization:
       description: What type of machine the image is for.
       type: string
@@ -1022,10 +1107,8 @@ components:
       - spec
       properties:
         metadata:
-          type: string
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/staticResourceMetadata'
+          $ref: '#/components/schemas/imageMetadata'
         spec:
-          type: string
           $ref: '#/components/schemas/imageSpec'
     images:
       description: A list of images that are compatible with this platform.
@@ -1577,6 +1660,93 @@ components:
                 value: 9361402c-f998-49cc-ab21-9bb99afcfde8
             spec:
               regionId: c7568e2d-f9ab-453d-9a3a-51375f78426b
+    imageCreateRequest:
+      description: A request for an image.
+      content:
+        application/json:
+          schema:
+            description: An image request.
+            type: object
+            required:
+            - metadata
+            - spec
+            properties:
+              metadata:
+                description: Metadata required for image writes.
+                type: object
+                required:
+                  - name
+                properties:
+                  name:
+                    $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/kubernetesLabelValue'
+                x-go-type-name: ImageCreateMetadata
+              spec:
+                description: An image.
+                type: object
+                required:
+                - virtualization
+                - os
+                properties:
+                  serverID:
+                    description: The server ID to create the image from. If not specified, the image is expected to be uploaded separately.
+                    type: string
+                  virtualization:
+                    $ref: '#/components/schemas/imageVirtualization'
+                  os:
+                    $ref: '#/components/schemas/imageOS'
+                  softwareVersions:
+                    $ref: '#/components/schemas/softwareVersions'
+                  gpu:
+                    $ref: '#/components/schemas/imageGpu'
+                x-go-type-name: ImageCreateSpec
+          example:
+            metadata:
+              name: ubu2204-v1.25.6-gpu-525.85.05-7ced4154
+            spec:
+              virtualization: virtualized
+              os:
+                kernel: linux
+                family: debian
+                distro: ubuntu
+                variant: server
+                codename: noble
+                version: '24.04'
+              softwareVersions:
+                kubernetes: v1.25.6
+              gpu:
+                vendor: NVIDIA
+                driver: 525.85.05
+                models:
+                  - A100
+                  - H100
+                  - H200
+      x-go-type-name: ImageCreateRequest
+    imageUploadRequest:
+      description: A request to upload data to an image. The file must be a `.tar.gz` archive containing a `disk.raw` or `disk.qcow2` file.
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required:
+            - method
+            properties:
+              method:
+                description: The upload method to use.
+                type: string
+                enum:
+                - direct
+                - url
+                x-go-type-name: ImageUploadMethod
+              file:
+                description: The image file to upload, required when method is `direct`.
+                type: string
+                format: binary
+              url:
+                description: The URL to upload the image from, required when method is `url`.
+                type: string
+          example:
+            method: "url"
+            url: "https://example.com/path/to/image.tar.gz"
     networkRequest:
       description: A request for a network.
       content:
@@ -1705,6 +1875,36 @@ components:
             $ref: '#/components/schemas/images'
           example:
           - metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: ubu2204-v1.25.6-gpu-525.85.05-7ced4154
+              creationTime: 2023-02-22T12:04:13Z
+            spec:
+              sizeGiB: 10
+              virtualization: virtualized
+              os:
+                kernel: linux
+                family: debian
+                distro: ubuntu
+                variant: server
+                codename: noble
+                version: '24.04'
+              softwareVersions:
+                kubernetes: v1.25.6
+              gpu:
+                vendor: NVIDIA
+                driver: 525.85.05
+                models:
+                - A100
+                - H100
+                - H200
+    imageResponse:
+      description: An image that can be used on this platform.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/image'
+          example:
+            metadata:
               id: a64f9269-36e0-4312-b8d1-52d93d569b7b
               name: ubu2204-v1.25.6-gpu-525.85.05-7ced4154
               creationTime: 2023-02-22T12:04:13Z

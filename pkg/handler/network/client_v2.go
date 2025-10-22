@@ -34,6 +34,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
+	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -261,7 +262,12 @@ func (s *createSaga) createServicePricipal(ctx context.Context) error {
 		},
 	}
 
-	identity, err := identity.New(s.client.client, s.client.namespace).CreateRaw(ctx, s.organizationID, s.projectID, request)
+	provider, err := region.NewClient(s.client.client, s.client.namespace).Provider(ctx, request.Spec.RegionId)
+	if err != nil {
+		return errors.OAuth2ServerError("unable to get region provider").WithError(err)
+	}
+
+	identity, err := identity.New(s.client.client, s.client.namespace).CreateRaw(ctx, s.organizationID, s.projectID, request, provider)
 	if err != nil {
 		return err
 	}

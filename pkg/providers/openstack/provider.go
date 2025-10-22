@@ -17,9 +17,12 @@ limitations under the License.
 package openstack
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -28,7 +31,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	gophercloud "github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
@@ -44,6 +49,7 @@ import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers/allocation/vlan"
@@ -101,6 +107,8 @@ type Provider struct {
 	_network  NetworkingInterface
 
 	lock sync.Mutex
+
+	imageCache *cache.TimeoutCache[[]images.Image]
 }
 
 var _ types.Provider = &Provider{}
@@ -116,6 +124,7 @@ func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Pro
 		client:        cli,
 		region:        region,
 		vlanAllocator: vlan.New(cli, region.Namespace, "openstack-region-provider", vlanSpec),
+		imageCache:    cache.New[[]images.Image](time.Hour),
 	}
 
 	if err := p.serviceClientRefresh(ctx); err != nil {
@@ -497,7 +506,12 @@ func getPublicOrOrganizationOwnedImages(resources []images.Image, organizationID
 }
 
 func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
-	virtualization, _ := image.Properties["unikorn:virtualization"].(string)
+	var organizationID *string
+
+	temp, _ := image.Properties["unikorn:organization:id"].(string)
+	if temp != "" {
+		organizationID = &temp
+	}
 
 	size := image.MinDiskGigabytes
 
@@ -506,15 +520,19 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 		size = int((image.VirtualSize + (1 << 30) - 1) >> 30)
 	}
 
+	virtualization, _ := image.Properties["unikorn:virtualization"].(string)
+
 	providerImage := types.Image{
 		ID:             image.ID,
 		Name:           image.Name,
+		OrganizationID: organizationID,
 		Created:        image.CreatedAt,
 		Modified:       image.UpdatedAt,
 		SizeGiB:        size,
 		Virtualization: types.ImageVirtualization(virtualization),
 		OS:             p.imageOS(image),
 		Packages:       p.imagePackages(image),
+		Active:         image.Status == images.ImageStatusActive,
 	}
 
 	if gpuVendor, ok := image.Properties["unikorn:gpu_vendor"].(string); ok {
@@ -539,14 +557,9 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 	return &providerImage, nil
 }
 
-// ListImages lists all available images.
+// ListImages lists all available (active) images.
 func (p *Provider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
-	imageService, err := p.image(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	resources, err := imageService.ListImages(ctx)
+	resources, err := p.listImages(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -567,8 +580,60 @@ func (p *Provider) ListImages(ctx context.Context, organizationID string) (types
 	return result, nil
 }
 
-// GetImage retrieves a specific image by its ID.
+func (p *Provider) listImages(ctx context.Context) ([]images.Image, error) {
+	if cached, found := p.imageCache.Get(); found {
+		return cached, nil
+	}
+
+	imageService, err := p.image(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	resources, err := imageService.ListImages(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	p.imageCache.Set(resources)
+
+	return resources, nil
+}
+
+// GetImage retrieves a specific image by its ID and the image is not guaranteed to be active.
 func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
+	resource, err := p.getImage(ctx, imageID)
+	if err != nil {
+		return nil, err
+	}
+
+	if !isPublicOrOrganizationOwnedImage(resource, organizationID) {
+		// This mimics the error returned by the OpenStack when an image is not found,
+		// allowing us to have consistent error handling over a single error type.
+		err = gophercloud.ErrUnexpectedResponseCode{
+			Method:   http.MethodGet,
+			Expected: []int{http.StatusOK},
+			Actual:   http.StatusNotFound,
+		}
+
+		return nil, err
+	}
+
+	return p.convertImage(resource)
+}
+
+func (p *Provider) getImage(ctx context.Context, imageID string) (*images.Image, error) {
+	if cached, found := p.imageCache.Get(); found {
+		imageIndexFunc := func(image images.Image) bool {
+			return image.ID == imageID
+		}
+
+		index := slices.IndexFunc(cached, imageIndexFunc)
+		if index != -1 {
+			return &cached[index], nil
+		}
+	}
+
 	imageService, err := p.image(ctx)
 	if err != nil {
 		return nil, err
@@ -579,11 +644,221 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 		return nil, err
 	}
 
-	if !isPublicOrOrganizationOwnedImage(resource, organizationID) {
-		return nil, fmt.Errorf("%w: image %s", ErrResourceNotFound, imageID)
+	if resource.Status == images.ImageStatusActive && resource.Visibility == images.ImageVisibilityPublic {
+		// Invalidate the cache as we had a cache miss.
+		p.imageCache.Invalidate()
+	}
+
+	return resource, nil
+}
+
+func SetMetadata[T ~string](metadata map[string]string, key string, value T) {
+	metadata[key] = string(value)
+}
+
+func SetNonNilMetadata[T ~string](metadata map[string]string, key string, value *T) {
+	if value != nil {
+		metadata[key] = string(*value)
+	}
+}
+
+func (p *Provider) createImageMetadata(image *types.Image) (map[string]string, error) {
+	metadata := make(map[string]string)
+
+	SetMetadata(metadata, "unikorn:os:kernal", image.OS.Kernel)
+	SetMetadata(metadata, "unikorn:os:family", image.OS.Family)
+	SetMetadata(metadata, "unikorn:os:distro", image.OS.Distro)
+	SetNonNilMetadata(metadata, "unikorn:os:variant", image.OS.Variant)
+	SetNonNilMetadata(metadata, "unikorn:os:codename", image.OS.Codename)
+
+	if image.Packages != nil {
+		for name, version := range *image.Packages {
+			key := fmt.Sprintf("unikorn:package:%s", name)
+			SetMetadata(metadata, key, version)
+		}
+	}
+
+	//nolint:nestif
+	if image.GPU != nil {
+		if image.GPU.Vendor == "" {
+			return nil, fmt.Errorf("%w: GPU vendor must be defined when GPU information is provided", ErrKeyUndefined)
+		}
+
+		if len(image.GPU.Models) == 0 {
+			return nil, fmt.Errorf("%w: GPU models must be defined when GPU information is provided", ErrKeyUndefined)
+		}
+
+		if image.GPU.Driver == "" {
+			return nil, fmt.Errorf("%w: GPU driver must be defined when GPU information is provided", ErrKeyUndefined)
+		}
+
+		var modelsBuffer bytes.Buffer
+
+		csvWriter := csv.NewWriter(&modelsBuffer)
+		if err := csvWriter.Write(image.GPU.Models); err != nil {
+			return nil, err
+		}
+
+		csvWriter.Flush()
+
+		gpuModels := modelsBuffer.String()
+		if gpuModels[len(gpuModels)-1] == '\n' {
+			gpuModels = gpuModels[:len(gpuModels)-1]
+		}
+
+		SetMetadata(metadata, "unikorn:gpu_vendor", image.GPU.Vendor)
+		SetMetadata(metadata, "unikorn:gpu_models", gpuModels)
+		SetMetadata(metadata, "unikorn:gpu_driver_version", image.GPU.Driver)
+	}
+
+	SetMetadata(metadata, "unikorn:virtualization", image.Virtualization)
+	SetNonNilMetadata(metadata, "unikorn:organization:id", image.OrganizationID)
+
+	return metadata, nil
+}
+
+// CreateImageForUpload creates a new image resource for upload.
+func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
+	imageService, err := p.image(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	properties, err := p.createImageMetadata(image)
+	if err != nil {
+		return nil, err
+	}
+
+	opts := &images.CreateOpts{
+		Name:       image.Name,
+		Visibility: ptr.To(images.ImageVisibilityPrivate),
+		Hidden:     ptr.To(false),
+		Protected:  ptr.To(false),
+		Properties: properties,
+	}
+
+	resource, err := imageService.CreateImage(ctx, opts)
+	if err != nil {
+		return nil, err
 	}
 
 	return p.convertImage(resource)
+}
+
+// CreateImageFromServer creates a new image from an existing server.
+//
+//nolint:cyclop
+func (p *Provider) CreateImageFromServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *types.Image) (*types.Image, error) {
+	compute, err := p.computeFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	openstackServer, err := compute.GetServer(ctx, server)
+	if err != nil {
+		return nil, err
+	}
+
+	imageService, err := p.image(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	metadata, err := p.createImageMetadata(image)
+	if err != nil {
+		return nil, err
+	}
+
+	opts := &servers.CreateImageOpts{
+		Name:     image.Name,
+		Metadata: metadata,
+	}
+
+	imageID, err := compute.CreateImageFromServer(ctx, openstackServer.ID, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// REVIEW_ME: We will stop the polling loop after an hour. This should be more than enough.
+	backoffStrategy := backoff.NewExponentialBackOff(backoff.WithMaxElapsedTime(time.Hour))
+
+	for {
+		resource, err := imageService.GetImage(ctx, imageID)
+		if err != nil {
+			if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+				if backoffStrategy.GetElapsedTime() > 30*time.Minute {
+					return nil, fmt.Errorf("%w: image %s not found after waiting for 30 minutes", ErrResourceNotFound, imageID)
+				}
+
+				time.Sleep(backoffStrategy.NextBackOff())
+
+				continue
+			}
+
+			return nil, err
+		}
+
+		switch resource.Status {
+		case images.ImageStatusQueued, images.ImageStatusSaving:
+			time.Sleep(backoffStrategy.NextBackOff())
+		case images.ImageStatusActive:
+			p.imageCache.Invalidate()
+			return p.convertImage(resource)
+		case images.ImageStatusKilled, images.ImageStatusDeleted, images.ImageStatusPendingDelete, images.ImageStatusDeactivated, images.ImageStatusImporting:
+			fallthrough
+		default:
+			// The status could be "killed", "deleted", "pending_delete", "deactivated", "importing", and unexpected ones.
+			return nil, fmt.Errorf("%w: unexpected image status %s for image %s", ErrResourceDependency, resource.Status, imageID)
+		}
+	}
+}
+
+// UploadImage uploads data to an image.
+func (p *Provider) UploadImage(ctx context.Context, imageID string, reader io.Reader) error {
+	imageService, err := p.image(ctx)
+	if err != nil {
+		return err
+	}
+
+	return imageService.UploadImageData(ctx, imageID, reader)
+}
+
+// FinalizeImage finalizes an image after upload.
+func (p *Provider) FinalizeImage(ctx context.Context, imageID string) (*types.Image, error) {
+	imageService, err := p.image(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	opts := images.UpdateOpts{
+		images.UpdateVisibility{
+			Visibility: images.ImageVisibilityPublic,
+		},
+	}
+
+	resource, err := imageService.UpdateImage(ctx, imageID, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	p.imageCache.Invalidate()
+
+	return p.convertImage(resource)
+}
+
+func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
+	imageService, err := p.image(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err = imageService.DeleteImage(ctx, imageID); err != nil {
+		return err
+	}
+
+	p.imageCache.Invalidate()
+
+	return nil
 }
 
 // ListExternalNetworks returns a list of external networks if the platform

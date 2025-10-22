@@ -18,6 +18,7 @@ package types
 
 import (
 	"context"
+	"io"
 
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 )
@@ -36,6 +37,16 @@ type Provider interface {
 	ListImages(ctx context.Context, organizationID string) (ImageList, error)
 	// GetImage retrieves a specific image by its ID.
 	GetImage(ctx context.Context, organizationID, imageID string) (*Image, error)
+	// CreateImageForUpload creates a new image resource for upload.
+	CreateImageForUpload(ctx context.Context, image *Image) (*Image, error)
+	// CreateImageFromServer creates a new image from an existing server.
+	CreateImageFromServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *Image) (*Image, error)
+	// UploadImage uploads data to an image.
+	UploadImage(ctx context.Context, imageID string, reader io.Reader) error
+	// FinalizeImage finalizes an image after upload.
+	FinalizeImage(ctx context.Context, imageID string) (*Image, error)
+	// DeleteImage deletes an image.
+	DeleteImage(ctx context.Context, imageID string) error
 	// CreateIdentity creates a new identity for cloud infrastructure.
 	CreateIdentity(ctx context.Context, identity *unikornv1.Identity) error
 	// DeleteIdentity cleans up an identity for cloud infrastructure.

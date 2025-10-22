@@ -122,6 +122,7 @@ type ServerInterface interface {
 	StopServer(ctx context.Context, id string) error
 	CreateRemoteConsole(ctx context.Context, id string) (*remoteconsoles.RemoteConsole, error)
 	ShowConsoleOutput(ctx context.Context, id string, length *int) (string, error)
+	CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error)
 }
 
 type ComputeInterface interface {
