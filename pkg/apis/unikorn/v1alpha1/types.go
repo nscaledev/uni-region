@@ -739,46 +739,30 @@ type ServerStorageList struct {
 	Items             []ServerStorage `json:"items"`
 }
 
-// schristoff:  StorageSpec
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:scope=Namespaced,categories=unikorn
 // +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
 type ServerStorage struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              ServerStorageSpec    `json:"spec"`
-	Request           ServerStorageRequest `json:"request"`
-	// ??
-	TenantID string
+
+	//schristoff: this is the user request
+	Spec ServerStorageSpec `json:"spec"`
 	// Pause, if true, will inhibit reconciliation.
-	Pause bool `json:"pause,omitempty"`
+	Pause  bool          `json:"pause,omitempty"`
+	Type   StorageType   `json:"type"`
+	Status StorageStatus `json:"status"`
 }
 
 type ServerStorageSpec struct {
 	StorageID  *string
-	VLAN       VLANSegment
-	Status     ServerStorageStatus `json:"status,omitempty"`
 	QuotaLimit *string
+	//schristoff: nfs specific :(
 	RootSquash bool
-	// schristoff: Standard rn is this goes in a status struct and chills
-	// but we already have a status
-	// so figure out what to do here
+}
+
+type StorageStatus struct {
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
 }
 
-// ServerStorageStatus current reported status of storage
-// we should be in "Pending" (present tense) until an action is completed
-// successfully or has timed out and then we enter past tense
-// +kubebuilder:validation:Enum=Created;Pending;Failed;Destroyed
-type ServerStorageStatus string
-
-const (
-	Created ServerStorageStatus = "Created"
-	Pending ServerStorageStatus = "Pending"
-	Failed  ServerStorageStatus = "Failed"
-	Destroy ServerStorageStatus = "Destroyed"
-)
-
-// ServerStorageRequest stores the end user desired state of storage
-type ServerStorageRequest struct {
-}
+type StorageType struct{}
