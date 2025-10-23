@@ -11,8 +11,8 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 
-	"github.com/unikorn-cloud/region/pkg/client"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Client provides a restful API for identities.
@@ -50,8 +50,8 @@ func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, networkI
 	return resource, nil
 }
 
-func (c *Client) Get(ctx context.Context, organizationID, projectID, serverID string) error {
-	result, err := c.GetRaw(ctx, organizationID, projectID, networkID)
+func (c *Client) Get(ctx context.Context, organizationID, projectID, storageID string) (*openapi.NetworkRead, error) {
+	result, err := c.GetRaw(ctx, organizationID, projectID, storageID)
 	if err != nil {
 		return nil, err
 	}
