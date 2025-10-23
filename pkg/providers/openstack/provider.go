@@ -36,7 +36,6 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/rules"
-	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/networks"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 	"github.com/gophercloud/utils/openstack/clientconfig"
@@ -1100,14 +1099,14 @@ func storageRange(prefix net.IPNet) (string, string) {
 	return start.String(), end.String()
 }
 
-func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface, network *unikornv1.Network) (*networks.Network, error) {
+func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface, network *unikornv1.Network) (*NetworkExt, error) {
 	log := log.FromContext(ctx)
 
 	result, err := client.GetNetwork(ctx, network)
 	if err == nil {
 		log.V(1).Info("L2 network already exists")
 
-		return &result.Network, nil
+		return result, nil
 	}
 
 	if !errors.Is(err, ErrNotFound) {
@@ -1143,7 +1142,7 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 	return result2, nil
 }
 
-func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, network *unikornv1.Network, openstackNetwork *networks.Network) (*subnets.Subnet, error) {
+func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, network *unikornv1.Network, openstackNetwork *NetworkExt) (*subnets.Subnet, error) {
 	log := log.FromContext(ctx)
 
 	result, err := client.GetSubnet(ctx, network)
@@ -1615,7 +1614,7 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 	}
 }
 
-func (p *Provider) lookupNetwork(ctx context.Context, networks NetworkInterface, namespace, id string) (*networks.Network, error) {
+func (p *Provider) lookupNetwork(ctx context.Context, networks NetworkInterface, namespace, id string) (*NetworkExt, error) {
 	network := &unikornv1.Network{}
 
 	if err := p.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: id}, network); err != nil {
@@ -1627,7 +1626,7 @@ func (p *Provider) lookupNetwork(ctx context.Context, networks NetworkInterface,
 		return nil, err
 	}
 
-	return &openstackNetwork.Network, nil
+	return openstackNetwork, nil
 }
 
 func (p *Provider) lookupSecurityGroup(ctx context.Context, securityGroups SecurityGroupInterface, namespace, id string) (*groups.SecGroup, error) {
@@ -1673,7 +1672,7 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 		}
 	}
 
-	port, err := client.GetPort(ctx, server.Name)
+	port, err := client.GetServerPort(ctx, server)
 	if err != nil {
 		if !errors.Is(err, ErrNotFound) {
 			return nil, err
@@ -1681,7 +1680,7 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 
 		log.V(1).Info("creating port")
 
-		port, err = client.CreatePort(ctx, network.ID, server.Name, securityGroupIDs, addressPairs)
+		port, err = client.CreateServerPort(ctx, server, network.ID, securityGroupIDs, addressPairs)
 		if err != nil {
 			return nil, err
 		}
@@ -1689,6 +1688,7 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 		return port, nil
 	}
 
+	// TODO: we should only do this when the security groups or address pairs differ.
 	log.V(1).Info("updating port")
 
 	port, err = client.UpdatePort(ctx, port.ID, securityGroupIDs, addressPairs)
@@ -1844,7 +1844,7 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
-	port, err := networking.GetPort(ctx, server.Name)
+	port, err := networking.GetServerPort(ctx, server)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}
