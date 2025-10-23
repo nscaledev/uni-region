@@ -733,36 +733,59 @@ type OpenstackServerStatus struct {
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-type ServerStorageList struct {
+type FileStorageList struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Items             []ServerStorage `json:"items"`
+	Items             []FileStorage `json:"items"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
-type ServerStorage struct {
+type FileStorage struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              FileStorageSpec   `json:"spec"`
+	Status            FileStorageStatus `json:"status"`
+}
 
-	//schristoff: this is the user request
-	Spec ServerStorageSpec `json:"spec"`
+type FileStorageSpec struct {
+	RegionID string `json:"regionID"`
+	// Name of the FileStorageClass
+	StorageClass string            `json:"storageClass"`
+	Size         resource.Quantity `json:"size"`
+	Attachments  []Attachment      `json:"attachments,omitempty"`
+
 	// Pause, if true, will inhibit reconciliation.
-	Pause  bool          `json:"pause,omitempty"`
-	Type   StorageType   `json:"type"`
-	Status StorageStatus `json:"status"`
+	Pause bool `json:"pause,omitempty"`
+	NFS   *NFS `json:"nfs,omitempty"`
 }
 
-type ServerStorageSpec struct {
-	StorageID  *string
-	QuotaLimit *string
-	//schristoff: nfs specific :(
-	RootSquash bool
-}
-
-type StorageStatus struct {
+type FileStorageStatus struct {
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
 }
+type Attachment struct {
+	NetworkID string `json:"networkID"`
+}
 
-type StorageType struct{}
+type NFS struct {
+	RootSquash bool `json:"rootSquash,omitempty"`
+}
+
+type FileStorageClass struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	// +kubebuilder:validation:Enum=nfsv3;nfsv4
+	Protocol Protocol               `json:"protocol"`
+	Status   FileStorageClassStatus `json:"status"`
+}
+
+type Protocol string
+
+const (
+	NFSv3 Protocol = "nfsv3"
+	NFSv4 Protocol = "nfsv4"
+)
+
+type FileStorageClassStatus struct{}

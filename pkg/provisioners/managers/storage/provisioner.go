@@ -11,12 +11,12 @@ import (
 
 type Provisioner struct {
 	provisioners.Metadata
-	storage *unikornv1.ServerStorage
+	storage *unikornv1.FileStorage
 }
 
 func New(_ manager.ControllerOptions) provisioners.ManagerProvisioner {
 	return &Provisioner{
-		storage: &unikornv1.ServerStorage{},
+		storage: &unikornv1.FileStorage{},
 	}
 }
 
