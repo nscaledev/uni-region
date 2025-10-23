@@ -33,16 +33,20 @@ type Provider interface {
 	Region(ctx context.Context) (*unikornv1.Region, error)
 	// Flavors list all available flavors.
 	Flavors(ctx context.Context) (FlavorList, error)
-	// CreateImage creates a new image.
-	CreateImage(ctx context.Context, image *Image) (*Image, error)
+	// ListImages lists all available images.
+	ListImages(ctx context.Context, organizationID string) (ImageList, error)
+	// GetImage retrieves a specific image by its ID.
+	GetImage(ctx context.Context, organizationID, imageID string, bypassCache bool) (*Image, error)
+	// CreateImageForUpload creates a new image resource for upload.
+	CreateImageForUpload(ctx context.Context, image *Image) (*Image, error)
+	// CreateImageFromServer creates a new image from an existing server.
+	CreateImageFromServer(ctx context.Context, serverID string, image *Image) (*Image, error)
 	// UploadImage uploads data to an image.
 	UploadImage(ctx context.Context, imageID string, reader io.Reader) error
 	// FinalizeImage finalizes an image after upload.
 	FinalizeImage(ctx context.Context, imageID string) (*Image, error)
-	// ListImages lists all available images.
-	ListImages(ctx context.Context, organizationID string) (ImageList, error)
-	// GetImage retrieves a specific image by its ID.
-	GetImage(ctx context.Context, organizationID, imageID string) (*Image, error)
+	// DeleteImage deletes an image.
+	DeleteImage(ctx context.Context, imageID string) error
 	// CreateIdentity creates a new identity for cloud infrastructure.
 	CreateIdentity(ctx context.Context, identity *unikornv1.Identity) error
 	// DeleteIdentity cleans up an identity for cloud infrastructure.

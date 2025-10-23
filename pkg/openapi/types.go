@@ -766,21 +766,6 @@ type SecurityGroupRequest = SecurityGroupWrite
 // ServerRequest A server request.
 type ServerRequest = ServerWrite
 
-// PostApiV1OrganizaitonsOrganizationIDRegionsRegionIDImagesImageIDMultipartBody defines parameters for PostApiV1OrganizaitonsOrganizationIDRegionsRegionIDImagesImageID.
-type PostApiV1OrganizaitonsOrganizationIDRegionsRegionIDImagesImageIDMultipartBody struct {
-	// File The image file to upload, required when method is `direct`.
-	File *openapi_types.File `json:"file,omitempty"`
-
-	// Method The upload method to use.
-	Method ImageUploadMethod `json:"method"`
-
-	// Url The URL to upload the image from, required when method is `url`.
-	Url *string `json:"url,omitempty"`
-}
-
-// ImageUploadMethod defines parameters for PostApiV1OrganizaitonsOrganizationIDRegionsRegionIDImagesImageID.
-type ImageUploadMethod string
-
 // GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams defines parameters for GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutput.
 type GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams struct {
 	// Length The requested output length.
@@ -811,12 +796,30 @@ type ImageCreateSpec struct {
 	// Os An operating system description.
 	Os ImageOS `json:"os"`
 
+	// ServerID The server ID to create the image from. If not specified, the image is expected to be uploaded separately.
+	ServerID *string `json:"serverID,omitempty"`
+
 	// SoftwareVersions Image preinstalled version version metadata.
 	SoftwareVersions *SoftwareVersions `json:"softwareVersions,omitempty"`
 
 	// Virtualization What type of machine the image is for.
 	Virtualization ImageVirtualization `json:"virtualization"`
 }
+
+// PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDMultipartBody defines parameters for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageID.
+type PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDMultipartBody struct {
+	// File The image file to upload, required when method is `direct`.
+	File *openapi_types.File `json:"file,omitempty"`
+
+	// Method The upload method to use.
+	Method ImageUploadMethod `json:"method"`
+
+	// Url The URL to upload the image from, required when method is `url`.
+	Url *string `json:"url,omitempty"`
+}
+
+// ImageUploadMethod defines parameters for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageID.
+type ImageUploadMethod string
 
 // GetApiV1OrganizationsOrganizationIDSecuritygroupsParams defines parameters for GetApiV1OrganizationsOrganizationIDSecuritygroups.
 type GetApiV1OrganizationsOrganizationIDSecuritygroupsParams struct {
@@ -855,9 +858,6 @@ type GetApiV2OrganizationsOrganizationIDProjectsProjectIDNetworksParams struct {
 	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
 }
 
-// PostApiV1OrganizaitonsOrganizationIDRegionsRegionIDImagesImageIDMultipartRequestBody defines body for PostApiV1OrganizaitonsOrganizationIDRegionsRegionIDImagesImageID for multipart/form-data ContentType.
-type PostApiV1OrganizaitonsOrganizationIDRegionsRegionIDImagesImageIDMultipartRequestBody PostApiV1OrganizaitonsOrganizationIDRegionsRegionIDImagesImageIDMultipartBody
-
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody = IdentityWrite
 
@@ -878,6 +878,9 @@ type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSer
 
 // PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesJSONRequestBody PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesJSONBody
+
+// PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDMultipartRequestBody defines body for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageID for multipart/form-data ContentType.
+type PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDMultipartRequestBody PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDMultipartBody
 
 // PostApiV2OrganizationsOrganizationIDProjectsProjectIDNetworksJSONRequestBody defines body for PostApiV2OrganizationsOrganizationIDProjectsProjectIDNetworks for application/json ContentType.
 type PostApiV2OrganizationsOrganizationIDProjectsProjectIDNetworksJSONRequestBody = NetworkV2Write

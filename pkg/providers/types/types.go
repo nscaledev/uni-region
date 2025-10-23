@@ -102,6 +102,8 @@ type Image struct {
 	OS ImageOS
 	// Packages is a list of pre-installed packages and its versions. Versions must be a semver (starts with a vN.N.N)
 	Packages *ImagePackages
+	// Active indicates whether the image is active and ready for use.
+	Active bool
 }
 
 // ImageGPU defines image specific GPU compatibility information.

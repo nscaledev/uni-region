@@ -364,3 +364,12 @@ func (c *ComputeClient) ShowConsoleOutput(ctx context.Context, id string, length
 
 	return servers.ShowConsoleOutput(ctx, c.client, id, opts).Extract()
 }
+
+func (c *ComputeClient) CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "POST /compute/v2/servers/{server_id}/action (create image)")
+	defer span.End()
+
+	return servers.CreateImage(ctx, c.client, id, opts).ExtractImageID()
+}

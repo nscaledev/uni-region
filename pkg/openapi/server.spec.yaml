@@ -108,7 +108,7 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v1/organizaitons/{organizationID}/regions/{regionID}/images/{imageID}:
+  /api/v1/organizations/{organizationID}/regions/{regionID}/images/{imageID}:
     description: Compute image services.
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
@@ -116,7 +116,7 @@ paths:
     - $ref: '#/components/parameters/imageIDParameter'
     post:
       description: |-
-        Upload image data to a comptue image.
+        Upload image data to a compute image.
       security:
       - oauth2Authentication: []
       requestBody:
@@ -124,6 +124,24 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/imageResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    delete:
+      description: |-
+        Delete a compute image.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
@@ -1669,6 +1687,9 @@ components:
                 - virtualization
                 - os
                 properties:
+                  serverID:
+                    description: The server ID to create the image from. If not specified, the image is expected to be uploaded separately.
+                    type: string
                   virtualization:
                     $ref: '#/components/schemas/imageVirtualization'
                   os:
@@ -1701,7 +1722,7 @@ components:
                   - H200
       x-go-type-name: ImageCreateRequest
     imageUploadRequest:
-      description: A request to upload an image. The file must be a `.tar.gz` archive containing a `disk.raw` or `disk.qcow2` file. 
+      description: A request to upload data to an image. The file must be a `.tar.gz` archive containing a `disk.raw` or `disk.qcow2` file.
       content:
         multipart/form-data:
           schema:

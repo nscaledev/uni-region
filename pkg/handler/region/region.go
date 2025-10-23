@@ -41,7 +41,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -241,7 +240,6 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 	}
 
 	image := &types.Image{
-		ID:             string(uuid.NewUUID()),
 		Name:           request.Metadata.Name,
 		OrganizationID: ptr.To(organizationID),
 		Virtualization: toProviderImageVirtualization(request.Spec.Virtualization),
@@ -250,12 +248,43 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 		Packages:       packages,
 	}
 
-	result, err := provider.CreateImage(ctx, image)
+	var result *types.Image
+
+	if request.Spec.ServerID == nil {
+		result, err = c.createImageForUpload(ctx, image, provider)
+	} else {
+		result, err = c.createImageFromServer(ctx, *request.Spec.ServerID, image, provider)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return fromProviderImage(result), nil
+}
+
+func (c *Client) createImageForUpload(ctx context.Context, image *types.Image, provider types.Provider) (*types.Image, error) {
+	result, err := provider.CreateImageForUpload(ctx, image)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create image").WithError(err)
 	}
 
-	return fromProviderImage(result), nil
+	return result, nil
+}
+
+func (c *Client) createImageFromServer(ctx context.Context, serverID string, image *types.Image, provider types.Provider) (*types.Image, error) {
+	result, err := provider.CreateImageFromServer(ctx, serverID, image)
+	if err != nil {
+		// FIXME: We should provide a better error description instead of using the default one defined in HTTPConflict function.
+		// This means that the server is not in a valid state to create an image from.
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return nil, errors.HTTPConflict().WithError(err)
+		}
+
+		return nil, errors.OAuth2ServerError("failed to create image").WithError(err)
+	}
+
+	return result, nil
 }
 
 func (c *Client) UploadImage(ctx context.Context, organizationID, regionID, imageID string, r *http.Request) (*openapi.Image, error) {
@@ -386,6 +415,30 @@ func (c *Client) uploadImageData(ctx context.Context, imageID string, sourceRead
 	}
 
 	return fromProviderImage(result), nil
+}
+
+func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imageID string) error {
+	provider, err := c.Provider(ctx, regionID)
+	if err != nil {
+		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	if err = provider.DeleteImage(ctx, imageID); err != nil {
+		// REVIEW_ME: Most deletion APIs ignore not found errors, but our other delete APIs return 404. To maintain consistency, we do the same here.
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return errors.HTTPNotFound().WithError(err)
+		}
+
+		// FIXME: We should provide a better error description instead of using the default one defined in HTTPConflict function.
+		// This means that the image is still being used by another resource.
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return errors.HTTPConflict().WithError(err)
+		}
+
+		return errors.OAuth2ServerError("failed to delete image").WithError(err)
+	}
+
+	return nil
 }
 
 func (c *Client) ListExternalNetworks(ctx context.Context, regionID string) (openapi.ExternalNetworks, error) {

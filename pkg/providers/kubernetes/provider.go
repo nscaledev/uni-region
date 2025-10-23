@@ -194,6 +194,26 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	return flavors, nil
 }
 
+// ListImages lists all available images.
+func (p *Provider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
+	return nil, ErrUnimplmented
+}
+
+// GetImage retrieves a specific image by its ID.
+func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string, bypassCache bool) (*types.Image, error) {
+	return nil, ErrUnimplmented
+}
+
+// CreateImageForUpload creates a new image resource for upload.
+func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
+	return nil, ErrUnimplmented
+}
+
+// CreateImageFromServer creates a new image from an existing server.
+func (p *Provider) CreateImageFromServer(ctx context.Context, serverID string, image *types.Image) (*types.Image, error) {
+	return nil, ErrUnimplmented
+}
+
 // CreateImage creates a new image.
 func (p *Provider) CreateImage(ctx context.Context, image *types.Image) (*types.Image, error) {
 	return nil, ErrUnimplmented
@@ -209,14 +229,9 @@ func (p *Provider) FinalizeImage(ctx context.Context, imageID string) (*types.Im
 	return nil, ErrUnimplmented
 }
 
-// ListImages lists all available images.
-func (p *Provider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
-	return nil, ErrUnimplmented
-}
-
-// GetImage retrieves a specific image by its ID.
-func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
-	return nil, ErrUnimplmented
+// DeleteImage deletes an image.
+func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
+	return ErrUnimplmented
 }
 
 // CreateIdentity creates a new identity for cloud infrastructure.
