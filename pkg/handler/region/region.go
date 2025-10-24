@@ -32,6 +32,7 @@ import (
 
 	"github.com/gophercloud/gophercloud/v2"
 
+	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -253,7 +254,7 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 	if request.Spec.ServerID == nil {
 		result, err = c.createImageForUpload(ctx, image, provider)
 	} else {
-		result, err = c.createImageFromServer(ctx, *request.Spec.ServerID, image, provider)
+		result, err = c.createImageFromServer(ctx, organizationID, *request.Spec.ServerID, image, provider)
 	}
 
 	if err != nil {
@@ -272,7 +273,20 @@ func (c *Client) createImageForUpload(ctx context.Context, image *types.Image, p
 	return result, nil
 }
 
-func (c *Client) createImageFromServer(ctx context.Context, serverID string, image *types.Image, provider types.Provider) (*types.Image, error) {
+func (c *Client) createImageFromServer(ctx context.Context, organizationID, serverID string, image *types.Image, provider types.Provider) (*types.Image, error) {
+	var server unikornv1.Server
+	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: serverID}, &server); err != nil {
+		if kerrors.IsNotFound(err) {
+			return nil, errors.OAuth2InvalidRequest("The provided server does not exist").WithError(err)
+		}
+
+		return nil, errors.OAuth2ServerError("failed to get server").WithError(err)
+	}
+
+	if server.Labels[coreconstants.OrganizationLabel] != organizationID {
+		return nil, errors.OAuth2InvalidRequest("The provided server does not exist")
+	}
+
 	result, err := provider.CreateImageFromServer(ctx, serverID, image)
 	if err != nil {
 		// FIXME: We should provide a better error description instead of using the default one defined in HTTPConflict function.
@@ -291,6 +305,19 @@ func (c *Client) UploadImage(ctx context.Context, organizationID, regionID, imag
 	provider, err := c.Provider(ctx, regionID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	image, err := provider.GetImage(ctx, organizationID, imageID, true)
+	if err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return nil, errors.HTTPNotFound().WithError(err)
+		}
+
+		return nil, errors.OAuth2ServerError("failed to get image").WithError(err)
+	}
+
+	if image.OrganizationID == nil || *image.OrganizationID != organizationID {
+		return nil, errors.HTTPNotFound()
 	}
 
 	method := openapi.ImageUploadMethod(r.Form.Get("method"))
@@ -421,6 +448,19 @@ func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imag
 	provider, err := c.Provider(ctx, regionID)
 	if err != nil {
 		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	image, err := provider.GetImage(ctx, organizationID, imageID, false)
+	if err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return errors.HTTPNotFound().WithError(err)
+		}
+
+		return errors.OAuth2ServerError("failed to get image").WithError(err)
+	}
+
+	if image.OrganizationID == nil || *image.OrganizationID != organizationID {
+		return errors.HTTPNotFound()
 	}
 
 	if err = provider.DeleteImage(ctx, imageID); err != nil {
