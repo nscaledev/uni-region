@@ -5,6 +5,7 @@
 //
 //	mockgen -source=interfaces.go -destination=mock/interfaces.go -package=mock
 //
+
 // Package mock is a generated GoMock package.
 package mock
 
@@ -32,6 +33,7 @@ import (
 type MockExternalNetworkInterfsce struct {
 	ctrl     *gomock.Controller
 	recorder *MockExternalNetworkInterfsceMockRecorder
+	isgomock struct{}
 }
 
 // MockExternalNetworkInterfsceMockRecorder is the mock recorder for MockExternalNetworkInterfsce.
@@ -70,6 +72,7 @@ func (mr *MockExternalNetworkInterfsceMockRecorder) ExternalNetworks(ctx any) *g
 type MockNetworkInterface struct {
 	ctrl     *gomock.Controller
 	recorder *MockNetworkInterfaceMockRecorder
+	isgomock struct{}
 }
 
 // MockNetworkInterfaceMockRecorder is the mock recorder for MockNetworkInterface.
@@ -137,6 +140,7 @@ func (mr *MockNetworkInterfaceMockRecorder) GetNetwork(ctx, network any) *gomock
 type MockSubnetInterface struct {
 	ctrl     *gomock.Controller
 	recorder *MockSubnetInterfaceMockRecorder
+	isgomock struct{}
 }
 
 // MockSubnetInterfaceMockRecorder is the mock recorder for MockSubnetInterface.
@@ -204,6 +208,7 @@ func (mr *MockSubnetInterfaceMockRecorder) GetSubnet(ctx, network any) *gomock.C
 type MockRouterInterface struct {
 	ctrl     *gomock.Controller
 	recorder *MockRouterInterfaceMockRecorder
+	isgomock struct{}
 }
 
 // MockRouterInterfaceMockRecorder is the mock recorder for MockRouterInterface.
@@ -299,6 +304,7 @@ func (mr *MockRouterInterfaceMockRecorder) RemoveRouterInterface(ctx, routerID, 
 type MockSecurityGroupInterface struct {
 	ctrl     *gomock.Controller
 	recorder *MockSecurityGroupInterfaceMockRecorder
+	isgomock struct{}
 }
 
 // MockSecurityGroupInterfaceMockRecorder is the mock recorder for MockSecurityGroupInterface.
@@ -410,6 +416,7 @@ func (mr *MockSecurityGroupInterfaceMockRecorder) ListSecurityGroupRules(ctx, se
 type MockFloatingIPInterface struct {
 	ctrl     *gomock.Controller
 	recorder *MockFloatingIPInterfaceMockRecorder
+	isgomock struct{}
 }
 
 // MockFloatingIPInterfaceMockRecorder is the mock recorder for MockFloatingIPInterface.
@@ -477,6 +484,7 @@ func (mr *MockFloatingIPInterfaceMockRecorder) GetFloatingIP(ctx, portID any) *g
 type MockPortInterface struct {
 	ctrl     *gomock.Controller
 	recorder *MockPortInterfaceMockRecorder
+	isgomock struct{}
 }
 
 // MockPortInterfaceMockRecorder is the mock recorder for MockPortInterface.
@@ -589,6 +597,7 @@ func (mr *MockPortInterfaceMockRecorder) UpdatePort(ctx, portID, securityGroupID
 type MockNetworkingInterface struct {
 	ctrl     *gomock.Controller
 	recorder *MockNetworkingInterfaceMockRecorder
+	isgomock struct{}
 }
 
 // MockNetworkingInterfaceMockRecorder is the mock recorder for MockNetworkingInterface.
@@ -1008,6 +1017,7 @@ func (mr *MockNetworkingInterfaceMockRecorder) UpdatePort(ctx, portID, securityG
 type MockKeypairInterface struct {
 	ctrl     *gomock.Controller
 	recorder *MockKeypairInterfaceMockRecorder
+	isgomock struct{}
 }
 
 // MockKeypairInterfaceMockRecorder is the mock recorder for MockKeypairInterface.
@@ -1059,6 +1069,7 @@ func (mr *MockKeypairInterfaceMockRecorder) DeleteKeypair(ctx, name any) *gomock
 type MockFlavorInterface struct {
 	ctrl     *gomock.Controller
 	recorder *MockFlavorInterfaceMockRecorder
+	isgomock struct{}
 }
 
 // MockFlavorInterfaceMockRecorder is the mock recorder for MockFlavorInterface.
@@ -1097,6 +1108,7 @@ func (mr *MockFlavorInterfaceMockRecorder) GetFlavors(ctx any) *gomock.Call {
 type MockServerGroupInterface struct {
 	ctrl     *gomock.Controller
 	recorder *MockServerGroupInterfaceMockRecorder
+	isgomock struct{}
 }
 
 // MockServerGroupInterfaceMockRecorder is the mock recorder for MockServerGroupInterface.
@@ -1149,6 +1161,7 @@ func (mr *MockServerGroupInterfaceMockRecorder) DeleteServerGroup(ctx, id any) *
 type MockComputeQuotaInterface struct {
 	ctrl     *gomock.Controller
 	recorder *MockComputeQuotaInterfaceMockRecorder
+	isgomock struct{}
 }
 
 // MockComputeQuotaInterfaceMockRecorder is the mock recorder for MockComputeQuotaInterface.
@@ -1186,6 +1199,7 @@ func (mr *MockComputeQuotaInterfaceMockRecorder) UpdateQuotas(ctx, projectID any
 type MockServerInterface struct {
 	ctrl     *gomock.Controller
 	recorder *MockServerInterfaceMockRecorder
+	isgomock struct{}
 }
 
 // MockServerInterfaceMockRecorder is the mock recorder for MockServerInterface.
@@ -1205,6 +1219,21 @@ func (m *MockServerInterface) EXPECT() *MockServerInterfaceMockRecorder {
 	return m.recorder
 }
 
+// CreateImageFromServer mocks base method.
+func (m *MockServerInterface) CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateImageFromServer", ctx, id, opts)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateImageFromServer indicates an expected call of CreateImageFromServer.
+func (mr *MockServerInterfaceMockRecorder) CreateImageFromServer(ctx, id, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateImageFromServer", reflect.TypeOf((*MockServerInterface)(nil).CreateImageFromServer), ctx, id, opts)
+}
+
 // CreateRemoteConsole mocks base method.
 func (m *MockServerInterface) CreateRemoteConsole(ctx context.Context, id string) (*remoteconsoles.RemoteConsole, error) {
 	m.ctrl.T.Helper()
@@ -1221,18 +1250,18 @@ func (mr *MockServerInterfaceMockRecorder) CreateRemoteConsole(ctx, id any) *gom
 }
 
 // CreateServer mocks base method.
-func (m *MockServerInterface) CreateServer(ctx context.Context, server *v1alpha1.Server, keyName string, networks []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
+func (m *MockServerInterface) CreateServer(ctx context.Context, server *v1alpha1.Server, keyName string, arg3 []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateServer", ctx, server, keyName, networks, serverGroupID, metadata)
+	ret := m.ctrl.Call(m, "CreateServer", ctx, server, keyName, arg3, serverGroupID, metadata)
 	ret0, _ := ret[0].(*servers.Server)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateServer indicates an expected call of CreateServer.
-func (mr *MockServerInterfaceMockRecorder) CreateServer(ctx, server, keyName, networks, serverGroupID, metadata any) *gomock.Call {
+func (mr *MockServerInterfaceMockRecorder) CreateServer(ctx, server, keyName, arg3, serverGroupID, metadata any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateServer", reflect.TypeOf((*MockServerInterface)(nil).CreateServer), ctx, server, keyName, networks, serverGroupID, metadata)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateServer", reflect.TypeOf((*MockServerInterface)(nil).CreateServer), ctx, server, keyName, arg3, serverGroupID, metadata)
 }
 
 // DeleteServer mocks base method.
@@ -1325,6 +1354,7 @@ func (mr *MockServerInterfaceMockRecorder) StopServer(ctx, id any) *gomock.Call 
 type MockComputeInterface struct {
 	ctrl     *gomock.Controller
 	recorder *MockComputeInterfaceMockRecorder
+	isgomock struct{}
 }
 
 // MockComputeInterfaceMockRecorder is the mock recorder for MockComputeInterface.
@@ -1342,6 +1372,21 @@ func NewMockComputeInterface(ctrl *gomock.Controller) *MockComputeInterface {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockComputeInterface) EXPECT() *MockComputeInterfaceMockRecorder {
 	return m.recorder
+}
+
+// CreateImageFromServer mocks base method.
+func (m *MockComputeInterface) CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateImageFromServer", ctx, id, opts)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateImageFromServer indicates an expected call of CreateImageFromServer.
+func (mr *MockComputeInterfaceMockRecorder) CreateImageFromServer(ctx, id, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateImageFromServer", reflect.TypeOf((*MockComputeInterface)(nil).CreateImageFromServer), ctx, id, opts)
 }
 
 // CreateKeypair mocks base method.
@@ -1374,18 +1419,18 @@ func (mr *MockComputeInterfaceMockRecorder) CreateRemoteConsole(ctx, id any) *go
 }
 
 // CreateServer mocks base method.
-func (m *MockComputeInterface) CreateServer(ctx context.Context, server *v1alpha1.Server, keyName string, networks []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
+func (m *MockComputeInterface) CreateServer(ctx context.Context, server *v1alpha1.Server, keyName string, arg3 []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateServer", ctx, server, keyName, networks, serverGroupID, metadata)
+	ret := m.ctrl.Call(m, "CreateServer", ctx, server, keyName, arg3, serverGroupID, metadata)
 	ret0, _ := ret[0].(*servers.Server)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateServer indicates an expected call of CreateServer.
-func (mr *MockComputeInterfaceMockRecorder) CreateServer(ctx, server, keyName, networks, serverGroupID, metadata any) *gomock.Call {
+func (mr *MockComputeInterfaceMockRecorder) CreateServer(ctx, server, keyName, arg3, serverGroupID, metadata any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateServer", reflect.TypeOf((*MockComputeInterface)(nil).CreateServer), ctx, server, keyName, networks, serverGroupID, metadata)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateServer", reflect.TypeOf((*MockComputeInterface)(nil).CreateServer), ctx, server, keyName, arg3, serverGroupID, metadata)
 }
 
 // CreateServerGroup mocks base method.

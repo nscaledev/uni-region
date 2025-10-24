@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/spjmurray/go-util/pkg/set"
 
@@ -199,8 +200,38 @@ func (p *Provider) ListImages(ctx context.Context, organizationID string) (types
 }
 
 // GetImage retrieves a specific image by its ID.
-func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
+func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string, bypassCache bool) (*types.Image, error) {
 	return nil, ErrUnimplmented
+}
+
+// CreateImageForUpload creates a new image resource for upload.
+func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
+	return nil, ErrUnimplmented
+}
+
+// CreateImageFromServer creates a new image from an existing server.
+func (p *Provider) CreateImageFromServer(ctx context.Context, serverID string, image *types.Image) (*types.Image, error) {
+	return nil, ErrUnimplmented
+}
+
+// CreateImage creates a new image.
+func (p *Provider) CreateImage(ctx context.Context, image *types.Image) (*types.Image, error) {
+	return nil, ErrUnimplmented
+}
+
+// UploadImage uploads data to an image.
+func (p *Provider) UploadImage(ctx context.Context, imageID string, reader io.Reader) error {
+	return ErrUnimplmented
+}
+
+// FinalizeImage finalizes an image after upload.
+func (p *Provider) FinalizeImage(ctx context.Context, imageID string) (*types.Image, error) {
+	return nil, ErrUnimplmented
+}
+
+// DeleteImage deletes an image.
+func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
+	return ErrUnimplmented
 }
 
 // CreateIdentity creates a new identity for cloud infrastructure.
