@@ -783,6 +783,7 @@ func (p *Provider) CreateImageFromServer(ctx context.Context, serverID string, i
 		case images.ImageStatusSaving:
 			time.Sleep(backoffStrategy.NextBackOff())
 		case images.ImageStatusActive:
+			p.imageCache.Invalidate()
 			return p.convertImage(resource)
 		case images.ImageStatusQueued, images.ImageStatusKilled, images.ImageStatusDeleted, images.ImageStatusPendingDelete, images.ImageStatusDeactivated, images.ImageStatusImporting:
 			fallthrough
