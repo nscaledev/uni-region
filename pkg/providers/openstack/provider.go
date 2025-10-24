@@ -509,7 +509,7 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 	var organizationID *string
 
 	temp, _ := image.Properties["unikorn:organization:id"].(string)
-	if temp == "" {
+	if temp != "" {
 		organizationID = &temp
 	}
 
