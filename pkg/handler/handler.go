@@ -217,8 +217,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImage
 		return
 	}
 
-	// FIXME: Uncomment this line and decide on a maximum size for the upload content.
-	// r.GetBody = http.MaxBytesReader(w, r.Body, TO_BE_DECIDED)
+	r.Body = http.MaxBytesReader(w, r.Body, h.options.ImageUploadSizeLimit)
 
 	// Even though we are passing 0 into this ParseMultipartForm function call, the underlying implementation adds an extra 10MiB buffer by default.
 	// Only the first 10MiB of the file will be read into memory, and any additional data beyond that will be streamed to disk.
