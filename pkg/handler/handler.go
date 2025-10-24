@@ -224,7 +224,6 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImage
 	// Only the first 10MiB of the file will be read into memory, and any additional data beyond that will be streamed to disk.
 	if err := r.ParseMultipartForm(0); err != nil {
 		if e := (*http.MaxBytesError)(nil); goerrors.As(err, &e) {
-			// FIXME: We should return RequestEntityTooLarge instead of BadRequest here, but that would require changes to the core package.
 			message := fmt.Sprintf("The request body exceeds the maximum allowed size of %d bytes", e.Limit)
 			err = errors.HTTPRequestEntityTooLarge(message).WithError(err)
 			errors.HandleError(w, r, err)
