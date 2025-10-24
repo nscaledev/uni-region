@@ -23,7 +23,6 @@ import (
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
-	coremanager "github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -61,11 +60,10 @@ type Provisioner struct {
 }
 
 // New returns a new initialized provisioner object.
-func New(options coremanager.ControllerOptions) provisioners.ManagerProvisioner {
+func New(options *Options) provisioners.ManagerProvisioner {
 	return &Provisioner{
 		identity: &unikornv1.Identity{},
-		//nolint:forcetypeassert
-		options: options.(*Options),
+		options:  options,
 	}
 }
 
