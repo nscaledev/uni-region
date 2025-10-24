@@ -646,7 +646,7 @@ func (p *Provider) getImage(ctx context.Context, imageID string, bypassCache boo
 		return nil, err
 	}
 
-	if !bypassCache {
+	if !bypassCache && resource.Status == images.ImageStatusActive {
 		// Invalidate the cache as we had a cache miss.
 		p.imageCache.Invalidate()
 	}
