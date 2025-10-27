@@ -327,6 +327,21 @@ func (p *Provider) getProviderFromServicePrincipal(ctx context.Context, identity
 	return p.getProviderFromServicePrincipalData(openstackIdentity)
 }
 
+// getPriviliegedProviderFromServicePrincipal binds itself to the service principal's project
+// but uses the provider's top level admin credentials.
+func (p *Provider) getPriviliegedProviderFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	if openstackIdentity.Spec.ProjectID == nil {
+		return nil, fmt.Errorf("%w: service principal project not set", coreerrors.ErrConsistency)
+	}
+
+	return NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID), nil
+}
+
 // computeFromServicePrincipal gets a compute client scoped to the service principal.
 func (p *Provider) computeFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (ComputeInterface, error) {
 	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
@@ -342,9 +357,25 @@ func (p *Provider) computeFromServicePrincipal(ctx context.Context, identity *un
 	return client, nil
 }
 
-// networkFromServicePrincipal get a network client scoped to the service principal.
+// networkFromServicePrincipal gets a network client scoped to the service principal.
 func (p *Provider) networkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
 	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := NewNetworkClient(ctx, provider, p.region.Spec.Openstack.Network)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
+// privilegedNetworkFromServicePrincipal gets a network client scoped to the service principal's
+// project but with "manager" credentials.
+func (p *Provider) privilegedNetworkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
+	provider, err := p.getPriviliegedProviderFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return nil, err
 	}
@@ -1242,7 +1273,9 @@ func (p *Provider) reconcileRouterInterface(ctx context.Context, client Networki
 
 // CreateNetwork creates a physical network for an identity.
 func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
-	networking, err := p.networkFromServicePrincipal(ctx, identity)
+	// NOTE: this is a privileged network client as it needs permissions
+	// from the manager policy in order to create provider networks.
+	networking, err := p.privilegedNetworkFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
 	}
@@ -1275,7 +1308,10 @@ func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identi
 func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
 	log := log.FromContext(ctx)
 
-	networking, err := p.networkFromServicePrincipal(ctx, identity)
+	// NOTE: this is a privileged network client as it needs permissions
+	// from the manager policy in order to see provider networks for VLAN
+	// deallocation.
+	networking, err := p.privilegedNetworkFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
 	}
