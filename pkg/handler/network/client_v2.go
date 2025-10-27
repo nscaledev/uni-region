@@ -48,9 +48,11 @@ func convertV2(in *regionv1.Network) *openapi.NetworkV2Read {
 	return &openapi.NetworkV2Read{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.NetworkV2Spec{
-			RegionId:       in.Labels[constants.RegionLabel],
 			Prefix:         in.Spec.Prefix.String(),
 			DnsNameservers: convertIPv4List(in.Spec.DNSNameservers),
+		},
+		Status: openapi.NetworkV2Status{
+			RegionId: in.Labels[constants.RegionLabel],
 		},
 	}
 }

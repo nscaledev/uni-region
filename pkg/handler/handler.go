@@ -311,13 +311,17 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 	w.WriteHeader(http.StatusAccepted)
 }
 
+func (h *Handler) securityGroupClient() *securitygroup.Client {
+	return securitygroup.New(h.client, h.namespace)
+}
+
 func (h *Handler) GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, params openapi.GetApiV1OrganizationsOrganizationIDSecuritygroupsParams) {
 	if err := rbac.AllowOrganizationScope(r.Context(), "region:securitygroups", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	result, err := securitygroup.New(h.client, h.namespace).List(r.Context(), organizationID, params)
+	result, err := h.securityGroupClient().List(r.Context(), organizationID, params)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -339,7 +343,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	result, err := securitygroup.New(h.client, h.namespace).Create(r.Context(), organizationID, projectID, identityID, request)
+	result, err := h.securityGroupClient().Create(r.Context(), organizationID, projectID, identityID, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -354,7 +358,7 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		return
 	}
 
-	if err := securitygroup.New(h.client, h.namespace).Delete(r.Context(), organizationID, projectID, securityGroupID); err != nil {
+	if err := h.securityGroupClient().Delete(r.Context(), organizationID, projectID, securityGroupID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -368,7 +372,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 		return
 	}
 
-	result, err := securitygroup.New(h.client, h.namespace).Get(r.Context(), organizationID, projectID, securityGroupID)
+	result, err := h.securityGroupClient().Get(r.Context(), organizationID, projectID, securityGroupID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -377,7 +381,6 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
-//nolint:dupl
 func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups", identityapi.Update, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
@@ -391,7 +394,7 @@ func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 		return
 	}
 
-	result, err := securitygroup.New(h.client, h.namespace).Update(r.Context(), organizationID, projectID, identityID, securityGroupID, request)
+	result, err := h.securityGroupClient().Update(r.Context(), organizationID, projectID, identityID, securityGroupID, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -467,7 +470,6 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
-//nolint:dupl
 func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter) {
 	if err := rbac.AllowProjectScope(r.Context(), "region:servers", identityapi.Create, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
