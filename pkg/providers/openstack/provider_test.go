@@ -309,6 +309,8 @@ func serverFixture(opts ...func(*regionv1.Server)) *regionv1.Server {
 	return s
 }
 
+const serverPortIP = "192.168.0.42"
+
 func openstackServerPortFixture(server *regionv1.Server, openstackNetwork *openstack.NetworkExt, openstackSubnet *subnets.Subnet) *ports.Port {
 	return &ports.Port{
 		ID:          string(uuid.NewUUID()),
@@ -318,7 +320,7 @@ func openstackServerPortFixture(server *regionv1.Server, openstackNetwork *opens
 		FixedIPs: []ports.IP{
 			{
 				SubnetID:  openstackSubnet.ID,
-				IPAddress: "192.168.0.42",
+				IPAddress: serverPortIP,
 			},
 		},
 	}
@@ -666,6 +668,8 @@ func TestReconcileServerPort(t *testing.T) {
 
 		_, err := openstack.ReconcileServerPort(t.Context(), p, networking, server)
 		require.NoError(t, err)
+		require.NotNil(t, server.Status.PrivateIP)
+		require.Equal(t, serverPortIP, *server.Status.PrivateIP)
 	})
 
 	t.Run("ItExists", func(t *testing.T) {
@@ -684,6 +688,8 @@ func TestReconcileServerPort(t *testing.T) {
 
 		_, err := openstack.ReconcileServerPort(t.Context(), p, networking, server)
 		require.NoError(t, err)
+		require.NotNil(t, server.Status.PrivateIP)
+		require.Equal(t, serverPortIP, *server.Status.PrivateIP)
 	})
 
 	t.Run("ItUpdatesSecurityGroups", func(t *testing.T) {
