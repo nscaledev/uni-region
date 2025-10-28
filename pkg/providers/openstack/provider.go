@@ -1721,6 +1721,8 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 			return nil, err
 		}
 
+		server.Status.PrivateIP = ptr.To(port.FixedIPs[0].IPAddress)
+
 		return port, nil
 	}
 
