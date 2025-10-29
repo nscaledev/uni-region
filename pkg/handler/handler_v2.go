@@ -109,3 +109,107 @@ func (h *Handler) DeleteApiV2OrganizationsOrganizationIDProjectsProjectIDNetwork
 
 	w.WriteHeader(http.StatusAccepted)
 }
+
+func (h *Handler) GetApiV2OrganizationsOrganizationIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, params openapi.GetApiV2OrganizationsOrganizationIDSecuritygroupsParams) {
+	ctx := r.Context()
+
+	result, err := h.securityGroupClient().ListV2Admin(ctx, organizationID, params)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result = slices.DeleteFunc(result, func(resource openapi.SecurityGroupV2Read) bool {
+		return rbac.AllowProjectScope(ctx, "region:securitygroups:v2", identityapi.Read, organizationID, resource.Metadata.ProjectId) != nil
+	})
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
+func (h *Handler) GetApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, params openapi.GetApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroupsParams) {
+	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups:v2", identityapi.Read, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := h.securityGroupClient().ListV2(r.Context(), organizationID, projectID, params)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
+func (h *Handler) PostApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups:v2", identityapi.Create, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	request := &openapi.SecurityGroupV2Create{}
+
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := h.securityGroupClient().CreateV2(r.Context(), organizationID, projectID, request)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusCreated, result)
+}
+
+func (h *Handler) GetApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups:v2", identityapi.Read, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := h.securityGroupClient().GetV2(r.Context(), organizationID, projectID, securityGroupID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
+func (h *Handler) PutApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups:v2", identityapi.Update, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	request := &openapi.SecurityGroupV2Update{}
+
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := h.securityGroupClient().UpdateV2(r.Context(), organizationID, projectID, securityGroupID, request)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
+}
+
+func (h *Handler) DeleteApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups:v2", identityapi.Delete, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	if err := h.securityGroupClient().DeleteV2(r.Context(), organizationID, projectID, securityGroupID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
