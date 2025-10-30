@@ -433,7 +433,10 @@ func (c *Client) uploadImageData(ctx context.Context, imageID string, sourceRead
 				return nil, errors.OAuth2InvalidRequest("The provided file contains multiple disk images, only a single disk image is supported")
 			}
 
-			if _, err = io.Copy(tempFile, tarReader); err != nil {
+			contextReader := NewContextReader(ctx, tarReader)
+
+			if _, err = io.Copy(tempFile, contextReader); err != nil {
+				// REVIEW_ME: For simplicity, we will return a status code 500 for all errors here, even if the error is due to context/request cancellation.
 				return nil, errors.OAuth2ServerError("The server encountered an unexpected error while extracting the disk image").WithError(err)
 			}
 		}
