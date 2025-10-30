@@ -417,9 +417,19 @@ type NetworkSpec struct {
 	DNSNameservers []unikornv1core.IPv4Address `json:"dnsNameservers"`
 }
 
+// TODO: delete me.
+type NetworkStatusOpenstack struct {
+	// NetworkID is the network ID.
+	NetworkID *string `json:"networkID,omitempty"`
+	// SubnetID is the subnet ID.
+	SubnetID *string `json:"subnetID,omitempty"`
+}
+
 type NetworkStatus struct {
 	// Current service state of a cluster manager.
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	// TODO: delete me.
+	Openstack *NetworkStatusOpenstack `json:"openstack,omitempty"`
 }
 
 // OpenstackNetworkList s a typed list of physical networks.
