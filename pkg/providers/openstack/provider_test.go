@@ -154,6 +154,9 @@ func networkFixture() *regionv1.Network {
 				},
 			},
 		},
+		Status: regionv1.NetworkStatus{
+			Openstack: &regionv1.NetworkStatusOpenstack{},
+		},
 	}
 }
 
@@ -375,6 +378,8 @@ func TestReconcileNetwork(t *testing.T) {
 
 		_, err := openstack.ReconcileNetwork(t.Context(), p, networking, network)
 		require.NoError(t, err)
+		require.NotNil(t, network.Status.Openstack.NetworkID)
+		require.Equal(t, openStackNetwork.ID, *network.Status.Openstack.NetworkID)
 	})
 
 	t.Run("IfExists", func(t *testing.T) {
@@ -387,6 +392,8 @@ func TestReconcileNetwork(t *testing.T) {
 
 		_, err := openstack.ReconcileNetwork(t.Context(), p, networking, network)
 		require.NoError(t, err)
+		require.NotNil(t, network.Status.Openstack.NetworkID)
+		require.Equal(t, openStackNetwork.ID, *network.Status.Openstack.NetworkID)
 	})
 }
 
@@ -416,12 +423,14 @@ func TestReconcileSubnet(t *testing.T) {
 
 		networking := mock.NewMockSubnetInterface(c)
 		networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, openstack.ErrNotFound)
-		networking.EXPECT().CreateSubnet(t.Context(), network, openstackNetwork.ID, "192.168.0.0/24", gomock.Any(), []string{"8.8.4.4"}, allocationPools).Return(nil, nil)
+		networking.EXPECT().CreateSubnet(t.Context(), network, openstackNetwork.ID, "192.168.0.0/24", gomock.Any(), []string{"8.8.4.4"}, allocationPools).Return(openstackSubnet, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
 		_, err := openstack.ReconcileSubnet(t.Context(), p, networking, network, openstackNetwork)
 		require.NoError(t, err)
+		require.NotNil(t, network.Status.Openstack.SubnetID)
+		require.Equal(t, openstackSubnet.ID, *network.Status.Openstack.SubnetID)
 	})
 
 	t.Run("ItExists", func(t *testing.T) {
@@ -434,6 +443,8 @@ func TestReconcileSubnet(t *testing.T) {
 
 		_, err := openstack.ReconcileSubnet(t.Context(), p, networking, network, openstackNetwork)
 		require.NoError(t, err)
+		require.NotNil(t, network.Status.Openstack.SubnetID)
+		require.Equal(t, openstackSubnet.ID, *network.Status.Openstack.SubnetID)
 	})
 }
 

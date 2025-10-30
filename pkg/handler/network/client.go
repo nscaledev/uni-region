@@ -73,7 +73,7 @@ func convertIPv4List(in []unikornv1core.IPv4Address) openapi.Ipv4AddressList {
 }
 
 // convert converts a single resource from the Kubernetes representation into the API one.
-func (c *Client) convert(ctx context.Context, in *unikornv1.Network) *openapi.NetworkRead {
+func (c *Client) convert(in *unikornv1.Network) *openapi.NetworkRead {
 	out := &openapi.NetworkRead{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.NetworkReadSpec{
@@ -83,19 +83,12 @@ func (c *Client) convert(ctx context.Context, in *unikornv1.Network) *openapi.Ne
 		},
 	}
 
-	//nolint:exhaustive,gocritic
-	switch in.Spec.Provider {
-	case unikornv1.ProviderOpenstack:
-		out.Spec.Type = openapi.Openstack
-
-		var openstackNetwork unikornv1.OpenstackNetwork
-
-		if err := c.client.Get(ctx, client.ObjectKey{Namespace: in.Namespace, Name: in.Name}, &openstackNetwork); err == nil {
-			out.Spec.Openstack = &openapi.NetworkSpecOpenstack{
-				VlanId:    openstackNetwork.Spec.VlanID,
-				NetworkId: openstackNetwork.Spec.NetworkID,
-				SubnetId:  openstackNetwork.Spec.SubnetID,
-			}
+	// TODO: this exposes provider internals to external services, for CAPO's benefit,
+	// Get rid of it to prevent leaking information.
+	if in.Status.Openstack != nil {
+		out.Spec.Openstack = &openapi.NetworkSpecOpenstack{
+			NetworkId: in.Status.Openstack.NetworkID,
+			SubnetId:  in.Status.Openstack.SubnetID,
 		}
 	}
 
@@ -103,11 +96,11 @@ func (c *Client) convert(ctx context.Context, in *unikornv1.Network) *openapi.Ne
 }
 
 // convertList converts a list of resources from the Kubernetes representation into the API one.
-func (c *Client) convertList(ctx context.Context, in unikornv1.NetworkList) openapi.NetworksRead {
+func (c *Client) convertList(in unikornv1.NetworkList) openapi.NetworksRead {
 	out := make(openapi.NetworksRead, len(in.Items))
 
 	for i := range in.Items {
-		out[i] = *c.convert(ctx, &in.Items[i])
+		out[i] = *c.convert(&in.Items[i])
 	}
 
 	return out
@@ -240,7 +233,7 @@ func (c *Client) List(ctx context.Context, organizationID string) (openapi.Netwo
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	return c.convertList(ctx, result), nil
+	return c.convertList(result), nil
 }
 
 // Create instantiates a new resource.
@@ -254,7 +247,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 		return nil, errors.OAuth2ServerError("unable to create network").WithError(err)
 	}
 
-	return c.convert(ctx, resource), nil
+	return c.convert(resource), nil
 }
 
 // Get a resource.
@@ -264,7 +257,7 @@ func (c *Client) Get(ctx context.Context, organizationID, projectID, networkID s
 		return nil, err
 	}
 
-	return c.convert(ctx, result), nil
+	return c.convert(result), nil
 }
 
 // Delete a resource.
