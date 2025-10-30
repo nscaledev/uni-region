@@ -59,21 +59,20 @@ func (c *Client) Get(ctx context.Context, organizationID, projectID, storageID s
 	return c.convert(ctx, result), nil
 }
 
-func (c *Client) Update(ctx context.Context, organizationID, projectID, identityID, serverID string, request *openapi.ServerWrite) error {
-	return nil
+// Create instantiates a new resource.
+func (c *Client) Create(ctx context.Context, organizationID, projectID, identityID string, request *openapi.NetworkWrite) (*openapi.NetworkRead, error) {
+	resource, err := c.generate(ctx, organizationID, projectID, identityID, request)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.client.Create(ctx, resource); err != nil {
+		return nil, errors.OAuth2ServerError("unable to create storage").WithError(err)
+	}
+
+	return c.convert(ctx, resource), nil
 }
 
-func (c *Client) Reboot(ctx context.Context, organizationID, projectID, identityID, serverID string, hard bool) error {
-	return nil
-}
-
-func (c *Client) Start(ctx context.Context, organizationID, projectID, identityID, serverID string) error {
-	return nil
-}
-
-func (c *Client) Stop(ctx context.Context, organizationID, projectID, identityID, serverID string) error {
-	return nil
-}
 
 func (c *Client) Delete(ctx context.Context, organizationID, projectID, storageID string) error {
 	result, err := c.GetRaw(ctx, organizationID, projectID, storageID)
@@ -90,3 +89,34 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, storageI
 	}
 
 }
+
+// generate a new resource from a request.
+func (c *Client) generate(ctx context.Context, organizationID, projectID, identityID string, request *openapi.NetworkWrite) (*unikornv1.Network, error) {
+	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("unable to get identity").WithError(err)
+	}
+
+	prefix, err := parseIPV4Prefix(request.Spec.Prefix)
+	if err != nil {
+		return nil, errors.OAuth2InvalidRequest("unable to parse prefix").WithError(err)
+	}
+
+	dnsNameservers, err := parseIPV4AddressList(request.Spec.DnsNameservers)
+	if err != nil {
+		return nil, err
+	}
+
+	out := &unikornv1.Network{
+		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.namespace).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identityID).Get(),
+		Spec: unikornv1.NetworkSpec{
+			Tags:           conversion.GenerateTagList(request.Metadata.Tags),
+			Provider:       identity.Spec.Provider,
+			Prefix:         generateIPV4Prefix(prefix),
+			DNSNameservers: generateIPV4AddressList(dnsNameservers),
+		},
+	}
+
+	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
+		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
+	}

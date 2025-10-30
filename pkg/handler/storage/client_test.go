@@ -14,6 +14,26 @@ func TestGet(t testing.T) {
 
 }
 
+func TestUpdate(testing.T) {
+
+}
+
+func TestReboot(t testing.T) {
+
+}
+
+func TestStart(t testing.T) {
+
+}
+
+func TestStop(t testing.T) {
+
+}
+
+func TestDelete(t testing.T) {
+
+}
+
 func newTestClient(t testing.T) *Client {
 
 	return NewClient(client.Client{}, "testnamespace")
