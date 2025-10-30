@@ -44,6 +44,10 @@ type Provider interface {
 	CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error
 	// DeleteNetwork deletes a physical network.
 	DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error
+	// GetNewtworkDetail exposes provider specific network information.
+	// NOTE: do not use this ever.
+	// TODO: used to propagate network and subnet details to CAPO, this needs fixing.
+
 	// ListExternalNetworks returns a list of external networks if the platform
 	// supports such a concept.
 	ListExternalNetworks(ctx context.Context) (ExternalNetworks, error)

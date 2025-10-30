@@ -1137,6 +1137,8 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 	if err == nil {
 		log.V(1).Info("L2 network already exists")
 
+		network.Status.Openstack.NetworkID = ptr.To(result.ID)
+
 		return result, nil
 	}
 
@@ -1159,7 +1161,7 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 		vlanID = &v
 	}
 
-	result2, err := client.CreateNetwork(ctx, network, vlanID)
+	result, err = client.CreateNetwork(ctx, network, vlanID)
 	if err != nil {
 		if vlanID != nil {
 			if rerr := p.vlanAllocator.Free(ctx, *vlanID); rerr != nil {
@@ -1170,7 +1172,9 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 		return nil, err
 	}
 
-	return result2, nil
+	network.Status.Openstack.NetworkID = ptr.To(result.ID)
+
+	return result, nil
 }
 
 func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, network *unikornv1.Network, openstackNetwork *NetworkExt) (*subnets.Subnet, error) {
@@ -1179,6 +1183,8 @@ func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, 
 	result, err := client.GetSubnet(ctx, network)
 	if err == nil {
 		log.V(1).Info("L3 subnet already exists")
+
+		network.Status.Openstack.SubnetID = ptr.To(result.ID)
 
 		return result, nil
 	}
@@ -1208,6 +1214,8 @@ func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, 
 	if err != nil {
 		return nil, err
 	}
+
+	network.Status.Openstack.SubnetID = ptr.To(result.ID)
 
 	return result, nil
 }
@@ -1273,6 +1281,8 @@ func (p *Provider) reconcileRouterInterface(ctx context.Context, client Networki
 
 // CreateNetwork creates a physical network for an identity.
 func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
+	network.Status.Openstack = &unikornv1.NetworkStatusOpenstack{}
+
 	// NOTE: this is a privileged network client as it needs permissions
 	// from the manager policy in order to create provider networks.
 	networking, err := p.privilegedNetworkFromServicePrincipal(ctx, identity)
