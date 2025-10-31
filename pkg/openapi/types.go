@@ -67,6 +67,12 @@ const (
 	Openstack  RegionType = "openstack"
 )
 
+// AllowedSourceAddresses A list of network prefixes that are allowed to egress from the server.
+// By default, only packets from the server's network interface's IP address
+// are allowed to enter the network.  Use of this option allows the server
+// to act as a router without SNAT rules.
+type AllowedSourceAddresses = []string
+
 // ConsoleOutput Console output
 type ConsoleOutput struct {
 	// Contents Console output.
@@ -548,7 +554,7 @@ type SecurityGroupV2Create struct {
 	Spec SecurityGroupV2CreateSpec `json:"spec"`
 }
 
-// SecurityGroupV2CreateSpec A security group's specification.
+// SecurityGroupV2CreateSpec defines model for securityGroupV2CreateSpec.
 type SecurityGroupV2CreateSpec struct {
 	// NetworkId The network a security group belongs to.
 	NetworkId string `json:"networkId"`
@@ -578,7 +584,7 @@ type SecurityGroupV2Spec struct {
 // SecurityGroupV2Status Read only status information about a security group.
 type SecurityGroupV2Status struct {
 	// NetworkId The network a security group belongs to.
-	NetworkId interface{} `json:"networkId"`
+	NetworkId string `json:"networkId"`
 
 	// RegionId The region a security group belongs to.
 	RegionId string `json:"regionId"`
@@ -692,6 +698,109 @@ type ServerStatus struct {
 	PublicIP *string `json:"publicIP,omitempty"`
 }
 
+// ServerV2Create A server creation request.
+type ServerV2Create struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A server's specification.
+	Spec ServerV2CreateSpec `json:"spec"`
+}
+
+// ServerV2CreateSpec defines model for serverV2CreateSpec.
+type ServerV2CreateSpec struct {
+	// FlavorId The flavor of the server.
+	FlavorId string `json:"flavorId"`
+
+	// ImageId The image of the server.
+	ImageId string `json:"imageId"`
+
+	// NetworkId The network ID to attach a server to.
+	NetworkId string `json:"networkId"`
+
+	// Networking A server's network configuration.
+	Networking *ServerV2Networking `json:"networking,omitempty"`
+
+	// UserData Contains base64-encoded configuration information or scripts to use upon launch.
+	// The format of the data is governed by the cloud-init standard, and may be a script,
+	// a MIME multipart archive, etc.
+	UserData *[]byte `json:"userData,omitempty"`
+}
+
+// ServerV2Networking A server's network configuration.
+type ServerV2Networking struct {
+	// AllowedSourceAddresses A list of network prefixes that are allowed to egress from the server.
+	// By default, only packets from the server's network interface's IP address
+	// are allowed to enter the network.  Use of this option allows the server
+	// to act as a router without SNAT rules.
+	AllowedSourceAddresses *AllowedSourceAddresses `json:"allowedSourceAddresses,omitempty"`
+
+	// PublicIP Whether or not to provision a public IP.
+	PublicIP *bool `json:"publicIP,omitempty"`
+
+	// SecurityGroups A list of security group IDs.
+	SecurityGroups *ServerV2SecurityGroupIDList `json:"securityGroups,omitempty"`
+}
+
+// ServerV2Read A server.
+type ServerV2Read struct {
+	// Metadata Metadata required by project scoped resource reads.
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+
+	// Spec A server's specification.
+	Spec ServerV2Spec `json:"spec"`
+
+	// Status Read only status information about a security group.
+	Status ServerV2Status `json:"status"`
+}
+
+// ServerV2SecurityGroupIDList A list of security group IDs.
+type ServerV2SecurityGroupIDList = []string
+
+// ServerV2Spec A server's specification.
+type ServerV2Spec struct {
+	// FlavorId The flavor of the server.
+	FlavorId string `json:"flavorId"`
+
+	// ImageId The image of the server.
+	ImageId string `json:"imageId"`
+
+	// Networking A server's network configuration.
+	Networking *ServerV2Networking `json:"networking,omitempty"`
+
+	// UserData Contains base64-encoded configuration information or scripts to use upon launch.
+	// The format of the data is governed by the cloud-init standard, and may be a script,
+	// a MIME multipart archive, etc.
+	UserData *[]byte `json:"userData,omitempty"`
+}
+
+// ServerV2Status Read only status information about a security group.
+type ServerV2Status struct {
+	// NetworkId The network a security group belongs to.
+	NetworkId string `json:"networkId"`
+
+	// PowerState The lifecycle phase of an instance.
+	PowerState *InstanceLifecyclePhase `json:"powerState,omitempty"`
+
+	// PrivateIP The private IP address of the server.
+	PrivateIP *string `json:"privateIP,omitempty"`
+
+	// PublicIP The public IP address of the server.
+	PublicIP *string `json:"publicIP,omitempty"`
+
+	// RegionId The region a security group belongs to.
+	RegionId string `json:"regionId"`
+}
+
+// ServerV2Update A server update request.
+type ServerV2Update struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A server's specification.
+	Spec ServerV2Spec `json:"spec"`
+}
+
 // ServerWrite A server request.
 type ServerWrite struct {
 	// Metadata Metadata required for all API resource reads and writes.
@@ -703,6 +812,9 @@ type ServerWrite struct {
 
 // ServersRead A list of servers.
 type ServersRead = []ServerRead
+
+// ServersV2Read A list of servers.
+type ServersV2Read = []ServerV2Read
 
 // SoftwareVersions Image preinstalled version version metadata.
 type SoftwareVersions map[string]externalRef0.Semver
@@ -794,8 +906,14 @@ type SecurityGroupsV2Response = SecurityGroupsV2Read
 // ServerResponse A server.
 type ServerResponse = ServerRead
 
+// ServerV2Response A server.
+type ServerV2Response = ServerV2Read
+
 // ServersResponse A list of servers.
 type ServersResponse = ServersRead
+
+// ServersV2Response A list of servers.
+type ServersV2Response = ServersV2Read
 
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
@@ -817,6 +935,12 @@ type SecurityGroupV2UpdateRequest = SecurityGroupV2Update
 
 // ServerRequest A server request.
 type ServerRequest = ServerWrite
+
+// ServerV2CreateRequest A server creation request.
+type ServerV2CreateRequest = ServerV2Create
+
+// ServerV2UpdateRequest A server update request.
+type ServerV2UpdateRequest = ServerV2Update
 
 // GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams defines parameters for GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutput.
 type GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams struct {
@@ -874,8 +998,43 @@ type GetApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroupsParams st
 	NetworkID *NetworkIDQueryParameter `form:"networkID,omitempty" json:"networkID,omitempty"`
 }
 
+// GetApiV2OrganizationsOrganizationIDProjectsProjectIDServersParams defines parameters for GetApiV2OrganizationsOrganizationIDProjectsProjectIDServers.
+type GetApiV2OrganizationsOrganizationIDProjectsProjectIDServersParams struct {
+	// Tag A set of tags to match against resources in the form "name=value",
+	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+
+	// NetworkID Allows resources to be filtered by network.
+	NetworkID *NetworkIDQueryParameter `form:"networkID,omitempty" json:"networkID,omitempty"`
+}
+
+// GetApiV2OrganizationsOrganizationIDProjectsProjectIDServersServerIDConsoleoutputParams defines parameters for GetApiV2OrganizationsOrganizationIDProjectsProjectIDServersServerIDConsoleoutput.
+type GetApiV2OrganizationsOrganizationIDProjectsProjectIDServersServerIDConsoleoutputParams struct {
+	// Length The requested output length.
+	Length *LengthParameter `form:"length,omitempty" json:"length,omitempty"`
+}
+
 // GetApiV2OrganizationsOrganizationIDSecuritygroupsParams defines parameters for GetApiV2OrganizationsOrganizationIDSecuritygroups.
 type GetApiV2OrganizationsOrganizationIDSecuritygroupsParams struct {
+	// Tag A set of tags to match against resources in the form "name=value",
+	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+
+	// ProjectID Allows resources to be filtered by project.
+	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+
+	// NetworkID Allows resources to be filtered by network.
+	NetworkID *NetworkIDQueryParameter `form:"networkID,omitempty" json:"networkID,omitempty"`
+}
+
+// GetApiV2OrganizationsOrganizationIDServersParams defines parameters for GetApiV2OrganizationsOrganizationIDServers.
+type GetApiV2OrganizationsOrganizationIDServersParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",
 	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
@@ -916,3 +1075,9 @@ type PostApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroupsJSONRequ
 
 // PutApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroupsSecurityGroupIDJSONRequestBody defines body for PutApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroupsSecurityGroupID for application/json ContentType.
 type PutApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroupsSecurityGroupIDJSONRequestBody = SecurityGroupV2Update
+
+// PostApiV2OrganizationsOrganizationIDProjectsProjectIDServersJSONRequestBody defines body for PostApiV2OrganizationsOrganizationIDProjectsProjectIDServers for application/json ContentType.
+type PostApiV2OrganizationsOrganizationIDProjectsProjectIDServersJSONRequestBody = ServerV2Create
+
+// PutApiV2OrganizationsOrganizationIDProjectsProjectIDServersServerIDJSONRequestBody defines body for PutApiV2OrganizationsOrganizationIDProjectsProjectIDServersServerID for application/json ContentType.
+type PutApiV2OrganizationsOrganizationIDProjectsProjectIDServersServerIDJSONRequestBody = ServerV2Update

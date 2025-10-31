@@ -27,16 +27,16 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
-	"github.com/unikorn-cloud/core/pkg/server/util"
+	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
+	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
 
@@ -67,27 +67,18 @@ func convertV2List(in *regionv1.NetworkList) openapi.NetworksV2Read {
 	return out
 }
 
-// filterRegionID indicates a resource must be omitted from any output because its
-// region is not in the user specified set.
-func filterRegionID(query *openapi.RegionIDQueryParameter, resource metav1.Object) bool {
-	return query != nil && !slices.Contains(*query, resource.GetLabels()[constants.RegionLabel])
-}
-
-// filterProjectID indicates a resource must be omitted from any output because its
-// project is not in the user specified set.
-func filterProjectID(query *openapi.ProjectIDQueryParameter, resource metav1.Object) bool {
-	return query != nil && !slices.Contains(*query, resource.GetLabels()[coreconstants.ProjectLabel])
-}
-
 func (c *Client) ListV2Admin(ctx context.Context, organizationID string, params openapi.GetApiV2OrganizationsOrganizationIDNetworksParams) (openapi.NetworksV2Read, error) {
-	selector := map[string]string{
+	selector := labels.SelectorFromSet(map[string]string{
 		coreconstants.OrganizationLabel:   organizationID,
 		constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
-	}
+	})
+
+	selector = util.AddProjectIDQuery(selector, params.ProjectID)
+	selector = util.AddRegionIDQuery(selector, params.RegionID)
 
 	options := &client.ListOptions{
 		Namespace:     c.namespace,
-		LabelSelector: labels.SelectorFromSet(selector),
+		LabelSelector: selector,
 	}
 
 	result := &regionv1.NetworkList{}
@@ -96,13 +87,13 @@ func (c *Client) ListV2Admin(ctx context.Context, organizationID string, params 
 		return nil, errors.OAuth2ServerError("unable to list networks").WithError(err)
 	}
 
-	tagSelector, err := util.DecodeTagSelectorParam(params.Tag)
+	tagSelector, err := coreutil.DecodeTagSelectorParam(params.Tag)
 	if err != nil {
 		return nil, err
 	}
 
 	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.Network) bool {
-		return !resource.Spec.Tags.ContainsAll(tagSelector) || filterRegionID(params.RegionID, &resource) || filterProjectID(params.ProjectID, &resource)
+		return !resource.Spec.Tags.ContainsAll(tagSelector)
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.Network) int {
@@ -113,15 +104,17 @@ func (c *Client) ListV2Admin(ctx context.Context, organizationID string, params 
 }
 
 func (c *Client) ListV2(ctx context.Context, organizationID, projectID string, params openapi.GetApiV2OrganizationsOrganizationIDProjectsProjectIDNetworksParams) (openapi.NetworksV2Read, error) {
-	selector := map[string]string{
+	selector := labels.SelectorFromSet(map[string]string{
 		coreconstants.OrganizationLabel:   organizationID,
 		coreconstants.ProjectLabel:        projectID,
 		constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
-	}
+	})
+
+	selector = util.AddRegionIDQuery(selector, params.RegionID)
 
 	options := &client.ListOptions{
 		Namespace:     c.namespace,
-		LabelSelector: labels.SelectorFromSet(selector),
+		LabelSelector: selector,
 	}
 
 	result := &regionv1.NetworkList{}
@@ -130,13 +123,13 @@ func (c *Client) ListV2(ctx context.Context, organizationID, projectID string, p
 		return nil, errors.OAuth2ServerError("unable to list networks").WithError(err)
 	}
 
-	tagSelector, err := util.DecodeTagSelectorParam(params.Tag)
+	tagSelector, err := coreutil.DecodeTagSelectorParam(params.Tag)
 	if err != nil {
 		return nil, err
 	}
 
 	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.Network) bool {
-		return !resource.Spec.Tags.ContainsAll(tagSelector) || filterRegionID(params.RegionID, &resource)
+		return !resource.Spec.Tags.ContainsAll(tagSelector)
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.Network) int {
@@ -342,6 +335,10 @@ func (c *Client) DeleteV2(ctx context.Context, organizationID, projectID, networ
 	resource, err := c.GetV2Raw(ctx, organizationID, projectID, networkID)
 	if err != nil {
 		return err
+	}
+
+	if resource.DeletionTimestamp != nil {
+		return nil
 	}
 
 	if err := identityclient.NewAllocations(c.client, c.identity).Delete(ctx, resource); err != nil {

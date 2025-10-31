@@ -403,13 +403,17 @@ func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
 }
 
+func (h *Handler) serverClient() *server.Client {
+	return server.NewClient(h.client, h.namespace)
+}
+
 func (h *Handler) GetApiV1OrganizationsOrganizationIDServers(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, params openapi.GetApiV1OrganizationsOrganizationIDServersParams) {
 	if err := rbac.AllowOrganizationScope(r.Context(), "region:servers", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	result, err := server.NewClient(h.client, h.namespace).List(r.Context(), organizationID, params)
+	result, err := h.serverClient().List(r.Context(), organizationID, params)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -431,7 +435,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	result, err := server.NewClient(h.client, h.namespace).Create(r.Context(), organizationID, projectID, identityID, request)
+	result, err := h.serverClient().Create(r.Context(), organizationID, projectID, identityID, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -446,7 +450,7 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		return
 	}
 
-	err := server.NewClient(h.client, h.namespace).Delete(r.Context(), organizationID, projectID, serverID)
+	err := h.serverClient().Delete(r.Context(), organizationID, projectID, serverID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -461,7 +465,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 		return
 	}
 
-	result, err := server.NewClient(h.client, h.namespace).Get(r.Context(), organizationID, projectID, serverID)
+	result, err := h.serverClient().Get(r.Context(), organizationID, projectID, serverID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -483,7 +487,7 @@ func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 		return
 	}
 
-	result, err := server.NewClient(h.client, h.namespace).Update(r.Context(), organizationID, projectID, identityID, serverID, request)
+	result, err := h.serverClient().Update(r.Context(), organizationID, projectID, identityID, serverID, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -493,13 +497,12 @@ func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutput(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter, params openapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams) {
-	// FIXME: Do we need a new RBAC permission for reading console output?
 	if err := rbac.AllowProjectScope(r.Context(), "region:servers", identityapi.Read, organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	result, err := server.NewClient(h.client, h.namespace).GetConsoleOutput(r.Context(), organizationID, projectID, identityID, serverID, params)
+	result, err := h.serverClient().GetConsoleOutput(r.Context(), organizationID, projectID, identityID, serverID, params)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -514,7 +517,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 		return
 	}
 
-	result, err := server.NewClient(h.client, h.namespace).CreateConsoleSession(r.Context(), organizationID, projectID, identityID, serverID)
+	result, err := h.serverClient().CreateConsoleSession(r.Context(), organizationID, projectID, identityID, serverID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -529,7 +532,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	if err := server.NewClient(h.client, h.namespace).Reboot(r.Context(), organizationID, projectID, identityID, serverID, true); err != nil {
+	if err := h.serverClient().Reboot(r.Context(), organizationID, projectID, identityID, serverID, true); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -543,7 +546,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	if err := server.NewClient(h.client, h.namespace).Reboot(r.Context(), organizationID, projectID, identityID, serverID, false); err != nil {
+	if err := h.serverClient().Reboot(r.Context(), organizationID, projectID, identityID, serverID, false); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -557,7 +560,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	if err := server.NewClient(h.client, h.namespace).Start(r.Context(), organizationID, projectID, identityID, serverID); err != nil {
+	if err := h.serverClient().Start(r.Context(), organizationID, projectID, identityID, serverID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -571,7 +574,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	if err := server.NewClient(h.client, h.namespace).Stop(r.Context(), organizationID, projectID, identityID, serverID); err != nil {
+	if err := h.serverClient().Stop(r.Context(), organizationID, projectID, identityID, serverID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
