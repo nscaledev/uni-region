@@ -72,8 +72,6 @@ spec:
               pause:
                 description: Pause, if true, will inhibit reconciliation.
                 type: boolean
-              regionID:
-                type: string
               size:
                 anyOf:
                 - type: integer
@@ -84,7 +82,10 @@ spec:
                 description: Name of the FileStorageClass
                 type: string
               tags:
-                description: TagList is an ordered list of tags.
+                description: |-
+                  Tags are an abitrary list of key/value pairs that a client
+                  may populate to store metadata for the resource.
+                  Tags are aribrary user data.
                 items:
                   description: Tag is an arbirary key/value.
                   properties:
@@ -100,7 +101,6 @@ spec:
                   type: object
                 type: array
             required:
-            - regionID
             - size
             - storageClassID
             type: object
