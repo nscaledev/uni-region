@@ -765,7 +765,6 @@ type FileStorage struct {
 }
 
 type FileStorageSpec struct {
-	RegionID string `json:"regionID"`
 	// Name of the FileStorageClass
 	StorageClassID string                `json:"storageClassID"`
 	Size           resource.Quantity     `json:"size"`
