@@ -38,7 +38,7 @@ type Provider interface {
 	// GetImage retrieves a specific image by its ID.
 	GetImage(ctx context.Context, organizationID, imageID string) (*Image, error)
 	// CreateImageForUpload creates a new image resource for upload.
-	CreateImageForUpload(ctx context.Context, image *Image) (*Image, error)
+	CreateImageForUpload(ctx context.Context, diskFormat string, image *Image) (*Image, error)
 	// CreateImageFromServer creates a new image from an existing server.
 	CreateImageFromServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *Image) (*Image, error)
 	// UploadImage uploads data to an image.

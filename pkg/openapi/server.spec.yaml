@@ -1690,6 +1690,13 @@ components:
                   serverID:
                     description: The server ID to create the image from. If not specified, the image is expected to be uploaded separately.
                     type: string
+                  diskFormat:
+                    description: The disk format of the image. If `serverID` is specified, this field is ignored. Otherwise, if not provided, the value defaults to `raw`.
+                    type: string
+                    enum:
+                    - raw
+                    - qcow2
+                    x-go-type-name: ImageDiskFormat
                   virtualization:
                     $ref: '#/components/schemas/imageVirtualization'
                   os:

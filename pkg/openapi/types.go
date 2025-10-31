@@ -70,6 +70,12 @@ const (
 	Openstack  RegionType = "openstack"
 )
 
+// Defines values for ImageDiskFormat.
+const (
+	Qcow2 ImageDiskFormat = "qcow2"
+	Raw   ImageDiskFormat = "raw"
+)
+
 // Defines values for ImageUploadMethod.
 const (
 	Direct ImageUploadMethod = "direct"
@@ -788,8 +794,14 @@ type ImageCreateMetadata struct {
 	Name externalRef0.KubernetesLabelValue `json:"name"`
 }
 
+// ImageDiskFormat defines parameters for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages.
+type ImageDiskFormat string
+
 // ImageCreateSpec defines parameters for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages.
 type ImageCreateSpec struct {
+	// DiskFormat The disk format of the image. If `serverID` is specified, this field is ignored. Otherwise, if not provided, the value defaults to `raw`.
+	DiskFormat *ImageDiskFormat `json:"diskFormat,omitempty"`
+
 	// Gpu The GPU driver if installed.
 	Gpu *ImageGpu `json:"gpu,omitempty"`
 

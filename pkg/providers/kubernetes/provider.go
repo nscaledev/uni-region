@@ -205,7 +205,7 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 }
 
 // CreateImageForUpload creates a new image resource for upload.
-func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
+func (p *Provider) CreateImageForUpload(ctx context.Context, diskFormat string, image *types.Image) (*types.Image, error) {
 	return nil, ErrUnimplmented
 }
 

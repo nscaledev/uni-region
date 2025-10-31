@@ -253,7 +253,12 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 	var result *types.Image
 
 	if request.Spec.ServerID == nil {
-		result, err = c.createImageForUpload(ctx, image, provider)
+		diskFormat := openapi.Raw
+		if request.Spec.DiskFormat != nil {
+			diskFormat = *request.Spec.DiskFormat
+		}
+
+		result, err = c.createImageForUpload(ctx, diskFormat, image, provider)
 	} else {
 		result, err = c.createImageFromServer(ctx, organizationID, *request.Spec.ServerID, image, provider)
 	}
@@ -265,8 +270,8 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 	return fromProviderImage(result), nil
 }
 
-func (c *Client) createImageForUpload(ctx context.Context, image *types.Image, provider types.Provider) (*types.Image, error) {
-	result, err := provider.CreateImageForUpload(ctx, image)
+func (c *Client) createImageForUpload(ctx context.Context, diskFormat openapi.ImageDiskFormat, image *types.Image, provider types.Provider) (*types.Image, error) {
+	result, err := provider.CreateImageForUpload(ctx, string(diskFormat), image)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create image").WithError(err)
 	}
@@ -330,6 +335,7 @@ func (c *Client) UploadImage(ctx context.Context, organizationID, regionID, imag
 	if image.Active {
 		return nil, errors.HTTPConflict()
 	}
+
 	if image.OrganizationID == nil || *image.OrganizationID != organizationID {
 		return nil, errors.HTTPNotFound()
 	}
@@ -428,6 +434,9 @@ func (c *Client) uploadImageData(ctx context.Context, imageID string, sourceRead
 			continue
 		}
 
+		// REVIEW_ME: We are not cross-checking the disk format against the image that was created.
+		// Doing so would require seeking the first few magic bytes, but tar.Reader does not support
+		// seeking without additional copies. For simplicity, this check is skipped.
 		if header.Name == "disk.raw" || header.Name == "disk.qcow2" {
 			if diskCount++; diskCount > 1 {
 				return nil, errors.OAuth2InvalidRequest("The provided file contains multiple disk images, only a single disk image is supported")
