@@ -27,7 +27,6 @@ spec:
             type: string
           items:
             items:
-              description: 'schristoff: this is an array not a string, can it print?'
               properties:
                 apiVersion:
                   description: |-

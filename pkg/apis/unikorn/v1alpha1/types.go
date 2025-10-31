@@ -744,9 +744,9 @@ type OpenstackServerStatus struct {
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type FileStorageList struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Items             []FileStorage `json:"items"`
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []FileStorage `json:"items"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -770,13 +770,20 @@ type FileStorageSpec struct {
 	StorageClassID string                `json:"storageClassID"`
 	Size           resource.Quantity     `json:"size"`
 	Attachments    []Attachment          `json:"attachments,omitempty"`
-	Protocol       Protocol              `json:"protocol"`
 	Tags           unikornv1core.TagList `json:"tags,omitempty"`
 
 	// Pause, if true, will inhibit reconciliation.
 	Pause bool `json:"pause,omitempty"`
 	NFS   *NFS `json:"nfs,omitempty"`
 }
+
+// +kubebuilder:validation:Enum=nfsv3;nfsv4
+type Protocol string
+
+const (
+	NFSv3 Protocol = "nfsv3"
+	NFSv4 Protocol = "nfsv4"
+)
 
 type FileStorageStatus struct {
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
@@ -789,18 +796,21 @@ type NFS struct {
 	RootSquash bool `json:"rootSquash,omitempty"`
 }
 
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type FileStorageClassList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []FileStorageClass `json:"items"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
 type FileStorageClass struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Status            FileStorageClassStatus `json:"status"`
 }
-
-// +kubebuilder:validation:Enum=nfsv3;nfsv4
-type Protocol string
-
-const (
-	NFSv3 Protocol = "nfsv3"
-	NFSv4 Protocol = "nfsv4"
-)
 
 type FileStorageClassStatus struct{}
