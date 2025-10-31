@@ -35,15 +35,9 @@ spec:
             type: string
           metadata:
             type: object
-          protocol:
-            enum:
-            - nfsv3
-            - nfsv4
-            type: string
           status:
             type: object
         required:
-        - protocol
         - status
         type: object
     served: true

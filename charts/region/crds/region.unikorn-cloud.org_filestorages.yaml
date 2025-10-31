@@ -17,12 +17,25 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .spec.protocol
+      name: protocol
+      type: string
+    - jsonPath: .spec.attachments
+      name: attachments
+      type: string
+    - jsonPath: .spec.storageClassID
+      name: storageClassID
+      type: string
+    - jsonPath: .spec.size
+      name: size
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: age
       type: date
     name: v1alpha1
     schema:
       openAPIV3Schema:
+        description: 'schristoff: this is an array not a string, can it print?'
         properties:
           apiVersion:
             description: |-
@@ -60,6 +73,11 @@ spec:
               pause:
                 description: Pause, if true, will inhibit reconciliation.
                 type: boolean
+              protocol:
+                enum:
+                - nfsv3
+                - nfsv4
+                type: string
               regionID:
                 type: string
               size:
@@ -68,13 +86,30 @@ spec:
                 - type: string
                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                 x-kubernetes-int-or-string: true
-              storageClass:
+              storageClassID:
                 description: Name of the FileStorageClass
                 type: string
+              tags:
+                description: TagList is an ordered list of tags.
+                items:
+                  description: Tag is an arbirary key/value.
+                  properties:
+                    name:
+                      description: Name of the tag.
+                      type: string
+                    value:
+                      description: Value of the tag.
+                      type: string
+                  required:
+                  - name
+                  - value
+                  type: object
+                type: array
             required:
+            - protocol
             - regionID
             - size
-            - storageClass
+            - storageClassID
             type: object
           status:
             properties:
