@@ -36,14 +36,13 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/rules"
-	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/networks"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 	"github.com/gophercloud/utils/openstack/clientconfig"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
-	"github.com/unikorn-cloud/core/pkg/provisioners"
+	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers/allocation/vlan"
@@ -98,7 +97,7 @@ type Provider struct {
 	_identity *IdentityClient
 	_compute  *ComputeClient
 	_image    *ImageClient
-	_network  *NetworkClient
+	_network  NetworkingInterface
 
 	lock sync.Mutex
 }
@@ -236,6 +235,7 @@ func (p *Provider) serviceClientRefresh(ctx context.Context) error {
 	return nil
 }
 
+// identity returns an admin-level identity client.
 func (p *Provider) identity(ctx context.Context) (*IdentityClient, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -247,7 +247,8 @@ func (p *Provider) identity(ctx context.Context) (*IdentityClient, error) {
 	return p._identity, nil
 }
 
-func (p *Provider) compute(ctx context.Context) (*ComputeClient, error) {
+// compute returns an admin-level compute client.
+func (p *Provider) compute(ctx context.Context) (ComputeInterface, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -258,6 +259,7 @@ func (p *Provider) compute(ctx context.Context) (*ComputeClient, error) {
 	return p._compute, nil
 }
 
+// identity returns an admin-level image client.
 func (p *Provider) image(ctx context.Context) (*ImageClient, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -269,7 +271,8 @@ func (p *Provider) image(ctx context.Context) (*ImageClient, error) {
 	return p._image, nil
 }
 
-func (p *Provider) network(ctx context.Context) (*NetworkClient, error) {
+// identity returns an admin-level network client.
+func (p *Provider) network(ctx context.Context) (NetworkingInterface, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -278,6 +281,111 @@ func (p *Provider) network(ctx context.Context) (*NetworkClient, error) {
 	}
 
 	return p._network, nil
+}
+
+// getProviderFromServicePrincipalData creates a generic provider client from ephemeral
+// per-service principal credentials.
+func (p *Provider) getProviderFromServicePrincipalData(identity *unikornv1.OpenstackIdentity) (CredentialProvider, error) {
+	if identity.Spec.UserID == nil {
+		return nil, fmt.Errorf("%w: service principal user ID not set", coreerrors.ErrConsistency)
+	}
+
+	if identity.Spec.Password == nil {
+		return nil, fmt.Errorf("%w: service principal password not set", coreerrors.ErrConsistency)
+	}
+
+	if identity.Spec.ProjectID == nil {
+		return nil, fmt.Errorf("%w: service principal project not set", coreerrors.ErrConsistency)
+	}
+
+	return NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *identity.Spec.UserID, *identity.Spec.Password, *identity.Spec.ProjectID), nil
+}
+
+// computeFromServicePrincipalData gets a compute client scoped to the service principal data.
+func (p *Provider) computeFromServicePrincipalData(ctx context.Context, identity *unikornv1.OpenstackIdentity) (ComputeInterface, error) {
+	provider, err := p.getProviderFromServicePrincipalData(identity)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := NewComputeClient(ctx, provider, p.region.Spec.Openstack.Compute)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
+// getProviderFromServicePrincipal takes a service principal and returns a generic
+// provider client for it.
+func (p *Provider) getProviderFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.getProviderFromServicePrincipalData(openstackIdentity)
+}
+
+// getPriviliegedProviderFromServicePrincipal binds itself to the service principal's project
+// but uses the provider's top level admin credentials.
+func (p *Provider) getPriviliegedProviderFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	if openstackIdentity.Spec.ProjectID == nil {
+		return nil, fmt.Errorf("%w: service principal project not set", coreerrors.ErrConsistency)
+	}
+
+	return NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID), nil
+}
+
+// computeFromServicePrincipal gets a compute client scoped to the service principal.
+func (p *Provider) computeFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (ComputeInterface, error) {
+	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := NewComputeClient(ctx, provider, p.region.Spec.Openstack.Compute)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
+// networkFromServicePrincipal gets a network client scoped to the service principal.
+func (p *Provider) networkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
+	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := NewNetworkClient(ctx, provider, p.region.Spec.Openstack.Network)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
+// privilegedNetworkFromServicePrincipal gets a network client scoped to the service principal's
+// project but with "manager" credentials.
+func (p *Provider) privilegedNetworkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
+	provider, err := p.getPriviliegedProviderFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := NewNetworkClient(ctx, provider, p.region.Spec.Openstack.Network)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
 }
 
 // Region returns the provider's region.
@@ -295,12 +403,12 @@ func (p *Provider) Region(ctx context.Context) (*unikornv1.Region, error) {
 
 // Flavors list all available flavors.
 func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
-	computeService, err := p.compute(ctx)
+	compute, err := p.compute(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	resources, err := computeService.Flavors(ctx)
+	resources, err := compute.GetFlavors(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -506,6 +614,31 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 	}
 
 	return p.convertImage(resource)
+}
+
+// ListExternalNetworks returns a list of external networks if the platform
+// supports such a concept.
+func (p *Provider) ListExternalNetworks(ctx context.Context) (types.ExternalNetworks, error) {
+	networking, err := p.network(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := networking.ExternalNetworks(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(types.ExternalNetworks, len(result))
+
+	for i, in := range result {
+		out[i] = types.ExternalNetwork{
+			ID:   in.ID,
+			Name: in.Name,
+		}
+	}
+
+	return out, nil
 }
 
 const (
@@ -722,10 +855,7 @@ func (p *Provider) createIdentityComputeResources(ctx context.Context, identity 
 		return nil
 	}
 
-	// Rescope to the user/project...
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *identity.Spec.UserID, *identity.Spec.Password, *identity.Spec.ProjectID)
-
-	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	compute, err := p.computeFromServicePrincipalData(ctx, identity)
 	if err != nil {
 		return err
 	}
@@ -733,7 +863,7 @@ func (p *Provider) createIdentityComputeResources(ctx context.Context, identity 
 	name := identityResourceName(identity)
 
 	// Create a server group, that can be used by clients for soft anti-affinity.
-	result, err := computeService.CreateServerGroup(ctx, name)
+	result, err := compute.CreateServerGroup(ctx, name)
 	if err != nil {
 		return err
 	}
@@ -749,7 +879,7 @@ func (p *Provider) createIdentityComputeResources(ctx context.Context, identity 
 		return err
 	}
 
-	if err := computeService.CreateKeypair(ctx, keyPairName, string(publicKey)); err != nil {
+	if err := compute.CreateKeypair(ctx, keyPairName, string(publicKey)); err != nil {
 		return err
 	}
 
@@ -902,15 +1032,13 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Ident
 	}
 
 	// Rescope to the user/project...
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *openstackIdentity.Spec.UserID, *openstackIdentity.Spec.Password, *openstackIdentity.Spec.ProjectID)
-
-	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
 	}
 
 	if openstackIdentity.Spec.SSHKeyName != nil {
-		if err := computeService.DeleteKeypair(ctx, keyPairName); err != nil {
+		if err := compute.DeleteKeypair(ctx, keyPairName); err != nil {
 			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 				return err
 			}
@@ -918,7 +1046,7 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Ident
 	}
 
 	if openstackIdentity.Spec.ServerGroupID != nil {
-		if err := computeService.DeleteServerGroup(ctx, *openstackIdentity.Spec.ServerGroupID); err != nil {
+		if err := compute.DeleteServerGroup(ctx, *openstackIdentity.Spec.ServerGroupID); err != nil {
 			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 				return err
 			}
@@ -1002,14 +1130,16 @@ func storageRange(prefix net.IPNet) (string, string) {
 	return start.String(), end.String()
 }
 
-func (p *Provider) reconcileNetwork(ctx context.Context, networkService *NetworkClient, network *unikornv1.Network) (*networks.Network, error) {
+func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface, network *unikornv1.Network) (*NetworkExt, error) {
 	log := log.FromContext(ctx)
 
-	result, err := networkService.GetNetwork(ctx, network)
+	result, err := client.GetNetwork(ctx, network)
 	if err == nil {
 		log.V(1).Info("L2 network already exists")
 
-		return &result.Network, nil
+		network.Status.Openstack.NetworkID = ptr.To(result.ID)
+
+		return result, nil
 	}
 
 	if !errors.Is(err, ErrNotFound) {
@@ -1031,7 +1161,7 @@ func (p *Provider) reconcileNetwork(ctx context.Context, networkService *Network
 		vlanID = &v
 	}
 
-	result2, err := networkService.CreateNetwork(ctx, network, vlanID)
+	result, err = client.CreateNetwork(ctx, network, vlanID)
 	if err != nil {
 		if vlanID != nil {
 			if rerr := p.vlanAllocator.Free(ctx, *vlanID); rerr != nil {
@@ -1042,15 +1172,19 @@ func (p *Provider) reconcileNetwork(ctx context.Context, networkService *Network
 		return nil, err
 	}
 
-	return result2, nil
+	network.Status.Openstack.NetworkID = ptr.To(result.ID)
+
+	return result, nil
 }
 
-func (p *Provider) reconcileSubnet(ctx context.Context, networkService *NetworkClient, network *unikornv1.Network, openstackNetwork *networks.Network) (*subnets.Subnet, error) {
+func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, network *unikornv1.Network, openstackNetwork *NetworkExt) (*subnets.Subnet, error) {
 	log := log.FromContext(ctx)
 
-	result, err := networkService.GetSubnet(ctx, network)
+	result, err := client.GetSubnet(ctx, network)
 	if err == nil {
 		log.V(1).Info("L3 subnet already exists")
+
+		network.Status.Openstack.SubnetID = ptr.To(result.ID)
 
 		return result, nil
 	}
@@ -1069,33 +1203,27 @@ func (p *Provider) reconcileSubnet(ctx context.Context, networkService *NetworkC
 
 	start, end := dhcpRange(network.Spec.Prefix.IPNet)
 
-	opts := &subnets.CreateOpts{
-		NetworkID:      openstackNetwork.ID,
-		Name:           networkName(network),
-		IPVersion:      gophercloud.IPv4,
-		CIDR:           network.Spec.Prefix.String(),
-		GatewayIP:      ptr.To(gatewayIP(network.Spec.Prefix.IPNet)),
-		DNSNameservers: dnsNameservers,
-		AllocationPools: []subnets.AllocationPool{
-			{
-				Start: start,
-				End:   end,
-			},
+	allocationPools := []subnets.AllocationPool{
+		{
+			Start: start,
+			End:   end,
 		},
 	}
 
-	result, err = networkService.CreateSubnet(ctx, opts)
+	result, err = client.CreateSubnet(ctx, network, openstackNetwork.ID, network.Spec.Prefix.String(), gatewayIP(network.Spec.Prefix.IPNet), dnsNameservers, allocationPools)
 	if err != nil {
 		return nil, err
 	}
 
+	network.Status.Openstack.SubnetID = ptr.To(result.ID)
+
 	return result, nil
 }
 
-func (p *Provider) reconcileRouter(ctx context.Context, networkService *NetworkClient, network *unikornv1.Network) (*routers.Router, error) {
+func (p *Provider) reconcileRouter(ctx context.Context, client RouterInterface, network *unikornv1.Network) (*routers.Router, error) {
 	log := log.FromContext(ctx)
 
-	result, err := networkService.GetRouter(ctx, network)
+	result, err := client.GetRouter(ctx, network)
 	if err == nil {
 		log.V(1).Info("router already exists")
 
@@ -1108,7 +1236,7 @@ func (p *Provider) reconcileRouter(ctx context.Context, networkService *NetworkC
 
 	log.V(1).Info("creating router")
 
-	result, err = networkService.CreateRouter(ctx, network)
+	result, err = client.CreateRouter(ctx, network)
 	if err != nil {
 		return nil, err
 	}
@@ -1128,10 +1256,10 @@ func subnetInPorts(ports []ports.Port, subnetID string) bool {
 	return false
 }
 
-func (p *Provider) reconcileRouterInterface(ctx context.Context, networkService *NetworkClient, router *routers.Router, subnet *subnets.Subnet) error {
+func (p *Provider) reconcileRouterInterface(ctx context.Context, client NetworkingInterface, router *routers.Router, subnet *subnets.Subnet) error {
 	log := log.FromContext(ctx)
 
-	ports, err := networkService.ListRouterPorts(ctx, router.ID)
+	ports, err := client.ListRouterPorts(ctx, router.ID)
 	if err != nil {
 		return err
 	}
@@ -1144,7 +1272,7 @@ func (p *Provider) reconcileRouterInterface(ctx context.Context, networkService 
 
 	log.V(1).Info("adding subnet to router")
 
-	if err := networkService.AddRouterInterface(ctx, router.ID, subnet.ID); err != nil {
+	if err := client.AddRouterInterface(ctx, router.ID, subnet.ID); err != nil {
 		return err
 	}
 
@@ -1153,35 +1281,31 @@ func (p *Provider) reconcileRouterInterface(ctx context.Context, networkService 
 
 // CreateNetwork creates a physical network for an identity.
 func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
-	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	network.Status.Openstack = &unikornv1.NetworkStatusOpenstack{}
+
+	// NOTE: this is a privileged network client as it needs permissions
+	// from the manager policy in order to create provider networks.
+	networking, err := p.privilegedNetworkFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
 	}
 
-	// Rescope to the project...
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
-
-	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	openstackNetwork, err := p.reconcileNetwork(ctx, networking, network)
 	if err != nil {
 		return err
 	}
 
-	openstackNetwork, err := p.reconcileNetwork(ctx, networkService, network)
+	subnet, err := p.reconcileSubnet(ctx, networking, network, openstackNetwork)
 	if err != nil {
 		return err
 	}
 
-	subnet, err := p.reconcileSubnet(ctx, networkService, network, openstackNetwork)
+	router, err := p.reconcileRouter(ctx, networking, network)
 	if err != nil {
 		return err
 	}
 
-	router, err := p.reconcileRouter(ctx, networkService, network)
-	if err != nil {
-		return err
-	}
-
-	if err := p.reconcileRouterInterface(ctx, networkService, router, subnet); err != nil {
+	if err := p.reconcileRouterInterface(ctx, networking, router, subnet); err != nil {
 		return err
 	}
 
@@ -1194,37 +1318,32 @@ func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identi
 func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
 	log := log.FromContext(ctx)
 
-	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	// NOTE: this is a privileged network client as it needs permissions
+	// from the manager policy in order to see provider networks for VLAN
+	// deallocation.
+	networking, err := p.privilegedNetworkFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
 	}
 
-	// Rescope to the project...
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
-
-	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
-	if err != nil {
-		return err
-	}
-
-	openstackNetwork, err := networkService.GetNetwork(ctx, network)
+	openstackNetwork, err := networking.GetNetwork(ctx, network)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}
 
-	subnet, err := networkService.GetSubnet(ctx, network)
+	subnet, err := networking.GetSubnet(ctx, network)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}
 
-	router, err := networkService.GetRouter(ctx, network)
+	router, err := networking.GetRouter(ctx, network)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}
 
 	//nolint:nestif
 	if router != nil {
-		ports, err := networkService.ListRouterPorts(ctx, router.ID)
+		ports, err := networking.ListRouterPorts(ctx, router.ID)
 		if err != nil {
 			return err
 		}
@@ -1232,14 +1351,14 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 		if subnetInPorts(ports, subnet.ID) {
 			log.V(1).Info("removing subnet from router")
 
-			if err := networkService.RemoveRouterInterface(ctx, router.ID, subnet.ID); err != nil {
+			if err := networking.RemoveRouterInterface(ctx, router.ID, subnet.ID); err != nil {
 				return err
 			}
 		}
 
 		log.V(1).Info("deleting router")
 
-		if err := networkService.DeleteRouter(ctx, router.ID); err != nil {
+		if err := networking.DeleteRouter(ctx, router.ID); err != nil {
 			return err
 		}
 	}
@@ -1247,7 +1366,7 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 	if subnet != nil {
 		log.V(1).Info("deleting subnet")
 
-		if err := networkService.DeleteSubnet(ctx, subnet.ID); err != nil {
+		if err := networking.DeleteSubnet(ctx, subnet.ID); err != nil {
 			return err
 		}
 	}
@@ -1256,7 +1375,7 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 	if openstackNetwork != nil {
 		log.V(1).Info("deleting network")
 
-		if err := networkService.DeleteNetwork(ctx, openstackNetwork.ID); err != nil {
+		if err := networking.DeleteNetwork(ctx, openstackNetwork.ID); err != nil {
 			return err
 		}
 
@@ -1281,31 +1400,6 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 	return nil
 }
 
-// ListExternalNetworks returns a list of external networks if the platform
-// supports such a concept.
-func (p *Provider) ListExternalNetworks(ctx context.Context) (types.ExternalNetworks, error) {
-	networkService, err := p.network(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := networkService.ExternalNetworks(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	out := make(types.ExternalNetworks, len(result))
-
-	for i, in := range result {
-		out[i] = types.ExternalNetwork{
-			ID:   in.ID,
-			Name: in.Name,
-		}
-	}
-
-	return out, nil
-}
-
 // securityGroupRulePortRange expands a security group port into a start-end range as
 // required by Neutron.
 func securityGroupRulePortRange(port *unikornv1.SecurityGroupRulePort) (int, int, error) {
@@ -1328,16 +1422,16 @@ func securityGroupRuleID(direction, protocol string, startPort, endPort int, pre
 // securityGroupRuleIDFromSecurityGroupRule generates a deterministic, but unique, ID for a security group rule.
 func securityGroupRuleIDFromSecurityGroupRule(rule *unikornv1.SecurityGroupRule) (string, error) {
 	// The data is a tuple of direction, protocol, port and prefix.
-	start, end, err := securityGroupRulePortRange(rule.Port)
+	start, end, err := securityGroupRulePortRange(&rule.Port)
 	if err != nil {
 		return "", err
 	}
 
-	return securityGroupRuleID(string(*rule.Direction), string(*rule.Protocol), start, end, rule.CIDR.String()), nil
+	return securityGroupRuleID(string(rule.Direction), string(rule.Protocol), start, end, rule.CIDR.String()), nil
 }
 
-func listOpenstackSecurityGroupRules(ctx context.Context, networkService *NetworkClient, securityGroupID string) (map[string]*rules.SecGroupRule, error) {
-	resources, err := networkService.ListSecurityGroupRules(ctx, securityGroupID)
+func listOpenstackSecurityGroupRules(ctx context.Context, client SecurityGroupInterface, securityGroupID string) (map[string]*rules.SecGroupRule, error) {
+	resources, err := client.ListSecurityGroupRules(ctx, securityGroupID)
 	if err != nil {
 		return nil, err
 	}
@@ -1376,30 +1470,13 @@ func generateSecurityGroupRules(securityGroup *unikornv1.SecurityGroup) (map[str
 	return out, nil
 }
 
-// createSecurityGroupRule creates a security group rule from out specification.
-func createSecurityGroupRule(ctx context.Context, networkService *NetworkClient, securityGroupID string, rule *unikornv1.SecurityGroupRule) error {
-	direction := rules.RuleDirection(*rule.Direction)
-	protocol := rules.RuleProtocol(*rule.Protocol)
-
-	portStart, portEnd, err := securityGroupRulePortRange(rule.Port)
-	if err != nil {
-		return err
-	}
-
-	if _, err := networkService.CreateSecurityGroupRule(ctx, securityGroupID, direction, protocol, portStart, portEnd, rule.CIDR); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // reconcileSecurityGroupRules generates two sets of IDs from existing and requested security group
 // rules, does a boolean difference, and uses that to either create or delete rules from the security
 // group.
-func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, networkService *NetworkClient, securityGroup *unikornv1.SecurityGroup, securityGroupID string) error {
+func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup, openstackSecurityGroup *groups.SecGroup) error {
 	log := log.FromContext(ctx)
 
-	existing, err := listOpenstackSecurityGroupRules(ctx, networkService, securityGroupID)
+	existing, err := listOpenstackSecurityGroupRules(ctx, client, openstackSecurityGroup.ID)
 	if err != nil {
 		return err
 	}
@@ -1412,13 +1489,13 @@ func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, networkServi
 	// Anything that exists but has not been requested needs deleting.
 	for id := range existing {
 		if _, ok := requested[id]; ok {
-			log.V(1).Info("security group rule already exists", "rule", id, "securitygroupid", securityGroupID, "securitygroupruleid", existing[id].ID)
+			log.V(1).Info("security group rule already exists", "rule", id, "securitygroupid", openstackSecurityGroup.ID, "securitygroupruleid", existing[id].ID)
 			continue
 		}
 
-		log.V(1).Info("deleting security group rule", "rule", id, "securitygroupid", securityGroupID, "securitygroupruleid", existing[id].ID)
+		log.V(1).Info("deleting security group rule", "rule", id, "securitygroupid", openstackSecurityGroup.ID, "securitygroupruleid", existing[id].ID)
 
-		if err := networkService.DeleteSecurityGroupRule(ctx, securityGroupID, existing[id].ID); err != nil {
+		if err := client.DeleteSecurityGroupRule(ctx, openstackSecurityGroup.ID, existing[id].ID); err != nil {
 			return err
 		}
 	}
@@ -1429,9 +1506,19 @@ func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, networkServi
 			continue
 		}
 
-		log.V(1).Info("creating security group rule", "rule", id, "securitygroupid", securityGroupID)
+		log.V(1).Info("creating security group rule", "rule", id, "securitygroupid", openstackSecurityGroup.ID)
 
-		if err := createSecurityGroupRule(ctx, networkService, securityGroupID, requested[id]); err != nil {
+		rule := requested[id]
+
+		direction := rules.RuleDirection(rule.Direction)
+		protocol := rules.RuleProtocol(rule.Protocol)
+
+		portStart, portEnd, err := securityGroupRulePortRange(&rule.Port)
+		if err != nil {
+			return err
+		}
+
+		if _, err := client.CreateSecurityGroupRule(ctx, openstackSecurityGroup.ID, direction, protocol, portStart, portEnd, rule.CIDR.String()); err != nil {
 			return err
 		}
 	}
@@ -1439,10 +1526,10 @@ func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, networkServi
 	return nil
 }
 
-func (p *Provider) reconcileSecurityGroup(ctx context.Context, networkService *NetworkClient, securityGroup *unikornv1.SecurityGroup) (*groups.SecGroup, error) {
+func (p *Provider) reconcileSecurityGroup(ctx context.Context, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup) (*groups.SecGroup, error) {
 	log := log.FromContext(ctx)
 
-	result, err := networkService.GetSecurityGroup(ctx, securityGroup)
+	result, err := client.GetSecurityGroup(ctx, securityGroup)
 	if err == nil {
 		log.V(1).Info("security group already exists")
 
@@ -1455,7 +1542,7 @@ func (p *Provider) reconcileSecurityGroup(ctx context.Context, networkService *N
 
 	log.V(1).Info("creating security group")
 
-	result, err = networkService.CreateSecurityGroup(ctx, securityGroup)
+	result, err = client.CreateSecurityGroup(ctx, securityGroup)
 	if err != nil {
 		return nil, err
 	}
@@ -1472,17 +1559,17 @@ func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.
 
 	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
 
-	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	networking, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
 	if err != nil {
 		return err
 	}
 
-	openstackSecurityGroup, err := p.reconcileSecurityGroup(ctx, networkService, securityGroup)
+	openstackSecurityGroup, err := p.reconcileSecurityGroup(ctx, networking, securityGroup)
 	if err != nil {
 		return err
 	}
 
-	if err := p.reconcileSecurityGroupRules(ctx, networkService, securityGroup, openstackSecurityGroup.ID); err != nil {
+	if err := p.reconcileSecurityGroupRules(ctx, networking, securityGroup, openstackSecurityGroup); err != nil {
 		return err
 	}
 
@@ -1500,12 +1587,12 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 
 	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
 
-	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	networking, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
 	if err != nil {
 		return err
 	}
 
-	openstackSecurityGroup, err := networkService.GetSecurityGroup(ctx, securityGroup)
+	openstackSecurityGroup, err := networking.GetSecurityGroup(ctx, securityGroup)
 	if err != nil && errors.Is(err, ErrNotFound) {
 		return err
 	}
@@ -1513,7 +1600,7 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 	if openstackSecurityGroup != nil {
 		log.V(1).Info("deleting security group")
 
-		if err := networkService.DeleteSecurityGroup(ctx, openstackSecurityGroup.ID); err != nil {
+		if err := networking.DeleteSecurityGroup(ctx, openstackSecurityGroup.ID); err != nil {
 			return err
 		}
 	}
@@ -1573,17 +1660,40 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 	}
 }
 
-//nolint:cyclop
-func (p *Provider) reconcileServerPort(ctx context.Context, networkService *NetworkClient, server *unikornv1.Server) (*ports.Port, error) {
-	log := log.FromContext(ctx)
-
+func (p *Provider) lookupNetwork(ctx context.Context, networks NetworkInterface, namespace, id string) (*NetworkExt, error) {
 	network := &unikornv1.Network{}
 
-	if err := p.client.Get(ctx, client.ObjectKey{Namespace: server.Namespace, Name: server.Spec.Networks[0].ID}, network); err != nil {
+	if err := p.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: id}, network); err != nil {
 		return nil, err
 	}
 
-	openstackNetwork, err := networkService.GetNetwork(ctx, network)
+	openstackNetwork, err := networks.GetNetwork(ctx, network)
+	if err != nil {
+		return nil, err
+	}
+
+	return openstackNetwork, nil
+}
+
+func (p *Provider) lookupSecurityGroup(ctx context.Context, securityGroups SecurityGroupInterface, namespace, id string) (*groups.SecGroup, error) {
+	securityGroup := &unikornv1.SecurityGroup{}
+
+	if err := p.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: id}, securityGroup); err != nil {
+		return nil, err
+	}
+
+	openstackSecurityGroup, err := securityGroups.GetSecurityGroup(ctx, securityGroup)
+	if err != nil {
+		return nil, err
+	}
+
+	return openstackSecurityGroup, nil
+}
+
+func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInterface, server *unikornv1.Server) (*ports.Port, error) {
+	log := log.FromContext(ctx)
+
+	network, err := p.lookupNetwork(ctx, client, server.Namespace, server.Spec.Networks[0].ID)
 	if err != nil {
 		return nil, err
 	}
@@ -1591,18 +1701,12 @@ func (p *Provider) reconcileServerPort(ctx context.Context, networkService *Netw
 	securityGroupIDs := make([]string, len(server.Spec.SecurityGroups))
 
 	for i, s := range server.Spec.SecurityGroups {
-		securityGroup := &unikornv1.SecurityGroup{}
-
-		if err := p.client.Get(ctx, client.ObjectKey{Namespace: server.Namespace, Name: s.ID}, securityGroup); err != nil {
-			return nil, err
-		}
-
-		openstackSecurityGroup, err := networkService.GetSecurityGroup(ctx, securityGroup)
+		securityGroup, err := p.lookupSecurityGroup(ctx, client, server.Namespace, s.ID)
 		if err != nil {
 			return nil, err
 		}
 
-		securityGroupIDs[i] = openstackSecurityGroup.ID
+		securityGroupIDs[i] = securityGroup.ID
 	}
 
 	addressPairs := make([]ports.AddressPair, len(server.Spec.Networks[0].AllowedAddressPairs))
@@ -1614,7 +1718,7 @@ func (p *Provider) reconcileServerPort(ctx context.Context, networkService *Netw
 		}
 	}
 
-	port, err := networkService.GetPort(ctx, server.Name)
+	port, err := client.GetServerPort(ctx, server)
 	if err != nil {
 		if !errors.Is(err, ErrNotFound) {
 			return nil, err
@@ -1622,17 +1726,20 @@ func (p *Provider) reconcileServerPort(ctx context.Context, networkService *Netw
 
 		log.V(1).Info("creating port")
 
-		port, err = networkService.CreatePort(ctx, openstackNetwork.ID, server.Name, securityGroupIDs, addressPairs)
+		port, err = client.CreateServerPort(ctx, server, network.ID, securityGroupIDs, addressPairs)
 		if err != nil {
 			return nil, err
 		}
 
+		server.Status.PrivateIP = ptr.To(port.FixedIPs[0].IPAddress)
+
 		return port, nil
 	}
 
+	// TODO: we should only do this when the security groups or address pairs differ.
 	log.V(1).Info("updating port")
 
-	port, err = networkService.UpdatePort(ctx, port.ID, securityGroupIDs, addressPairs)
+	port, err = client.UpdatePort(ctx, port.ID, securityGroupIDs, addressPairs)
 	if err != nil {
 		return nil, err
 	}
@@ -1642,14 +1749,14 @@ func (p *Provider) reconcileServerPort(ctx context.Context, networkService *Netw
 	return port, nil
 }
 
-func (p *Provider) reconcileFloatingIP(ctx context.Context, networkService *NetworkClient, server *unikornv1.Server, port *ports.Port) error {
+func (p *Provider) reconcileFloatingIP(ctx context.Context, client FloatingIPInterface, server *unikornv1.Server, port *ports.Port) error {
 	log := log.FromContext(ctx)
 
 	enabled := server.Spec.PublicIPAllocation != nil && server.Spec.PublicIPAllocation.Enabled
 
 	server.Status.PublicIP = nil
 
-	floatingip, err := networkService.GetFloatingIP(ctx, port.ID)
+	floatingip, err := client.GetFloatingIP(ctx, port.ID)
 	if err == nil {
 		if enabled {
 			log.V(1).Info("floating ip already exists")
@@ -1661,7 +1768,7 @@ func (p *Provider) reconcileFloatingIP(ctx context.Context, networkService *Netw
 
 		log.V(1).Info("deleting floating ip")
 
-		if err := networkService.DeleteFloatingIP(ctx, floatingip.ID); err != nil {
+		if err := client.DeleteFloatingIP(ctx, floatingip.ID); err != nil {
 			return err
 		}
 
@@ -1678,7 +1785,7 @@ func (p *Provider) reconcileFloatingIP(ctx context.Context, networkService *Netw
 
 	log.V(1).Info("creating floating ip")
 
-	floatingip, err = networkService.CreateFloatingIP(ctx, port.ID)
+	floatingip, err = client.CreateFloatingIP(ctx, port.ID)
 	if err != nil {
 		return err
 	}
@@ -1688,20 +1795,20 @@ func (p *Provider) reconcileFloatingIP(ctx context.Context, networkService *Netw
 	return nil
 }
 
-func (p *Provider) reconcileServer(ctx context.Context, computeService *ComputeClient, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
+func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
 	log := log.FromContext(ctx)
 
-	openstackServer, err := computeService.GetServer(ctx, server)
+	openstackServer, err := client.GetServer(ctx, server)
 	if err == nil {
 		log.V(1).Info("server already exists")
 
 		return openstackServer, nil
 	}
 
-	networks := []NetworkOptions{
+	networks := []servers.Network{
 		{
-			PortID:    port.ID,
-			NetworkID: port.NetworkID,
+			Port: port.ID,
+			UUID: port.NetworkID,
 		},
 	}
 
@@ -1714,7 +1821,7 @@ func (p *Provider) reconcileServer(ctx context.Context, computeService *ComputeC
 
 	log.V(1).Info("creating server")
 
-	openstackServer, err = computeService.CreateServer(ctx, server, keyName, networks, nil, metadata)
+	openstackServer, err = client.CreateServer(ctx, server, keyName, networks, nil, metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -1732,35 +1839,27 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
-	// Rescope to the project...
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *openstackIdentity.Spec.UserID, *openstackIdentity.Spec.Password, *openstackIdentity.Spec.ProjectID)
-
-	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	networking, err := p.networkFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
 	}
 
-	port, err := p.reconcileServerPort(ctx, networkService, server)
+	port, err := p.reconcileServerPort(ctx, networking, server)
 	if err != nil {
 		return err
 	}
 
-	if err := p.reconcileFloatingIP(ctx, networkService, server, port); err != nil {
+	if err := p.reconcileFloatingIP(ctx, networking, server, port); err != nil {
 		return err
 	}
 
-	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
 	}
 
-	openstackServer, err := p.reconcileServer(ctx, computeService, server, port, *openstackIdentity.Spec.SSHKeyName)
-	if err != nil {
+	if _, err := p.reconcileServer(ctx, compute, server, port, *openstackIdentity.Spec.SSHKeyName); err != nil {
 		return err
-	}
-
-	if openstackServer.Status != "ACTIVE" {
-		return provisioners.ErrYield
 	}
 
 	return nil
@@ -1770,20 +1869,12 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	log := log.FromContext(ctx)
 
-	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
 	}
 
-	// Rescope to the project...
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *openstackIdentity.Spec.UserID, *openstackIdentity.Spec.Password, *openstackIdentity.Spec.ProjectID)
-
-	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
-	if err != nil {
-		return err
-	}
-
-	openstackServer, err := computeService.GetServer(ctx, server)
+	openstackServer, err := compute.GetServer(ctx, server)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}
@@ -1791,24 +1882,24 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 	if openstackServer != nil {
 		log.V(1).Info("deleting server")
 
-		if err := computeService.DeleteServer(ctx, openstackServer.ID); err != nil {
+		if err := compute.DeleteServer(ctx, openstackServer.ID); err != nil {
 			return err
 		}
 	}
 
-	networkService, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	networking, err := p.networkFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
 	}
 
-	port, err := networkService.GetPort(ctx, server.Name)
+	port, err := networking.GetServerPort(ctx, server)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}
 
 	//nolint:nestif
 	if port != nil {
-		floatingip, err := networkService.GetFloatingIP(ctx, port.ID)
+		floatingip, err := networking.GetFloatingIP(ctx, port.ID)
 		if err != nil && !errors.Is(err, ErrNotFound) {
 			return err
 		}
@@ -1816,14 +1907,14 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 		if floatingip != nil {
 			log.V(1).Info("deleting floating ip")
 
-			if err := networkService.DeleteFloatingIP(ctx, floatingip.ID); err != nil {
+			if err := networking.DeleteFloatingIP(ctx, floatingip.ID); err != nil {
 				return err
 			}
 		}
 
 		log.V(1).Info("deleting port")
 
-		if err := networkService.DeletePort(ctx, port.ID); err != nil {
+		if err := networking.DeletePort(ctx, port.ID); err != nil {
 			return err
 		}
 	}
@@ -1832,24 +1923,17 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 }
 
 func (p *Provider) RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error {
-	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
 	}
 
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
-
-	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	openstackServer, err := compute.GetServer(ctx, server)
 	if err != nil {
 		return err
 	}
 
-	openstackServer, err := computeService.GetServer(ctx, server)
-	if err != nil {
-		return err
-	}
-
-	if err := computeService.RebootServer(ctx, openstackServer.ID, hard); err != nil {
+	if err := compute.RebootServer(ctx, openstackServer.ID, hard); err != nil {
 		// ignore not found errors
 		if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			return err
@@ -1860,24 +1944,17 @@ func (p *Provider) RebootServer(ctx context.Context, identity *unikornv1.Identit
 }
 
 func (p *Provider) StartServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
 	}
 
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
-
-	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	openstackServer, err := compute.GetServer(ctx, server)
 	if err != nil {
 		return err
 	}
 
-	openstackServer, err := computeService.GetServer(ctx, server)
-	if err != nil {
-		return err
-	}
-
-	if err := computeService.StartServer(ctx, openstackServer.ID); err != nil {
+	if err := compute.StartServer(ctx, openstackServer.ID); err != nil {
 		// ignore not found errors
 		if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			return err
@@ -1888,24 +1965,17 @@ func (p *Provider) StartServer(ctx context.Context, identity *unikornv1.Identity
 }
 
 func (p *Provider) StopServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
 	}
 
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
-
-	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	openstackServer, err := compute.GetServer(ctx, server)
 	if err != nil {
 		return err
 	}
 
-	openstackServer, err := computeService.GetServer(ctx, server)
-	if err != nil {
-		return err
-	}
-
-	if err := computeService.StopServer(ctx, openstackServer.ID); err != nil {
+	if err := compute.StopServer(ctx, openstackServer.ID); err != nil {
 		// ignore not found errors
 		if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			return err
@@ -1917,20 +1987,12 @@ func (p *Provider) StopServer(ctx context.Context, identity *unikornv1.Identity,
 
 // UpdateServerState checks a server's state and modifies the resource in place.
 func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
 	}
 
-	// Rescope to the project...
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *openstackIdentity.Spec.UserID, *openstackIdentity.Spec.Password, *openstackIdentity.Spec.ProjectID)
-
-	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
-	if err != nil {
-		return err
-	}
-
-	openstackServer, err := computeService.GetServer(ctx, server)
+	openstackServer, err := compute.GetServer(ctx, server)
 	if err != nil {
 		return err
 	}
@@ -1942,24 +2004,17 @@ func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Id
 }
 
 func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) (string, error) {
-	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return "", err
 	}
 
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
-
-	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	openstackServer, err := compute.GetServer(ctx, server)
 	if err != nil {
 		return "", err
 	}
 
-	openstackServer, err := computeService.GetServer(ctx, server)
-	if err != nil {
-		return "", err
-	}
-
-	result, err := computeService.CreateRemoteConsole(ctx, openstackServer.ID)
+	result, err := compute.CreateRemoteConsole(ctx, openstackServer.ID)
 	if err != nil {
 		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			return "", fmt.Errorf("%w: server is being deprovisioned", ErrResourceDependency)
@@ -1972,24 +2027,17 @@ func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1
 }
 
 func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, length *int) (string, error) {
-	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return "", err
 	}
 
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
-
-	computeService, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	openstackServer, err := compute.GetServer(ctx, server)
 	if err != nil {
 		return "", err
 	}
 
-	openstackServer, err := computeService.GetServer(ctx, server)
-	if err != nil {
-		return "", err
-	}
-
-	result, err := computeService.ShowConsoleOutput(ctx, openstackServer.ID, length)
+	result, err := compute.ShowConsoleOutput(ctx, openstackServer.ID, length)
 	if err != nil {
 		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			return "", fmt.Errorf("%w: server is being deprovisioned", ErrResourceDependency)

@@ -6,7 +6,7 @@ info:
     by end users.  Region related functionality is typically exposed by higher level services
     e.g. Compute and Kubernetes, that provide subsets of resources that are compatible with
     that service.
-  version: 1.9.0
+  version: 1.10.0
 paths:
   /api/v1/organizations/{organizationID}/regions:
     description: |-
@@ -703,7 +703,7 @@ paths:
       requestBody:
         $ref: '#/components/requestBodies/networkV2Request'
       responses:
-        '200':
+        '201':
           $ref: '#/components/responses/networkV2Response'
         '400':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
@@ -739,6 +739,130 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       description: Delete a network.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/organizations/{organizationID}/securitygroups:
+    description: |-
+      Manages network scoped security groups.  By default, security groups allow
+      all egress traffic from a server, ingress traffic must be explcitly allowed.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    get:
+      description: List security groups.
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: '#/components/parameters/projectIDQueryParameter'
+      - $ref: '#/components/parameters/regionIDQueryParameter'
+      - $ref: '#/components/parameters/networkIDQueryParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/securityGroupsV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/organizations/{organizationID}/projects/{projectID}/securitygroups:
+    description: |-
+      Manages network scoped security groups.  By default, security groups allow
+      all egress traffic from a server, ingress traffic must be explcitly allowed.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    get:
+      description: List security groups.
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: '#/components/parameters/regionIDQueryParameter'
+      - $ref: '#/components/parameters/networkIDQueryParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/securityGroupsV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    post:
+      description: Create a new security group.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/securityGroupV2CreateRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/securityGroupV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/organizations/{organizationID}/projects/{projectID}/securitygroups/{securityGroupID}:
+    description: |-
+      Manages network scoped security groups.  By default, security groups allow
+      all egress traffic from a server, ingress traffic must be explcitly allowed.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/securityGroupIDParameter'
+    get:
+      description: Get a security group.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/securityGroupV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    put:
+      description: Update a security group.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/securityGroupV2UpdateRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/securityGroupV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    delete:
+      description: Delete a security groups.
       security:
       - oauth2Authentication: []
       responses:
@@ -822,6 +946,14 @@ components:
       name: regionID
       in: query
       description: Allows resources to be filtered by region.
+      schema:
+        type: array
+        items:
+          type: string
+    networkIDQueryParameter:
+      name: networkID
+      in: query
+      description: Allows resources to be filtered by network.
       schema:
         type: array
         items:
@@ -1255,8 +1387,8 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/networkRead'
-    networkV2Spec:
-      description: A physical network's specification.
+    networkV2CreateSpec:
+      description: A network's specification.
       type: object
       required:
       - regionId
@@ -1269,7 +1401,28 @@ components:
         dnsNameservers:
           $ref: '#/components/schemas/ipv4AddressList'
         regionId:
-          description: The region an identity is provisioned in.
+          description: The region a network is to be provisioned in.
+          type: string
+    networkV2Spec:
+      description: A network's specification.
+      type: object
+      required:
+      - prefix
+      - dnsNameservers
+      properties:
+        prefix:
+          description: An IPv4 prefix for the network.
+          type: string
+        dnsNameservers:
+          $ref: '#/components/schemas/ipv4AddressList'
+    networkV2Status:
+      description: Read only status about a network.
+      type: object
+      required:
+      - regionId
+      properties:
+        regionId:
+          description: The region a network is provisioned in.
           type: string
     networkV2Read:
       description: A network.
@@ -1277,11 +1430,14 @@ components:
       required:
       - metadata
       - spec
+      - status
       properties:
         metadata:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
           $ref: '#/components/schemas/networkV2Spec'
+        status:
+          $ref: '#/components/schemas/networkV2Status'
     networksV2Read:
       description: A list of networks.
       type: array
@@ -1297,7 +1453,7 @@ components:
         metadata:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
-          $ref: '#/components/schemas/networkV2Spec'
+          $ref: '#/components/schemas/networkV2CreateSpec'
     externalNetwork:
       description: An Openstack external network.
       type: object
@@ -1323,6 +1479,8 @@ components:
         number:
           description: The port to allow.
           type: integer
+          minimum: 1
+          maximum: 65535
         range:
           $ref: '#/components/schemas/securityGroupRulePortRange'
     securityGroupRulePortRange:
@@ -1335,9 +1493,13 @@ components:
         start:
           description: The start of the port range.
           type: integer
+          minimum: 1
+          maximum: 65535
         end:
           description: The end of the port range.
           type: integer
+          minimum: 1
+          maximum: 65535
     networkDirection:
       description: The direction of the rule.
       type: string
@@ -1407,6 +1569,79 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/securityGroupRead'
+    securityGroupV2CreateSpec:
+      description: A security group's specification.
+      type: object
+      required:
+      - networkId
+      - rules
+      properties:
+        networkId:
+          description: The network a security group belongs to.
+          type: string
+        rules:
+          $ref: '#/components/schemas/securityGroupRuleList'
+    securityGroupV2Spec:
+      description: A security group's specification.
+      type: object
+      required:
+      - rules
+      properties:
+        rules:
+          $ref: '#/components/schemas/securityGroupRuleList'
+    securityGroupV2Status:
+      description: Read only status information about a security group.
+      type: object
+      required:
+      - regionId
+      - networkId
+      properties:
+        regionId:
+          description: The region a security group belongs to.
+          type: string
+        networkId:
+          description: The network a security group belongs to.
+    securityGroupV2Create:
+      description: A security group request.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/securityGroupV2CreateSpec'
+    securityGroupV2Update:
+      description: A security group request.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/securityGroupV2Spec'
+    securityGroupV2Read:
+      description: A security group.
+      type: object
+      required:
+      - metadata
+      - spec
+      - status
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+        spec:
+          $ref: '#/components/schemas/securityGroupV2Spec'
+        status:
+          $ref: '#/components/schemas/securityGroupV2Status'
+    securityGroupsV2Read:
+      description: A list of security groups.
+      type: array
+      items:
+        $ref: '#/components/schemas/securityGroupV2Read'
     serverSpec:
       description: A server's specification.
       type: object
@@ -1595,7 +1830,7 @@ components:
               dnsNameservers:
               - 8.8.8.8
     networkV2Request:
-      description: A request for a network.
+      description: A request for a network create.
       content:
         application/json:
           schema:
@@ -1618,6 +1853,47 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/securityGroupWrite'
+          example:
+            metadata:
+              name: security-group-name
+              description: A verbose description
+              tags:
+              - name: cluster-id
+                value: 9361402c-f998-49cc-ab21-9bb99afcfde8
+            spec:
+              rules:
+              - direction: ingress
+                protocol: tcp
+                port:
+                  number: 80
+                cidr: 172.16.0.0/12
+    securityGroupV2CreateRequest:
+      description: A request for a security group.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/securityGroupV2Create'
+          example:
+            metadata:
+              name: security-group-name
+              description: A verbose description
+              tags:
+              - name: cluster-id
+                value: 9361402c-f998-49cc-ab21-9bb99afcfde8
+            spec:
+              networkId: 61f0ad85-3001-41cb-824a-e6a047668dfe
+              rules:
+              - direction: ingress
+                protocol: tcp
+                port:
+                  number: 80
+                cidr: 172.16.0.0/12
+    securityGroupV2UpdateRequest:
+      description: A request for a security group.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/securityGroupV2Update'
           example:
             metadata:
               name: security-group-name
@@ -1866,10 +2142,11 @@ components:
               provisioningStatus: provisioned
               healthStatus: healthy
             spec:
-              regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
               prefix: 192.168.0.0/24
               dnsNameservers:
               - 8.8.8.8
+            status:
+              regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
     networksV2Response:
       description: A list of layer 3 networks.
       content:
@@ -1887,10 +2164,11 @@ components:
               provisioningStatus: provisioned
               healthStatus: healthy
             spec:
-              regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
               prefix: 192.168.0.0/24
               dnsNameservers:
               - 8.8.8.8
+            status:
+              regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
     externalNetworksResponse:
       description: A list of valid external networks.
       content:
@@ -1946,6 +2224,58 @@ components:
                 port:
                   number: 80
                 cidr: 172.16.0.0/12
+    securityGroupV2Response:
+      description: A security group.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/securityGroupV2Read'
+          example:
+            metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: undefined
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2024-05-31T14:11:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: provisioned
+              healthStatus: healthy
+            spec:
+              rules:
+              - direction: ingress
+                protocol: tcp
+                port:
+                  number: 80
+                cidr: 172.16.0.0/12
+            status:
+              regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
+              networkId: 61f0ad85-3001-41cb-824a-e6a047668dfe
+    securityGroupsV2Response:
+      description: A list of security groups.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/securityGroupsV2Read'
+          example:
+          - metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: undefined
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2024-05-31T14:11:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: provisioned
+              healthStatus: healthy
+            spec:
+              rules:
+              - direction: ingress
+                protocol: tcp
+                port:
+                  number: 80
+                cidr: 172.16.0.0/12
+            status:
+              regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
+              networkId: 61f0ad85-3001-41cb-824a-e6a047668dfe
     serverResponse:
       description: A server.
       content:

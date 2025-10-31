@@ -29,6 +29,8 @@ rules:
   - securitygroups/status
   verbs:
   - update
+# TODO: delete me
+# --- SNIP ----
 - apiGroups:
   - region.unikorn-cloud.org
   resources:
@@ -39,6 +41,14 @@ rules:
   - create
   - update
   - delete
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - openstacknetworks
+  verbs:
+  - list
+  - watch
+# ---- SNIP ----
 - apiGroups:
   - ""
   resources:

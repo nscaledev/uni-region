@@ -344,24 +344,42 @@ type NetworkSpecOpenstack struct {
 	VlanId *int `json:"vlanId,omitempty"`
 }
 
-// NetworkV2Read A network.
-type NetworkV2Read struct {
-	// Metadata Metadata required by project scoped resource reads.
-	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
-
-	// Spec A physical network's specification.
-	Spec NetworkV2Spec `json:"spec"`
-}
-
-// NetworkV2Spec A physical network's specification.
-type NetworkV2Spec struct {
+// NetworkV2CreateSpec A network's specification.
+type NetworkV2CreateSpec struct {
 	// DnsNameservers A list of IPv4 addresses.
 	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
 
 	// Prefix An IPv4 prefix for the network.
 	Prefix string `json:"prefix"`
 
-	// RegionId The region an identity is provisioned in.
+	// RegionId The region a network is to be provisioned in.
+	RegionId string `json:"regionId"`
+}
+
+// NetworkV2Read A network.
+type NetworkV2Read struct {
+	// Metadata Metadata required by project scoped resource reads.
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+
+	// Spec A network's specification.
+	Spec NetworkV2Spec `json:"spec"`
+
+	// Status Read only status about a network.
+	Status NetworkV2Status `json:"status"`
+}
+
+// NetworkV2Spec A network's specification.
+type NetworkV2Spec struct {
+	// DnsNameservers A list of IPv4 addresses.
+	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
+
+	// Prefix An IPv4 prefix for the network.
+	Prefix string `json:"prefix"`
+}
+
+// NetworkV2Status Read only status about a network.
+type NetworkV2Status struct {
+	// RegionId The region a network is provisioned in.
 	RegionId string `json:"regionId"`
 }
 
@@ -370,8 +388,8 @@ type NetworkV2Write struct {
 	// Metadata Metadata required for all API resource reads and writes.
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
 
-	// Spec A physical network's specification.
-	Spec NetworkV2Spec `json:"spec"`
+	// Spec A network's specification.
+	Spec NetworkV2CreateSpec `json:"spec"`
 }
 
 // NetworkWrite A network request.
@@ -521,6 +539,60 @@ type SecurityGroupSpec struct {
 	Rules SecurityGroupRuleList `json:"rules"`
 }
 
+// SecurityGroupV2Create A security group request.
+type SecurityGroupV2Create struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A security group's specification.
+	Spec SecurityGroupV2CreateSpec `json:"spec"`
+}
+
+// SecurityGroupV2CreateSpec A security group's specification.
+type SecurityGroupV2CreateSpec struct {
+	// NetworkId The network a security group belongs to.
+	NetworkId string `json:"networkId"`
+
+	// Rules A set of security group rules to apply.
+	Rules SecurityGroupRuleList `json:"rules"`
+}
+
+// SecurityGroupV2Read A security group.
+type SecurityGroupV2Read struct {
+	// Metadata Metadata required by project scoped resource reads.
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+
+	// Spec A security group's specification.
+	Spec SecurityGroupV2Spec `json:"spec"`
+
+	// Status Read only status information about a security group.
+	Status SecurityGroupV2Status `json:"status"`
+}
+
+// SecurityGroupV2Spec A security group's specification.
+type SecurityGroupV2Spec struct {
+	// Rules A set of security group rules to apply.
+	Rules SecurityGroupRuleList `json:"rules"`
+}
+
+// SecurityGroupV2Status Read only status information about a security group.
+type SecurityGroupV2Status struct {
+	// NetworkId The network a security group belongs to.
+	NetworkId interface{} `json:"networkId"`
+
+	// RegionId The region a security group belongs to.
+	RegionId string `json:"regionId"`
+}
+
+// SecurityGroupV2Update A security group request.
+type SecurityGroupV2Update struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A security group's specification.
+	Spec SecurityGroupV2Spec `json:"spec"`
+}
+
 // SecurityGroupWrite A security group request.
 type SecurityGroupWrite struct {
 	// Metadata Metadata required for all API resource reads and writes.
@@ -532,6 +604,9 @@ type SecurityGroupWrite struct {
 
 // SecurityGroupsRead A list of security groups.
 type SecurityGroupsRead = []SecurityGroupRead
+
+// SecurityGroupsV2Read A list of security groups.
+type SecurityGroupsV2Read = []SecurityGroupV2Read
 
 // ServerNetwork The server's network.
 type ServerNetwork struct {
@@ -641,6 +716,9 @@ type LengthParameter = int
 // NetworkIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type NetworkIDParameter = KubernetesNameParameter
 
+// NetworkIDQueryParameter defines model for networkIDQueryParameter.
+type NetworkIDQueryParameter = []string
+
 // OrganizationIDParameter defines model for organizationIDParameter.
 type OrganizationIDParameter = string
 
@@ -704,8 +782,14 @@ type RegionsResponse = Regions
 // SecurityGroupResponse A security group.
 type SecurityGroupResponse = SecurityGroupRead
 
+// SecurityGroupV2Response A security group.
+type SecurityGroupV2Response = SecurityGroupV2Read
+
 // SecurityGroupsResponse A list of security groups.
 type SecurityGroupsResponse = SecurityGroupsRead
+
+// SecurityGroupsV2Response A list of security groups.
+type SecurityGroupsV2Response = SecurityGroupsV2Read
 
 // ServerResponse A server.
 type ServerResponse = ServerRead
@@ -724,6 +808,12 @@ type NetworkV2Request = NetworkV2Write
 
 // SecurityGroupRequest A security group request.
 type SecurityGroupRequest = SecurityGroupWrite
+
+// SecurityGroupV2CreateRequest A security group request.
+type SecurityGroupV2CreateRequest = SecurityGroupV2Create
+
+// SecurityGroupV2UpdateRequest A security group request.
+type SecurityGroupV2UpdateRequest = SecurityGroupV2Update
 
 // ServerRequest A server request.
 type ServerRequest = ServerWrite
@@ -771,6 +861,35 @@ type GetApiV2OrganizationsOrganizationIDProjectsProjectIDNetworksParams struct {
 	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
 }
 
+// GetApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroupsParams defines parameters for GetApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroups.
+type GetApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroupsParams struct {
+	// Tag A set of tags to match against resources in the form "name=value",
+	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+
+	// NetworkID Allows resources to be filtered by network.
+	NetworkID *NetworkIDQueryParameter `form:"networkID,omitempty" json:"networkID,omitempty"`
+}
+
+// GetApiV2OrganizationsOrganizationIDSecuritygroupsParams defines parameters for GetApiV2OrganizationsOrganizationIDSecuritygroups.
+type GetApiV2OrganizationsOrganizationIDSecuritygroupsParams struct {
+	// Tag A set of tags to match against resources in the form "name=value",
+	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+
+	// ProjectID Allows resources to be filtered by project.
+	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+
+	// NetworkID Allows resources to be filtered by network.
+	NetworkID *NetworkIDQueryParameter `form:"networkID,omitempty" json:"networkID,omitempty"`
+}
+
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody = IdentityWrite
 
@@ -791,3 +910,9 @@ type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSer
 
 // PostApiV2OrganizationsOrganizationIDProjectsProjectIDNetworksJSONRequestBody defines body for PostApiV2OrganizationsOrganizationIDProjectsProjectIDNetworks for application/json ContentType.
 type PostApiV2OrganizationsOrganizationIDProjectsProjectIDNetworksJSONRequestBody = NetworkV2Write
+
+// PostApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroupsJSONRequestBody defines body for PostApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroups for application/json ContentType.
+type PostApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroupsJSONRequestBody = SecurityGroupV2Create
+
+// PutApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroupsSecurityGroupIDJSONRequestBody defines body for PutApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroupsSecurityGroupID for application/json ContentType.
+type PutApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroupsSecurityGroupIDJSONRequestBody = SecurityGroupV2Update

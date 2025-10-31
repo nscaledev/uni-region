@@ -38,7 +38,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
-	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -201,7 +200,7 @@ func (c *NetworkClient) GetNetwork(ctx context.Context, network *unikornv1.Netwo
 // CreateNetwork creates a virtual or VLAN provider network for a project.
 // This requires https://github.com/unikorn-cloud/python-unikorn-openstack-policy
 // to be installed, see the README for further details on how this has to work.
-func (c *NetworkClient) CreateNetwork(ctx context.Context, network *unikornv1.Network, vlanID *int) (*networks.Network, error) {
+func (c *NetworkClient) CreateNetwork(ctx context.Context, network *unikornv1.Network, vlanID *int) (*NetworkExt, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, "POST /network/v2.0/networks", trace.WithSpanKind(trace.SpanKindClient))
@@ -224,12 +223,13 @@ func (c *NetworkClient) CreateNetwork(ctx context.Context, network *unikornv1.Ne
 		}
 	}
 
-	result, err := networks.Create(ctx, c.client, opts).Extract()
-	if err != nil {
+	var result NetworkExt
+
+	if err := networks.Create(ctx, c.client, opts).ExtractInto(&result); err != nil {
 		return nil, err
 	}
 
-	return result, nil
+	return &result, nil
 }
 
 func (c *NetworkClient) DeleteNetwork(ctx context.Context, id string) error {
@@ -272,11 +272,21 @@ func (c *NetworkClient) GetSubnet(ctx context.Context, network *unikornv1.Networ
 	return &result[0], nil
 }
 
-func (c *NetworkClient) CreateSubnet(ctx context.Context, opts *subnets.CreateOpts) (*subnets.Subnet, error) {
+func (c *NetworkClient) CreateSubnet(ctx context.Context, network *unikornv1.Network, networkID, prefix, gatewayIP string, dnsNameservers []string, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, "POST /network/v2.0/subnets", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
+
+	opts := &subnets.CreateOpts{
+		Name:            networkName(network),
+		NetworkID:       networkID,
+		IPVersion:       gophercloud.IPv4,
+		CIDR:            prefix,
+		GatewayIP:       ptr.To(gatewayIP),
+		DNSNameservers:  dnsNameservers,
+		AllocationPools: allocationPools,
+	}
 
 	subnet, err := subnets.Create(ctx, c.client, opts).Extract()
 	if err != nil {
@@ -471,7 +481,7 @@ func (c *NetworkClient) ListSecurityGroupRules(ctx context.Context, securityGrou
 }
 
 // CreateSecurityGroupRule adds a security group rule to a security group.
-func (c *NetworkClient) CreateSecurityGroupRule(ctx context.Context, securityGroupID string, direction rules.RuleDirection, protocol rules.RuleProtocol, portStart, portEnd int, cidr *unikornv1core.IPv4Prefix) (*rules.SecGroupRule, error) {
+func (c *NetworkClient) CreateSecurityGroupRule(ctx context.Context, securityGroupID string, direction rules.RuleDirection, protocol rules.RuleProtocol, portStart, portEnd int, prefix string) (*rules.SecGroupRule, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, fmt.Sprintf("POST /network/v2.0/securitygroups/%s/rules", securityGroupID), trace.WithSpanKind(trace.SpanKindClient))
@@ -485,7 +495,7 @@ func (c *NetworkClient) CreateSecurityGroupRule(ctx context.Context, securityGro
 		PortRangeMax:   portEnd,
 		Protocol:       protocol,
 		SecGroupID:     securityGroupID,
-		RemoteIPPrefix: cidr.String(),
+		RemoteIPPrefix: prefix,
 	}
 
 	rule, err := rules.Create(ctx, c.client, opts).Extract()
@@ -620,18 +630,18 @@ func (c *NetworkClient) ListRouterPorts(ctx context.Context, routerID string) ([
 	return allPorts, nil
 }
 
-func serverName(serverID string) string {
-	return "server-" + serverID
+func serverName(server *unikornv1.Server) string {
+	return "server-" + server.Name
 }
 
-func (c *NetworkClient) GetPort(ctx context.Context, serverID string) (*ports.Port, error) {
+func (c *NetworkClient) GetServerPort(ctx context.Context, server *unikornv1.Server) (*ports.Port, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, "GET /network/v2.0/ports", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
 	opts := ports.ListOpts{
-		Name: serverName(serverID),
+		Name: serverName(server),
 	}
 
 	page, err := ports.List(c.client, opts).AllPages(ctx)
@@ -655,14 +665,14 @@ func (c *NetworkClient) GetPort(ctx context.Context, serverID string) (*ports.Po
 	return &result[0], nil
 }
 
-func (c *NetworkClient) CreatePort(ctx context.Context, networkID, serverID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error) {
+func (c *NetworkClient) CreateServerPort(ctx context.Context, server *unikornv1.Server, networkID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, "POST /network/v2.0/ports", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
 	opts := &ports.CreateOpts{
-		Name:                serverName(serverID),
+		Name:                serverName(server),
 		NetworkID:           networkID,
 		AllowedAddressPairs: allowedAddressPairs,
 		SecurityGroups:      ptr.To(securityGroupIDs),

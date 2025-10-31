@@ -140,6 +140,15 @@ spec:
                   - type
                   type: object
                 type: array
+              openstack:
+                properties:
+                  networkID:
+                    description: NetworkID is the network ID.
+                    type: string
+                  subnetID:
+                    description: SubnetID is the subnet ID.
+                    type: string
+                type: object
             type: object
         required:
         - spec

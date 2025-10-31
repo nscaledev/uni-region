@@ -26,7 +26,6 @@ import (
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack"
-	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/availabilityzones"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/keypairs"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/quotasets"
@@ -105,21 +104,6 @@ func (c *ComputeClient) DeleteKeypair(ctx context.Context, name string) error {
 	return keypairs.Delete(ctx, c.client, name, nil).Err
 }
 
-// KeyPairs returns a list of key pairs.
-func (c *ComputeClient) KeyPairs(ctx context.Context) ([]keypairs.KeyPair, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "GET /compute/v2/os-keypairs", trace.WithSpanKind(trace.SpanKindClient))
-	defer span.End()
-
-	page, err := keypairs.List(c.client, &keypairs.ListOpts{}).AllPages(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return keypairs.ExtractKeyPairs(page)
-}
-
 // mutateFlavors allows nova's view of fact to be altered...
 func (c *ComputeClient) mutateFlavors(f []flavors.Flavor) {
 	if c.options == nil || c.options.Flavors == nil {
@@ -147,7 +131,7 @@ func (c *ComputeClient) mutateFlavors(f []flavors.Flavor) {
 }
 
 // Flavors returns a list of flavors.
-func (c *ComputeClient) Flavors(ctx context.Context) ([]flavors.Flavor, error) {
+func (c *ComputeClient) GetFlavors(ctx context.Context) ([]flavors.Flavor, error) {
 	if result, ok := c.flavorCache.Get(); ok {
 		return result, nil
 	}
@@ -192,36 +176,6 @@ func (c *ComputeClient) Flavors(ctx context.Context) ([]flavors.Flavor, error) {
 	c.flavorCache.Set(result)
 
 	return result, nil
-}
-
-// AvailabilityZones returns a list of availability zones.
-func (c *ComputeClient) AvailabilityZones(ctx context.Context) ([]availabilityzones.AvailabilityZone, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "GET /compute/v2/os-availability-zones", trace.WithSpanKind(trace.SpanKindClient))
-	defer span.End()
-
-	page, err := availabilityzones.List(c.client).AllPages(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := availabilityzones.ExtractAvailabilityZones(page)
-	if err != nil {
-		return nil, err
-	}
-
-	filtered := []availabilityzones.AvailabilityZone{}
-
-	for _, az := range result {
-		if !az.ZoneState.Available {
-			continue
-		}
-
-		filtered = append(filtered, az)
-	}
-
-	return filtered, nil
 }
 
 // CreateServerGroup creates the named server group with the given policy and returns
@@ -304,12 +258,7 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 	return &result[0], nil
 }
 
-type NetworkOptions struct {
-	NetworkID string
-	PortID    string
-}
-
-func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Server, keyName string, networks []NetworkOptions, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
+func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Server, keyName string, networks []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, "POST /compute/v2/servers/")
@@ -321,21 +270,13 @@ func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Serv
 		schedulerHintOpts.Group = *serverGroupID
 	}
 
-	networksOps := make([]servers.Network, len(networks))
-	for i, n := range networks {
-		networksOps[i] = servers.Network{
-			UUID: n.NetworkID,
-			Port: n.PortID,
-		}
-	}
-
 	name := server.Labels[coreconstants.NameLabel]
 
 	serverCreateOpts := servers.CreateOpts{
 		Name:      name,
 		ImageRef:  server.Spec.Image.ID,
 		FlavorRef: server.Spec.FlavorID,
-		Networks:  networksOps,
+		Networks:  networks,
 		Metadata:  metadata,
 		UserData:  server.Spec.UserData,
 	}
@@ -346,6 +287,15 @@ func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Serv
 	}
 
 	return servers.Create(ctx, c.client, createOpts, schedulerHintOpts).Extract()
+}
+
+func (c *ComputeClient) DeleteServer(ctx context.Context, id string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /compute/v2/servers/%s", id))
+	defer span.End()
+
+	return servers.Delete(ctx, c.client, id).ExtractErr()
 }
 
 func (c *ComputeClient) RebootServer(ctx context.Context, id string, hard bool) error {
@@ -384,15 +334,6 @@ func (c *ComputeClient) StopServer(ctx context.Context, id string) error {
 	defer span.End()
 
 	return servers.Stop(ctx, c.client, id).ExtractErr()
-}
-
-func (c *ComputeClient) DeleteServer(ctx context.Context, id string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /compute/v2/servers/%s", id))
-	defer span.End()
-
-	return servers.Delete(ctx, c.client, id).ExtractErr()
 }
 
 func (c *ComputeClient) CreateRemoteConsole(ctx context.Context, id string) (*remoteconsoles.RemoteConsole, error) {

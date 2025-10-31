@@ -417,9 +417,19 @@ type NetworkSpec struct {
 	DNSNameservers []unikornv1core.IPv4Address `json:"dnsNameservers"`
 }
 
+// TODO: delete me.
+type NetworkStatusOpenstack struct {
+	// NetworkID is the network ID.
+	NetworkID *string `json:"networkID,omitempty"`
+	// SubnetID is the subnet ID.
+	SubnetID *string `json:"subnetID,omitempty"`
+}
+
 type NetworkStatus struct {
 	// Current service state of a cluster manager.
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	// TODO: delete me.
+	Openstack *NetworkStatusOpenstack `json:"openstack,omitempty"`
 }
 
 // OpenstackNetworkList s a typed list of physical networks.
@@ -567,11 +577,11 @@ type SecurityGroupRulePort struct {
 
 type SecurityGroupRule struct {
 	// Direction is the direction of the rule.
-	Direction *SecurityGroupRuleDirection `json:"direction"`
+	Direction SecurityGroupRuleDirection `json:"direction"`
 	// Protocol is the protocol of the rule.
-	Protocol *SecurityGroupRuleProtocol `json:"protocol"`
+	Protocol SecurityGroupRuleProtocol `json:"protocol"`
 	// Port is the port or range of ports.
-	Port *SecurityGroupRulePort `json:"port"`
+	Port SecurityGroupRulePort `json:"port"`
 	// CIDR is the CIDR block to allow traffic from.
 	CIDR *unikornv1core.IPv4Prefix `json:"cidr"`
 }
