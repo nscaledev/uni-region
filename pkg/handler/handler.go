@@ -241,6 +241,36 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 	w.WriteHeader(http.StatusAccepted)
 }
 
+func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDReferencesReference(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, reference openapi.ReferenceParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "region:identities/references", identityapi.Create, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	if err := identity.New(h.client, h.namespace).ReferenceCreate(r.Context(), organizationID, projectID, identityID, reference); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	h.setUncacheable(w)
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDReferencesReference(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, reference openapi.ReferenceParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "region:identities/references", identityapi.Delete, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	if err := identity.New(h.client, h.namespace).ReferenceDelete(r.Context(), organizationID, projectID, identityID, reference); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	h.setUncacheable(w)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) networkClient() *network.Client {
 	return network.New(h.client, h.namespace, h.getIdentityAPIClient)
 }
@@ -309,6 +339,36 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 	}
 
 	w.WriteHeader(http.StatusAccepted)
+}
+
+func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDNetworksNetworkIDReferencesReference(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, networkID openapi.NetworkIDParameter, reference openapi.ReferenceParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "region:networks/references", identityapi.Create, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	if err := h.networkClient().ReferenceCreate(r.Context(), organizationID, projectID, networkID, reference); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	h.setUncacheable(w)
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDNetworksNetworkIDReferencesReference(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, networkID openapi.NetworkIDParameter, reference openapi.ReferenceParameter) {
+	if err := rbac.AllowProjectScope(r.Context(), "region:networks/references", identityapi.Delete, organizationID, projectID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	if err := h.networkClient().ReferenceDelete(r.Context(), organizationID, projectID, networkID, reference); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	h.setUncacheable(w)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) securityGroupClient() *securitygroup.Client {
