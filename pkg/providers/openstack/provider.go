@@ -755,7 +755,7 @@ func (p *Provider) createImageMetadata(image *types.Image) (map[string]string, e
 }
 
 // CreateImageForUpload creates a new image resource for upload.
-func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
+func (p *Provider) CreateImageForUpload(ctx context.Context, diskFormat string, image *types.Image) (*types.Image, error) {
 	imageService, err := p.image(ctx)
 	if err != nil {
 		return nil, err
@@ -771,6 +771,7 @@ func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image)
 		Visibility:      ptr.To(images.ImageVisibilityPrivate),
 		Hidden:          ptr.To(false),
 		ContainerFormat: "bare", // there's no const in gophercloud for this
+		DiskFormat:      diskFormat,
 		Protected:       ptr.To(false),
 		Properties:      properties,
 	}
