@@ -766,10 +766,14 @@ type FileStorage struct {
 
 type FileStorageSpec struct {
 	// Name of the FileStorageClass
-	StorageClassID string                `json:"storageClassID"`
-	Size           resource.Quantity     `json:"size"`
-	Attachments    []Attachment          `json:"attachments,omitempty"`
-	Tags           unikornv1core.TagList `json:"tags,omitempty"`
+	StorageClassID string            `json:"storageClassID"`
+	Size           resource.Quantity `json:"size"`
+	Attachments    []Attachment      `json:"attachments,omitempty"`
+
+	// Tags are an abitrary list of key/value pairs that a client
+	// may populate to store metadata for the resource.
+	// Tags are aribrary user data.
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
 
 	// Pause, if true, will inhibit reconciliation.
 	Pause bool `json:"pause,omitempty"`
