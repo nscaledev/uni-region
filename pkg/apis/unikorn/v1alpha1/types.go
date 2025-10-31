@@ -742,6 +742,12 @@ type FileStorageList struct {
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:scope=Namespaced,categories=unikorn
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="protocol",type="string",JSONPath=".spec.protocol"
+
+// schristoff: this is an array not a string, can it print?
+// +kubebuilder:printcolumn:name="attachments",type="string",JSONPath=".spec.attachments"
+// +kubebuilder:printcolumn:name="storageClassID",type="string",JSONPath=".spec.storageClassID"
+// +kubebuilder:printcolumn:name="size",type="string",JSONPath=".spec.size"
 // +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
 type FileStorage struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -753,9 +759,11 @@ type FileStorage struct {
 type FileStorageSpec struct {
 	RegionID string `json:"regionID"`
 	// Name of the FileStorageClass
-	StorageClass string            `json:"storageClass"`
-	Size         resource.Quantity `json:"size"`
-	Attachments  []Attachment      `json:"attachments,omitempty"`
+	StorageClassID string                `json:"storageClassID"`
+	Size           resource.Quantity     `json:"size"`
+	Attachments    []Attachment          `json:"attachments,omitempty"`
+	Protocol       Protocol              `json:"protocol"`
+	Tags           unikornv1core.TagList `json:"tags,omitempty"`
 
 	// Pause, if true, will inhibit reconciliation.
 	Pause bool `json:"pause,omitempty"`
@@ -776,11 +784,10 @@ type NFS struct {
 type FileStorageClass struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	// +kubebuilder:validation:Enum=nfsv3;nfsv4
-	Protocol Protocol               `json:"protocol"`
-	Status   FileStorageClassStatus `json:"status"`
+	Status            FileStorageClassStatus `json:"status"`
 }
 
+// +kubebuilder:validation:Enum=nfsv3;nfsv4
 type Protocol string
 
 const (
