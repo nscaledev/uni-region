@@ -743,11 +743,9 @@ type FileStorageList struct {
 // +kubebuilder:resource:scope=Namespaced,categories=unikorn
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="protocol",type="string",JSONPath=".spec.protocol"
-
-// schristoff: this is an array not a string, can it print?
 // +kubebuilder:printcolumn:name="attachments",type="string",JSONPath=".spec.attachments"
-// +kubebuilder:printcolumn:name="storageClassID",type="string",JSONPath=".spec.storageClassID"
 // +kubebuilder:printcolumn:name="size",type="string",JSONPath=".spec.size"
+// +kubebuilder:printcolumn:name="storageClassID",type="string",JSONPath=".spec.storageClassID"
 // +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
 type FileStorage struct {
 	metav1.TypeMeta   `json:",inline"`
