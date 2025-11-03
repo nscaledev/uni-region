@@ -14,31 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package region
+package types
 
-import (
-	"context"
-	"io"
+import "errors"
+
+var (
+	ErrResourceNotFound          = errors.New("resource not found")
+	ErrServerNotReadyForSnapshot = errors.New("server is not in a desired state for snapshotting")
+	ErrImageNotReadyForUpload    = errors.New("image is not in a desired state for upload")
+	ErrImageStillInUse           = errors.New("image is still in use by one or more servers")
 )
-
-//nolint:containedctx
-type ContextReader struct {
-	ctx   context.Context
-	inner io.Reader
-}
-
-func NewContextReader(ctx context.Context, inner io.Reader) *ContextReader {
-	return &ContextReader{
-		ctx:   ctx,
-		inner: inner,
-	}
-}
-
-func (r *ContextReader) Read(p []byte) (int, error) {
-	select {
-	case <-r.ctx.Done():
-		return 0, r.ctx.Err()
-	default:
-		return r.inner.Read(p)
-	}
-}

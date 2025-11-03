@@ -33,7 +33,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
 	gophercloud "github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
@@ -505,11 +504,55 @@ func getPublicOrOrganizationOwnedImages(resources []images.Image, organizationID
 	})
 }
 
+func (p *Provider) imageDiskFormat(image *images.Image) types.ImageDiskFormat {
+	temp, _ := image.Properties["unikorn:disk_format"].(string)
+	// Assume all image disk formats are valid, as they should have already been validated by the JSON schema.
+	return types.ImageDiskFormat(temp)
+}
+
+func (p *Provider) imageDataSource(image *images.Image) types.ImageDataSource {
+	temp, _ := image.Properties["unikorn:data_source"].(string)
+
+	var dataSource types.ImageDataSource
+
+	switch temp {
+	case string(types.ImageDataSourceFile), string(types.ImageDataSourceURL), string(types.ImageDataSourceServer):
+		dataSource = types.ImageDataSource(temp)
+	default:
+		// Fallback to file for all images that were created before this field was added.
+		dataSource = types.ImageDataSourceFile
+	}
+
+	return dataSource
+}
+
+func (p *Provider) imageStatus(image *images.Image, dataSource types.ImageDataSource) types.ImageStatus {
+	var status types.ImageStatus
+
+	switch image.Status {
+	case images.ImageStatusQueued:
+		if dataSource == types.ImageDataSourceFile {
+			status = types.ImageStatusPending
+		} else {
+			status = types.ImageStatusCreating
+		}
+	case images.ImageStatusSaving:
+		status = types.ImageStatusCreating
+	case images.ImageStatusActive:
+		status = types.ImageStatusReady
+	case images.ImageStatusKilled:
+		status = types.ImageStatusFailed
+	case images.ImageStatusDeleted, images.ImageStatusPendingDelete, images.ImageStatusDeactivated, images.ImageStatusImporting:
+		// These statuses are not directly mappable, mark them as failed.
+		status = types.ImageStatusFailed
+	}
+
+	return status
+}
+
 func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 	var organizationID *string
-
-	temp, _ := image.Properties["unikorn:organization:id"].(string)
-	if temp != "" {
+	if temp, _ := image.Properties["unikorn:organization:id"].(string); temp != "" {
 		organizationID = &temp
 	}
 
@@ -522,6 +565,8 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 
 	virtualization, _ := image.Properties["unikorn:virtualization"].(string)
 
+	dataSource := p.imageDataSource(image)
+
 	providerImage := types.Image{
 		ID:             image.ID,
 		Name:           image.Name,
@@ -532,7 +577,9 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 		Virtualization: types.ImageVirtualization(virtualization),
 		OS:             p.imageOS(image),
 		Packages:       p.imagePackages(image),
-		Active:         image.Status == images.ImageStatusActive,
+		DiskFormat:     p.imageDiskFormat(image),
+		DataSource:     dataSource,
+		Status:         p.imageStatus(image, dataSource),
 	}
 
 	if gpuVendor, ok := image.Properties["unikorn:gpu_vendor"].(string); ok {
@@ -557,7 +604,13 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 	return &providerImage, nil
 }
 
-// ListImages lists all available (active) images.
+// ClearImageCache clears the image cache.
+func (p *Provider) ClearImageCache(ctx context.Context) error {
+	p.imageCache.Invalidate()
+	return nil
+}
+
+// ListImages lists all available images.
 func (p *Provider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
 	resources, err := p.listImages(ctx)
 	if err != nil {
@@ -600,23 +653,21 @@ func (p *Provider) listImages(ctx context.Context) ([]images.Image, error) {
 	return resources, nil
 }
 
-// GetImage retrieves a specific image by its ID and the image is not guaranteed to be active.
+// GetImage retrieves a specific image by its ID.
 func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
 	resource, err := p.getImage(ctx, imageID)
 	if err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return nil, fmt.Errorf("image %w", types.ErrResourceNotFound)
+		}
+
 		return nil, err
 	}
 
 	if !isPublicOrOrganizationOwnedImage(resource, organizationID) {
 		// This mimics the error returned by the OpenStack when an image is not found,
 		// allowing us to have consistent error handling over a single error type.
-		err = gophercloud.ErrUnexpectedResponseCode{
-			Method:   http.MethodGet,
-			Expected: []int{http.StatusOK},
-			Actual:   http.StatusNotFound,
-		}
-
-		return nil, err
+		return nil, fmt.Errorf("image %w", types.ErrResourceNotFound)
 	}
 
 	return p.convertImage(resource)
@@ -644,7 +695,7 @@ func (p *Provider) getImage(ctx context.Context, imageID string) (*images.Image,
 		return nil, err
 	}
 
-	if resource.Status == images.ImageStatusActive && resource.Visibility == images.ImageVisibilityPublic {
+	if resource.Visibility == images.ImageVisibilityPublic {
 		// Invalidate the cache as we had a cache miss.
 		p.imageCache.Invalidate()
 	}
@@ -713,12 +764,13 @@ func (p *Provider) createImageMetadata(image *types.Image) (map[string]string, e
 
 	SetMetadata(metadata, "unikorn:virtualization", image.Virtualization)
 	SetNonNilMetadata(metadata, "unikorn:organization:id", image.OrganizationID)
+	SetMetadata(metadata, "unikorn:data_source", image.DataSource)
 
 	return metadata, nil
 }
 
 // CreateImageForUpload creates a new image resource for upload.
-func (p *Provider) CreateImageForUpload(ctx context.Context, diskFormat string, image *types.Image) (*types.Image, error) {
+func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
 	imageService, err := p.image(ctx)
 	if err != nil {
 		return nil, err
@@ -731,9 +783,9 @@ func (p *Provider) CreateImageForUpload(ctx context.Context, diskFormat string, 
 
 	opts := &images.CreateOpts{
 		Name:       image.Name,
-		Visibility: ptr.To(images.ImageVisibilityPrivate),
+		Visibility: ptr.To(images.ImageVisibilityPublic),
 		Hidden:     ptr.To(false),
-		DiskFormat: diskFormat,
+		DiskFormat: string(image.DiskFormat),
 		Protected:  ptr.To(false),
 		Properties: properties,
 	}
@@ -743,31 +795,25 @@ func (p *Provider) CreateImageForUpload(ctx context.Context, diskFormat string, 
 		return nil, err
 	}
 
+	p.imageCache.Invalidate()
+
 	return p.convertImage(resource)
 }
 
-// CreateImageFromServer creates a new image from an existing server.
-//
-//nolint:cyclop
-func (p *Provider) CreateImageFromServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *types.Image) (*types.Image, error) {
+func (p *Provider) CreateImageFromServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *types.Image) (string, error) {
 	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	openstackServer, err := compute.GetServer(ctx, server)
 	if err != nil {
-		return nil, err
-	}
-
-	imageService, err := p.image(ctx)
-	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	metadata, err := p.createImageMetadata(image)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	opts := &servers.CreateImageOpts{
@@ -777,41 +823,18 @@ func (p *Provider) CreateImageFromServer(ctx context.Context, identity *unikornv
 
 	imageID, err := compute.CreateImageFromServer(ctx, openstackServer.ID, opts)
 	if err != nil {
-		return nil, err
-	}
-
-	// REVIEW_ME: We will stop the polling loop after an hour. This should be more than enough.
-	backoffStrategy := backoff.NewExponentialBackOff(backoff.WithMaxElapsedTime(time.Hour))
-
-	for {
-		resource, err := imageService.GetImage(ctx, imageID)
-		if err != nil {
-			if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-				if backoffStrategy.GetElapsedTime() > 30*time.Minute {
-					return nil, fmt.Errorf("%w: image %s not found after waiting for 30 minutes", ErrResourceNotFound, imageID)
-				}
-
-				time.Sleep(backoffStrategy.NextBackOff())
-
-				continue
-			}
-
-			return nil, err
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return "", fmt.Errorf("server %w", types.ErrResourceNotFound)
 		}
 
-		switch resource.Status {
-		case images.ImageStatusQueued, images.ImageStatusSaving:
-			time.Sleep(backoffStrategy.NextBackOff())
-		case images.ImageStatusActive:
-			p.imageCache.Invalidate()
-			return p.convertImage(resource)
-		case images.ImageStatusKilled, images.ImageStatusDeleted, images.ImageStatusPendingDelete, images.ImageStatusDeactivated, images.ImageStatusImporting:
-			fallthrough
-		default:
-			// The status could be "killed", "deleted", "pending_delete", "deactivated", "importing", and unexpected ones.
-			return nil, fmt.Errorf("%w: unexpected image status %s for image %s", ErrResourceDependency, resource.Status, imageID)
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return "", types.ErrServerNotReadyForSnapshot
 		}
+
+		return "", err
 	}
+
+	return imageID, nil
 }
 
 // UploadImage uploads data to an image.
@@ -821,11 +844,23 @@ func (p *Provider) UploadImage(ctx context.Context, imageID string, reader io.Re
 		return err
 	}
 
-	return imageService.UploadImageData(ctx, imageID, reader)
+	if err = imageService.UploadImageData(ctx, imageID, reader); err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return fmt.Errorf("image %w", types.ErrResourceNotFound)
+		}
+
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return types.ErrImageNotReadyForUpload
+		}
+
+		return err
+	}
+
+	return nil
 }
 
-// FinalizeImage finalizes an image after upload.
-func (p *Provider) FinalizeImage(ctx context.Context, imageID string) (*types.Image, error) {
+// PublishImage makes an image publicly available.
+func (p *Provider) PublishImage(ctx context.Context, imageID string) (*types.Image, error) {
 	imageService, err := p.image(ctx)
 	if err != nil {
 		return nil, err
@@ -839,6 +874,10 @@ func (p *Provider) FinalizeImage(ctx context.Context, imageID string) (*types.Im
 
 	resource, err := imageService.UpdateImage(ctx, imageID, opts)
 	if err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return nil, fmt.Errorf("image %w", types.ErrResourceNotFound)
+		}
+
 		return nil, err
 	}
 
@@ -854,6 +893,14 @@ func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
 	}
 
 	if err = imageService.DeleteImage(ctx, imageID); err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return fmt.Errorf("image %w", types.ErrResourceNotFound)
+		}
+
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return types.ErrImageStillInUse
+		}
+
 		return err
 	}
 

@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-image-monitor-task-controller
+  labels:
+    {{- include "unikorn.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-image-monitor-task-controller
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-image-monitor-task-controller
+    spec:
+      containers:
+      - name: {{ .Release.Name }}-image-monitor-task-controller
+        image: {{ include "unikorn.imageMontiorTaskControllerImage" . }}
+        args:
+        {{- include "unikorn.core.flags" . | nindent 8 }}
+        {{- include "unikorn.otlp.flags" . | nindent 8 }}
+        {{- include "unikorn.mtls.flags" . | nindent 8 }}
+        {{- include "unikorn.identity.flags" . | nindent 8 }}
+        {{- include "unikorn.region.flags" . | nindent 8 }}
+        ports:
+        - name: http
+          containerPort: 6080
+        - name: prometheus
+          containerPort: 8080
+        - name: pprof
+          containerPort: 6060
+        resources:
+          {{- .Values.imageMonitorTaskController.resources | toYaml | nindent 10 }}
+        securityContext:
+          readOnlyRootFilesystem: true
+      serviceAccountName: {{ .Release.Name }}-image-monitor-task-controller
+      securityContext:
+        runAsNonRoot: true

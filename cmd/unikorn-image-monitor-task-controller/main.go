@@ -14,31 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package region
+package main
 
 import (
-	"context"
-	"io"
+	"github.com/unikorn-cloud/core/pkg/manager"
+	"github.com/unikorn-cloud/region/pkg/managers/imagemonitortask"
 )
 
-//nolint:containedctx
-type ContextReader struct {
-	ctx   context.Context
-	inner io.Reader
-}
-
-func NewContextReader(ctx context.Context, inner io.Reader) *ContextReader {
-	return &ContextReader{
-		ctx:   ctx,
-		inner: inner,
-	}
-}
-
-func (r *ContextReader) Read(p []byte) (int, error) {
-	select {
-	case <-r.ctx.Done():
-		return 0, r.ctx.Err()
-	default:
-		return r.inner.Read(p)
-	}
+func main() {
+	manager.Run(&imagemonitortask.Factory{})
 }

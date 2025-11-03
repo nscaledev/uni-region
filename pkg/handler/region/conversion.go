@@ -1,5 +1,5 @@
 /*
-Copyright 2024-2025 the Unikorn Authors.
+Copyright 2025 the Unikorn Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,12 +17,17 @@ limitations under the License.
 package region
 
 import (
+	"errors"
+	"fmt"
+
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"k8s.io/utils/ptr"
 )
+
+var ErrUnknownDiskFormat = errors.New("unknown image format")
 
 func fromProviderGPUVendor(source types.GPUVendor) openapi.GpuVendor {
 	switch source {
@@ -111,6 +116,17 @@ func toProviderImageVirtualization(source openapi.ImageVirtualization) types.Ima
 		return types.Any
 	default:
 		return ""
+	}
+}
+
+func toProviderImageDiskFormat(source openapi.ImageDiskFormat) (types.ImageDiskFormat, error) {
+	switch source {
+	case openapi.Raw:
+		return types.ImageDiskFormatRaw, nil
+	case openapi.Qcow2:
+		return types.ImageDiskFormatQCOW2, nil
+	default:
+		return "", fmt.Errorf("%w: %s", ErrUnknownDiskFormat, source)
 	}
 }
 

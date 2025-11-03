@@ -1,3 +1,19 @@
+/*
+Copyright 2025 the Unikorn Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package region_test
 
 import (
@@ -58,7 +74,9 @@ func TestUploadImageData(t *testing.T) {
 		Packages: ptr.To(types.ImagePackages{
 			"kubernetes": "v1.25.6",
 		}),
-		Active: false,
+		DiskFormat: types.ImageDiskFormatRaw,
+		DataSource: types.ImageDataSourceFile,
+		Status:     types.ImageStatusReady,
 	}
 
 	expectedImage := &openapi.Image{
@@ -101,6 +119,16 @@ func TestUploadImageData(t *testing.T) {
 
 	}
 
+	fakeRawDiskContent := func() []byte {
+		bs := make([]byte, 512)
+
+		bs[510], bs[511] = 0x55, 0xAA
+
+		return bs
+	}()
+
+	fakeQCOW2DiskContent := []byte("QFI\xfb")
+
 	defaultReaderSetupFunc := func(t *testing.T) io.Reader {
 		t.Helper()
 
@@ -110,19 +138,17 @@ func TestUploadImageData(t *testing.T) {
 
 		tarWriter := tar.NewWriter(gzipWriter)
 
-		tarContent := []byte("this is a test disk image content")
-
 		tarHeader := &tar.Header{
 			Name: "disk.raw",
 			Mode: 0600,
-			Size: int64(len(tarContent)),
+			Size: int64(len(fakeRawDiskContent)),
 		}
 
 		if err := tarWriter.WriteHeader(tarHeader); err != nil {
 			require.NoError(t, err)
 		}
 
-		if _, err := tarWriter.Write(tarContent); err != nil {
+		if _, err := tarWriter.Write(fakeRawDiskContent); err != nil {
 			require.NoError(t, err)
 		}
 
@@ -274,8 +300,8 @@ func TestUploadImageData(t *testing.T) {
 				}
 
 				files := map[string][]byte{
-					"disk.raw":   []byte("abcdefg"),
-					"disk.qcow2": []byte("xyz"),
+					"disk.raw":   fakeRawDiskContent,
+					"disk.qcow2": fakeQCOW2DiskContent,
 				}
 
 				for name, content := range files {
@@ -309,7 +335,7 @@ func TestUploadImageData(t *testing.T) {
 			ExpectedImage:     nil,
 		},
 		{
-			Name: "fails to copy data into temporary file after context cancellation",
+			Name: "fails to valid disk file after context cancellation",
 			ContextMutateFunc: func(ctx context.Context) context.Context {
 				ctx, cancel := context.WithCancel(ctx)
 				cancel()
@@ -325,19 +351,17 @@ func TestUploadImageData(t *testing.T) {
 
 				tarWriter := tar.NewWriter(gzipWriter)
 
-				tarContent := []byte("this is a test disk image content")
-
 				tarHeader := &tar.Header{
 					Name: "disk.raw",
 					Mode: 0600,
-					Size: int64(len(tarContent)),
+					Size: int64(len(fakeRawDiskContent)),
 				}
 
 				if err := tarWriter.WriteHeader(tarHeader); err != nil {
 					require.NoError(t, err)
 				}
 
-				if _, err := tarWriter.Write(tarContent); err != nil {
+				if _, err := tarWriter.Write(fakeRawDiskContent); err != nil {
 					require.NoError(t, err)
 				}
 
@@ -408,9 +432,7 @@ func TestUploadImageData(t *testing.T) {
 						return false
 					}
 
-					expected := []byte("this is a test disk image content")
-
-					return bytes.Equal(actual, expected)
+					return bytes.Equal(fakeRawDiskContent, actual)
 				})
 
 				provider.EXPECT().
@@ -431,9 +453,7 @@ func TestUploadImageData(t *testing.T) {
 						return false
 					}
 
-					expected := []byte("this is a test disk image content")
-
-					return bytes.Equal(actual, expected)
+					return bytes.Equal(fakeRawDiskContent, actual)
 				})
 
 				provider.EXPECT().
@@ -444,7 +464,7 @@ func TestUploadImageData(t *testing.T) {
 			ExpectedImage: nil,
 		},
 		{
-			Name:              "fails to finalize image",
+			Name:              "fails to publish image",
 			ContextMutateFunc: noopContextMutateFunc,
 			ReaderSetupFunc:   defaultReaderSetupFunc,
 			ProviderSetupFunc: func(provider *mock.MockProvider) {
@@ -454,9 +474,7 @@ func TestUploadImageData(t *testing.T) {
 						return false
 					}
 
-					expected := []byte("this is a test disk image content")
-
-					return bytes.Equal(actual, expected)
+					return bytes.Equal(fakeRawDiskContent, actual)
 				})
 
 				provider.EXPECT().
@@ -464,7 +482,7 @@ func TestUploadImageData(t *testing.T) {
 					Return(nil)
 
 				provider.EXPECT().
-					FinalizeImage(gomock.Any(), imageID).
+					PublishImage(gomock.Any(), imageID).
 					Return(nil, gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusInternalServerError})
 			},
 			ExpectedError: true,
@@ -481,9 +499,7 @@ func TestUploadImageData(t *testing.T) {
 						return false
 					}
 
-					expected := []byte("this is a test disk image content")
-
-					return bytes.Equal(actual, expected)
+					return bytes.Equal(fakeRawDiskContent, actual)
 				})
 
 				provider.EXPECT().
@@ -491,7 +507,7 @@ func TestUploadImageData(t *testing.T) {
 					Return(nil)
 
 				provider.EXPECT().
-					FinalizeImage(gomock.Any(), imageID).
+					PublishImage(gomock.Any(), imageID).
 					Return(providerImage, nil)
 			},
 			ExpectedError: false,
@@ -512,7 +528,7 @@ func TestUploadImageData(t *testing.T) {
 			ctx := testCase.ContextMutateFunc(t.Context())
 			reader := testCase.ReaderSetupFunc(t)
 
-			actualImage, err := region.UploadImageData(ctx, imageID, reader, mockProvider)
+			actualImage, err := region.UploadImageData(ctx, imageID, types.ImageDiskFormatRaw, reader, mockProvider)
 			require.Equal(t, testCase.ExpectedError, err != nil)
 			require.Equal(t, testCase.ExpectedImage, actualImage)
 		})

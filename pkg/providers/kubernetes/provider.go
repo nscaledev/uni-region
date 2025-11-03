@@ -194,6 +194,11 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	return flavors, nil
 }
 
+// ClearImageCache clears the image cache.
+func (p *Provider) ClearImageCache(ctx context.Context) error {
+	return ErrUnimplmented
+}
+
 // ListImages lists all available images.
 func (p *Provider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
 	return nil, ErrUnimplmented
@@ -205,13 +210,13 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 }
 
 // CreateImageForUpload creates a new image resource for upload.
-func (p *Provider) CreateImageForUpload(ctx context.Context, diskFormat string, image *types.Image) (*types.Image, error) {
+func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
 	return nil, ErrUnimplmented
 }
 
 // CreateImageFromServer creates a new image from an existing server.
-func (p *Provider) CreateImageFromServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *types.Image) (*types.Image, error) {
-	return nil, ErrUnimplmented
+func (p *Provider) CreateImageFromServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *types.Image) (string, error) {
+	return "", ErrUnimplmented
 }
 
 // CreateImage creates a new image.
@@ -224,8 +229,8 @@ func (p *Provider) UploadImage(ctx context.Context, imageID string, reader io.Re
 	return ErrUnimplmented
 }
 
-// FinalizeImage finalizes an image after upload.
-func (p *Provider) FinalizeImage(ctx context.Context, imageID string) (*types.Image, error) {
+// PublishImage makes an image publicly available.
+func (p *Provider) PublishImage(ctx context.Context, imageID string) (*types.Image, error) {
 	return nil, ErrUnimplmented
 }
 

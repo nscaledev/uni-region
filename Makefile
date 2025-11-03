@@ -14,6 +14,8 @@ CONTROLLERS = \
   unikorn-region-controller \
   unikorn-region-project-consumer \
   unikorn-identity-controller \
+  unikorn-image-upload-task-controller \
+  unikorn-image-monitor-task-controller \
   unikorn-network-controller \
   unikorn-security-group-controller \
   unikorn-server-controller \

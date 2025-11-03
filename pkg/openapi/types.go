@@ -76,12 +76,6 @@ const (
 	Raw   ImageDiskFormat = "raw"
 )
 
-// Defines values for ImageUploadMethod.
-const (
-	Direct ImageUploadMethod = "direct"
-	Url    ImageUploadMethod = "url"
-)
-
 // ConsoleOutput Console output
 type ConsoleOutput struct {
 	// Contents Console output.
@@ -799,20 +793,23 @@ type ImageDiskFormat string
 
 // ImageCreateSpec defines parameters for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages.
 type ImageCreateSpec struct {
-	// DiskFormat The disk format of the image. If `serverID` is specified, this field is ignored. Otherwise, if not provided, the value defaults to `raw`.
-	DiskFormat *ImageDiskFormat `json:"diskFormat,omitempty"`
-
 	// Gpu The GPU driver if installed.
 	Gpu *ImageGpu `json:"gpu,omitempty"`
 
 	// Os An operating system description.
 	Os ImageOS `json:"os"`
 
-	// ServerID The server ID to create the image from. If not specified, the image is expected to be uploaded separately.
-	ServerID *string `json:"serverID,omitempty"`
-
 	// SoftwareVersions Image preinstalled version version metadata.
 	SoftwareVersions *SoftwareVersions `json:"softwareVersions,omitempty"`
+
+	// SourceFormat The disk format of the image. If `sourceServerID` is specified, this field is ignored. Otherwise, if not provided, the value defaults to `raw`.
+	SourceFormat *ImageDiskFormat `json:"sourceFormat,omitempty"`
+
+	// SourceServerID The server ID to create the image from. If `sourceURL` and this field are both not specified, the image is expected to be uploaded separately.
+	SourceServerID *string `json:"sourceServerID,omitempty"`
+
+	// SourceURL The URL to upload the image from. If `sourceServerID` and this field are both not specified, the image is expected to be uploaded separately.
+	SourceURL *string `json:"sourceURL,omitempty"`
 
 	// Virtualization What type of machine the image is for.
 	Virtualization ImageVirtualization `json:"virtualization"`
@@ -820,18 +817,9 @@ type ImageCreateSpec struct {
 
 // PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDMultipartBody defines parameters for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageID.
 type PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDMultipartBody struct {
-	// File The image file to upload, required when method is `direct`.
-	File *openapi_types.File `json:"file,omitempty"`
-
-	// Method The upload method to use.
-	Method ImageUploadMethod `json:"method"`
-
-	// Url The URL to upload the image from, required when method is `url`.
-	Url *string `json:"url,omitempty"`
+	// File The image file to upload.
+	File openapi_types.File `json:"file"`
 }
-
-// ImageUploadMethod defines parameters for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageID.
-type ImageUploadMethod string
 
 // GetApiV1OrganizationsOrganizationIDSecuritygroupsParams defines parameters for GetApiV1OrganizationsOrganizationIDSecuritygroups.
 type GetApiV1OrganizationsOrganizationIDSecuritygroupsParams struct {

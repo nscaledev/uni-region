@@ -133,6 +133,25 @@ identityController:
       cpu: 100m
       memory: 100Mi
 
+imageUploadTaskController:
+  # Allow override of the controller image.
+  image: ~
+  # Allows resource limits to be set.
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
+
+
+imageMonitorTaskController:
+  # Allow override of the controller image.
+  image: ~
+  # Allows resource limits to be set.
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
+
 networkController:
   # Allow override of the controller image.
   image: ~

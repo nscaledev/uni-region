@@ -126,3 +126,51 @@ func (c *Server) ResourceLabels() (labels.Set, error) {
 func (s *RegionOpenstackNetworkSpec) UseProviderNetworks() bool {
 	return s != nil && s.ProviderNetworks != nil && s.ProviderNetworks.Network != nil
 }
+
+// ResourceLabels generates a set of labels to uniquely identify the resource
+// if it were to be placed in a single global namespace.
+func (c *ImageUploadTask) ResourceLabels() (labels.Set, error) {
+	//nolint:nilnil
+	return nil, nil
+}
+
+// Paused implements the ReconcilePauser interface.
+func (c *ImageUploadTask) Paused() bool {
+	return c.Status.Retries >= 5
+}
+
+// StatusConditionRead scans the status conditions for an existing condition whose type
+// matches.
+func (c *ImageUploadTask) StatusConditionRead(t unikornv1core.ConditionType) (*unikornv1core.Condition, error) {
+	return nil, unikornv1core.ErrStatusConditionLookup
+}
+
+// StatusConditionWrite either adds or updates a condition in the cluster manager status.
+// If the condition, status and message match an existing condition the update is
+// ignored.
+func (c *ImageUploadTask) StatusConditionWrite(t unikornv1core.ConditionType, status corev1.ConditionStatus, reason unikornv1core.ConditionReason, message string) {
+}
+
+// ResourceLabels generates a set of labels to uniquely identify the resource
+// if it were to be placed in a single global namespace.
+func (c *ImageMonitorTask) ResourceLabels() (labels.Set, error) {
+	//nolint:nilnil
+	return nil, nil
+}
+
+// Paused implements the ReconcilePauser interface.
+func (c *ImageMonitorTask) Paused() bool {
+	return false
+}
+
+// StatusConditionRead scans the status conditions for an existing condition whose type
+// matches.
+func (c *ImageMonitorTask) StatusConditionRead(t unikornv1core.ConditionType) (*unikornv1core.Condition, error) {
+	return nil, unikornv1core.ErrStatusConditionLookup
+}
+
+// StatusConditionWrite either adds or updates a condition in the cluster manager status.
+// If the condition, status and message match an existing condition the update is
+// ignored.
+func (c *ImageMonitorTask) StatusConditionWrite(t unikornv1core.ConditionType, status corev1.ConditionStatus, reason unikornv1core.ConditionReason, message string) {
+}

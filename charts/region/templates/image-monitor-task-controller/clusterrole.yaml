@@ -1,0 +1,46 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-image-monitor-task-controller
+  labels:
+    {{- include "unikorn.labels" . | nindent 4 }}
+rules:
+# Orchestrate Unikorn resources (my job).
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - identities
+  - openstackidentities
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - imagemonitortasks
+  verbs:
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - imagemonitortasks/status
+  verbs:
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - regions
+  verbs:
+  - list
+  - watch

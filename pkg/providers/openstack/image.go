@@ -160,8 +160,8 @@ func ImageSchemaValid(image *images.Image, schema *jsonschema.Schema) bool {
 	return schema.Validate(image.Properties).Valid
 }
 
-// imageValid returns true when the image is active, matches the schema and optionally
-// is signed by a trusted image building pipeline.
+// imageValid returns true when the image is matches the schema and optionally is signed
+// by a trusted image building pipeline.
 func (c *ImageClient) imageValid(image *images.Image, schema *jsonschema.Schema) bool {
 	if !ImageSchemaValid(image, schema) {
 		return false
@@ -206,7 +206,7 @@ func (c *ImageClient) UpdateImage(ctx context.Context, id string, opts images.Up
 	return images.Update(ctx, c.client, id, opts).Extract()
 }
 
-// ListImages returns a list of active images.
+// ListImages returns a list of images.
 func (c *ImageClient) ListImages(ctx context.Context) ([]images.Image, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
@@ -220,7 +220,6 @@ func (c *ImageClient) ListImages(ctx context.Context) ([]images.Image, error) {
 
 	opts := &images.ListOpts{
 		Visibility: images.ImageVisibilityPublic,
-		Status:     images.ImageStatusActive,
 	}
 
 	page, err := images.List(c.client, opts).AllPages(ctx)
@@ -246,7 +245,7 @@ func (c *ImageClient) ListImages(ctx context.Context) ([]images.Image, error) {
 	return result, nil
 }
 
-// GetImage retrieves a specific image by its ID and the image is not guaranteed to be active.
+// GetImage retrieves a specific image by its ID.
 func (c *ImageClient) GetImage(ctx context.Context, id string) (*images.Image, error) {
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 

@@ -1,6 +1,7 @@
 {
         "type":"object",
         "required":[
+          "disk_format",
           "unikorn:os:kernel",
           "unikorn:os:family",
           "unikorn:os:distro",
@@ -8,6 +9,13 @@
           "unikorn:virtualization"
         ],
         "properties":{
+          "disk_format": {
+            "type": "string",
+            "enum": [
+              "raw",
+              "qcow2"
+            ]
+          },
                 "unikorn:os:kernel":{
                         "type":"string",
                         "enum":[

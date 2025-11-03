@@ -1,0 +1,75 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.3
+  name: imageuploadtasks.region.unikorn-cloud.org
+spec:
+  group: region.unikorn-cloud.org
+  names:
+    categories:
+    - unikorn
+    kind: ImageUploadTask
+    listKind: ImageUploadTaskList
+    plural: imageuploadtasks
+    singular: imageuploadtask
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.retries
+      name: retries
+      type: integer
+    - jsonPath: .status.lastRetryTime
+      name: lastRetryTime
+      type: date
+    - jsonPath: .metadata.creationTimestamp
+      name: age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ImageUploadTask defines a task to upload an image from a source
+          URL to the image service.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              sourceUrl:
+                type: string
+            required:
+            - sourceUrl
+            type: object
+          status:
+            properties:
+              lastRetryReason:
+                type: string
+              lastRetryTime:
+                format: date-time
+                type: string
+              retries:
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -43,6 +43,20 @@ func (m *MockProvider) EXPECT() *MockProviderMockRecorder {
 	return m.recorder
 }
 
+// ClearImageCache mocks base method.
+func (m *MockProvider) ClearImageCache(ctx context.Context) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClearImageCache", ctx)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ClearImageCache indicates an expected call of ClearImageCache.
+func (mr *MockProviderMockRecorder) ClearImageCache(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearImageCache", reflect.TypeOf((*MockProvider)(nil).ClearImageCache), ctx)
+}
+
 // CreateConsoleSession mocks base method.
 func (m *MockProvider) CreateConsoleSession(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server) (string, error) {
 	m.ctrl.T.Helper()
@@ -73,25 +87,25 @@ func (mr *MockProviderMockRecorder) CreateIdentity(ctx, identity any) *gomock.Ca
 }
 
 // CreateImageForUpload mocks base method.
-func (m *MockProvider) CreateImageForUpload(ctx context.Context, diskFormat string, image *types.Image) (*types.Image, error) {
+func (m *MockProvider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateImageForUpload", ctx, diskFormat, image)
+	ret := m.ctrl.Call(m, "CreateImageForUpload", ctx, image)
 	ret0, _ := ret[0].(*types.Image)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateImageForUpload indicates an expected call of CreateImageForUpload.
-func (mr *MockProviderMockRecorder) CreateImageForUpload(ctx, diskFormat, image any) *gomock.Call {
+func (mr *MockProviderMockRecorder) CreateImageForUpload(ctx, image any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateImageForUpload", reflect.TypeOf((*MockProvider)(nil).CreateImageForUpload), ctx, diskFormat, image)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateImageForUpload", reflect.TypeOf((*MockProvider)(nil).CreateImageForUpload), ctx, image)
 }
 
 // CreateImageFromServer mocks base method.
-func (m *MockProvider) CreateImageFromServer(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server, image *types.Image) (*types.Image, error) {
+func (m *MockProvider) CreateImageFromServer(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server, image *types.Image) (string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateImageFromServer", ctx, identity, server, image)
-	ret0, _ := ret[0].(*types.Image)
+	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -214,21 +228,6 @@ func (mr *MockProviderMockRecorder) DeleteServer(ctx, identity, server any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteServer", reflect.TypeOf((*MockProvider)(nil).DeleteServer), ctx, identity, server)
 }
 
-// FinalizeImage mocks base method.
-func (m *MockProvider) FinalizeImage(ctx context.Context, imageID string) (*types.Image, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FinalizeImage", ctx, imageID)
-	ret0, _ := ret[0].(*types.Image)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// FinalizeImage indicates an expected call of FinalizeImage.
-func (mr *MockProviderMockRecorder) FinalizeImage(ctx, imageID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FinalizeImage", reflect.TypeOf((*MockProvider)(nil).FinalizeImage), ctx, imageID)
-}
-
 // Flavors mocks base method.
 func (m *MockProvider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	m.ctrl.T.Helper()
@@ -302,6 +301,21 @@ func (m *MockProvider) ListImages(ctx context.Context, organizationID string) (t
 func (mr *MockProviderMockRecorder) ListImages(ctx, organizationID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListImages", reflect.TypeOf((*MockProvider)(nil).ListImages), ctx, organizationID)
+}
+
+// PublishImage mocks base method.
+func (m *MockProvider) PublishImage(ctx context.Context, imageID string) (*types.Image, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PublishImage", ctx, imageID)
+	ret0, _ := ret[0].(*types.Image)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PublishImage indicates an expected call of PublishImage.
+func (mr *MockProviderMockRecorder) PublishImage(ctx, imageID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishImage", reflect.TypeOf((*MockProvider)(nil).PublishImage), ctx, imageID)
 }
 
 // RebootServer mocks base method.

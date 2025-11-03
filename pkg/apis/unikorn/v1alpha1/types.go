@@ -731,3 +731,60 @@ type OpenstackServerSpec struct {
 
 type OpenstackServerStatus struct {
 }
+
+// ImageUploadTaskList is a typed list of image upload tasks.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type ImageUploadTaskList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []ImageUploadTask `json:"items"`
+}
+
+// ImageUploadTask defines a task to upload an image from a source URL to the image service.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="retries",type="integer",JSONPath=".status.retries"
+// +kubebuilder:printcolumn:name="lastRetryTime",type="date",JSONPath=".status.lastRetryTime"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type ImageUploadTask struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              ImageUploadTaskSpec   `json:"spec"`
+	Status            ImageUploadTaskStatus `json:"status,omitempty"`
+}
+
+type ImageUploadTaskSpec struct {
+	SourceURL string `json:"sourceUrl"`
+}
+
+type ImageUploadTaskStatus struct {
+	Retries         int          `json:"retries,omitempty"`
+	LastRetryTime   *metav1.Time `json:"lastRetryTime,omitempty"`
+	LastRetryReason string       `json:"lastRetryReason,omitempty"`
+}
+
+// ImageMonitorTaskList is a typed list of image monitor tasks.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type ImageMonitorTaskList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []ImageMonitorTask `json:"items"`
+}
+
+// ImageMonitorTask defines a task to monitor the creation progress of an image generated from an existing server.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type ImageMonitorTask struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              ImageMonitorTaskSpec   `json:"spec"`
+	Status            ImageMonitorTaskStatus `json:"status,omitempty"`
+}
+
+type ImageMonitorTaskSpec struct{}
+
+type ImageMonitorTaskStatus struct{}

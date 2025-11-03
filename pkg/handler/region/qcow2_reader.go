@@ -17,28 +17,40 @@ limitations under the License.
 package region
 
 import (
-	"context"
+	"bufio"
+	"errors"
 	"io"
 )
 
-//nolint:containedctx
-type ContextReader struct {
-	ctx   context.Context
+var ErrInvalidQCOW2 = errors.New("invalid QCOW2 image")
+
+type QCOW2Reader struct {
 	inner io.Reader
 }
 
-func NewContextReader(ctx context.Context, inner io.Reader) *ContextReader {
-	return &ContextReader{
-		ctx:   ctx,
+func NewQCOW2Reader(r io.Reader) (*QCOW2Reader, error) {
+	inner := bufio.NewReader(r)
+
+	bs, err := inner.Peek(4)
+	if err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, ErrInvalidQCOW2
+		}
+
+		return nil, err
+	}
+
+	if bs[0] != 'Q' || bs[1] != 'F' || bs[2] != 'I' || bs[3] != 0xfb {
+		return nil, ErrInvalidQCOW2
+	}
+
+	reader := &QCOW2Reader{
 		inner: inner,
 	}
+
+	return reader, nil
 }
 
-func (r *ContextReader) Read(p []byte) (int, error) {
-	select {
-	case <-r.ctx.Done():
-		return 0, r.ctx.Err()
-	default:
-		return r.inner.Read(p)
-	}
+func (q *QCOW2Reader) Read(p []byte) (int, error) {
+	return q.inner.Read(p)
 }
