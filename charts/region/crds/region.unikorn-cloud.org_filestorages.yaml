@@ -17,17 +17,11 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.protocol
-      name: protocol
-      type: string
-    - jsonPath: .spec.attachments
-      name: attachments
+    - jsonPath: .status.conditions[?(@.type=="Available")].reason
+      name: status
       type: string
     - jsonPath: .spec.size
       name: size
-      type: string
-    - jsonPath: .spec.storageClassID
-      name: storageClassID
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: age
@@ -158,7 +152,6 @@ spec:
             type: object
         required:
         - spec
-        - status
         type: object
     served: true
     storage: true

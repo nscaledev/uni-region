@@ -17,6 +17,9 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Available")].reason
+      name: status
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: age
       type: date
@@ -43,8 +46,6 @@ spec:
             type: object
           status:
             type: object
-        required:
-        - status
         type: object
     served: true
     storage: true

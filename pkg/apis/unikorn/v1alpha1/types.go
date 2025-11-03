@@ -752,16 +752,14 @@ type FileStorageList struct {
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:scope=Namespaced,categories=unikorn
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="protocol",type="string",JSONPath=".spec.protocol"
-// +kubebuilder:printcolumn:name="attachments",type="string",JSONPath=".spec.attachments"
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
 // +kubebuilder:printcolumn:name="size",type="string",JSONPath=".spec.size"
-// +kubebuilder:printcolumn:name="storageClassID",type="string",JSONPath=".spec.storageClassID"
 // +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
 type FileStorage struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Spec              FileStorageSpec   `json:"spec"`
-	Status            FileStorageStatus `json:"status"`
+	Status            FileStorageStatus `json:"status,omitempty"`
 }
 
 type FileStorageSpec struct {
@@ -809,11 +807,12 @@ type FileStorageClassList struct {
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:scope=Namespaced,categories=unikorn
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
 // +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
 type FileStorageClass struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Status            FileStorageClassStatus `json:"status"`
+	Status            FileStorageClassStatus `json:"status,omitempty"`
 }
 
 type FileStorageClassStatus struct{}
