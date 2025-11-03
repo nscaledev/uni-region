@@ -876,6 +876,264 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/organizations/{organizationID}/servers:
+    description: |-
+      Manages servers.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    get:
+      description: List security groups.
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: '#/components/parameters/projectIDQueryParameter'
+      - $ref: '#/components/parameters/regionIDQueryParameter'
+      - $ref: '#/components/parameters/networkIDQueryParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/serversV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/organizations/{organizationID}/projects/{projectID}/servers:
+    description: |-
+      Manages servers.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    get:
+      description: List servers.
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: '#/components/parameters/regionIDQueryParameter'
+      - $ref: '#/components/parameters/networkIDQueryParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/serversV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    post:
+      description: Create a new server.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/serverV2CreateRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/securityGroupV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/organizations/{organizationID}/projects/{projectID}/servers/{serverID}:
+    description: |-
+      Manages servers.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/serverIDParameter'
+    get:
+      description: Get a server.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/serverV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    put:
+      description: Update a server.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/serverV2UpdateRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/securityGroupV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    delete:
+      description: Delete a server.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/organizations/{organizationID}/projects/{projectID}/servers/{serverID}/start:
+    description: |-
+      Manages servers.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/serverIDParameter'
+    post:
+      x-no-body: true
+      description: Start a server that was previously stopped via the stop endpoint.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/organizations/{organizationID}/projects/{projectID}/servers/{serverID}/stop:
+    description: |-
+      Manages servers.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/serverIDParameter'
+    post:
+      x-no-body: true
+      description: Stop a running server. The server can be restarted later via the start endpoint.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/organizations/{organizationID}/projects/{projectID}/servers/{serverID}/softreboot:
+    description: |-
+      Manages servers.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/serverIDParameter'
+    post:
+      x-no-body: true
+      description: Soft reboot a server.
+      security:
+      - oauth2Authentication: [ ]
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/organizations/{organizationID}/projects/{projectID}/servers/{serverID}/hardreboot:
+    description: |-
+      Manages servers.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/serverIDParameter'
+    post:
+      x-no-body: true
+      description: Hard reboot a server.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/organizations/{organizationID}/projects/{projectID}/servers/{serverID}/consolesessions:
+    description: |-
+      Manages servers.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/serverIDParameter'
+    get:
+      description: Create a new console session for a server.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/consoleSessionResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/organizations/{organizationID}/projects/{projectID}/servers/{serverID}/consoleoutput:
+    description: |-
+      Manages servers.
+    parameters:
+    - $ref: '#/components/parameters/organizationIDParameter'
+    - $ref: '#/components/parameters/projectIDParameter'
+    - $ref: '#/components/parameters/serverIDParameter'
+    - $ref: '#/components/parameters/lengthParameter'
+    get:
+      description: Get the console output for a server.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/consoleOutputResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 components:
   parameters:
     organizationIDParameter:
@@ -1569,18 +1827,6 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/securityGroupRead'
-    securityGroupV2CreateSpec:
-      description: A security group's specification.
-      type: object
-      required:
-      - networkId
-      - rules
-      properties:
-        networkId:
-          description: The network a security group belongs to.
-          type: string
-        rules:
-          $ref: '#/components/schemas/securityGroupRuleList'
     securityGroupV2Spec:
       description: A security group's specification.
       type: object
@@ -1589,6 +1835,18 @@ components:
       properties:
         rules:
           $ref: '#/components/schemas/securityGroupRuleList'
+    securityGroupV2CreateSpec:
+      description: A security group's specification.
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/securityGroupV2Spec'
+      - type: object
+        required:
+        - networkId
+        properties:
+          networkId:
+            description: The network a security group belongs to.
+            type: string
     securityGroupV2Status:
       description: Read only status information about a security group.
       type: object
@@ -1601,6 +1859,7 @@ components:
           type: string
         networkId:
           description: The network a security group belongs to.
+          type: string
     securityGroupV2Create:
       description: A security group request.
       type: object
@@ -1777,6 +2036,129 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/serverRead'
+    allowedSourceAddresses:
+      description: |-
+        A list of network prefixes that are allowed to egress from the server.
+        By default, only packets from the server's network interface's IP address
+        are allowed to enter the network.  Use of this option allows the server
+        to act as a router without SNAT rules.
+      type: array
+      items:
+        description: An allowed source address prefix.
+        type: string
+    serverV2SecurityGroupIDList:
+      description: A list of security group IDs.
+      type: array
+      items:
+        description: A security group ID.
+        type: string
+    serverV2Networking:
+      description: A server's network configuration.
+      type: object
+      properties:
+        securityGroups:
+          $ref: '#/components/schemas/serverV2SecurityGroupIDList'
+        publicIP:
+          description: Whether or not to provision a public IP.
+          type: boolean
+        allowedSourceAddresses:
+          $ref: '#/components/schemas/allowedSourceAddresses'
+    serverV2Spec:
+      description: A server's specification.
+      type: object
+      required:
+      - flavorId
+      - imageId
+      properties:
+        flavorId:
+          description: The flavor of the server.
+          type: string
+        imageId:
+          description: The image of the server.
+          type: string
+        networking:
+          $ref: '#/components/schemas/serverV2Networking'
+        userData:
+          description: |-
+            Contains base64-encoded configuration information or scripts to use upon launch.
+            The format of the data is governed by the cloud-init standard, and may be a script,
+            a MIME multipart archive, etc.
+          type: string
+          format: byte
+    serverV2CreateSpec:
+      description: A server's specification.
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/serverV2Spec'
+      - type: object
+        required:
+        - networkId
+        properties:
+          networkId:
+            description: The network ID to attach a server to.
+            type: string
+    serverV2Status:
+      description: Read only status information about a security group.
+      type: object
+      required:
+      - regionId
+      - networkId
+      properties:
+        regionId:
+          description: The region a security group belongs to.
+          type: string
+        networkId:
+          description: The network a security group belongs to.
+          type: string
+        powerState:
+          $ref: '#/components/schemas/instanceLifecyclePhase'
+        privateIP:
+          description: The private IP address of the server.
+          type: string
+        publicIP:
+          description: The public IP address of the server.
+          type: string
+    serverV2Read:
+      description: A server.
+      type: object
+      required:
+      - metadata
+      - spec
+      - status
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+        spec:
+          $ref: '#/components/schemas/serverV2Spec'
+        status:
+          $ref: '#/components/schemas/serverV2Status'
+    serversV2Read:
+      description: A list of servers.
+      type: array
+      items:
+        $ref: '#/components/schemas/serverV2Read'
+    serverV2Create:
+      description: A server creation request.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/serverV2CreateSpec'
+    serverV2Update:
+      description: A server update request.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/serverV2Spec'
     consoleSession:
       description: A console session response.
       type: object
@@ -1933,6 +2315,55 @@ components:
               - id: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
                 allowedAddressPairs:
                 - cidr: 192.168.192.0/24
+              userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
+    serverV2CreateRequest:
+      description: A request for a server.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/serverV2Create'
+          example:
+            metadata:
+              name: server-name
+              description: A verbose description
+              tags:
+              - name: tag-name
+                value: tag-value
+            spec:
+              networkId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              flavorId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              imageId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              networking:
+                securityGroups:
+                - 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+                - 9a8c6370-4065-4d4a-9da0-7678df40cd9e
+                publicIP: true
+                allowedSourceAddresses:
+                - 192.168.192.0/24
+              userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
+    serverV2UpdateRequest:
+      description: A request for a server.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/serverV2Update'
+          example:
+            metadata:
+              name: server-name
+              description: A verbose description
+              tags:
+              - name: tag-name
+                value: tag-value
+            spec:
+              flavorId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              imageId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              networking:
+                securityGroups:
+                - 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+                - 9a8c6370-4065-4d4a-9da0-7678df40cd9e
+                publicIP: true
+                allowedSourceAddresses:
+                - 192.168.192.0/24
               userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
   responses:
     regionsResponse:
@@ -2342,6 +2773,78 @@ components:
               userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
             status:
               phase: Running
+              privateIP: 192.168.1.50
+              publicIP: 142.250.66.196
+    serverV2Response:
+      description: A server.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/serverV2Read'
+          example:
+            metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: server-name
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2024-05-31T14:11:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: provisioned
+              healthStatus: healthy
+              tags:
+              - name: tag-name
+                value: tag-value
+            spec:
+              flavorId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              imageId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              metworking:
+                securityGroups:
+                - 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+                - 9a8c6370-4065-4d4a-9da0-7678df40cd9e
+                publicIP: true
+                allowedSourceAddresses:
+                - 192.168.192.0/24
+              userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
+            status:
+              regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
+              networkId: 61f0ad85-3001-41cb-824a-e6a047668dfe
+              powerState: Running
+              privateIP: 192.168.1.50
+              publicIP: 142.250.66.196
+    serversV2Response:
+      description: A list of servers.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/serversV2Read'
+          example:
+          - metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: server-name
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2024-05-31T14:11:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: provisioned
+              healthStatus: healthy
+              tags:
+              - name: tag-name
+                value: tag-value
+            spec:
+              flavorId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              imageId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              metworking:
+                securityGroups:
+                - 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+                - 9a8c6370-4065-4d4a-9da0-7678df40cd9e
+                publicIP: true
+                allowedSourceAddresses:
+                - 192.168.192.0/24
+              userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
+            status: 
+              regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
+              networkId: 61f0ad85-3001-41cb-824a-e6a047668dfe
+              powerState: Running
               privateIP: 192.168.1.50
               publicIP: 142.250.66.196
     consoleSessionResponse:

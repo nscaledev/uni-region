@@ -35,7 +35,6 @@ import (
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -65,31 +64,19 @@ func convertV2List(in *regionv1.SecurityGroupList) openapi.SecurityGroupsV2Read 
 	return out
 }
 
-// filterRegionID indicates a resource must be omitted from any output because its
-// region is not in the user specified set.
-func filterRegionID(query *openapi.RegionIDQueryParameter, resource metav1.Object) bool {
-	return query != nil && !slices.Contains(*query, resource.GetLabels()[constants.RegionLabel])
-}
-
-// filterProjectID indicates a resource must be omitted from any output because its
-// project is not in the user specified set.
-func filterProjectID(query *openapi.ProjectIDQueryParameter, resource metav1.Object) bool {
-	return query != nil && !slices.Contains(*query, resource.GetLabels()[coreconstants.ProjectLabel])
-}
-
-func filterNetworkID(query *openapi.NetworkIDQueryParameter, resource metav1.Object) bool {
-	return query != nil && !slices.Contains(*query, resource.GetLabels()[constants.RegionLabel])
-}
-
 func (c *Client) ListV2Admin(ctx context.Context, organizationID string, params openapi.GetApiV2OrganizationsOrganizationIDSecuritygroupsParams) (openapi.SecurityGroupsV2Read, error) {
-	selector := map[string]string{
+	selector := labels.SelectorFromSet(map[string]string{
 		coreconstants.OrganizationLabel:   organizationID,
 		constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
-	}
+	})
+
+	selector = util.AddProjectIDQuery(selector, params.ProjectID)
+	selector = util.AddRegionIDQuery(selector, params.RegionID)
+	selector = util.AddNetworkIDQuery(selector, params.NetworkID)
 
 	options := &client.ListOptions{
 		Namespace:     c.namespace,
-		LabelSelector: labels.SelectorFromSet(selector),
+		LabelSelector: selector,
 	}
 
 	result := &regionv1.SecurityGroupList{}
@@ -104,7 +91,7 @@ func (c *Client) ListV2Admin(ctx context.Context, organizationID string, params 
 	}
 
 	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.SecurityGroup) bool {
-		return !resource.Spec.Tags.ContainsAll(tagSelector) || filterRegionID(params.RegionID, &resource) || filterProjectID(params.ProjectID, &resource) || filterNetworkID(params.NetworkID, &resource)
+		return !resource.Spec.Tags.ContainsAll(tagSelector)
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.SecurityGroup) int {
@@ -115,15 +102,18 @@ func (c *Client) ListV2Admin(ctx context.Context, organizationID string, params 
 }
 
 func (c *Client) ListV2(ctx context.Context, organizationID, projectID string, params openapi.GetApiV2OrganizationsOrganizationIDProjectsProjectIDSecuritygroupsParams) (openapi.SecurityGroupsV2Read, error) {
-	selector := map[string]string{
+	selector := labels.SelectorFromSet(map[string]string{
 		coreconstants.OrganizationLabel:   organizationID,
 		coreconstants.ProjectLabel:        projectID,
 		constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
-	}
+	})
+
+	selector = util.AddRegionIDQuery(selector, params.RegionID)
+	selector = util.AddNetworkIDQuery(selector, params.NetworkID)
 
 	options := &client.ListOptions{
 		Namespace:     c.namespace,
-		LabelSelector: labels.SelectorFromSet(selector),
+		LabelSelector: selector,
 	}
 
 	result := &regionv1.SecurityGroupList{}
@@ -138,7 +128,7 @@ func (c *Client) ListV2(ctx context.Context, organizationID, projectID string, p
 	}
 
 	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.SecurityGroup) bool {
-		return !resource.Spec.Tags.ContainsAll(tagSelector) || filterRegionID(params.RegionID, &resource) || filterNetworkID(params.NetworkID, &resource)
+		return !resource.Spec.Tags.ContainsAll(tagSelector)
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.SecurityGroup) int {
@@ -277,9 +267,13 @@ func (c *Client) CreateV2(ctx context.Context, organizationID, projectID string,
 }
 
 func (c *Client) UpdateV2(ctx context.Context, organizationID, projectID, securityGroupID string, request *openapi.SecurityGroupV2Update) (*openapi.SecurityGroupV2Read, error) {
-	current, err := c.GetRaw(ctx, organizationID, projectID, securityGroupID)
+	current, err := c.GetV2Raw(ctx, organizationID, projectID, securityGroupID)
 	if err != nil {
 		return nil, err
+	}
+
+	if current.DeletionTimestamp != nil {
+		return nil, errors.OAuth2InvalidRequest("security group is being deleted")
 	}
 
 	// Get the network, required for generation.
@@ -303,7 +297,7 @@ func (c *Client) UpdateV2(ctx context.Context, organizationID, projectID, securi
 	updated.Spec = required.Spec
 
 	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
-		return nil, errors.OAuth2ServerError("unable to updated security group").WithError(err)
+		return nil, errors.OAuth2ServerError("unable to update security group").WithError(err)
 	}
 
 	return convertV2(updated), nil
@@ -315,7 +309,10 @@ func (c *Client) DeleteV2(ctx context.Context, organizationID, projectID, securi
 		return err
 	}
 
-	// TODO: check this is a V2 resource
+	if resource.DeletionTimestamp != nil {
+		return nil
+	}
+
 	if err := c.client.Delete(ctx, resource, util.ForegroundDeleteOptions()); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
