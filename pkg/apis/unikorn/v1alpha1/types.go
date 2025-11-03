@@ -822,13 +822,17 @@ type FileStorageClassList struct {
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:scope=Namespaced,categories=unikorn
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="protocol",type="string",JSONPath=".protocol"
+// +kubebuilder:printcolumn:name="protocol",type="string",JSONPath=".spec.protocol"
 // +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
 type FileStorageClass struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Status            FileStorageClassStatus `json:"status,omitempty"`
+	Spec              FileStorageClassSpec   `json:"spec"`
+}
 
+// FileStorageClassSpec defines the FileStorageClass.
+type FileStorageClassSpec struct {
 	// Protocol defines the protocol of the storage class being used.
 	Protocol Protocol `json:"protocol,omitempty"`
 }
