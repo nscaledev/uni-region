@@ -742,7 +742,7 @@ type OpenstackServerSpec struct {
 type OpenstackServerStatus struct {
 }
 
-// FileStorageList is a list of FileStorage types
+// FileStorageList is a list of FileStorage types.
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type FileStorageList struct {
 	metav1.TypeMeta `json:",inline"`
@@ -750,7 +750,7 @@ type FileStorageList struct {
 	Items           []FileStorage `json:"items"`
 }
 
-// FileStorage defines a FileStorageSpec
+// FileStorage defines a FileStorageSpec.
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:scope=Namespaced,categories=unikorn
 // +kubebuilder:subresource:status
@@ -764,15 +764,15 @@ type FileStorage struct {
 	Status            FileStorageStatus `json:"status,omitempty"`
 }
 
-// FileStorageSpec defines the storage request
+// FileStorageSpec defines the storage request.
 type FileStorageSpec struct {
-	// Name of the FileStorageClass
+	// Name of the FileStorageClass.
 	StorageClassID string `json:"storageClassID"`
 
-	// Size is the total size of the storage class
+	// Size is the total size of the storage class.
 	Size resource.Quantity `json:"size"`
 
-	// Attachments are the network attachments for the storage
+	// Attachments are the network attachments for the storage.
 	Attachments []Attachment `json:"attachments,omitempty"`
 
 	// Tags are an abitrary list of key/value pairs that a client
@@ -783,11 +783,11 @@ type FileStorageSpec struct {
 	// Pause, if true, will inhibit reconciliation.
 	Pause bool `json:"pause,omitempty"`
 
-	// NFS is fulfilled when leveraging the NFS storage class
+	// NFS is fulfilled when leveraging the NFS storage class.
 	NFS *NFS `json:"nfs,omitempty"`
 }
 
-// Protocol defines which storage protocol to leverage
+// Protocol defines which storage protocol to leverage.
 // +kubebuilder:validation:Enum=nfsv3;nfsv4
 type Protocol string
 
@@ -808,7 +808,7 @@ type NFS struct {
 	RootSquash bool `json:"rootSquash,omitempty"`
 }
 
-// FileStorageClassList is a list of the FileStorageClass type
+// FileStorageClassList is a list of the FileStorageClass type.
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type FileStorageClassList struct {
 	metav1.TypeMeta `json:",inline"`
@@ -816,7 +816,7 @@ type FileStorageClassList struct {
 	Items           []FileStorageClass `json:"items"`
 }
 
-// FileStorageClass defines the status of storage
+// FileStorageClass defines the status of storage.
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:scope=Namespaced,categories=unikorn
 // +kubebuilder:subresource:status
