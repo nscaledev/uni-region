@@ -17,8 +17,8 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .status.conditions[?(@.type=="Available")].reason
-      name: status
+    - jsonPath: .spec.protocol
+      name: protocol
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: age
@@ -26,6 +26,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
+        description: FileStorageClass defines the status of storage.
         properties:
           apiVersion:
             description: |-
@@ -44,8 +45,21 @@ spec:
             type: string
           metadata:
             type: object
+          spec:
+            description: FileStorageClassSpec defines the FileStorageClass.
+            properties:
+              protocol:
+                description: Protocol defines the protocol of the storage class being
+                  used.
+                enum:
+                - nfsv3
+                - nfsv4
+                type: string
+            type: object
           status:
             type: object
+        required:
+        - spec
         type: object
     served: true
     storage: true
