@@ -55,6 +55,8 @@ spec:
                 - nfsv3
                 - nfsv4
                 type: string
+            required:
+            - protocol
             type: object
           status:
             type: object

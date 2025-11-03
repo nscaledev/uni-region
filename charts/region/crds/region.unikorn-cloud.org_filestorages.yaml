@@ -52,20 +52,28 @@ spec:
             description: FileStorageSpec defines the storage request.
             properties:
               attachments:
-                description: Attachments are the network attachments for the storage.
+                description: Attachments define where the storage is requested to
+                  be attached to.
                 items:
-                  description: Attachment has the network identifier for the storage.
                   properties:
                     networkID:
+                      description: NetworkID is the network ID the storage is attached
+                        to.
                       type: string
                   required:
                   - networkID
                   type: object
                 type: array
               nfs:
-                description: NFS is fulfilled when leveraging the NFS storage class.
+                description: |-
+                  NFS contains relevant user definable parameters for NFS based
+                  storage classes.
                 properties:
                   rootSquash:
+                    description: |-
+                      RootSquash, when defined prevents the NFS storage from being able
+                      to write as "root".  Instead, it writes as an anonymous non-root user
+                      typically "nobody".
                     type: boolean
                 type: object
               pause:
@@ -105,8 +113,10 @@ spec:
             - storageClassID
             type: object
           status:
+            description: FileStorageStatus contains the status of the resouce.
             properties:
               conditions:
+                description: Current service state of a file storage claim.
                 items:
                   description: |-
                     Condition is a generic condition type for use across all resource types.

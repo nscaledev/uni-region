@@ -772,7 +772,7 @@ type FileStorageSpec struct {
 	// Size is the total size of the storage class.
 	Size resource.Quantity `json:"size"`
 
-	// Attachments are the network attachments for the storage.
+	// Attachments define where the storage is requested to be attached to.
 	Attachments []Attachment `json:"attachments,omitempty"`
 
 	// Tags are an abitrary list of key/value pairs that a client
@@ -783,7 +783,8 @@ type FileStorageSpec struct {
 	// Pause, if true, will inhibit reconciliation.
 	Pause bool `json:"pause,omitempty"`
 
-	// NFS is fulfilled when leveraging the NFS storage class.
+	// NFS contains relevant user definable parameters for NFS based
+	// storage classes.
 	NFS *NFS `json:"nfs,omitempty"`
 }
 
@@ -796,17 +797,21 @@ const (
 	NFSv4 Protocol = "nfsv4"
 )
 
+// FileStorageStatus contains the status of the resouce.
 type FileStorageStatus struct {
+	// Current service state of a file storage claim.
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
 }
 
-// Attachment has the network identifier for the storage.
 type Attachment struct {
+	// NetworkID is the network ID the storage is attached to.
 	NetworkID string `json:"networkID"`
 }
 
-// NFS has the configuration for NFS type.
 type NFS struct {
+	// RootSquash, when defined prevents the NFS storage from being able
+	// to write as "root".  Instead, it writes as an anonymous non-root user
+	// typically "nobody".
 	RootSquash bool `json:"rootSquash,omitempty"`
 }
 
@@ -827,14 +832,14 @@ type FileStorageClassList struct {
 type FileStorageClass struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Status            FileStorageClassStatus `json:"status,omitempty"`
 	Spec              FileStorageClassSpec   `json:"spec"`
+	Status            FileStorageClassStatus `json:"status,omitempty"`
 }
 
 // FileStorageClassSpec defines the FileStorageClass.
 type FileStorageClassSpec struct {
 	// Protocol defines the protocol of the storage class being used.
-	Protocol Protocol `json:"protocol,omitempty"`
+	Protocol Protocol `json:"protocol"`
 }
 
 type FileStorageClassStatus struct{}
