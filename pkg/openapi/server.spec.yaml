@@ -882,7 +882,7 @@ paths:
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
     get:
-      description: List security groups.
+      description: List servers.
       security:
       - oauth2Authentication: []
       parameters:
@@ -934,7 +934,7 @@ paths:
         $ref: '#/components/requestBodies/serverV2CreateRequest'
       responses:
         '201':
-          $ref: '#/components/responses/securityGroupV2Response'
+          $ref: '#/components/responses/serverV2Response'
         '400':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
@@ -973,7 +973,7 @@ paths:
         $ref: '#/components/requestBodies/serverV2UpdateRequest'
       responses:
         '202':
-          $ref: '#/components/responses/securityGroupV2Response'
+          $ref: '#/components/responses/serverV2Response'
         '400':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':

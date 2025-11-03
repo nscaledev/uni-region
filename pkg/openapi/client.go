@@ -5253,7 +5253,7 @@ func (r GetApiV2OrganizationsOrganizationIDProjectsProjectIDServersResponse) Sta
 type PostApiV2OrganizationsOrganizationIDProjectsProjectIDServersResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON201      *SecurityGroupV2Response
+	JSON201      *ServerV2Response
 	JSON400      *externalRef0.BadRequestResponse
 	JSON401      *externalRef0.UnauthorizedResponse
 	JSON403      *externalRef0.ForbiddenResponse
@@ -5330,7 +5330,7 @@ func (r GetApiV2OrganizationsOrganizationIDProjectsProjectIDServersServerIDRespo
 type PutApiV2OrganizationsOrganizationIDProjectsProjectIDServersServerIDResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON202      *SecurityGroupV2Response
+	JSON202      *ServerV2Response
 	JSON400      *externalRef0.BadRequestResponse
 	JSON401      *externalRef0.UnauthorizedResponse
 	JSON403      *externalRef0.ForbiddenResponse
@@ -8197,7 +8197,7 @@ func ParsePostApiV2OrganizationsOrganizationIDProjectsProjectIDServersResponse(r
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest SecurityGroupV2Response
+		var dest ServerV2Response
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -8352,7 +8352,7 @@ func ParsePutApiV2OrganizationsOrganizationIDProjectsProjectIDServersServerIDRes
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
-		var dest SecurityGroupV2Response
+		var dest ServerV2Response
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
