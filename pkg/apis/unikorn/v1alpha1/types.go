@@ -800,12 +800,12 @@ type FileStorageStatus struct {
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
 }
 
-// Attachment has the network identifier for the storage
+// Attachment has the network identifier for the storage.
 type Attachment struct {
 	NetworkID string `json:"networkID"`
 }
 
-// NFS has the configuration for NFS type
+// NFS has the configuration for NFS type.
 type NFS struct {
 	RootSquash bool `json:"rootSquash,omitempty"`
 }
@@ -828,7 +828,9 @@ type FileStorageClass struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Status            FileStorageClassStatus `json:"status,omitempty"`
-	Protocol          Protocol               `json:"protocol,omitempty"`
+
+	// Protocol defines the protocol of the storage class being used.
+	Protocol Protocol `json:"protocol,omitempty"`
 }
 
 type FileStorageClassStatus struct{}
