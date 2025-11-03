@@ -741,3 +741,100 @@ type OpenstackServerSpec struct {
 
 type OpenstackServerStatus struct {
 }
+
+// FileStorageList is a list of FileStorage types.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type FileStorageList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []FileStorage `json:"items"`
+}
+
+// FileStorage defines a FileStorageSpec.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="size",type="string",JSONPath=".spec.size"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type FileStorage struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              FileStorageSpec   `json:"spec"`
+	Status            FileStorageStatus `json:"status,omitempty"`
+}
+
+// FileStorageSpec defines the storage request.
+type FileStorageSpec struct {
+	// Name of the FileStorageClass.
+	StorageClassID string `json:"storageClassID"`
+
+	// Size is the total size of the storage class.
+	Size resource.Quantity `json:"size"`
+
+	// Attachments are the network attachments for the storage.
+	Attachments []Attachment `json:"attachments,omitempty"`
+
+	// Tags are an abitrary list of key/value pairs that a client
+	// may populate to store metadata for the resource.
+	// Tags are aribrary user data.
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
+
+	// Pause, if true, will inhibit reconciliation.
+	Pause bool `json:"pause,omitempty"`
+
+	// NFS is fulfilled when leveraging the NFS storage class.
+	NFS *NFS `json:"nfs,omitempty"`
+}
+
+// Protocol defines which storage protocol to leverage.
+// +kubebuilder:validation:Enum=nfsv3;nfsv4
+type Protocol string
+
+const (
+	NFSv3 Protocol = "nfsv3"
+	NFSv4 Protocol = "nfsv4"
+)
+
+type FileStorageStatus struct {
+	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+}
+
+// Attachment has the network identifier for the storage.
+type Attachment struct {
+	NetworkID string `json:"networkID"`
+}
+
+// NFS has the configuration for NFS type.
+type NFS struct {
+	RootSquash bool `json:"rootSquash,omitempty"`
+}
+
+// FileStorageClassList is a list of the FileStorageClass type.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type FileStorageClassList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []FileStorageClass `json:"items"`
+}
+
+// FileStorageClass defines the status of storage.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="protocol",type="string",JSONPath=".spec.protocol"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type FileStorageClass struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Status            FileStorageClassStatus `json:"status,omitempty"`
+	Spec              FileStorageClassSpec   `json:"spec"`
+}
+
+// FileStorageClassSpec defines the FileStorageClass.
+type FileStorageClassSpec struct {
+	// Protocol defines the protocol of the storage class being used.
+	Protocol Protocol `json:"protocol,omitempty"`
+}
+
+type FileStorageClassStatus struct{}
