@@ -17,13 +17,15 @@ limitations under the License.
 package util
 
 import (
-	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	"context"
+
+	"github.com/unikorn-cloud/identity/pkg/principal"
+	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,44 +37,50 @@ func ForegroundDeleteOptions() *client.DeleteOptions {
 	}
 }
 
-func addQuery(selector labels.Selector, label string, vals []string) labels.Selector {
-	if len(vals) == 0 {
-		return selector
+func OrganizationIDQuery(query *openapi.OrganizationIDQueryParameter) []string {
+	if query == nil {
+		return nil
 	}
 
-	if len(vals) == 1 {
-		// SM: Send me to burn in hell, but the client code is way
-		// prettier, we're basically pulling the checks out of the library.
-		req, _ := labels.NewRequirement(label, selection.Equals, vals)
-
-		return selector.Add(*req)
-	}
-
-	req, _ := labels.NewRequirement(label, selection.In, vals)
-
-	return selector.Add(*req)
+	return *query
 }
 
-func AddRegionIDQuery(selector labels.Selector, query *openapi.RegionIDQueryParameter) labels.Selector {
+func ProjectIDQuery(query *openapi.ProjectIDQueryParameter) []string {
 	if query == nil {
-		return selector
+		return nil
 	}
 
-	return addQuery(selector, constants.RegionLabel, *query)
+	return *query
 }
 
-func AddProjectIDQuery(selector labels.Selector, query *openapi.ProjectIDQueryParameter) labels.Selector {
+func AddRegionIDQuery(selector labels.Selector, query *openapi.RegionIDQueryParameter) (labels.Selector, error) {
 	if query == nil {
-		return selector
+		return selector, nil
 	}
 
-	return addQuery(selector, coreconstants.ProjectLabel, *query)
+	return rbac.AddQuery(selector, constants.RegionLabel, *query)
 }
 
-func AddNetworkIDQuery(selector labels.Selector, query *openapi.NetworkIDQueryParameter) labels.Selector {
+func AddNetworkIDQuery(selector labels.Selector, query *openapi.NetworkIDQueryParameter) (labels.Selector, error) {
 	if query == nil {
-		return selector
+		return selector, nil
 	}
 
-	return addQuery(selector, constants.NetworkLabel, *query)
+	return rbac.AddQuery(selector, constants.NetworkLabel, *query)
+}
+
+// InjectUserPrincipal updates the principal information from either the resource request
+// or the existing resource.
+func InjectUserPrincipal(ctx context.Context, organizationID, projectID string) error {
+	principal, err := principal.FromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if principal.OrganizationID == "" {
+		principal.OrganizationID = organizationID
+		principal.ProjectID = projectID
+	}
+
+	return nil
 }
