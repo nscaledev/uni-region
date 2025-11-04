@@ -521,9 +521,15 @@ func isPublicOrOrganizationOwnedImage(image *images.Image, organizationID string
 }
 
 func getPublicOrOrganizationOwnedImages(resources []images.Image, organizationID string) []images.Image {
-	return slices.DeleteFunc(resources, func(image images.Image) bool {
-		return !isPublicOrOrganizationOwnedImage(&image, organizationID)
-	})
+	result := make([]images.Image, 0, len(resources))
+
+	for _, image := range resources {
+		if isPublicOrOrganizationOwnedImage(&image, organizationID) {
+			result = append(result, image)
+		}
+	}
+
+	return result
 }
 
 func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
