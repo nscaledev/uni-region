@@ -42,7 +42,7 @@ type Provisioner struct {
 }
 
 // New returns a new initialized provisioner object.
-func New(_ manager.ControllerOptions) provisioners.ManagerProvisioner {
+func New(_ *manager.NullControllerOptions) provisioners.ManagerProvisioner {
 	return &Provisioner{
 		server: &unikornv1.Server{},
 	}
