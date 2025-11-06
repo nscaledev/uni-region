@@ -205,7 +205,7 @@ func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID strin
 		return cmp.Compare(a.Memory.Value(), b.Memory.Value())
 	})
 
-	return fromProviderFlavors(result), nil
+	return convertFlavors(result), nil
 }
 
 func (c *Client) ClearImageCache(ctx context.Context, regionID string) error {
@@ -237,7 +237,7 @@ func (c *Client) ListImages(ctx context.Context, organizationID, regionID string
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	return fromProviderImages(result), nil
+	return convertImages(result), nil
 }
 
 func (c *Client) CreateImage(ctx context.Context, organizationID, regionID string, request *openapi.ImageCreateRequest) (*openapi.Image, error) {
@@ -253,22 +253,22 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 	var gpu *types.ImageGPU
 
 	if request.Spec.Gpu != nil {
-		gpu = toProviderImageGPU(request.Spec.Gpu)
+		gpu = generateImageGPU(request.Spec.Gpu)
 	}
 
 	var packages *types.ImagePackages
 
 	if request.Spec.SoftwareVersions != nil {
-		temp := toProviderPackages(*request.Spec.SoftwareVersions)
+		temp := generatePackages(*request.Spec.SoftwareVersions)
 		packages = &temp
 	}
 
 	image := &types.Image{
 		Name:           request.Metadata.Name,
 		OrganizationID: ptr.To(organizationID),
-		Virtualization: toProviderImageVirtualization(request.Spec.Virtualization),
+		Virtualization: generateImageVirtualization(request.Spec.Virtualization),
 		GPU:            gpu,
-		OS:             *toProviderImageOS(&request.Spec.Os),
+		OS:             *generateImageOS(&request.Spec.Os),
 		Packages:       packages,
 	}
 
@@ -309,7 +309,7 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 		return nil, err
 	}
 
-	return fromProviderImage(result), nil
+	return convertImage(result), nil
 }
 
 type createImageForUploadSaga struct {
@@ -343,7 +343,7 @@ func (s *createImageForUploadSaga) convertImageDiskFormat(ctx context.Context) e
 		return nil
 	}
 
-	temp, err := toProviderImageDiskFormat(*s.sourceFormat)
+	temp, err := generateImageDiskFormat(*s.sourceFormat)
 	if err != nil {
 		return errors.OAuth2InvalidRequest("The provided disk format is not valid").WithError(err)
 	}
@@ -760,7 +760,7 @@ func UploadImageData(ctx context.Context, imageID string, diskFormat types.Image
 		return nil, errors.OAuth2ServerError("The server encountered an unexpected error while finalizing the image upload").WithError(err)
 	}
 
-	return fromProviderImage(result), nil
+	return convertImage(result), nil
 }
 
 func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imageID string) error {
@@ -811,5 +811,5 @@ func (c *Client) ListExternalNetworks(ctx context.Context, regionID string) (ope
 		return nil, errors.OAuth2ServerError("failed to list external networks").WithError(err)
 	}
 
-	return fromProviderExternalNetworks(result), nil
+	return convertExternalNetworks(result), nil
 }

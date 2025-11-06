@@ -29,7 +29,7 @@ import (
 
 var ErrUnknownDiskFormat = errors.New("unknown image format")
 
-func fromProviderGPUVendor(source types.GPUVendor) openapi.GpuVendor {
+func convertGPUVendor(source types.GPUVendor) openapi.GpuVendor {
 	switch source {
 	case types.Nvidia:
 		return openapi.NVIDIA
@@ -40,7 +40,7 @@ func fromProviderGPUVendor(source types.GPUVendor) openapi.GpuVendor {
 	}
 }
 
-func toProviderGPUVendor(source openapi.GpuVendor) types.GPUVendor {
+func generateGPUVendor(source openapi.GpuVendor) types.GPUVendor {
 	switch source {
 	case openapi.NVIDIA:
 		return types.Nvidia
@@ -51,20 +51,20 @@ func toProviderGPUVendor(source openapi.GpuVendor) types.GPUVendor {
 	}
 }
 
-func fromProviderFlavorGPU(source *types.GPU) *openapi.GpuSpec {
+func convertFlavorGPU(source *types.GPU) *openapi.GpuSpec {
 	return &openapi.GpuSpec{
 		LogicalCount:  source.LogicalCount,
 		Memory:        int(source.Memory.Value() >> 30),
 		Model:         source.Model,
 		PhysicalCount: source.PhysicalCount,
-		Vendor:        fromProviderGPUVendor(source.Vendor),
+		Vendor:        convertGPUVendor(source.Vendor),
 	}
 }
 
-func fromProviderFlavor(source *types.Flavor) *openapi.Flavor {
+func convertFlavor(source *types.Flavor) *openapi.Flavor {
 	var gpu *openapi.GpuSpec
 	if source.GPU != nil {
-		gpu = fromProviderFlavorGPU(source.GPU)
+		gpu = convertFlavorGPU(source.GPU)
 	}
 
 	return &openapi.Flavor{
@@ -83,17 +83,17 @@ func fromProviderFlavor(source *types.Flavor) *openapi.Flavor {
 	}
 }
 
-func fromProviderFlavors(sources []types.Flavor) []openapi.Flavor {
+func convertFlavors(sources []types.Flavor) []openapi.Flavor {
 	targets := make([]openapi.Flavor, len(sources))
 
 	for i, source := range sources {
-		targets[i] = *fromProviderFlavor(&source)
+		targets[i] = *convertFlavor(&source)
 	}
 
 	return targets
 }
 
-func fromProviderImageVirtualization(source types.ImageVirtualization) openapi.ImageVirtualization {
+func convertImageVirtualization(source types.ImageVirtualization) openapi.ImageVirtualization {
 	switch source {
 	case types.Virtualized:
 		return openapi.Virtualized
@@ -106,7 +106,7 @@ func fromProviderImageVirtualization(source types.ImageVirtualization) openapi.I
 	}
 }
 
-func toProviderImageVirtualization(source openapi.ImageVirtualization) types.ImageVirtualization {
+func generateImageVirtualization(source openapi.ImageVirtualization) types.ImageVirtualization {
 	switch source {
 	case openapi.Virtualized:
 		return types.Virtualized
@@ -119,7 +119,7 @@ func toProviderImageVirtualization(source openapi.ImageVirtualization) types.Ima
 	}
 }
 
-func toProviderImageDiskFormat(source openapi.ImageDiskFormat) (types.ImageDiskFormat, error) {
+func generateImageDiskFormat(source openapi.ImageDiskFormat) (types.ImageDiskFormat, error) {
 	switch source {
 	case openapi.Raw:
 		return types.ImageDiskFormatRaw, nil
@@ -130,7 +130,7 @@ func toProviderImageDiskFormat(source openapi.ImageDiskFormat) (types.ImageDiskF
 	}
 }
 
-func fromProviderOSKernel(source types.OsKernel) openapi.OsKernel {
+func convertOSKernel(source types.OsKernel) openapi.OsKernel {
 	switch source {
 	case types.Linux:
 		return openapi.Linux
@@ -139,7 +139,7 @@ func fromProviderOSKernel(source types.OsKernel) openapi.OsKernel {
 	}
 }
 
-func toProviderOSKernel(source openapi.OsKernel) types.OsKernel {
+func generateOSKernel(source openapi.OsKernel) types.OsKernel {
 	switch source {
 	case openapi.Linux:
 		return types.Linux
@@ -148,7 +148,7 @@ func toProviderOSKernel(source openapi.OsKernel) types.OsKernel {
 	}
 }
 
-func fromProviderOSFamily(source types.OsFamily) openapi.OsFamily {
+func convertOSFamily(source types.OsFamily) openapi.OsFamily {
 	switch source {
 	case types.Debian:
 		return openapi.Debian
@@ -159,7 +159,7 @@ func fromProviderOSFamily(source types.OsFamily) openapi.OsFamily {
 	}
 }
 
-func toProviderOSFamily(source openapi.OsFamily) types.OsFamily {
+func generateOSFamily(source openapi.OsFamily) types.OsFamily {
 	switch source {
 	case openapi.Debian:
 		return types.Debian
@@ -170,7 +170,7 @@ func toProviderOSFamily(source openapi.OsFamily) types.OsFamily {
 	}
 }
 
-func fromProviderOSDistro(source types.OsDistro) openapi.OsDistro {
+func convertOSDistro(source types.OsDistro) openapi.OsDistro {
 	switch source {
 	case types.Rocky:
 		return openapi.Rocky
@@ -181,7 +181,7 @@ func fromProviderOSDistro(source types.OsDistro) openapi.OsDistro {
 	}
 }
 
-func toProviderOSDistro(source openapi.OsDistro) types.OsDistro {
+func generateOSDistro(source openapi.OsDistro) types.OsDistro {
 	switch source {
 	case openapi.Rocky:
 		return types.Rocky
@@ -192,7 +192,7 @@ func toProviderOSDistro(source openapi.OsDistro) types.OsDistro {
 	}
 }
 
-func fromProviderPackages(source types.ImagePackages) openapi.SoftwareVersions {
+func convertPackages(source types.ImagePackages) openapi.SoftwareVersions {
 	target := make(openapi.SoftwareVersions, len(source))
 
 	for name, version := range source {
@@ -202,7 +202,7 @@ func fromProviderPackages(source types.ImagePackages) openapi.SoftwareVersions {
 	return target
 }
 
-func toProviderPackages(source openapi.SoftwareVersions) types.ImagePackages {
+func generatePackages(source openapi.SoftwareVersions) types.ImagePackages {
 	target := make(types.ImagePackages, len(source))
 
 	for name, version := range source {
@@ -212,7 +212,7 @@ func toProviderPackages(source openapi.SoftwareVersions) types.ImagePackages {
 	return target
 }
 
-func fromProviderImageGPU(source *types.ImageGPU) *openapi.ImageGpu {
+func convertImageGPU(source *types.ImageGPU) *openapi.ImageGpu {
 	var models *[]string
 	if source.Models != nil {
 		models = &source.Models
@@ -221,56 +221,56 @@ func fromProviderImageGPU(source *types.ImageGPU) *openapi.ImageGpu {
 	return &openapi.ImageGpu{
 		Driver: source.Driver,
 		Models: models,
-		Vendor: fromProviderGPUVendor(source.Vendor),
+		Vendor: convertGPUVendor(source.Vendor),
 	}
 }
 
-func toProviderImageGPU(source *openapi.ImageGpu) *types.ImageGPU {
+func generateImageGPU(source *openapi.ImageGpu) *types.ImageGPU {
 	var models []string
 	if source.Models != nil {
 		models = *source.Models
 	}
 
 	return &types.ImageGPU{
-		Vendor: toProviderGPUVendor(source.Vendor),
+		Vendor: generateGPUVendor(source.Vendor),
 		Driver: source.Driver,
 		Models: models,
 	}
 }
 
-func fromProviderImageOS(source *types.ImageOS) *openapi.ImageOS {
+func convertImageOS(source *types.ImageOS) *openapi.ImageOS {
 	return &openapi.ImageOS{
 		Codename: source.Codename,
-		Distro:   fromProviderOSDistro(source.Distro),
-		Family:   fromProviderOSFamily(source.Family),
-		Kernel:   fromProviderOSKernel(source.Kernel),
+		Distro:   convertOSDistro(source.Distro),
+		Family:   convertOSFamily(source.Family),
+		Kernel:   convertOSKernel(source.Kernel),
 		Variant:  source.Variant,
 		Version:  source.Version,
 	}
 }
 
-func toProviderImageOS(source *openapi.ImageOS) *types.ImageOS {
+func generateImageOS(source *openapi.ImageOS) *types.ImageOS {
 	return &types.ImageOS{
-		Kernel:   toProviderOSKernel(source.Kernel),
-		Family:   toProviderOSFamily(source.Family),
-		Distro:   toProviderOSDistro(source.Distro),
+		Kernel:   generateOSKernel(source.Kernel),
+		Family:   generateOSFamily(source.Family),
+		Distro:   generateOSDistro(source.Distro),
 		Variant:  source.Variant,
 		Codename: source.Codename,
 		Version:  source.Version,
 	}
 }
 
-func fromProviderImage(source *types.Image) *openapi.Image {
+func convertImage(source *types.Image) *openapi.Image {
 	var gpu *openapi.ImageGpu
 
 	if source.GPU != nil {
-		gpu = fromProviderImageGPU(source.GPU)
+		gpu = convertImageGPU(source.GPU)
 	}
 
 	var softwareVersions *openapi.SoftwareVersions
 
 	if source.Packages != nil {
-		temp := fromProviderPackages(*source.Packages)
+		temp := convertPackages(*source.Packages)
 		softwareVersions = &temp
 	}
 
@@ -282,36 +282,36 @@ func fromProviderImage(source *types.Image) *openapi.Image {
 		},
 		Spec: openapi.ImageSpec{
 			Gpu:              gpu,
-			Os:               *fromProviderImageOS(&source.OS),
+			Os:               *convertImageOS(&source.OS),
 			SizeGiB:          source.SizeGiB,
 			SoftwareVersions: softwareVersions,
-			Virtualization:   fromProviderImageVirtualization(source.Virtualization),
+			Virtualization:   convertImageVirtualization(source.Virtualization),
 		},
 	}
 }
 
-func fromProviderImages(sources []types.Image) []openapi.Image {
+func convertImages(sources []types.Image) []openapi.Image {
 	targets := make([]openapi.Image, len(sources))
 
 	for i, source := range sources {
-		targets[i] = *fromProviderImage(&source)
+		targets[i] = *convertImage(&source)
 	}
 
 	return targets
 }
 
-func fromProviderExternalNetwork(in types.ExternalNetwork) openapi.ExternalNetwork {
+func convertExternalNetwork(in types.ExternalNetwork) openapi.ExternalNetwork {
 	return openapi.ExternalNetwork{
 		Id:   in.ID,
 		Name: in.Name,
 	}
 }
 
-func fromProviderExternalNetworks(in types.ExternalNetworks) openapi.ExternalNetworks {
+func convertExternalNetworks(in types.ExternalNetworks) openapi.ExternalNetworks {
 	targets := make([]openapi.ExternalNetwork, len(in))
 
 	for i, source := range in {
-		targets[i] = fromProviderExternalNetwork(source)
+		targets[i] = convertExternalNetwork(source)
 	}
 
 	return targets
