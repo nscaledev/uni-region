@@ -36,7 +36,7 @@ type Provider interface {
 	// Flavors list all available flavors.
 	Flavors(ctx context.Context) (FlavorList, error)
 	// ClearImageCache clears the image cache.
-	ClearImageCache(ctx context.Context) error
+	ClearImageCache(ctx context.Context, organizationID string) error
 	// ListImages lists all available images.
 	ListImages(ctx context.Context, organizationID string) (ImageList, error)
 	// GetImage retrieves a specific image by its ID.

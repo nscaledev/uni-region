@@ -33,7 +33,7 @@ import (
 	"sync"
 	"time"
 
-	gophercloud "github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
@@ -48,7 +48,6 @@ import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
-	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers/allocation/vlan"
@@ -107,7 +106,7 @@ type Provider struct {
 
 	lock sync.Mutex
 
-	imageCache *cache.TimeoutCache[[]images.Image]
+	imageCache *ImageCache
 }
 
 var _ types.Provider = &Provider{}
@@ -123,7 +122,7 @@ func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Pro
 		client:        cli,
 		region:        region,
 		vlanAllocator: vlan.New(cli, region.Namespace, "openstack-region-provider", vlanSpec),
-		imageCache:    cache.New[[]images.Image](time.Hour),
+		imageCache:    NewImageCache(time.Hour),
 	}
 
 	if err := p.serviceClientRefresh(ctx); err != nil {
@@ -605,19 +604,17 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 }
 
 // ClearImageCache clears the image cache.
-func (p *Provider) ClearImageCache(ctx context.Context) error {
-	p.imageCache.Invalidate()
+func (p *Provider) ClearImageCache(ctx context.Context, organizationID string) error {
+	p.imageCache.ClearByOrganizationID(organizationID)
 	return nil
 }
 
 // ListImages lists all available images.
 func (p *Provider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
-	resources, err := p.listImages(ctx)
+	resources, err := p.listImages(ctx, organizationID)
 	if err != nil {
 		return nil, err
 	}
-
-	resources = getPublicOrOrganizationOwnedImages(resources, organizationID)
 
 	result := make(types.ImageList, len(resources))
 
@@ -633,8 +630,8 @@ func (p *Provider) ListImages(ctx context.Context, organizationID string) (types
 	return result, nil
 }
 
-func (p *Provider) listImages(ctx context.Context) ([]images.Image, error) {
-	if cached, found := p.imageCache.Get(); found {
+func (p *Provider) listImages(ctx context.Context, organizationID string) ([]images.Image, error) {
+	if cached, found := p.imageCache.GetByOrganizationID(organizationID); found {
 		return cached, nil
 	}
 
@@ -649,6 +646,8 @@ func (p *Provider) listImages(ctx context.Context) ([]images.Image, error) {
 	}
 
 	p.imageCache.Set(resources)
+
+	resources = getPublicOrOrganizationOwnedImages(resources, organizationID)
 
 	return resources, nil
 }
@@ -674,15 +673,8 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 }
 
 func (p *Provider) getImage(ctx context.Context, imageID string) (*images.Image, error) {
-	if cached, found := p.imageCache.Get(); found {
-		imageIndexFunc := func(image images.Image) bool {
-			return image.ID == imageID
-		}
-
-		index := slices.IndexFunc(cached, imageIndexFunc)
-		if index != -1 {
-			return &cached[index], nil
-		}
+	if cached, found := p.imageCache.Get(imageID); found {
+		return cached, nil
 	}
 
 	imageService, err := p.image(ctx)
@@ -695,10 +687,7 @@ func (p *Provider) getImage(ctx context.Context, imageID string) (*images.Image,
 		return nil, err
 	}
 
-	if resource.Visibility == images.ImageVisibilityPublic {
-		// Invalidate the cache as we had a cache miss.
-		p.imageCache.Invalidate()
-	}
+	p.imageCache.Clear(resource)
 
 	return resource, nil
 }
@@ -795,7 +784,7 @@ func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image)
 		return nil, err
 	}
 
-	p.imageCache.Invalidate()
+	p.imageCache.Clear(resource)
 
 	return p.convertImage(resource)
 }
@@ -881,7 +870,8 @@ func (p *Provider) PublishImage(ctx context.Context, imageID string) (*types.Ima
 		return nil, err
 	}
 
-	p.imageCache.Invalidate()
+	// REVIEW_ME: Would it be better to fetch the image and update the cache entry instead?
+	p.imageCache.Purge()
 
 	return p.convertImage(resource)
 }
@@ -904,7 +894,8 @@ func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
 		return err
 	}
 
-	p.imageCache.Invalidate()
+	// REVIEW_ME: Would it be better to fetch the image and update the cache entry instead?
+	p.imageCache.Purge()
 
 	return nil
 }

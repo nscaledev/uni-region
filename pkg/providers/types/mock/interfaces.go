@@ -44,17 +44,17 @@ func (m *MockProvider) EXPECT() *MockProviderMockRecorder {
 }
 
 // ClearImageCache mocks base method.
-func (m *MockProvider) ClearImageCache(ctx context.Context) error {
+func (m *MockProvider) ClearImageCache(ctx context.Context, organizationID string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ClearImageCache", ctx)
+	ret := m.ctrl.Call(m, "ClearImageCache", ctx, organizationID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // ClearImageCache indicates an expected call of ClearImageCache.
-func (mr *MockProviderMockRecorder) ClearImageCache(ctx any) *gomock.Call {
+func (mr *MockProviderMockRecorder) ClearImageCache(ctx, organizationID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearImageCache", reflect.TypeOf((*MockProvider)(nil).ClearImageCache), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearImageCache", reflect.TypeOf((*MockProvider)(nil).ClearImageCache), ctx, organizationID)
 }
 
 // CreateConsoleSession mocks base method.

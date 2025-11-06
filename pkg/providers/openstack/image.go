@@ -30,6 +30,8 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"sync"
+	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack"
@@ -285,4 +287,126 @@ func (c *ImageClient) DeleteImage(ctx context.Context, id string) error {
 	defer span.End()
 
 	return images.Delete(ctx, c.client, id).ExtractErr()
+}
+
+type imageCacheEntry struct {
+	images        []images.Image
+	invalidatedAt time.Time
+}
+
+// REVIEW_ME: Image filtering and partitioning logic are split across structs.
+type ImageCache struct {
+	partitions map[string]*imageCacheEntry
+	updatedAt  time.Time
+	expiresAt  time.Time
+	ttl        time.Duration
+	lock       sync.RWMutex
+}
+
+func NewImageCache(ttl time.Duration) *ImageCache {
+	return &ImageCache{
+		partitions: make(map[string]*imageCacheEntry),
+		ttl:        ttl,
+	}
+}
+
+func (c *ImageCache) Set(items []images.Image) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	clear(c.partitions)
+
+	partitions := make(map[string][]images.Image)
+
+	for _, item := range items {
+		organizationID, _ := item.Properties["unikorn:organization:id"].(string)
+		partitions[organizationID] = append(partitions[organizationID], item)
+	}
+
+	for organizationID, items := range partitions {
+		c.partitions[organizationID] = &imageCacheEntry{
+			images: items,
+		}
+	}
+
+	c.updatedAt = time.Now()
+	c.expiresAt = c.updatedAt.Add(c.ttl)
+}
+
+func (c *ImageCache) Get(id string) (*images.Image, bool) {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+
+	if time.Now().After(c.expiresAt) {
+		return nil, false
+	}
+
+	for _, entry := range c.partitions {
+		if entry.invalidatedAt.After(c.updatedAt) {
+			continue
+		}
+
+		for _, image := range entry.images {
+			if image.ID == id {
+				return &image, true
+			}
+		}
+	}
+
+	return nil, false
+}
+
+func (c *ImageCache) GetByOrganizationID(organizationID string) ([]images.Image, bool) {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+
+	if time.Now().After(c.expiresAt) {
+		return nil, false
+	}
+
+	var aggregated []images.Image
+
+	if entry, ok := c.partitions[""]; ok && entry.invalidatedAt.Before(c.updatedAt) {
+		aggregated = append(aggregated, entry.images...)
+	}
+
+	if entry, ok := c.partitions[organizationID]; ok && entry.invalidatedAt.Before(c.updatedAt) {
+		aggregated = append(aggregated, entry.images...)
+	}
+
+	return aggregated, true
+}
+
+func (c *ImageCache) ClearByOrganizationID(organizationID string) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	if organizationID == "" {
+		c.purge()
+		return
+	}
+
+	if entry, ok := c.partitions[organizationID]; ok {
+		clear(entry.images)
+		entry.invalidatedAt = time.Now()
+	}
+}
+
+func (c *ImageCache) Clear(item *images.Image) {
+	organizationID, _ := item.Properties["unikorn:organization:id"].(string)
+	c.ClearByOrganizationID(organizationID)
+}
+
+func (c *ImageCache) Purge() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.purge()
+}
+
+func (c *ImageCache) purge() {
+	clear(c.partitions)
+
+	c.updatedAt = time.Time{}
+	c.expiresAt = time.Time{}
 }

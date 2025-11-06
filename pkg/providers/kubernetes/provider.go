@@ -195,7 +195,7 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 }
 
 // ClearImageCache clears the image cache.
-func (p *Provider) ClearImageCache(ctx context.Context) error {
+func (p *Provider) ClearImageCache(ctx context.Context, organizationID string) error {
 	return ErrUnimplmented
 }
 

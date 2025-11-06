@@ -113,13 +113,12 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWrit
 }
 
 func (h *Handler) DeleteApiV1OrganizationsOrganizationIDRegionsRegionIDCachesImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
-	// REVIEW_ME: We probably want to use a different scope instead of the organisation scope here. This should be a system-level API.
-	if err := rbac.AllowOrganizationScope(r.Context(), "region:caches/images", identityapi.Read, organizationID); err != nil {
+	if err := rbac.AllowOrganizationScope(r.Context(), "region:caches/images", identityapi.Delete, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	if err := region.NewClient(h.client, h.namespace).ClearImageCache(r.Context(), regionID); err != nil {
+	if err := region.NewClient(h.client, h.namespace).ClearImageCache(r.Context(), organizationID, regionID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}

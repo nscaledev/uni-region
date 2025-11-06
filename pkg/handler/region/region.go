@@ -208,13 +208,13 @@ func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID strin
 	return convertFlavors(result), nil
 }
 
-func (c *Client) ClearImageCache(ctx context.Context, regionID string) error {
+func (c *Client) ClearImageCache(ctx context.Context, organizationID, regionID string) error {
 	provider, err := c.Provider(ctx, regionID)
 	if err != nil {
 		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
 
-	if err = provider.ClearImageCache(ctx); err != nil {
+	if err = provider.ClearImageCache(ctx, organizationID); err != nil {
 		return errors.OAuth2ServerError("failed to clear image cache").WithError(err)
 	}
 
