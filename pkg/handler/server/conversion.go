@@ -93,8 +93,11 @@ func convertNetworkAddressPairs(in []unikornv1.ServerNetworkAddressPair) *openap
 
 	for i := range in {
 		out[i] = openapi.ServerNetworkAllowedAddressPair{
-			Cidr:       in[i].CIDR.String(),
-			MacAddress: &in[i].MACAddress,
+			Cidr: in[i].CIDR.String(),
+		}
+
+		if in[i].MACAddress != "" {
+			out[i].MacAddress = &in[i].MACAddress
 		}
 	}
 
