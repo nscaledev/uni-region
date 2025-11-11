@@ -31,7 +31,6 @@ import (
 	"slices"
 
 	"github.com/gophercloud/gophercloud/v2"
-
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
@@ -344,15 +343,15 @@ func (c *Client) UploadImage(ctx context.Context, organizationID, regionID, imag
 
 	switch method {
 	case openapi.Direct:
-		return c.uploadImageFromFile(ctx, imageID, r, provider)
+		return c.uploadImageFromFile(ctx, imageID, image.DiskFormat, r, provider)
 	case openapi.Url:
-		return c.uploadImageFromURL(ctx, imageID, r, provider)
+		return c.uploadImageFromURL(ctx, imageID, image.DiskFormat, r, provider)
 	default:
 		return nil, errors.OAuth2InvalidRequest("The provided upload method is not supported")
 	}
 }
 
-func (c *Client) uploadImageFromFile(ctx context.Context, imageID string, r *http.Request, provider types.Provider) (*openapi.Image, error) {
+func (c *Client) uploadImageFromFile(ctx context.Context, imageID string, diskFormat types.ImageDiskFormat, r *http.Request, provider types.Provider) (*openapi.Image, error) {
 	multipartFile, _, err := r.FormFile("file")
 	if err != nil {
 		if goerrors.Is(err, http.ErrMissingFile) {
@@ -363,10 +362,10 @@ func (c *Client) uploadImageFromFile(ctx context.Context, imageID string, r *htt
 	}
 	defer multipartFile.Close()
 
-	return UploadImageData(ctx, imageID, multipartFile, provider)
+	return UploadImageData(ctx, imageID, diskFormat, multipartFile, provider)
 }
 
-func (c *Client) uploadImageFromURL(ctx context.Context, imageID string, r *http.Request, provider types.Provider) (*openapi.Image, error) {
+func (c *Client) uploadImageFromURL(ctx context.Context, imageID string, diskFormat types.ImageDiskFormat, r *http.Request, provider types.Provider) (*openapi.Image, error) {
 	downloadURL := r.Form.Get("url")
 	if _, err := url.Parse(downloadURL); err != nil {
 		return nil, errors.OAuth2InvalidRequest("The provided URL is not valid").WithError(err)
@@ -388,11 +387,11 @@ func (c *Client) uploadImageFromURL(ctx context.Context, imageID string, r *http
 		return nil, errors.OAuth2InvalidRequest("The provided URL could not be downloaded").WithValues("status_code", response.StatusCode)
 	}
 
-	return UploadImageData(ctx, imageID, response.Body, provider)
+	return UploadImageData(ctx, imageID, diskFormat, response.Body, provider)
 }
 
 //nolint:cyclop,gocognit
-func UploadImageData(ctx context.Context, imageID string, sourceReader io.Reader, provider types.Provider) (*openapi.Image, error) {
+func UploadImageData(ctx context.Context, imageID string, diskFormat types.ImageDiskFormat, sourceReader io.Reader, provider types.Provider) (*openapi.Image, error) {
 	gzipReader, err := gzip.NewReader(sourceReader)
 	if err != nil {
 		return nil, errors.OAuth2InvalidRequest("The provided file is not a valid gzip file").WithError(err)
@@ -437,12 +436,34 @@ func UploadImageData(ctx context.Context, imageID string, sourceReader io.Reader
 		// REVIEW_ME: We are not cross-checking the disk format against the image that was created.
 		// Doing so would require seeking the first few magic bytes, but tar.Reader does not support
 		// seeking without additional copies. For simplicity, this check is skipped.
+		//nolint:nestif
 		if header.Name == "disk.raw" || header.Name == "disk.qcow2" {
 			if diskCount++; diskCount > 1 {
 				return nil, errors.OAuth2InvalidRequest("The provided file contains multiple disk images, only a single disk image is supported")
 			}
 
-			if _, err = io.Copy(tempFile, tarReader); err != nil {
+			var validatingReader io.Reader
+
+			switch diskFormat {
+			case types.ImageDiskFormatRaw:
+				validatingReader, err = NewMasterBootRecordReader(tarReader)
+			case types.ImageDiskFormatQCOW2:
+				validatingReader, err = NewQCOW2Reader(tarReader)
+			default:
+				return nil, errors.OAuth2ServerError("The server encountered an unexpected error due to an unhandled disk format").WithValues("disk_format", diskFormat)
+			}
+
+			if err != nil {
+				if goerrors.Is(err, ErrInvalidMasterBootRecord) || goerrors.Is(err, ErrInvalidQCOW2) {
+					message := fmt.Sprintf("The provided disk image is not a valid %s image", diskFormat)
+					return nil, errors.OAuth2InvalidRequest(message)
+				}
+
+				return nil, errors.OAuth2ServerError("The server encountered an unexpected error while validating the disk image").WithError(err)
+			}
+
+			if _, err = io.Copy(tempFile, validatingReader); err != nil {
+				// REVIEW_ME: For simplicity, we will return a status code 500 for all errors here, even if the error is due to context/request cancellation.
 				return nil, errors.OAuth2ServerError("The server encountered an unexpected error while extracting the disk image").WithError(err)
 			}
 		}

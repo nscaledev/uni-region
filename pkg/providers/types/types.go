@@ -78,6 +78,21 @@ const (
 	Any         ImageVirtualization = "any"
 )
 
+type ImageDiskFormat string
+
+const (
+	ImageDiskFormatRaw   ImageDiskFormat = "raw"
+	ImageDiskFormatQCOW2 ImageDiskFormat = "qcow2"
+)
+
+type ImageDataSource string
+
+const (
+	ImageDataSourceFile   ImageDataSource = "file"
+	ImageDataSourceURL    ImageDataSource = "url"
+	ImageDataSourceServer ImageDataSource = "server"
+)
+
 // Image represents an operating system image.
 type Image struct {
 	// ID must be an immutable ID, preferably a UUID.
@@ -104,6 +119,10 @@ type Image struct {
 	Packages *ImagePackages
 	// Active indicates whether the image is active and ready for use.
 	Active bool
+	// DiskFormat is the disk format of the image.
+	DiskFormat ImageDiskFormat
+	// DataSource is the source type for the image.
+	DataSource ImageDataSource
 }
 
 // ImageGPU defines image specific GPU compatibility information.
