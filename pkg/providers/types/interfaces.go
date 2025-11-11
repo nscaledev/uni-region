@@ -16,6 +16,8 @@ limitations under the License.
 
 package types
 
+//go:generate mockgen -source=interfaces.go -destination=mock/interfaces.go -package=mock
+
 import (
 	"context"
 	"io"
