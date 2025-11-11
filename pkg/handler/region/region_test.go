@@ -40,7 +40,7 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-//nolint:cyclop,gocyclo,gocognit,maintidx
+//gnolint:gocognit
 func TestUploadImageData(t *testing.T) {
 	t.Parallel()
 
@@ -118,41 +118,39 @@ func TestUploadImageData(t *testing.T) {
 
 	}
 
-	defaultReaderSetupFunc := func(t *testing.T) io.Reader {
-		t.Helper()
+	tarballReader := func(filename string, content []byte) func(t *testing.T) io.Reader {
+		return func(t *testing.T) io.Reader {
+			t.Helper()
 
-		var buf bytes.Buffer
+			var buf bytes.Buffer
 
-		gzipWriter := gzip.NewWriter(&buf)
+			gzipWriter := gzip.NewWriter(&buf)
 
-		tarWriter := tar.NewWriter(gzipWriter)
+			tarWriter := tar.NewWriter(gzipWriter)
 
-		tarContent := []byte("this is a test disk image content")
+			tarHeader := &tar.Header{
+				Name: filename,
+				Mode: 0600,
+				Size: int64(len(content)),
+			}
 
-		tarHeader := &tar.Header{
-			Name: "disk.raw",
-			Mode: 0600,
-			Size: int64(len(tarContent)),
-		}
+			require.NoError(t, tarWriter.WriteHeader(tarHeader))
 
-		if err := tarWriter.WriteHeader(tarHeader); err != nil {
+			_, err := tarWriter.Write(content)
 			require.NoError(t, err)
-		}
 
-		if _, err := tarWriter.Write(tarContent); err != nil {
-			require.NoError(t, err)
-		}
+			require.NoError(t, tarWriter.Close())
+			require.NoError(t, gzipWriter.Close())
 
-		if err := tarWriter.Close(); err != nil {
-			require.NoError(t, err)
+			return &buf
 		}
-
-		if err := gzipWriter.Close(); err != nil {
-			require.NoError(t, err)
-		}
-
-		return &buf
 	}
+
+	rawFileContent := make([]byte, 512)
+	rawFileContent[510], rawFileContent[511] = 0x55, 0xAA
+	fakeRawDiskReader := tarballReader("disk.raw", rawFileContent)
+
+	//fakeQcowReader := tarballReader("disk.qcow2", []byte("QFI\xfb"))
 
 	type TestCase struct {
 		Name              string
@@ -333,41 +331,7 @@ func TestUploadImageData(t *testing.T) {
 
 				return ctx
 			},
-			ReaderSetupFunc: func(t *testing.T) io.Reader {
-				t.Helper()
-
-				var buf bytes.Buffer
-
-				gzipWriter := gzip.NewWriter(&buf)
-
-				tarWriter := tar.NewWriter(gzipWriter)
-
-				tarContent := []byte("this is a test disk image content")
-
-				tarHeader := &tar.Header{
-					Name: "disk.raw",
-					Mode: 0600,
-					Size: int64(len(tarContent)),
-				}
-
-				if err := tarWriter.WriteHeader(tarHeader); err != nil {
-					require.NoError(t, err)
-				}
-
-				if _, err := tarWriter.Write(tarContent); err != nil {
-					require.NoError(t, err)
-				}
-
-				if err := tarWriter.Close(); err != nil {
-					require.NoError(t, err)
-				}
-
-				if err := gzipWriter.Close(); err != nil {
-					require.NoError(t, err)
-				}
-
-				return &buf
-			},
+			ReaderSetupFunc:   tarballReader("disk.raw", []byte("disk contents")),
 			ProviderSetupFunc: noopProviderSetupFunc,
 			ExpectedError:     true,
 			ExpectedImage:     nil,
@@ -375,41 +339,7 @@ func TestUploadImageData(t *testing.T) {
 		{
 			Name:              "fails to find disk file in tar archive",
 			ContextMutateFunc: noopContextMutateFunc,
-			ReaderSetupFunc: func(t *testing.T) io.Reader {
-				t.Helper()
-
-				var buf bytes.Buffer
-
-				gzipWriter := gzip.NewWriter(&buf)
-
-				tarWriter := tar.NewWriter(gzipWriter)
-
-				tarContent := []byte("this is some random file content")
-
-				tarHeader := &tar.Header{
-					Name: "random.txt",
-					Mode: 0600,
-					Size: int64(len(tarContent)),
-				}
-
-				if err := tarWriter.WriteHeader(tarHeader); err != nil {
-					require.NoError(t, err)
-				}
-
-				if _, err := tarWriter.Write(tarContent); err != nil {
-					require.NoError(t, err)
-				}
-
-				if err := tarWriter.Close(); err != nil {
-					require.NoError(t, err)
-				}
-
-				if err := gzipWriter.Close(); err != nil {
-					require.NoError(t, err)
-				}
-
-				return &buf
-			},
+			ReaderSetupFunc:   tarballReader("randomfile.txt", []byte("file contents")),
 			ProviderSetupFunc: noopProviderSetupFunc,
 			ExpectedError:     true,
 			ExpectedImage:     nil,
@@ -417,7 +347,7 @@ func TestUploadImageData(t *testing.T) {
 		{
 			Name:              "fails to upload image due to upload conflict",
 			ContextMutateFunc: noopContextMutateFunc,
-			ReaderSetupFunc:   defaultReaderSetupFunc,
+			ReaderSetupFunc:   fakeRawDiskReader,
 			ProviderSetupFunc: func(provider *mock.MockProvider) {
 				expectedReader := gomock.Cond[io.Reader](func(reader io.Reader) bool {
 					actual, err := io.ReadAll(reader)
@@ -425,9 +355,7 @@ func TestUploadImageData(t *testing.T) {
 						return false
 					}
 
-					expected := []byte("this is a test disk image content")
-
-					return bytes.Equal(actual, expected)
+					return bytes.Equal(actual, rawFileContent)
 				})
 
 				provider.EXPECT().
@@ -440,7 +368,7 @@ func TestUploadImageData(t *testing.T) {
 		{
 			Name:              "fails to upload image due to unexpected error",
 			ContextMutateFunc: noopContextMutateFunc,
-			ReaderSetupFunc:   defaultReaderSetupFunc,
+			ReaderSetupFunc:   fakeRawDiskReader,
 			ProviderSetupFunc: func(provider *mock.MockProvider) {
 				expectedReader := gomock.Cond[io.Reader](func(reader io.Reader) bool {
 					actual, err := io.ReadAll(reader)
@@ -448,9 +376,7 @@ func TestUploadImageData(t *testing.T) {
 						return false
 					}
 
-					expected := []byte("this is a test disk image content")
-
-					return bytes.Equal(actual, expected)
+					return bytes.Equal(actual, rawFileContent)
 				})
 
 				provider.EXPECT().
@@ -463,7 +389,7 @@ func TestUploadImageData(t *testing.T) {
 		{
 			Name:              "fails to finalize image",
 			ContextMutateFunc: noopContextMutateFunc,
-			ReaderSetupFunc:   defaultReaderSetupFunc,
+			ReaderSetupFunc:   fakeRawDiskReader,
 			ProviderSetupFunc: func(provider *mock.MockProvider) {
 				expectedReader := gomock.Cond[io.Reader](func(reader io.Reader) bool {
 					actual, err := io.ReadAll(reader)
@@ -471,9 +397,7 @@ func TestUploadImageData(t *testing.T) {
 						return false
 					}
 
-					expected := []byte("this is a test disk image content")
-
-					return bytes.Equal(actual, expected)
+					return bytes.Equal(actual, rawFileContent)
 				})
 
 				provider.EXPECT().
@@ -490,17 +414,15 @@ func TestUploadImageData(t *testing.T) {
 		{
 			Name:              "succeeds in uploading image data",
 			ContextMutateFunc: noopContextMutateFunc,
-			ReaderSetupFunc:   defaultReaderSetupFunc,
+			ReaderSetupFunc:   fakeRawDiskReader,
 			ProviderSetupFunc: func(provider *mock.MockProvider) {
-				expectedReader := gomock.Cond[io.Reader](func(reader io.Reader) bool {
+				expectedReader := gomock.Cond(func(reader io.Reader) bool {
 					actual, err := io.ReadAll(reader)
 					if err != nil {
 						return false
 					}
 
-					expected := []byte("this is a test disk image content")
-
-					return bytes.Equal(actual, expected)
+					return bytes.Equal(actual, rawFileContent)
 				})
 
 				provider.EXPECT().
@@ -530,7 +452,7 @@ func TestUploadImageData(t *testing.T) {
 			reader := testCase.ReaderSetupFunc(t)
 
 			actualImage, err := region.UploadImageData(ctx, imageID, providerImage.DiskFormat, reader, mockProvider)
-			require.Equal(t, testCase.ExpectedError, err != nil)
+			require.Equal(t, testCase.ExpectedError, err != nil, "got error %s", err)
 			require.Equal(t, testCase.ExpectedImage, actualImage)
 		})
 	}
