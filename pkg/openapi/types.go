@@ -864,6 +864,15 @@ type StorageUsageV2Spec struct {
 	Used *string `json:"used,omitempty"`
 }
 
+// StorageV2Create A storage create request.
+type StorageV2Create struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A storage's specification.
+	Spec StorageV2Spec `json:"spec"`
+}
+
 // StorageV2Read A storage read only group.
 type StorageV2Read struct {
 	// Metadata Metadata required by project scoped resource reads.
@@ -1035,6 +1044,12 @@ type ServerV2CreateRequest = ServerV2Create
 // ServerV2UpdateRequest A server update request.
 type ServerV2UpdateRequest = ServerV2Update
 
+// StorageV2CreateRequest A storage create request.
+type StorageV2CreateRequest = StorageV2Create
+
+// StorageV2UpdateRequest A storage create request.
+type StorageV2UpdateRequest = StorageV2Create
+
 // GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams defines parameters for GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutput.
 type GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams struct {
 	// Length The requested output length.
@@ -1080,6 +1095,15 @@ type GetApiV2FilestorageParams struct {
 	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 
+	// ProjectID Allows resources to be filtered by project.
+	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+}
+
+// PostApiV2FilestorageParams defines parameters for PostApiV2Filestorage.
+type PostApiV2FilestorageParams struct {
 	// ProjectID Allows resources to be filtered by project.
 	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
 
@@ -1176,6 +1200,9 @@ type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSer
 // PostApiV2SecuritygroupsJSONRequestBody defines body for PostApiV2Securitygroups for application/json ContentType.
 type PostApiV2SecuritygroupsJSONRequestBody = SecurityGroupV2Create
 
+// PostApiV2FilestorageJSONRequestBody defines body for PostApiV2Filestorage for application/json ContentType.
+type PostApiV2FilestorageJSONRequestBody = StorageV2Create
+
 // PostApiV2NetworksJSONRequestBody defines body for PostApiV2Networks for application/json ContentType.
 type PostApiV2NetworksJSONRequestBody = NetworkV2Write
 
@@ -1189,4 +1216,4 @@ type PostApiV2ServersJSONRequestBody = ServerV2Create
 type PutApiV2ServersServerIDJSONRequestBody = ServerV2Update
 
 // PutApiV2StorageFilestorageFilestorageIDJSONRequestBody defines body for PutApiV2StorageFilestorageFilestorageID for application/json ContentType.
-type PutApiV2StorageFilestorageFilestorageIDJSONRequestBody = SecurityGroupV2Update
+type PutApiV2StorageFilestorageFilestorageIDJSONRequestBody = StorageV2Create

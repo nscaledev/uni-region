@@ -257,6 +257,8 @@ func (h *Handler) GetApiV2ServersServerIDConsolesessions(w http.ResponseWriter, 
 // todo(schristoff): implement these.
 func (h *Handler) GetApiV2Filestorage(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2FilestorageParams) {
 }
+func (h *Handler) PostApiV2Filestorage(w http.ResponseWriter, r *http.Request, params openapi.PostApiV2FilestorageParams) {
+}
 func (h *Handler) DeleteApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter, params openapi.DeleteApiV2StorageFilestorageFilestorageIDParams) {
 }
 func (h *Handler) GetApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter, params openapi.GetApiV2StorageFilestorageFilestorageIDParams) {
