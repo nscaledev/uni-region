@@ -262,16 +262,16 @@ type ClientInterface interface {
 	// PostApiV2ServersServerIDStop request
 	PostApiV2ServersServerIDStop(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// DeleteApiV2StorageFilestorageStorageID request
-	DeleteApiV2StorageFilestorageStorageID(ctx context.Context, storageID StorageIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// DeleteApiV2StorageFilestorageFilestorageID request
+	DeleteApiV2StorageFilestorageFilestorageID(ctx context.Context, filestorageID FilestorageIDParameter, params *DeleteApiV2StorageFilestorageFilestorageIDParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetApiV2StorageFilestorageStorageID request
-	GetApiV2StorageFilestorageStorageID(ctx context.Context, storageID StorageIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetApiV2StorageFilestorageFilestorageID request
+	GetApiV2StorageFilestorageFilestorageID(ctx context.Context, filestorageID FilestorageIDParameter, params *GetApiV2StorageFilestorageFilestorageIDParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PutApiV2StorageFilestorageStorageIDWithBody request with any body
-	PutApiV2StorageFilestorageStorageIDWithBody(ctx context.Context, storageID StorageIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// PutApiV2StorageFilestorageFilestorageIDWithBody request with any body
+	PutApiV2StorageFilestorageFilestorageIDWithBody(ctx context.Context, filestorageID FilestorageIDParameter, params *PutApiV2StorageFilestorageFilestorageIDParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	PutApiV2StorageFilestorageStorageID(ctx context.Context, storageID StorageIDParameter, body PutApiV2StorageFilestorageStorageIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PutApiV2StorageFilestorageFilestorageID(ctx context.Context, filestorageID FilestorageIDParameter, params *PutApiV2StorageFilestorageFilestorageIDParams, body PutApiV2StorageFilestorageFilestorageIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) GetApiV1OrganizationsOrganizationIDIdentities(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -1006,8 +1006,8 @@ func (c *Client) PostApiV2ServersServerIDStop(ctx context.Context, serverID Serv
 	return c.Client.Do(req)
 }
 
-func (c *Client) DeleteApiV2StorageFilestorageStorageID(ctx context.Context, storageID StorageIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteApiV2StorageFilestorageStorageIDRequest(c.Server, storageID)
+func (c *Client) DeleteApiV2StorageFilestorageFilestorageID(ctx context.Context, filestorageID FilestorageIDParameter, params *DeleteApiV2StorageFilestorageFilestorageIDParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApiV2StorageFilestorageFilestorageIDRequest(c.Server, filestorageID, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1018,8 +1018,8 @@ func (c *Client) DeleteApiV2StorageFilestorageStorageID(ctx context.Context, sto
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetApiV2StorageFilestorageStorageID(ctx context.Context, storageID StorageIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetApiV2StorageFilestorageStorageIDRequest(c.Server, storageID)
+func (c *Client) GetApiV2StorageFilestorageFilestorageID(ctx context.Context, filestorageID FilestorageIDParameter, params *GetApiV2StorageFilestorageFilestorageIDParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV2StorageFilestorageFilestorageIDRequest(c.Server, filestorageID, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1030,8 +1030,8 @@ func (c *Client) GetApiV2StorageFilestorageStorageID(ctx context.Context, storag
 	return c.Client.Do(req)
 }
 
-func (c *Client) PutApiV2StorageFilestorageStorageIDWithBody(ctx context.Context, storageID StorageIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPutApiV2StorageFilestorageStorageIDRequestWithBody(c.Server, storageID, contentType, body)
+func (c *Client) PutApiV2StorageFilestorageFilestorageIDWithBody(ctx context.Context, filestorageID FilestorageIDParameter, params *PutApiV2StorageFilestorageFilestorageIDParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiV2StorageFilestorageFilestorageIDRequestWithBody(c.Server, filestorageID, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1042,8 +1042,8 @@ func (c *Client) PutApiV2StorageFilestorageStorageIDWithBody(ctx context.Context
 	return c.Client.Do(req)
 }
 
-func (c *Client) PutApiV2StorageFilestorageStorageID(ctx context.Context, storageID StorageIDParameter, body PutApiV2StorageFilestorageStorageIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPutApiV2StorageFilestorageStorageIDRequest(c.Server, storageID, body)
+func (c *Client) PutApiV2StorageFilestorageFilestorageID(ctx context.Context, filestorageID FilestorageIDParameter, params *PutApiV2StorageFilestorageFilestorageIDParams, body PutApiV2StorageFilestorageFilestorageIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiV2StorageFilestorageFilestorageIDRequest(c.Server, filestorageID, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3631,13 +3631,13 @@ func NewPostApiV2ServersServerIDStopRequest(server string, serverID ServerIDPara
 	return req, nil
 }
 
-// NewDeleteApiV2StorageFilestorageStorageIDRequest generates requests for DeleteApiV2StorageFilestorageStorageID
-func NewDeleteApiV2StorageFilestorageStorageIDRequest(server string, storageID StorageIDParameter) (*http.Request, error) {
+// NewDeleteApiV2StorageFilestorageFilestorageIDRequest generates requests for DeleteApiV2StorageFilestorageFilestorageID
+func NewDeleteApiV2StorageFilestorageFilestorageIDRequest(server string, filestorageID FilestorageIDParameter, params *DeleteApiV2StorageFilestorageFilestorageIDParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "storageID", runtime.ParamLocationPath, storageID)
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "filestorageID", runtime.ParamLocationPath, filestorageID)
 	if err != nil {
 		return nil, err
 	}
@@ -3655,6 +3655,44 @@ func NewDeleteApiV2StorageFilestorageStorageIDRequest(server string, storageID S
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.ProjectID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "projectID", runtime.ParamLocationQuery, *params.ProjectID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RegionID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "regionID", runtime.ParamLocationQuery, *params.RegionID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
@@ -3665,13 +3703,13 @@ func NewDeleteApiV2StorageFilestorageStorageIDRequest(server string, storageID S
 	return req, nil
 }
 
-// NewGetApiV2StorageFilestorageStorageIDRequest generates requests for GetApiV2StorageFilestorageStorageID
-func NewGetApiV2StorageFilestorageStorageIDRequest(server string, storageID StorageIDParameter) (*http.Request, error) {
+// NewGetApiV2StorageFilestorageFilestorageIDRequest generates requests for GetApiV2StorageFilestorageFilestorageID
+func NewGetApiV2StorageFilestorageFilestorageIDRequest(server string, filestorageID FilestorageIDParameter, params *GetApiV2StorageFilestorageFilestorageIDParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "storageID", runtime.ParamLocationPath, storageID)
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "filestorageID", runtime.ParamLocationPath, filestorageID)
 	if err != nil {
 		return nil, err
 	}
@@ -3689,6 +3727,44 @@ func NewGetApiV2StorageFilestorageStorageIDRequest(server string, storageID Stor
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.ProjectID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "projectID", runtime.ParamLocationQuery, *params.ProjectID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RegionID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "regionID", runtime.ParamLocationQuery, *params.RegionID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
@@ -3699,24 +3775,24 @@ func NewGetApiV2StorageFilestorageStorageIDRequest(server string, storageID Stor
 	return req, nil
 }
 
-// NewPutApiV2StorageFilestorageStorageIDRequest calls the generic PutApiV2StorageFilestorageStorageID builder with application/json body
-func NewPutApiV2StorageFilestorageStorageIDRequest(server string, storageID StorageIDParameter, body PutApiV2StorageFilestorageStorageIDJSONRequestBody) (*http.Request, error) {
+// NewPutApiV2StorageFilestorageFilestorageIDRequest calls the generic PutApiV2StorageFilestorageFilestorageID builder with application/json body
+func NewPutApiV2StorageFilestorageFilestorageIDRequest(server string, filestorageID FilestorageIDParameter, params *PutApiV2StorageFilestorageFilestorageIDParams, body PutApiV2StorageFilestorageFilestorageIDJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewPutApiV2StorageFilestorageStorageIDRequestWithBody(server, storageID, "application/json", bodyReader)
+	return NewPutApiV2StorageFilestorageFilestorageIDRequestWithBody(server, filestorageID, params, "application/json", bodyReader)
 }
 
-// NewPutApiV2StorageFilestorageStorageIDRequestWithBody generates requests for PutApiV2StorageFilestorageStorageID with any type of body
-func NewPutApiV2StorageFilestorageStorageIDRequestWithBody(server string, storageID StorageIDParameter, contentType string, body io.Reader) (*http.Request, error) {
+// NewPutApiV2StorageFilestorageFilestorageIDRequestWithBody generates requests for PutApiV2StorageFilestorageFilestorageID with any type of body
+func NewPutApiV2StorageFilestorageFilestorageIDRequestWithBody(server string, filestorageID FilestorageIDParameter, params *PutApiV2StorageFilestorageFilestorageIDParams, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "storageID", runtime.ParamLocationPath, storageID)
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "filestorageID", runtime.ParamLocationPath, filestorageID)
 	if err != nil {
 		return nil, err
 	}
@@ -3734,6 +3810,44 @@ func NewPutApiV2StorageFilestorageStorageIDRequestWithBody(server string, storag
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.ProjectID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "projectID", runtime.ParamLocationQuery, *params.ProjectID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RegionID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "regionID", runtime.ParamLocationQuery, *params.RegionID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("PUT", queryURL.String(), body)
@@ -3961,16 +4075,16 @@ type ClientWithResponsesInterface interface {
 	// PostApiV2ServersServerIDStopWithResponse request
 	PostApiV2ServersServerIDStopWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDStopResponse, error)
 
-	// DeleteApiV2StorageFilestorageStorageIDWithResponse request
-	DeleteApiV2StorageFilestorageStorageIDWithResponse(ctx context.Context, storageID StorageIDParameter, reqEditors ...RequestEditorFn) (*DeleteApiV2StorageFilestorageStorageIDResponse, error)
+	// DeleteApiV2StorageFilestorageFilestorageIDWithResponse request
+	DeleteApiV2StorageFilestorageFilestorageIDWithResponse(ctx context.Context, filestorageID FilestorageIDParameter, params *DeleteApiV2StorageFilestorageFilestorageIDParams, reqEditors ...RequestEditorFn) (*DeleteApiV2StorageFilestorageFilestorageIDResponse, error)
 
-	// GetApiV2StorageFilestorageStorageIDWithResponse request
-	GetApiV2StorageFilestorageStorageIDWithResponse(ctx context.Context, storageID StorageIDParameter, reqEditors ...RequestEditorFn) (*GetApiV2StorageFilestorageStorageIDResponse, error)
+	// GetApiV2StorageFilestorageFilestorageIDWithResponse request
+	GetApiV2StorageFilestorageFilestorageIDWithResponse(ctx context.Context, filestorageID FilestorageIDParameter, params *GetApiV2StorageFilestorageFilestorageIDParams, reqEditors ...RequestEditorFn) (*GetApiV2StorageFilestorageFilestorageIDResponse, error)
 
-	// PutApiV2StorageFilestorageStorageIDWithBodyWithResponse request with any body
-	PutApiV2StorageFilestorageStorageIDWithBodyWithResponse(ctx context.Context, storageID StorageIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiV2StorageFilestorageStorageIDResponse, error)
+	// PutApiV2StorageFilestorageFilestorageIDWithBodyWithResponse request with any body
+	PutApiV2StorageFilestorageFilestorageIDWithBodyWithResponse(ctx context.Context, filestorageID FilestorageIDParameter, params *PutApiV2StorageFilestorageFilestorageIDParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiV2StorageFilestorageFilestorageIDResponse, error)
 
-	PutApiV2StorageFilestorageStorageIDWithResponse(ctx context.Context, storageID StorageIDParameter, body PutApiV2StorageFilestorageStorageIDJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiV2StorageFilestorageStorageIDResponse, error)
+	PutApiV2StorageFilestorageFilestorageIDWithResponse(ctx context.Context, filestorageID FilestorageIDParameter, params *PutApiV2StorageFilestorageFilestorageIDParams, body PutApiV2StorageFilestorageFilestorageIDJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiV2StorageFilestorageFilestorageIDResponse, error)
 }
 
 type GetApiV1OrganizationsOrganizationIDIdentitiesResponse struct {
@@ -5255,7 +5369,7 @@ func (r PostApiV2ServersServerIDStopResponse) StatusCode() int {
 	return 0
 }
 
-type DeleteApiV2StorageFilestorageStorageIDResponse struct {
+type DeleteApiV2StorageFilestorageFilestorageIDResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON400      *externalRef0.BadRequestResponse
@@ -5265,7 +5379,7 @@ type DeleteApiV2StorageFilestorageStorageIDResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r DeleteApiV2StorageFilestorageStorageIDResponse) Status() string {
+func (r DeleteApiV2StorageFilestorageFilestorageIDResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -5273,14 +5387,14 @@ func (r DeleteApiV2StorageFilestorageStorageIDResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r DeleteApiV2StorageFilestorageStorageIDResponse) StatusCode() int {
+func (r DeleteApiV2StorageFilestorageFilestorageIDResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetApiV2StorageFilestorageStorageIDResponse struct {
+type GetApiV2StorageFilestorageFilestorageIDResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *StorageV2Response
@@ -5291,7 +5405,7 @@ type GetApiV2StorageFilestorageStorageIDResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetApiV2StorageFilestorageStorageIDResponse) Status() string {
+func (r GetApiV2StorageFilestorageFilestorageIDResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -5299,14 +5413,14 @@ func (r GetApiV2StorageFilestorageStorageIDResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetApiV2StorageFilestorageStorageIDResponse) StatusCode() int {
+func (r GetApiV2StorageFilestorageFilestorageIDResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type PutApiV2StorageFilestorageStorageIDResponse struct {
+type PutApiV2StorageFilestorageFilestorageIDResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON202      *SecurityGroupV2Response
@@ -5317,7 +5431,7 @@ type PutApiV2StorageFilestorageStorageIDResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r PutApiV2StorageFilestorageStorageIDResponse) Status() string {
+func (r PutApiV2StorageFilestorageFilestorageIDResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -5325,7 +5439,7 @@ func (r PutApiV2StorageFilestorageStorageIDResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PutApiV2StorageFilestorageStorageIDResponse) StatusCode() int {
+func (r PutApiV2StorageFilestorageFilestorageIDResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -5870,39 +5984,39 @@ func (c *ClientWithResponses) PostApiV2ServersServerIDStopWithResponse(ctx conte
 	return ParsePostApiV2ServersServerIDStopResponse(rsp)
 }
 
-// DeleteApiV2StorageFilestorageStorageIDWithResponse request returning *DeleteApiV2StorageFilestorageStorageIDResponse
-func (c *ClientWithResponses) DeleteApiV2StorageFilestorageStorageIDWithResponse(ctx context.Context, storageID StorageIDParameter, reqEditors ...RequestEditorFn) (*DeleteApiV2StorageFilestorageStorageIDResponse, error) {
-	rsp, err := c.DeleteApiV2StorageFilestorageStorageID(ctx, storageID, reqEditors...)
+// DeleteApiV2StorageFilestorageFilestorageIDWithResponse request returning *DeleteApiV2StorageFilestorageFilestorageIDResponse
+func (c *ClientWithResponses) DeleteApiV2StorageFilestorageFilestorageIDWithResponse(ctx context.Context, filestorageID FilestorageIDParameter, params *DeleteApiV2StorageFilestorageFilestorageIDParams, reqEditors ...RequestEditorFn) (*DeleteApiV2StorageFilestorageFilestorageIDResponse, error) {
+	rsp, err := c.DeleteApiV2StorageFilestorageFilestorageID(ctx, filestorageID, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseDeleteApiV2StorageFilestorageStorageIDResponse(rsp)
+	return ParseDeleteApiV2StorageFilestorageFilestorageIDResponse(rsp)
 }
 
-// GetApiV2StorageFilestorageStorageIDWithResponse request returning *GetApiV2StorageFilestorageStorageIDResponse
-func (c *ClientWithResponses) GetApiV2StorageFilestorageStorageIDWithResponse(ctx context.Context, storageID StorageIDParameter, reqEditors ...RequestEditorFn) (*GetApiV2StorageFilestorageStorageIDResponse, error) {
-	rsp, err := c.GetApiV2StorageFilestorageStorageID(ctx, storageID, reqEditors...)
+// GetApiV2StorageFilestorageFilestorageIDWithResponse request returning *GetApiV2StorageFilestorageFilestorageIDResponse
+func (c *ClientWithResponses) GetApiV2StorageFilestorageFilestorageIDWithResponse(ctx context.Context, filestorageID FilestorageIDParameter, params *GetApiV2StorageFilestorageFilestorageIDParams, reqEditors ...RequestEditorFn) (*GetApiV2StorageFilestorageFilestorageIDResponse, error) {
+	rsp, err := c.GetApiV2StorageFilestorageFilestorageID(ctx, filestorageID, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetApiV2StorageFilestorageStorageIDResponse(rsp)
+	return ParseGetApiV2StorageFilestorageFilestorageIDResponse(rsp)
 }
 
-// PutApiV2StorageFilestorageStorageIDWithBodyWithResponse request with arbitrary body returning *PutApiV2StorageFilestorageStorageIDResponse
-func (c *ClientWithResponses) PutApiV2StorageFilestorageStorageIDWithBodyWithResponse(ctx context.Context, storageID StorageIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiV2StorageFilestorageStorageIDResponse, error) {
-	rsp, err := c.PutApiV2StorageFilestorageStorageIDWithBody(ctx, storageID, contentType, body, reqEditors...)
+// PutApiV2StorageFilestorageFilestorageIDWithBodyWithResponse request with arbitrary body returning *PutApiV2StorageFilestorageFilestorageIDResponse
+func (c *ClientWithResponses) PutApiV2StorageFilestorageFilestorageIDWithBodyWithResponse(ctx context.Context, filestorageID FilestorageIDParameter, params *PutApiV2StorageFilestorageFilestorageIDParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiV2StorageFilestorageFilestorageIDResponse, error) {
+	rsp, err := c.PutApiV2StorageFilestorageFilestorageIDWithBody(ctx, filestorageID, params, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePutApiV2StorageFilestorageStorageIDResponse(rsp)
+	return ParsePutApiV2StorageFilestorageFilestorageIDResponse(rsp)
 }
 
-func (c *ClientWithResponses) PutApiV2StorageFilestorageStorageIDWithResponse(ctx context.Context, storageID StorageIDParameter, body PutApiV2StorageFilestorageStorageIDJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiV2StorageFilestorageStorageIDResponse, error) {
-	rsp, err := c.PutApiV2StorageFilestorageStorageID(ctx, storageID, body, reqEditors...)
+func (c *ClientWithResponses) PutApiV2StorageFilestorageFilestorageIDWithResponse(ctx context.Context, filestorageID FilestorageIDParameter, params *PutApiV2StorageFilestorageFilestorageIDParams, body PutApiV2StorageFilestorageFilestorageIDJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiV2StorageFilestorageFilestorageIDResponse, error) {
+	rsp, err := c.PutApiV2StorageFilestorageFilestorageID(ctx, filestorageID, params, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePutApiV2StorageFilestorageStorageIDResponse(rsp)
+	return ParsePutApiV2StorageFilestorageFilestorageIDResponse(rsp)
 }
 
 // ParseGetApiV1OrganizationsOrganizationIDIdentitiesResponse parses an HTTP response from a GetApiV1OrganizationsOrganizationIDIdentitiesWithResponse call
@@ -8479,15 +8593,15 @@ func ParsePostApiV2ServersServerIDStopResponse(rsp *http.Response) (*PostApiV2Se
 	return response, nil
 }
 
-// ParseDeleteApiV2StorageFilestorageStorageIDResponse parses an HTTP response from a DeleteApiV2StorageFilestorageStorageIDWithResponse call
-func ParseDeleteApiV2StorageFilestorageStorageIDResponse(rsp *http.Response) (*DeleteApiV2StorageFilestorageStorageIDResponse, error) {
+// ParseDeleteApiV2StorageFilestorageFilestorageIDResponse parses an HTTP response from a DeleteApiV2StorageFilestorageFilestorageIDWithResponse call
+func ParseDeleteApiV2StorageFilestorageFilestorageIDResponse(rsp *http.Response) (*DeleteApiV2StorageFilestorageFilestorageIDResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &DeleteApiV2StorageFilestorageStorageIDResponse{
+	response := &DeleteApiV2StorageFilestorageFilestorageIDResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -8526,15 +8640,15 @@ func ParseDeleteApiV2StorageFilestorageStorageIDResponse(rsp *http.Response) (*D
 	return response, nil
 }
 
-// ParseGetApiV2StorageFilestorageStorageIDResponse parses an HTTP response from a GetApiV2StorageFilestorageStorageIDWithResponse call
-func ParseGetApiV2StorageFilestorageStorageIDResponse(rsp *http.Response) (*GetApiV2StorageFilestorageStorageIDResponse, error) {
+// ParseGetApiV2StorageFilestorageFilestorageIDResponse parses an HTTP response from a GetApiV2StorageFilestorageFilestorageIDWithResponse call
+func ParseGetApiV2StorageFilestorageFilestorageIDResponse(rsp *http.Response) (*GetApiV2StorageFilestorageFilestorageIDResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetApiV2StorageFilestorageStorageIDResponse{
+	response := &GetApiV2StorageFilestorageFilestorageIDResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -8580,15 +8694,15 @@ func ParseGetApiV2StorageFilestorageStorageIDResponse(rsp *http.Response) (*GetA
 	return response, nil
 }
 
-// ParsePutApiV2StorageFilestorageStorageIDResponse parses an HTTP response from a PutApiV2StorageFilestorageStorageIDWithResponse call
-func ParsePutApiV2StorageFilestorageStorageIDResponse(rsp *http.Response) (*PutApiV2StorageFilestorageStorageIDResponse, error) {
+// ParsePutApiV2StorageFilestorageFilestorageIDResponse parses an HTTP response from a PutApiV2StorageFilestorageFilestorageIDWithResponse call
+func ParsePutApiV2StorageFilestorageFilestorageIDResponse(rsp *http.Response) (*PutApiV2StorageFilestorageFilestorageIDResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PutApiV2StorageFilestorageStorageIDResponse{
+	response := &PutApiV2StorageFilestorageFilestorageIDResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

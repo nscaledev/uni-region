@@ -843,7 +843,7 @@ type StorageAttachmentV2Status struct {
 	Id StorageAttachmentV2Spec `json:"id"`
 
 	// ProvisioningStatus The provisioning state of a resource.
-	ProvisioningStatus *externalRef0.ResourceProvisioningStatus `json:"provisioningStatus,omitempty"`
+	ProvisioningStatus externalRef0.ResourceProvisioningStatus `json:"provisioningStatus"`
 }
 
 // StorageTypeV2Spec A storage's type
@@ -903,6 +903,9 @@ type StorageV2Status struct {
 	Usage StorageUsageV2Spec `json:"usage"`
 }
 
+// FilestorageIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
+type FilestorageIDParameter = KubernetesNameParameter
+
 // IdentityIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type IdentityIDParameter = KubernetesNameParameter
 
@@ -938,9 +941,6 @@ type SecurityGroupIDParameter = KubernetesNameParameter
 
 // ServerIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type ServerIDParameter = KubernetesNameParameter
-
-// StorageIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
-type StorageIDParameter = KubernetesNameParameter
 
 // ConsoleOutputResponse Console output
 type ConsoleOutputResponse = ConsoleOutput
@@ -1128,6 +1128,33 @@ type GetApiV2ServersServerIDConsoleoutputParams struct {
 	Length *LengthParameter `form:"length,omitempty" json:"length,omitempty"`
 }
 
+// DeleteApiV2StorageFilestorageFilestorageIDParams defines parameters for DeleteApiV2StorageFilestorageFilestorageID.
+type DeleteApiV2StorageFilestorageFilestorageIDParams struct {
+	// ProjectID Allows resources to be filtered by project.
+	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+}
+
+// GetApiV2StorageFilestorageFilestorageIDParams defines parameters for GetApiV2StorageFilestorageFilestorageID.
+type GetApiV2StorageFilestorageFilestorageIDParams struct {
+	// ProjectID Allows resources to be filtered by project.
+	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+}
+
+// PutApiV2StorageFilestorageFilestorageIDParams defines parameters for PutApiV2StorageFilestorageFilestorageID.
+type PutApiV2StorageFilestorageFilestorageIDParams struct {
+	// ProjectID Allows resources to be filtered by project.
+	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+}
+
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody = IdentityWrite
 
@@ -1161,5 +1188,5 @@ type PostApiV2ServersJSONRequestBody = ServerV2Create
 // PutApiV2ServersServerIDJSONRequestBody defines body for PutApiV2ServersServerID for application/json ContentType.
 type PutApiV2ServersServerIDJSONRequestBody = ServerV2Update
 
-// PutApiV2StorageFilestorageStorageIDJSONRequestBody defines body for PutApiV2StorageFilestorageStorageID for application/json ContentType.
-type PutApiV2StorageFilestorageStorageIDJSONRequestBody = SecurityGroupV2Update
+// PutApiV2StorageFilestorageFilestorageIDJSONRequestBody defines body for PutApiV2StorageFilestorageFilestorageID for application/json ContentType.
+type PutApiV2StorageFilestorageFilestorageIDJSONRequestBody = SecurityGroupV2Update

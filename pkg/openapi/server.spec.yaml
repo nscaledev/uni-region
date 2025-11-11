@@ -1058,11 +1058,13 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/storage/filestorage/{storageID}:
+  /api/v2/storage/filestorage/{filestorageID}:
     description: |-
       Manages project scoped storage. 
     parameters:
-    - $ref: '#/components/parameters/storageIDParameter'
+    - $ref: '#/components/parameters/projectIDQueryParameter'
+    - $ref: '#/components/parameters/regionIDQueryParameter'
+    - $ref: '#/components/parameters/filestorageIDParameter'
     get:
       description: Get all storage information this ID.
       security:
@@ -1110,7 +1112,6 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-
 components:
   parameters:
     organizationIDParameter:
@@ -1177,8 +1178,8 @@ components:
         type: array
         items:
           type: string
-    storageIDParameter:
-      name: storageID
+    filestorageIDParameter:
+      name: filestorageID
       in: path
       description: The storage unique identifier.
       required: true
@@ -2206,6 +2207,7 @@ components:
         type: object
         required:
         - id
+        - provisioningStatus
         properties:
           id:
             $ref: '#/components/schemas/storageAttachmentV2Spec'
