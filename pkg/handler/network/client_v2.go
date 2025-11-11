@@ -31,12 +31,14 @@ import (
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
 
@@ -67,14 +69,22 @@ func convertV2List(in *regionv1.NetworkList) openapi.NetworksV2Read {
 	return out
 }
 
-func (c *Client) ListV2Admin(ctx context.Context, organizationID string, params openapi.GetApiV2OrganizationsOrganizationIDNetworksParams) (openapi.NetworksV2Read, error) {
+func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2NetworksParams) (openapi.NetworksV2Read, error) {
 	selector := labels.SelectorFromSet(map[string]string{
-		coreconstants.OrganizationLabel:   organizationID,
 		constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
 	})
 
-	selector = util.AddProjectIDQuery(selector, params.ProjectID)
-	selector = util.AddRegionIDQuery(selector, params.RegionID)
+	var err error
+
+	selector, err = rbac.AddOrganizationAndProjectIDQuery(ctx, selector, util.OrganizationIDQuery(params.OrganizationID), util.ProjectIDQuery(params.ProjectID))
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to add identity label selector").WithError(err)
+	}
+
+	selector, err = util.AddRegionIDQuery(selector, params.RegionID)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to add region label selector").WithError(err)
+	}
 
 	options := &client.ListOptions{
 		Namespace:     c.namespace,
@@ -93,7 +103,8 @@ func (c *Client) ListV2Admin(ctx context.Context, organizationID string, params 
 	}
 
 	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.Network) bool {
-		return !resource.Spec.Tags.ContainsAll(tagSelector)
+		return !resource.Spec.Tags.ContainsAll(tagSelector) ||
+			rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Read, resource.Labels[coreconstants.OrganizationLabel], resource.Labels[coreconstants.ProjectLabel]) != nil
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.Network) int {
@@ -103,45 +114,18 @@ func (c *Client) ListV2Admin(ctx context.Context, organizationID string, params 
 	return convertV2List(result), nil
 }
 
-func (c *Client) ListV2(ctx context.Context, organizationID, projectID string, params openapi.GetApiV2OrganizationsOrganizationIDProjectsProjectIDNetworksParams) (openapi.NetworksV2Read, error) {
-	selector := labels.SelectorFromSet(map[string]string{
-		coreconstants.OrganizationLabel:   organizationID,
-		coreconstants.ProjectLabel:        projectID,
-		constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
-	})
+func (c *Client) GetV2Raw(ctx context.Context, networkID string) (*regionv1.Network, error) {
+	result := &regionv1.Network{}
 
-	selector = util.AddRegionIDQuery(selector, params.RegionID)
+	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: networkID}, result); err != nil {
+		if kerrors.IsNotFound(err) {
+			return nil, errors.HTTPNotFound().WithError(err)
+		}
 
-	options := &client.ListOptions{
-		Namespace:     c.namespace,
-		LabelSelector: selector,
+		return nil, errors.OAuth2ServerError("unable to lookup network").WithError(err)
 	}
 
-	result := &regionv1.NetworkList{}
-
-	if err := c.client.List(ctx, result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list networks").WithError(err)
-	}
-
-	tagSelector, err := coreutil.DecodeTagSelectorParam(params.Tag)
-	if err != nil {
-		return nil, err
-	}
-
-	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.Network) bool {
-		return !resource.Spec.Tags.ContainsAll(tagSelector)
-	})
-
-	slices.SortStableFunc(result.Items, func(a, b regionv1.Network) int {
-		return cmp.Compare(a.Name, b.Name)
-	})
-
-	return convertV2List(result), nil
-}
-
-func (c *Client) GetV2Raw(ctx context.Context, organizationID, projectID, networkID string) (*regionv1.Network, error) {
-	result, err := c.GetRaw(ctx, organizationID, projectID, networkID)
-	if err != nil {
+	if err := rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Read, result.Labels[coreconstants.OrganizationLabel], result.Labels[coreconstants.ProjectLabel]); err != nil {
 		return nil, err
 	}
 
@@ -163,8 +147,8 @@ func (c *Client) GetV2Raw(ctx context.Context, organizationID, projectID, networ
 	return result, nil
 }
 
-func (c *Client) GetV2(ctx context.Context, organizationID, projectID, networkID string) (*openapi.NetworkV2Read, error) {
-	result, err := c.GetV2Raw(ctx, organizationID, projectID, networkID)
+func (c *Client) GetV2(ctx context.Context, networkID string) (*openapi.NetworkV2Read, error) {
+	result, err := c.GetV2Raw(ctx, networkID)
 	if err != nil {
 		return nil, err
 	}
@@ -172,11 +156,11 @@ func (c *Client) GetV2(ctx context.Context, organizationID, projectID, networkID
 	return convertV2(result), nil
 }
 
-func (c *Client) generateV2(ctx context.Context, organizationID, projectID string, request *openapi.NetworkV2Write, prefix *net.IPNet, dnsNameservers []net.IP) (*regionv1.Network, error) {
+func (c *Client) generateV2(ctx context.Context, request *openapi.NetworkV2Write, prefix *net.IPNet, dnsNameservers []net.IP) (*regionv1.Network, error) {
 	out := &regionv1.Network{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.namespace).
-			WithOrganization(organizationID).
-			WithProject(projectID).
+			WithOrganization(request.Spec.OrganizationId).
+			WithProject(request.Spec.ProjectId).
 			WithLabel(constants.RegionLabel, request.Spec.RegionId).
 			WithLabel(constants.ResourceAPIVersionLabel, constants.MarshalAPIVersion(2)).
 			Get(),
@@ -187,6 +171,10 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 		},
 	}
 
+	if err := util.InjectUserPrincipal(ctx, request.Spec.OrganizationId, request.Spec.ProjectId); err != nil {
+		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
+	}
+
 	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
 		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
 	}
@@ -195,21 +183,17 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 }
 
 type createSaga struct {
-	client         *Client
-	organizationID string
-	projectID      string
-	request        *openapi.NetworkV2Write
+	client  *Client
+	request *openapi.NetworkV2Write
 
 	identity *regionv1.Identity
 	network  *regionv1.Network
 }
 
-func newCreateSaga(client *Client, organizationID, projectID string, request *openapi.NetworkV2Write) *createSaga {
+func newCreateSaga(client *Client, request *openapi.NetworkV2Write) *createSaga {
 	return &createSaga{
-		client:         client,
-		organizationID: organizationID,
-		projectID:      projectID,
-		request:        request,
+		client:  client,
+		request: request,
 	}
 }
 
@@ -232,7 +216,7 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 		return err
 	}
 
-	network, err := s.client.generateV2(ctx, s.organizationID, s.projectID, s.request, prefix, dnsNameservers)
+	network, err := s.client.generateV2(ctx, s.request, prefix, dnsNameservers)
 	if err != nil {
 		return err
 	}
@@ -256,7 +240,7 @@ func (s *createSaga) createServicePricipal(ctx context.Context) error {
 		},
 	}
 
-	identity, err := identity.New(s.client.client, s.client.namespace).CreateRaw(ctx, s.organizationID, s.projectID, request)
+	identity, err := identity.New(s.client.client, s.client.namespace).CreateRaw(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, request)
 	if err != nil {
 		return err
 	}
@@ -276,7 +260,7 @@ func (s *createSaga) createServicePricipal(ctx context.Context) error {
 // NOTE: you must use the shared delete library call to preserve cascading
 // deletion semantics.
 func (s *createSaga) deleteServicePricipal(ctx context.Context) error {
-	return identity.New(s.client.client, s.client.namespace).Delete(ctx, s.organizationID, s.projectID, s.identity.Name)
+	return identity.New(s.client.client, s.client.namespace).Delete(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.identity.Name)
 }
 
 // createAllocation creates an allocation for the network ID and then attaches
@@ -321,8 +305,12 @@ func (s *createSaga) Actions() []saga.Action {
 	}
 }
 
-func (c *Client) CreateV2(ctx context.Context, organizationID, projectID string, request *openapi.NetworkV2Write) (*openapi.NetworkV2Read, error) {
-	s := newCreateSaga(c, organizationID, projectID, request)
+func (c *Client) CreateV2(ctx context.Context, request *openapi.NetworkV2Write) (*openapi.NetworkV2Read, error) {
+	if err := rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Create, request.Spec.OrganizationId, request.Spec.ProjectId); err != nil {
+		return nil, err
+	}
+
+	s := newCreateSaga(c, request)
 
 	if err := saga.Run(ctx, s); err != nil {
 		return nil, err
@@ -331,9 +319,16 @@ func (c *Client) CreateV2(ctx context.Context, organizationID, projectID string,
 	return convertV2(s.network), nil
 }
 
-func (c *Client) DeleteV2(ctx context.Context, organizationID, projectID, networkID string) error {
-	resource, err := c.GetV2Raw(ctx, organizationID, projectID, networkID)
+func (c *Client) DeleteV2(ctx context.Context, networkID string) error {
+	resource, err := c.GetV2Raw(ctx, networkID)
 	if err != nil {
+		return err
+	}
+
+	organizationID := resource.Labels[coreconstants.OrganizationLabel]
+	projectID := resource.Labels[coreconstants.ProjectLabel]
+
+	if err := rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Delete, organizationID, projectID); err != nil {
 		return err
 	}
 

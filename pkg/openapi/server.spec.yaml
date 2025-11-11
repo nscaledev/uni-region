@@ -644,46 +644,19 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/organizations/{organizationID}/networks:
+  /api/v2/networks:
     description: |-
       Manages region scoped layer 3 networks.  Networks by default come with a default route to
       the internet that performs masquerading.  This version of the API requires at least a
       /24 CIDR range, of which the top /25 is reserved for storage integration.
-    parameters:
-    - $ref: '#/components/parameters/organizationIDParameter'
     get:
       description: List networks.
       security:
       - oauth2Authentication: []
       parameters:
       - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: '#/components/parameters/organizationIDQueryParameter'
       - $ref: '#/components/parameters/projectIDQueryParameter'
-      - $ref: '#/components/parameters/regionIDQueryParameter'
-      responses:
-        '200':
-          $ref: '#/components/responses/networksV2Response'
-        '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
-        '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
-        '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
-        '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/organizations/{organizationID}/projects/{projectID}/networks:
-    description: |-
-      Manages region scoped layer 3 networks.  Networks by default come with a default route to
-      the internet that performs masquerading.  This version of the API requires at least a
-      /24 CIDR range, of which the top /25 is reserved for storage integration.
-    parameters:
-    - $ref: '#/components/parameters/organizationIDParameter'
-    - $ref: '#/components/parameters/projectIDParameter'
-    get:
-      description: List networks.
-      security:
-      - oauth2Authentication: []
-      parameters:
-      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
       - $ref: '#/components/parameters/regionIDQueryParameter'
       responses:
         '200':
@@ -713,14 +686,12 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/organizations/{organizationID}/projects/{projectID}/networks/{networkID}:
+  /api/v2/networks/{networkID}:
     description: |-
       Manages region scoped layer 3 networks.  Networks by default come with a default route to
       the internet that performs masquerading.  This version of the API requires at least a
       /24 CIDR range, of which the top /25 is reserved for storage integration.
     parameters:
-    - $ref: '#/components/parameters/organizationIDParameter'
-    - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/networkIDParameter'
     get:
       description: Get a network.
@@ -752,45 +723,18 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/organizations/{organizationID}/securitygroups:
+  /api/v2//securitygroups:
     description: |-
       Manages network scoped security groups.  By default, security groups allow
       all egress traffic from a server, ingress traffic must be explcitly allowed.
-    parameters:
-    - $ref: '#/components/parameters/organizationIDParameter'
     get:
       description: List security groups.
       security:
       - oauth2Authentication: []
       parameters:
       - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: '#/components/parameters/organizationIDQueryParameter'
       - $ref: '#/components/parameters/projectIDQueryParameter'
-      - $ref: '#/components/parameters/regionIDQueryParameter'
-      - $ref: '#/components/parameters/networkIDQueryParameter'
-      responses:
-        '200':
-          $ref: '#/components/responses/securityGroupsV2Response'
-        '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
-        '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
-        '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
-        '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/organizations/{organizationID}/projects/{projectID}/securitygroups:
-    description: |-
-      Manages network scoped security groups.  By default, security groups allow
-      all egress traffic from a server, ingress traffic must be explcitly allowed.
-    parameters:
-    - $ref: '#/components/parameters/organizationIDParameter'
-    - $ref: '#/components/parameters/projectIDParameter'
-    get:
-      description: List security groups.
-      security:
-      - oauth2Authentication: []
-      parameters:
-      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
       - $ref: '#/components/parameters/regionIDQueryParameter'
       - $ref: '#/components/parameters/networkIDQueryParameter'
       responses:
@@ -821,13 +765,11 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/organizations/{organizationID}/projects/{projectID}/securitygroups/{securityGroupID}:
+  /api/v2/securitygroups/{securityGroupID}:
     description: |-
       Manages network scoped security groups.  By default, security groups allow
       all egress traffic from a server, ingress traffic must be explcitly allowed.
     parameters:
-    - $ref: '#/components/parameters/organizationIDParameter'
-    - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/securityGroupIDParameter'
     get:
       description: Get a security group.
@@ -876,43 +818,17 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/organizations/{organizationID}/servers:
+  /api/v2/servers:
     description: |-
       Manages servers.
-    parameters:
-    - $ref: '#/components/parameters/organizationIDParameter'
     get:
       description: List servers.
       security:
       - oauth2Authentication: []
       parameters:
       - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: '#/components/parameters/organizationIDQueryParameter'
       - $ref: '#/components/parameters/projectIDQueryParameter'
-      - $ref: '#/components/parameters/regionIDQueryParameter'
-      - $ref: '#/components/parameters/networkIDQueryParameter'
-      responses:
-        '200':
-          $ref: '#/components/responses/serversV2Response'
-        '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
-        '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
-        '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
-        '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/organizations/{organizationID}/projects/{projectID}/servers:
-    description: |-
-      Manages servers.
-    parameters:
-    - $ref: '#/components/parameters/organizationIDParameter'
-    - $ref: '#/components/parameters/projectIDParameter'
-    get:
-      description: List servers.
-      security:
-      - oauth2Authentication: []
-      parameters:
-      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
       - $ref: '#/components/parameters/regionIDQueryParameter'
       - $ref: '#/components/parameters/networkIDQueryParameter'
       responses:
@@ -943,12 +859,10 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/organizations/{organizationID}/projects/{projectID}/servers/{serverID}:
+  /api/v2/servers/{serverID}:
     description: |-
       Manages servers.
     parameters:
-    - $ref: '#/components/parameters/organizationIDParameter'
-    - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/serverIDParameter'
     get:
       description: Get a server.
@@ -997,12 +911,10 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/organizations/{organizationID}/projects/{projectID}/servers/{serverID}/start:
+  /api/v2/servers/{serverID}/start:
     description: |-
       Manages servers.
     parameters:
-    - $ref: '#/components/parameters/organizationIDParameter'
-    - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/serverIDParameter'
     post:
       x-no-body: true
@@ -1020,12 +932,10 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/organizations/{organizationID}/projects/{projectID}/servers/{serverID}/stop:
+  /api/v2/servers/{serverID}/stop:
     description: |-
       Manages servers.
     parameters:
-    - $ref: '#/components/parameters/organizationIDParameter'
-    - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/serverIDParameter'
     post:
       x-no-body: true
@@ -1043,12 +953,10 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/organizations/{organizationID}/projects/{projectID}/servers/{serverID}/softreboot:
+  /api/v2/servers/{serverID}/softreboot:
     description: |-
       Manages servers.
     parameters:
-    - $ref: '#/components/parameters/organizationIDParameter'
-    - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/serverIDParameter'
     post:
       x-no-body: true
@@ -1066,12 +974,10 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/organizations/{organizationID}/projects/{projectID}/servers/{serverID}/hardreboot:
+  /api/v2//servers/{serverID}/hardreboot:
     description: |-
       Manages servers.
     parameters:
-    - $ref: '#/components/parameters/organizationIDParameter'
-    - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/serverIDParameter'
     post:
       x-no-body: true
@@ -1089,12 +995,10 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/organizations/{organizationID}/projects/{projectID}/servers/{serverID}/consolesessions:
+  /api/v2/servers/{serverID}/consolesessions:
     description: |-
       Manages servers.
     parameters:
-    - $ref: '#/components/parameters/organizationIDParameter'
-    - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/serverIDParameter'
     get:
       description: Create a new console session for a server.
@@ -1111,12 +1015,10 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/organizations/{organizationID}/projects/{projectID}/servers/{serverID}/consoleoutput:
+  /api/v2/servers/{serverID}/consoleoutput:
     description: |-
       Manages servers.
     parameters:
-    - $ref: '#/components/parameters/organizationIDParameter'
-    - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/serverIDParameter'
     - $ref: '#/components/parameters/lengthParameter'
     get:
@@ -1192,6 +1094,14 @@ components:
       description: The requested output length.
       schema:
         type: integer
+    organizationIDQueryParameter:
+      name: organizationID
+      in: query
+      description: Allows resources to be filtered by organization.
+      schema:
+        type: array
+        items:
+          type: string
     projectIDQueryParameter:
       name: projectID
       in: query
@@ -1649,10 +1559,18 @@ components:
       description: A network's specification.
       type: object
       required:
+      - organizationId
+      - projectId
       - regionId
       - prefix
       - dnsNameservers
       properties:
+        organizationId:
+          description: The organization to provision the resource in.
+          type: string
+        projectId:
+          description: The project to provision the resource in.
+          type: string
         prefix:
           description: An IPv4 prefix for the network.
           type: string
@@ -2225,6 +2143,8 @@ components:
               - name: cluster-id
                 value: 9361402c-f998-49cc-ab21-9bb99afcfde8
             spec:
+              organizationId: 161b9d5a-701d-4fea-848d-0e345edf16e9
+              projectId: f113be96-4dd2-4c14-9c0e-e96c500f21e0
               regionId: c7568e2d-f9ab-453d-9a3a-51375f78426b
               prefix: 192.168.0.0/24
               dnsNameservers:

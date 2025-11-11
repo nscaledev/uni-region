@@ -28,6 +28,8 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
@@ -178,6 +180,10 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 		},
 	}
 
+	if err := util.InjectUserPrincipal(ctx, organizationID, projectID); err != nil {
+		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
+	}
+
 	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
 		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
 	}
@@ -191,15 +197,27 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 	return out, nil
 }
 
-func (c *Client) ListV2Admin(ctx context.Context, organizationID string, params openapi.GetApiV2OrganizationsOrganizationIDServersParams) (openapi.ServersV2Read, error) {
+func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2ServersParams) (openapi.ServersV2Read, error) {
 	selector := labels.SelectorFromSet(map[string]string{
-		coreconstants.OrganizationLabel:   organizationID,
 		constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
 	})
 
-	selector = util.AddProjectIDQuery(selector, params.ProjectID)
-	selector = util.AddRegionIDQuery(selector, params.RegionID)
-	selector = util.AddNetworkIDQuery(selector, params.NetworkID)
+	var err error
+
+	selector, err = rbac.AddOrganizationAndProjectIDQuery(ctx, selector, util.OrganizationIDQuery(params.OrganizationID), util.ProjectIDQuery(params.ProjectID))
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to add identity label selector").WithError(err)
+	}
+
+	selector, err = util.AddRegionIDQuery(selector, params.RegionID)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to add region label selector").WithError(err)
+	}
+
+	selector, err = util.AddNetworkIDQuery(selector, params.NetworkID)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to add network label selector").WithError(err)
+	}
 
 	options := &client.ListOptions{
 		Namespace:     c.namespace,
@@ -218,7 +236,8 @@ func (c *Client) ListV2Admin(ctx context.Context, organizationID string, params 
 	}
 
 	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.Server) bool {
-		return !resource.Spec.Tags.ContainsAll(tagSelector)
+		return !resource.Spec.Tags.ContainsAll(tagSelector) ||
+			rbac.AllowProjectScope(ctx, "region:servers", identityapi.Read, resource.Labels[coreconstants.OrganizationLabel], resource.Labels[coreconstants.ProjectLabel]) != nil
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.Server) int {
@@ -228,46 +247,16 @@ func (c *Client) ListV2Admin(ctx context.Context, organizationID string, params 
 	return convertV2List(result), nil
 }
 
-func (c *Client) ListV2(ctx context.Context, organizationID, projectID string, params openapi.GetApiV2OrganizationsOrganizationIDProjectsProjectIDServersParams) (openapi.ServersV2Read, error) {
-	selector := labels.SelectorFromSet(map[string]string{
-		coreconstants.OrganizationLabel:   organizationID,
-		coreconstants.ProjectLabel:        projectID,
-		constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
-	})
-
-	selector = util.AddRegionIDQuery(selector, params.RegionID)
-	selector = util.AddNetworkIDQuery(selector, params.NetworkID)
-
-	options := &client.ListOptions{
-		Namespace:     c.namespace,
-		LabelSelector: selector,
-	}
-
-	result := &regionv1.ServerList{}
-
-	if err := c.client.List(ctx, result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list servers").WithError(err)
-	}
-
-	tagSelector, err := coreutil.DecodeTagSelectorParam(params.Tag)
+func (c *Client) CreateV2(ctx context.Context, request *openapi.ServerV2Create) (*openapi.ServerV2Read, error) {
+	network, err := network.New(c.client, c.namespace, nil).GetV2Raw(ctx, request.Spec.NetworkId)
 	if err != nil {
 		return nil, err
 	}
 
-	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.Server) bool {
-		return !resource.Spec.Tags.ContainsAll(tagSelector)
-	})
+	organizationID := network.Labels[coreconstants.OrganizationLabel]
+	projectID := network.Labels[coreconstants.ProjectLabel]
 
-	slices.SortStableFunc(result.Items, func(a, b regionv1.Server) int {
-		return cmp.Compare(a.Name, b.Name)
-	})
-
-	return convertV2List(result), nil
-}
-
-func (c *Client) CreateV2(ctx context.Context, organizationID, projectID string, request *openapi.ServerV2Create) (*openapi.ServerV2Read, error) {
-	network, err := network.New(c.client, c.namespace, nil).GetRaw(ctx, organizationID, projectID, request.Spec.NetworkId)
-	if err != nil {
+	if err := rbac.AllowProjectScope(ctx, "region:servers", identityapi.Create, organizationID, projectID); err != nil {
 		return nil, err
 	}
 
@@ -288,9 +277,18 @@ func (c *Client) CreateV2(ctx context.Context, organizationID, projectID string,
 	return convertV2(resource), nil
 }
 
-func (c *Client) GetV2Raw(ctx context.Context, organizationID, projectID, serverID string) (*regionv1.Server, error) {
-	result, err := c.get(ctx, organizationID, projectID, serverID)
-	if err != nil {
+func (c *Client) GetV2Raw(ctx context.Context, serverID string) (*regionv1.Server, error) {
+	result := &regionv1.Server{}
+
+	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: serverID}, result); err != nil {
+		if kerrors.IsNotFound(err) {
+			return nil, errors.HTTPNotFound().WithError(err)
+		}
+
+		return nil, errors.OAuth2ServerError("unable to lookup server").WithError(err)
+	}
+
+	if err := rbac.AllowProjectScope(ctx, "region:servers", identityapi.Read, result.Labels[coreconstants.OrganizationLabel], result.Labels[coreconstants.ProjectLabel]); err != nil {
 		return nil, err
 	}
 
@@ -312,8 +310,8 @@ func (c *Client) GetV2Raw(ctx context.Context, organizationID, projectID, server
 	return result, nil
 }
 
-func (c *Client) GetV2(ctx context.Context, organizationID, projectID, serverID string) (*openapi.ServerV2Read, error) {
-	result, err := c.GetV2Raw(ctx, organizationID, projectID, serverID)
+func (c *Client) GetV2(ctx context.Context, serverID string) (*openapi.ServerV2Read, error) {
+	result, err := c.GetV2Raw(ctx, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -321,9 +319,13 @@ func (c *Client) GetV2(ctx context.Context, organizationID, projectID, serverID 
 	return convertV2(result), nil
 }
 
-func (c *Client) UpdateV2(ctx context.Context, organizationID, projectID, serverID string, request *openapi.ServerV2Update) (*openapi.ServerV2Read, error) {
-	current, err := c.GetV2Raw(ctx, organizationID, projectID, serverID)
+func (c *Client) UpdateV2(ctx context.Context, serverID string, request *openapi.ServerV2Update) (*openapi.ServerV2Read, error) {
+	current, err := c.GetV2Raw(ctx, serverID)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := rbac.AllowProjectScope(ctx, "region:securitygroups:v2", identityapi.Delete, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel]); err != nil {
 		return nil, err
 	}
 
@@ -332,12 +334,12 @@ func (c *Client) UpdateV2(ctx context.Context, organizationID, projectID, server
 	}
 
 	// Get the network, required for generation.
-	network, err := network.New(c.client, c.namespace, nil).GetRaw(ctx, organizationID, projectID, current.Spec.Networks[0].ID)
+	network, err := network.New(c.client, c.namespace, nil).GetV2Raw(ctx, current.Spec.Networks[0].ID)
 	if err != nil {
 		return nil, err
 	}
 
-	required, err := c.generateV2(ctx, organizationID, projectID, request, network)
+	required, err := c.generateV2(ctx, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel], request, network)
 	if err != nil {
 		return nil, err
 	}
@@ -354,9 +356,13 @@ func (c *Client) UpdateV2(ctx context.Context, organizationID, projectID, server
 	return convertV2(updated), nil
 }
 
-func (c *Client) DeleteV2(ctx context.Context, organizationID, projectID, serverID string) error {
-	resource, err := c.GetV2Raw(ctx, organizationID, projectID, serverID)
+func (c *Client) DeleteV2(ctx context.Context, serverID string) error {
+	resource, err := c.GetV2Raw(ctx, serverID)
 	if err != nil {
+		return err
+	}
+
+	if err := rbac.AllowProjectScope(ctx, "region:servers", identityapi.Delete, resource.Labels[coreconstants.OrganizationLabel], resource.Labels[coreconstants.ProjectLabel]); err != nil {
 		return err
 	}
 
@@ -371,13 +377,13 @@ func (c *Client) DeleteV2(ctx context.Context, organizationID, projectID, server
 	return nil
 }
 
-func (c *Client) getServerIdentityAndProvider(ctx context.Context, organizationID, projectID, serverID string) (*regionv1.Server, *regionv1.Identity, types.Provider, error) {
-	server, err := c.GetV2Raw(ctx, organizationID, projectID, serverID)
+func (c *Client) getServerIdentityAndProvider(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, types.Provider, error) {
+	server, err := c.GetV2Raw(ctx, serverID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, server.Labels[constants.IdentityLabel])
+	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, server.Labels[coreconstants.OrganizationLabel], server.Labels[coreconstants.ProjectLabel], server.Labels[constants.IdentityLabel])
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -390,8 +396,8 @@ func (c *Client) getServerIdentityAndProvider(ctx context.Context, organizationI
 	return server, identity, provider, nil
 }
 
-func (c *Client) StartV2(ctx context.Context, organizationID, projectID, serverID string) error {
-	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, serverID)
+func (c *Client) StartV2(ctx context.Context, serverID string) error {
+	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, serverID)
 	if err != nil {
 		return err
 	}
@@ -403,8 +409,8 @@ func (c *Client) StartV2(ctx context.Context, organizationID, projectID, serverI
 	return nil
 }
 
-func (c *Client) StopV2(ctx context.Context, organizationID, projectID, serverID string) error {
-	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, serverID)
+func (c *Client) StopV2(ctx context.Context, serverID string) error {
+	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, serverID)
 	if err != nil {
 		return err
 	}
@@ -416,8 +422,8 @@ func (c *Client) StopV2(ctx context.Context, organizationID, projectID, serverID
 	return nil
 }
 
-func (c *Client) RebootV2(ctx context.Context, organizationID, projectID, serverID string, hard bool) error {
-	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, serverID)
+func (c *Client) RebootV2(ctx context.Context, serverID string, hard bool) error {
+	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, serverID)
 	if err != nil {
 		return err
 	}
@@ -429,8 +435,8 @@ func (c *Client) RebootV2(ctx context.Context, organizationID, projectID, server
 	return nil
 }
 
-func (c *Client) ConsoleOutputV2(ctx context.Context, organizationID, projectID, serverID string, params openapi.GetApiV2OrganizationsOrganizationIDProjectsProjectIDServersServerIDConsoleoutputParams) (*openapi.ConsoleOutputResponse, error) {
-	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, serverID)
+func (c *Client) ConsoleOutputV2(ctx context.Context, serverID string, params openapi.GetApiV2ServersServerIDConsoleoutputParams) (*openapi.ConsoleOutputResponse, error) {
+	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -447,8 +453,8 @@ func (c *Client) ConsoleOutputV2(ctx context.Context, organizationID, projectID,
 	return result, nil
 }
 
-func (c *Client) ConsoleSessionV2(ctx context.Context, organizationID, projectID, serverID string) (*openapi.ConsoleSessionResponse, error) {
-	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, serverID)
+func (c *Client) ConsoleSessionV2(ctx context.Context, serverID string) (*openapi.ConsoleSessionResponse, error) {
+	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, serverID)
 	if err != nil {
 		return nil, err
 	}
