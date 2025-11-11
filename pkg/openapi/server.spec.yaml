@@ -2251,16 +2251,19 @@ components:
                 - virtualization
                 - os
                 properties:
-                  serverID:
-                    description: The server ID to create the image from. If not specified, the image is expected to be uploaded separately.
-                    type: string
-                  diskFormat:
-                    description: The disk format of the image. If `serverID` is specified, this field is ignored. Otherwise, if not provided, the value defaults to `raw`.
+                  sourceFormat:
+                    description: The disk format of the image. If `sourceServerID` is specified, this field is ignored. Otherwise, if not provided, the value defaults to `raw`.
                     type: string
                     enum:
                     - raw
                     - qcow2
                     x-go-type-name: ImageDiskFormat
+                  sourceURL:
+                    description: The URL to upload the image from. If `sourceServerID` and this field are both not specified, the image is expected to be uploaded separately.
+                    type: string
+                  sourceServerID:
+                    description: The server ID to create the image from. If `sourceURL` and this field are both not specified, the image is expected to be uploaded separately.
+                    type: string
                   virtualization:
                     $ref: '#/components/schemas/imageVirtualization'
                   os:
@@ -2293,31 +2296,20 @@ components:
                   - H200
       x-go-type-name: ImageCreateRequest
     imageUploadRequest:
-      description: A request to upload data to an image. The file must be a `.tar.gz` archive containing a `disk.raw` or `disk.qcow2` file.
+      description: A request to upload data to an image. The file must be a .tar.gz archive that contains a single disk image file in the format specified during image creation, either `disk.raw` or `disk.qcow2`.
       content:
         multipart/form-data:
           schema:
             type: object
             required:
-            - method
+            - file
             properties:
-              method:
-                description: The upload method to use.
-                type: string
-                enum:
-                - direct
-                - url
-                x-go-type-name: ImageUploadMethod
               file:
-                description: The image file to upload, required when method is `direct`.
+                description: The image file to upload.
                 type: string
                 format: binary
-              url:
-                description: The URL to upload the image from, required when method is `url`.
-                type: string
           example:
-            method: "url"
-            url: "https://example.com/path/to/image.tar.gz"
+            file: (binary file data)
     networkRequest:
       description: A request for a network.
       content:
