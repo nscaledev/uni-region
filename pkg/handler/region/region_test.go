@@ -110,14 +110,6 @@ func TestUploadImageData(t *testing.T) {
 		},
 	}
 
-	noopContextMutateFunc := func(ctx context.Context) context.Context {
-		return ctx
-	}
-
-	noopProviderSetupFunc := func(provider *mock.MockProvider) {
-
-	}
-
 	tarballReader := func(filename string, content []byte) func(t *testing.T) io.Reader {
 		return func(t *testing.T) io.Reader {
 			t.Helper()
@@ -163,8 +155,7 @@ func TestUploadImageData(t *testing.T) {
 
 	testCases := []TestCase{
 		{
-			Name:              "fails to create gzip reader",
-			ContextMutateFunc: noopContextMutateFunc,
+			Name: "fails to create gzip reader",
 			ReaderSetupFunc: func(t *testing.T) io.Reader {
 				t.Helper()
 
@@ -172,13 +163,11 @@ func TestUploadImageData(t *testing.T) {
 
 				return bytes.NewBuffer(data)
 			},
-			ProviderSetupFunc: noopProviderSetupFunc,
-			ExpectedError:     true,
-			ExpectedImage:     nil,
+			ExpectedError: true,
+			ExpectedImage: nil,
 		},
 		{
-			Name:              "fails to read invalid tar data",
-			ContextMutateFunc: noopContextMutateFunc,
+			Name: "fails to read invalid tar data",
 			ReaderSetupFunc: func(t *testing.T) io.Reader {
 				t.Helper()
 
@@ -197,13 +186,11 @@ func TestUploadImageData(t *testing.T) {
 
 				return &buf
 			},
-			ProviderSetupFunc: noopProviderSetupFunc,
-			ExpectedError:     true,
-			ExpectedImage:     nil,
+			ExpectedError: true,
+			ExpectedImage: nil,
 		},
 		{
-			Name:              "fails to parse tar header",
-			ContextMutateFunc: noopContextMutateFunc,
+			Name: "fails to parse tar header",
 			ReaderSetupFunc: func(t *testing.T) io.Reader {
 				t.Helper()
 
@@ -228,13 +215,11 @@ func TestUploadImageData(t *testing.T) {
 
 				return &buf
 			},
-			ProviderSetupFunc: noopProviderSetupFunc,
-			ExpectedError:     true,
-			ExpectedImage:     nil,
+			ExpectedError: true,
+			ExpectedImage: nil,
 		},
 		{
-			Name:              "fails to parse oversized tar header",
-			ContextMutateFunc: noopContextMutateFunc,
+			Name: "fails to parse oversized tar header",
 			ReaderSetupFunc: func(t *testing.T) io.Reader {
 				t.Helper()
 
@@ -262,13 +247,11 @@ func TestUploadImageData(t *testing.T) {
 
 				return &buf
 			},
-			ProviderSetupFunc: noopProviderSetupFunc,
-			ExpectedError:     true,
-			ExpectedImage:     nil,
+			ExpectedError: true,
+			ExpectedImage: nil,
 		},
 		{
-			Name:              "fails to process multiple disk files",
-			ContextMutateFunc: noopContextMutateFunc,
+			Name: "fails to process multiple disk files",
 			ReaderSetupFunc: func(t *testing.T) io.Reader {
 				t.Helper()
 
@@ -319,9 +302,8 @@ func TestUploadImageData(t *testing.T) {
 
 				return &buf
 			},
-			ProviderSetupFunc: noopProviderSetupFunc,
-			ExpectedError:     true,
-			ExpectedImage:     nil,
+			ExpectedError: true,
+			ExpectedImage: nil,
 		},
 		{
 			Name: "fails to copy data into temporary file after context cancellation",
@@ -331,23 +313,19 @@ func TestUploadImageData(t *testing.T) {
 
 				return ctx
 			},
-			ReaderSetupFunc:   tarballReader("disk.raw", []byte("disk contents")),
-			ProviderSetupFunc: noopProviderSetupFunc,
-			ExpectedError:     true,
-			ExpectedImage:     nil,
+			ReaderSetupFunc: tarballReader("disk.raw", []byte("disk contents")),
+			ExpectedError:   true,
+			ExpectedImage:   nil,
 		},
 		{
-			Name:              "fails to find disk file in tar archive",
-			ContextMutateFunc: noopContextMutateFunc,
-			ReaderSetupFunc:   tarballReader("randomfile.txt", []byte("file contents")),
-			ProviderSetupFunc: noopProviderSetupFunc,
-			ExpectedError:     true,
-			ExpectedImage:     nil,
+			Name:            "fails to find disk file in tar archive",
+			ReaderSetupFunc: tarballReader("randomfile.txt", []byte("file contents")),
+			ExpectedError:   true,
+			ExpectedImage:   nil,
 		},
 		{
-			Name:              "fails to upload image due to upload conflict",
-			ContextMutateFunc: noopContextMutateFunc,
-			ReaderSetupFunc:   fakeRawDiskReader,
+			Name:            "fails to upload image due to upload conflict",
+			ReaderSetupFunc: fakeRawDiskReader,
 			ProviderSetupFunc: func(provider *mock.MockProvider) {
 				expectedReader := gomock.Cond[io.Reader](func(reader io.Reader) bool {
 					actual, err := io.ReadAll(reader)
@@ -366,9 +344,8 @@ func TestUploadImageData(t *testing.T) {
 			ExpectedImage: nil,
 		},
 		{
-			Name:              "fails to upload image due to unexpected error",
-			ContextMutateFunc: noopContextMutateFunc,
-			ReaderSetupFunc:   fakeRawDiskReader,
+			Name:            "fails to upload image due to unexpected error",
+			ReaderSetupFunc: fakeRawDiskReader,
 			ProviderSetupFunc: func(provider *mock.MockProvider) {
 				expectedReader := gomock.Cond[io.Reader](func(reader io.Reader) bool {
 					actual, err := io.ReadAll(reader)
@@ -387,9 +364,8 @@ func TestUploadImageData(t *testing.T) {
 			ExpectedImage: nil,
 		},
 		{
-			Name:              "fails to finalize image",
-			ContextMutateFunc: noopContextMutateFunc,
-			ReaderSetupFunc:   fakeRawDiskReader,
+			Name:            "fails to finalize image",
+			ReaderSetupFunc: fakeRawDiskReader,
 			ProviderSetupFunc: func(provider *mock.MockProvider) {
 				expectedReader := gomock.Cond[io.Reader](func(reader io.Reader) bool {
 					actual, err := io.ReadAll(reader)
@@ -412,9 +388,8 @@ func TestUploadImageData(t *testing.T) {
 			ExpectedImage: nil,
 		},
 		{
-			Name:              "succeeds in uploading image data",
-			ContextMutateFunc: noopContextMutateFunc,
-			ReaderSetupFunc:   fakeRawDiskReader,
+			Name:            "succeeds in uploading image data",
+			ReaderSetupFunc: fakeRawDiskReader,
 			ProviderSetupFunc: func(provider *mock.MockProvider) {
 				expectedReader := gomock.Cond(func(reader io.Reader) bool {
 					actual, err := io.ReadAll(reader)
@@ -446,9 +421,16 @@ func TestUploadImageData(t *testing.T) {
 			defer mockController.Finish()
 
 			mockProvider := mock.NewMockProvider(mockController)
-			testCase.ProviderSetupFunc(mockProvider)
+			if fn := testCase.ProviderSetupFunc; fn != nil {
+				fn(mockProvider)
+			}
 
-			ctx := testCase.ContextMutateFunc(t.Context())
+			ctx := t.Context()
+
+			if fn := testCase.ContextMutateFunc; fn != nil {
+				ctx = fn(ctx)
+			}
+
 			reader := testCase.ReaderSetupFunc(t)
 
 			actualImage, err := region.UploadImageData(ctx, imageID, providerImage.DiskFormat, reader, mockProvider)
