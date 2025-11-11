@@ -541,6 +541,50 @@ func getPublicOrOrganizationOwnedImages(resources []images.Image, organizationID
 	return result
 }
 
+func (p *Provider) imageDiskFormat(image *images.Image) types.ImageDiskFormat {
+	return types.ImageDiskFormat(image.DiskFormat)
+}
+
+func (p *Provider) imageDataSource(image *images.Image) types.ImageDataSource {
+	temp, _ := image.Properties["unikorn:data_source"].(string)
+
+	var dataSource types.ImageDataSource
+
+	switch temp {
+	case string(types.ImageDataSourceFile), string(types.ImageDataSourceURL), string(types.ImageDataSourceServer):
+		dataSource = types.ImageDataSource(temp)
+	default:
+		// Fallback to file for all images that were created before this field was added.
+		dataSource = types.ImageDataSourceFile
+	}
+
+	return dataSource
+}
+
+func (p *Provider) imageStatus(image *images.Image, dataSource types.ImageDataSource) types.ImageStatus {
+	var status types.ImageStatus
+
+	switch image.Status {
+	case images.ImageStatusQueued:
+		if dataSource == types.ImageDataSourceFile {
+			status = types.ImageStatusPending
+		} else {
+			status = types.ImageStatusCreating
+		}
+	case images.ImageStatusSaving:
+		status = types.ImageStatusCreating
+	case images.ImageStatusActive:
+		status = types.ImageStatusReady
+	case images.ImageStatusKilled:
+		status = types.ImageStatusFailed
+	case images.ImageStatusDeleted, images.ImageStatusPendingDelete, images.ImageStatusDeactivated, images.ImageStatusImporting:
+		// These statuses are not directly mappable, mark them as failed.
+		status = types.ImageStatusFailed
+	}
+
+	return status
+}
+
 func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 	var organizationID *string
 
@@ -558,6 +602,8 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 
 	virtualization, _ := image.Properties["unikorn:virtualization"].(string)
 
+	dataSource := p.imageDataSource(image)
+
 	providerImage := types.Image{
 		ID:             image.ID,
 		Name:           image.Name,
@@ -568,7 +614,9 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 		Virtualization: types.ImageVirtualization(virtualization),
 		OS:             p.imageOS(image),
 		Packages:       p.imagePackages(image),
-		Active:         image.Status == images.ImageStatusActive,
+		DiskFormat:     p.imageDiskFormat(image),
+		DataSource:     dataSource,
+		Status:         p.imageStatus(image, dataSource),
 	}
 
 	if gpuVendor, ok := image.Properties["unikorn:gpu_vendor"].(string); ok {

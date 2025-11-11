@@ -36,6 +36,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers/openstack"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -131,7 +132,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 		return nil, errors.OAuth2ServerError("failed to retrieve image from provider").WithError(err)
 	}
 
-	if !image.Active {
+	if image.Status != types.ImageStatusReady {
 		return nil, errors.HTTPNotFound()
 	}
 
@@ -180,7 +181,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 		return nil, errors.OAuth2ServerError("failed to retrieve image from provider").WithError(err)
 	}
 
-	if !image.Active {
+	if image.Status != types.ImageStatusReady {
 		return nil, errors.HTTPNotFound()
 	}
 

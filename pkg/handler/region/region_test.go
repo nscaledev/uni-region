@@ -75,7 +75,7 @@ func TestUploadImageData(t *testing.T) {
 			"kubernetes": "v1.25.6",
 		}),
 		DiskFormat: types.ImageDiskFormatRaw,
-		Active:     false,
+		Status:     types.ImageStatusPending,
 	}
 
 	expectedImage := &openapi.Image{

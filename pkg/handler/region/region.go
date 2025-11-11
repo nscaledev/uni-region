@@ -31,6 +31,7 @@ import (
 	"slices"
 
 	"github.com/gophercloud/gophercloud/v2"
+
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
@@ -331,7 +332,7 @@ func (c *Client) UploadImage(ctx context.Context, organizationID, regionID, imag
 		return nil, errors.OAuth2ServerError("failed to get image").WithError(err)
 	}
 
-	if image.Active {
+	if image.Status != types.ImageStatusPending {
 		return nil, errors.HTTPConflict()
 	}
 
