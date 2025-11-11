@@ -837,13 +837,19 @@ type StorageAttachmentV2Spec struct {
 	Id string `json:"id"`
 }
 
+// StorageAttachmentV2Status Describes the network attachment for storage
+type StorageAttachmentV2Status struct {
+	// Id Describes the network attachment for storage
+	Id StorageAttachmentV2Spec `json:"id"`
+
+	// ProvisioningStatus The provisioning state of a resource.
+	ProvisioningStatus *externalRef0.ResourceProvisioningStatus `json:"provisioningStatus,omitempty"`
+}
+
 // StorageTypeV2Spec A storage's type
 type StorageTypeV2Spec struct {
 	// NFS NFS specific
 	NFS *NFSV2Spec `json:"NFS,omitempty"`
-
-	// Attachements Describes the network attachment for storage
-	Attachements *StorageAttachmentV2Spec `json:"attachements,omitempty"`
 }
 
 // StorageUsageV2Spec Information about the usage of the storage
@@ -872,15 +878,21 @@ type StorageV2Read struct {
 
 // StorageV2Spec A storage's specification.
 type StorageV2Spec struct {
+	// Attachments Describes the network attachment for storage
+	Attachments *StorageAttachmentV2Spec `json:"attachments,omitempty"`
+
 	// Size size of the storage
 	Size string `json:"size"`
 
 	// StorageType A storage's type
-	StorageType *StorageTypeV2Spec `json:"storageType,omitempty"`
+	StorageType StorageTypeV2Spec `json:"storageType"`
 }
 
 // StorageV2Status Read only status about storage
 type StorageV2Status struct {
+	// Attachments Describes the network attachment for storage
+	Attachments *StorageAttachmentV2Status `json:"attachments,omitempty"`
+
 	// RegionId The region an identity is provisioned in.
 	RegionId string `json:"regionId"`
 
