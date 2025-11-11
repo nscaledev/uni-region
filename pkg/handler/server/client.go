@@ -133,7 +133,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 	}
 
 	if image.Status != types.ImageStatusReady {
-		return nil, errors.HTTPNotFound()
+		return nil, errors.HTTPConflict().WithValues("image_status", image.Status)
 	}
 
 	resource, err := newGenerator(c.client, c.namespace, organizationID, projectID, identityID).generate(ctx, request)
@@ -182,7 +182,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	}
 
 	if image.Status != types.ImageStatusReady {
-		return nil, errors.HTTPNotFound()
+		return nil, errors.HTTPConflict().WithValues("image_status", image.Status)
 	}
 
 	current, err := c.get(ctx, organizationID, projectID, serverID)
