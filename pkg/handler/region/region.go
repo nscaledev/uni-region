@@ -363,7 +363,7 @@ func (c *Client) uploadImageFromFile(ctx context.Context, imageID string, r *htt
 	}
 	defer multipartFile.Close()
 
-	return c.uploadImageData(ctx, imageID, multipartFile, provider)
+	return UploadImageData(ctx, imageID, multipartFile, provider)
 }
 
 func (c *Client) uploadImageFromURL(ctx context.Context, imageID string, r *http.Request, provider types.Provider) (*openapi.Image, error) {
@@ -388,11 +388,11 @@ func (c *Client) uploadImageFromURL(ctx context.Context, imageID string, r *http
 		return nil, errors.OAuth2InvalidRequest("The provided URL could not be downloaded").WithValues("status_code", response.StatusCode)
 	}
 
-	return c.uploadImageData(ctx, imageID, response.Body, provider)
+	return UploadImageData(ctx, imageID, response.Body, provider)
 }
 
-//nolint:cyclop
-func (c *Client) uploadImageData(ctx context.Context, imageID string, sourceReader io.Reader, provider types.Provider) (*openapi.Image, error) {
+//nolint:cyclop,gocognit
+func UploadImageData(ctx context.Context, imageID string, sourceReader io.Reader, provider types.Provider) (*openapi.Image, error) {
 	gzipReader, err := gzip.NewReader(sourceReader)
 	if err != nil {
 		return nil, errors.OAuth2InvalidRequest("The provided file is not a valid gzip file").WithError(err)
@@ -423,7 +423,7 @@ func (c *Client) uploadImageData(ctx context.Context, imageID string, sourceRead
 				break
 			}
 
-			if goerrors.Is(err, tar.ErrHeader) {
+			if goerrors.Is(err, io.ErrUnexpectedEOF) || goerrors.Is(err, tar.ErrHeader) {
 				return nil, errors.OAuth2InvalidRequest("The provided file is not a valid tar archive").WithError(err)
 			}
 
