@@ -67,6 +67,12 @@ const (
 	Openstack  RegionType = "openstack"
 )
 
+// NFSV2Spec NFS specific
+type NFSV2Spec struct {
+	// RootSquash root squash
+	RootSquash bool `json:"rootSquash"`
+}
+
 // AllowedSourceAddresses A list of network prefixes that are allowed to egress from the server.
 // By default, only packets from the server's network interface's IP address
 // are allowed to enter the network.  Use of this option allows the server
@@ -825,6 +831,66 @@ type ServersV2Read = []ServerV2Read
 // SoftwareVersions Image preinstalled version version metadata.
 type SoftwareVersions map[string]externalRef0.Semver
 
+// StorageAttachmentV2Spec Describes the network attachment for storage
+type StorageAttachmentV2Spec struct {
+	// Id identifier of the attachment
+	Id string `json:"id"`
+}
+
+// StorageTypeV2Spec A storage's type
+type StorageTypeV2Spec struct {
+	// NFS NFS specific
+	NFS *NFSV2Spec `json:"NFS,omitempty"`
+
+	// Attachements Describes the network attachment for storage
+	Attachements *StorageAttachmentV2Spec `json:"attachements,omitempty"`
+}
+
+// StorageUsageV2Spec Information about the usage of the storage
+type StorageUsageV2Spec struct {
+	// Capacity total space allotted
+	Capacity string `json:"capacity"`
+
+	// Free amount of storage space free to utilize
+	Free *string `json:"free,omitempty"`
+
+	// Used amount of storage space utilizied
+	Used *string `json:"used,omitempty"`
+}
+
+// StorageV2Read A storage read only group.
+type StorageV2Read struct {
+	// Metadata Metadata required by project scoped resource reads.
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+
+	// Spec A storage's specification.
+	Spec StorageV2Spec `json:"spec"`
+
+	// Status Read only status about storage
+	Status StorageV2Status `json:"status"`
+}
+
+// StorageV2Spec A storage's specification.
+type StorageV2Spec struct {
+	// Size size of the storage
+	Size string `json:"size"`
+
+	// StorageType A storage's type
+	StorageType *StorageTypeV2Spec `json:"storageType,omitempty"`
+}
+
+// StorageV2Status Read only status about storage
+type StorageV2Status struct {
+	// RegionId The region an identity is provisioned in.
+	RegionId string `json:"regionId"`
+
+	// StorageClassId identifier for the storage
+	StorageClassId string `json:"storageClassId"`
+
+	// Usage Information about the usage of the storage
+	Usage StorageUsageV2Spec `json:"usage"`
+}
+
 // IdentityIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type IdentityIDParameter = KubernetesNameParameter
 
@@ -860,6 +926,9 @@ type SecurityGroupIDParameter = KubernetesNameParameter
 
 // ServerIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type ServerIDParameter = KubernetesNameParameter
+
+// StorageIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
+type StorageIDParameter = KubernetesNameParameter
 
 // ConsoleOutputResponse Console output
 type ConsoleOutputResponse = ConsoleOutput
@@ -923,6 +992,9 @@ type ServersResponse = ServersRead
 
 // ServersV2Response A list of servers.
 type ServersV2Response = ServersV2Read
+
+// StorageV2Response A storage read only group.
+type StorageV2Response = StorageV2Read
 
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
@@ -988,6 +1060,19 @@ type GetApiV2SecuritygroupsParams struct {
 
 	// NetworkID Allows resources to be filtered by network.
 	NetworkID *NetworkIDQueryParameter `form:"networkID,omitempty" json:"networkID,omitempty"`
+}
+
+// GetApiV2FilestorageParams defines parameters for GetApiV2Filestorage.
+type GetApiV2FilestorageParams struct {
+	// Tag A set of tags to match against resources in the form "name=value",
+	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+
+	// ProjectID Allows resources to be filtered by project.
+	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
 }
 
 // GetApiV2NetworksParams defines parameters for GetApiV2Networks.
@@ -1063,3 +1148,6 @@ type PostApiV2ServersJSONRequestBody = ServerV2Create
 
 // PutApiV2ServersServerIDJSONRequestBody defines body for PutApiV2ServersServerID for application/json ContentType.
 type PutApiV2ServersServerIDJSONRequestBody = ServerV2Update
+
+// PutApiV2StorageFilestorageStorageIDJSONRequestBody defines body for PutApiV2StorageFilestorageStorageID for application/json ContentType.
+type PutApiV2StorageFilestorageStorageIDJSONRequestBody = SecurityGroupV2Update
