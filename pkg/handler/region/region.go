@@ -26,18 +26,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"slices"
 
 	"github.com/gophercloud/gophercloud/v2"
 
-	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
+	"github.com/unikorn-cloud/core/pkg/server/saga"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -223,6 +220,10 @@ func (c *Client) ListImages(ctx context.Context, organizationID, regionID string
 }
 
 func (c *Client) CreateImage(ctx context.Context, organizationID, regionID string, request *openapi.ImageCreateRequest) (*openapi.Image, error) {
+	if request.Spec.SourceURL != nil && request.Spec.SourceServerID != nil {
+		return nil, errors.OAuth2InvalidRequest("Only one source parameter may be provided. Specify either \"sourceURL\" or \"sourceServerID\", not both")
+	}
+
 	provider, err := c.Provider(ctx, regionID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
@@ -250,71 +251,44 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 		Packages:       packages,
 	}
 
-	var result *types.Image
-
-	if request.Spec.ServerID == nil {
-		diskFormat := openapi.Raw
-		if request.Spec.DiskFormat != nil {
-			diskFormat = *request.Spec.DiskFormat
-		}
-
-		result, err = c.createImageForUpload(ctx, diskFormat, image, provider)
-	} else {
-		result, err = c.createImageFromServer(ctx, organizationID, *request.Spec.ServerID, image, provider)
+	type LocalTransaction interface {
+		saga.Handler
+		Result() (*types.Image, error)
 	}
 
+	var tx LocalTransaction
+
+	if request.Spec.SourceServerID == nil {
+		tx = &createImageForUploadSaga{
+			client:         c,
+			organizationID: organizationID,
+			regionID:       regionID,
+			sourceFormat:   request.Spec.SourceFormat,
+			sourceURL:      request.Spec.SourceURL,
+			image:          image,
+			provider:       provider,
+		}
+	} else {
+		tx = &createImageFromServerSaga{
+			client:         c,
+			organizationID: organizationID,
+			regionID:       regionID,
+			serverID:       *request.Spec.SourceServerID,
+			image:          image,
+			provider:       provider,
+		}
+	}
+
+	if err = saga.Run(ctx, tx); err != nil {
+		return nil, err
+	}
+
+	result, err := tx.Result()
 	if err != nil {
 		return nil, err
 	}
 
 	return convertImage(result), nil
-}
-
-func (c *Client) createImageForUpload(ctx context.Context, diskFormat openapi.ImageDiskFormat, image *types.Image, provider types.Provider) (*types.Image, error) {
-	result, err := provider.CreateImageForUpload(ctx, string(diskFormat), image)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create image").WithError(err)
-	}
-
-	return result, nil
-}
-
-func (c *Client) createImageFromServer(ctx context.Context, organizationID, serverID string, image *types.Image, provider types.Provider) (*types.Image, error) {
-	var server unikornv1.Server
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: serverID}, &server); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.OAuth2InvalidRequest("The provided server does not exist").WithError(err)
-		}
-
-		return nil, errors.OAuth2ServerError("failed to get server").WithError(err)
-	}
-
-	if server.Labels[coreconstants.OrganizationLabel] != organizationID {
-		return nil, errors.OAuth2InvalidRequest("The provided server does not exist")
-	}
-
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, server.Labels[coreconstants.ProjectLabel], server.Labels[constants.IdentityLabel])
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := provider.CreateImageFromServer(ctx, identity, &server, image)
-	if err != nil {
-		// FIXME: We should provide a better error description instead of using the default one defined in HTTPConflict function.
-		// This means the server isn't in a valid state to create an image from. It could be because the server isn't in the desired status, or a snapshot is already being created.
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			return nil, errors.HTTPConflict().WithError(err)
-		}
-
-		return nil, errors.OAuth2ServerError("failed to create image").WithError(err)
-	}
-
-	result, err = provider.FinalizeImage(ctx, result.ID)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("The server encountered an unexpected error while finalizing the image").WithError(err)
-	}
-
-	return result, nil
 }
 
 func (c *Client) UploadImage(ctx context.Context, organizationID, regionID, imageID string, r *http.Request) (*openapi.Image, error) {
@@ -340,16 +314,7 @@ func (c *Client) UploadImage(ctx context.Context, organizationID, regionID, imag
 		return nil, errors.HTTPNotFound()
 	}
 
-	method := openapi.ImageUploadMethod(r.Form.Get("method"))
-
-	switch method {
-	case openapi.Direct:
-		return c.uploadImageFromFile(ctx, imageID, image.DiskFormat, r, provider)
-	case openapi.Url:
-		return c.uploadImageFromURL(ctx, imageID, image.DiskFormat, r, provider)
-	default:
-		return nil, errors.OAuth2InvalidRequest("The provided upload method is not supported")
-	}
+	return c.uploadImageFromFile(ctx, imageID, image.DiskFormat, r, provider)
 }
 
 func (c *Client) uploadImageFromFile(ctx context.Context, imageID string, diskFormat types.ImageDiskFormat, r *http.Request, provider types.Provider) (*openapi.Image, error) {
@@ -364,31 +329,6 @@ func (c *Client) uploadImageFromFile(ctx context.Context, imageID string, diskFo
 	defer multipartFile.Close()
 
 	return UploadImageData(ctx, imageID, diskFormat, multipartFile, provider)
-}
-
-func (c *Client) uploadImageFromURL(ctx context.Context, imageID string, diskFormat types.ImageDiskFormat, r *http.Request, provider types.Provider) (*openapi.Image, error) {
-	downloadURL := r.Form.Get("url")
-	if _, err := url.Parse(downloadURL); err != nil {
-		return nil, errors.OAuth2InvalidRequest("The provided URL is not valid").WithError(err)
-	}
-
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("The server encountered an unexpected error while preparing the download").WithError(err)
-	}
-
-	// REVIEW_ME: Should we limit the size of the download and use a custom http.Client?
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("The server encountered an unexpected error while downloading the file").WithError(err)
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		return nil, errors.OAuth2InvalidRequest("The provided URL could not be downloaded").WithValues("status_code", response.StatusCode)
-	}
-
-	return UploadImageData(ctx, imageID, diskFormat, response.Body, provider)
 }
 
 //nolint:cyclop,gocognit
@@ -487,7 +427,7 @@ func UploadImageData(ctx context.Context, imageID string, diskFormat types.Image
 		return nil, errors.OAuth2ServerError("The server encountered an unexpected error while uploading the image data").WithError(err)
 	}
 
-	result, err := provider.FinalizeImage(ctx, imageID)
+	result, err := provider.PublishImage(ctx, imageID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("The server encountered an unexpected error while finalizing the image upload").WithError(err)
 	}

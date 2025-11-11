@@ -18,6 +18,7 @@ package region
 
 import (
 	"errors"
+	"fmt"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -245,6 +246,17 @@ func generateImageOS(source *openapi.ImageOS) *types.ImageOS {
 		Variant:  source.Variant,
 		Codename: source.Codename,
 		Version:  source.Version,
+	}
+}
+
+func generateDiskFormat(source openapi.ImageDiskFormat) (types.ImageDiskFormat, error) {
+	switch source {
+	case openapi.Raw:
+		return types.ImageDiskFormatRaw, nil
+	case openapi.Qcow2:
+		return types.ImageDiskFormatQCOW2, nil
+	default:
+		return "", fmt.Errorf("%w: %s", ErrUnknownDiskFormat, source)
 	}
 }
 
