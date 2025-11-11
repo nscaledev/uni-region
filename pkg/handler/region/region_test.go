@@ -74,7 +74,8 @@ func TestUploadImageData(t *testing.T) {
 		Packages: ptr.To(types.ImagePackages{
 			"kubernetes": "v1.25.6",
 		}),
-		Active: false,
+		DiskFormat: types.ImageDiskFormatRaw,
+		Active:     false,
 	}
 
 	expectedImage := &openapi.Image{
@@ -528,7 +529,7 @@ func TestUploadImageData(t *testing.T) {
 			ctx := testCase.ContextMutateFunc(t.Context())
 			reader := testCase.ReaderSetupFunc(t)
 
-			actualImage, err := region.UploadImageData(ctx, imageID, reader, mockProvider)
+			actualImage, err := region.UploadImageData(ctx, imageID, providerImage.DiskFormat, reader, mockProvider)
 			require.Equal(t, testCase.ExpectedError, err != nil)
 			require.Equal(t, testCase.ExpectedImage, actualImage)
 		})
