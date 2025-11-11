@@ -37,8 +37,8 @@ import (
 )
 
 var (
-	// ErrUnimplmented is raised when something isn't done, nor makes zero senese.
-	ErrUnimplmented = errors.New("interface unimplemnted")
+	// ErrUnimplemented is raised when something isn't done, or makes zero sense.
+	ErrUnimplemented = errors.New("interface unimplemented")
 
 	// ErrResource is raised when a resource is in a bad state.
 	ErrResource = errors.New("resource error")
@@ -201,116 +201,116 @@ func (p *Provider) ClearImageCache(ctx context.Context) error {
 
 // ListImages lists all available images.
 func (p *Provider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
-	return nil, ErrUnimplmented
+	return nil, ErrUnimplemented
 }
 
 // GetImage retrieves a specific image by its ID.
 func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
-	return nil, ErrUnimplmented
+	return nil, ErrUnimplemented
 }
 
 // CreateImageForUpload creates a new image resource for upload.
-func (p *Provider) CreateImageForUpload(ctx context.Context, diskFormat string, image *types.Image) (*types.Image, error) {
-	return nil, ErrUnimplmented
+func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
+	return nil, ErrUnimplemented
 }
 
 // CreateImageFromServer creates a new image from an existing server.
-func (p *Provider) CreateImageFromServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *types.Image) (*types.Image, error) {
-	return nil, ErrUnimplmented
+func (p *Provider) CreateImageFromServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *types.Image) (string, error) {
+	return "", ErrUnimplemented
 }
 
 // CreateImage creates a new image.
 func (p *Provider) CreateImage(ctx context.Context, image *types.Image) (*types.Image, error) {
-	return nil, ErrUnimplmented
+	return nil, ErrUnimplemented
 }
 
 // UploadImage uploads data to an image.
 func (p *Provider) UploadImage(ctx context.Context, imageID string, reader io.Reader) error {
-	return ErrUnimplmented
+	return ErrUnimplemented
 }
 
-// FinalizeImage finalizes an image after upload.
-func (p *Provider) FinalizeImage(ctx context.Context, imageID string) (*types.Image, error) {
-	return nil, ErrUnimplmented
+// PublishImage makes an image publicly available.
+func (p *Provider) PublishImage(ctx context.Context, imageID string) (*types.Image, error) {
+	return nil, ErrUnimplemented
 }
 
 // DeleteImage deletes an image.
 func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
-	return ErrUnimplmented
+	return ErrUnimplemented
 }
 
 // CreateIdentity creates a new identity for cloud infrastructure.
 func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Identity) error {
-	return ErrUnimplmented
+	return ErrUnimplemented
 }
 
 // DeleteIdentity cleans up an identity for cloud infrastructure.
 func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Identity) error {
-	return ErrUnimplmented
+	return ErrUnimplemented
 }
 
 // CreateNetwork creates a new physical network.
 func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
-	return ErrUnimplmented
+	return ErrUnimplemented
 }
 
 // DeleteNetwork deletes a physical network.
 func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
-	return ErrUnimplmented
+	return ErrUnimplemented
 }
 
 // ListExternalNetworks returns a list of external networks if the platform
 // supports such a concept.
 func (p *Provider) ListExternalNetworks(ctx context.Context) (types.ExternalNetworks, error) {
-	return nil, ErrUnimplmented
+	return nil, ErrUnimplemented
 }
 
 // CreateSecurityGroup creates a new security group.
 func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
-	return ErrUnimplmented
+	return ErrUnimplemented
 }
 
 // DeleteSecurityGroup deletes a security group.
 func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
-	return ErrUnimplmented
+	return ErrUnimplemented
 }
 
 // CreateServer creates a new server.
 func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	return ErrUnimplmented
+	return ErrUnimplemented
 }
 
 // RebootServer reboots a server.
 func (p *Provider) RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error {
-	return ErrUnimplmented
+	return ErrUnimplemented
 }
 
 // StartServer starts a server.
 func (p *Provider) StartServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	return ErrUnimplmented
+	return ErrUnimplemented
 }
 
 // StopServer stops a server.
 func (p *Provider) StopServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	return ErrUnimplmented
+	return ErrUnimplemented
 }
 
 // DeleteServer deletes a server.
 func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	return ErrUnimplmented
+	return ErrUnimplemented
 }
 
 // UpdateServerState checks a server's state and modifies the resource in place.
 func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	return ErrUnimplmented
+	return ErrUnimplemented
 }
 
 // CreateConsoleSession creates a new console session for a server.
 func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) (string, error) {
-	return "", ErrUnimplmented
+	return "", ErrUnimplemented
 }
 
 // GetConsoleOutput retrieves the console output for a server.
 func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, length *int) (string, error) {
-	return "", ErrUnimplmented
+	return "", ErrUnimplemented
 }
