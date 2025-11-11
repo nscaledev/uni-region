@@ -383,7 +383,7 @@ func TestUploadImageData(t *testing.T) {
 					Return(nil)
 
 				provider.EXPECT().
-					FinalizeImage(gomock.Any(), imageID).
+					PublishImage(gomock.Any(), imageID).
 					Return(nil, gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusInternalServerError})
 			},
 			ExpectedError: true,
@@ -407,7 +407,7 @@ func TestUploadImageData(t *testing.T) {
 					Return(nil)
 
 				provider.EXPECT().
-					FinalizeImage(gomock.Any(), imageID).
+					PublishImage(gomock.Any(), imageID).
 					Return(providerImage, nil)
 			},
 			ExpectedError: false,
@@ -431,7 +431,7 @@ func TestUploadImageData(t *testing.T) {
 					Return(nil)
 
 				provider.EXPECT().
-					FinalizeImage(gomock.Any(), imageID).
+					PublishImage(gomock.Any(), imageID).
 					Return(providerImage, nil)
 			},
 			DiskFormat:    types.ImageDiskFormatQCOW2,

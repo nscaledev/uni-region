@@ -194,6 +194,11 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	return flavors, nil
 }
 
+// ClearImageCache clears the image cache.
+func (p *Provider) ClearImageCache(ctx context.Context) error {
+	return ErrUnimplemented
+}
+
 // ListImages lists all available images.
 func (p *Provider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
 	return nil, ErrUnimplmented
