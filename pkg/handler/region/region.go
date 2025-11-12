@@ -17,16 +17,23 @@ limitations under the License.
 package region
 
 import (
+	"archive/tar"
 	"cmp"
+	"compress/gzip"
 	"context"
 	"encoding/base64"
 	goerrors "errors"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"slices"
 
-	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
+	"github.com/gophercloud/gophercloud/v2"
+
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
+	"github.com/unikorn-cloud/core/pkg/server/saga"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
@@ -37,6 +44,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 var (
@@ -153,8 +161,6 @@ func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
 func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.RegionDetailRead, error) {
 	result := &unikornv1.Region{}
 
-	fmt.Println("getting region", c.namespace, regionID)
-
 	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: regionID}, result); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
@@ -164,58 +170,6 @@ func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.Regio
 	}
 
 	return c.convertDetail(ctx, result)
-}
-
-func convertGpuVendor(in types.GPUVendor) openapi.GpuVendor {
-	switch in {
-	case types.Nvidia:
-		return openapi.NVIDIA
-	case types.AMD:
-		return openapi.AMD
-	}
-
-	return ""
-}
-
-func convertFlavor(in *types.Flavor) *openapi.Flavor {
-	out := &openapi.Flavor{
-		Metadata: coreapi.StaticResourceMetadata{
-			Id:   in.ID,
-			Name: in.Name,
-		},
-		Spec: openapi.FlavorSpec{
-			Cpus:      in.CPUs,
-			CpuFamily: in.CPUFamily,
-			Memory:    int(in.Memory.Value()) >> 30,
-			Disk:      int(in.Disk.Value()) / 1000000000,
-		},
-	}
-
-	if in.Baremetal {
-		out.Spec.Baremetal = ptr.To(true)
-	}
-
-	if in.GPU != nil {
-		out.Spec.Gpu = &openapi.GpuSpec{
-			Vendor:        convertGpuVendor(in.GPU.Vendor),
-			Model:         in.GPU.Model,
-			Memory:        int(in.GPU.Memory.Value()) >> 30,
-			PhysicalCount: in.GPU.PhysicalCount,
-			LogicalCount:  in.GPU.LogicalCount,
-		}
-	}
-
-	return out
-}
-
-func convertFlavors(in []types.Flavor) openapi.Flavors {
-	out := make(openapi.Flavors, len(in))
-
-	for i := range in {
-		out[i] = *convertFlavor(&in[i])
-	}
-
-	return out
 }
 
 func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID string) (openapi.Flavors, error) {
@@ -246,113 +200,6 @@ func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID strin
 	return convertFlavors(result), nil
 }
 
-func convertImageVirtualization(in types.ImageVirtualization) openapi.ImageVirtualization {
-	switch in {
-	case types.Virtualized:
-		return openapi.Virtualized
-	case types.Baremetal:
-		return openapi.Baremetal
-	case types.Any:
-		return openapi.Any
-	}
-
-	return ""
-}
-
-func convertOsKernel(in types.OsKernel) openapi.OsKernel {
-	//nolint:gocritic
-	switch in {
-	case types.Linux:
-		return openapi.Linux
-	}
-
-	return ""
-}
-
-func convertOsFamily(in types.OsFamily) openapi.OsFamily {
-	switch in {
-	case types.Debian:
-		return openapi.Debian
-	case types.Redhat:
-		return openapi.Redhat
-	}
-
-	return ""
-}
-
-func convertOsDistro(in types.OsDistro) openapi.OsDistro {
-	switch in {
-	case types.Rocky:
-		return openapi.Rocky
-	case types.Ubuntu:
-		return openapi.Ubuntu
-	}
-
-	return ""
-}
-
-func convertPackages(in *types.ImagePackages) *openapi.SoftwareVersions {
-	if in == nil {
-		return nil
-	}
-
-	out := make(openapi.SoftwareVersions)
-
-	for name, version := range *in {
-		out[name] = version
-	}
-
-	return &out
-}
-
-func convertImage(in *types.Image) *openapi.Image {
-	out := &openapi.Image{
-		Metadata: coreapi.StaticResourceMetadata{
-			Id:           in.ID,
-			Name:         in.Name,
-			CreationTime: in.Created,
-		},
-		Spec: openapi.ImageSpec{
-			SizeGiB:        in.SizeGiB,
-			Virtualization: convertImageVirtualization(in.Virtualization),
-			Os: openapi.ImageOS{
-				Kernel:   convertOsKernel(in.OS.Kernel),
-				Family:   convertOsFamily(in.OS.Family),
-				Distro:   convertOsDistro(in.OS.Distro),
-				Codename: in.OS.Codename,
-				Variant:  in.OS.Variant,
-				Version:  in.OS.Version,
-			},
-			SoftwareVersions: convertPackages(in.Packages),
-		},
-	}
-
-	if in.GPU != nil {
-		gpu := &openapi.ImageGpu{
-			Vendor: convertGpuVendor(in.GPU.Vendor),
-			Driver: in.GPU.Driver,
-		}
-
-		if len(in.GPU.Models) > 0 {
-			gpu.Models = &in.GPU.Models
-		}
-
-		out.Spec.Gpu = gpu
-	}
-
-	return out
-}
-
-func convertImages(in []types.Image) openapi.Images {
-	out := make(openapi.Images, len(in))
-
-	for i := range in {
-		out[i] = *convertImage(&in[i])
-	}
-
-	return out
-}
-
 func (c *Client) ListImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {
 	provider, err := c.Provider(ctx, regionID)
 	if err != nil {
@@ -372,23 +219,264 @@ func (c *Client) ListImages(ctx context.Context, organizationID, regionID string
 	return convertImages(result), nil
 }
 
-func convertExternalNetwork(in types.ExternalNetwork) openapi.ExternalNetwork {
-	out := openapi.ExternalNetwork{
-		Id:   in.ID,
-		Name: in.Name,
+func (c *Client) CreateImage(ctx context.Context, organizationID, regionID string, request *openapi.ImageCreateRequest) (*openapi.Image, error) {
+	if request.Spec.SourceURL != nil && request.Spec.SourceServerID != nil {
+		return nil, errors.OAuth2InvalidRequest("Only one source parameter may be provided. Specify either \"sourceURL\" or \"sourceServerID\", not both")
 	}
 
-	return out
+	provider, err := c.Provider(ctx, regionID)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	var gpu *types.ImageGPU
+
+	if request.Spec.Gpu != nil {
+		gpu = generateImageGPU(request.Spec.Gpu)
+	}
+
+	var packages *types.ImagePackages
+
+	if request.Spec.SoftwareVersions != nil {
+		temp := generatePackages(*request.Spec.SoftwareVersions)
+		packages = &temp
+	}
+
+	image := &types.Image{
+		Name:           request.Metadata.Name,
+		OrganizationID: ptr.To(organizationID),
+		Virtualization: generateImageVirtualization(request.Spec.Virtualization),
+		GPU:            gpu,
+		OS:             *generateImageOS(&request.Spec.Os),
+		Packages:       packages,
+	}
+
+	type LocalTransaction interface {
+		saga.Handler
+		Result() (*types.Image, error)
+	}
+
+	var tx LocalTransaction
+
+	if request.Spec.SourceServerID == nil {
+		tx = &createImageForUploadSaga{
+			client:         c,
+			organizationID: organizationID,
+			regionID:       regionID,
+			sourceFormat:   request.Spec.SourceFormat,
+			sourceURL:      request.Spec.SourceURL,
+			image:          image,
+			provider:       provider,
+		}
+	} else {
+		tx = &createImageFromServerSaga{
+			client:         c,
+			organizationID: organizationID,
+			regionID:       regionID,
+			serverID:       *request.Spec.SourceServerID,
+			image:          image,
+			provider:       provider,
+		}
+	}
+
+	if err = saga.Run(ctx, tx); err != nil {
+		return nil, err
+	}
+
+	result, err := tx.Result()
+	if err != nil {
+		return nil, err
+	}
+
+	return convertImage(result), nil
 }
 
-func convertExternalNetworks(in types.ExternalNetworks) openapi.ExternalNetworks {
-	out := make(openapi.ExternalNetworks, len(in))
-
-	for i := range in {
-		out[i] = convertExternalNetwork(in[i])
+func (c *Client) UploadImage(ctx context.Context, organizationID, regionID, imageID string, r *http.Request) (*openapi.Image, error) {
+	provider, err := c.Provider(ctx, regionID)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
 
-	return out
+	image, err := provider.GetImage(ctx, organizationID, imageID)
+	if err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return nil, errors.HTTPNotFound().WithError(err)
+		}
+
+		return nil, errors.OAuth2ServerError("failed to get image").WithError(err)
+	}
+
+	if image.Status != types.ImageStatusPending {
+		return nil, errors.HTTPConflict()
+	}
+
+	if image.OrganizationID == nil || *image.OrganizationID != organizationID {
+		return nil, errors.HTTPNotFound()
+	}
+
+	return c.uploadImageFromFile(ctx, imageID, image.DiskFormat, r, provider)
+}
+
+func (c *Client) uploadImageFromFile(ctx context.Context, imageID string, diskFormat types.ImageDiskFormat, r *http.Request, provider types.Provider) (*openapi.Image, error) {
+	multipartFile, _, err := r.FormFile("file")
+	if err != nil {
+		if goerrors.Is(err, http.ErrMissingFile) {
+			return nil, errors.OAuth2InvalidRequest("No file provided for upload")
+		}
+
+		return nil, errors.OAuth2ServerError("The server encountered an unexpected error while reading the uploaded file").WithError(err)
+	}
+	defer multipartFile.Close()
+
+	return UploadImageData(ctx, imageID, diskFormat, multipartFile, provider)
+}
+
+//nolint:cyclop,gocognit
+func UploadImageData(ctx context.Context, imageID string, diskFormat types.ImageDiskFormat, sourceReader io.Reader, provider types.ImageProvider) (*openapi.Image, error) {
+	gzipReader, err := gzip.NewReader(sourceReader)
+	if err != nil {
+		return nil, errors.OAuth2InvalidRequest("The provided file is not a valid gzip file").WithError(err)
+	}
+	defer gzipReader.Close()
+
+	tempFile, err := os.CreateTemp(os.TempDir(), "disk_")
+	if err != nil {
+		return nil, errors.OAuth2ServerError("The server encountered an unexpected error while processing the provided file").WithError(err)
+	}
+	defer tempFile.Close()
+
+	defer func() {
+		if err := os.Remove(tempFile.Name()); err != nil {
+			log.FromContext(ctx).Error(err, "failed to remove temporary disk image file", "file", tempFile.Name())
+		}
+	}()
+
+	var (
+		tarReader = tar.NewReader(gzipReader)
+		diskCount = 0
+	)
+
+	for {
+		// This gives the context a chance to be cancelled
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
+		header, err := tarReader.Next()
+		if err != nil {
+			if goerrors.Is(err, io.EOF) {
+				break
+			}
+
+			if goerrors.Is(err, io.ErrUnexpectedEOF) || goerrors.Is(err, tar.ErrHeader) {
+				return nil, errors.OAuth2InvalidRequest("The provided file is not a valid tar archive").WithError(err)
+			}
+
+			return nil, errors.OAuth2ServerError("The server encountered an unexpected error while reading the tar archive").WithError(err)
+		}
+
+		if header.Typeflag != tar.TypeReg {
+			continue
+		}
+
+		// REVIEW_ME: We are not cross-checking the disk format against the image that was created.
+		// Doing so would require seeking the first few magic bytes, but tar.Reader does not support
+		// seeking without additional copies. For simplicity, this check is skipped.
+		//nolint:nestif
+		if header.Name == "disk.raw" || header.Name == "disk.qcow2" {
+			if diskCount++; diskCount > 1 {
+				return nil, errors.OAuth2InvalidRequest("The provided file contains multiple disk images, only a single disk image is supported")
+			}
+
+			var validatingReader io.Reader
+
+			switch diskFormat {
+			case types.ImageDiskFormatRaw:
+				validatingReader, err = NewMasterBootRecordReader(tarReader)
+			case types.ImageDiskFormatQCOW2:
+				validatingReader, err = NewQCOW2Reader(tarReader)
+			default:
+				return nil, errors.OAuth2ServerError("The server encountered an unexpected error due to an unhandled disk format").WithValues("disk_format", diskFormat)
+			}
+
+			if err != nil {
+				if goerrors.Is(err, ErrInvalidMasterBootRecord) || goerrors.Is(err, ErrInvalidQCOW2) {
+					message := fmt.Sprintf("The provided disk image is not a valid %s image", diskFormat)
+					return nil, errors.OAuth2InvalidRequest(message)
+				}
+
+				return nil, errors.OAuth2ServerError("The server encountered an unexpected error while validating the disk image").WithError(err)
+			}
+
+			if _, err = io.Copy(tempFile, validatingReader); err != nil {
+				// REVIEW_ME: For simplicity, we will return a status code 500 for all errors here, even if the error is due to context/request cancellation.
+				return nil, errors.OAuth2ServerError("The server encountered an unexpected error while extracting the disk image").WithError(err)
+			}
+		}
+	}
+
+	if diskCount == 0 {
+		return nil, errors.OAuth2InvalidRequest("The provided file does not contain a valid disk image")
+	}
+
+	if _, err = tempFile.Seek(0, io.SeekStart); err != nil {
+		return nil, errors.OAuth2ServerError("The server encountered an unexpected error while processing the provided file").WithError(err)
+	}
+
+	if err = provider.UploadImage(ctx, imageID, tempFile); err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			err = fmt.Errorf("%w: image data has already been uploaded", ErrResource)
+			return nil, errors.HTTPConflict().WithError(err)
+		}
+
+		return nil, errors.OAuth2ServerError("The server encountered an unexpected error while uploading the image data").WithError(err)
+	}
+
+	result, err := provider.PublishImage(ctx, imageID)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("The server encountered an unexpected error while finalizing the image upload").WithError(err)
+	}
+
+	return convertImage(result), nil
+}
+
+func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imageID string) error {
+	provider, err := c.Provider(ctx, regionID)
+	if err != nil {
+		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	image, err := provider.GetImage(ctx, organizationID, imageID)
+	if err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return errors.HTTPNotFound().WithError(err)
+		}
+
+		return errors.OAuth2ServerError("failed to get image").WithError(err)
+	}
+
+	if image.OrganizationID == nil || *image.OrganizationID != organizationID {
+		return errors.HTTPNotFound()
+	}
+
+	if err = provider.DeleteImage(ctx, imageID); err != nil {
+		// REVIEW_ME: Most deletion APIs ignore not found errors, but our other delete APIs return 404. To maintain consistency, we do the same here.
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return errors.HTTPNotFound().WithError(err)
+		}
+
+		// FIXME: We should provide a better error description instead of using the default one defined in HTTPConflict function.
+		// This means that the image is still being used by another resource.
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return errors.HTTPConflict().WithError(err)
+		}
+
+		return errors.OAuth2ServerError("failed to delete image").WithError(err)
+	}
+
+	return nil
 }
 
 func (c *Client) ListExternalNetworks(ctx context.Context, regionID string) (openapi.ExternalNetworks, error) {

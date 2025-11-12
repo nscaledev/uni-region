@@ -18,9 +18,24 @@ package types
 
 import (
 	"context"
+	"io"
 
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 )
+
+// ImageProvider
+type ImageProvider interface {
+	// CreateImageForUpload creates a new image resource for upload.
+	CreateImageForUpload(ctx context.Context, image *Image) (*Image, error)
+	// CreateImageFromServer creates a new image from an existing server.
+	CreateImageFromServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *Image) (string, error)
+	// UploadImage uploads data to an image.
+	UploadImage(ctx context.Context, imageID string, reader io.Reader) error
+	// PublishImage makes an image publicly available.
+	PublishImage(ctx context.Context, imageID string) (*Image, error)
+	// DeleteImage deletes an image.
+	DeleteImage(ctx context.Context, imageID string) error
+}
 
 // Providers are expected to provide a provider agnostic manner.
 // They are also expected to provide any caching or memoization required
@@ -32,10 +47,16 @@ type Provider interface {
 	Region(ctx context.Context) (*unikornv1.Region, error)
 	// Flavors list all available flavors.
 	Flavors(ctx context.Context) (FlavorList, error)
+	// ClearImageCache clears the image cache.
+	ClearImageCache(ctx context.Context) error
 	// ListImages lists all available images.
 	ListImages(ctx context.Context, organizationID string) (ImageList, error)
 	// GetImage retrieves a specific image by its ID.
 	GetImage(ctx context.Context, organizationID, imageID string) (*Image, error)
+
+	// ImageProvider is part of the full provider interface.
+	ImageProvider
+
 	// CreateIdentity creates a new identity for cloud infrastructure.
 	CreateIdentity(ctx context.Context, identity *unikornv1.Identity) error
 	// DeleteIdentity cleans up an identity for cloud infrastructure.

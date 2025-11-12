@@ -4,6 +4,9 @@
 package openapi
 
 import (
+	"time"
+
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	externalRef0 "github.com/unikorn-cloud/core/pkg/openapi"
 )
 
@@ -65,6 +68,12 @@ const (
 const (
 	Kubernetes RegionType = "kubernetes"
 	Openstack  RegionType = "openstack"
+)
+
+// Defines values for ImageDiskFormat.
+const (
+	Qcow2 ImageDiskFormat = "qcow2"
+	Raw   ImageDiskFormat = "raw"
 )
 
 // AllowedSourceAddresses A list of network prefixes that are allowed to egress from the server.
@@ -224,10 +233,8 @@ type IdentityWriteSpec struct {
 
 // Image An image.
 type Image struct {
-	// Metadata This metadata is for resources that just exist, and don't require
-	// any provisioning and health status, but benefit from a standardized
-	// metadata format.
-	Metadata externalRef0.StaticResourceMetadata `json:"metadata"`
+	// Metadata Metadata required by image reads.
+	Metadata ImageMetadata `json:"metadata"`
 
 	// Spec An image.
 	Spec ImageSpec `json:"spec"`
@@ -243,6 +250,22 @@ type ImageGpu struct {
 
 	// Vendor The GPU vendor.
 	Vendor GpuVendor `json:"vendor"`
+}
+
+// ImageMetadata Metadata required by image reads.
+type ImageMetadata struct {
+	// CreationTime The time the resource was created.
+	CreationTime time.Time `json:"creationTime"`
+
+	// Id The unique resource ID.
+	Id string `json:"id"`
+
+	// ModifiedTime The time a resource was updated.
+	ModifiedTime *time.Time `json:"modifiedTime,omitempty"`
+
+	// Name A valid Kubernetes label value, typically used for resource names that can be
+	// indexed in the database.
+	Name externalRef0.KubernetesLabelValue `json:"name"`
 }
 
 // ImageOS An operating system description.
@@ -828,6 +851,9 @@ type SoftwareVersions map[string]externalRef0.Semver
 // IdentityIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type IdentityIDParameter = KubernetesNameParameter
 
+// ImageIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
+type ImageIDParameter = KubernetesNameParameter
+
 // LengthParameter defines model for lengthParameter.
 type LengthParameter = int
 
@@ -879,6 +905,9 @@ type IdentitiesResponse = IdentitiesRead
 // IdentityResponse A provider specific identity.
 type IdentityResponse = IdentityRead
 
+// ImageResponse An image.
+type ImageResponse = Image
+
 // ImagesResponse A list of images that are compatible with this platform.
 type ImagesResponse = Images
 
@@ -927,6 +956,15 @@ type ServersV2Response = ServersV2Read
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
 
+// ImageCreateRequest An image request.
+type ImageCreateRequest struct {
+	// Metadata Metadata required for image writes.
+	Metadata ImageCreateMetadata `json:"metadata"`
+
+	// Spec An image.
+	Spec ImageCreateSpec `json:"spec"`
+}
+
 // NetworkRequest A network request.
 type NetworkRequest = NetworkWrite
 
@@ -955,6 +993,55 @@ type ServerV2UpdateRequest = ServerV2Update
 type GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams struct {
 	// Length The requested output length.
 	Length *LengthParameter `form:"length,omitempty" json:"length,omitempty"`
+}
+
+// PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesJSONBody defines parameters for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages.
+type PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesJSONBody struct {
+	// Metadata Metadata required for image writes.
+	Metadata ImageCreateMetadata `json:"metadata"`
+
+	// Spec An image.
+	Spec ImageCreateSpec `json:"spec"`
+}
+
+// ImageCreateMetadata defines parameters for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages.
+type ImageCreateMetadata struct {
+	// Name A valid Kubernetes label value, typically used for resource names that can be
+	// indexed in the database.
+	Name externalRef0.KubernetesLabelValue `json:"name"`
+}
+
+// ImageDiskFormat defines parameters for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages.
+type ImageDiskFormat string
+
+// ImageCreateSpec defines parameters for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages.
+type ImageCreateSpec struct {
+	// Gpu The GPU driver if installed.
+	Gpu *ImageGpu `json:"gpu,omitempty"`
+
+	// Os An operating system description.
+	Os ImageOS `json:"os"`
+
+	// SoftwareVersions Image preinstalled version version metadata.
+	SoftwareVersions *SoftwareVersions `json:"softwareVersions,omitempty"`
+
+	// SourceFormat The disk format of the image. If `sourceServerID` is specified, this field is ignored. Otherwise, if not provided, the value defaults to `raw`.
+	SourceFormat *ImageDiskFormat `json:"sourceFormat,omitempty"`
+
+	// SourceServerID The server ID to create the image from. If `sourceURL` and this field are both not specified, the image is expected to be uploaded separately.
+	SourceServerID *string `json:"sourceServerID,omitempty"`
+
+	// SourceURL The URL to upload the image from. If `sourceServerID` and this field are both not specified, the image is expected to be uploaded separately.
+	SourceURL *string `json:"sourceURL,omitempty"`
+
+	// Virtualization What type of machine the image is for.
+	Virtualization ImageVirtualization `json:"virtualization"`
+}
+
+// PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDMultipartBody defines parameters for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageID.
+type PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDMultipartBody struct {
+	// File The image file to upload.
+	File openapi_types.File `json:"file"`
 }
 
 // GetApiV1OrganizationsOrganizationIDSecuritygroupsParams defines parameters for GetApiV1OrganizationsOrganizationIDSecuritygroups.
@@ -1048,6 +1135,12 @@ type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSe
 
 // PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody defines body for PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID for application/json ContentType.
 type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody = ServerWrite
+
+// PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages for application/json ContentType.
+type PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesJSONRequestBody PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesJSONBody
+
+// PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDMultipartRequestBody defines body for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageID for multipart/form-data ContentType.
+type PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDMultipartRequestBody PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDMultipartBody
 
 // PostApiV2SecuritygroupsJSONRequestBody defines body for PostApiV2Securitygroups for application/json ContentType.
 type PostApiV2SecuritygroupsJSONRequestBody = SecurityGroupV2Create

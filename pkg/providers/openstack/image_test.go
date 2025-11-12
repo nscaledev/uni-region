@@ -50,6 +50,7 @@ const (
 	virtualizationProperty    = "unikorn:virtualization"
 	digestProperty            = "unikorn:digest"
 	organizationIDProperty    = "unikorn:organization:id"
+	diskFormatProperty        = "unikorn:disk_format"
 
 	osKernelLinux = "linux"
 
@@ -77,6 +78,7 @@ func basicImageFixture() *images.Image {
 			osCodenameProperty:     "Oracular Oriole",
 			osVersionProperty:      "24.10",
 			virtualizationProperty: virtualizationAny,
+			diskFormatProperty:     "raw",
 		},
 	}
 }
