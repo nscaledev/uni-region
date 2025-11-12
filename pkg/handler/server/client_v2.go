@@ -20,9 +20,11 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"net"
 	"reflect"
 	"slices"
 
+	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
@@ -165,6 +167,71 @@ func convertCreateToUpdateRequest(in *openapi.ServerV2Create) (*openapi.ServerV2
 	return out, nil
 }
 
+func generatePublicIPAllocation(in *openapi.ServerV2Networking) *regionv1.ServerPublicIPAllocationSpec {
+	if in == nil || in.PublicIP == nil || !*in.PublicIP {
+		return nil
+	}
+
+	return &regionv1.ServerPublicIPAllocationSpec{
+		Enabled: true,
+	}
+}
+
+func generateSecurityGroups(in *openapi.ServerV2Networking) []regionv1.ServerSecurityGroupSpec {
+	if in == nil || in.SecurityGroups == nil || len(*in.SecurityGroups) == 0 {
+		return nil
+	}
+
+	out := make([]regionv1.ServerSecurityGroupSpec, len(*in.SecurityGroups))
+
+	for i, id := range *in.SecurityGroups {
+		out[i] = regionv1.ServerSecurityGroupSpec{
+			ID: id,
+		}
+	}
+
+	return out
+}
+
+func generateAllowedAddressPairs(in *openapi.ServerV2Networking) []regionv1.ServerNetworkAddressPair {
+	if in == nil || in.AllowedSourceAddresses == nil || len(*in.AllowedSourceAddresses) == 0 {
+		return nil
+	}
+
+	prefixes := *in.AllowedSourceAddresses
+
+	out := make([]regionv1.ServerNetworkAddressPair, len(prefixes))
+
+	for i := range prefixes {
+		_, prefix, _ := net.ParseCIDR(prefixes[i])
+
+		out[i] = regionv1.ServerNetworkAddressPair{
+			CIDR: corev1.IPv4Prefix{
+				IPNet: *prefix,
+			},
+		}
+	}
+
+	return out
+}
+
+func generateNetworks(networkID string, in *openapi.ServerV2Networking) []regionv1.ServerNetworkSpec {
+	out := regionv1.ServerNetworkSpec{
+		ID:                  networkID,
+		AllowedAddressPairs: generateAllowedAddressPairs(in),
+	}
+
+	return []regionv1.ServerNetworkSpec{out}
+}
+
+func generateUserData(in *[]byte) []byte {
+	if in == nil {
+		return nil
+	}
+
+	return *in
+}
+
 func (c *Client) generateV2(ctx context.Context, organizationID, projectID string, in *openapi.ServerV2Update, network *regionv1.Network) (*regionv1.Server, error) {
 	out := &regionv1.Server{
 		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, c.namespace).
@@ -176,7 +243,15 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 			WithLabel(constants.ResourceAPIVersionLabel, constants.MarshalAPIVersion(2)).
 			Get(),
 		Spec: regionv1.ServerSpec{
-			Tags: conversion.GenerateTagList(in.Metadata.Tags),
+			Tags:     conversion.GenerateTagList(in.Metadata.Tags),
+			FlavorID: in.Spec.FlavorId,
+			Image: &regionv1.ServerImage{
+				ID: in.Spec.ImageId,
+			},
+			PublicIPAllocation: generatePublicIPAllocation(in.Spec.Networking),
+			SecurityGroups:     generateSecurityGroups(in.Spec.Networking),
+			Networks:           generateNetworks(network.Name, in.Spec.Networking),
+			UserData:           generateUserData(in.Spec.UserData),
 		},
 	}
 
