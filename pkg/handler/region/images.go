@@ -19,6 +19,9 @@ package region
 import (
 	"context"
 	goerrors "errors"
+	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"time"
 
@@ -36,7 +39,10 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+var ErrFailedImageFetch = goerrors.New("image fetch failed")
 
 type createImageForUploadSaga struct {
 	client         *Client
@@ -107,17 +113,53 @@ func (s *createImageForUploadSaga) deleteImage(ctx context.Context) error {
 	return nil
 }
 
+func (s *createImageForUploadSaga) uploadFromURL(ctx context.Context, source string) error {
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
+	if err != nil {
+		return err
+	}
+
+	res, err := http.DefaultClient.Do(r)
+	if err != nil {
+		return err
+	}
+
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		// Reading and closing the response body lets us reuse connections; but, defensively, don't just read
+		// until the other side decides to stop sending!
+		body := io.LimitReader(res.Body, 10*1024)
+		_, _ = io.Copy(io.Discard, body)
+
+		return fmt.Errorf("%w: non-OK status code (%s) from fetching source", ErrFailedImageFetch, res.Status)
+	}
+
+	if _, err := UploadImageData(ctx, s.image.ID, s.result.DiskFormat, res.Body, s.provider); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (s *createImageForUploadSaga) createImageUploadTask(ctx context.Context) error {
 	if s.sourceURL == nil {
 		return nil
 	}
+
+	source := *s.sourceURL
 
 	if s.result == nil {
 		return errors.OAuth2ServerError("unexpected nil image")
 	}
 
 	go func(ctx context.Context) {
-		// TODO do whatever the custom controller would have done
+		if err := s.uploadFromURL(ctx, source); err != nil {
+			// NB the image will not be published if it's not successfully uploaded, so
+			// there's no further action to take here; in particular, no need to update
+			// the record at the provider.
+			log.FromContext(ctx).Error(err, "fetching from given source", "url", source)
+		}
 	}(context.WithoutCancel(ctx))
 
 	return nil
@@ -274,16 +316,62 @@ func (s *createImageFromServerSaga) publishImage(ctx context.Context) error {
 	}
 }
 
+// createImageMonitorTask runs a thread to watch the Image record stream at the provider, and
+// invalidate the cache if/when it has succeeded.
 func (s *createImageFromServerSaga) createImageMonitorTask(ctx context.Context) error {
 	if s.imageID == "" {
 		return errors.OAuth2ServerError("unexpected empty image ID")
 	}
 
 	go func(ctx context.Context) {
-		// TODO whatever the custom controller was going to do.
+		ok, err := s.waitForSnapshot(ctx)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "error waiting for snapshot image to be completed")
+		}
+
+		if ok {
+			if err := s.provider.ClearImageCache(ctx); err != nil {
+				log.FromContext(ctx).Error(err, "clearing image cache after successful snapshot")
+			}
+		}
 	}(context.WithoutCancel(ctx))
 
 	return nil
+}
+
+// waitForSnapshot blocks until it can give a definitive status for an image that has been created as a snapshot.
+// The result is true if the image has becomes ready, and false otherwise; and error is returned if there was a problem
+// polling the provider.
+func (s *createImageFromServerSaga) waitForSnapshot(ctx context.Context) (bool, error) {
+	backoffStrategy := backoff.NewExponentialBackOff(backoff.WithMaxElapsedTime(time.Hour))
+
+	for {
+		resource, err := s.provider.GetImage(ctx, s.organizationID, s.imageID)
+		if err != nil {
+			if goerrors.Is(err, types.ErrResourceNotFound) {
+				if backoffStrategy.GetElapsedTime() > 30*time.Minute {
+					return false, fmt.Errorf("%w: image %s not found after waiting for 30 minutes", ErrResource, s.imageID)
+				}
+
+				time.Sleep(backoffStrategy.NextBackOff())
+
+				continue
+			}
+
+			return false, err
+		}
+
+		switch resource.Status {
+		case types.ImageStatusCreating, types.ImageStatusPending:
+			time.Sleep(backoffStrategy.NextBackOff())
+		case types.ImageStatusReady:
+			return true, nil
+		case types.ImageStatusFailed:
+			return false, nil
+		default:
+			return false, fmt.Errorf("%w: unexpected image status %s for image %s", ErrResource, resource.Status, s.imageID)
+		}
+	}
 }
 
 func (s *createImageFromServerSaga) Actions() []saga.Action {
