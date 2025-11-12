@@ -33,12 +33,14 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/unikorn-cloud/region/pkg/handler/region"
+	"github.com/unikorn-cloud/region/pkg/handler/region/mock"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
-	"github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
 	"k8s.io/utils/ptr"
 )
+
+//go:generate mockgen -source=../../providers/types/interfaces.go -exclude_interfaces Provider -destination=mock/interfaces.go -package=mock
 
 func stringReader(content string) func(t *testing.T) io.Reader {
 	return func(t *testing.T) io.Reader {
@@ -202,7 +204,7 @@ func TestUploadImageData(t *testing.T) {
 		Name              string
 		ContextMutateFunc func(ctx context.Context) context.Context
 		ReaderSetupFunc   func(t *testing.T) io.Reader
-		ProviderSetupFunc func(provider *mock.MockProvider)
+		ProviderSetupFunc func(provider *mock.MockImageProvider)
 		DiskFormat        types.ImageDiskFormat
 		ExpectedError     bool
 		ExpectedImage     *openapi.Image
@@ -265,7 +267,7 @@ func TestUploadImageData(t *testing.T) {
 		{
 			Name:            "fails to upload image due to upload conflict",
 			ReaderSetupFunc: fakeRawDiskReader,
-			ProviderSetupFunc: func(provider *mock.MockProvider) {
+			ProviderSetupFunc: func(provider *mock.MockImageProvider) {
 				provider.EXPECT().
 					UploadImage(gomock.Any(), imageID, expectedReaderBytes(rawFileContent)).
 					Return(gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusConflict})
@@ -276,7 +278,7 @@ func TestUploadImageData(t *testing.T) {
 		{
 			Name:            "fails to upload image due to unexpected error",
 			ReaderSetupFunc: fakeRawDiskReader,
-			ProviderSetupFunc: func(provider *mock.MockProvider) {
+			ProviderSetupFunc: func(provider *mock.MockImageProvider) {
 				provider.EXPECT().
 					UploadImage(gomock.Any(), imageID, expectedReaderBytes(rawFileContent)).
 					Return(gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusInternalServerError})
@@ -287,7 +289,7 @@ func TestUploadImageData(t *testing.T) {
 		{
 			Name:            "fails to finalize image",
 			ReaderSetupFunc: fakeRawDiskReader,
-			ProviderSetupFunc: func(provider *mock.MockProvider) {
+			ProviderSetupFunc: func(provider *mock.MockImageProvider) {
 				provider.EXPECT().
 					UploadImage(gomock.Any(), imageID, expectedReaderBytes(rawFileContent)).
 					Return(nil)
@@ -302,7 +304,7 @@ func TestUploadImageData(t *testing.T) {
 		{
 			Name:            "succeeds in uploading raw image data",
 			ReaderSetupFunc: fakeRawDiskReader,
-			ProviderSetupFunc: func(provider *mock.MockProvider) {
+			ProviderSetupFunc: func(provider *mock.MockImageProvider) {
 				provider.EXPECT().
 					UploadImage(gomock.Any(), imageID, expectedReaderBytes(rawFileContent)).
 					Return(nil)
@@ -317,7 +319,7 @@ func TestUploadImageData(t *testing.T) {
 		{
 			Name:            "succeeds in uploading qcow2 image data",
 			ReaderSetupFunc: fakeQcow2Reader,
-			ProviderSetupFunc: func(provider *mock.MockProvider) {
+			ProviderSetupFunc: func(provider *mock.MockImageProvider) {
 				provider.EXPECT().
 					UploadImage(gomock.Any(), imageID, expectedReaderBytes(qcow2FileContent)).
 					Return(nil)
@@ -339,7 +341,7 @@ func TestUploadImageData(t *testing.T) {
 			mockController := gomock.NewController(t)
 			defer mockController.Finish()
 
-			mockProvider := mock.NewMockProvider(mockController)
+			mockProvider := mock.NewMockImageProvider(mockController)
 			if fn := testCase.ProviderSetupFunc; fn != nil {
 				fn(mockProvider)
 			}
