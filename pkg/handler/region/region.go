@@ -357,6 +357,13 @@ func UploadImageData(ctx context.Context, imageID string, diskFormat types.Image
 	)
 
 	for {
+		// This gives the context a chance to be cancelled
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		header, err := tarReader.Next()
 		if err != nil {
 			if goerrors.Is(err, io.EOF) {
