@@ -332,7 +332,7 @@ func (c *Client) uploadImageFromFile(ctx context.Context, imageID string, diskFo
 }
 
 //nolint:cyclop,gocognit
-func UploadImageData(ctx context.Context, imageID string, diskFormat types.ImageDiskFormat, sourceReader io.Reader, provider types.Provider) (*openapi.Image, error) {
+func UploadImageData(ctx context.Context, imageID string, diskFormat types.ImageDiskFormat, sourceReader io.Reader, provider types.ImageProvider) (*openapi.Image, error) {
 	gzipReader, err := gzip.NewReader(sourceReader)
 	if err != nil {
 		return nil, errors.OAuth2InvalidRequest("The provided file is not a valid gzip file").WithError(err)
