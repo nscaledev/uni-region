@@ -1045,6 +1045,7 @@ paths:
       - oauth2Authentication: []
       parameters:
       - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: '#/components/parameters/organizationIDQueryParameter'
       - $ref: '#/components/parameters/projectIDQueryParameter'
       - $ref: '#/components/parameters/regionIDQueryParameter'
       responses:
@@ -1063,6 +1064,7 @@ paths:
         security:
         - oauth2Authentication: []
         parameters:
+        - $ref: '#/components/parameters/organizationIDQueryParameter'
         - $ref: '#/components/parameters/projectIDQueryParameter'
         - $ref: '#/components/parameters/regionIDQueryParameter'
         requestBody:
@@ -1082,8 +1084,7 @@ paths:
     description: |-
       Manages project scoped storage. 
     parameters:
-    - $ref: '#/components/parameters/projectIDQueryParameter'
-    - $ref: '#/components/parameters/regionIDQueryParameter'
+    - $ref: '#/components/parameters/organizationIDQueryParameter'
     - $ref: '#/components/parameters/filestorageIDParameter'
     get:
       description: Get all storage information this ID.
@@ -2217,22 +2218,17 @@ components:
       description: Describes the network attachment for storage
       type: object
       required:
-      - id
+      - networkIds
       properties:
-        id:
-          description: identifier of the attachment
-          type: string
-    storageAttachmentV2Status:
-        description: Describes the network attachment for storage
-        type: object
-        required:
-        - id
-        - provisioningStatus
-        properties:
-          id:
-            $ref: '#/components/schemas/storageAttachmentV2Spec'
-          provisioningStatus:
-            $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceProvisioningStatus'
+        networkIds:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string 
+              provisioningStatus:
+                $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceProvisioningStatus'
     storageV2Spec:
       description: A storage's specification.
       type: object
@@ -2264,7 +2260,7 @@ components:
         usage:
           $ref: '#/components/schemas/storageUsageV2Spec'
         attachments:
-         $ref: '#/components/schemas/storageAttachmentV2Status'
+         $ref: '#/components/schemas/storageAttachmentV2Spec'
     storageUsageV2Spec:
         description: Information about the usage of the storage
         type: object
@@ -2281,6 +2277,24 @@ components:
               description: amount of storage space free to utilize
               type: string
     storageV2Create:
+      description: A storage create request.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          allOf:
+          - type: object
+            required:
+            - storageClassId
+            properties:
+              storageClassId:
+                type: string
+          - $ref: '#/components/schemas/storageV2Spec'
+    storageV2Update:
       description: A storage create request.
       type: object
       required:
@@ -2509,6 +2523,7 @@ components:
               - name: tag-name
                 value: tag-value
             spec:
+              storageClassId: aUniqueIdentifier
               size: 200Ti
               storageType:
                 nfs:
@@ -2518,7 +2533,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/storageV2Create'
+            $ref: '#/components/schemas/storageV2Update'
           example:
             metadata:
               name: storage-name
@@ -2532,8 +2547,8 @@ components:
                 nfs:
                   rootsquash: true
               attachements:
-                networks:
-                  id: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
+                networkIds:
+                  - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
   responses:
     regionsResponse:
       description: A list of regions.
@@ -3059,9 +3074,8 @@ components:
                 nfs:
                   rootsquash: true
               attachements:
-                networks:
-                  id: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
-                  provisioningStatus: provisioned
+                networkIds:
+                  - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
             status:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
               storageClassId: 99659b44-1700-400f-9c6c-cfdb4bb0445c
@@ -3070,9 +3084,9 @@ components:
                   used: 88Ti
                   free: 12Ti
               attachements:
-                networks:
-                  id: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
-                  provisioningStatus: provisioned
+                networkIds:
+                  - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
+                provisioningStatus: provisioned
   securitySchemes:
     oauth2Authentication:
       description: Operation requires OAuth 2.0 bearer token authentication.

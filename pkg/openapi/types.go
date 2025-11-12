@@ -833,17 +833,12 @@ type SoftwareVersions map[string]externalRef0.Semver
 
 // StorageAttachmentV2Spec Describes the network attachment for storage
 type StorageAttachmentV2Spec struct {
-	// Id identifier of the attachment
-	Id string `json:"id"`
-}
+	NetworkIds []struct {
+		Id *string `json:"id,omitempty"`
 
-// StorageAttachmentV2Status Describes the network attachment for storage
-type StorageAttachmentV2Status struct {
-	// Id Describes the network attachment for storage
-	Id StorageAttachmentV2Spec `json:"id"`
-
-	// ProvisioningStatus The provisioning state of a resource.
-	ProvisioningStatus externalRef0.ResourceProvisioningStatus `json:"provisioningStatus"`
+		// ProvisioningStatus The provisioning state of a resource.
+		ProvisioningStatus *externalRef0.ResourceProvisioningStatus `json:"provisioningStatus,omitempty"`
+	} `json:"networkIds"`
 }
 
 // StorageTypeV2Spec A storage's type
@@ -868,9 +863,17 @@ type StorageUsageV2Spec struct {
 type StorageV2Create struct {
 	// Metadata Metadata required for all API resource reads and writes.
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+	Spec     struct {
+		// Attachments Describes the network attachment for storage
+		Attachments *StorageAttachmentV2Spec `json:"attachments,omitempty"`
 
-	// Spec A storage's specification.
-	Spec StorageV2Spec `json:"spec"`
+		// Size size of the storage
+		Size           string `json:"size"`
+		StorageClassId string `json:"storageClassId"`
+
+		// StorageType A storage's type
+		StorageType StorageTypeV2Spec `json:"storageType"`
+	} `json:"spec"`
 }
 
 // StorageV2Read A storage read only group.
@@ -900,7 +903,7 @@ type StorageV2Spec struct {
 // StorageV2Status Read only status about storage
 type StorageV2Status struct {
 	// Attachments Describes the network attachment for storage
-	Attachments *StorageAttachmentV2Status `json:"attachments,omitempty"`
+	Attachments *StorageAttachmentV2Spec `json:"attachments,omitempty"`
 
 	// RegionId The region an identity is provisioned in.
 	RegionId string `json:"regionId"`
@@ -910,6 +913,15 @@ type StorageV2Status struct {
 
 	// Usage Information about the usage of the storage
 	Usage StorageUsageV2Spec `json:"usage"`
+}
+
+// StorageV2Update A storage create request.
+type StorageV2Update struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A storage's specification.
+	Spec StorageV2Spec `json:"spec"`
 }
 
 // FilestorageIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
@@ -1048,7 +1060,7 @@ type ServerV2UpdateRequest = ServerV2Update
 type StorageV2CreateRequest = StorageV2Create
 
 // StorageV2UpdateRequest A storage create request.
-type StorageV2UpdateRequest = StorageV2Create
+type StorageV2UpdateRequest = StorageV2Update
 
 // GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams defines parameters for GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutput.
 type GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams struct {
@@ -1095,6 +1107,9 @@ type GetApiV2FilestorageParams struct {
 	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 
+	// OrganizationID Allows resources to be filtered by organization.
+	OrganizationID *OrganizationIDQueryParameter `form:"organizationID,omitempty" json:"organizationID,omitempty"`
+
 	// ProjectID Allows resources to be filtered by project.
 	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
 
@@ -1104,6 +1119,9 @@ type GetApiV2FilestorageParams struct {
 
 // PostApiV2FilestorageParams defines parameters for PostApiV2Filestorage.
 type PostApiV2FilestorageParams struct {
+	// OrganizationID Allows resources to be filtered by organization.
+	OrganizationID *OrganizationIDQueryParameter `form:"organizationID,omitempty" json:"organizationID,omitempty"`
+
 	// ProjectID Allows resources to be filtered by project.
 	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
 
@@ -1154,29 +1172,20 @@ type GetApiV2ServersServerIDConsoleoutputParams struct {
 
 // DeleteApiV2StorageFilestorageFilestorageIDParams defines parameters for DeleteApiV2StorageFilestorageFilestorageID.
 type DeleteApiV2StorageFilestorageFilestorageIDParams struct {
-	// ProjectID Allows resources to be filtered by project.
-	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
-
-	// RegionID Allows resources to be filtered by region.
-	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+	// OrganizationID Allows resources to be filtered by organization.
+	OrganizationID *OrganizationIDQueryParameter `form:"organizationID,omitempty" json:"organizationID,omitempty"`
 }
 
 // GetApiV2StorageFilestorageFilestorageIDParams defines parameters for GetApiV2StorageFilestorageFilestorageID.
 type GetApiV2StorageFilestorageFilestorageIDParams struct {
-	// ProjectID Allows resources to be filtered by project.
-	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
-
-	// RegionID Allows resources to be filtered by region.
-	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+	// OrganizationID Allows resources to be filtered by organization.
+	OrganizationID *OrganizationIDQueryParameter `form:"organizationID,omitempty" json:"organizationID,omitempty"`
 }
 
 // PutApiV2StorageFilestorageFilestorageIDParams defines parameters for PutApiV2StorageFilestorageFilestorageID.
 type PutApiV2StorageFilestorageFilestorageIDParams struct {
-	// ProjectID Allows resources to be filtered by project.
-	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
-
-	// RegionID Allows resources to be filtered by region.
-	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+	// OrganizationID Allows resources to be filtered by organization.
+	OrganizationID *OrganizationIDQueryParameter `form:"organizationID,omitempty" json:"organizationID,omitempty"`
 }
 
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities for application/json ContentType.
@@ -1216,4 +1225,4 @@ type PostApiV2ServersJSONRequestBody = ServerV2Create
 type PutApiV2ServersServerIDJSONRequestBody = ServerV2Update
 
 // PutApiV2StorageFilestorageFilestorageIDJSONRequestBody defines body for PutApiV2StorageFilestorageFilestorageID for application/json ContentType.
-type PutApiV2StorageFilestorageFilestorageIDJSONRequestBody = StorageV2Create
+type PutApiV2StorageFilestorageFilestorageIDJSONRequestBody = StorageV2Update

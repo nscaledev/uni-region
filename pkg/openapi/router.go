@@ -2044,6 +2044,14 @@ func (siw *ServerInterfaceWrapper) GetApiV2Filestorage(w http.ResponseWriter, r 
 		return
 	}
 
+	// ------------- Optional query parameter "organizationID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "organizationID", r.URL.Query(), &params.OrganizationID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
+		return
+	}
+
 	// ------------- Optional query parameter "projectID" -------------
 
 	err = runtime.BindQueryParameter("form", true, false, "projectID", r.URL.Query(), &params.ProjectID)
@@ -2084,6 +2092,14 @@ func (siw *ServerInterfaceWrapper) PostApiV2Filestorage(w http.ResponseWriter, r
 
 	// Parameter object where we will unmarshal all parameters from the context
 	var params PostApiV2FilestorageParams
+
+	// ------------- Optional query parameter "organizationID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "organizationID", r.URL.Query(), &params.OrganizationID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
+		return
+	}
 
 	// ------------- Optional query parameter "projectID" -------------
 
@@ -2711,19 +2727,11 @@ func (siw *ServerInterfaceWrapper) DeleteApiV2StorageFilestorageFilestorageID(w 
 	// Parameter object where we will unmarshal all parameters from the context
 	var params DeleteApiV2StorageFilestorageFilestorageIDParams
 
-	// ------------- Optional query parameter "projectID" -------------
+	// ------------- Optional query parameter "organizationID" -------------
 
-	err = runtime.BindQueryParameter("form", true, false, "projectID", r.URL.Query(), &params.ProjectID)
+	err = runtime.BindQueryParameter("form", true, false, "organizationID", r.URL.Query(), &params.OrganizationID)
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "regionID" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "regionID", r.URL.Query(), &params.RegionID)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "regionID", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
 		return
 	}
 
@@ -2761,19 +2769,11 @@ func (siw *ServerInterfaceWrapper) GetApiV2StorageFilestorageFilestorageID(w htt
 	// Parameter object where we will unmarshal all parameters from the context
 	var params GetApiV2StorageFilestorageFilestorageIDParams
 
-	// ------------- Optional query parameter "projectID" -------------
+	// ------------- Optional query parameter "organizationID" -------------
 
-	err = runtime.BindQueryParameter("form", true, false, "projectID", r.URL.Query(), &params.ProjectID)
+	err = runtime.BindQueryParameter("form", true, false, "organizationID", r.URL.Query(), &params.OrganizationID)
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "regionID" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "regionID", r.URL.Query(), &params.RegionID)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "regionID", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
 		return
 	}
 
@@ -2811,19 +2811,11 @@ func (siw *ServerInterfaceWrapper) PutApiV2StorageFilestorageFilestorageID(w htt
 	// Parameter object where we will unmarshal all parameters from the context
 	var params PutApiV2StorageFilestorageFilestorageIDParams
 
-	// ------------- Optional query parameter "projectID" -------------
+	// ------------- Optional query parameter "organizationID" -------------
 
-	err = runtime.BindQueryParameter("form", true, false, "projectID", r.URL.Query(), &params.ProjectID)
+	err = runtime.BindQueryParameter("form", true, false, "organizationID", r.URL.Query(), &params.OrganizationID)
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "regionID" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "regionID", r.URL.Query(), &params.RegionID)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "regionID", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
 		return
 	}
 
