@@ -825,6 +825,12 @@ type ServersV2Read = []ServerV2Read
 // SoftwareVersions Image preinstalled version version metadata.
 type SoftwareVersions map[string]externalRef0.Semver
 
+// SshKey An SSH key.
+type SshKey struct {
+	// PrivateKey The SSH private key.
+	PrivateKey string `json:"privateKey"`
+}
+
 // IdentityIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type IdentityIDParameter = KubernetesNameParameter
 
@@ -923,6 +929,9 @@ type ServersResponse = ServersRead
 
 // ServersV2Response A list of servers.
 type ServersV2Response = ServersV2Read
+
+// SshKeyResponse An SSH key.
+type SshKeyResponse = SshKey
 
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite

@@ -346,7 +346,7 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.ServerV2Create) 
 	}
 
 	if err := c.client.Create(ctx, resource); err != nil {
-		return nil, errors.OAuth2ServerError("unable to create security group").WithError(err)
+		return nil, errors.OAuth2ServerError("unable to create server").WithError(err)
 	}
 
 	return convertV2(resource), nil
@@ -469,6 +469,29 @@ func (c *Client) getServerIdentityAndProvider(ctx context.Context, serverID stri
 	}
 
 	return server, identity, provider, nil
+}
+
+func (c *Client) SSHKey(ctx context.Context, serverID string) (*openapi.SshKey, error) {
+	_, identity, _, err := c.getServerIdentityAndProvider(ctx, serverID)
+	if err != nil {
+		return nil, err
+	}
+
+	var openstackIdentity regionv1.OpenstackIdentity
+
+	if err := c.client.Get(ctx, client.ObjectKey{Namespace: identity.Namespace, Name: identity.Name}, &openstackIdentity); err != nil {
+		return nil, errors.OAuth2ServerError("failed to load server identity information").WithError(err)
+	}
+
+	if len(openstackIdentity.Spec.SSHPrivateKey) == 0 {
+		return nil, errors.OAuth2ServerError("server SSH key unavailable").WithError(err)
+	}
+
+	out := &openapi.SshKey{
+		PrivateKey: string(openstackIdentity.Spec.SSHPrivateKey),
+	}
+
+	return out, nil
 }
 
 func (c *Client) StartV2(ctx context.Context, serverID string) error {

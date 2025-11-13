@@ -645,7 +645,7 @@ type ServerSpec struct {
 	// may populate to store metadata for the resource.
 	Tags unikornv1core.TagList `json:"tags,omitempty"`
 	// Provider defines the provider type.
-	Provider Provider `json:"provider"`
+	Provider Provider `json:"provider,omitempty"`
 	// FlavorID is the flavor ID.
 	FlavorID string `json:"flavorID"`
 	// Image defines a set of rules to lookup for the server image.
