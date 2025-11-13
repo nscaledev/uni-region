@@ -65,7 +65,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := kubernetes.New(cr.GetConfigOrDie(), scheme, &identityv1.Project{}, consumer).Run(ctx); err != nil {
+	if err := kubernetes.New(cr.GetConfigOrDie(), scheme, &identityv1.Project{}).Run(ctx, consumer); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
