@@ -198,6 +198,16 @@ func (h *Handler) DeleteApiV2ServersServerID(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusAccepted)
 }
 
+func (h *Handler) GetApiV2ServersServerIDSshkey(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
+	result, err := h.serverClient().SSHKey(r.Context(), serverID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
 func (h *Handler) PostApiV2ServersServerIDStart(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	if err := h.serverClient().StartV2(r.Context(), serverID); err != nil {
 		errors.HandleError(w, r, err)

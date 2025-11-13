@@ -911,6 +911,26 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/servers/{serverID}/sshkey:
+    description: |-
+      Manages servers.
+    parameters:
+    - $ref: '#/components/parameters/serverIDParameter'
+    get:
+      description: Retrieve the SSH key for a server.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/sshKeyResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/servers/{serverID}/start:
     description: |-
       Manages servers.
@@ -2095,6 +2115,15 @@ components:
         contents:
           description: Console output.
           type: string
+    sshKey:
+      description: An SSH key.
+      type: object
+      required:
+      - privateKey
+      properties:
+        privateKey:
+          description: The SSH private key.
+          type: string
   requestBodies:
     identityRequest:
       description: A request for an identity.
@@ -2785,6 +2814,22 @@ components:
             contents: |-
               Linux version 5.15.0-1086-kvm (buildd@lcy02-amd64-053) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #91-Ubuntu SMP Mon Aug 4 18:41:47 UTC 2025 (Ubuntu 5.15.0-1086.91-kvm 5.15.185)
               Command line: BOOT_IMAGE=/boot/vmlinuz-5.15.0-1086-kvm root=PARTUUID=16a95af3-5f57-4321-a6af-d006cccb7d04 ro console=tty1 console=ttyS0 panic=-1
+    sshKeyResponse:
+      description: An SSH key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/sshKey'
+          example:
+            privateKey: |-
+              -----BEGIN OPENSSH PRIVATE KEY-----
+              b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtz
+              c2gtZWQyNTUxOQAAACCtvR5BFiAX6+UGoPw/uG/U1Da+iN1lNHYWzk8YhPOeUwAA
+              AKAhzCVJIcwlSQAAAAtzc2gtZWQyNTUxOQAAACCtvR5BFiAX6+UGoPw/uG/U1Da+
+              iN1lNHYWzk8YhPOeUwAAAEClYjYgxFjEM4qh3sl7IS2dpBzSxkRT0NTy9ILygiaA
+              tq29HkEWIBfr5Qag/D+4b9TUNr6I3WU0dhbOTxiE855TAAAAHXVuaWtvcm4gZXBo
+              ZW1lcmFsIGVkMjU1MTkga2V5
+              -----END OPENSSH PRIVATE KEY-----
   securitySchemes:
     oauth2Authentication:
       description: Operation requires OAuth 2.0 bearer token authentication.

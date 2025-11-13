@@ -156,6 +156,9 @@ type ServerInterface interface {
 	// (POST /api/v2/servers/{serverID}/softreboot)
 	PostApiV2ServersServerIDSoftreboot(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter)
 
+	// (GET /api/v2/servers/{serverID}/sshkey)
+	GetApiV2ServersServerIDSshkey(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter)
+
 	// (POST /api/v2/servers/{serverID}/start)
 	PostApiV2ServersServerIDStart(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter)
 
@@ -399,6 +402,11 @@ func (_ Unimplemented) GetApiV2ServersServerIDConsolesessions(w http.ResponseWri
 
 // (POST /api/v2/servers/{serverID}/softreboot)
 func (_ Unimplemented) PostApiV2ServersServerIDSoftreboot(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /api/v2/servers/{serverID}/sshkey)
+func (_ Unimplemented) GetApiV2ServersServerIDSshkey(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2496,6 +2504,37 @@ func (siw *ServerInterfaceWrapper) PostApiV2ServersServerIDSoftreboot(w http.Res
 	handler.ServeHTTP(w, r)
 }
 
+// GetApiV2ServersServerIDSshkey operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV2ServersServerIDSshkey(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "serverID" -------------
+	var serverID ServerIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverID", chi.URLParam(r, "serverID"), &serverID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV2ServersServerIDSshkey(w, r, serverID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PostApiV2ServersServerIDStart operation middleware
 func (siw *ServerInterfaceWrapper) PostApiV2ServersServerIDStart(w http.ResponseWriter, r *http.Request) {
 
@@ -2811,6 +2850,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v2/servers/{serverID}/softreboot", wrapper.PostApiV2ServersServerIDSoftreboot)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v2/servers/{serverID}/sshkey", wrapper.GetApiV2ServersServerIDSshkey)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v2/servers/{serverID}/start", wrapper.PostApiV2ServersServerIDStart)

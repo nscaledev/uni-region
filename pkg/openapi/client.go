@@ -253,6 +253,9 @@ type ClientInterface interface {
 	// PostApiV2ServersServerIDSoftreboot request
 	PostApiV2ServersServerIDSoftreboot(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiV2ServersServerIDSshkey request
+	GetApiV2ServersServerIDSshkey(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PostApiV2ServersServerIDStart request
 	PostApiV2ServersServerIDStart(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -946,6 +949,18 @@ func (c *Client) GetApiV2ServersServerIDConsolesessions(ctx context.Context, ser
 
 func (c *Client) PostApiV2ServersServerIDSoftreboot(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostApiV2ServersServerIDSoftrebootRequest(c.Server, serverID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiV2ServersServerIDSshkey(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV2ServersServerIDSshkeyRequest(c.Server, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -3408,6 +3423,40 @@ func NewPostApiV2ServersServerIDSoftrebootRequest(server string, serverID Server
 	return req, nil
 }
 
+// NewGetApiV2ServersServerIDSshkeyRequest generates requests for GetApiV2ServersServerIDSshkey
+func NewGetApiV2ServersServerIDSshkeyRequest(server string, serverID ServerIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "serverID", runtime.ParamLocationPath, serverID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/servers/%s/sshkey", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewPostApiV2ServersServerIDStartRequest generates requests for PostApiV2ServersServerIDStart
 func NewPostApiV2ServersServerIDStartRequest(server string, serverID ServerIDParameter) (*http.Request, error) {
 	var err error
@@ -3681,6 +3730,9 @@ type ClientWithResponsesInterface interface {
 
 	// PostApiV2ServersServerIDSoftrebootWithResponse request
 	PostApiV2ServersServerIDSoftrebootWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDSoftrebootResponse, error)
+
+	// GetApiV2ServersServerIDSshkeyWithResponse request
+	GetApiV2ServersServerIDSshkeyWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*GetApiV2ServersServerIDSshkeyResponse, error)
 
 	// PostApiV2ServersServerIDStartWithResponse request
 	PostApiV2ServersServerIDStartWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDStartResponse, error)
@@ -4895,6 +4947,32 @@ func (r PostApiV2ServersServerIDSoftrebootResponse) StatusCode() int {
 	return 0
 }
 
+type GetApiV2ServersServerIDSshkeyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *SshKeyResponse
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV2ServersServerIDSshkeyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV2ServersServerIDSshkeyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type PostApiV2ServersServerIDStartResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -5454,6 +5532,15 @@ func (c *ClientWithResponses) PostApiV2ServersServerIDSoftrebootWithResponse(ctx
 		return nil, err
 	}
 	return ParsePostApiV2ServersServerIDSoftrebootResponse(rsp)
+}
+
+// GetApiV2ServersServerIDSshkeyWithResponse request returning *GetApiV2ServersServerIDSshkeyResponse
+func (c *ClientWithResponses) GetApiV2ServersServerIDSshkeyWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*GetApiV2ServersServerIDSshkeyResponse, error) {
+	rsp, err := c.GetApiV2ServersServerIDSshkey(ctx, serverID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV2ServersServerIDSshkeyResponse(rsp)
 }
 
 // PostApiV2ServersServerIDStartWithResponse request returning *PostApiV2ServersServerIDStartResponse
@@ -7867,6 +7954,60 @@ func ParsePostApiV2ServersServerIDSoftrebootResponse(rsp *http.Response) (*PostA
 	}
 
 	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiV2ServersServerIDSshkeyResponse parses an HTTP response from a GetApiV2ServersServerIDSshkeyWithResponse call
+func ParseGetApiV2ServersServerIDSshkeyResponse(rsp *http.Response) (*GetApiV2ServersServerIDSshkeyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV2ServersServerIDSshkeyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SshKeyResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest externalRef0.BadRequestResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

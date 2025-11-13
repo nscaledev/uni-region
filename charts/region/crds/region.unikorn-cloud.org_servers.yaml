@@ -149,7 +149,6 @@ spec:
             required:
             - flavorID
             - image
-            - provider
             type: object
           status:
             properties:
