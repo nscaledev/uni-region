@@ -43,6 +43,7 @@ rules:
   - servers/status
   verbs:
   - update
+  - patch
 # TODO: delete me
 # ---- SNIP ----
 - apiGroups:
