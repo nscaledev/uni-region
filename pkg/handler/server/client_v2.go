@@ -441,7 +441,7 @@ func (c *Client) DeleteV2(ctx context.Context, serverID string) error {
 		return err
 	}
 
-	if err := c.client.Delete(ctx, resource, util.ForegroundDeleteOptions()); err != nil {
+	if err := c.client.Delete(ctx, resource); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
 		}
