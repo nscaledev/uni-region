@@ -1096,19 +1096,19 @@ func gatewayIP(prefix net.IPNet) string {
 	return ip.String()
 }
 
-// dhcpRange returns a range from the prefix starting at .2 and extending
-// to the address before the last /25.
+// dhcpRange returns a range from the prefix starting at after the first /25
+// and extending to the address before the subnet's broadcast address.
 func dhcpRange(prefix net.IPNet) (string, string) {
 	ba := big.NewInt(0).SetBytes(prefix.IP)
 
 	// Start.
-	bs := big.NewInt(0).Add(ba, big.NewInt(2))
+	bs := big.NewInt(0).Add(ba, big.NewInt(128))
 
 	// End.
 	ones, bits := prefix.Mask.Size()
 	size := 1 << (bits - ones)
 
-	be := big.NewInt(0).Add(ba, big.NewInt(int64(size-(1<<7)-1)))
+	be := big.NewInt(0).Add(ba, big.NewInt(int64(size-2)))
 
 	start := net.IP(bs.Bytes())
 	end := net.IP(be.Bytes())
@@ -1116,19 +1116,16 @@ func dhcpRange(prefix net.IPNet) (string, string) {
 	return start.String(), end.String()
 }
 
-// storageRange returns a range from prefix that starts at the top /25
-// and ends at the end of the range (less the broadcast address).
+// storageRange returns a range from the prefix that comes from the first /25
+// but leaves some spare IPs around for various uses.
 func storageRange(prefix net.IPNet) (string, string) {
 	ba := big.NewInt(0).SetBytes(prefix.IP)
 
 	// Start.
-	ones, bits := prefix.Mask.Size()
-	size := 1 << (bits - ones)
-
-	bs := big.NewInt(0).Add(ba, big.NewInt(int64(size)-(1<<7)))
+	bs := big.NewInt(0).Add(ba, big.NewInt(16))
 
 	// End.
-	be := big.NewInt(0).Sub(big.NewInt(0).Add(ba, big.NewInt(int64(size))), big.NewInt(2))
+	be := big.NewInt(0).Add(ba, big.NewInt(127))
 
 	start := net.IP(bs.Bytes())
 	end := net.IP(be.Bytes())
