@@ -350,7 +350,16 @@ type NetworkSpecOpenstack struct {
 	VlanId *int `json:"vlanId,omitempty"`
 }
 
-// NetworkV2CreateSpec A network's specification.
+// NetworkV2Create A network request.
+type NetworkV2Create struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A network's specification.
+	Spec NetworkV2CreateSpec `json:"spec"`
+}
+
+// NetworkV2CreateSpec defines model for networkV2CreateSpec.
 type NetworkV2CreateSpec struct {
 	// DnsNameservers A list of IPv4 addresses.
 	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
@@ -366,6 +375,9 @@ type NetworkV2CreateSpec struct {
 
 	// RegionId The region a network is to be provisioned in.
 	RegionId string `json:"regionId"`
+
+	// Routes A list of network routes.
+	Routes *Routes `json:"routes,omitempty"`
 }
 
 // NetworkV2Read A network.
@@ -385,23 +397,26 @@ type NetworkV2Spec struct {
 	// DnsNameservers A list of IPv4 addresses.
 	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
 
-	// Prefix An IPv4 prefix for the network.
-	Prefix string `json:"prefix"`
+	// Routes A list of network routes.
+	Routes *Routes `json:"routes,omitempty"`
 }
 
 // NetworkV2Status Read only status about a network.
 type NetworkV2Status struct {
+	// Prefix An IPv4 prefix for the network.
+	Prefix string `json:"prefix"`
+
 	// RegionId The region a network is provisioned in.
 	RegionId string `json:"regionId"`
 }
 
-// NetworkV2Write A network request.
-type NetworkV2Write struct {
+// NetworkV2Update A network request.
+type NetworkV2Update struct {
 	// Metadata Metadata required for all API resource reads and writes.
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
 
 	// Spec A network's specification.
-	Spec NetworkV2CreateSpec `json:"spec"`
+	Spec NetworkV2Spec `json:"spec"`
 }
 
 // NetworkWrite A network request.
@@ -499,6 +514,18 @@ type RegionType string
 
 // Regions A list of regions.
 type Regions = []RegionRead
+
+// Route A network route.
+type Route struct {
+	// Nexthop An IPv4 address for the route's next hop.
+	Nexthop string `json:"nexthop"`
+
+	// Prefix An IPv4 prefix for the route.
+	Prefix string `json:"prefix"`
+}
+
+// Routes A list of network routes.
+type Routes = []Route
 
 // SecurityGroupRead A security group.
 type SecurityGroupRead struct {
@@ -939,8 +966,11 @@ type IdentityRequest = IdentityWrite
 // NetworkRequest A network request.
 type NetworkRequest = NetworkWrite
 
-// NetworkV2Request A network request.
-type NetworkV2Request = NetworkV2Write
+// NetworkV2CreateRequest A network request.
+type NetworkV2CreateRequest = NetworkV2Create
+
+// NetworkV2UpdateRequest A network request.
+type NetworkV2UpdateRequest = NetworkV2Update
 
 // SecurityGroupRequest A security group request.
 type SecurityGroupRequest = SecurityGroupWrite
@@ -1059,7 +1089,10 @@ type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSe
 type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody = ServerWrite
 
 // PostApiV2NetworksJSONRequestBody defines body for PostApiV2Networks for application/json ContentType.
-type PostApiV2NetworksJSONRequestBody = NetworkV2Write
+type PostApiV2NetworksJSONRequestBody = NetworkV2Create
+
+// PutApiV2NetworksNetworkIDJSONRequestBody defines body for PutApiV2NetworksNetworkID for application/json ContentType.
+type PutApiV2NetworksNetworkIDJSONRequestBody = NetworkV2Update
 
 // PostApiV2SecuritygroupsJSONRequestBody defines body for PostApiV2Securitygroups for application/json ContentType.
 type PostApiV2SecuritygroupsJSONRequestBody = SecurityGroupV2Create

@@ -19,6 +19,7 @@ package network
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"net"
 	"slices"
 
@@ -46,15 +47,37 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
+func convertRoute(in *regionv1.Route) *openapi.Route {
+	return &openapi.Route{
+		Prefix:  in.Prefix.String(),
+		Nexthop: in.NextHop.String(),
+	}
+}
+
+func convertRoutes(in []regionv1.Route) *openapi.Routes {
+	if len(in) == 0 {
+		return nil
+	}
+
+	out := make(openapi.Routes, len(in))
+
+	for i := range in {
+		out[i] = *convertRoute(&in[i])
+	}
+
+	return &out
+}
+
 func convertV2(in *regionv1.Network) *openapi.NetworkV2Read {
 	return &openapi.NetworkV2Read{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.NetworkV2Spec{
-			Prefix:         in.Spec.Prefix.String(),
 			DnsNameservers: convertIPv4List(in.Spec.DNSNameservers),
+			Routes:         convertRoutes(in.Spec.Routes),
 		},
 		Status: openapi.NetworkV2Status{
 			RegionId: in.Labels[constants.RegionLabel],
+			Prefix:   in.Spec.Prefix.String(),
 		},
 	}
 }
@@ -156,22 +179,76 @@ func (c *Client) GetV2(ctx context.Context, networkID string) (*openapi.NetworkV
 	return convertV2(result), nil
 }
 
-func (c *Client) generateV2(ctx context.Context, request *openapi.NetworkV2Write, prefix *net.IPNet, dnsNameservers []net.IP) (*regionv1.Network, error) {
+// convertCreateToUpdateRequest marshals a create request into an update request
+// that can be used with generate().  Updates are a subset of creates (without the
+// immutable bits).
+func convertCreateToUpdateRequest(in *openapi.NetworkV2Create) (*openapi.NetworkV2Update, error) {
+	t, err := json.Marshal(in)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to marshal request").WithError(err)
+	}
+
+	out := &openapi.NetworkV2Update{}
+
+	if err := json.Unmarshal(t, out); err != nil {
+		return nil, errors.OAuth2ServerError("failed to unmarshal request").WithError(err)
+	}
+
+	return out, nil
+}
+
+func generateRoutes(in *openapi.Routes) ([]regionv1.Route, error) {
+	if in == nil {
+		return nil, nil
+	}
+
+	out := make([]regionv1.Route, len(*in))
+
+	for i, route := range *in {
+		_, prefix, err := net.ParseCIDR(route.Prefix)
+		if err != nil {
+			return nil, errors.OAuth2InvalidRequest("failed to parse route prefix").WithError(err)
+		}
+
+		nextHop := net.ParseIP(route.Nexthop)
+		if nextHop == nil {
+			return nil, errors.OAuth2InvalidRequest("failed to parse route next-hop").WithError(err)
+		}
+
+		out[i].Prefix.IPNet = *prefix
+		out[i].NextHop.IP = nextHop
+	}
+
+	return out, nil
+}
+
+func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.NetworkV2Update, prefix *net.IPNet) (*regionv1.Network, error) {
+	dnsNameservers, err := parseIPV4AddressList(request.Spec.DnsNameservers)
+	if err != nil {
+		return nil, err
+	}
+
+	routes, err := generateRoutes(request.Spec.Routes)
+	if err != nil {
+		return nil, err
+	}
+
 	out := &regionv1.Network{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.namespace).
-			WithOrganization(request.Spec.OrganizationId).
-			WithProject(request.Spec.ProjectId).
-			WithLabel(constants.RegionLabel, request.Spec.RegionId).
+			WithOrganization(organizationID).
+			WithProject(projectID).
+			WithLabel(constants.RegionLabel, regionID).
 			WithLabel(constants.ResourceAPIVersionLabel, constants.MarshalAPIVersion(2)).
 			Get(),
 		Spec: regionv1.NetworkSpec{
 			Tags:           conversion.GenerateTagList(request.Metadata.Tags),
 			Prefix:         generateIPV4Prefix(prefix),
 			DNSNameservers: generateIPV4AddressList(dnsNameservers),
+			Routes:         routes,
 		},
 	}
 
-	if err := util.InjectUserPrincipal(ctx, request.Spec.OrganizationId, request.Spec.ProjectId); err != nil {
+	if err := util.InjectUserPrincipal(ctx, organizationID, projectID); err != nil {
 		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
 	}
 
@@ -184,13 +261,13 @@ func (c *Client) generateV2(ctx context.Context, request *openapi.NetworkV2Write
 
 type createSaga struct {
 	client  *Client
-	request *openapi.NetworkV2Write
+	request *openapi.NetworkV2Create
 
 	identity *regionv1.Identity
 	network  *regionv1.Network
 }
 
-func newCreateSaga(client *Client, request *openapi.NetworkV2Write) *createSaga {
+func newCreateSaga(client *Client, request *openapi.NetworkV2Create) *createSaga {
 	return &createSaga{
 		client:  client,
 		request: request,
@@ -211,12 +288,12 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 		return errors.OAuth2InvalidRequest("minimum network prefix size is /24")
 	}
 
-	dnsNameservers, err := parseIPV4AddressList(s.request.Spec.DnsNameservers)
+	updateRequest, err := convertCreateToUpdateRequest(s.request)
 	if err != nil {
 		return err
 	}
 
-	network, err := s.client.generateV2(ctx, s.request, prefix, dnsNameservers)
+	network, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId, updateRequest, prefix)
 	if err != nil {
 		return err
 	}
@@ -305,7 +382,7 @@ func (s *createSaga) Actions() []saga.Action {
 	}
 }
 
-func (c *Client) CreateV2(ctx context.Context, request *openapi.NetworkV2Write) (*openapi.NetworkV2Read, error) {
+func (c *Client) CreateV2(ctx context.Context, request *openapi.NetworkV2Create) (*openapi.NetworkV2Read, error) {
 	if err := rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Create, request.Spec.OrganizationId, request.Spec.ProjectId); err != nil {
 		return nil, err
 	}
@@ -317,6 +394,41 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.NetworkV2Write) 
 	}
 
 	return convertV2(s.network), nil
+}
+
+func (c *Client) Update(ctx context.Context, networkID string, request *openapi.NetworkV2Update) (*openapi.NetworkV2Read, error) {
+	current, err := c.GetV2Raw(ctx, networkID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Delete, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel]); err != nil {
+		return nil, err
+	}
+
+	if current.DeletionTimestamp != nil {
+		return nil, errors.OAuth2InvalidRequest("network is being deleted")
+	}
+
+	organizationID := current.Labels[coreconstants.OrganizationLabel]
+	projectID := current.Labels[coreconstants.ProjectLabel]
+	regionID := current.Labels[constants.RegionLabel]
+
+	required, err := c.generateV2(ctx, organizationID, projectID, regionID, request, &current.Spec.Prefix.IPNet)
+	if err != nil {
+		return nil, err
+	}
+
+	updated := current.DeepCopy()
+	updated.Labels = required.Labels
+	updated.Annotations = required.Annotations
+	updated.Spec = required.Spec
+
+	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+		return nil, errors.OAuth2ServerError("unable to update network").WithError(err)
+	}
+
+	return convertV2(updated), nil
 }
 
 func (c *Client) DeleteV2(ctx context.Context, networkID string) error {

@@ -423,7 +423,7 @@ func TestReconcileSubnet(t *testing.T) {
 
 		networking := mock.NewMockSubnetInterface(c)
 		networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, openstack.ErrNotFound)
-		networking.EXPECT().CreateSubnet(t.Context(), network, openstackNetwork.ID, "192.168.0.0/24", gomock.Any(), []string{"8.8.4.4"}, allocationPools).Return(openstackSubnet, nil)
+		networking.EXPECT().CreateSubnet(t.Context(), network, openstackNetwork.ID, "192.168.0.0/24", gomock.Any(), []string{"8.8.4.4"}, []subnets.HostRoute{}, allocationPools).Return(openstackSubnet, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
@@ -438,6 +438,7 @@ func TestReconcileSubnet(t *testing.T) {
 
 		networking := mock.NewMockSubnetInterface(c)
 		networking.EXPECT().GetSubnet(t.Context(), network).Return(openstackSubnet, nil)
+		networking.EXPECT().UpdateSubnet(t.Context(), openstackSubnet.ID, []string{"8.8.4.4"}, []subnets.HostRoute{}).Return(openstackSubnet, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 

@@ -1183,38 +1183,49 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, network *unikornv1.Network, openstackNetwork *NetworkExt) (*subnets.Subnet, error) {
 	log := log.FromContext(ctx)
 
-	result, err := client.GetSubnet(ctx, network)
-	if err == nil {
-		log.V(1).Info("L3 subnet already exists")
-
-		network.Status.Openstack.SubnetID = ptr.To(result.ID)
-
-		return result, nil
-	}
-
-	if !errors.Is(err, ErrNotFound) {
-		return nil, err
-	}
-
-	log.V(1).Info("creating L3 subnet")
-
 	dnsNameservers := make([]string, len(network.Spec.DNSNameservers))
 
 	for i, ip := range network.Spec.DNSNameservers {
 		dnsNameservers[i] = ip.String()
 	}
 
-	start, end := dhcpRange(network.Spec.Prefix.IPNet)
+	routes := make([]subnets.HostRoute, len(network.Spec.Routes))
 
-	allocationPools := []subnets.AllocationPool{
-		{
-			Start: start,
-			End:   end,
-		},
+	for i, route := range network.Spec.Routes {
+		routes[i].DestinationCIDR = route.Prefix.String()
+		routes[i].NextHop = route.NextHop.String()
 	}
 
-	result, err = client.CreateSubnet(ctx, network, openstackNetwork.ID, network.Spec.Prefix.String(), gatewayIP(network.Spec.Prefix.IPNet), dnsNameservers, allocationPools)
+	result, err := client.GetSubnet(ctx, network)
 	if err != nil {
+		if !errors.Is(err, ErrNotFound) {
+			return nil, err
+		}
+
+		log.V(1).Info("creating L3 subnet")
+
+		start, end := dhcpRange(network.Spec.Prefix.IPNet)
+
+		allocationPools := []subnets.AllocationPool{
+			{
+				Start: start,
+				End:   end,
+			},
+		}
+
+		result, err = client.CreateSubnet(ctx, network, openstackNetwork.ID, network.Spec.Prefix.String(), gatewayIP(network.Spec.Prefix.IPNet), dnsNameservers, routes, allocationPools)
+		if err != nil {
+			return nil, err
+		}
+
+		network.Status.Openstack.SubnetID = ptr.To(result.ID)
+
+		return result, nil
+	}
+
+	log.V(1).Info("Updating subnet")
+
+	if _, err = client.UpdateSubnet(ctx, result.ID, dnsNameservers, routes); err != nil {
 		return nil, err
 	}
 

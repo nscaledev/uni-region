@@ -114,6 +114,9 @@ type ServerInterface interface {
 	// (GET /api/v2/networks/{networkID})
 	GetApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter)
 
+	// (PUT /api/v2/networks/{networkID})
+	PutApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter)
+
 	// (GET /api/v2/securitygroups)
 	GetApiV2Securitygroups(w http.ResponseWriter, r *http.Request, params GetApiV2SecuritygroupsParams)
 
@@ -332,6 +335,11 @@ func (_ Unimplemented) DeleteApiV2NetworksNetworkID(w http.ResponseWriter, r *ht
 
 // (GET /api/v2/networks/{networkID})
 func (_ Unimplemented) GetApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PUT /api/v2/networks/{networkID})
+func (_ Unimplemented) PutApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2013,6 +2021,37 @@ func (siw *ServerInterfaceWrapper) GetApiV2NetworksNetworkID(w http.ResponseWrit
 	handler.ServeHTTP(w, r)
 }
 
+// PutApiV2NetworksNetworkID operation middleware
+func (siw *ServerInterfaceWrapper) PutApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "networkID" -------------
+	var networkID NetworkIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "networkID", chi.URLParam(r, "networkID"), &networkID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "networkID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutApiV2NetworksNetworkID(w, r, networkID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetApiV2Securitygroups operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV2Securitygroups(w http.ResponseWriter, r *http.Request) {
 
@@ -2808,6 +2847,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/networks/{networkID}", wrapper.GetApiV2NetworksNetworkID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v2/networks/{networkID}", wrapper.PutApiV2NetworksNetworkID)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/securitygroups", wrapper.GetApiV2Securitygroups)

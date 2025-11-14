@@ -36,7 +36,7 @@ func (h *Handler) GetApiV2Networks(w http.ResponseWriter, r *http.Request, param
 }
 
 func (h *Handler) PostApiV2Networks(w http.ResponseWriter, r *http.Request) {
-	request := &openapi.NetworkV2Write{}
+	request := &openapi.NetworkV2Create{}
 
 	if err := util.ReadJSONBody(r, request); err != nil {
 		errors.HandleError(w, r, err)
@@ -60,6 +60,23 @@ func (h *Handler) GetApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Reque
 	}
 
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
+func (h *Handler) PutApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID openapi.NetworkIDParameter) {
+	request := &openapi.NetworkV2Update{}
+
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := h.networkClient().Update(r.Context(), networkID, request)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
 }
 
 func (h *Handler) DeleteApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID openapi.NetworkIDParameter) {
