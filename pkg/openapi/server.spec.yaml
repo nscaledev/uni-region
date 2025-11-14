@@ -723,7 +723,7 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2//securitygroups:
+  /api/v2/securitygroups:
     description: |-
       Manages network scoped security groups.  By default, security groups allow
       all egress traffic from a server, ingress traffic must be explcitly allowed.
@@ -994,7 +994,7 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2//servers/{serverID}/hardreboot:
+  /api/v2/servers/{serverID}/hardreboot:
     description: |-
       Manages servers.
     parameters:
