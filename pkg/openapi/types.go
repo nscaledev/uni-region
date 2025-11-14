@@ -980,6 +980,22 @@ type GetApiV1OrganizationsOrganizationIDServersParams struct {
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 }
 
+// GetApiV2NetworksParams defines parameters for GetApiV2Networks.
+type GetApiV2NetworksParams struct {
+	// Tag A set of tags to match against resources in the form "name=value",
+	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+
+	// OrganizationID Allows resources to be filtered by organization.
+	OrganizationID *OrganizationIDQueryParameter `form:"organizationID,omitempty" json:"organizationID,omitempty"`
+
+	// ProjectID Allows resources to be filtered by project.
+	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+}
+
 // GetApiV2SecuritygroupsParams defines parameters for GetApiV2Securitygroups.
 type GetApiV2SecuritygroupsParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",
@@ -997,22 +1013,6 @@ type GetApiV2SecuritygroupsParams struct {
 
 	// NetworkID Allows resources to be filtered by network.
 	NetworkID *NetworkIDQueryParameter `form:"networkID,omitempty" json:"networkID,omitempty"`
-}
-
-// GetApiV2NetworksParams defines parameters for GetApiV2Networks.
-type GetApiV2NetworksParams struct {
-	// Tag A set of tags to match against resources in the form "name=value",
-	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
-	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
-
-	// OrganizationID Allows resources to be filtered by organization.
-	OrganizationID *OrganizationIDQueryParameter `form:"organizationID,omitempty" json:"organizationID,omitempty"`
-
-	// ProjectID Allows resources to be filtered by project.
-	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
-
-	// RegionID Allows resources to be filtered by region.
-	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
 }
 
 // GetApiV2ServersParams defines parameters for GetApiV2Servers.
@@ -1058,11 +1058,11 @@ type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSe
 // PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody defines body for PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID for application/json ContentType.
 type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody = ServerWrite
 
-// PostApiV2SecuritygroupsJSONRequestBody defines body for PostApiV2Securitygroups for application/json ContentType.
-type PostApiV2SecuritygroupsJSONRequestBody = SecurityGroupV2Create
-
 // PostApiV2NetworksJSONRequestBody defines body for PostApiV2Networks for application/json ContentType.
 type PostApiV2NetworksJSONRequestBody = NetworkV2Write
+
+// PostApiV2SecuritygroupsJSONRequestBody defines body for PostApiV2Securitygroups for application/json ContentType.
+type PostApiV2SecuritygroupsJSONRequestBody = SecurityGroupV2Create
 
 // PutApiV2SecuritygroupsSecurityGroupIDJSONRequestBody defines body for PutApiV2SecuritygroupsSecurityGroupID for application/json ContentType.
 type PutApiV2SecuritygroupsSecurityGroupIDJSONRequestBody = SecurityGroupV2Update

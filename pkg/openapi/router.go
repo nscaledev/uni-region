@@ -102,15 +102,6 @@ type ServerInterface interface {
 	// (GET /api/v1/organizations/{organizationID}/servers)
 	GetApiV1OrganizationsOrganizationIDServers(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, params GetApiV1OrganizationsOrganizationIDServersParams)
 
-	// (GET /api/v2//securitygroups)
-	GetApiV2Securitygroups(w http.ResponseWriter, r *http.Request, params GetApiV2SecuritygroupsParams)
-
-	// (POST /api/v2//securitygroups)
-	PostApiV2Securitygroups(w http.ResponseWriter, r *http.Request)
-
-	// (POST /api/v2//servers/{serverID}/hardreboot)
-	PostApiV2ServersServerIDHardreboot(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter)
-
 	// (GET /api/v2/networks)
 	GetApiV2Networks(w http.ResponseWriter, r *http.Request, params GetApiV2NetworksParams)
 
@@ -122,6 +113,12 @@ type ServerInterface interface {
 
 	// (GET /api/v2/networks/{networkID})
 	GetApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter)
+
+	// (GET /api/v2/securitygroups)
+	GetApiV2Securitygroups(w http.ResponseWriter, r *http.Request, params GetApiV2SecuritygroupsParams)
+
+	// (POST /api/v2/securitygroups)
+	PostApiV2Securitygroups(w http.ResponseWriter, r *http.Request)
 
 	// (DELETE /api/v2/securitygroups/{securityGroupID})
 	DeleteApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, securityGroupID SecurityGroupIDParameter)
@@ -152,6 +149,9 @@ type ServerInterface interface {
 
 	// (GET /api/v2/servers/{serverID}/consolesessions)
 	GetApiV2ServersServerIDConsolesessions(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter)
+
+	// (POST /api/v2/servers/{serverID}/hardreboot)
+	PostApiV2ServersServerIDHardreboot(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter)
 
 	// (POST /api/v2/servers/{serverID}/softreboot)
 	PostApiV2ServersServerIDSoftreboot(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter)
@@ -315,21 +315,6 @@ func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDServers(w http.Respons
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// (GET /api/v2//securitygroups)
-func (_ Unimplemented) GetApiV2Securitygroups(w http.ResponseWriter, r *http.Request, params GetApiV2SecuritygroupsParams) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// (POST /api/v2//securitygroups)
-func (_ Unimplemented) PostApiV2Securitygroups(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// (POST /api/v2//servers/{serverID}/hardreboot)
-func (_ Unimplemented) PostApiV2ServersServerIDHardreboot(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
 // (GET /api/v2/networks)
 func (_ Unimplemented) GetApiV2Networks(w http.ResponseWriter, r *http.Request, params GetApiV2NetworksParams) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -347,6 +332,16 @@ func (_ Unimplemented) DeleteApiV2NetworksNetworkID(w http.ResponseWriter, r *ht
 
 // (GET /api/v2/networks/{networkID})
 func (_ Unimplemented) GetApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /api/v2/securitygroups)
+func (_ Unimplemented) GetApiV2Securitygroups(w http.ResponseWriter, r *http.Request, params GetApiV2SecuritygroupsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /api/v2/securitygroups)
+func (_ Unimplemented) PostApiV2Securitygroups(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -397,6 +392,11 @@ func (_ Unimplemented) GetApiV2ServersServerIDConsoleoutput(w http.ResponseWrite
 
 // (GET /api/v2/servers/{serverID}/consolesessions)
 func (_ Unimplemented) GetApiV2ServersServerIDConsolesessions(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /api/v2/servers/{serverID}/hardreboot)
+func (_ Unimplemented) PostApiV2ServersServerIDHardreboot(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1874,122 +1874,6 @@ func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDServers(w 
 	handler.ServeHTTP(w, r)
 }
 
-// GetApiV2Securitygroups operation middleware
-func (siw *ServerInterfaceWrapper) GetApiV2Securitygroups(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetApiV2SecuritygroupsParams
-
-	// ------------- Optional query parameter "tag" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "tag", r.URL.Query(), &params.Tag)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "organizationID" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "organizationID", r.URL.Query(), &params.OrganizationID)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "projectID" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "projectID", r.URL.Query(), &params.ProjectID)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "regionID" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "regionID", r.URL.Query(), &params.RegionID)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "regionID", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "networkID" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "networkID", r.URL.Query(), &params.NetworkID)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "networkID", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetApiV2Securitygroups(w, r, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// PostApiV2Securitygroups operation middleware
-func (siw *ServerInterfaceWrapper) PostApiV2Securitygroups(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PostApiV2Securitygroups(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// PostApiV2ServersServerIDHardreboot operation middleware
-func (siw *ServerInterfaceWrapper) PostApiV2ServersServerIDHardreboot(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	// ------------- Path parameter "serverID" -------------
-	var serverID ServerIDParameter
-
-	err = runtime.BindStyledParameterWithOptions("simple", "serverID", chi.URLParam(r, "serverID"), &serverID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverID", Err: err})
-		return
-	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PostApiV2ServersServerIDHardreboot(w, r, serverID)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // GetApiV2Networks operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV2Networks(w http.ResponseWriter, r *http.Request) {
 
@@ -2120,6 +2004,91 @@ func (siw *ServerInterfaceWrapper) GetApiV2NetworksNetworkID(w http.ResponseWrit
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetApiV2NetworksNetworkID(w, r, networkID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetApiV2Securitygroups operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV2Securitygroups(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetApiV2SecuritygroupsParams
+
+	// ------------- Optional query parameter "tag" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "tag", r.URL.Query(), &params.Tag)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "organizationID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "organizationID", r.URL.Query(), &params.OrganizationID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "projectID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "projectID", r.URL.Query(), &params.ProjectID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "regionID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "regionID", r.URL.Query(), &params.RegionID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "regionID", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "networkID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "networkID", r.URL.Query(), &params.NetworkID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "networkID", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV2Securitygroups(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostApiV2Securitygroups operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV2Securitygroups(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiV2Securitygroups(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2473,6 +2442,37 @@ func (siw *ServerInterfaceWrapper) GetApiV2ServersServerIDConsolesessions(w http
 	handler.ServeHTTP(w, r)
 }
 
+// PostApiV2ServersServerIDHardreboot operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV2ServersServerIDHardreboot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "serverID" -------------
+	var serverID ServerIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverID", chi.URLParam(r, "serverID"), &serverID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiV2ServersServerIDHardreboot(w, r, serverID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PostApiV2ServersServerIDSoftreboot operation middleware
 func (siw *ServerInterfaceWrapper) PostApiV2ServersServerIDSoftreboot(w http.ResponseWriter, r *http.Request) {
 
@@ -2798,15 +2798,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/servers", wrapper.GetApiV1OrganizationsOrganizationIDServers)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v2//securitygroups", wrapper.GetApiV2Securitygroups)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v2//securitygroups", wrapper.PostApiV2Securitygroups)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v2//servers/{serverID}/hardreboot", wrapper.PostApiV2ServersServerIDHardreboot)
-	})
-	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/networks", wrapper.GetApiV2Networks)
 	})
 	r.Group(func(r chi.Router) {
@@ -2817,6 +2808,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/networks/{networkID}", wrapper.GetApiV2NetworksNetworkID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v2/securitygroups", wrapper.GetApiV2Securitygroups)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v2/securitygroups", wrapper.PostApiV2Securitygroups)
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/api/v2/securitygroups/{securityGroupID}", wrapper.DeleteApiV2SecuritygroupsSecurityGroupID)
@@ -2847,6 +2844,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/servers/{serverID}/consolesessions", wrapper.GetApiV2ServersServerIDConsolesessions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v2/servers/{serverID}/hardreboot", wrapper.PostApiV2ServersServerIDHardreboot)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v2/servers/{serverID}/softreboot", wrapper.PostApiV2ServersServerIDSoftreboot)

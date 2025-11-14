@@ -189,17 +189,6 @@ type ClientInterface interface {
 	// GetApiV1OrganizationsOrganizationIDServers request
 	GetApiV1OrganizationsOrganizationIDServers(ctx context.Context, organizationID OrganizationIDParameter, params *GetApiV1OrganizationsOrganizationIDServersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetApiV2Securitygroups request
-	GetApiV2Securitygroups(ctx context.Context, params *GetApiV2SecuritygroupsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostApiV2SecuritygroupsWithBody request with any body
-	PostApiV2SecuritygroupsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	PostApiV2Securitygroups(ctx context.Context, body PostApiV2SecuritygroupsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostApiV2ServersServerIDHardreboot request
-	PostApiV2ServersServerIDHardreboot(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// GetApiV2Networks request
 	GetApiV2Networks(ctx context.Context, params *GetApiV2NetworksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -213,6 +202,14 @@ type ClientInterface interface {
 
 	// GetApiV2NetworksNetworkID request
 	GetApiV2NetworksNetworkID(ctx context.Context, networkID NetworkIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiV2Securitygroups request
+	GetApiV2Securitygroups(ctx context.Context, params *GetApiV2SecuritygroupsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApiV2SecuritygroupsWithBody request with any body
+	PostApiV2SecuritygroupsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostApiV2Securitygroups(ctx context.Context, body PostApiV2SecuritygroupsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteApiV2SecuritygroupsSecurityGroupID request
 	DeleteApiV2SecuritygroupsSecurityGroupID(ctx context.Context, securityGroupID SecurityGroupIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -249,6 +246,9 @@ type ClientInterface interface {
 
 	// GetApiV2ServersServerIDConsolesessions request
 	GetApiV2ServersServerIDConsolesessions(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApiV2ServersServerIDHardreboot request
+	PostApiV2ServersServerIDHardreboot(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostApiV2ServersServerIDSoftreboot request
 	PostApiV2ServersServerIDSoftreboot(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -683,54 +683,6 @@ func (c *Client) GetApiV1OrganizationsOrganizationIDServers(ctx context.Context,
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetApiV2Securitygroups(ctx context.Context, params *GetApiV2SecuritygroupsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetApiV2SecuritygroupsRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostApiV2SecuritygroupsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostApiV2SecuritygroupsRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostApiV2Securitygroups(ctx context.Context, body PostApiV2SecuritygroupsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostApiV2SecuritygroupsRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostApiV2ServersServerIDHardreboot(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostApiV2ServersServerIDHardrebootRequest(c.Server, serverID)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
 func (c *Client) GetApiV2Networks(ctx context.Context, params *GetApiV2NetworksParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiV2NetworksRequest(c.Server, params)
 	if err != nil {
@@ -781,6 +733,42 @@ func (c *Client) DeleteApiV2NetworksNetworkID(ctx context.Context, networkID Net
 
 func (c *Client) GetApiV2NetworksNetworkID(ctx context.Context, networkID NetworkIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiV2NetworksNetworkIDRequest(c.Server, networkID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiV2Securitygroups(ctx context.Context, params *GetApiV2SecuritygroupsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV2SecuritygroupsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiV2SecuritygroupsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV2SecuritygroupsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiV2Securitygroups(ctx context.Context, body PostApiV2SecuritygroupsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV2SecuritygroupsRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -937,6 +925,18 @@ func (c *Client) GetApiV2ServersServerIDConsoleoutput(ctx context.Context, serve
 
 func (c *Client) GetApiV2ServersServerIDConsolesessions(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiV2ServersServerIDConsolesessionsRequest(c.Server, serverID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiV2ServersServerIDHardreboot(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV2ServersServerIDHardrebootRequest(c.Server, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -2524,193 +2524,6 @@ func NewGetApiV1OrganizationsOrganizationIDServersRequest(server string, organiz
 	return req, nil
 }
 
-// NewGetApiV2SecuritygroupsRequest generates requests for GetApiV2Securitygroups
-func NewGetApiV2SecuritygroupsRequest(server string, params *GetApiV2SecuritygroupsParams) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v2//securitygroups")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		queryValues := queryURL.Query()
-
-		if params.Tag != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "tag", runtime.ParamLocationQuery, *params.Tag); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.OrganizationID != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "organizationID", runtime.ParamLocationQuery, *params.OrganizationID); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.ProjectID != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "projectID", runtime.ParamLocationQuery, *params.ProjectID); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.RegionID != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "regionID", runtime.ParamLocationQuery, *params.RegionID); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.NetworkID != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "networkID", runtime.ParamLocationQuery, *params.NetworkID); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		queryURL.RawQuery = queryValues.Encode()
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewPostApiV2SecuritygroupsRequest calls the generic PostApiV2Securitygroups builder with application/json body
-func NewPostApiV2SecuritygroupsRequest(server string, body PostApiV2SecuritygroupsJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPostApiV2SecuritygroupsRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewPostApiV2SecuritygroupsRequestWithBody generates requests for PostApiV2Securitygroups with any type of body
-func NewPostApiV2SecuritygroupsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v2//securitygroups")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewPostApiV2ServersServerIDHardrebootRequest generates requests for PostApiV2ServersServerIDHardreboot
-func NewPostApiV2ServersServerIDHardrebootRequest(server string, serverID ServerIDParameter) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "serverID", runtime.ParamLocationPath, serverID)
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v2//servers/%s/hardreboot", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
 // NewGetApiV2NetworksRequest generates requests for GetApiV2Networks
 func NewGetApiV2NetworksRequest(server string, params *GetApiV2NetworksParams) (*http.Request, error) {
 	var err error
@@ -2912,6 +2725,159 @@ func NewGetApiV2NetworksNetworkIDRequest(server string, networkID NetworkIDParam
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewGetApiV2SecuritygroupsRequest generates requests for GetApiV2Securitygroups
+func NewGetApiV2SecuritygroupsRequest(server string, params *GetApiV2SecuritygroupsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/securitygroups")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Tag != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "tag", runtime.ParamLocationQuery, *params.Tag); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.OrganizationID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "organizationID", runtime.ParamLocationQuery, *params.OrganizationID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.ProjectID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "projectID", runtime.ParamLocationQuery, *params.ProjectID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RegionID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "regionID", runtime.ParamLocationQuery, *params.RegionID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.NetworkID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "networkID", runtime.ParamLocationQuery, *params.NetworkID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostApiV2SecuritygroupsRequest calls the generic PostApiV2Securitygroups builder with application/json body
+func NewPostApiV2SecuritygroupsRequest(server string, body PostApiV2SecuritygroupsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApiV2SecuritygroupsRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostApiV2SecuritygroupsRequestWithBody generates requests for PostApiV2Securitygroups with any type of body
+func NewPostApiV2SecuritygroupsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/securitygroups")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -3389,6 +3355,40 @@ func NewGetApiV2ServersServerIDConsolesessionsRequest(server string, serverID Se
 	return req, nil
 }
 
+// NewPostApiV2ServersServerIDHardrebootRequest generates requests for PostApiV2ServersServerIDHardreboot
+func NewPostApiV2ServersServerIDHardrebootRequest(server string, serverID ServerIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "serverID", runtime.ParamLocationPath, serverID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/servers/%s/hardreboot", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewPostApiV2ServersServerIDSoftrebootRequest generates requests for PostApiV2ServersServerIDSoftreboot
 func NewPostApiV2ServersServerIDSoftrebootRequest(server string, serverID ServerIDParameter) (*http.Request, error) {
 	var err error
@@ -3667,17 +3667,6 @@ type ClientWithResponsesInterface interface {
 	// GetApiV1OrganizationsOrganizationIDServersWithResponse request
 	GetApiV1OrganizationsOrganizationIDServersWithResponse(ctx context.Context, organizationID OrganizationIDParameter, params *GetApiV1OrganizationsOrganizationIDServersParams, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDServersResponse, error)
 
-	// GetApiV2SecuritygroupsWithResponse request
-	GetApiV2SecuritygroupsWithResponse(ctx context.Context, params *GetApiV2SecuritygroupsParams, reqEditors ...RequestEditorFn) (*GetApiV2SecuritygroupsResponse, error)
-
-	// PostApiV2SecuritygroupsWithBodyWithResponse request with any body
-	PostApiV2SecuritygroupsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2SecuritygroupsResponse, error)
-
-	PostApiV2SecuritygroupsWithResponse(ctx context.Context, body PostApiV2SecuritygroupsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV2SecuritygroupsResponse, error)
-
-	// PostApiV2ServersServerIDHardrebootWithResponse request
-	PostApiV2ServersServerIDHardrebootWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDHardrebootResponse, error)
-
 	// GetApiV2NetworksWithResponse request
 	GetApiV2NetworksWithResponse(ctx context.Context, params *GetApiV2NetworksParams, reqEditors ...RequestEditorFn) (*GetApiV2NetworksResponse, error)
 
@@ -3691,6 +3680,14 @@ type ClientWithResponsesInterface interface {
 
 	// GetApiV2NetworksNetworkIDWithResponse request
 	GetApiV2NetworksNetworkIDWithResponse(ctx context.Context, networkID NetworkIDParameter, reqEditors ...RequestEditorFn) (*GetApiV2NetworksNetworkIDResponse, error)
+
+	// GetApiV2SecuritygroupsWithResponse request
+	GetApiV2SecuritygroupsWithResponse(ctx context.Context, params *GetApiV2SecuritygroupsParams, reqEditors ...RequestEditorFn) (*GetApiV2SecuritygroupsResponse, error)
+
+	// PostApiV2SecuritygroupsWithBodyWithResponse request with any body
+	PostApiV2SecuritygroupsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2SecuritygroupsResponse, error)
+
+	PostApiV2SecuritygroupsWithResponse(ctx context.Context, body PostApiV2SecuritygroupsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV2SecuritygroupsResponse, error)
 
 	// DeleteApiV2SecuritygroupsSecurityGroupIDWithResponse request
 	DeleteApiV2SecuritygroupsSecurityGroupIDWithResponse(ctx context.Context, securityGroupID SecurityGroupIDParameter, reqEditors ...RequestEditorFn) (*DeleteApiV2SecuritygroupsSecurityGroupIDResponse, error)
@@ -3727,6 +3724,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetApiV2ServersServerIDConsolesessionsWithResponse request
 	GetApiV2ServersServerIDConsolesessionsWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*GetApiV2ServersServerIDConsolesessionsResponse, error)
+
+	// PostApiV2ServersServerIDHardrebootWithResponse request
+	PostApiV2ServersServerIDHardrebootWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDHardrebootResponse, error)
 
 	// PostApiV2ServersServerIDSoftrebootWithResponse request
 	PostApiV2ServersServerIDSoftrebootWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDSoftrebootResponse, error)
@@ -4484,83 +4484,6 @@ func (r GetApiV1OrganizationsOrganizationIDServersResponse) StatusCode() int {
 	return 0
 }
 
-type GetApiV2SecuritygroupsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *SecurityGroupsV2Response
-	JSON400      *externalRef0.BadRequestResponse
-	JSON401      *externalRef0.UnauthorizedResponse
-	JSON403      *externalRef0.ForbiddenResponse
-	JSON500      *externalRef0.InternalServerErrorResponse
-}
-
-// Status returns HTTPResponse.Status
-func (r GetApiV2SecuritygroupsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetApiV2SecuritygroupsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type PostApiV2SecuritygroupsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON201      *SecurityGroupV2Response
-	JSON400      *externalRef0.BadRequestResponse
-	JSON401      *externalRef0.UnauthorizedResponse
-	JSON403      *externalRef0.ForbiddenResponse
-	JSON500      *externalRef0.InternalServerErrorResponse
-}
-
-// Status returns HTTPResponse.Status
-func (r PostApiV2SecuritygroupsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostApiV2SecuritygroupsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type PostApiV2ServersServerIDHardrebootResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON400      *externalRef0.BadRequestResponse
-	JSON401      *externalRef0.UnauthorizedResponse
-	JSON403      *externalRef0.ForbiddenResponse
-	JSON500      *externalRef0.InternalServerErrorResponse
-}
-
-// Status returns HTTPResponse.Status
-func (r PostApiV2ServersServerIDHardrebootResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostApiV2ServersServerIDHardrebootResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
 type GetApiV2NetworksResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -4658,6 +4581,58 @@ func (r GetApiV2NetworksNetworkIDResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetApiV2NetworksNetworkIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetApiV2SecuritygroupsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *SecurityGroupsV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV2SecuritygroupsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV2SecuritygroupsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostApiV2SecuritygroupsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *SecurityGroupV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApiV2SecuritygroupsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApiV2SecuritygroupsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -4916,6 +4891,31 @@ func (r GetApiV2ServersServerIDConsolesessionsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetApiV2ServersServerIDConsolesessionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostApiV2ServersServerIDHardrebootResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApiV2ServersServerIDHardrebootResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApiV2ServersServerIDHardrebootResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -5332,41 +5332,6 @@ func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDServersWithResp
 	return ParseGetApiV1OrganizationsOrganizationIDServersResponse(rsp)
 }
 
-// GetApiV2SecuritygroupsWithResponse request returning *GetApiV2SecuritygroupsResponse
-func (c *ClientWithResponses) GetApiV2SecuritygroupsWithResponse(ctx context.Context, params *GetApiV2SecuritygroupsParams, reqEditors ...RequestEditorFn) (*GetApiV2SecuritygroupsResponse, error) {
-	rsp, err := c.GetApiV2Securitygroups(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetApiV2SecuritygroupsResponse(rsp)
-}
-
-// PostApiV2SecuritygroupsWithBodyWithResponse request with arbitrary body returning *PostApiV2SecuritygroupsResponse
-func (c *ClientWithResponses) PostApiV2SecuritygroupsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2SecuritygroupsResponse, error) {
-	rsp, err := c.PostApiV2SecuritygroupsWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostApiV2SecuritygroupsResponse(rsp)
-}
-
-func (c *ClientWithResponses) PostApiV2SecuritygroupsWithResponse(ctx context.Context, body PostApiV2SecuritygroupsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV2SecuritygroupsResponse, error) {
-	rsp, err := c.PostApiV2Securitygroups(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostApiV2SecuritygroupsResponse(rsp)
-}
-
-// PostApiV2ServersServerIDHardrebootWithResponse request returning *PostApiV2ServersServerIDHardrebootResponse
-func (c *ClientWithResponses) PostApiV2ServersServerIDHardrebootWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDHardrebootResponse, error) {
-	rsp, err := c.PostApiV2ServersServerIDHardreboot(ctx, serverID, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostApiV2ServersServerIDHardrebootResponse(rsp)
-}
-
 // GetApiV2NetworksWithResponse request returning *GetApiV2NetworksResponse
 func (c *ClientWithResponses) GetApiV2NetworksWithResponse(ctx context.Context, params *GetApiV2NetworksParams, reqEditors ...RequestEditorFn) (*GetApiV2NetworksResponse, error) {
 	rsp, err := c.GetApiV2Networks(ctx, params, reqEditors...)
@@ -5409,6 +5374,32 @@ func (c *ClientWithResponses) GetApiV2NetworksNetworkIDWithResponse(ctx context.
 		return nil, err
 	}
 	return ParseGetApiV2NetworksNetworkIDResponse(rsp)
+}
+
+// GetApiV2SecuritygroupsWithResponse request returning *GetApiV2SecuritygroupsResponse
+func (c *ClientWithResponses) GetApiV2SecuritygroupsWithResponse(ctx context.Context, params *GetApiV2SecuritygroupsParams, reqEditors ...RequestEditorFn) (*GetApiV2SecuritygroupsResponse, error) {
+	rsp, err := c.GetApiV2Securitygroups(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV2SecuritygroupsResponse(rsp)
+}
+
+// PostApiV2SecuritygroupsWithBodyWithResponse request with arbitrary body returning *PostApiV2SecuritygroupsResponse
+func (c *ClientWithResponses) PostApiV2SecuritygroupsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2SecuritygroupsResponse, error) {
+	rsp, err := c.PostApiV2SecuritygroupsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiV2SecuritygroupsResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostApiV2SecuritygroupsWithResponse(ctx context.Context, body PostApiV2SecuritygroupsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV2SecuritygroupsResponse, error) {
+	rsp, err := c.PostApiV2Securitygroups(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiV2SecuritygroupsResponse(rsp)
 }
 
 // DeleteApiV2SecuritygroupsSecurityGroupIDWithResponse request returning *DeleteApiV2SecuritygroupsSecurityGroupIDResponse
@@ -5523,6 +5514,15 @@ func (c *ClientWithResponses) GetApiV2ServersServerIDConsolesessionsWithResponse
 		return nil, err
 	}
 	return ParseGetApiV2ServersServerIDConsolesessionsResponse(rsp)
+}
+
+// PostApiV2ServersServerIDHardrebootWithResponse request returning *PostApiV2ServersServerIDHardrebootResponse
+func (c *ClientWithResponses) PostApiV2ServersServerIDHardrebootWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDHardrebootResponse, error) {
+	rsp, err := c.PostApiV2ServersServerIDHardreboot(ctx, serverID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiV2ServersServerIDHardrebootResponse(rsp)
 }
 
 // PostApiV2ServersServerIDSoftrebootWithResponse request returning *PostApiV2ServersServerIDSoftrebootResponse
@@ -7050,161 +7050,6 @@ func ParseGetApiV1OrganizationsOrganizationIDServersResponse(rsp *http.Response)
 	return response, nil
 }
 
-// ParseGetApiV2SecuritygroupsResponse parses an HTTP response from a GetApiV2SecuritygroupsWithResponse call
-func ParseGetApiV2SecuritygroupsResponse(rsp *http.Response) (*GetApiV2SecuritygroupsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetApiV2SecuritygroupsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SecurityGroupsV2Response
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest externalRef0.BadRequestResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest externalRef0.UnauthorizedResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest externalRef0.ForbiddenResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest externalRef0.InternalServerErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParsePostApiV2SecuritygroupsResponse parses an HTTP response from a PostApiV2SecuritygroupsWithResponse call
-func ParsePostApiV2SecuritygroupsResponse(rsp *http.Response) (*PostApiV2SecuritygroupsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostApiV2SecuritygroupsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest SecurityGroupV2Response
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON201 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest externalRef0.BadRequestResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest externalRef0.UnauthorizedResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest externalRef0.ForbiddenResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest externalRef0.InternalServerErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParsePostApiV2ServersServerIDHardrebootResponse parses an HTTP response from a PostApiV2ServersServerIDHardrebootWithResponse call
-func ParsePostApiV2ServersServerIDHardrebootResponse(rsp *http.Response) (*PostApiV2ServersServerIDHardrebootResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostApiV2ServersServerIDHardrebootResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest externalRef0.BadRequestResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest externalRef0.UnauthorizedResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest externalRef0.ForbiddenResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest externalRef0.InternalServerErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	}
-
-	return response, nil
-}
-
 // ParseGetApiV2NetworksResponse parses an HTTP response from a GetApiV2NetworksWithResponse call
 func ParseGetApiV2NetworksResponse(rsp *http.Response) (*GetApiV2NetworksResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -7380,6 +7225,114 @@ func ParseGetApiV2NetworksNetworkIDResponse(rsp *http.Response) (*GetApiV2Networ
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiV2SecuritygroupsResponse parses an HTTP response from a GetApiV2SecuritygroupsWithResponse call
+func ParseGetApiV2SecuritygroupsResponse(rsp *http.Response) (*GetApiV2SecuritygroupsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV2SecuritygroupsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SecurityGroupsV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostApiV2SecuritygroupsResponse parses an HTTP response from a PostApiV2SecuritygroupsWithResponse call
+func ParsePostApiV2SecuritygroupsResponse(rsp *http.Response) (*PostApiV2SecuritygroupsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApiV2SecuritygroupsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest SecurityGroupV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest externalRef0.BadRequestResponse
@@ -7907,6 +7860,53 @@ func ParseGetApiV2ServersServerIDConsolesessionsResponse(rsp *http.Response) (*G
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostApiV2ServersServerIDHardrebootResponse parses an HTTP response from a PostApiV2ServersServerIDHardrebootWithResponse call
+func ParsePostApiV2ServersServerIDHardrebootResponse(rsp *http.Response) (*PostApiV2ServersServerIDHardrebootResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApiV2ServersServerIDHardrebootResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest externalRef0.BadRequestResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
