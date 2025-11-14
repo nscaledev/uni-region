@@ -88,7 +88,7 @@ func TestGatewayIP(t *testing.T) {
 }
 
 // TestDHCPRange checks that the DHCP range function correctly removes a /25
-// from the end of the provided prefix.
+// from the start of the provided prefix.
 func TestDHCPRange(t *testing.T) {
 	t.Parallel()
 
@@ -98,12 +98,12 @@ func TestDHCPRange(t *testing.T) {
 	}
 
 	start, end := openstack.DHCPRange(prefix)
-	require.Equal(t, "192.168.10.2", start)
-	require.Equal(t, "192.168.10.127", end)
+	require.Equal(t, "192.168.10.128", start)
+	require.Equal(t, "192.168.10.254", end)
 }
 
-// TestStorageRange checks that the DHCP range function correctly starting at
-// the top /25 and ending before the broadcast address.
+// TestStorageRange checks that the storage range is allocated from the first
+// /25, leaving a few addresses spare for various networking shenanigans.
 func TestStorageRange(t *testing.T) {
 	t.Parallel()
 
@@ -113,8 +113,8 @@ func TestStorageRange(t *testing.T) {
 	}
 
 	start, end := openstack.StorageRange(prefix)
-	require.Equal(t, "192.168.10.128", start)
-	require.Equal(t, "192.168.10.254", end)
+	require.Equal(t, "192.168.10.16", start)
+	require.Equal(t, "192.168.10.127", end)
 }
 
 const (
@@ -413,8 +413,8 @@ func TestReconcileSubnet(t *testing.T) {
 
 	allocationPools := []subnets.AllocationPool{
 		{
-			Start: "192.168.0.2",
-			End:   "192.168.0.127",
+			Start: "192.168.0.128",
+			End:   "192.168.0.254",
 		},
 	}
 
