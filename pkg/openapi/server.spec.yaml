@@ -1073,6 +1073,102 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/filestorage:
+    description: |-
+      Manages project scoped storage. Returns a list of all storage, regardless of type. 
+    get:
+      description: List storage for project.
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: '#/components/parameters/organizationIDQueryParameter'
+      - $ref: '#/components/parameters/projectIDQueryParameter'
+      - $ref: '#/components/parameters/regionIDQueryParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/storageListV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    post:
+        description: Create a new storage.
+        security:
+        - oauth2Authentication: []
+        parameters:
+        - $ref: '#/components/parameters/organizationIDQueryParameter'
+        - $ref: '#/components/parameters/projectIDQueryParameter'
+        - $ref: '#/components/parameters/regionIDQueryParameter'
+        requestBody:
+          $ref: '#/components/requestBodies/storageV2CreateRequest'
+        responses:
+          '201':
+            $ref: '#/components/responses/storageV2Response'
+          '400':
+            $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          '401':
+            $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          '403':
+            $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          '500':
+            $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/storage/filestorage/{filestorageID}:
+    description: |-
+      Manages project scoped storage. 
+    parameters:
+    - $ref: '#/components/parameters/filestorageIDParameter'
+    get:
+      description: Get all storage information this ID.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/storageV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    put:
+      description: Update this storage.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/storageV2UpdateRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/storageV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    delete:
+      description: Delete a storage.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 components:
   parameters:
     organizationIDParameter:
@@ -1139,6 +1235,13 @@ components:
         type: array
         items:
           type: string
+    filestorageIDParameter:
+      name: filestorageID
+      in: path
+      description: The storage unique identifier.
+      required: true
+      schema:
+        $ref: '#/components/schemas/kubernetesNameParameter'
     projectIDQueryParameter:
       name: projectID
       in: query
@@ -2172,6 +2275,148 @@ components:
         privateKey:
           description: The SSH private key.
           type: string
+    storageTypeV2Spec:
+      description: A storage's type
+      type: object
+      properties:
+        NFS:
+          $ref: '#/components/schemas/NFSV2Spec'
+    NFSV2Spec:
+      description: NFS specific
+      type: object
+      required:
+       - rootSquash
+      properties:
+        rootSquash:
+          description: root squash
+          type: boolean
+    storageAttachmentV2Spec:
+      description: Describes the network attachment for storage
+      type: object
+      required:
+      - networkIds
+      properties:
+        networkIds:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string 
+    storageAttachmentV2Status:
+      description: Describes the network attachment for storage
+      type: object
+      required:
+      - networkIds
+      properties:
+        networkIds:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string 
+              provisioningStatus:
+                $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceProvisioningStatus'
+    storageV2Spec:
+      description: A storage's specification.
+      type: object
+      required:
+      - size
+      - storageType
+      properties:
+        size:
+          description: size of the storage 
+          type: string
+        storageType: 
+          $ref: '#/components/schemas/storageTypeV2Spec'
+        attachments:
+          $ref: '#/components/schemas/storageAttachmentV2Spec'
+    storageV2Status:
+      description: Read only status about storage
+      type: object
+      required:
+        - storageClassId
+        - regionId
+        - usage
+      properties:
+        storageClassId:
+          description: identifier for the storage
+          type: string
+        regionId:
+          description: The region an identity is provisioned in.
+          type: string
+        usage:
+          $ref: '#/components/schemas/storageUsageV2Spec'
+        attachments:
+         $ref: '#/components/schemas/storageAttachmentV2Status'
+    storageUsageV2Spec:
+        description: Information about the usage of the storage
+        type: object
+        required:
+          - capacity
+        properties:
+            capacity:
+              description: total space allotted
+              type: string
+            used:
+              description: amount of storage space utilizied
+              type: string
+            free:
+              description: amount of storage space free to utilize
+              type: string
+    storageV2Create:
+      description: A storage create request.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          allOf:
+          - type: object
+            required:
+            - organizationId
+            - projectId
+            - storageClassId
+            properties:
+              storageClassId:
+                description: The storage class ID to provision the storage into.
+                type: string
+              organizationId:
+                description: The organization to provision the resource in.
+                type: string
+              projectId:
+                description: The project to provision the resource in.
+                type: string
+          - $ref: '#/components/schemas/storageV2Spec'
+    storageV2Update:
+      description: A storage create request.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/storageV2Spec'
+    storageV2Read:
+      description: A storage read only group.
+      type: object
+      required:
+      - metadata
+      - spec
+      - status
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+        spec:
+          $ref: '#/components/schemas/storageV2Spec'
+        status:
+          $ref: '#/components/schemas/storageV2Status'
   requestBodies:
     identityRequest:
       description: A request for an identity.
@@ -2384,6 +2629,48 @@ components:
                 allowedSourceAddresses:
                 - 192.168.192.0/24
               userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
+    storageV2CreateRequest:
+      description: A request for storage.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/storageV2Create'
+          example:
+            metadata:
+              name: storage-name
+              description: A verbose description
+              tags:
+              - name: tag-name
+                value: tag-value
+            spec:
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              storageClassId: c7568e2d-f9ab-453d-9a3a-51375f78426b
+              size: 200Ti
+              storageType:
+                nfs:
+                  rootsquash: true
+    storageV2UpdateRequest:
+      description: A request to update a storage.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/storageV2Update'
+          example:
+            metadata:
+              name: storage-name
+              description: A verbose description
+              tags:
+              - name: tag-name
+                value: tag-value
+            spec:
+              size: 200Ti
+              storageType:
+                nfs:
+                  rootsquash: true
+              attachements:
+                networkIds:
+                  - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
   responses:
     regionsResponse:
       description: A list of regions.
@@ -2900,6 +3187,83 @@ components:
               tq29HkEWIBfr5Qag/D+4b9TUNr6I3WU0dhbOTxiE855TAAAAHXVuaWtvcm4gZXBo
               ZW1lcmFsIGVkMjU1MTkga2V5
               -----END OPENSSH PRIVATE KEY-----
+    storageV2Response:
+      description: A storage.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/storageV2Read'
+          example:
+            metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: storage-name
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2024-05-31T14:11:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: provisioned
+              healthStatus: healthy
+              tags:
+              - name: tag-name
+                value: tag-value
+            spec:
+              size: 200Ti
+              storageType:
+                nfs:
+                  rootsquash: true
+              attachements:
+                networkIds:
+                  - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
+            status:
+              regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
+              storageClassId: 99659b44-1700-400f-9c6c-cfdb4bb0445c
+              usage:
+                  capacity: 100Ti
+                  used: 88Ti
+                  free: 12Ti
+              attachements:
+                networkIds:
+                  - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
+                provisioningStatus: provisioned
+    storageListV2Response:
+      description: A list of storages.
+      content:
+        application/json:
+          schema:
+            type: array
+            $ref: '#/components/schemas/storageV2Read'
+          example:
+            metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: storage-name
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2024-05-31T14:11:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: provisioned
+              healthStatus: healthy
+              tags:
+              - name: tag-name
+                value: tag-value
+            spec:
+              size: 200Ti
+              storageType:
+                nfs:
+                  rootsquash: true
+              attachements:
+                networkIds:
+                  - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
+            status:
+              regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
+              storageClassId: 99659b44-1700-400f-9c6c-cfdb4bb0445c
+              usage:
+                  capacity: 100Ti
+                  used: 88Ti
+                  free: 12Ti
+              attachements:
+                networkIds:
+                  - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
+                provisioningStatus: provisioned
   securitySchemes:
     oauth2Authentication:
       description: Operation requires OAuth 2.0 bearer token authentication.

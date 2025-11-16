@@ -189,6 +189,14 @@ type ClientInterface interface {
 	// GetApiV1OrganizationsOrganizationIDServers request
 	GetApiV1OrganizationsOrganizationIDServers(ctx context.Context, organizationID OrganizationIDParameter, params *GetApiV1OrganizationsOrganizationIDServersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiV2Filestorage request
+	GetApiV2Filestorage(ctx context.Context, params *GetApiV2FilestorageParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApiV2FilestorageWithBody request with any body
+	PostApiV2FilestorageWithBody(ctx context.Context, params *PostApiV2FilestorageParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostApiV2Filestorage(ctx context.Context, params *PostApiV2FilestorageParams, body PostApiV2FilestorageJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApiV2Networks request
 	GetApiV2Networks(ctx context.Context, params *GetApiV2NetworksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -266,6 +274,17 @@ type ClientInterface interface {
 
 	// PostApiV2ServersServerIDStop request
 	PostApiV2ServersServerIDStop(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteApiV2StorageFilestorageFilestorageID request
+	DeleteApiV2StorageFilestorageFilestorageID(ctx context.Context, filestorageID FilestorageIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiV2StorageFilestorageFilestorageID request
+	GetApiV2StorageFilestorageFilestorageID(ctx context.Context, filestorageID FilestorageIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutApiV2StorageFilestorageFilestorageIDWithBody request with any body
+	PutApiV2StorageFilestorageFilestorageIDWithBody(ctx context.Context, filestorageID FilestorageIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PutApiV2StorageFilestorageFilestorageID(ctx context.Context, filestorageID FilestorageIDParameter, body PutApiV2StorageFilestorageFilestorageIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) GetApiV1OrganizationsOrganizationIDIdentities(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -688,6 +707,42 @@ func (c *Client) GetApiV1OrganizationsOrganizationIDServers(ctx context.Context,
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetApiV2Filestorage(ctx context.Context, params *GetApiV2FilestorageParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV2FilestorageRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiV2FilestorageWithBody(ctx context.Context, params *PostApiV2FilestorageParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV2FilestorageRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiV2Filestorage(ctx context.Context, params *PostApiV2FilestorageParams, body PostApiV2FilestorageJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV2FilestorageRequest(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetApiV2Networks(ctx context.Context, params *GetApiV2NetworksParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiV2NetworksRequest(c.Server, params)
 	if err != nil {
@@ -1014,6 +1069,54 @@ func (c *Client) PostApiV2ServersServerIDStart(ctx context.Context, serverID Ser
 
 func (c *Client) PostApiV2ServersServerIDStop(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostApiV2ServersServerIDStopRequest(c.Server, serverID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteApiV2StorageFilestorageFilestorageID(ctx context.Context, filestorageID FilestorageIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApiV2StorageFilestorageFilestorageIDRequest(c.Server, filestorageID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiV2StorageFilestorageFilestorageID(ctx context.Context, filestorageID FilestorageIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV2StorageFilestorageFilestorageIDRequest(c.Server, filestorageID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiV2StorageFilestorageFilestorageIDWithBody(ctx context.Context, filestorageID FilestorageIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiV2StorageFilestorageFilestorageIDRequestWithBody(c.Server, filestorageID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiV2StorageFilestorageFilestorageID(ctx context.Context, filestorageID FilestorageIDParameter, body PutApiV2StorageFilestorageFilestorageIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiV2StorageFilestorageFilestorageIDRequest(c.Server, filestorageID, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2553,6 +2656,197 @@ func NewGetApiV1OrganizationsOrganizationIDServersRequest(server string, organiz
 	return req, nil
 }
 
+// NewGetApiV2FilestorageRequest generates requests for GetApiV2Filestorage
+func NewGetApiV2FilestorageRequest(server string, params *GetApiV2FilestorageParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/filestorage")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Tag != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "tag", runtime.ParamLocationQuery, *params.Tag); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.OrganizationID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "organizationID", runtime.ParamLocationQuery, *params.OrganizationID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.ProjectID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "projectID", runtime.ParamLocationQuery, *params.ProjectID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RegionID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "regionID", runtime.ParamLocationQuery, *params.RegionID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostApiV2FilestorageRequest calls the generic PostApiV2Filestorage builder with application/json body
+func NewPostApiV2FilestorageRequest(server string, params *PostApiV2FilestorageParams, body PostApiV2FilestorageJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApiV2FilestorageRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewPostApiV2FilestorageRequestWithBody generates requests for PostApiV2Filestorage with any type of body
+func NewPostApiV2FilestorageRequestWithBody(server string, params *PostApiV2FilestorageParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/filestorage")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.OrganizationID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "organizationID", runtime.ParamLocationQuery, *params.OrganizationID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.ProjectID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "projectID", runtime.ParamLocationQuery, *params.ProjectID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RegionID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "regionID", runtime.ParamLocationQuery, *params.RegionID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetApiV2NetworksRequest generates requests for GetApiV2Networks
 func NewGetApiV2NetworksRequest(server string, params *GetApiV2NetworksParams) (*http.Request, error) {
 	var err error
@@ -3601,6 +3895,121 @@ func NewPostApiV2ServersServerIDStopRequest(server string, serverID ServerIDPara
 	return req, nil
 }
 
+// NewDeleteApiV2StorageFilestorageFilestorageIDRequest generates requests for DeleteApiV2StorageFilestorageFilestorageID
+func NewDeleteApiV2StorageFilestorageFilestorageIDRequest(server string, filestorageID FilestorageIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "filestorageID", runtime.ParamLocationPath, filestorageID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/storage/filestorage/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiV2StorageFilestorageFilestorageIDRequest generates requests for GetApiV2StorageFilestorageFilestorageID
+func NewGetApiV2StorageFilestorageFilestorageIDRequest(server string, filestorageID FilestorageIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "filestorageID", runtime.ParamLocationPath, filestorageID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/storage/filestorage/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutApiV2StorageFilestorageFilestorageIDRequest calls the generic PutApiV2StorageFilestorageFilestorageID builder with application/json body
+func NewPutApiV2StorageFilestorageFilestorageIDRequest(server string, filestorageID FilestorageIDParameter, body PutApiV2StorageFilestorageFilestorageIDJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutApiV2StorageFilestorageFilestorageIDRequestWithBody(server, filestorageID, "application/json", bodyReader)
+}
+
+// NewPutApiV2StorageFilestorageFilestorageIDRequestWithBody generates requests for PutApiV2StorageFilestorageFilestorageID with any type of body
+func NewPutApiV2StorageFilestorageFilestorageIDRequestWithBody(server string, filestorageID FilestorageIDParameter, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "filestorageID", runtime.ParamLocationPath, filestorageID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/storage/filestorage/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -3743,6 +4152,14 @@ type ClientWithResponsesInterface interface {
 	// GetApiV1OrganizationsOrganizationIDServersWithResponse request
 	GetApiV1OrganizationsOrganizationIDServersWithResponse(ctx context.Context, organizationID OrganizationIDParameter, params *GetApiV1OrganizationsOrganizationIDServersParams, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDServersResponse, error)
 
+	// GetApiV2FilestorageWithResponse request
+	GetApiV2FilestorageWithResponse(ctx context.Context, params *GetApiV2FilestorageParams, reqEditors ...RequestEditorFn) (*GetApiV2FilestorageResponse, error)
+
+	// PostApiV2FilestorageWithBodyWithResponse request with any body
+	PostApiV2FilestorageWithBodyWithResponse(ctx context.Context, params *PostApiV2FilestorageParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2FilestorageResponse, error)
+
+	PostApiV2FilestorageWithResponse(ctx context.Context, params *PostApiV2FilestorageParams, body PostApiV2FilestorageJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV2FilestorageResponse, error)
+
 	// GetApiV2NetworksWithResponse request
 	GetApiV2NetworksWithResponse(ctx context.Context, params *GetApiV2NetworksParams, reqEditors ...RequestEditorFn) (*GetApiV2NetworksResponse, error)
 
@@ -3820,6 +4237,17 @@ type ClientWithResponsesInterface interface {
 
 	// PostApiV2ServersServerIDStopWithResponse request
 	PostApiV2ServersServerIDStopWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDStopResponse, error)
+
+	// DeleteApiV2StorageFilestorageFilestorageIDWithResponse request
+	DeleteApiV2StorageFilestorageFilestorageIDWithResponse(ctx context.Context, filestorageID FilestorageIDParameter, reqEditors ...RequestEditorFn) (*DeleteApiV2StorageFilestorageFilestorageIDResponse, error)
+
+	// GetApiV2StorageFilestorageFilestorageIDWithResponse request
+	GetApiV2StorageFilestorageFilestorageIDWithResponse(ctx context.Context, filestorageID FilestorageIDParameter, reqEditors ...RequestEditorFn) (*GetApiV2StorageFilestorageFilestorageIDResponse, error)
+
+	// PutApiV2StorageFilestorageFilestorageIDWithBodyWithResponse request with any body
+	PutApiV2StorageFilestorageFilestorageIDWithBodyWithResponse(ctx context.Context, filestorageID FilestorageIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiV2StorageFilestorageFilestorageIDResponse, error)
+
+	PutApiV2StorageFilestorageFilestorageIDWithResponse(ctx context.Context, filestorageID FilestorageIDParameter, body PutApiV2StorageFilestorageFilestorageIDJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiV2StorageFilestorageFilestorageIDResponse, error)
 }
 
 type GetApiV1OrganizationsOrganizationIDIdentitiesResponse struct {
@@ -4565,6 +4993,58 @@ func (r GetApiV1OrganizationsOrganizationIDServersResponse) StatusCode() int {
 	return 0
 }
 
+type GetApiV2FilestorageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *StorageListV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV2FilestorageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV2FilestorageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostApiV2FilestorageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *StorageV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApiV2FilestorageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApiV2FilestorageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetApiV2NetworksResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -5130,6 +5610,83 @@ func (r PostApiV2ServersServerIDStopResponse) StatusCode() int {
 	return 0
 }
 
+type DeleteApiV2StorageFilestorageFilestorageIDResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteApiV2StorageFilestorageFilestorageIDResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteApiV2StorageFilestorageFilestorageIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetApiV2StorageFilestorageFilestorageIDResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *StorageV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV2StorageFilestorageFilestorageIDResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV2StorageFilestorageFilestorageIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PutApiV2StorageFilestorageFilestorageIDResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *StorageV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r PutApiV2StorageFilestorageFilestorageIDResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutApiV2StorageFilestorageFilestorageIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 // GetApiV1OrganizationsOrganizationIDIdentitiesWithResponse request returning *GetApiV1OrganizationsOrganizationIDIdentitiesResponse
 func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDIdentitiesWithResponse(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDIdentitiesResponse, error) {
 	rsp, err := c.GetApiV1OrganizationsOrganizationIDIdentities(ctx, organizationID, reqEditors...)
@@ -5439,6 +5996,32 @@ func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDServersWithResp
 	return ParseGetApiV1OrganizationsOrganizationIDServersResponse(rsp)
 }
 
+// GetApiV2FilestorageWithResponse request returning *GetApiV2FilestorageResponse
+func (c *ClientWithResponses) GetApiV2FilestorageWithResponse(ctx context.Context, params *GetApiV2FilestorageParams, reqEditors ...RequestEditorFn) (*GetApiV2FilestorageResponse, error) {
+	rsp, err := c.GetApiV2Filestorage(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV2FilestorageResponse(rsp)
+}
+
+// PostApiV2FilestorageWithBodyWithResponse request with arbitrary body returning *PostApiV2FilestorageResponse
+func (c *ClientWithResponses) PostApiV2FilestorageWithBodyWithResponse(ctx context.Context, params *PostApiV2FilestorageParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2FilestorageResponse, error) {
+	rsp, err := c.PostApiV2FilestorageWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiV2FilestorageResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostApiV2FilestorageWithResponse(ctx context.Context, params *PostApiV2FilestorageParams, body PostApiV2FilestorageJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV2FilestorageResponse, error) {
+	rsp, err := c.PostApiV2Filestorage(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiV2FilestorageResponse(rsp)
+}
+
 // GetApiV2NetworksWithResponse request returning *GetApiV2NetworksResponse
 func (c *ClientWithResponses) GetApiV2NetworksWithResponse(ctx context.Context, params *GetApiV2NetworksParams, reqEditors ...RequestEditorFn) (*GetApiV2NetworksResponse, error) {
 	rsp, err := c.GetApiV2Networks(ctx, params, reqEditors...)
@@ -5683,6 +6266,41 @@ func (c *ClientWithResponses) PostApiV2ServersServerIDStopWithResponse(ctx conte
 		return nil, err
 	}
 	return ParsePostApiV2ServersServerIDStopResponse(rsp)
+}
+
+// DeleteApiV2StorageFilestorageFilestorageIDWithResponse request returning *DeleteApiV2StorageFilestorageFilestorageIDResponse
+func (c *ClientWithResponses) DeleteApiV2StorageFilestorageFilestorageIDWithResponse(ctx context.Context, filestorageID FilestorageIDParameter, reqEditors ...RequestEditorFn) (*DeleteApiV2StorageFilestorageFilestorageIDResponse, error) {
+	rsp, err := c.DeleteApiV2StorageFilestorageFilestorageID(ctx, filestorageID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteApiV2StorageFilestorageFilestorageIDResponse(rsp)
+}
+
+// GetApiV2StorageFilestorageFilestorageIDWithResponse request returning *GetApiV2StorageFilestorageFilestorageIDResponse
+func (c *ClientWithResponses) GetApiV2StorageFilestorageFilestorageIDWithResponse(ctx context.Context, filestorageID FilestorageIDParameter, reqEditors ...RequestEditorFn) (*GetApiV2StorageFilestorageFilestorageIDResponse, error) {
+	rsp, err := c.GetApiV2StorageFilestorageFilestorageID(ctx, filestorageID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV2StorageFilestorageFilestorageIDResponse(rsp)
+}
+
+// PutApiV2StorageFilestorageFilestorageIDWithBodyWithResponse request with arbitrary body returning *PutApiV2StorageFilestorageFilestorageIDResponse
+func (c *ClientWithResponses) PutApiV2StorageFilestorageFilestorageIDWithBodyWithResponse(ctx context.Context, filestorageID FilestorageIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiV2StorageFilestorageFilestorageIDResponse, error) {
+	rsp, err := c.PutApiV2StorageFilestorageFilestorageIDWithBody(ctx, filestorageID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiV2StorageFilestorageFilestorageIDResponse(rsp)
+}
+
+func (c *ClientWithResponses) PutApiV2StorageFilestorageFilestorageIDWithResponse(ctx context.Context, filestorageID FilestorageIDParameter, body PutApiV2StorageFilestorageFilestorageIDJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiV2StorageFilestorageFilestorageIDResponse, error) {
+	rsp, err := c.PutApiV2StorageFilestorageFilestorageID(ctx, filestorageID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiV2StorageFilestorageFilestorageIDResponse(rsp)
 }
 
 // ParseGetApiV1OrganizationsOrganizationIDIdentitiesResponse parses an HTTP response from a GetApiV1OrganizationsOrganizationIDIdentitiesWithResponse call
@@ -7174,6 +7792,114 @@ func ParseGetApiV1OrganizationsOrganizationIDServersResponse(rsp *http.Response)
 	return response, nil
 }
 
+// ParseGetApiV2FilestorageResponse parses an HTTP response from a GetApiV2FilestorageWithResponse call
+func ParseGetApiV2FilestorageResponse(rsp *http.Response) (*GetApiV2FilestorageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV2FilestorageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest StorageListV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostApiV2FilestorageResponse parses an HTTP response from a PostApiV2FilestorageWithResponse call
+func ParsePostApiV2FilestorageResponse(rsp *http.Response) (*PostApiV2FilestorageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApiV2FilestorageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest StorageV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetApiV2NetworksResponse parses an HTTP response from a GetApiV2NetworksWithResponse call
 func ParseGetApiV2NetworksResponse(rsp *http.Response) (*GetApiV2NetworksResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -8280,6 +9006,161 @@ func ParsePostApiV2ServersServerIDStopResponse(rsp *http.Response) (*PostApiV2Se
 	}
 
 	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteApiV2StorageFilestorageFilestorageIDResponse parses an HTTP response from a DeleteApiV2StorageFilestorageFilestorageIDWithResponse call
+func ParseDeleteApiV2StorageFilestorageFilestorageIDResponse(rsp *http.Response) (*DeleteApiV2StorageFilestorageFilestorageIDResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteApiV2StorageFilestorageFilestorageIDResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiV2StorageFilestorageFilestorageIDResponse parses an HTTP response from a GetApiV2StorageFilestorageFilestorageIDWithResponse call
+func ParseGetApiV2StorageFilestorageFilestorageIDResponse(rsp *http.Response) (*GetApiV2StorageFilestorageFilestorageIDResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV2StorageFilestorageFilestorageIDResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest StorageV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutApiV2StorageFilestorageFilestorageIDResponse parses an HTTP response from a PutApiV2StorageFilestorageFilestorageIDWithResponse call
+func ParsePutApiV2StorageFilestorageFilestorageIDResponse(rsp *http.Response) (*PutApiV2StorageFilestorageFilestorageIDResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutApiV2StorageFilestorageFilestorageIDResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest StorageV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest externalRef0.BadRequestResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
