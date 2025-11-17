@@ -34,10 +34,9 @@ var (
 )
 
 type CreateFileSystem struct {
-	ProjectID         string `json:"projectId"`
-	VolumeID          string `json:"volumeId"`
-	Size              int64  `json:"size"`
-	RootSquashEnabled bool   `json:"rootSquashEnabled"`
+	RemoteIdentifier  `json:",inline"`
+	Size              int64 `json:"size"`
+	RootSquashEnabled bool  `json:"rootSquashEnabled"`
 }
 
 type CreateFileSystemResponse struct {
@@ -45,18 +44,16 @@ type CreateFileSystemResponse struct {
 }
 
 type CreateMountTarget struct {
-	ProjectID string `json:"projectId"`
-	VolumeID  string `json:"volumeId"`
-	VlanID    int64  `json:"vlanId"`
-	StartIP   string `json:"startIp"`
-	EndIP     string `json:"endIp"`
+	RemoteIdentifier `json:",inline"`
+	VlanID           int64  `json:"vlanId"`
+	StartIP          string `json:"startIp"`
+	EndIP            string `json:"endIp"`
 }
 
 type CreateMountTargetResponse struct{}
 
 type GetFileSystem struct {
-	ProjectID string `json:"projectId"`
-	VolumeID  string `json:"volumeId"`
+	RemoteIdentifier `json:",inline"`
 }
 
 type GetFileSystemResponse struct {
@@ -67,8 +64,7 @@ type GetFileSystemResponse struct {
 }
 
 type ListFileSystemMountTargets struct {
-	ProjectID string `json:"projectId"`
-	VolumeID  string `json:"volumeId"`
+	RemoteIdentifier `json:",inline"`
 }
 
 type ListFileSystemMountTargetsResponse struct {
@@ -82,9 +78,8 @@ type Attachment struct {
 }
 
 type Resize struct {
-	ProjectID string `json:"projectId"`
-	VolumeID  string `json:"volumeId"`
-	Size      int64  `json:"size"`
+	RemoteIdentifier `json:",inline"`
+	Size             int64 `json:"size"`
 }
 
 type ResizeResponse struct {
@@ -95,6 +90,11 @@ type ResizeResponse struct {
 type NatsResponseEnvelope[T any] struct {
 	Error   string `json:"error,omitempty"`
 	Success *T     `json:"success,omitempty"`
+}
+
+type RemoteIdentifier struct {
+	ProjectID string `json:"projectId"`
+	VolumeID  string `json:"volumeId"`
 }
 
 // doRequest wraps the common NATS request/response pattern and unmarshals into a typed envelope.

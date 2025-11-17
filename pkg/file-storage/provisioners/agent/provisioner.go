@@ -69,8 +69,10 @@ func connectToNATS(_ *unikornv1.FileStorageProvisioner) (*nats.Conn, error) {
 
 func (p *Provisioner) GetDetails(ctx context.Context, fs *unikornv1.FileStorage) (*types.FileStorageDetails, error) {
 	req := &GetFileSystem{
-		ProjectID: fs.Labels[coreconstants.ProjectLabel],
-		VolumeID:  fs.GetName(),
+		RemoteIdentifier: RemoteIdentifier{
+			ProjectID: fs.Labels[coreconstants.ProjectLabel],
+			VolumeID:  fs.GetName(),
+		},
 	}
 
 	res, err := doRequest[GetFileSystemResponse](ctx, p.nc, p.subject("getfilesystem"), req)
