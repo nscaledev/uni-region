@@ -1417,6 +1417,10 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 // securityGroupRulePortRange expands a security group port into a start-end range as
 // required by Neutron.
 func securityGroupRulePortRange(port *unikornv1.SecurityGroupRulePort) (int, int, error) {
+	if port == nil {
+		return 0, 0, nil
+	}
+
 	if port.Number != nil {
 		return *port.Number, *port.Number, nil
 	}
@@ -1436,12 +1440,18 @@ func securityGroupRuleID(direction, protocol string, startPort, endPort int, pre
 // securityGroupRuleIDFromSecurityGroupRule generates a deterministic, but unique, ID for a security group rule.
 func securityGroupRuleIDFromSecurityGroupRule(rule *unikornv1.SecurityGroupRule) (string, error) {
 	// The data is a tuple of direction, protocol, port and prefix.
-	start, end, err := securityGroupRulePortRange(&rule.Port)
+	start, end, err := securityGroupRulePortRange(rule.Port)
 	if err != nil {
 		return "", err
 	}
 
-	return securityGroupRuleID(string(rule.Direction), string(rule.Protocol), start, end, rule.CIDR.String()), nil
+	var prefix string
+
+	if rule.CIDR != nil {
+		prefix = rule.CIDR.String()
+	}
+
+	return securityGroupRuleID(string(rule.Direction), string(rule.Protocol), start, end, prefix), nil
 }
 
 func listOpenstackSecurityGroupRules(ctx context.Context, client SecurityGroupInterface, securityGroupID string) (map[string]*rules.SecGroupRule, error) {
@@ -1487,6 +1497,8 @@ func generateSecurityGroupRules(securityGroup *unikornv1.SecurityGroup) (map[str
 // reconcileSecurityGroupRules generates two sets of IDs from existing and requested security group
 // rules, does a boolean difference, and uses that to either create or delete rules from the security
 // group.
+//
+//nolint:cyclop
 func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup, openstackSecurityGroup *groups.SecGroup) error {
 	log := log.FromContext(ctx)
 
@@ -1527,12 +1539,18 @@ func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, client Secur
 		direction := rules.RuleDirection(rule.Direction)
 		protocol := rules.RuleProtocol(rule.Protocol)
 
-		portStart, portEnd, err := securityGroupRulePortRange(&rule.Port)
+		portStart, portEnd, err := securityGroupRulePortRange(rule.Port)
 		if err != nil {
 			return err
 		}
 
-		if _, err := client.CreateSecurityGroupRule(ctx, openstackSecurityGroup.ID, direction, protocol, portStart, portEnd, rule.CIDR.String()); err != nil {
+		var prefix string
+
+		if rule.CIDR != nil {
+			prefix = rule.CIDR.String()
+		}
+
+		if _, err := client.CreateSecurityGroupRule(ctx, openstackSecurityGroup.ID, direction, protocol, portStart, portEnd, prefix); err != nil {
 			return err
 		}
 	}

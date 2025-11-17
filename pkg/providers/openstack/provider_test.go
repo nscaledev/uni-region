@@ -216,7 +216,7 @@ func securityGroupRuleFixtureSingle(t *testing.T, dir regionv1.SecurityGroupRule
 	return regionv1.SecurityGroupRule{
 		Direction: dir,
 		Protocol:  proto,
-		Port: regionv1.SecurityGroupRulePort{
+		Port: &regionv1.SecurityGroupRulePort{
 			Number: ptr.To(port),
 		},
 		CIDR: &corev1.IPv4Prefix{

@@ -92,13 +92,14 @@ spec:
                     protocol:
                       description: Protocol is the protocol of the rule.
                       enum:
+                      - any
+                      - icmp
                       - tcp
                       - udp
+                      - vrrp
                       type: string
                   required:
-                  - cidr
                   - direction
-                  - port
                   - protocol
                   type: object
                 type: array

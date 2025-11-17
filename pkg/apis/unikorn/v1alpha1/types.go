@@ -554,15 +554,21 @@ type SecurityGroupStatus struct {
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=tcp;udp
+// +kubebuilder:validation:Enum=any;icmp;tcp;udp;vrrp
 type SecurityGroupRuleProtocol string
+
+const (
+	Any  SecurityGroupRuleProtocol = "any"
+	ICMP SecurityGroupRuleProtocol = "icmp"
+	TCP  SecurityGroupRuleProtocol = "tcp"
+	UDP  SecurityGroupRuleProtocol = "udp"
+	VRRP SecurityGroupRuleProtocol = "vrrp"
+)
 
 // +kubebuilder:validation:Enum=ingress;egress
 type SecurityGroupRuleDirection string
 
 const (
-	TCP     SecurityGroupRuleProtocol  = "tcp"
-	UDP     SecurityGroupRuleProtocol  = "udp"
 	Ingress SecurityGroupRuleDirection = "ingress"
 	Egress  SecurityGroupRuleDirection = "egress"
 )
@@ -590,9 +596,9 @@ type SecurityGroupRule struct {
 	// Protocol is the protocol of the rule.
 	Protocol SecurityGroupRuleProtocol `json:"protocol"`
 	// Port is the port or range of ports.
-	Port SecurityGroupRulePort `json:"port"`
+	Port *SecurityGroupRulePort `json:"port,omitempty"`
 	// CIDR is the CIDR block to allow traffic from.
-	CIDR *unikornv1core.IPv4Prefix `json:"cidr"`
+	CIDR *unikornv1core.IPv4Prefix `json:"cidr,omitempty"`
 }
 
 // OpenstackSecurityGroupList is a typed list of security groups.
