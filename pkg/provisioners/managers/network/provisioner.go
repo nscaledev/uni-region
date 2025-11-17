@@ -19,10 +19,14 @@ package network
 import (
 	"context"
 
+	"github.com/spf13/pflag"
+
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
+	identityclient "github.com/unikorn-cloud/identity/pkg/client"
+	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
@@ -30,18 +34,42 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// Options allows access to CLI options in the provisioner.
+type Options struct {
+	// identityOptions allow the identity host and CA to be set.
+	identityOptions *identityclient.Options
+	// clientOptions give access to client certificate information as
+	// we need to talk to identity to get a token, and then to region
+	// to ensure cloud identities and networks are provisioned, as well
+	// as deptovisioning them.
+	clientOptions coreclient.HTTPClientOptions
+}
+
+func (o *Options) AddFlags(f *pflag.FlagSet) {
+	if o.identityOptions == nil {
+		o.identityOptions = identityclient.NewOptions()
+	}
+
+	o.identityOptions.AddFlags(f)
+	o.clientOptions.AddFlags(f)
+}
+
 // Provisioner encapsulates control plane provisioning.
 type Provisioner struct {
 	provisioners.Metadata
-
 	// network is the network we're provisioning.
 	network *unikornv1.Network
+	// options are documented for the type.
+	options *Options
 }
 
 // New returns a new initialized provisioner object.
-func New(_ manager.ControllerOptions) provisioners.ManagerProvisioner {
+func New(options manager.ControllerOptions) provisioners.ManagerProvisioner {
+	o, _ := options.(*Options)
+
 	return &Provisioner{
 		network: &unikornv1.Network{},
+		options: o,
 	}
 }
 
@@ -50,6 +78,20 @@ var _ provisioners.ManagerProvisioner = &Provisioner{}
 
 func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 	return p.network
+}
+
+func (p *Provisioner) identityClient(ctx context.Context) (identityapi.ClientWithResponsesInterface, error) {
+	client, err := coreclient.FromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	token, err := identityclient.NewTokenIssuer(client, p.options.identityOptions, &p.options.clientOptions, constants.ServiceDescriptor()).Issue(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return identityclient.New(client, p.options.identityOptions, &p.options.clientOptions).ControllerClient(ctx, token, p.network)
 }
 
 func (p *Provisioner) getIdentity(ctx context.Context, cli client.Client) (*unikornv1.Identity, error) {
@@ -110,6 +152,10 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 	}
 
 	if err := provider.DeleteNetwork(ctx, identity, p.network); err != nil {
+		return err
+	}
+
+	if err := identityclient.NewAllocations(cli, p.identityClient).Delete(ctx, p.network); err != nil {
 		return err
 	}
 
