@@ -286,9 +286,9 @@ func (h *Handler) GetApiV2Filestorage(w http.ResponseWriter, r *http.Request, pa
 }
 func (h *Handler) PostApiV2Filestorage(w http.ResponseWriter, r *http.Request, params openapi.PostApiV2FilestorageParams) {
 }
-func (h *Handler) DeleteApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter, params openapi.DeleteApiV2StorageFilestorageFilestorageIDParams) {
+func (h *Handler) DeleteApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter) {
 }
-func (h *Handler) GetApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter, params openapi.GetApiV2StorageFilestorageFilestorageIDParams) {
+func (h *Handler) GetApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter) {
 }
-func (h *Handler) PutApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, fileStorageID openapi.FilestorageIDParameter, params openapi.PutApiV2StorageFilestorageFilestorageIDParams) {
+func (h *Handler) PutApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, fileStorageID openapi.FilestorageIDParameter) {
 }
