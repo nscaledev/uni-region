@@ -21,7 +21,6 @@ package v1alpha1
 import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -783,7 +782,7 @@ type FileStorage struct {
 // FileStorageSpec defines the storage request.
 type FileStorageSpec struct {
 	// Name of the FileStorageClass.
-	StorageClassID string `json:"storageClassID"`
+	FileStorageClass string `json:"fileStorageClass"`
 
 	// Size is the total size of the storage class.
 	Size resource.Quantity `json:"size"`
@@ -813,7 +812,10 @@ const (
 )
 
 type FileStorageStatus struct {
+	// Current service state of a file storage.
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	// MountPath is the path where the file storage is mounted.
+	MountPath *string `json:"mountPath,omitempty"`
 }
 
 // Attachment has the network identifier for the storage.
@@ -834,7 +836,7 @@ type FileStorageClassList struct {
 	Items           []FileStorageClass `json:"items"`
 }
 
-// FileStorageClass defines the storage protocols, optional QoS guarantees, the service provider, and the billing identifier used to assign storage costs.
+// FileStorageClass defines the storage protocols, optional QoS guarantees and the service provider.
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:scope=Namespaced,categories=unikorn
 // +kubebuilder:subresource:status
@@ -849,56 +851,37 @@ type FileStorageClass struct {
 
 // FileStorageClassSpec defines the FileStorageClass.
 type FileStorageClassSpec struct {
-	// Provider is the provider configuration for the file storage class.
-	Provider *FileStorageProviderSpec `json:"provider,omitempty"`
+	// Provisioner is the name of the provisioner to use for the file storage class.
+	Provisioner string `json:"provisioner"`
 	// Protocols specifies the storage protocols (e.g., NFSv3, NFSv4) supported by this class.
 	Protocols []Protocol `json:"protocols,omitempty"`
 }
 
 type FileStorageClassStatus struct{}
 
-type FileStorageProviderSpec struct {
-	// Agent is the agent provider specific configuration for the file storage class.
-	Agent *FileStorageProviderAgentSpec `json:"agent,omitempty"`
+// FileStorageProvisionerList is a list of the FileStorageProvisioner type.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type FileStorageProvisionerList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []FileStorageProvisioner `json:"items"`
 }
 
-type FileStorageProviderAgentSpec struct {
-	// Type defines the agent type.
-	Type FileStorageAgentType `json:"type"`
-	// Nats is agent specific configuration for the file storage class.
-	Nats *FileStorageProviderAgentNatsSpec `json:"nats,omitempty"`
+// FileStorageProvisioner defines the file storage provisioner.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type FileStorageProvisioner struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Status            FileStorageProvisionerStatus `json:"status,omitempty"`
+	Spec              FileStorageProvisionerSpec   `json:"spec"`
 }
 
-// FileStorageAgentType specifies the implementation of the agent responsible
-// for provisioning and managing file storage resources.
-type FileStorageAgentType string
-
-const (
-	FileStorageAgentTypeNats FileStorageAgentType = "nats"
-)
-
-type FileStorageProviderAgentNatsSpec struct {
-	NatsConnectionSpec `json:",inline"`
-	NatsPublisherSpec  `json:",inline"`
+type FileStorageProvisionerSpec struct {
+	// ConfigRef is the reference to the config map for the file storage provisioner.
+	ConfigRef *NamespacedObject `json:"configRef,omitempty"`
 }
 
-type NatsConnectionSpec struct {
-	// Servers is a list of NATS servers.
-	Servers []string `json:"servers"`
-	// TLS is the TLS configuration for the NATS connection.
-	TLS *FileStorageProviderAgentNatsTLS `json:"tls,omitempty"`
-}
-
-type NatsPublisherSpec struct {
-	// Subject is the NATS subject used to communicate with the agent.
-	Subject string `json:"subject"`
-}
-
-type FileStorageProviderAgentNatsTLS struct {
-	// CASecret is the secret containing the CA certificate.
-	CASecret *corev1.SecretKeySelector `json:"caSecret,omitempty"`
-	// CertSecret is the secret containing the client certificate.
-	CertSecret *corev1.SecretKeySelector `json:"certSecret,omitempty"`
-	// KeySecret is the secret containing the client key.
-	KeySecret *corev1.SecretKeySelector `json:"keySecret,omitempty"`
-}
+type FileStorageProvisionerStatus struct{}
