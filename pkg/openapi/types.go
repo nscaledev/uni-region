@@ -67,6 +67,12 @@ const (
 	Openstack  RegionType = "openstack"
 )
 
+// NFSV2Spec NFS specific
+type NFSV2Spec struct {
+	// RootSquash root squash
+	RootSquash bool `json:"rootSquash"`
+}
+
 // AllowedSourceAddresses A list of network prefixes that are allowed to egress from the server.
 // By default, only packets from the server's network interface's IP address
 // are allowed to enter the network.  Use of this option allows the server
@@ -858,6 +864,117 @@ type SshKey struct {
 	PrivateKey string `json:"privateKey"`
 }
 
+// StorageAttachmentV2Spec Describes the network attachment for storage
+type StorageAttachmentV2Spec struct {
+	NetworkIds []struct {
+		Id *string `json:"id,omitempty"`
+	} `json:"networkIds"`
+}
+
+// StorageAttachmentV2Status Describes the network attachment for storage
+type StorageAttachmentV2Status struct {
+	NetworkIds []struct {
+		Id *string `json:"id,omitempty"`
+
+		// ProvisioningStatus The provisioning state of a resource.
+		ProvisioningStatus *externalRef0.ResourceProvisioningStatus `json:"provisioningStatus,omitempty"`
+	} `json:"networkIds"`
+}
+
+// StorageTypeV2Spec A storage's type
+type StorageTypeV2Spec struct {
+	// NFS NFS specific
+	NFS *NFSV2Spec `json:"NFS,omitempty"`
+}
+
+// StorageUsageV2Spec Information about the usage of the storage
+type StorageUsageV2Spec struct {
+	// Capacity total space allotted
+	Capacity string `json:"capacity"`
+
+	// Free amount of storage space free to utilize
+	Free *string `json:"free,omitempty"`
+
+	// Used amount of storage space utilizied
+	Used *string `json:"used,omitempty"`
+}
+
+// StorageV2Create A storage create request.
+type StorageV2Create struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+	Spec     struct {
+		// Attachments Describes the network attachment for storage
+		Attachments *StorageAttachmentV2Spec `json:"attachments,omitempty"`
+
+		// OrganizationId The organization to provision the resource in.
+		OrganizationId string `json:"organizationId"`
+
+		// ProjectId The project to provision the resource in.
+		ProjectId string `json:"projectId"`
+
+		// Size size of the storage
+		Size string `json:"size"`
+
+		// StorageClassId The storage class ID to provision the storage into.
+		StorageClassId string `json:"storageClassId"`
+
+		// StorageType A storage's type
+		StorageType StorageTypeV2Spec `json:"storageType"`
+	} `json:"spec"`
+}
+
+// StorageV2Read A storage read only group.
+type StorageV2Read struct {
+	// Metadata Metadata required by project scoped resource reads.
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+
+	// Spec A storage's specification.
+	Spec StorageV2Spec `json:"spec"`
+
+	// Status Read only status about storage
+	Status StorageV2Status `json:"status"`
+}
+
+// StorageV2Spec A storage's specification.
+type StorageV2Spec struct {
+	// Attachments Describes the network attachment for storage
+	Attachments *StorageAttachmentV2Spec `json:"attachments,omitempty"`
+
+	// Size size of the storage
+	Size string `json:"size"`
+
+	// StorageType A storage's type
+	StorageType StorageTypeV2Spec `json:"storageType"`
+}
+
+// StorageV2Status Read only status about storage
+type StorageV2Status struct {
+	// Attachments Describes the network attachment for storage
+	Attachments *StorageAttachmentV2Status `json:"attachments,omitempty"`
+
+	// RegionId The region an identity is provisioned in.
+	RegionId string `json:"regionId"`
+
+	// StorageClassId identifier for the storage
+	StorageClassId string `json:"storageClassId"`
+
+	// Usage Information about the usage of the storage
+	Usage StorageUsageV2Spec `json:"usage"`
+}
+
+// StorageV2Update A storage create request.
+type StorageV2Update struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A storage's specification.
+	Spec StorageV2Spec `json:"spec"`
+}
+
+// FilestorageIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
+type FilestorageIDParameter = KubernetesNameParameter
+
 // IdentityIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type IdentityIDParameter = KubernetesNameParameter
 
@@ -960,6 +1077,12 @@ type ServersV2Response = ServersV2Read
 // SshKeyResponse An SSH key.
 type SshKeyResponse = SshKey
 
+// StorageListV2Response A storage read only group.
+type StorageListV2Response = StorageV2Read
+
+// StorageV2Response A storage read only group.
+type StorageV2Response = StorageV2Read
+
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
 
@@ -990,6 +1113,12 @@ type ServerV2CreateRequest = ServerV2Create
 // ServerV2UpdateRequest A server update request.
 type ServerV2UpdateRequest = ServerV2Update
 
+// StorageV2CreateRequest A storage create request.
+type StorageV2CreateRequest = StorageV2Create
+
+// StorageV2UpdateRequest A storage create request.
+type StorageV2UpdateRequest = StorageV2Update
+
 // GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams defines parameters for GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutput.
 type GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams struct {
 	// Length The requested output length.
@@ -1008,6 +1137,22 @@ type GetApiV1OrganizationsOrganizationIDServersParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",
 	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+}
+
+// GetApiV2FilestorageParams defines parameters for GetApiV2Filestorage.
+type GetApiV2FilestorageParams struct {
+	// Tag A set of tags to match against resources in the form "name=value",
+	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+
+	// OrganizationID Allows resources to be filtered by organization.
+	OrganizationID *OrganizationIDQueryParameter `form:"organizationID,omitempty" json:"organizationID,omitempty"`
+
+	// ProjectID Allows resources to be filtered by project.
+	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
 }
 
 // GetApiV2NetworksParams defines parameters for GetApiV2Networks.
@@ -1088,6 +1233,9 @@ type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSe
 // PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody defines body for PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID for application/json ContentType.
 type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody = ServerWrite
 
+// PostApiV2FilestorageJSONRequestBody defines body for PostApiV2Filestorage for application/json ContentType.
+type PostApiV2FilestorageJSONRequestBody = StorageV2Create
+
 // PostApiV2NetworksJSONRequestBody defines body for PostApiV2Networks for application/json ContentType.
 type PostApiV2NetworksJSONRequestBody = NetworkV2Create
 
@@ -1105,3 +1253,6 @@ type PostApiV2ServersJSONRequestBody = ServerV2Create
 
 // PutApiV2ServersServerIDJSONRequestBody defines body for PutApiV2ServersServerID for application/json ContentType.
 type PutApiV2ServersServerIDJSONRequestBody = ServerV2Update
+
+// PutApiV2StorageFilestorageFilestorageIDJSONRequestBody defines body for PutApiV2StorageFilestorageFilestorageID for application/json ContentType.
+type PutApiV2StorageFilestorageFilestorageIDJSONRequestBody = StorageV2Update
