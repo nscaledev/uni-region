@@ -22,8 +22,8 @@ import (
 	"slices"
 
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-	"github.com/unikorn-cloud/region/pkg/providers/kubernetes"
-	"github.com/unikorn-cloud/region/pkg/providers/openstack"
+	"github.com/unikorn-cloud/region/pkg/providers/internal/kubernetes"
+	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"

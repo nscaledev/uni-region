@@ -30,7 +30,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/stretchr/testify/require"
 
-	"github.com/unikorn-cloud/region/pkg/providers/openstack"
+	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
 
 	"k8s.io/apimachinery/pkg/util/uuid"
 )

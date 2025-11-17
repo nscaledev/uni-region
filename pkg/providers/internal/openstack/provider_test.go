@@ -37,8 +37,8 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/providers/openstack"
-	"github.com/unikorn-cloud/region/pkg/providers/openstack/mock"
+	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
+	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack/mock"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"

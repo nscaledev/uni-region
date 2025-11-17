@@ -616,7 +616,7 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 	}
 
 	if !isPublicOrOrganizationOwnedImage(resource, organizationID) {
-		return nil, fmt.Errorf("%w: image %s", ErrResourceNotFound, imageID)
+		return nil, fmt.Errorf("%w: image %s", types.ErrResourceNotFound, imageID)
 	}
 
 	return p.convertImage(resource)
@@ -721,7 +721,7 @@ func roleNameToID(roles []roles.Role, name string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("%w: role %s", ErrResourceNotFound, name)
+	return "", fmt.Errorf("%w: role %s", types.ErrResourceNotFound, name)
 }
 
 // getRequiredProjectManagerRoles returns the roles required for a manager to create, manage
@@ -2049,7 +2049,7 @@ func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1
 	result, err := compute.CreateRemoteConsole(ctx, openstackServer.ID)
 	if err != nil {
 		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return "", fmt.Errorf("%w: server is being deprovisioned", ErrResourceDependency)
+			return "", fmt.Errorf("%w: server is being deprovisioned", types.ErrResourceDependency)
 		}
 
 		return "", err
@@ -2072,7 +2072,7 @@ func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Ide
 	result, err := compute.ShowConsoleOutput(ctx, openstackServer.ID, length)
 	if err != nil {
 		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return "", fmt.Errorf("%w: server is being deprovisioned", ErrResourceDependency)
+			return "", fmt.Errorf("%w: server is being deprovisioned", types.ErrResourceDependency)
 		}
 
 		return "", err
