@@ -249,11 +249,11 @@ func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID strin
 func convertImageVirtualization(in types.ImageVirtualization) openapi.ImageVirtualization {
 	switch in {
 	case types.Virtualized:
-		return openapi.Virtualized
+		return openapi.ImageVirtualizationVirtualized
 	case types.Baremetal:
-		return openapi.Baremetal
+		return openapi.ImageVirtualizationBaremetal
 	case types.Any:
-		return openapi.Any
+		return openapi.ImageVirtualizationAny
 	}
 
 	return ""
