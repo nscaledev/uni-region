@@ -448,10 +448,6 @@ func (c *Client) DeleteV2(ctx context.Context, networkID string) error {
 		return nil
 	}
 
-	if err := identityclient.NewAllocations(c.client, c.identity).Delete(ctx, resource); err != nil {
-		return err
-	}
-
 	// The V2 API doesn't expose service principals, but they are mapped 1:1 to networks, so as the
 	// real root of the tree we actually delete that and allow cascading deletion to do the
 	// rest.
