@@ -66,6 +66,23 @@ spec:
                 - openstack
                 - kubernetes
                 type: string
+              routes:
+                description: Routes to be distributed via DHCP.
+                items:
+                  properties:
+                    nextHop:
+                      description: NextHop address to forward the traffic to.
+                      pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])$
+                      type: string
+                    prefix:
+                      description: Prefix to match when forwarding.
+                      pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\/(?:3[0-2]|[1-2]?[0-9])$
+                      type: string
+                  required:
+                  - nextHop
+                  - prefix
+                  type: object
+                type: array
               tags:
                 description: |-
                   Tags are an abitrary list of key/value pairs that a client

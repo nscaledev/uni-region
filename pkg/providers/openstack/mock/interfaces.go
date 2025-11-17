@@ -157,18 +157,18 @@ func (m *MockSubnetInterface) EXPECT() *MockSubnetInterfaceMockRecorder {
 }
 
 // CreateSubnet mocks base method.
-func (m *MockSubnetInterface) CreateSubnet(ctx context.Context, network *v1alpha1.Network, networkID, prefix, gatewayID string, dnsNameservers []string, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error) {
+func (m *MockSubnetInterface) CreateSubnet(ctx context.Context, network *v1alpha1.Network, networkID, prefix, gatewayID string, dnsNameservers []string, routes []subnets.HostRoute, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateSubnet", ctx, network, networkID, prefix, gatewayID, dnsNameservers, allocationPools)
+	ret := m.ctrl.Call(m, "CreateSubnet", ctx, network, networkID, prefix, gatewayID, dnsNameservers, routes, allocationPools)
 	ret0, _ := ret[0].(*subnets.Subnet)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateSubnet indicates an expected call of CreateSubnet.
-func (mr *MockSubnetInterfaceMockRecorder) CreateSubnet(ctx, network, networkID, prefix, gatewayID, dnsNameservers, allocationPools any) *gomock.Call {
+func (mr *MockSubnetInterfaceMockRecorder) CreateSubnet(ctx, network, networkID, prefix, gatewayID, dnsNameservers, routes, allocationPools any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSubnet", reflect.TypeOf((*MockSubnetInterface)(nil).CreateSubnet), ctx, network, networkID, prefix, gatewayID, dnsNameservers, allocationPools)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSubnet", reflect.TypeOf((*MockSubnetInterface)(nil).CreateSubnet), ctx, network, networkID, prefix, gatewayID, dnsNameservers, routes, allocationPools)
 }
 
 // DeleteSubnet mocks base method.
@@ -198,6 +198,21 @@ func (m *MockSubnetInterface) GetSubnet(ctx context.Context, network *v1alpha1.N
 func (mr *MockSubnetInterfaceMockRecorder) GetSubnet(ctx, network any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSubnet", reflect.TypeOf((*MockSubnetInterface)(nil).GetSubnet), ctx, network)
+}
+
+// UpdateSubnet mocks base method.
+func (m *MockSubnetInterface) UpdateSubnet(ctx context.Context, subnetID string, dnsNameservers []string, routes []subnets.HostRoute) (*subnets.Subnet, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateSubnet", ctx, subnetID, dnsNameservers, routes)
+	ret0, _ := ret[0].(*subnets.Subnet)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateSubnet indicates an expected call of UpdateSubnet.
+func (mr *MockSubnetInterfaceMockRecorder) UpdateSubnet(ctx, subnetID, dnsNameservers, routes any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSubnet", reflect.TypeOf((*MockSubnetInterface)(nil).UpdateSubnet), ctx, subnetID, dnsNameservers, routes)
 }
 
 // MockRouterInterface is a mock of RouterInterface interface.
@@ -713,18 +728,18 @@ func (mr *MockNetworkingInterfaceMockRecorder) CreateServerPort(ctx, server, net
 }
 
 // CreateSubnet mocks base method.
-func (m *MockNetworkingInterface) CreateSubnet(ctx context.Context, network *v1alpha1.Network, networkID, prefix, gatewayID string, dnsNameservers []string, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error) {
+func (m *MockNetworkingInterface) CreateSubnet(ctx context.Context, network *v1alpha1.Network, networkID, prefix, gatewayID string, dnsNameservers []string, routes []subnets.HostRoute, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateSubnet", ctx, network, networkID, prefix, gatewayID, dnsNameservers, allocationPools)
+	ret := m.ctrl.Call(m, "CreateSubnet", ctx, network, networkID, prefix, gatewayID, dnsNameservers, routes, allocationPools)
 	ret0, _ := ret[0].(*subnets.Subnet)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateSubnet indicates an expected call of CreateSubnet.
-func (mr *MockNetworkingInterfaceMockRecorder) CreateSubnet(ctx, network, networkID, prefix, gatewayID, dnsNameservers, allocationPools any) *gomock.Call {
+func (mr *MockNetworkingInterfaceMockRecorder) CreateSubnet(ctx, network, networkID, prefix, gatewayID, dnsNameservers, routes, allocationPools any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSubnet", reflect.TypeOf((*MockNetworkingInterface)(nil).CreateSubnet), ctx, network, networkID, prefix, gatewayID, dnsNameservers, allocationPools)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSubnet", reflect.TypeOf((*MockNetworkingInterface)(nil).CreateSubnet), ctx, network, networkID, prefix, gatewayID, dnsNameservers, routes, allocationPools)
 }
 
 // DeleteFloatingIP mocks base method.
@@ -1002,6 +1017,21 @@ func (m *MockNetworkingInterface) UpdatePort(ctx context.Context, portID string,
 func (mr *MockNetworkingInterfaceMockRecorder) UpdatePort(ctx, portID, securityGroupIDs, allowedAddressPairs any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePort", reflect.TypeOf((*MockNetworkingInterface)(nil).UpdatePort), ctx, portID, securityGroupIDs, allowedAddressPairs)
+}
+
+// UpdateSubnet mocks base method.
+func (m *MockNetworkingInterface) UpdateSubnet(ctx context.Context, subnetID string, dnsNameservers []string, routes []subnets.HostRoute) (*subnets.Subnet, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateSubnet", ctx, subnetID, dnsNameservers, routes)
+	ret0, _ := ret[0].(*subnets.Subnet)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateSubnet indicates an expected call of UpdateSubnet.
+func (mr *MockNetworkingInterfaceMockRecorder) UpdateSubnet(ctx, subnetID, dnsNameservers, routes any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSubnet", reflect.TypeOf((*MockNetworkingInterface)(nil).UpdateSubnet), ctx, subnetID, dnsNameservers, routes)
 }
 
 // MockKeypairInterface is a mock of KeypairInterface interface.

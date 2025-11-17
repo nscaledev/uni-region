@@ -415,6 +415,15 @@ type NetworkSpec struct {
 	Prefix *unikornv1core.IPv4Prefix `json:"prefix"`
 	// DNSNameservers are a set of DNS nameservrs for the network.
 	DNSNameservers []unikornv1core.IPv4Address `json:"dnsNameservers"`
+	// Routes to be distributed via DHCP.
+	Routes []Route `json:"routes,omitempty"`
+}
+
+type Route struct {
+	// Prefix to match when forwarding.
+	Prefix unikornv1core.IPv4Prefix `json:"prefix"`
+	// NextHop address to forward the traffic to.
+	NextHop unikornv1core.IPv4Address `json:"nextHop"`
 }
 
 // TODO: delete me.

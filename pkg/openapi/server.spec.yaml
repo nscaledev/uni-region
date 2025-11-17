@@ -674,7 +674,7 @@ paths:
       security:
       - oauth2Authentication: []
       requestBody:
-        $ref: '#/components/requestBodies/networkV2Request'
+        $ref: '#/components/requestBodies/networkV2CreateRequest'
       responses:
         '201':
           $ref: '#/components/responses/networkV2Response'
@@ -699,6 +699,23 @@ paths:
       - oauth2Authentication: []
       responses:
         '200':
+          $ref: '#/components/responses/networkV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    put:
+      description: Update a network.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/networkV2UpdateRequest'
+      responses:
+        '202':
           $ref: '#/components/responses/networkV2Response'
         '400':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
@@ -1575,50 +1592,70 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/networkRead'
-    networkV2CreateSpec:
-      description: A network's specification.
+    route:
+      description: A network route.
       type: object
       required:
-      - organizationId
-      - projectId
-      - regionId
       - prefix
-      - dnsNameservers
+      - nexthop
       properties:
-        organizationId:
-          description: The organization to provision the resource in.
-          type: string
-        projectId:
-          description: The project to provision the resource in.
-          type: string
         prefix:
-          description: An IPv4 prefix for the network.
+          description: An IPv4 prefix for the route.
           type: string
-        dnsNameservers:
-          $ref: '#/components/schemas/ipv4AddressList'
-        regionId:
-          description: The region a network is to be provisioned in.
+        nexthop:
+          description: An IPv4 address for the route's next hop.
           type: string
+    routes:
+      description: A list of network routes.
+      type: array
+      items:
+        $ref: '#/components/schemas/route'
     networkV2Spec:
       description: A network's specification.
       type: object
       required:
-      - prefix
       - dnsNameservers
       properties:
-        prefix:
-          description: An IPv4 prefix for the network.
-          type: string
         dnsNameservers:
           $ref: '#/components/schemas/ipv4AddressList'
+        routes:
+          $ref: '#/components/schemas/routes'
+    networkV2CreateSpec:
+      description: A network's specification.
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/networkV2Spec'
+      - type: object
+        required:
+        - organizationId
+        - projectId
+        - regionId
+        - prefix
+        properties:
+          organizationId:
+            description: The organization to provision the resource in.
+            type: string
+          projectId:
+            description: The project to provision the resource in.
+            type: string
+          regionId:
+            description: The region a network is to be provisioned in.
+            type: string 
+          prefix:
+            description: An IPv4 prefix for the network.
+            type: string
     networkV2Status:
       description: Read only status about a network.
       type: object
       required:
       - regionId
+      - prefix
       properties:
         regionId:
           description: The region a network is provisioned in.
+          type: string
+        prefix:
+          description: An IPv4 prefix for the network.
           type: string
     networkV2Read:
       description: A network.
@@ -1639,7 +1676,7 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/networkV2Read'
-    networkV2Write:
+    networkV2Create:
       description: A network request.
       type: object
       required:
@@ -1650,6 +1687,17 @@ components:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/networkV2CreateSpec'
+    networkV2Update:
+      description: A network request.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/networkV2Spec'
     externalNetwork:
       description: An Openstack external network.
       type: object
@@ -2158,12 +2206,12 @@ components:
               prefix: 192.168.0.0/24
               dnsNameservers:
               - 8.8.8.8
-    networkV2Request:
+    networkV2CreateRequest:
       description: A request for a network create.
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/networkV2Write'
+            $ref: '#/components/schemas/networkV2Create'
           example:
             metadata:
               name: network-name
@@ -2178,6 +2226,28 @@ components:
               prefix: 192.168.0.0/24
               dnsNameservers:
               - 8.8.8.8
+              routes:
+              - prefix: 10.0.0.0/8
+                nexthop: 192.168.0.10
+    networkV2UpdateRequest:
+      description: A request for a network create.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/networkV2Update'
+          example:
+            metadata:
+              name: network-name
+              description: A verbose description
+              tags:
+              - name: cluster-id
+                value: 9361402c-f998-49cc-ab21-9bb99afcfde8
+            spec:
+              dnsNameservers:
+              - 8.8.8.8
+              routes:
+              - prefix: 10.0.0.0/8
+                nexthop: 192.168.0.10
     securityGroupRequest:
       description: A request for a security group.
       content:
@@ -2522,11 +2592,11 @@ components:
               provisioningStatus: provisioned
               healthStatus: healthy
             spec:
-              prefix: 192.168.0.0/24
               dnsNameservers:
               - 8.8.8.8
             status:
               regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
+              prefix: 192.168.0.0/24
     networksV2Response:
       description: A list of layer 3 networks.
       content:
@@ -2544,11 +2614,11 @@ components:
               provisioningStatus: provisioned
               healthStatus: healthy
             spec:
-              prefix: 192.168.0.0/24
               dnsNameservers:
               - 8.8.8.8
             status:
               regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
+              prefix: 192.168.0.0/24
     externalNetworksResponse:
       description: A list of valid external networks.
       content:

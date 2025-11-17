@@ -203,6 +203,11 @@ type ClientInterface interface {
 	// GetApiV2NetworksNetworkID request
 	GetApiV2NetworksNetworkID(ctx context.Context, networkID NetworkIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PutApiV2NetworksNetworkIDWithBody request with any body
+	PutApiV2NetworksNetworkIDWithBody(ctx context.Context, networkID NetworkIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PutApiV2NetworksNetworkID(ctx context.Context, networkID NetworkIDParameter, body PutApiV2NetworksNetworkIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApiV2Securitygroups request
 	GetApiV2Securitygroups(ctx context.Context, params *GetApiV2SecuritygroupsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -733,6 +738,30 @@ func (c *Client) DeleteApiV2NetworksNetworkID(ctx context.Context, networkID Net
 
 func (c *Client) GetApiV2NetworksNetworkID(ctx context.Context, networkID NetworkIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiV2NetworksNetworkIDRequest(c.Server, networkID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiV2NetworksNetworkIDWithBody(ctx context.Context, networkID NetworkIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiV2NetworksNetworkIDRequestWithBody(c.Server, networkID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiV2NetworksNetworkID(ctx context.Context, networkID NetworkIDParameter, body PutApiV2NetworksNetworkIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiV2NetworksNetworkIDRequest(c.Server, networkID, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2729,6 +2758,53 @@ func NewGetApiV2NetworksNetworkIDRequest(server string, networkID NetworkIDParam
 	return req, nil
 }
 
+// NewPutApiV2NetworksNetworkIDRequest calls the generic PutApiV2NetworksNetworkID builder with application/json body
+func NewPutApiV2NetworksNetworkIDRequest(server string, networkID NetworkIDParameter, body PutApiV2NetworksNetworkIDJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutApiV2NetworksNetworkIDRequestWithBody(server, networkID, "application/json", bodyReader)
+}
+
+// NewPutApiV2NetworksNetworkIDRequestWithBody generates requests for PutApiV2NetworksNetworkID with any type of body
+func NewPutApiV2NetworksNetworkIDRequestWithBody(server string, networkID NetworkIDParameter, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "networkID", runtime.ParamLocationPath, networkID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/networks/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetApiV2SecuritygroupsRequest generates requests for GetApiV2Securitygroups
 func NewGetApiV2SecuritygroupsRequest(server string, params *GetApiV2SecuritygroupsParams) (*http.Request, error) {
 	var err error
@@ -3681,6 +3757,11 @@ type ClientWithResponsesInterface interface {
 	// GetApiV2NetworksNetworkIDWithResponse request
 	GetApiV2NetworksNetworkIDWithResponse(ctx context.Context, networkID NetworkIDParameter, reqEditors ...RequestEditorFn) (*GetApiV2NetworksNetworkIDResponse, error)
 
+	// PutApiV2NetworksNetworkIDWithBodyWithResponse request with any body
+	PutApiV2NetworksNetworkIDWithBodyWithResponse(ctx context.Context, networkID NetworkIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiV2NetworksNetworkIDResponse, error)
+
+	PutApiV2NetworksNetworkIDWithResponse(ctx context.Context, networkID NetworkIDParameter, body PutApiV2NetworksNetworkIDJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiV2NetworksNetworkIDResponse, error)
+
 	// GetApiV2SecuritygroupsWithResponse request
 	GetApiV2SecuritygroupsWithResponse(ctx context.Context, params *GetApiV2SecuritygroupsParams, reqEditors ...RequestEditorFn) (*GetApiV2SecuritygroupsResponse, error)
 
@@ -4587,6 +4668,32 @@ func (r GetApiV2NetworksNetworkIDResponse) StatusCode() int {
 	return 0
 }
 
+type PutApiV2NetworksNetworkIDResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *NetworkV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r PutApiV2NetworksNetworkIDResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutApiV2NetworksNetworkIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetApiV2SecuritygroupsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -5374,6 +5481,23 @@ func (c *ClientWithResponses) GetApiV2NetworksNetworkIDWithResponse(ctx context.
 		return nil, err
 	}
 	return ParseGetApiV2NetworksNetworkIDResponse(rsp)
+}
+
+// PutApiV2NetworksNetworkIDWithBodyWithResponse request with arbitrary body returning *PutApiV2NetworksNetworkIDResponse
+func (c *ClientWithResponses) PutApiV2NetworksNetworkIDWithBodyWithResponse(ctx context.Context, networkID NetworkIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiV2NetworksNetworkIDResponse, error) {
+	rsp, err := c.PutApiV2NetworksNetworkIDWithBody(ctx, networkID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiV2NetworksNetworkIDResponse(rsp)
+}
+
+func (c *ClientWithResponses) PutApiV2NetworksNetworkIDWithResponse(ctx context.Context, networkID NetworkIDParameter, body PutApiV2NetworksNetworkIDJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiV2NetworksNetworkIDResponse, error) {
+	rsp, err := c.PutApiV2NetworksNetworkID(ctx, networkID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiV2NetworksNetworkIDResponse(rsp)
 }
 
 // GetApiV2SecuritygroupsWithResponse request returning *GetApiV2SecuritygroupsResponse
@@ -7225,6 +7349,60 @@ func ParseGetApiV2NetworksNetworkIDResponse(rsp *http.Response) (*GetApiV2Networ
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutApiV2NetworksNetworkIDResponse parses an HTTP response from a PutApiV2NetworksNetworkIDWithResponse call
+func ParsePutApiV2NetworksNetworkIDResponse(rsp *http.Response) (*PutApiV2NetworksNetworkIDResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutApiV2NetworksNetworkIDResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest NetworkV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest externalRef0.BadRequestResponse
