@@ -1097,26 +1097,22 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     post:
-        description: Create a new storage.
-        security:
-        - oauth2Authentication: []
-        parameters:
-        - $ref: '#/components/parameters/organizationIDQueryParameter'
-        - $ref: '#/components/parameters/projectIDQueryParameter'
-        - $ref: '#/components/parameters/regionIDQueryParameter'
-        requestBody:
-          $ref: '#/components/requestBodies/storageV2CreateRequest'
-        responses:
-          '201':
-            $ref: '#/components/responses/storageV2Response'
-          '400':
-            $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
-          '401':
-            $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
-          '403':
-            $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
-          '500':
-            $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+      description: Create a new storage.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/storageV2CreateRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/storageV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/storage/filestorage/{filestorageID}:
     description: |-
       Manages project scoped storage. 

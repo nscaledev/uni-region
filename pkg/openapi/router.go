@@ -106,7 +106,7 @@ type ServerInterface interface {
 	GetApiV2Filestorage(w http.ResponseWriter, r *http.Request, params GetApiV2FilestorageParams)
 
 	// (POST /api/v2/filestorage)
-	PostApiV2Filestorage(w http.ResponseWriter, r *http.Request, params PostApiV2FilestorageParams)
+	PostApiV2Filestorage(w http.ResponseWriter, r *http.Request)
 
 	// (GET /api/v2/networks)
 	GetApiV2Networks(w http.ResponseWriter, r *http.Request, params GetApiV2NetworksParams)
@@ -339,7 +339,7 @@ func (_ Unimplemented) GetApiV2Filestorage(w http.ResponseWriter, r *http.Reques
 }
 
 // (POST /api/v2/filestorage)
-func (_ Unimplemented) PostApiV2Filestorage(w http.ResponseWriter, r *http.Request, params PostApiV2FilestorageParams) {
+func (_ Unimplemented) PostApiV2Filestorage(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1982,43 +1982,14 @@ func (siw *ServerInterfaceWrapper) GetApiV2Filestorage(w http.ResponseWriter, r 
 // PostApiV2Filestorage operation middleware
 func (siw *ServerInterfaceWrapper) PostApiV2Filestorage(w http.ResponseWriter, r *http.Request) {
 
-	var err error
-
 	ctx := r.Context()
 
 	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
 
 	r = r.WithContext(ctx)
 
-	// Parameter object where we will unmarshal all parameters from the context
-	var params PostApiV2FilestorageParams
-
-	// ------------- Optional query parameter "organizationID" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "organizationID", r.URL.Query(), &params.OrganizationID)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "projectID" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "projectID", r.URL.Query(), &params.ProjectID)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "regionID" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "regionID", r.URL.Query(), &params.RegionID)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "regionID", Err: err})
-		return
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PostApiV2Filestorage(w, r, params)
+		siw.Handler.PostApiV2Filestorage(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
