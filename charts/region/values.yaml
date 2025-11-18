@@ -102,6 +102,16 @@ server:
     limits:
       cpu: 100m
       memory: 100Mi
+  staging:
+    # staging.storageClass controls what kind of persistent volume the chart will create
+    # to use as an image upload staging area.
+    storageClass: ~
+    # Let a storage class with ReadWriteOnce be used. In general, ReadWriteOnce will
+    # hinder rolling upgrades, so it's only useful in e.g., a colima deployment where pods
+    # will land on the same node.
+    allowReadWriteOnce: ~
+    # staging.size is the size of persistent volume to create.
+    size: 100Gi
 
 # Monitor configuration.
 monitor:
