@@ -60,11 +60,13 @@ func convertRuleV2(in *regionv1.SecurityGroupRule) *openapi.SecurityGroupRuleV2 
 	}
 
 	if in.Protocol == regionv1.TCP || in.Protocol == regionv1.UDP && in.Port != nil {
-		if in.Port.Number != nil {
-			out.Port = in.Port.Number
-		} else if in.Port.Range != nil {
-			out.Port = &in.Port.Range.Start
-			out.PortMax = &in.Port.Range.End
+		if in.Port != nil {
+			if in.Port.Number != nil {
+				out.Port = in.Port.Number
+			} else if in.Port.Range != nil {
+				out.Port = &in.Port.Range.Start
+				out.PortMax = &in.Port.Range.End
+			}
 		}
 	}
 
