@@ -155,8 +155,11 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
-	if err := identityclient.NewAllocations(cli, p.identityClient).Delete(ctx, p.network); err != nil {
-		return err
+	// Temporary hack, V1 networks don't have a discrete network allocation,
+	if v, ok := p.network.Labels[constants.ResourceAPIVersionLabel]; ok && v == constants.MarshalAPIVersion(2) {
+		if err := identityclient.NewAllocations(cli, p.identityClient).Delete(ctx, p.network); err != nil {
+			return err
+		}
 	}
 
 	return nil
