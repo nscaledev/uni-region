@@ -62,9 +62,6 @@ spec:
                   - networkID
                   type: object
                 type: array
-              fileStorageClass:
-                description: Name of the FileStorageClass.
-                type: string
               nfs:
                 description: NFS is fulfilled when leveraging the NFS storage class.
                 properties:
@@ -81,6 +78,9 @@ spec:
                 description: Size is the total size of the storage class.
                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                 x-kubernetes-int-or-string: true
+              storageClassID:
+                description: StorageClassID is the storage class ID.
+                type: string
               tags:
                 description: |-
                   Tags are an abitrary list of key/value pairs that a client
@@ -101,8 +101,8 @@ spec:
                   type: object
                 type: array
             required:
-            - fileStorageClass
             - size
+            - storageClassID
             type: object
           status:
             properties:

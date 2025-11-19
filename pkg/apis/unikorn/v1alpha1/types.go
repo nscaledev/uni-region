@@ -781,8 +781,8 @@ type FileStorage struct {
 
 // FileStorageSpec defines the storage request.
 type FileStorageSpec struct {
-	// Name of the FileStorageClass.
-	FileStorageClass string `json:"fileStorageClass"`
+	// StorageClassID is the storage class ID.
+	StorageClassID string `json:"storageClassID"`
 
 	// Size is the total size of the storage class.
 	Size resource.Quantity `json:"size"`
