@@ -42,7 +42,6 @@ import (
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
-	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers/allocation/vlan"
@@ -59,11 +58,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/yaml"
-)
-
-var (
-	ErrConflict     = errors.New("resource conflict error")
-	ErrKeyUndefined = errors.New("a required key was not defined")
 )
 
 type providerCredentials struct {
@@ -130,28 +124,27 @@ func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Pro
 //
 //nolint:cyclop
 func (p *Provider) serviceClientRefresh(ctx context.Context) error {
-	refresh := false
+	regionKey := client.ObjectKey{
+		Namespace: p.region.Namespace,
+		Name:      p.region.Name,
+	}
 
-	region := &unikornv1.Region{}
-
-	if err := p.client.Get(ctx, client.ObjectKey{Namespace: p.region.Namespace, Name: p.region.Name}, region); err != nil {
+	var region unikornv1.Region
+	if err := p.client.Get(ctx, regionKey, &region); err != nil {
 		return err
 	}
 
-	// If anything changes with the configuration, referesh the clients as they may
+	// If anything changes with the configuration, refresh the clients as they may
 	// do caching.
-	if !reflect.DeepEqual(region.Spec.Openstack, p.region.Spec.Openstack) {
-		refresh = true
-	}
+	refresh := !reflect.DeepEqual(region.Spec.Openstack, p.region.Spec.Openstack)
 
-	secretkey := client.ObjectKey{
+	secretKey := client.ObjectKey{
 		Namespace: region.Spec.Openstack.ServiceAccountSecret.Namespace,
 		Name:      region.Spec.Openstack.ServiceAccountSecret.Name,
 	}
 
-	secret := &corev1.Secret{}
-
-	if err := p.client.Get(ctx, secretkey, secret); err != nil {
+	var secret corev1.Secret
+	if err := p.client.Get(ctx, secretKey, &secret); err != nil {
 		return err
 	}
 
@@ -169,22 +162,22 @@ func (p *Provider) serviceClientRefresh(ctx context.Context) error {
 	// Create the core credential provider.
 	domainID, ok := secret.Data["domain-id"]
 	if !ok {
-		return fmt.Errorf("%w: domain-id", ErrKeyUndefined)
+		return fmt.Errorf("%w: domain-id not found in secret %s", types.ErrInternal, secretKey.Name)
 	}
 
 	userID, ok := secret.Data["user-id"]
 	if !ok {
-		return fmt.Errorf("%w: user-id", ErrKeyUndefined)
+		return fmt.Errorf("%w: user-id not found in secret %s", types.ErrInternal, secretKey.Name)
 	}
 
 	password, ok := secret.Data["password"]
 	if !ok {
-		return fmt.Errorf("%w: password", ErrKeyUndefined)
+		return fmt.Errorf("%w: password not found in secret %s", types.ErrInternal, secretKey.Name)
 	}
 
 	projectID, ok := secret.Data["project-id"]
 	if !ok {
-		return fmt.Errorf("%w: project-id", ErrKeyUndefined)
+		return fmt.Errorf("%w: project-id not found in secret %s", types.ErrInternal, secretKey.Name)
 	}
 
 	credentials := &providerCredentials{
@@ -222,11 +215,11 @@ func (p *Provider) serviceClientRefresh(ctx context.Context) error {
 	}
 
 	// Save the current configuration for checking next time.
-	p.region = region
-	p.secret = secret
+	p.region = &region
+	p.secret = &secret
 	p.credentials = credentials
 
-	// Seve the clients
+	// Save the clients
 	p._identity = identity
 	p._compute = compute
 	p._image = image
@@ -287,15 +280,15 @@ func (p *Provider) network(ctx context.Context) (NetworkingInterface, error) {
 // per-service principal credentials.
 func (p *Provider) getProviderFromServicePrincipalData(identity *unikornv1.OpenstackIdentity) (CredentialProvider, error) {
 	if identity.Spec.UserID == nil {
-		return nil, fmt.Errorf("%w: service principal user ID not set", coreerrors.ErrConsistency)
+		return nil, fmt.Errorf("%w: service principal user ID not set", types.ErrInternal)
 	}
 
 	if identity.Spec.Password == nil {
-		return nil, fmt.Errorf("%w: service principal password not set", coreerrors.ErrConsistency)
+		return nil, fmt.Errorf("%w: service principal password not set", types.ErrInternal)
 	}
 
 	if identity.Spec.ProjectID == nil {
-		return nil, fmt.Errorf("%w: service principal project not set", coreerrors.ErrConsistency)
+		return nil, fmt.Errorf("%w: service principal project not set", types.ErrInternal)
 	}
 
 	return NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *identity.Spec.UserID, *identity.Spec.Password, *identity.Spec.ProjectID), nil
@@ -327,16 +320,16 @@ func (p *Provider) getProviderFromServicePrincipal(ctx context.Context, identity
 	return p.getProviderFromServicePrincipalData(openstackIdentity)
 }
 
-// getPriviliegedProviderFromServicePrincipal binds itself to the service principal's project
+// getPrivilegedProviderFromServicePrincipal binds itself to the service principal's project
 // but uses the provider's top level admin credentials.
-func (p *Provider) getPriviliegedProviderFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
+func (p *Provider) getPrivilegedProviderFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return nil, err
 	}
 
 	if openstackIdentity.Spec.ProjectID == nil {
-		return nil, fmt.Errorf("%w: service principal project not set", coreerrors.ErrConsistency)
+		return nil, fmt.Errorf("%w: service principal project not set", types.ErrInternal)
 	}
 
 	return NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID), nil
@@ -375,7 +368,7 @@ func (p *Provider) networkFromServicePrincipal(ctx context.Context, identity *un
 // privilegedNetworkFromServicePrincipal gets a network client scoped to the service principal's
 // project but with "manager" credentials.
 func (p *Provider) privilegedNetworkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
-	provider, err := p.getPriviliegedProviderFromServicePrincipal(ctx, identity)
+	provider, err := p.getPrivilegedProviderFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return nil, err
 	}
@@ -556,8 +549,7 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 	if gpuVendor, ok := image.Properties["unikorn:gpu_vendor"].(string); ok {
 		gpuDriver, ok := image.Properties["unikorn:gpu_driver_version"].(string)
 		if !ok {
-			// TODO: it's perhaps better to just skip this one, rather than kill the entire service??
-			return nil, fmt.Errorf("%w: GPU driver is not defined for image %s", ErrKeyUndefined, image.ID)
+			return nil, fmt.Errorf("%w: GPU driver is not defined for image %s", types.ErrInternal, image.ID)
 		}
 
 		gpu := &types.ImageGPU{
@@ -616,7 +608,8 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 	}
 
 	if !isPublicOrOrganizationOwnedImage(resource, organizationID) {
-		return nil, fmt.Errorf("%w: image %s", ErrResourceNotFound, imageID)
+		err = fmt.Errorf("%w: no image found with ID %s", types.ErrResourceNotFound, imageID)
+		return nil, err
 	}
 
 	return p.convertImage(resource)
@@ -721,7 +714,9 @@ func roleNameToID(roles []roles.Role, name string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("%w: role %s", ErrResourceNotFound, name)
+	err := fmt.Errorf("%w: no role found with name %s", types.ErrResourceNotFound, name)
+
+	return "", err
 }
 
 // getRequiredProjectManagerRoles returns the roles required for a manager to create, manage
@@ -1145,7 +1140,7 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 		return result, nil
 	}
 
-	if !errors.Is(err, ErrNotFound) {
+	if !errors.Is(err, types.ErrResourceNotFound) {
 		return nil, err
 	}
 
@@ -1198,7 +1193,7 @@ func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, 
 
 	result, err := client.GetSubnet(ctx, network)
 	if err != nil {
-		if !errors.Is(err, ErrNotFound) {
+		if !errors.Is(err, types.ErrResourceNotFound) {
 			return nil, err
 		}
 
@@ -1244,7 +1239,7 @@ func (p *Provider) reconcileRouter(ctx context.Context, client RouterInterface, 
 		return result, nil
 	}
 
-	if !errors.Is(err, ErrNotFound) {
+	if !errors.Is(err, types.ErrResourceNotFound) {
 		return nil, err
 	}
 
@@ -1341,17 +1336,17 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 	}
 
 	openstackNetwork, err := networking.GetNetwork(ctx, network)
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !errors.Is(err, types.ErrResourceNotFound) {
 		return err
 	}
 
 	subnet, err := networking.GetSubnet(ctx, network)
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !errors.Is(err, types.ErrResourceNotFound) {
 		return err
 	}
 
 	router, err := networking.GetRouter(ctx, network)
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !errors.Is(err, types.ErrResourceNotFound) {
 		return err
 	}
 
@@ -1429,7 +1424,9 @@ func securityGroupRulePortRange(port *unikornv1.SecurityGroupRulePort) (int, int
 		return port.Range.Start, port.Range.End, nil
 	}
 
-	return 0, 0, fmt.Errorf("%w: at least one of number or range must be defined for security rule", ErrKeyUndefined)
+	err := fmt.Errorf("%w: security group rule contains no port number or range", types.ErrInternal)
+
+	return 0, 0, err
 }
 
 // securityGroupRuleID generates a deterministic, but unique, ID for a security group rule.
@@ -1568,7 +1565,7 @@ func (p *Provider) reconcileSecurityGroup(ctx context.Context, client SecurityGr
 		return result, nil
 	}
 
-	if !errors.Is(err, ErrNotFound) {
+	if !errors.Is(err, types.ErrResourceNotFound) {
 		return nil, err
 	}
 
@@ -1625,7 +1622,7 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 	}
 
 	openstackSecurityGroup, err := networking.GetSecurityGroup(ctx, securityGroup)
-	if err != nil && errors.Is(err, ErrNotFound) {
+	if err != nil && errors.Is(err, types.ErrResourceNotFound) {
 		return err
 	}
 
@@ -1752,7 +1749,7 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 
 	port, err := client.GetServerPort(ctx, server)
 	if err != nil {
-		if !errors.Is(err, ErrNotFound) {
+		if !errors.Is(err, types.ErrResourceNotFound) {
 			return nil, err
 		}
 
@@ -1807,7 +1804,7 @@ func (p *Provider) reconcileFloatingIP(ctx context.Context, client FloatingIPInt
 		return nil
 	}
 
-	if !errors.Is(err, ErrNotFound) {
+	if !errors.Is(err, types.ErrResourceNotFound) {
 		return err
 	}
 
@@ -1907,7 +1904,7 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 	}
 
 	openstackServer, err := compute.GetServer(ctx, server)
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !errors.Is(err, types.ErrResourceNotFound) {
 		return err
 	}
 
@@ -1925,14 +1922,14 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 	}
 
 	port, err := networking.GetServerPort(ctx, server)
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !errors.Is(err, types.ErrResourceNotFound) {
 		return err
 	}
 
 	//nolint:nestif
 	if port != nil {
 		floatingip, err := networking.GetFloatingIP(ctx, port.ID)
-		if err != nil && !errors.Is(err, ErrNotFound) {
+		if err != nil && !errors.Is(err, types.ErrResourceNotFound) {
 			return err
 		}
 
@@ -1966,10 +1963,15 @@ func (p *Provider) RebootServer(ctx context.Context, identity *unikornv1.Identit
 	}
 
 	if err := compute.RebootServer(ctx, openstackServer.ID, hard); err != nil {
-		// ignore not found errors
-		if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return err
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return fmt.Errorf("%w: no server found with ID %s", types.ErrResourceNotFound, openstackServer.ID)
 		}
+
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return fmt.Errorf("%w: server %s is not in a valid state for reboot", types.ErrConflict, openstackServer.ID)
+		}
+
+		return err
 	}
 
 	return nil
@@ -1987,10 +1989,15 @@ func (p *Provider) StartServer(ctx context.Context, identity *unikornv1.Identity
 	}
 
 	if err := compute.StartServer(ctx, openstackServer.ID); err != nil {
-		// ignore not found errors
-		if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return err
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return fmt.Errorf("%w: no server found with ID %s", types.ErrResourceNotFound, openstackServer.ID)
 		}
+
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return fmt.Errorf("%w: server %s is not in a valid state for start", types.ErrConflict, openstackServer.ID)
+		}
+
+		return err
 	}
 
 	return nil
@@ -2008,10 +2015,15 @@ func (p *Provider) StopServer(ctx context.Context, identity *unikornv1.Identity,
 	}
 
 	if err := compute.StopServer(ctx, openstackServer.ID); err != nil {
-		// ignore not found errors
-		if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return err
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return fmt.Errorf("%w: no server found with ID %s", types.ErrResourceNotFound, openstackServer.ID)
 		}
+
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return fmt.Errorf("%w: server %s is not in a valid state for stop", types.ErrConflict, openstackServer.ID)
+		}
+
+		return err
 	}
 
 	return nil
@@ -2049,7 +2061,13 @@ func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1
 	result, err := compute.CreateRemoteConsole(ctx, openstackServer.ID)
 	if err != nil {
 		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return "", fmt.Errorf("%w: server is being deprovisioned", ErrResourceDependency)
+			err = fmt.Errorf("%w: no server found with ID %s", types.ErrResourceNotFound, openstackServer.ID)
+			return "", err
+		}
+
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			err = fmt.Errorf("%w: server %s is not in a valid state for console access", types.ErrConflict, openstackServer.ID)
+			return "", err
 		}
 
 		return "", err
@@ -2072,7 +2090,13 @@ func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Ide
 	result, err := compute.ShowConsoleOutput(ctx, openstackServer.ID, length)
 	if err != nil {
 		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return "", fmt.Errorf("%w: server is being deprovisioned", ErrResourceDependency)
+			err = fmt.Errorf("%w: no server found with ID %s", types.ErrResourceNotFound, openstackServer.ID)
+			return "", err
+		}
+
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			err = fmt.Errorf("%w: server %s is not in a valid state for console output", types.ErrConflict, openstackServer.ID)
+			return "", err
 		}
 
 		return "", err

@@ -79,7 +79,7 @@ func (p *Provisioner) securityGroupIDs() []string {
 
 // identityListOptions lists all resources associated with an identity.
 func (p *Provisioner) identityListOptions() *client.ListOptions {
-	selector := map[string]string{
+	selector := labels.Set{
 		constants.IdentityLabel: p.server.Labels[constants.IdentityLabel],
 	}
 

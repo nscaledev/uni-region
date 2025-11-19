@@ -25,7 +25,6 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -34,23 +33,13 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/kaptinlin/jsonschema"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-)
-
-var (
-	// ErrPEMDecode is raised when the PEM decode failed for some reason.
-	ErrPEMDecode = errors.New("PEM decode error")
-
-	// ErrPEMType is raised when the encounter the wrong PEM type, e.g. PKCS#1.
-	ErrPEMType = errors.New("PEM type unsupported")
-
-	// ErrKeyType is raised when we encounter an unsupported key type.
-	ErrKeyType = errors.New("key type unsupported")
 )
 
 // imagePropertySchemaV2 defines what consitutes a valid image e.g. contains all the
@@ -91,11 +80,13 @@ func NewImageClient(ctx context.Context, provider CredentialProvider, options *u
 func decodeSigningKey(signingKey []byte) (*ecdsa.PublicKey, error) {
 	pemBlock, _ := pem.Decode(signingKey)
 	if pemBlock == nil {
-		return nil, ErrPEMDecode
+		err := fmt.Errorf("%w: failed to decode signing key PEM", types.ErrInternal)
+		return nil, err
 	}
 
 	if pemBlock.Type != "PUBLIC KEY" {
-		return nil, fmt.Errorf("%w: %s", ErrPEMType, pemBlock.Type)
+		err := fmt.Errorf("%w: unexpected %s PEM block type for signing key", types.ErrInternal, pemBlock.Type)
+		return nil, err
 	}
 
 	key, err := x509.ParsePKIXPublicKey(pemBlock.Bytes)
@@ -105,7 +96,8 @@ func decodeSigningKey(signingKey []byte) (*ecdsa.PublicKey, error) {
 
 	ecKey, ok := key.(*ecdsa.PublicKey)
 	if !ok {
-		return nil, ErrKeyType
+		err = fmt.Errorf("%w: signing key is not an ECDSA public key", types.ErrInternal)
+		return nil, err
 	}
 
 	return ecKey, nil
@@ -233,7 +225,8 @@ func (c *ImageClient) GetImage(ctx context.Context, id string) (*images.Image, e
 
 	index := slices.IndexFunc(result, imageIndexFunc)
 	if index < 0 {
-		return nil, fmt.Errorf("%w: image %s", ErrResourceNotFound, id)
+		err = fmt.Errorf("%w: no image found with ID %s", types.ErrResourceNotFound, id)
+		return nil, err
 	}
 
 	return &result[index], nil

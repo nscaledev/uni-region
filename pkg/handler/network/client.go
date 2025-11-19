@@ -19,14 +19,15 @@ package network
 import (
 	"cmp"
 	"context"
+	goerrors "errors"
 	"net"
 	"slices"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
-	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	errorsv2 "github.com/unikorn-cloud/core/pkg/server/v2/errors"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -41,6 +42,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
+
+var ErrInvalidIPAddress = goerrors.New("invalid IP address")
 
 // Client provides a restful API for networks.
 type Client struct {
@@ -108,10 +111,6 @@ func (c *Client) convertList(in unikornv1.NetworkList) openapi.NetworksRead {
 
 func parseIPV4Prefix(in string) (*net.IPNet, error) {
 	_, prefix, err := net.ParseCIDR(in)
-	if err != nil {
-		return nil, errors.OAuth2InvalidRequest("unable to parse IPv4 prefix").WithError(err)
-	}
-
 	return prefix, err
 }
 
@@ -124,7 +123,7 @@ func generateIPV4Prefix(in *net.IPNet) *unikornv1core.IPv4Prefix {
 func parseIPV4Address(in string) (net.IP, error) {
 	ip := net.ParseIP(in)
 	if ip == nil {
-		return nil, errors.OAuth2InvalidRequest("unable to parse IPv4 address")
+		return nil, ErrInvalidIPAddress
 	}
 
 	return ip, nil
@@ -161,16 +160,26 @@ func generateIPV4AddressList(in []net.IP) []unikornv1core.IPv4Address {
 func (c *Client) generate(ctx context.Context, organizationID, projectID, identityID string, request *openapi.NetworkWrite) (*unikornv1.Network, error) {
 	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to get identity").WithError(err)
+		return nil, err
 	}
 
 	prefix, err := parseIPV4Prefix(request.Spec.Prefix)
 	if err != nil {
-		return nil, errors.OAuth2InvalidRequest("unable to parse prefix").WithError(err)
+		err = errorsv2.NewInvalidRequestError().
+			WithCausef("failed to parse CIDR: %w", err).
+			WithErrorDescription("The provided prefix is not a valid CIDR notation.").
+			Prefixed()
+
+		return nil, err
 	}
 
 	dnsNameservers, err := parseIPV4AddressList(request.Spec.DnsNameservers)
 	if err != nil {
+		err = errorsv2.NewInvalidRequestError().
+			WithCausef("failed to parse DNS nameservers: %w", err).
+			WithErrorDescription("One of the specified DNS nameservers is not a valid IPv4 address.").
+			Prefixed()
+
 		return nil, err
 	}
 
@@ -185,12 +194,16 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 	}
 
 	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
-		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
+		return nil, err
 	}
 
 	// The resource belongs to its identity, for cascading deletion.
 	if err := controllerutil.SetOwnerReference(identity, out, c.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
-		return nil, errors.OAuth2ServerError("unable to set resource owner").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to set owner reference: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	return out, nil
@@ -198,42 +211,59 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 
 // GetRaw gives access to the raw Kubernetes resource.
 func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, networkID string) (*unikornv1.Network, error) {
-	resource := &unikornv1.Network{}
-
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: networkID}, resource); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, errors.OAuth2ServerError("unable to lookup network").WithError(err)
+	key := client.ObjectKey{
+		Namespace: c.namespace,
+		Name:      networkID,
 	}
 
-	if err := coreutil.AssertProjectOwnership(resource, organizationID, projectID); err != nil {
+	var network unikornv1.Network
+	if err := c.client.Get(ctx, key, &network); err != nil {
+		if kerrors.IsNotFound(err) {
+			err = errorsv2.NewResourceMissingError("network").
+				WithCause(err).
+				Prefixed()
+
+			return nil, err
+		}
+
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve network: %w", err).
+			Prefixed()
+
 		return nil, err
 	}
 
-	return resource, nil
+	if err := coreutil.AssertProjectOwnership(&network, organizationID, projectID); err != nil {
+		return nil, err
+	}
+
+	return &network, nil
 }
 
 // List returns an ordered list of all resources in scope.
 func (c *Client) List(ctx context.Context, organizationID string) (openapi.NetworksRead, error) {
-	var result unikornv1.NetworkList
-
-	options := &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(map[string]string{
-			coreconstants.OrganizationLabel: organizationID,
-		}),
+	opts := []client.ListOption{
+		&client.ListOptions{
+			LabelSelector: labels.SelectorFromSet(labels.Set{
+				coreconstants.OrganizationLabel: organizationID,
+			}),
+		},
 	}
 
-	if err := c.client.List(ctx, &result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list networks").WithError(err)
+	var list unikornv1.NetworkList
+	if err := c.client.List(ctx, &list, opts...); err != nil {
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve networks: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
-	slices.SortStableFunc(result.Items, func(a, b unikornv1.Network) int {
+	slices.SortStableFunc(list.Items, func(a, b unikornv1.Network) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	return c.convertList(result), nil
+	return c.convertList(list), nil
 }
 
 // Create instantiates a new resource.
@@ -244,7 +274,11 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 	}
 
 	if err := c.client.Create(ctx, resource); err != nil {
-		return nil, errors.OAuth2ServerError("unable to create network").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to create network: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	return c.convert(resource), nil
@@ -269,10 +303,14 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, networkI
 
 	if err := c.client.Delete(ctx, result, util.ForegroundDeleteOptions()); err != nil {
 		if kerrors.IsNotFound(err) {
-			return errors.HTTPNotFound().WithError(err)
+			return errorsv2.NewResourceMissingError("network").
+				WithCause(err).
+				Prefixed()
 		}
 
-		return errors.OAuth2ServerError("unable to delete network").WithError(err)
+		return errorsv2.NewInternalError().
+			WithCausef("failed to delete network: %w", err).
+			Prefixed()
 	}
 
 	return nil

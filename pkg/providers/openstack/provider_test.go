@@ -30,6 +30,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 	"github.com/stretchr/testify/require"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"go.uber.org/mock/gomock"
 
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
@@ -371,7 +372,7 @@ func TestReconcileNetwork(t *testing.T) {
 		t.Parallel()
 
 		networking := mock.NewMockNetworkInterface(c)
-		networking.EXPECT().GetNetwork(t.Context(), network).Return(nil, openstack.ErrNotFound)
+		networking.EXPECT().GetNetwork(t.Context(), network).Return(nil, types.ErrResourceNotFound)
 		networking.EXPECT().CreateNetwork(t.Context(), network, nil).Return(openStackNetwork, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -422,7 +423,7 @@ func TestReconcileSubnet(t *testing.T) {
 		t.Parallel()
 
 		networking := mock.NewMockSubnetInterface(c)
-		networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, openstack.ErrNotFound)
+		networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, types.ErrResourceNotFound)
 		networking.EXPECT().CreateSubnet(t.Context(), network, openstackNetwork.ID, "192.168.0.0/24", gomock.Any(), []string{"8.8.4.4"}, []subnets.HostRoute{}, allocationPools).Return(openstackSubnet, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -466,7 +467,7 @@ func TestReconcileRouter(t *testing.T) {
 		t.Parallel()
 
 		networking := mock.NewMockRouterInterface(c)
-		networking.EXPECT().GetRouter(t.Context(), network).Return(nil, openstack.ErrNotFound)
+		networking.EXPECT().GetRouter(t.Context(), network).Return(nil, types.ErrResourceNotFound)
 		networking.EXPECT().CreateRouter(t.Context(), network).Return(openstackRouter, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -547,7 +548,7 @@ func TestReconcileSecurityGroup(t *testing.T) {
 		t.Parallel()
 
 		networking := mock.NewMockSecurityGroupInterface(c)
-		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroup).Return(nil, openstack.ErrNotFound)
+		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroup).Return(nil, types.ErrResourceNotFound)
 		networking.EXPECT().CreateSecurityGroup(t.Context(), securityGroup).Return(openstackSecurityGroup, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -673,7 +674,7 @@ func TestReconcileServerPort(t *testing.T) {
 		networking := mock.NewMockNetworkingInterface(c)
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
-		networking.EXPECT().GetServerPort(t.Context(), server).Return(nil, openstack.ErrNotFound)
+		networking.EXPECT().GetServerPort(t.Context(), server).Return(nil, types.ErrResourceNotFound)
 		networking.EXPECT().CreateServerPort(t.Context(), server, openstackNetwork.ID, []string{openstackSecurityGroup.ID}, []ports.AddressPair{}).Return(openstackServerPort, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -750,7 +751,7 @@ func TestReconcileFloatingIP(t *testing.T) {
 		server := server.DeepCopy()
 
 		networking := mock.NewMockFloatingIPInterface(c)
-		networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(nil, openstack.ErrNotFound)
+		networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(nil, types.ErrResourceNotFound)
 		networking.EXPECT().CreateFloatingIP(t.Context(), openstackServerPort.ID).Return(openstackFloatingIP, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -827,7 +828,7 @@ func TestReconcileServer(t *testing.T) {
 		t.Parallel()
 
 		compute := mock.NewMockServerInterface(c)
-		compute.EXPECT().GetServer(t.Context(), server).Return(nil, openstack.ErrNotFound)
+		compute.EXPECT().GetServer(t.Context(), server).Return(nil, types.ErrResourceNotFound)
 		compute.EXPECT().CreateServer(t.Context(), server, sshKeyName, openstackNetworks, nil, metadata).Return(openstackServer, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())

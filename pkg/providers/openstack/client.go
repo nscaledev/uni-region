@@ -192,7 +192,7 @@ type UnauthenticatedProvider struct {
 // Ensure the interface is implemented.
 var _ CredentialProvider = &UnauthenticatedProvider{}
 
-// NewTokenProvider returns a new initialized provider.
+// NewUnauthenticatedProvider returns a new initialized provider.
 func NewUnauthenticatedProvider(endpoint string) *UnauthenticatedProvider {
 	return &UnauthenticatedProvider{
 		endpoint: endpoint,

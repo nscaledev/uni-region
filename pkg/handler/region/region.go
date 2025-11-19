@@ -21,12 +21,11 @@ import (
 	"context"
 	"encoding/base64"
 	goerrors "errors"
-	"fmt"
 	"slices"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
-	"github.com/unikorn-cloud/core/pkg/server/errors"
+	errorsv2 "github.com/unikorn-cloud/core/pkg/server/v2/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
@@ -60,7 +59,16 @@ func NewClient(client client.Client, namespace string) *Client {
 }
 
 func (c *Client) Provider(ctx context.Context, regionID string) (types.Provider, error) {
-	return providers.New(ctx, c.client, c.namespace, regionID)
+	provider, err := providers.New(ctx, c.client, c.namespace, regionID)
+	if err != nil {
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to create region provider: %w", err).
+			Prefixed()
+
+		return nil, err
+	}
+
+	return provider, nil
 }
 
 func convertRegionType(in unikornv1.Provider) openapi.RegionType {
@@ -103,15 +111,35 @@ func (c *Client) convertDetail(ctx context.Context, in *unikornv1.Region) (*open
 	// Calculate any region specific configuration.
 	switch in.Spec.Provider {
 	case unikornv1.ProviderKubernetes:
-		secret := &corev1.Secret{}
+		key := client.ObjectKey{
+			Namespace: c.namespace,
+			Name:      in.Spec.Kubernetes.KubeconfigSecret.Name,
+		}
 
-		if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: in.Spec.Kubernetes.KubeconfigSecret.Name}, secret); err != nil {
+		var secret corev1.Secret
+		if err := c.client.Get(ctx, key, &secret); err != nil {
+			if kerrors.IsNotFound(err) {
+				err = errorsv2.NewResourceMissingError("secret").
+					WithCause(err).
+					Prefixed()
+
+				return nil, err
+			}
+
+			err = errorsv2.NewInternalError().
+				WithCausef("failed to retrieve secret: %w", err).
+				Prefixed()
+
 			return nil, err
 		}
 
 		kubeconfig, ok := secret.Data["kubeconfig"]
 		if !ok {
-			return nil, fmt.Errorf("%w: kubeconfig kye missing in region secret", ErrResource)
+			err := errorsv2.NewInternalError().
+				WithSimpleCausef("kubeconfig not found in secret %s", in.Spec.Kubernetes.KubeconfigSecret.Name).
+				Prefixed()
+
+			return nil, err
 		}
 
 		out.Spec.Kubernetes = &openapi.RegionDetailKubernetes{
@@ -141,29 +169,46 @@ func convertList(in *unikornv1.RegionList) openapi.Regions {
 }
 
 func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
-	regions := &unikornv1.RegionList{}
+	opts := []client.ListOption{
+		&client.ListOptions{Namespace: c.namespace},
+	}
 
-	if err := c.client.List(ctx, regions, &client.ListOptions{Namespace: c.namespace}); err != nil {
+	var list unikornv1.RegionList
+	if err := c.client.List(ctx, &list, opts...); err != nil {
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve regions: %w", err).
+			Prefixed()
+
 		return nil, err
 	}
 
-	return convertList(regions), nil
+	return convertList(&list), nil
 }
 
 func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.RegionDetailRead, error) {
-	result := &unikornv1.Region{}
-
-	fmt.Println("getting region", c.namespace, regionID)
-
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: regionID}, result); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, errors.OAuth2ServerError("unable to lookup region").WithError(err)
+	key := client.ObjectKey{
+		Namespace: c.namespace,
+		Name:      regionID,
 	}
 
-	return c.convertDetail(ctx, result)
+	var region unikornv1.Region
+	if err := c.client.Get(ctx, key, &region); err != nil {
+		if kerrors.IsNotFound(err) {
+			err = errorsv2.NewResourceMissingError("region").
+				WithCause(err).
+				Prefixed()
+
+			return nil, err
+		}
+
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve region: %w", err).
+			Prefixed()
+
+		return nil, err
+	}
+
+	return c.convertDetail(ctx, &region)
 }
 
 func convertGpuVendor(in types.GPUVendor) openapi.GpuVendor {
@@ -221,12 +266,16 @@ func convertFlavors(in []types.Flavor) openapi.Flavors {
 func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID string) (openapi.Flavors, error) {
 	provider, err := c.Provider(ctx, regionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, err
 	}
 
 	result, err := provider.Flavors(ctx)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to list flavors").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve flavors: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	// Apply ordering guarantees, ascending order with GPUs taking precedence over
@@ -356,12 +405,16 @@ func convertImages(in []types.Image) openapi.Images {
 func (c *Client) ListImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {
 	provider, err := c.Provider(ctx, regionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, err
 	}
 
 	result, err := provider.ListImages(ctx, organizationID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to list images").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve images: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	// Apply ordering guarantees, ordered by name.
@@ -373,12 +426,10 @@ func (c *Client) ListImages(ctx context.Context, organizationID, regionID string
 }
 
 func convertExternalNetwork(in types.ExternalNetwork) openapi.ExternalNetwork {
-	out := openapi.ExternalNetwork{
+	return openapi.ExternalNetwork{
 		Id:   in.ID,
 		Name: in.Name,
 	}
-
-	return out
 }
 
 func convertExternalNetworks(in types.ExternalNetworks) openapi.ExternalNetworks {
@@ -394,12 +445,16 @@ func convertExternalNetworks(in types.ExternalNetworks) openapi.ExternalNetworks
 func (c *Client) ListExternalNetworks(ctx context.Context, regionID string) (openapi.ExternalNetworks, error) {
 	provider, err := c.Provider(ctx, regionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, err
 	}
 
 	result, err := provider.ListExternalNetworks(ctx)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to list external networks").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve external networks: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	return convertExternalNetworks(result), nil

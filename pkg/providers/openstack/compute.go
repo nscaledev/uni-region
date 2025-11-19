@@ -32,11 +32,11 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/remoteconsoles"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
-	"github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -130,7 +130,7 @@ func (c *ComputeClient) mutateFlavors(f []flavors.Flavor) {
 	}
 }
 
-// Flavors returns a list of flavors.
+// GetFlavors returns a list of flavors.
 func (c *ComputeClient) GetFlavors(ctx context.Context) ([]flavors.Flavor, error) {
 	if result, ok := c.flavorCache.Get(); ok {
 		return result, nil
@@ -231,10 +231,8 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 	_, span := tracer.Start(ctx, "GET /compute/v2/servers")
 	defer span.End()
 
-	name := server.Labels[coreconstants.NameLabel]
-
 	opts := servers.ListOpts{
-		Name: name,
+		Name: server.Labels[coreconstants.NameLabel],
 	}
 
 	page, err := servers.List(c.client, opts).AllPages(ctx)
@@ -248,11 +246,13 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 	}
 
 	if len(result) == 0 {
-		return nil, ErrNotFound
+		err = fmt.Errorf("%w: no server found with name %s", types.ErrResourceNotFound, opts.Name)
+		return nil, err
 	}
 
 	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+		err = fmt.Errorf("%w: multiple servers found with name %s", types.ErrInternal, opts.Name)
+		return nil, err
 	}
 
 	return &result[0], nil

@@ -19,7 +19,6 @@ package openstack
 
 import (
 	"context"
-	goerrors "errors"
 	"fmt"
 	"slices"
 	"time"
@@ -35,19 +34,15 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/networks"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 
 	"k8s.io/utils/ptr"
-)
-
-var (
-	ErrNotFound = goerrors.New("resource not found")
 )
 
 // NetworkClient wraps the generic client because gophercloud is unsafe.
@@ -171,7 +166,7 @@ func (c *NetworkClient) GetNetwork(ctx context.Context, network *unikornv1.Netwo
 	_, span := tracer.Start(ctx, "GET /network/v2.0/networks", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
-	opts := &networks.ListOpts{
+	opts := networks.ListOpts{
 		Name: networkName(network),
 	}
 
@@ -181,17 +176,18 @@ func (c *NetworkClient) GetNetwork(ctx context.Context, network *unikornv1.Netwo
 	}
 
 	var result []NetworkExt
-
 	if err := networks.ExtractNetworksInto(page, &result); err != nil {
 		return nil, err
 	}
 
 	if len(result) == 0 {
-		return nil, ErrNotFound
+		err = fmt.Errorf("%w: no network found with name %s", types.ErrResourceNotFound, opts.Name)
+		return nil, err
 	}
 
 	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+		err = fmt.Errorf("%w: multiple networks found with name %s", types.ErrInternal, opts.Name)
+		return nil, err
 	}
 
 	return &result[0], nil
@@ -247,7 +243,7 @@ func (c *NetworkClient) GetSubnet(ctx context.Context, network *unikornv1.Networ
 	_, span := tracer.Start(ctx, "GET /network/v2.0/subnets", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
-	opts := &subnets.ListOpts{
+	opts := subnets.ListOpts{
 		Name: networkName(network),
 	}
 
@@ -262,11 +258,13 @@ func (c *NetworkClient) GetSubnet(ctx context.Context, network *unikornv1.Networ
 	}
 
 	if len(result) == 0 {
-		return nil, ErrNotFound
+		err = fmt.Errorf("%w: no subnet found for network %s", types.ErrResourceNotFound, opts.Name)
+		return nil, err
 	}
 
 	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+		err = fmt.Errorf("%w: multiple subnets found for network %s", types.ErrInternal, opts.Name)
+		return nil, err
 	}
 
 	return &result[0], nil
@@ -349,11 +347,13 @@ func (c *NetworkClient) GetRouter(ctx context.Context, network *unikornv1.Networ
 	}
 
 	if len(result) == 0 {
-		return nil, ErrNotFound
+		err = fmt.Errorf("%w: no router found for network %s", types.ErrResourceNotFound, opts.Name)
+		return nil, err
 	}
 
 	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+		err = fmt.Errorf("%w: multiple routers found for network %s", types.ErrInternal, opts.Name)
+		return nil, err
 	}
 
 	return &result[0], nil
@@ -445,11 +445,13 @@ func (c *NetworkClient) GetSecurityGroup(ctx context.Context, securityGroup *uni
 	}
 
 	if len(result) == 0 {
-		return nil, ErrNotFound
+		err = fmt.Errorf("%w: no security group found with name %s", types.ErrResourceNotFound, opts.Name)
+		return nil, err
 	}
 
 	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+		err = fmt.Errorf("%w: multiple security groups found with name %s", types.ErrInternal, opts.Name)
+		return nil, err
 	}
 
 	return &result[0], nil
@@ -560,11 +562,13 @@ func (c *NetworkClient) GetFloatingIP(ctx context.Context, portID string) (*floa
 	}
 
 	if len(result) == 0 {
-		return nil, ErrNotFound
+		err = fmt.Errorf("%w: no floating IP found for port %s", types.ErrResourceNotFound, portID)
+		return nil, err
 	}
 
 	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+		err = fmt.Errorf("%w: multiple floating IPs found for port %s", types.ErrInternal, portID)
+		return nil, err
 	}
 
 	return &result[0], nil
@@ -678,11 +682,13 @@ func (c *NetworkClient) GetServerPort(ctx context.Context, server *unikornv1.Ser
 	}
 
 	if len(result) == 0 {
-		return nil, ErrNotFound
+		err = fmt.Errorf("%w: no port found for server %s", types.ErrResourceNotFound, opts.Name)
+		return nil, err
 	}
 
 	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+		err = fmt.Errorf("%w: multiple ports found for server %s", types.ErrInternal, opts.Name)
+		return nil, err
 	}
 
 	return &result[0], nil

@@ -25,8 +25,8 @@ import (
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
-	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	errorsv2 "github.com/unikorn-cloud/core/pkg/server/v2/errors"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
@@ -111,86 +111,91 @@ func convertV2List(in *regionv1.SecurityGroupList) openapi.SecurityGroupsV2Read 
 }
 
 func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2SecuritygroupsParams) (openapi.SecurityGroupsV2Read, error) {
-	selector := labels.SelectorFromSet(map[string]string{
-		constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
-	})
-
-	var err error
-
-	selector, err = rbac.AddOrganizationAndProjectIDQuery(ctx, selector, util.OrganizationIDQuery(params.OrganizationID), util.ProjectIDQuery(params.ProjectID))
-	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to add identity label selector").WithError(err)
-	}
-
-	selector, err = util.AddRegionIDQuery(selector, params.RegionID)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to add region label selector").WithError(err)
-	}
-
-	selector, err = util.AddNetworkIDQuery(selector, params.NetworkID)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to add network label selector").WithError(err)
-	}
-
-	options := &client.ListOptions{
-		Namespace:     c.namespace,
-		LabelSelector: selector,
-	}
-
-	result := &regionv1.SecurityGroupList{}
-
-	if err := c.client.List(ctx, result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list security groups").WithError(err)
-	}
-
 	tagSelector, err := coreutil.DecodeTagSelectorParam(params.Tag)
 	if err != nil {
 		return nil, err
 	}
 
-	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.SecurityGroup) bool {
+	selector := labels.SelectorFromSet(map[string]string{
+		constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
+	})
+
+	selector, err = rbac.AddOrganizationAndProjectIDQuery(ctx, selector, util.OrganizationIDQuery(params.OrganizationID), util.ProjectIDQuery(params.ProjectID))
+	if err != nil {
+		return nil, err
+	}
+
+	selector, err = util.AddRegionIDQuery(selector, params.RegionID)
+	if err != nil {
+		return nil, err
+	}
+
+	selector, err = util.AddNetworkIDQuery(selector, params.NetworkID)
+	if err != nil {
+		return nil, err
+	}
+
+	opts := []client.ListOption{
+		&client.ListOptions{
+			Namespace:     c.namespace,
+			LabelSelector: selector,
+		},
+	}
+
+	var list regionv1.SecurityGroupList
+	if err := c.client.List(ctx, &list, opts...); err != nil {
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve security groups: %w", err).
+			Prefixed()
+
+		return nil, err
+	}
+
+	list.Items = slices.DeleteFunc(list.Items, func(resource regionv1.SecurityGroup) bool {
 		return !resource.Spec.Tags.ContainsAll(tagSelector) ||
 			rbac.AllowProjectScope(ctx, "region:securitygroups:v2", identityapi.Read, resource.Labels[coreconstants.OrganizationLabel], resource.Labels[coreconstants.ProjectLabel]) != nil
 	})
 
-	slices.SortStableFunc(result.Items, func(a, b regionv1.SecurityGroup) int {
+	slices.SortStableFunc(list.Items, func(a, b regionv1.SecurityGroup) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	return convertV2List(result), nil
+	return convertV2List(&list), nil
 }
 
 func (c *Client) GetV2Raw(ctx context.Context, securityGroupID string) (*regionv1.SecurityGroup, error) {
-	result := &regionv1.SecurityGroup{}
-
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: securityGroupID}, result); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, errors.OAuth2ServerError("unable to lookup security group").WithError(err)
+	key := client.ObjectKey{
+		Namespace: c.namespace,
+		Name:      securityGroupID,
 	}
 
-	if err := rbac.AllowProjectScope(ctx, "region:securitygroups:v2", identityapi.Read, result.Labels[coreconstants.OrganizationLabel], result.Labels[coreconstants.ProjectLabel]); err != nil {
+	var securityGroup regionv1.SecurityGroup
+	if err := c.client.Get(ctx, key, &securityGroup); err != nil {
+		if kerrors.IsNotFound(err) {
+			err = errorsv2.NewResourceMissingError("security group").
+				WithCause(err).
+				Prefixed()
+
+			return nil, err
+		}
+
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve security group: %w", err).
+			Prefixed()
+
+		return nil, err
+	}
+
+	if err := rbac.AllowProjectScope(ctx, "region:securitygroups:v2", identityapi.Read, securityGroup.Labels[coreconstants.OrganizationLabel], securityGroup.Labels[coreconstants.ProjectLabel]); err != nil {
 		return nil, err
 	}
 
 	// Only allow access to resources created by this API (temporarily).
-	v, ok := result.Labels[constants.ResourceAPIVersionLabel]
-	if !ok {
-		return nil, errors.HTTPNotFound()
+	if err := util.EnsureObjectAPIVersion("security group", &securityGroup, 2); err != nil {
+		return nil, err
 	}
 
-	version, err := constants.UnmarshalAPIVersion(v)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to parse API version")
-	}
-
-	if version != 2 {
-		return nil, errors.HTTPNotFound()
-	}
-
-	return result, nil
+	return &securityGroup, nil
 }
 
 func (c *Client) GetV2(ctx context.Context, securityGroupID string) (*openapi.SecurityGroupV2Read, error) {
@@ -206,18 +211,25 @@ func (c *Client) GetV2(ctx context.Context, securityGroupID string) (*openapi.Se
 // that can be used with generate().  Updates are a subset of creates (without the
 // immutable bits).
 func convertCreateToUpdateRequest(in *openapi.SecurityGroupV2Create) (*openapi.SecurityGroupV2Update, error) {
-	t, err := json.Marshal(in)
+	bs, err := json.Marshal(in)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to marshal request").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to marshal security group create request: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
-	out := &openapi.SecurityGroupV2Update{}
+	var params openapi.SecurityGroupV2Update
+	if err := json.Unmarshal(bs, &params); err != nil {
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to unmarshal data to security group update request: %w", err).
+			Prefixed()
 
-	if err := json.Unmarshal(t, out); err != nil {
-		return nil, errors.OAuth2ServerError("failed to unmarshal request").WithError(err)
+		return nil, err
 	}
 
-	return out, nil
+	return &params, nil
 }
 
 func protocolIsLayer4(in openapi.NetworkProtocol) bool {
@@ -226,12 +238,18 @@ func protocolIsLayer4(in openapi.NetworkProtocol) bool {
 
 func validateRule(in *openapi.SecurityGroupRuleV2) error {
 	if !protocolIsLayer4(in.Protocol) && in.Port != nil {
-		return errors.OAuth2InvalidRequest("rule specified ports for a layer 3 protocol")
+		return errorsv2.NewInvalidRequestError().
+			WithSimpleCause("port specified in security group rule for a layer 3 protocol").
+			WithErrorDescription("Port cannot be configured for non-layer 4 protocols.").
+			Prefixed()
 	}
 
 	if protocolIsLayer4(in.Protocol) && in.Port != nil && in.PortMax != nil {
 		if *in.Port >= *in.PortMax {
-			return errors.OAuth2InvalidRequest("rule must have a range where start < end")
+			return errorsv2.NewInvalidRequestError().
+				WithSimpleCause("invalid port range specified in security group rule").
+				WithErrorDescription("The 'port' must be less than the 'portMax' when specifying a port range.").
+				Prefixed()
 		}
 	}
 
@@ -311,15 +329,19 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 	}
 
 	if err := util.InjectUserPrincipal(ctx, organizationID, projectID); err != nil {
-		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
+		return nil, err
 	}
 
 	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
-		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
+		return nil, err
 	}
 
 	if err := controllerutil.SetOwnerReference(network, out, c.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
-		return nil, errors.OAuth2ServerError("unable to set resource owner").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to set owner reference: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	return out, nil
@@ -329,6 +351,15 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.SecurityGroupV2C
 	// Check the network exists, and the user has permission to it.
 	network, err := network.New(c.client, c.namespace, nil).GetV2Raw(ctx, request.Spec.NetworkId)
 	if err != nil {
+		if errorsv2.IsAPIResourceMissingError(err) {
+			err = errorsv2.NewInvalidRequestError().
+				WithCause(err).
+				WithErrorDescription("The provided network ID is invalid or cannot be resolved.").
+				Prefixed()
+
+			return nil, err
+		}
+
 		return nil, err
 	}
 
@@ -350,7 +381,11 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.SecurityGroupV2C
 	}
 
 	if err := c.client.Create(ctx, resource); err != nil {
-		return nil, errors.OAuth2ServerError("unable to create security group").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to create security group: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	return convertV2(resource), nil
@@ -367,12 +402,22 @@ func (c *Client) UpdateV2(ctx context.Context, securityGroupID string, request *
 	}
 
 	if current.DeletionTimestamp != nil {
-		return nil, errors.OAuth2InvalidRequest("security group is being deleted")
+		err = errorsv2.NewConflictError().
+			WithSimpleCause("security group is being deleted").
+			WithErrorDescription("The security group is being deleted and cannot be modified.").
+			Prefixed()
+
+		return nil, err
 	}
 
 	// Get the network, required for generation.
 	network, err := network.New(c.client, c.namespace, nil).GetV2Raw(ctx, current.Labels[constants.NetworkLabel])
 	if err != nil {
+		if errorsv2.IsAPIResourceMissingError(err) {
+			err = errorsv2.NewInternalError().WithCause(err).Prefixed()
+			return nil, err
+		}
+
 		return nil, err
 	}
 
@@ -387,7 +432,11 @@ func (c *Client) UpdateV2(ctx context.Context, securityGroupID string, request *
 	updated.Spec = required.Spec
 
 	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
-		return nil, errors.OAuth2ServerError("unable to update security group").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to patch security group: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	return convertV2(updated), nil
@@ -409,10 +458,14 @@ func (c *Client) DeleteV2(ctx context.Context, securityGroupID string) error {
 
 	if err := c.client.Delete(ctx, resource, util.ForegroundDeleteOptions()); err != nil {
 		if kerrors.IsNotFound(err) {
-			return errors.HTTPNotFound().WithError(err)
+			return errorsv2.NewResourceMissingError("security group").
+				WithCause(err).
+				Prefixed()
 		}
 
-		return errors.OAuth2ServerError("unable to delete security group").WithError(err)
+		return errorsv2.NewInternalError().
+			WithCausef("failed to delete security group: %w", err).
+			Prefixed()
 	}
 
 	return nil
