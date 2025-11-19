@@ -24,6 +24,7 @@ import (
 
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
@@ -405,6 +406,10 @@ func (c *Client) DeleteV2(ctx context.Context, securityGroupID string) error {
 
 	if resource.DeletionTimestamp != nil {
 		return nil
+	}
+
+	if len(manager.GetResourceReferences(resource)) > 0 {
+		return errors.HTTPForbidden("security group is in use and callot be deleted")
 	}
 
 	if err := c.client.Delete(ctx, resource, util.ForegroundDeleteOptions()); err != nil {
