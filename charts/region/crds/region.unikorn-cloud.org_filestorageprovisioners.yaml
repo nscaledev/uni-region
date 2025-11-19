@@ -4,30 +4,26 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.3
-  name: filestorageclasses.region.unikorn-cloud.org
+  name: filestorageprovisioners.region.unikorn-cloud.org
 spec:
   group: region.unikorn-cloud.org
   names:
     categories:
     - unikorn
-    kind: FileStorageClass
-    listKind: FileStorageClassList
-    plural: filestorageclasses
-    singular: filestorageclass
+    kind: FileStorageProvisioner
+    listKind: FileStorageProvisionerList
+    plural: filestorageprovisioners
+    singular: filestorageprovisioner
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.protocols
-      name: protocols
-      type: string
     - jsonPath: .metadata.creationTimestamp
       name: age
       type: date
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: FileStorageClass defines the storage protocols, optional QoS
-          guarantees and the service provider.
+        description: FileStorageProvisioner defines the file storage provisioner.
         properties:
           apiVersion:
             description: |-
@@ -47,24 +43,21 @@ spec:
           metadata:
             type: object
           spec:
-            description: FileStorageClassSpec defines the FileStorageClass.
             properties:
-              protocols:
-                description: Protocols specifies the storage protocols (e.g., NFSv3,
-                  NFSv4) supported by this class.
-                items:
-                  description: Protocol defines which storage protocol to leverage.
-                  enum:
-                  - nfsv3
-                  - nfsv4
-                  type: string
-                type: array
-              provisioner:
-                description: Provisioner is the name of the provisioner to use for
-                  the file storage class.
-                type: string
-            required:
-            - provisioner
+              configRef:
+                description: ConfigRef is the reference to the config map for the
+                  file storage provisioner.
+                properties:
+                  name:
+                    description: Name is the name of the object.
+                    type: string
+                  namespace:
+                    description: Namespace is the namespace in which the object resides.
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
             type: object
           status:
             type: object
