@@ -452,7 +452,14 @@ func (c *Client) DeleteV2(ctx context.Context, serverID string) error {
 	return nil
 }
 
-func (c *Client) getServerIdentityAndProvider(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, types.Provider, error) {
+// serverProvider gloms together the operations needed to provision servers.
+type serverProvider interface {
+	types.Server
+	types.ServerConsole
+	types.Identity
+}
+
+func (c *Client) getServerIdentityAndProvider(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, serverProvider, error) {
 	server, err := c.GetV2Raw(ctx, serverID)
 	if err != nil {
 		return nil, nil, nil, err
