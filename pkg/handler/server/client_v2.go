@@ -400,7 +400,7 @@ func (c *Client) UpdateV2(ctx context.Context, serverID string, request *openapi
 		return nil, err
 	}
 
-	if err := rbac.AllowProjectScope(ctx, "region:securitygroups:v2", identityapi.Delete, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel]); err != nil {
+	if err := rbac.AllowProjectScope(ctx, "region:servers", identityapi.Delete, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel]); err != nil {
 		return nil, err
 	}
 
