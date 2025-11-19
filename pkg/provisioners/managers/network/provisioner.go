@@ -29,9 +29,7 @@ import (
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/handler/region"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 )
 
 // Options allows access to CLI options in the provisioner.
@@ -94,29 +92,9 @@ func (p *Provisioner) identityClient(ctx context.Context) (identityapi.ClientWit
 	return identityclient.New(client, p.options.identityOptions, &p.options.clientOptions).ControllerClient(ctx, token, p.network)
 }
 
-func (p *Provisioner) getIdentity(ctx context.Context, cli client.Client) (*unikornv1.Identity, error) {
-	identity := &unikornv1.Identity{}
-
-	if err := cli.Get(ctx, client.ObjectKey{Namespace: p.network.Namespace, Name: p.network.Labels[constants.IdentityLabel]}, identity); err != nil {
-		return nil, err
-	}
-
-	return identity, nil
-}
-
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
-	cli, err := coreclient.FromContext(ctx)
-	if err != nil {
-		return err
-	}
-
-	provider, err := region.NewClient(cli, p.network.Namespace).Provider(ctx, p.network.Labels[constants.RegionLabel])
-	if err != nil {
-		return err
-	}
-
-	identity, err := p.getIdentity(ctx, cli)
+	provider, identity, err := base.ProviderAndIdentity(ctx, p.network)
 	if err != nil {
 		return err
 	}
@@ -136,17 +114,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	cli, err := coreclient.FromContext(ctx)
-	if err != nil {
-		return err
-	}
-
-	provider, err := region.NewClient(cli, p.network.Namespace).Provider(ctx, p.network.Labels[constants.RegionLabel])
-	if err != nil {
-		return err
-	}
-
-	identity, err := p.getIdentity(ctx, cli)
+	provider, identity, err := base.ProviderAndIdentity(ctx, p.network)
 	if err != nil {
 		return err
 	}
@@ -156,6 +124,11 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 	}
 
 	// Temporary hack, V1 networks don't have a discrete network allocation,
+	cli, err := coreclient.FromContext(ctx)
+	if err != nil {
+		return err
+	}
+
 	if v, ok := p.network.Labels[constants.ResourceAPIVersionLabel]; ok && v == constants.MarshalAPIVersion(2) {
 		if err := identityclient.NewAllocations(cli, p.identityClient).Delete(ctx, p.network); err != nil {
 			return err
