@@ -106,13 +106,13 @@ func convertPowerStateV2(in regionv1.InstanceLifecyclePhase) *openapi.InstanceLi
 
 	switch in {
 	case regionv1.InstanceLifecyclePhasePending:
-		return ptr.To(openapi.Pending)
+		return ptr.To(openapi.InstanceLifecyclePhasePending)
 	case regionv1.InstanceLifecyclePhaseRunning:
-		return ptr.To(openapi.Running)
+		return ptr.To(openapi.InstanceLifecyclePhaseRunning)
 	case regionv1.InstanceLifecyclePhaseStopping:
-		return ptr.To(openapi.Stopping)
+		return ptr.To(openapi.InstanceLifecyclePhaseStopping)
 	case regionv1.InstanceLifecyclePhaseStopped:
-		return ptr.To(openapi.Stopped)
+		return ptr.To(openapi.InstanceLifecyclePhaseStopped)
 	}
 
 	return nil

@@ -80,9 +80,9 @@ func convertProtocol(in unikornv1.SecurityGroupRuleProtocol) openapi.NetworkProt
 func convertDirection(in unikornv1.SecurityGroupRuleDirection) openapi.NetworkDirection {
 	switch in {
 	case unikornv1.Ingress:
-		return openapi.Ingress
+		return openapi.NetworkDirectionIngress
 	case unikornv1.Egress:
-		return openapi.Egress
+		return openapi.NetworkDirectionEgress
 	}
 
 	return ""
@@ -184,9 +184,9 @@ func generateDirection(in openapi.NetworkDirection) unikornv1.SecurityGroupRuleD
 	var out unikornv1.SecurityGroupRuleDirection
 
 	switch in {
-	case openapi.Ingress:
+	case openapi.NetworkDirectionIngress:
 		out = unikornv1.Ingress
-	case openapi.Egress:
+	case openapi.NetworkDirectionEgress:
 		out = unikornv1.Egress
 	}
 
