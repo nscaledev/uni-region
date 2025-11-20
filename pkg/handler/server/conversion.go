@@ -22,7 +22,6 @@ import (
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
-	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -47,7 +46,7 @@ func convertList(in *unikornv1.ServerList) openapi.ServersRead {
 
 // convert converts from a custom resource into the API definition.
 func convert(in *unikornv1.Server) *openapi.ServerRead {
-	out := &openapi.ServerRead{
+	return &openapi.ServerRead{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.ServerSpec{
 			FlavorId:           in.Spec.FlavorID,
@@ -63,8 +62,6 @@ func convert(in *unikornv1.Server) *openapi.ServerRead {
 			PublicIP:  in.Status.PublicIP,
 		},
 	}
-
-	return out
 }
 
 func convertNetworks(in []unikornv1.ServerNetworkSpec) openapi.ServerNetworkList {
@@ -210,7 +207,7 @@ func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*uni
 	}
 
 	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
-		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
+		return nil, err
 	}
 
 	// Ensure the server is owned by the network so it is automatically cleaned

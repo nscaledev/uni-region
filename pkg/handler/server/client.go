@@ -20,22 +20,19 @@ import (
 	"cmp"
 	"context"
 	goerrors "errors"
-	"net/http"
 	"slices"
-
-	"github.com/gophercloud/gophercloud/v2"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
-	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
+	errorsv2 "github.com/unikorn-cloud/core/pkg/server/v2/errors"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
-	"github.com/unikorn-cloud/region/pkg/providers/openstack"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -61,53 +58,70 @@ func NewClient(client client.Client, namespace string) *Client {
 
 // get gives access to the raw Kubernetes resource.
 func (c *Client) get(ctx context.Context, organizationID, projectID, serverID string) (*unikornv1.Server, error) {
-	resource := &unikornv1.Server{}
-
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: serverID}, resource); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, errors.OAuth2ServerError("unable to get server").WithError(err)
+	key := client.ObjectKey{
+		Namespace: c.namespace,
+		Name:      serverID,
 	}
 
-	if err := util.AssertProjectOwnership(resource, organizationID, projectID); err != nil {
+	var server unikornv1.Server
+	if err := c.client.Get(ctx, key, &server); err != nil {
+		if kerrors.IsNotFound(err) {
+			err = errorsv2.NewResourceMissingError("server").
+				WithCause(err).
+				Prefixed()
+
+			return nil, err
+		}
+
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve server: %w", err).
+			Prefixed()
+
 		return nil, err
 	}
 
-	return resource, nil
+	if err := util.AssertProjectOwnership(&server, organizationID, projectID); err != nil {
+		return nil, err
+	}
+
+	return &server, nil
 }
 
 // List returns an ordered list of all resources in scope.
 func (c *Client) List(ctx context.Context, organizationID string, params openapi.GetApiV1OrganizationsOrganizationIDServersParams) (openapi.ServersRead, error) {
-	result := &unikornv1.ServerList{}
-
-	options := &client.ListOptions{
-		Namespace: c.namespace,
-		LabelSelector: labels.SelectorFromSet(map[string]string{
-			coreconstants.OrganizationLabel: organizationID,
-		}),
-	}
-
-	if err := c.client.List(ctx, result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list servers").WithError(err)
-	}
-
 	tagSelector, err := util.DecodeTagSelectorParam(params.Tag)
 	if err != nil {
 		return nil, err
 	}
 
-	result.Items = slices.DeleteFunc(result.Items, func(resource unikornv1.Server) bool {
+	opts := []client.ListOption{
+		&client.ListOptions{
+			Namespace: c.namespace,
+			LabelSelector: labels.SelectorFromSet(labels.Set{
+				coreconstants.OrganizationLabel: organizationID,
+			}),
+		},
+	}
+
+	var list unikornv1.ServerList
+	if err := c.client.List(ctx, &list, opts...); err != nil {
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve servers: %w", err).
+			Prefixed()
+
+		return nil, err
+	}
+
+	list.Items = slices.DeleteFunc(list.Items, func(resource unikornv1.Server) bool {
 		return !resource.Spec.Tags.ContainsAll(tagSelector)
 	})
 
 	// Apply ordering guarantees, ordered by name.
-	slices.SortStableFunc(result.Items, func(a, b unikornv1.Server) int {
+	slices.SortStableFunc(list.Items, func(a, b unikornv1.Server) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	return convertList(result), nil
+	return convertList(&list), nil
 }
 
 // Create instantiates a new resource.
@@ -119,15 +133,23 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 
 	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, identity.Labels[constants.RegionLabel])
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, err
 	}
 
 	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
-		if goerrors.Is(err, openstack.ErrResourceNotFound) {
-			return nil, errors.HTTPNotFound()
+		if goerrors.Is(err, types.ErrResourceNotFound) {
+			err = errorsv2.NewResourceMissingError("image").
+				WithCause(err).
+				Prefixed()
+
+			return nil, err
 		}
 
-		return nil, errors.OAuth2ServerError("failed to retrieve image from provider").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve image: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	resource, err := newGenerator(c.client, c.namespace, organizationID, projectID, identityID).generate(ctx, request)
@@ -138,7 +160,11 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 	resource.Status.Phase = unikornv1.InstanceLifecyclePhasePending
 
 	if err := c.client.Create(ctx, resource); err != nil {
-		return nil, errors.OAuth2ServerError("unable to create server").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to create server: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	return convert(resource), nil
@@ -163,15 +189,23 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 
 	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, identity.Labels[constants.RegionLabel])
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, err
 	}
 
 	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
-		if goerrors.Is(err, openstack.ErrResourceNotFound) {
-			return nil, errors.HTTPNotFound()
+		if goerrors.Is(err, types.ErrResourceNotFound) {
+			err = errorsv2.NewResourceMissingError("image").
+				WithCause(err).
+				Prefixed()
+
+			return nil, err
 		}
 
-		return nil, errors.OAuth2ServerError("failed to retrieve image from provider").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve image: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	current, err := c.get(ctx, organizationID, projectID, serverID)
@@ -185,7 +219,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	}
 
 	if err := conversion.UpdateObjectMetadata(required, current, common.IdentityMetadataMutator); err != nil {
-		return nil, errors.OAuth2ServerError("failed to merge metadata").WithError(err)
+		return nil, err
 	}
 
 	updated := current.DeepCopy()
@@ -194,7 +228,11 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	updated.Spec = required.Spec
 
 	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
-		return nil, errors.OAuth2ServerError("failed to patch server").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to patch server: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	return convert(updated), nil
@@ -208,7 +246,7 @@ func (c *Client) Reboot(ctx context.Context, organizationID, projectID, identity
 
 	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
 	if err != nil {
-		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return err
 	}
 
 	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
@@ -216,20 +254,33 @@ func (c *Client) Reboot(ctx context.Context, organizationID, projectID, identity
 		return err
 	}
 
+	return c.reboot(ctx, current, hard, identity, provider)
+}
+
+func (c *Client) reboot(ctx context.Context, server *unikornv1.Server, hard bool, identity *unikornv1.Identity, provider types.Provider) error {
 	// REVIEW_ME: Do we want to track who rebooted the server, and when?
 	// REVIEW_ME: This action only reboots the server with the existing configuration, so updating the labels (creator/principal) seems a bit weird.
+	if err := provider.RebootServer(ctx, identity, server, hard); err != nil {
+		if goerrors.Is(err, types.ErrResourceNotFound) {
+			return nil
+		}
 
-	if err := provider.RebootServer(ctx, identity, current, hard); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			// REVIEW_ME: Should this return 409 instead? But we will probably need to add a new error type for that.
-			return errors.OAuth2InvalidRequest("server cannot be rebooted in its current state").WithError(err)
+		if goerrors.Is(err, types.ErrConflict) {
+			return errorsv2.NewConflictError().
+				WithCause(err).
+				WithErrorDescription("The server cannot be rebooted in its current state.").
+				Prefixed()
 		}
 
 		if hard {
-			return errors.OAuth2ServerError("failed to hard reboot server").WithError(err)
+			return errorsv2.NewInternalError().
+				WithCausef("failed to hard reboot server: %w", err).
+				Prefixed()
 		}
 
-		return errors.OAuth2ServerError("failed to soft reboot server").WithError(err)
+		return errorsv2.NewInternalError().
+			WithCausef("failed to soft reboot server: %w", err).
+			Prefixed()
 	}
 
 	return nil
@@ -244,7 +295,7 @@ func (c *Client) Start(ctx context.Context, organizationID, projectID, identityI
 
 	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
 	if err != nil {
-		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return err
 	}
 
 	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
@@ -252,21 +303,37 @@ func (c *Client) Start(ctx context.Context, organizationID, projectID, identityI
 		return err
 	}
 
-	if err := provider.StartServer(ctx, identity, current); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			// REVIEW_ME: Should this return 409 instead? But we will probably need to add a new error type for that.
-			return errors.OAuth2InvalidRequest("server cannot be started in its current state").WithError(err)
+	return c.start(ctx, current, identity, provider)
+}
+
+func (c *Client) start(ctx context.Context, server *unikornv1.Server, identity *unikornv1.Identity, provider types.Provider) error {
+	if err := provider.StartServer(ctx, identity, server); err != nil {
+		if goerrors.Is(err, types.ErrResourceNotFound) {
+			return errorsv2.NewResourceMissingError("server").
+				WithCause(err).
+				Prefixed()
 		}
 
-		return errors.OAuth2ServerError("failed to start server").WithError(err)
+		if goerrors.Is(err, types.ErrConflict) {
+			return errorsv2.NewConflictError().
+				WithCause(err).
+				WithErrorDescription("The server cannot be started in its current state.").
+				Prefixed()
+		}
+
+		return errorsv2.NewInternalError().
+			WithCausef("failed to start server: %w", err).
+			Prefixed()
 	}
 
 	// REVIEW_ME: Do we want to track who started the server, and when?
-	updated := current.DeepCopy()
+	updated := server.DeepCopy()
 	updated.Status.Phase = unikornv1.InstanceLifecyclePhasePending
 
-	if err := c.client.Status().Patch(ctx, updated, client.MergeFrom(current)); err != nil {
-		return errors.OAuth2ServerError("failed to patch server").WithError(err)
+	if err := c.client.Status().Patch(ctx, updated, client.MergeFrom(server)); err != nil {
+		return errorsv2.NewInternalError().
+			WithCausef("failed to patch server: %w", err).
+			Prefixed()
 	}
 
 	return nil
@@ -281,7 +348,7 @@ func (c *Client) Stop(ctx context.Context, organizationID, projectID, identityID
 
 	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
 	if err != nil {
-		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return err
 	}
 
 	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
@@ -289,21 +356,37 @@ func (c *Client) Stop(ctx context.Context, organizationID, projectID, identityID
 		return err
 	}
 
-	if err := provider.StopServer(ctx, identity, current); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			// REVIEW_ME: Should this return 409 instead? But we will probably need to add a new error type for that.
-			return errors.OAuth2InvalidRequest("server cannot be stopped in its current state").WithError(err)
+	return c.stop(ctx, current, identity, provider)
+}
+
+func (c *Client) stop(ctx context.Context, server *unikornv1.Server, identity *unikornv1.Identity, provider types.Provider) error {
+	if err := provider.StopServer(ctx, identity, server); err != nil {
+		if goerrors.Is(err, types.ErrResourceNotFound) {
+			return errorsv2.NewResourceMissingError("server").
+				WithCause(err).
+				Prefixed()
 		}
 
-		return errors.OAuth2ServerError("failed to stop server").WithError(err)
+		if goerrors.Is(err, types.ErrConflict) {
+			return errorsv2.NewConflictError().
+				WithCause(err).
+				WithErrorDescription("The server cannot be stopped in its current state.").
+				Prefixed()
+		}
+
+		return errorsv2.NewInternalError().
+			WithCausef("failed to stop server: %w", err).
+			Prefixed()
 	}
 
 	// REVIEW_ME: Do we want to track who stopped the server, and when?
-	updated := current.DeepCopy()
+	updated := server.DeepCopy()
 	updated.Status.Phase = unikornv1.InstanceLifecyclePhaseStopping
 
-	if err := c.client.Status().Patch(ctx, updated, client.MergeFrom(current)); err != nil {
-		return errors.OAuth2ServerError("failed to patch server").WithError(err)
+	if err := c.client.Status().Patch(ctx, updated, client.MergeFrom(server)); err != nil {
+		return errorsv2.NewInternalError().
+			WithCausef("failed to patch server: %w", err).
+			Prefixed()
 	}
 
 	return nil
@@ -318,10 +401,14 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, serverID
 
 	if err := c.client.Delete(ctx, resource); err != nil {
 		if kerrors.IsNotFound(err) {
-			return errors.HTTPNotFound().WithError(err)
+			return errorsv2.NewResourceMissingError("server").
+				WithCause(err).
+				Prefixed()
 		}
 
-		return errors.OAuth2ServerError("unable to delete server").WithError(err)
+		return errorsv2.NewInternalError().
+			WithCausef("failed to delete server: %w", err).
+			Prefixed()
 	}
 
 	return nil
@@ -335,7 +422,7 @@ func (c *Client) CreateConsoleSession(ctx context.Context, organizationID, proje
 
 	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, err
 	}
 
 	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
@@ -343,14 +430,34 @@ func (c *Client) CreateConsoleSession(ctx context.Context, organizationID, proje
 		return nil, err
 	}
 
-	url, err := provider.CreateConsoleSession(ctx, identity, current)
+	return c.createConsoleSession(ctx, current, identity, provider)
+}
+
+func (c *Client) createConsoleSession(ctx context.Context, server *unikornv1.Server, identity *unikornv1.Identity, provider types.Provider) (*openapi.ConsoleSessionResponse, error) {
+	url, err := provider.CreateConsoleSession(ctx, identity, server)
 	if err != nil {
-		// REVIEW_ME: This looks odd. Shouldn't the ErrResourceDependency error be moved to the provider package?
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) || goerrors.Is(err, openstack.ErrResourceDependency) {
-			return nil, errors.HTTPNotFound().WithError(err)
+		if goerrors.Is(err, types.ErrResourceNotFound) {
+			err = errorsv2.NewResourceMissingError("server").
+				WithCause(err).
+				Prefixed()
+
+			return nil, err
 		}
 
-		return nil, errors.OAuth2ServerError("failed to create console session").WithError(err)
+		if goerrors.Is(err, types.ErrConflict) {
+			err = errorsv2.NewConflictError().
+				WithCause(err).
+				WithErrorDescription("The server cannot be accessed in its current state.").
+				Prefixed()
+
+			return nil, err
+		}
+
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to create console session: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	response := &openapi.ConsoleSessionResponse{
@@ -368,7 +475,7 @@ func (c *Client) GetConsoleOutput(ctx context.Context, organizationID, projectID
 
 	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, err
 	}
 
 	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
@@ -376,14 +483,34 @@ func (c *Client) GetConsoleOutput(ctx context.Context, organizationID, projectID
 		return nil, err
 	}
 
-	contents, err := provider.GetConsoleOutput(ctx, identity, current, params.Length)
+	return c.getConsoleOutput(ctx, current, params.Length, identity, provider)
+}
+
+func (c *Client) getConsoleOutput(ctx context.Context, server *unikornv1.Server, length *int, identity *unikornv1.Identity, provider types.Provider) (*openapi.ConsoleOutputResponse, error) {
+	contents, err := provider.GetConsoleOutput(ctx, identity, server, length)
 	if err != nil {
-		// REVIEW_ME: This looks odd. Shouldn't the ErrResourceDependency error be moved to the provider package?
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) || goerrors.Is(err, openstack.ErrResourceDependency) {
-			return nil, errors.HTTPNotFound().WithError(err)
+		if goerrors.Is(err, types.ErrResourceNotFound) {
+			err = errorsv2.NewResourceMissingError("server").
+				WithCause(err).
+				Prefixed()
+
+			return nil, err
 		}
 
-		return nil, errors.OAuth2ServerError("failed to create console session").WithError(err)
+		if goerrors.Is(err, types.ErrConflict) {
+			err = errorsv2.NewConflictError().
+				WithCause(err).
+				WithErrorDescription("The server console output cannot be retrieved in its current state.").
+				Prefixed()
+
+			return nil, err
+		}
+
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve console output: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	response := &openapi.ConsoleOutputResponse{

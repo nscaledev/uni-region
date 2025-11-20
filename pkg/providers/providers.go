@@ -33,9 +33,9 @@ var (
 	// ErrRegionNotFound is raised when a region doesn't exist.
 	ErrRegionNotFound = errors.New("region doesn't exist")
 
-	// ErrRegionProviderUnimplmented is raised when you haven't written
+	// ErrRegionProviderUnimplemented is raised when you haven't written
 	// it yet!
-	ErrRegionProviderUnimplmented = errors.New("region provider unimplmented")
+	ErrRegionProviderUnimplemented = errors.New("region provider unimplemented")
 )
 
 //nolint:gochecknoglobals
@@ -50,7 +50,7 @@ func newProvider(ctx context.Context, client client.Client, region *unikornv1.Re
 		return openstack.New(ctx, client, region)
 	}
 
-	return nil, ErrRegionProviderUnimplmented
+	return nil, ErrRegionProviderUnimplemented
 }
 
 // New returns a new provider for the given region.
@@ -59,17 +59,20 @@ func New(ctx context.Context, c client.Client, namespace, regionID string) (type
 		return provider, nil
 	}
 
-	var regions unikornv1.RegionList
+	opts := []client.ListOption{
+		&client.ListOptions{Namespace: namespace},
+	}
 
-	if err := c.List(ctx, &regions, &client.ListOptions{Namespace: namespace}); err != nil {
+	var regions unikornv1.RegionList
+	if err := c.List(ctx, &regions, opts...); err != nil {
 		return nil, err
 	}
 
-	matchRegionID := func(region unikornv1.Region) bool {
+	isTargetRegion := func(region unikornv1.Region) bool {
 		return region.Name == regionID
 	}
 
-	index := slices.IndexFunc(regions.Items, matchRegionID)
+	index := slices.IndexFunc(regions.Items, isTargetRegion)
 	if index < 0 {
 		return nil, ErrRegionNotFound
 	}

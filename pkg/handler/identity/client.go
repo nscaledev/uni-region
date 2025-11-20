@@ -24,8 +24,8 @@ import (
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
-	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	errorsv2 "github.com/unikorn-cloud/core/pkg/server/v2/errors"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -113,12 +113,16 @@ func (c *Client) convertList(ctx context.Context, in unikornv1.IdentityList) ope
 func (c *Client) generate(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*unikornv1.Identity, error) {
 	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, request.Spec.RegionId)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to get region provider").WithError(err)
+		return nil, err
 	}
 
 	region, err := provider.Region(ctx)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to get region").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve region: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	out := &unikornv1.Identity{
@@ -130,7 +134,7 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID string,
 	}
 
 	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
-		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
+		return nil, err
 	}
 
 	return out, nil
@@ -138,42 +142,59 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID string,
 
 // GetRaw gives access to the raw Kubernetes resource.
 func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, identityID string) (*unikornv1.Identity, error) {
-	resource := &unikornv1.Identity{}
-
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: identityID}, resource); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, errors.OAuth2ServerError("unable to lookup identity").WithError(err)
+	key := client.ObjectKey{
+		Namespace: c.namespace,
+		Name:      identityID,
 	}
 
-	if err := coreutil.AssertProjectOwnership(resource, organizationID, projectID); err != nil {
+	var identity unikornv1.Identity
+	if err := c.client.Get(ctx, key, &identity); err != nil {
+		if kerrors.IsNotFound(err) {
+			err = errorsv2.NewResourceMissingError("identity").
+				WithCause(err).
+				Prefixed()
+
+			return nil, err
+		}
+
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve identity: %w", err).
+			Prefixed()
+
 		return nil, err
 	}
 
-	return resource, nil
+	if err := coreutil.AssertProjectOwnership(&identity, organizationID, projectID); err != nil {
+		return nil, err
+	}
+
+	return &identity, nil
 }
 
 // List returns an ordered list of all resources in scope.
 func (c *Client) List(ctx context.Context, organizationID string) (openapi.IdentitiesRead, error) {
-	var result unikornv1.IdentityList
-
-	options := &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(map[string]string{
-			coreconstants.OrganizationLabel: organizationID,
-		}),
+	opts := []client.ListOption{
+		&client.ListOptions{
+			LabelSelector: labels.SelectorFromSet(labels.Set{
+				coreconstants.OrganizationLabel: organizationID,
+			}),
+		},
 	}
 
-	if err := c.client.List(ctx, &result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list identities").WithError(err)
+	var list unikornv1.IdentityList
+	if err := c.client.List(ctx, &list, opts...); err != nil {
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve identities: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
-	slices.SortStableFunc(result.Items, func(a, b unikornv1.Identity) int {
+	slices.SortStableFunc(list.Items, func(a, b unikornv1.Identity) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	return c.convertList(ctx, result), nil
+	return c.convertList(ctx, list), nil
 }
 
 func (c *Client) CreateRaw(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*unikornv1.Identity, error) {
@@ -183,7 +204,11 @@ func (c *Client) CreateRaw(ctx context.Context, organizationID, projectID string
 	}
 
 	if err := c.client.Create(ctx, resource); err != nil {
-		return nil, errors.OAuth2ServerError("unable to create identity").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to create identity: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	return resource, nil
@@ -218,10 +243,14 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, identity
 
 	if err := c.client.Delete(ctx, result, util.ForegroundDeleteOptions()); err != nil {
 		if kerrors.IsNotFound(err) {
-			return errors.HTTPNotFound().WithError(err)
+			return errorsv2.NewResourceMissingError("identity").
+				WithCause(err).
+				Prefixed()
 		}
 
-		return errors.OAuth2ServerError("unable to delete identity").WithError(err)
+		return errorsv2.NewInternalError().
+			WithCausef("failed to delete identity: %w", err).
+			Prefixed()
 	}
 
 	return nil

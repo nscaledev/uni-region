@@ -19,6 +19,7 @@ package util
 import (
 	"context"
 
+	errorsv2 "github.com/unikorn-cloud/core/pkg/server/v2/errors"
 	"github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -58,7 +59,16 @@ func AddRegionIDQuery(selector labels.Selector, query *openapi.RegionIDQueryPara
 		return selector, nil
 	}
 
-	return rbac.AddQuery(selector, constants.RegionLabel, *query)
+	selector, err := rbac.AddQuery(selector, constants.RegionLabel, *query)
+	if err != nil {
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to add region id label selector: %w", err).
+			Prefixed()
+
+		return nil, err
+	}
+
+	return selector, nil
 }
 
 func AddNetworkIDQuery(selector labels.Selector, query *openapi.NetworkIDQueryParameter) (labels.Selector, error) {
@@ -66,7 +76,16 @@ func AddNetworkIDQuery(selector labels.Selector, query *openapi.NetworkIDQueryPa
 		return selector, nil
 	}
 
-	return rbac.AddQuery(selector, constants.NetworkLabel, *query)
+	selector, err := rbac.AddQuery(selector, constants.NetworkLabel, *query)
+	if err != nil {
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to add network id label selector: %w", err).
+			Prefixed()
+
+		return nil, err
+	}
+
+	return selector, nil
 }
 
 // InjectUserPrincipal updates the principal information from either the resource request
@@ -74,12 +93,34 @@ func AddNetworkIDQuery(selector labels.Selector, query *openapi.NetworkIDQueryPa
 func InjectUserPrincipal(ctx context.Context, organizationID, projectID string) error {
 	principal, err := principal.FromContext(ctx)
 	if err != nil {
-		return err
+		return errorsv2.NewInternalError().
+			WithCausef("failed to inject user principal: %w", err).
+			Prefixed()
 	}
 
 	if principal.OrganizationID == "" {
 		principal.OrganizationID = organizationID
 		principal.ProjectID = projectID
+	}
+
+	return nil
+}
+
+func EnsureObjectAPIVersion(name string, object client.Object, version int) error {
+	value, ok := object.GetLabels()[constants.ResourceAPIVersionLabel]
+	if !ok {
+		return errorsv2.NewResourceMissingError(name).Prefixed()
+	}
+
+	version, err := constants.UnmarshalAPIVersion(value)
+	if err != nil {
+		return errorsv2.NewInternalError().
+			WithCausef("failed to parse resource API version label: %w", err).
+			Prefixed()
+	}
+
+	if version != 2 {
+		return errorsv2.NewResourceMissingError(name).Prefixed()
 	}
 
 	return nil

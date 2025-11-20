@@ -26,9 +26,9 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
-	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	errorsv2 "github.com/unikorn-cloud/core/pkg/server/v2/errors"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
@@ -93,81 +93,86 @@ func convertV2List(in *regionv1.NetworkList) openapi.NetworksV2Read {
 }
 
 func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2NetworksParams) (openapi.NetworksV2Read, error) {
-	selector := labels.SelectorFromSet(map[string]string{
-		constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
-	})
-
-	var err error
-
-	selector, err = rbac.AddOrganizationAndProjectIDQuery(ctx, selector, util.OrganizationIDQuery(params.OrganizationID), util.ProjectIDQuery(params.ProjectID))
-	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to add identity label selector").WithError(err)
-	}
-
-	selector, err = util.AddRegionIDQuery(selector, params.RegionID)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to add region label selector").WithError(err)
-	}
-
-	options := &client.ListOptions{
-		Namespace:     c.namespace,
-		LabelSelector: selector,
-	}
-
-	result := &regionv1.NetworkList{}
-
-	if err := c.client.List(ctx, result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list networks").WithError(err)
-	}
-
 	tagSelector, err := coreutil.DecodeTagSelectorParam(params.Tag)
 	if err != nil {
 		return nil, err
 	}
 
-	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.Network) bool {
+	selector := labels.SelectorFromSet(map[string]string{
+		constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
+	})
+
+	selector, err = rbac.AddOrganizationAndProjectIDQuery(ctx, selector, util.OrganizationIDQuery(params.OrganizationID), util.ProjectIDQuery(params.ProjectID))
+	if err != nil {
+		return nil, err
+	}
+
+	selector, err = util.AddRegionIDQuery(selector, params.RegionID)
+	if err != nil {
+		return nil, err
+	}
+
+	opts := []client.ListOption{
+		&client.ListOptions{
+			Namespace:     c.namespace,
+			LabelSelector: selector,
+		},
+	}
+
+	var list regionv1.NetworkList
+	if err := c.client.List(ctx, &list, opts...); err != nil {
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve networks: %w", err).
+			Prefixed()
+
+		return nil, err
+	}
+
+	list.Items = slices.DeleteFunc(list.Items, func(resource regionv1.Network) bool {
 		return !resource.Spec.Tags.ContainsAll(tagSelector) ||
 			rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Read, resource.Labels[coreconstants.OrganizationLabel], resource.Labels[coreconstants.ProjectLabel]) != nil
 	})
 
-	slices.SortStableFunc(result.Items, func(a, b regionv1.Network) int {
+	slices.SortStableFunc(list.Items, func(a, b regionv1.Network) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	return convertV2List(result), nil
+	return convertV2List(&list), nil
 }
 
 func (c *Client) GetV2Raw(ctx context.Context, networkID string) (*regionv1.Network, error) {
-	result := &regionv1.Network{}
-
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: networkID}, result); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, errors.OAuth2ServerError("unable to lookup network").WithError(err)
+	key := client.ObjectKey{
+		Namespace: c.namespace,
+		Name:      networkID,
 	}
 
-	if err := rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Read, result.Labels[coreconstants.OrganizationLabel], result.Labels[coreconstants.ProjectLabel]); err != nil {
+	var network regionv1.Network
+	if err := c.client.Get(ctx, key, &network); err != nil {
+		if kerrors.IsNotFound(err) {
+			err = errorsv2.NewResourceMissingError("network").
+				WithCause(err).
+				Prefixed()
+
+			return nil, err
+		}
+
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve network: %w", err).
+			Prefixed()
+
+		return nil, err
+	}
+
+	if err := rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Read, network.Labels[coreconstants.OrganizationLabel], network.Labels[coreconstants.ProjectLabel]); err != nil {
 		return nil, err
 	}
 
 	// Only allow access to resources created by this API (temporarily).
-	v, ok := result.Labels[constants.ResourceAPIVersionLabel]
-	if !ok {
-		return nil, errors.HTTPNotFound()
+	if err := util.EnsureObjectAPIVersion("network", &network, 2); err != nil {
+		return nil, err
 	}
 
-	version, err := constants.UnmarshalAPIVersion(v)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to parse API version")
-	}
-
-	if version != 2 {
-		return nil, errors.HTTPNotFound()
-	}
-
-	return result, nil
+	return &network, nil
 }
 
 func (c *Client) GetV2(ctx context.Context, networkID string) (*openapi.NetworkV2Read, error) {
@@ -183,18 +188,25 @@ func (c *Client) GetV2(ctx context.Context, networkID string) (*openapi.NetworkV
 // that can be used with generate().  Updates are a subset of creates (without the
 // immutable bits).
 func convertCreateToUpdateRequest(in *openapi.NetworkV2Create) (*openapi.NetworkV2Update, error) {
-	t, err := json.Marshal(in)
+	bs, err := json.Marshal(in)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to marshal request").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to marshal network create request: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
-	out := &openapi.NetworkV2Update{}
+	var params openapi.NetworkV2Update
+	if err := json.Unmarshal(bs, &params); err != nil {
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to unmarshal data to network update request: %w", err).
+			Prefixed()
 
-	if err := json.Unmarshal(t, out); err != nil {
-		return nil, errors.OAuth2ServerError("failed to unmarshal request").WithError(err)
+		return nil, err
 	}
 
-	return out, nil
+	return &params, nil
 }
 
 func generateRoutes(in *openapi.Routes) ([]regionv1.Route, error) {
@@ -207,12 +219,22 @@ func generateRoutes(in *openapi.Routes) ([]regionv1.Route, error) {
 	for i, route := range *in {
 		_, prefix, err := net.ParseCIDR(route.Prefix)
 		if err != nil {
-			return nil, errors.OAuth2InvalidRequest("failed to parse route prefix").WithError(err)
+			err = errorsv2.NewInvalidRequestError().
+				WithCausef("failed to parse route prefix: %w", err).
+				WithErrorDescription("One of the specified route prefixes is not a valid CIDR notation.").
+				Prefixed()
+
+			return nil, err
 		}
 
 		nextHop := net.ParseIP(route.Nexthop)
 		if nextHop == nil {
-			return nil, errors.OAuth2InvalidRequest("failed to parse route next-hop").WithError(err)
+			err = errorsv2.NewInvalidRequestError().
+				WithCausef("failed to parse route next-hop: %w", err).
+				WithErrorDescription("One of the specified route next-hops is not a valid IPv4 address.").
+				Prefixed()
+
+			return nil, err
 		}
 
 		out[i].Prefix.IPNet = *prefix
@@ -225,6 +247,11 @@ func generateRoutes(in *openapi.Routes) ([]regionv1.Route, error) {
 func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.NetworkV2Update, prefix *net.IPNet) (*regionv1.Network, error) {
 	dnsNameservers, err := parseIPV4AddressList(request.Spec.DnsNameservers)
 	if err != nil {
+		err = errorsv2.NewInvalidRequestError().
+			WithCausef("failed to parse DNS nameservers: %w", err).
+			WithErrorDescription("One of the specified DNS nameservers is not a valid IPv4 address.").
+			Prefixed()
+
 		return nil, err
 	}
 
@@ -249,11 +276,11 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 	}
 
 	if err := util.InjectUserPrincipal(ctx, organizationID, projectID); err != nil {
-		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
+		return nil, err
 	}
 
 	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
-		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
+		return nil, err
 	}
 
 	return out, nil
@@ -279,13 +306,18 @@ func newCreateSaga(client *Client, request *openapi.NetworkV2Create) *createSaga
 func (s *createSaga) validateRequest(ctx context.Context) error {
 	prefix, err := parseIPV4Prefix(s.request.Spec.Prefix)
 	if err != nil {
-		return err
+		return errorsv2.NewInvalidRequestError().
+			WithCausef("failed to parse network prefix: %w", err).
+			WithErrorDescription("The provided network prefix is not a valid IPv4 address.").
+			Prefixed()
 	}
 
 	ones, _ := prefix.Mask.Size()
-
 	if ones > 24 {
-		return errors.OAuth2InvalidRequest("minimum network prefix size is /24")
+		return errorsv2.NewInvalidRequestError().
+			WithSimpleCausef("network prefix size %d > /24", ones).
+			WithErrorDescription("The minimum network prefix size is /24.").
+			Prefixed()
 	}
 
 	updateRequest, err := convertCreateToUpdateRequest(s.request)
@@ -303,10 +335,10 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 	return nil
 }
 
-// createServicePricipal creates the service principal that will own all the infrastructure
+// createServicePrincipal creates the service principal that will own all the infrastructure
 // for this network and its children.  Adds a link from the network to the service principal
 // so we can find it based on the network and also sets up cascading deletion.
-func (s *createSaga) createServicePricipal(ctx context.Context) error {
+func (s *createSaga) createServicePrincipal(ctx context.Context) error {
 	request := &openapi.IdentityWrite{
 		Metadata: coreapi.ResourceWriteMetadata{
 			Name:        "network-" + s.network.Name,
@@ -327,16 +359,18 @@ func (s *createSaga) createServicePricipal(ctx context.Context) error {
 	s.network.Labels[constants.IdentityLabel] = identity.Name
 
 	if err := controllerutil.SetOwnerReference(identity, s.network, s.client.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
-		return errors.OAuth2ServerError("unable to set resource owner").WithError(err)
+		return errorsv2.NewInternalError().
+			WithCausef("failed to set owner reference: %w", err).
+			Prefixed()
 	}
 
 	return nil
 }
 
-// deleteServicePricipal removes the service principal on error.
+// deleteServicePrincipal removes the service principal on error.
 // NOTE: you must use the shared delete library call to preserve cascading
 // deletion semantics.
-func (s *createSaga) deleteServicePricipal(ctx context.Context) error {
+func (s *createSaga) deleteServicePrincipal(ctx context.Context) error {
 	return identity.New(s.client.client, s.client.namespace).Delete(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.identity.Name)
 }
 
@@ -367,7 +401,9 @@ func (s *createSaga) deleteAllocation(ctx context.Context) error {
 
 func (s *createSaga) createNetwork(ctx context.Context) error {
 	if err := s.client.client.Create(ctx, s.network); err != nil {
-		return errors.OAuth2ServerError("unable to create network").WithError(err)
+		return errorsv2.NewInternalError().
+			WithCausef("failed to create network: %w", err).
+			Prefixed()
 	}
 
 	return nil
@@ -376,7 +412,7 @@ func (s *createSaga) createNetwork(ctx context.Context) error {
 func (s *createSaga) Actions() []saga.Action {
 	return []saga.Action{
 		saga.NewAction("validate request", s.validateRequest, nil),
-		saga.NewAction("create service principal", s.createServicePricipal, s.deleteServicePricipal),
+		saga.NewAction("create service principal", s.createServicePrincipal, s.deleteServicePrincipal),
 		saga.NewAction("create quota allocation", s.createAllocation, s.deleteAllocation),
 		saga.NewAction("create network", s.createNetwork, nil),
 	}
@@ -407,7 +443,12 @@ func (c *Client) Update(ctx context.Context, networkID string, request *openapi.
 	}
 
 	if current.DeletionTimestamp != nil {
-		return nil, errors.OAuth2InvalidRequest("network is being deleted")
+		err = errorsv2.NewConflictError().
+			WithSimpleCause("network is being deleted").
+			WithErrorDescription("The network is being deleted and cannot be modified.").
+			Prefixed()
+
+		return nil, err
 	}
 
 	organizationID := current.Labels[coreconstants.OrganizationLabel]
@@ -425,7 +466,11 @@ func (c *Client) Update(ctx context.Context, networkID string, request *openapi.
 	updated.Spec = required.Spec
 
 	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
-		return nil, errors.OAuth2ServerError("unable to update network").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to patch network: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	return convertV2(updated), nil

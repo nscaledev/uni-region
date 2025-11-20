@@ -18,7 +18,6 @@ package kubernetes
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/spjmurray/go-util/pkg/set"
@@ -35,17 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var (
-	// ErrUnimplmented is raised when something isn't done, nor makes zero senese.
-	ErrUnimplmented = errors.New("interface unimplemnted")
-
-	// ErrResource is raised when a resource is in a bad state.
-	ErrResource = errors.New("resource error")
-)
-
-const (
-	NodeClassLabel = "kubernetes.region.unikorn-cloud.org/node-class"
-)
+const NodeClassLabel = "kubernetes.region.unikorn-cloud.org/node-class"
 
 type Provider struct {
 	// client is Kubernetes client.
@@ -130,7 +119,13 @@ func (p *Provider) regionClient(ctx context.Context) (client.Client, error) {
 
 	kubeconfig, ok := secret.Data["kubeconfig"]
 	if !ok {
-		return nil, fmt.Errorf("%w: kubeconfig kye missing in region secret", ErrResource)
+		err := fmt.Errorf(
+			"%w: kubeconfig not found in secret %s",
+			types.ErrInternal,
+			p.region.Spec.Kubernetes.KubeconfigSecret.Name,
+		)
+
+		return nil, err
 	}
 
 	client, err := ClientFromConfigBytes(kubeconfig)
@@ -195,86 +190,86 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 
 // ListImages lists all available images.
 func (p *Provider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
-	return nil, ErrUnimplmented
+	return nil, types.ErrUnimplemented
 }
 
 // GetImage retrieves a specific image by its ID.
 func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
-	return nil, ErrUnimplmented
+	return nil, types.ErrUnimplemented
 }
 
 // CreateIdentity creates a new identity for cloud infrastructure.
 func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Identity) error {
-	return ErrUnimplmented
+	return types.ErrUnimplemented
 }
 
 // DeleteIdentity cleans up an identity for cloud infrastructure.
 func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Identity) error {
-	return ErrUnimplmented
+	return types.ErrUnimplemented
 }
 
 // CreateNetwork creates a new physical network.
 func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
-	return ErrUnimplmented
+	return types.ErrUnimplemented
 }
 
 // DeleteNetwork deletes a physical network.
 func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
-	return ErrUnimplmented
+	return types.ErrUnimplemented
 }
 
 // ListExternalNetworks returns a list of external networks if the platform
 // supports such a concept.
 func (p *Provider) ListExternalNetworks(ctx context.Context) (types.ExternalNetworks, error) {
-	return nil, ErrUnimplmented
+	return nil, types.ErrUnimplemented
 }
 
 // CreateSecurityGroup creates a new security group.
 func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
-	return ErrUnimplmented
+	return types.ErrUnimplemented
 }
 
 // DeleteSecurityGroup deletes a security group.
 func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
-	return ErrUnimplmented
+	return types.ErrUnimplemented
 }
 
 // CreateServer creates a new server.
 func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	return ErrUnimplmented
+	return types.ErrUnimplemented
 }
 
 // RebootServer reboots a server.
 func (p *Provider) RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error {
-	return ErrUnimplmented
+	return types.ErrUnimplemented
 }
 
 // StartServer starts a server.
 func (p *Provider) StartServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	return ErrUnimplmented
+	return types.ErrUnimplemented
 }
 
 // StopServer stops a server.
 func (p *Provider) StopServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	return ErrUnimplmented
+	return types.ErrUnimplemented
 }
 
 // DeleteServer deletes a server.
 func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	return ErrUnimplmented
+	return types.ErrUnimplemented
 }
 
 // UpdateServerState checks a server's state and modifies the resource in place.
 func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	return ErrUnimplmented
+	return types.ErrUnimplemented
 }
 
 // CreateConsoleSession creates a new console session for a server.
 func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) (string, error) {
-	return "", ErrUnimplmented
+	return "", types.ErrUnimplemented
 }
 
 // GetConsoleOutput retrieves the console output for a server.
 func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, length *int) (string, error) {
-	return "", ErrUnimplmented
+	return "", types.ErrUnimplemented
 }

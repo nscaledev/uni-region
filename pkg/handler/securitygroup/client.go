@@ -25,8 +25,8 @@ import (
 	unikorncorev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
-	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	errorsv2 "github.com/unikorn-cloud/core/pkg/server/v2/errors"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -138,14 +138,12 @@ func convertRuleList(in []unikornv1.SecurityGroupRule) openapi.SecurityGroupRule
 
 // convert converts a single resource from the Kubernetes representation into the API one.
 func convert(in *unikornv1.SecurityGroup) *openapi.SecurityGroupRead {
-	out := &openapi.SecurityGroupRead{
+	return &openapi.SecurityGroupRead{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.SecurityGroupSpec{
 			Rules: convertRuleList(in.Spec.Rules),
 		},
 	}
-
-	return out
 }
 
 // convertList converts a list of resources from the Kubernetes representation into the API one.
@@ -223,7 +221,12 @@ func generatePrefix(in *string) (*unikorncorev1.IPv4Prefix, error) {
 
 	_, prefix, err := net.ParseCIDR(*in)
 	if err != nil {
-		return nil, errors.OAuth2InvalidRequest("unable to parse prefix").WithError(err)
+		err = errorsv2.NewInvalidRequestError().
+			WithCausef("failed to parse CIDR: %w", err).
+			WithErrorDescription("The provided CIDR/prefix is not a valid CIDR notation.").
+			Prefixed()
+
+		return nil, err
 	}
 
 	out := &unikorncorev1.IPv4Prefix{
@@ -286,12 +289,16 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 	}
 
 	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
-		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
+		return nil, err
 	}
 
 	// Ensure the security is owned by the identity so it is automatically cleaned
 	// up on identity deletion.
 	if err := controllerutil.SetOwnerReference(identity, out, c.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to set owner reference: %w", err).
+			Prefixed()
+
 		return nil, err
 	}
 
@@ -300,52 +307,69 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 
 // GetRaw gives access to the raw Kubernetes resource.
 func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, securityGroupID string) (*unikornv1.SecurityGroup, error) {
-	resource := &unikornv1.SecurityGroup{}
-
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: securityGroupID}, resource); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, errors.OAuth2ServerError("unable to get security group").WithError(err)
+	key := client.ObjectKey{
+		Namespace: c.namespace,
+		Name:      securityGroupID,
 	}
 
-	if err := coreutil.AssertProjectOwnership(resource, organizationID, projectID); err != nil {
+	var securityGroup unikornv1.SecurityGroup
+	if err := c.client.Get(ctx, key, &securityGroup); err != nil {
+		if kerrors.IsNotFound(err) {
+			err = errorsv2.NewResourceMissingError("security group").
+				WithCause(err).
+				Prefixed()
+
+			return nil, err
+		}
+
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve security group: %w", err).
+			Prefixed()
+
 		return nil, err
 	}
 
-	return resource, nil
+	if err := coreutil.AssertProjectOwnership(&securityGroup, organizationID, projectID); err != nil {
+		return nil, err
+	}
+
+	return &securityGroup, nil
 }
 
 // List returns an ordered list of all resources in scope.
 func (c *Client) List(ctx context.Context, organizationID string, params openapi.GetApiV1OrganizationsOrganizationIDSecuritygroupsParams) (openapi.SecurityGroupsRead, error) {
-	result := &unikornv1.SecurityGroupList{}
-
-	options := &client.ListOptions{
-		Namespace: c.namespace,
-		LabelSelector: labels.SelectorFromSet(map[string]string{
-			coreconstants.OrganizationLabel: organizationID,
-		}),
-	}
-
-	if err := c.client.List(ctx, result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list security groups").WithError(err)
-	}
-
-	slices.SortStableFunc(result.Items, func(a, b unikornv1.SecurityGroup) int {
-		return cmp.Compare(a.Name, b.Name)
-	})
-
 	tagSelector, err := coreutil.DecodeTagSelectorParam(params.Tag)
 	if err != nil {
 		return nil, err
 	}
 
-	result.Items = slices.DeleteFunc(result.Items, func(resource unikornv1.SecurityGroup) bool {
+	opts := []client.ListOption{
+		&client.ListOptions{
+			Namespace: c.namespace,
+			LabelSelector: labels.SelectorFromSet(labels.Set{
+				coreconstants.OrganizationLabel: organizationID,
+			}),
+		},
+	}
+
+	var list unikornv1.SecurityGroupList
+	if err := c.client.List(ctx, &list, opts...); err != nil {
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to retrieve security groups: %w", err).
+			Prefixed()
+
+		return nil, err
+	}
+
+	slices.SortStableFunc(list.Items, func(a, b unikornv1.SecurityGroup) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+
+	list.Items = slices.DeleteFunc(list.Items, func(resource unikornv1.SecurityGroup) bool {
 		return !resource.Spec.Tags.ContainsAll(tagSelector)
 	})
 
-	return convertList(result), nil
+	return convertList(&list), nil
 }
 
 // Create instantiates a new resource.
@@ -356,7 +380,11 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 	}
 
 	if err := c.client.Create(ctx, securityGroup); err != nil {
-		return nil, errors.OAuth2ServerError("unable to create security group").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to create security group: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	return convert(securityGroup), nil
@@ -390,7 +418,11 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	updated.Spec = required.Spec
 
 	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
-		return nil, errors.OAuth2ServerError("unable to updated security group").WithError(err)
+		err = errorsv2.NewInternalError().
+			WithCausef("failed to patch security group: %w", err).
+			Prefixed()
+
+		return nil, err
 	}
 
 	return convert(updated), nil
@@ -405,10 +437,14 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, security
 
 	if err := c.client.Delete(ctx, resource, util.ForegroundDeleteOptions()); err != nil {
 		if kerrors.IsNotFound(err) {
-			return errors.HTTPNotFound().WithError(err)
+			return errorsv2.NewResourceMissingError("security group").
+				WithCause(err).
+				Prefixed()
 		}
 
-		return errors.OAuth2ServerError("unable to delete security group").WithError(err)
+		return errorsv2.NewInternalError().
+			WithCausef("failed to delete security group: %w", err).
+			Prefixed()
 	}
 
 	return nil

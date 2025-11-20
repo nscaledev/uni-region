@@ -20,68 +20,65 @@ package handler
 import (
 	"net/http"
 
-	"github.com/unikorn-cloud/core/pkg/server/errors"
-	"github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/core/pkg/server/v2/httputil"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
 
 func (h *Handler) GetApiV2Networks(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2NetworksParams) {
 	result, err := h.networkClient().ListV2(r.Context(), params)
 	if err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
+	httputil.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) PostApiV2Networks(w http.ResponseWriter, r *http.Request) {
-	request := &openapi.NetworkV2Create{}
-
-	if err := util.ReadJSONBody(r, request); err != nil {
-		errors.HandleError(w, r, err)
+	request, err := httputil.ReadJSONRequestBody[openapi.NetworkV2Create](r.Body)
+	if err != nil {
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
 	result, err := h.networkClient().CreateV2(r.Context(), request)
 	if err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusCreated, result)
+	httputil.WriteJSONResponse(w, r, http.StatusCreated, result)
 }
 
 func (h *Handler) GetApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID openapi.NetworkIDParameter) {
 	result, err := h.networkClient().GetV2(r.Context(), networkID)
 	if err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
+	httputil.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) PutApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID openapi.NetworkIDParameter) {
-	request := &openapi.NetworkV2Update{}
-
-	if err := util.ReadJSONBody(r, request); err != nil {
-		errors.HandleError(w, r, err)
+	request, err := httputil.ReadJSONRequestBody[openapi.NetworkV2Update](r.Body)
+	if err != nil {
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
 	result, err := h.networkClient().Update(r.Context(), networkID, request)
 	if err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
+	httputil.WriteJSONResponse(w, r, http.StatusAccepted, result)
 }
 
 func (h *Handler) DeleteApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID openapi.NetworkIDParameter) {
 	if err := h.networkClient().DeleteV2(r.Context(), networkID); err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
@@ -91,60 +88,58 @@ func (h *Handler) DeleteApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Re
 func (h *Handler) GetApiV2Securitygroups(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2SecuritygroupsParams) {
 	result, err := h.securityGroupClient().ListV2(r.Context(), params)
 	if err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
+	httputil.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) PostApiV2Securitygroups(w http.ResponseWriter, r *http.Request) {
-	request := &openapi.SecurityGroupV2Create{}
-
-	if err := util.ReadJSONBody(r, request); err != nil {
-		errors.HandleError(w, r, err)
+	request, err := httputil.ReadJSONRequestBody[openapi.SecurityGroupV2Create](r.Body)
+	if err != nil {
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
 	result, err := h.securityGroupClient().CreateV2(r.Context(), request)
 	if err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusCreated, result)
+	httputil.WriteJSONResponse(w, r, http.StatusCreated, result)
 }
 
 func (h *Handler) GetApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, securityGroupID openapi.SecurityGroupIDParameter) {
 	result, err := h.securityGroupClient().GetV2(r.Context(), securityGroupID)
 	if err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
+	httputil.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) PutApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, securityGroupID openapi.SecurityGroupIDParameter) {
-	request := &openapi.SecurityGroupV2Update{}
-
-	if err := util.ReadJSONBody(r, request); err != nil {
-		errors.HandleError(w, r, err)
+	request, err := httputil.ReadJSONRequestBody[openapi.SecurityGroupV2Update](r.Body)
+	if err != nil {
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
 	result, err := h.securityGroupClient().UpdateV2(r.Context(), securityGroupID, request)
 	if err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
+	httputil.WriteJSONResponse(w, r, http.StatusAccepted, result)
 }
 
 func (h *Handler) DeleteApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, securityGroupID openapi.SecurityGroupIDParameter) {
 	if err := h.securityGroupClient().DeleteV2(r.Context(), securityGroupID); err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
@@ -154,61 +149,59 @@ func (h *Handler) DeleteApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter
 func (h *Handler) GetApiV2Servers(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2ServersParams) {
 	result, err := h.serverClient().ListV2(r.Context(), params)
 	if err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
+	httputil.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) PostApiV2Servers(w http.ResponseWriter, r *http.Request) {
-	request := &openapi.ServerV2Create{}
-
-	if err := util.ReadJSONBody(r, request); err != nil {
-		errors.HandleError(w, r, err)
+	request, err := httputil.ReadJSONRequestBody[openapi.ServerV2Create](r.Body)
+	if err != nil {
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
 	result, err := h.serverClient().CreateV2(r.Context(), request)
 	if err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusCreated, result)
+	httputil.WriteJSONResponse(w, r, http.StatusCreated, result)
 }
 
 func (h *Handler) GetApiV2ServersServerID(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	result, err := h.serverClient().GetV2(r.Context(), serverID)
 	if err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
+	httputil.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) PutApiV2ServersServerID(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
-	request := &openapi.ServerV2Update{}
-
-	if err := util.ReadJSONBody(r, request); err != nil {
-		errors.HandleError(w, r, err)
+	request, err := httputil.ReadJSONRequestBody[openapi.ServerV2Update](r.Body)
+	if err != nil {
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
 	result, err := h.serverClient().UpdateV2(r.Context(), serverID, request)
 	if err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
+	httputil.WriteJSONResponse(w, r, http.StatusAccepted, result)
 }
 
 func (h *Handler) DeleteApiV2ServersServerID(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	err := h.serverClient().DeleteV2(r.Context(), serverID)
 	if err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
@@ -218,16 +211,16 @@ func (h *Handler) DeleteApiV2ServersServerID(w http.ResponseWriter, r *http.Requ
 func (h *Handler) GetApiV2ServersServerIDSshkey(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	result, err := h.serverClient().SSHKey(r.Context(), serverID)
 	if err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
+	httputil.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) PostApiV2ServersServerIDStart(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	if err := h.serverClient().StartV2(r.Context(), serverID); err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
@@ -236,7 +229,7 @@ func (h *Handler) PostApiV2ServersServerIDStart(w http.ResponseWriter, r *http.R
 
 func (h *Handler) PostApiV2ServersServerIDStop(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	if err := h.serverClient().StopV2(r.Context(), serverID); err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
@@ -245,7 +238,7 @@ func (h *Handler) PostApiV2ServersServerIDStop(w http.ResponseWriter, r *http.Re
 
 func (h *Handler) PostApiV2ServersServerIDSoftreboot(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	if err := h.serverClient().RebootV2(r.Context(), serverID, false); err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
@@ -254,7 +247,7 @@ func (h *Handler) PostApiV2ServersServerIDSoftreboot(w http.ResponseWriter, r *h
 
 func (h *Handler) PostApiV2ServersServerIDHardreboot(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	if err := h.serverClient().RebootV2(r.Context(), serverID, true); err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
@@ -264,21 +257,21 @@ func (h *Handler) PostApiV2ServersServerIDHardreboot(w http.ResponseWriter, r *h
 func (h *Handler) GetApiV2ServersServerIDConsoleoutput(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter, params openapi.GetApiV2ServersServerIDConsoleoutputParams) {
 	result, err := h.serverClient().ConsoleOutputV2(r.Context(), serverID, params)
 	if err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
+	httputil.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) GetApiV2ServersServerIDConsolesessions(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	result, err := h.serverClient().ConsoleSessionV2(r.Context(), serverID)
 	if err != nil {
-		errors.HandleError(w, r, err)
+		httputil.WriteAPIErrorResponse(w, r, err)
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
+	httputil.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 // todo(schristoff): implement these.

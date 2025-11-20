@@ -75,8 +75,7 @@ func (c *BlockStorageClient) AvailabilityZones(ctx context.Context) ([]availabil
 		return nil, err
 	}
 
-	filtered := []availabilityzones.AvailabilityZone{}
-
+	var filtered []availabilityzones.AvailabilityZone
 	for _, az := range result {
 		if !az.ZoneState.Available {
 			continue
