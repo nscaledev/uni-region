@@ -145,13 +145,13 @@ func convertUserData(in []byte) *[]byte {
 func convertInstanceLifecyclePhase(in unikornv1.InstanceLifecyclePhase) openapi.InstanceLifecyclePhase {
 	switch in {
 	case unikornv1.InstanceLifecyclePhasePending:
-		return openapi.Pending
+		return openapi.InstanceLifecyclePhasePending
 	case unikornv1.InstanceLifecyclePhaseRunning:
-		return openapi.Running
+		return openapi.InstanceLifecyclePhaseRunning
 	case unikornv1.InstanceLifecyclePhaseStopping:
-		return openapi.Stopping
+		return openapi.InstanceLifecyclePhaseStopping
 	case unikornv1.InstanceLifecyclePhaseStopped:
-		return openapi.Stopped
+		return openapi.InstanceLifecyclePhaseStopped
 	default:
 		return ""
 	}
