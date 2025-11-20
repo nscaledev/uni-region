@@ -40,7 +40,7 @@ func convertOsKernel(in types.OsKernel) openapi.OsKernel {
 	//nolint:gocritic
 	switch in {
 	case types.Linux:
-		return openapi.Linux
+		return openapi.OsKernelLinux
 	}
 
 	return ""
@@ -49,9 +49,9 @@ func convertOsKernel(in types.OsKernel) openapi.OsKernel {
 func convertOsFamily(in types.OsFamily) openapi.OsFamily {
 	switch in {
 	case types.Debian:
-		return openapi.Debian
+		return openapi.OsFamilyDebian
 	case types.Redhat:
-		return openapi.Redhat
+		return openapi.OsFamilyRedhat
 	}
 
 	return ""
@@ -60,9 +60,9 @@ func convertOsFamily(in types.OsFamily) openapi.OsFamily {
 func convertOsDistro(in types.OsDistro) openapi.OsDistro {
 	switch in {
 	case types.Rocky:
-		return openapi.Rocky
+		return openapi.OsDistroRocky
 	case types.Ubuntu:
-		return openapi.Ubuntu
+		return openapi.OsDistroUbuntu
 	}
 
 	return ""
