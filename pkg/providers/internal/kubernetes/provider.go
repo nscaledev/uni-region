@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/spjmurray/go-util/pkg/set"
 
@@ -201,6 +202,21 @@ func (p *Provider) ListImages(ctx context.Context, organizationID string) (types
 // GetImage retrieves a specific image by its ID.
 func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
 	return nil, ErrUnimplmented
+}
+
+// CreateImageForUpload creates a new image resource for upload.
+func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
+	return nil, ErrUnimplmented
+}
+
+// UploadImage uploads data to an image.
+func (p *Provider) UploadImageData(ctx context.Context, imageID string, reader io.Reader) error {
+	return ErrUnimplmented
+}
+
+// DeleteImage deletes an image.
+func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
+	return ErrUnimplmented
 }
 
 // CreateIdentity creates a new identity for cloud infrastructure.
