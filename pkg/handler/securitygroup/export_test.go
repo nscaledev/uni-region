@@ -18,3 +18,6 @@ package securitygroup
 
 //nolint:gochecknoglobals
 var GenerateRule = generateRuleV2
+
+//nolint:gochecknoglobals
+var ConvertRuleListV2 = convertRuleListV2

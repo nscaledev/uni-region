@@ -140,3 +140,14 @@ func TestValidation(t *testing.T) {
 		})
 	}
 }
+
+// TestRulesRequired tests that, as it is marked as a required field in the OpenAPI
+// specification, rule conversion of an empty list always returns an empty slice
+// (as opposed to nil), that will be emitted in the response body.
+func TestRulesRequired(t *testing.T) {
+	t.Parallel()
+
+	out := securitygroup.ConvertRuleListV2(nil)
+	require.NotNil(t, out)
+	require.Empty(t, out)
+}

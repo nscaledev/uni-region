@@ -75,10 +75,6 @@ func convertRuleV2(in *regionv1.SecurityGroupRule) *openapi.SecurityGroupRuleV2 
 }
 
 func convertRuleListV2(in []regionv1.SecurityGroupRule) openapi.SecurityGroupRuleV2List {
-	if len(in) == 0 {
-		return nil
-	}
-
 	out := make(openapi.SecurityGroupRuleV2List, len(in))
 
 	for i := range in {
