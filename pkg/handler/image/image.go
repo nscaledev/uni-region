@@ -19,6 +19,8 @@ package image
 import (
 	"cmp"
 	"context"
+	goerrors "errors"
+	"io"
 	"slices"
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
@@ -45,6 +47,8 @@ type provider interface {
 	types.ImageRead
 }
 
+var errTempNotImplemented = goerrors.New("not implemented (yet)")
+
 func (c *Client) provider(ctx context.Context, regionID string) (provider, error) {
 	return providers.New(ctx, c.client, c.namespace, regionID)
 }
@@ -66,4 +70,16 @@ func (c *Client) ListImages(ctx context.Context, organizationID, regionID string
 	})
 
 	return convertImages(result), nil
+}
+
+func (c *Client) CreateImage(ctx context.Context, organizationID, regionID string, request *openapi.ImageCreateRequest) (*openapi.ImageResponse, error) {
+	return nil, errTempNotImplemented
+}
+
+func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imageID string) error {
+	return errTempNotImplemented
+}
+
+func (c *Client) UploadImage(ctx context.Context, organizationID, regionID, imageID string, contentType string, data io.Reader) (*openapi.ImageResponse, error) {
+	return nil, errTempNotImplemented
 }
