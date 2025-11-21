@@ -35,7 +35,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
-	"github.com/unikorn-cloud/region/pkg/providers/openstack"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -123,7 +123,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 	}
 
 	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
-		if goerrors.Is(err, openstack.ErrResourceNotFound) {
+		if goerrors.Is(err, types.ErrResourceNotFound) {
 			return nil, errors.HTTPNotFound()
 		}
 
@@ -167,7 +167,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	}
 
 	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
-		if goerrors.Is(err, openstack.ErrResourceNotFound) {
+		if goerrors.Is(err, types.ErrResourceNotFound) {
 			return nil, errors.HTTPNotFound()
 		}
 
@@ -346,7 +346,7 @@ func (c *Client) CreateConsoleSession(ctx context.Context, organizationID, proje
 	url, err := provider.CreateConsoleSession(ctx, identity, current)
 	if err != nil {
 		// REVIEW_ME: This looks odd. Shouldn't the ErrResourceDependency error be moved to the provider package?
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) || goerrors.Is(err, openstack.ErrResourceDependency) {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) || goerrors.Is(err, types.ErrResourceDependency) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
@@ -379,7 +379,7 @@ func (c *Client) GetConsoleOutput(ctx context.Context, organizationID, projectID
 	contents, err := provider.GetConsoleOutput(ctx, identity, current, params.Length)
 	if err != nil {
 		// REVIEW_ME: This looks odd. Shouldn't the ErrResourceDependency error be moved to the provider package?
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) || goerrors.Is(err, openstack.ErrResourceDependency) {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) || goerrors.Is(err, types.ErrResourceDependency) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
 

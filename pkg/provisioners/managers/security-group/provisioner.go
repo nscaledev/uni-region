@@ -20,20 +20,15 @@ import (
 	"context"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
-	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/handler/region"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 )
 
 // Provisioner encapsulates control plane provisioning.
 type Provisioner struct {
 	provisioners.Metadata
-
 	// securitygroup is the security group we're provisioning.
 	securitygroup *unikornv1.SecurityGroup
 }
@@ -52,29 +47,9 @@ func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 	return p.securitygroup
 }
 
-func (p *Provisioner) getIdentity(ctx context.Context, cli client.Client) (*unikornv1.Identity, error) {
-	identity := &unikornv1.Identity{}
-
-	if err := cli.Get(ctx, client.ObjectKey{Namespace: p.securitygroup.Namespace, Name: p.securitygroup.Labels[constants.IdentityLabel]}, identity); err != nil {
-		return nil, err
-	}
-
-	return identity, nil
-}
-
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
-	cli, err := coreclient.FromContext(ctx)
-	if err != nil {
-		return err
-	}
-
-	provider, err := region.NewClient(cli, p.securitygroup.Namespace).Provider(ctx, p.securitygroup.Labels[constants.RegionLabel])
-	if err != nil {
-		return err
-	}
-
-	identity, err := p.getIdentity(ctx, cli)
+	provider, identity, err := base.ProviderAndIdentity(ctx, p.securitygroup)
 	if err != nil {
 		return err
 	}
@@ -94,17 +69,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	cli, err := coreclient.FromContext(ctx)
-	if err != nil {
-		return err
-	}
-
-	identity, err := p.getIdentity(ctx, cli)
-	if err != nil {
-		return err
-	}
-
-	provider, err := region.NewClient(cli, p.securitygroup.Namespace).Provider(ctx, p.securitygroup.Labels[constants.RegionLabel])
+	provider, identity, err := base.ProviderAndIdentity(ctx, p.securitygroup)
 	if err != nil {
 		return err
 	}

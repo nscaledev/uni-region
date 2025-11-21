@@ -28,7 +28,7 @@ import (
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/handler/region"
+	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 )
 
 // Options allows access to CLI options in the provisioner.
@@ -52,7 +52,6 @@ func (o *Options) AddFlags(f *pflag.FlagSet) {
 // Provisioner encapsulates control plane provisioning.
 type Provisioner struct {
 	provisioners.Metadata
-
 	// identity is the identity we're provisioning.
 	identity *unikornv1.Identity
 
@@ -78,16 +77,11 @@ func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
-	cli, err := coreclient.FromContext(ctx)
-	if err != nil {
-		return err
-	}
-
 	if err := identityclient.NewReferences(constants.ServiceDescriptor(), p.options.identityOptions, &p.options.clientOptions).AddReferenceToProject(ctx, p.identity); err != nil {
 		return err
 	}
 
-	provider, err := region.NewClient(cli, p.identity.Namespace).Provider(ctx, p.identity.Labels[constants.RegionLabel])
+	provider, err := base.Provider(ctx, p.identity)
 	if err != nil {
 		return err
 	}
@@ -101,12 +95,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	cli, err := coreclient.FromContext(ctx)
-	if err != nil {
-		return err
-	}
-
-	provider, err := region.NewClient(cli, p.identity.Namespace).Provider(ctx, p.identity.Labels[constants.RegionLabel])
+	provider, err := base.Provider(ctx, p.identity)
 	if err != nil {
 		return err
 	}
