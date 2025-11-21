@@ -13,8 +13,8 @@ const (
 
 // Defines values for GpuVendor.
 const (
-	AMD    GpuVendor = "AMD"
-	NVIDIA GpuVendor = "NVIDIA"
+	GpuVendorAMD    GpuVendor = "AMD"
+	GpuVendorNVIDIA GpuVendor = "NVIDIA"
 )
 
 // Defines values for ImageVirtualization.
@@ -26,16 +26,16 @@ const (
 
 // Defines values for InstanceLifecyclePhase.
 const (
-	Pending  InstanceLifecyclePhase = "Pending"
-	Running  InstanceLifecyclePhase = "Running"
-	Stopped  InstanceLifecyclePhase = "Stopped"
-	Stopping InstanceLifecyclePhase = "Stopping"
+	InstanceLifecyclePhasePending  InstanceLifecyclePhase = "Pending"
+	InstanceLifecyclePhaseRunning  InstanceLifecyclePhase = "Running"
+	InstanceLifecyclePhaseStopped  InstanceLifecyclePhase = "Stopped"
+	InstanceLifecyclePhaseStopping InstanceLifecyclePhase = "Stopping"
 )
 
 // Defines values for NetworkDirection.
 const (
-	Egress  NetworkDirection = "egress"
-	Ingress NetworkDirection = "ingress"
+	NetworkDirectionEgress  NetworkDirection = "egress"
+	NetworkDirectionIngress NetworkDirection = "ingress"
 )
 
 // Defines values for NetworkProtocol.
@@ -49,25 +49,25 @@ const (
 
 // Defines values for OsDistro.
 const (
-	Rocky  OsDistro = "rocky"
-	Ubuntu OsDistro = "ubuntu"
+	OsDistroRocky  OsDistro = "rocky"
+	OsDistroUbuntu OsDistro = "ubuntu"
 )
 
 // Defines values for OsFamily.
 const (
-	Debian OsFamily = "debian"
-	Redhat OsFamily = "redhat"
+	OsFamilyDebian OsFamily = "debian"
+	OsFamilyRedhat OsFamily = "redhat"
 )
 
 // Defines values for OsKernel.
 const (
-	Linux OsKernel = "linux"
+	OsKernelLinux OsKernel = "linux"
 )
 
 // Defines values for RegionType.
 const (
-	Kubernetes RegionType = "kubernetes"
-	Openstack  RegionType = "openstack"
+	RegionTypeKubernetes RegionType = "kubernetes"
+	RegionTypeOpenstack  RegionType = "openstack"
 )
 
 // NFSV2Spec NFS specific
