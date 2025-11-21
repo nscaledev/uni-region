@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -620,6 +621,23 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 	}
 
 	return p.convertImage(resource)
+}
+
+var errTempNotImplemented = errors.New("not implemented (yet)")
+
+// CreateImageForUpload creates a new image resource for upload.
+func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
+	return nil, errTempNotImplemented
+}
+
+// UploadImage uploads data to an image.
+func (p *Provider) UploadImageData(ctx context.Context, imageID string, reader io.Reader) error {
+	return errTempNotImplemented
+}
+
+// DeleteImage deletes an image.
+func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
+	return errTempNotImplemented
 }
 
 // ListExternalNetworks returns a list of external networks if the platform
