@@ -4,6 +4,7 @@
 package openapi
 
 import (
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	externalRef0 "github.com/unikorn-cloud/core/pkg/openapi"
 )
 
@@ -15,6 +16,12 @@ const (
 const (
 	GpuVendorAMD    GpuVendor = "AMD"
 	GpuVendorNVIDIA GpuVendor = "NVIDIA"
+)
+
+// Defines values for ImageDiskFormat.
+const (
+	Qcow2 ImageDiskFormat = "qcow2"
+	Raw   ImageDiskFormat = "raw"
 )
 
 // Defines values for ImageVirtualization.
@@ -242,6 +249,39 @@ type Image struct {
 	Spec ImageSpec `json:"spec"`
 }
 
+// ImageCreate A compute image create request.
+type ImageCreate struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A compute image specification.
+	Spec ImageCreateSpec `json:"spec"`
+}
+
+// ImageCreateSpec A compute image specification.
+type ImageCreateSpec struct {
+	// Gpu The GPU driver if installed.
+	Gpu *ImageGpu `json:"gpu,omitempty"`
+
+	// Os An operating system description.
+	Os ImageOS `json:"os"`
+
+	// SoftwareVersions Image preinstalled version version metadata.
+	SoftwareVersions *SoftwareVersions `json:"softwareVersions,omitempty"`
+
+	// SourceFormat The disk format of the image. If `sourceServerID` is specified, this field is ignored. Otherwise, if not provided, the value defaults to `raw`.
+	SourceFormat *ImageDiskFormat `json:"sourceFormat,omitempty"`
+
+	// SourceURL A URL to upload the image from. If not specified, the image is expected to be uploaded separately.
+	SourceURL *string `json:"sourceURL,omitempty"`
+
+	// Virtualization What type of machine the image is for.
+	Virtualization ImageVirtualization `json:"virtualization"`
+}
+
+// ImageDiskFormat The disk format of the image. If `sourceServerID` is specified, this field is ignored. Otherwise, if not provided, the value defaults to `raw`.
+type ImageDiskFormat string
+
 // ImageGpu The GPU driver if installed.
 type ImageGpu struct {
 	// Driver The GPU driver version, this is vendor specific.
@@ -291,6 +331,12 @@ type ImageSpec struct {
 
 	// Virtualization What type of machine the image is for.
 	Virtualization ImageVirtualization `json:"virtualization"`
+}
+
+// ImageUpload Image upload form.
+type ImageUpload struct {
+	// File The image file data to upload.
+	File openapi_types.File `json:"file"`
 }
 
 // ImageVirtualization What type of machine the image is for.
@@ -1006,6 +1052,9 @@ type FilestorageIDParameter = KubernetesNameParameter
 // IdentityIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type IdentityIDParameter = KubernetesNameParameter
 
+// ImageIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
+type ImageIDParameter = KubernetesNameParameter
+
 // LengthParameter defines model for lengthParameter.
 type LengthParameter = int
 
@@ -1056,6 +1105,9 @@ type IdentitiesResponse = IdentitiesRead
 
 // IdentityResponse A provider specific identity.
 type IdentityResponse = IdentityRead
+
+// ImageResponse An image.
+type ImageResponse = Image
 
 // ImagesResponse A list of images that are compatible with this platform.
 type ImagesResponse = Images
@@ -1113,6 +1165,9 @@ type StorageV2Response = StorageV2Read
 
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
+
+// ImageCreateRequest A compute image create request.
+type ImageCreateRequest = ImageCreate
 
 // NetworkRequest A network request.
 type NetworkRequest = NetworkWrite
@@ -1260,6 +1315,12 @@ type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSe
 
 // PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody defines body for PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID for application/json ContentType.
 type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody = ServerWrite
+
+// PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages for application/json ContentType.
+type PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesJSONRequestBody = ImageCreate
+
+// PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDDataMultipartRequestBody defines body for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDData for multipart/form-data ContentType.
+type PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDDataMultipartRequestBody = ImageUpload
 
 // PostApiV2FilestorageJSONRequestBody defines body for PostApiV2Filestorage for application/json ContentType.
 type PostApiV2FilestorageJSONRequestBody = StorageV2Create
