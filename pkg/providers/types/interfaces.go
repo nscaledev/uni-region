@@ -18,6 +18,7 @@ package types
 
 import (
 	"context"
+	"io"
 
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 )
@@ -27,6 +28,15 @@ type ImageRead interface {
 	ListImages(ctx context.Context, organizationID string) (ImageList, error)
 	// GetImage retrieves a specific image by its ID.
 	GetImage(ctx context.Context, organizationID, imageID string) (*Image, error)
+}
+
+type ImageWrite interface {
+	// CreateImageForUpload creates a new image resource for upload.
+	CreateImageForUpload(ctx context.Context, image *Image) (*Image, error)
+	// UploadImage uploads data to an image.
+	UploadImageData(ctx context.Context, imageID string, reader io.Reader) error
+	// DeleteImage deletes an image.
+	DeleteImage(ctx context.Context, imageID string) error
 }
 
 type Identity interface {
@@ -89,6 +99,7 @@ type Provider interface {
 	Flavors(ctx context.Context) (FlavorList, error)
 
 	ImageRead
+	ImageWrite
 	Identity
 	Network
 	SecurityGroup
