@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"slices"
 
+	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -139,7 +140,7 @@ func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imag
 
 	image, err := provider.GetImage(ctx, organizationID, imageID)
 	if err != nil {
-		if goerrors.Is(err, types.ErrResourceNotFound) {
+		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return errors.HTTPNotFound().WithError(err)
 		}
 
@@ -152,7 +153,7 @@ func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imag
 
 	if err = provider.DeleteImage(ctx, imageID); err != nil {
 		// Most deletion APIs ignore not found errors, but our other delete APIs return 404. To maintain consistency, we do the same here.
-		if goerrors.Is(err, types.ErrResourceNotFound) {
+		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return errors.HTTPNotFound().WithError(err)
 		}
 

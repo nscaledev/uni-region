@@ -29,6 +29,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	gophercloud "github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
@@ -44,6 +45,7 @@ import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers/allocation/vlan"
@@ -62,9 +64,36 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+const (
+	osKernelLabel   = "unikorn:os:kernel"
+	osFamilyLabel   = "unikorn:os:family"
+	osDistroLabel   = "unikorn:os:distro"
+	osVersionLabel  = "unikorn:os:version"
+	osVariantLabel  = "unikorn:os:variant"
+	osCodenameLabel = "unikorn:os:codename"
+
+	virtualizationLabel   = "unikorn:virtualization"
+	gpuModelsLabel        = "unikorn:gpu_models"
+	gpuVendorLabel        = "unikorn:gpu_vendor"
+	gpuDriverVersionLabel = "unikorn:gpu_driver_version"
+
+	packageLabelPrefix = "unikorn:package:"
+
+	kubernetesVersionLabel = "unikorn:kubernetes_version"
+
+	organizationIDLabel = "unikorn:organization:id"
+	dataSourceLabel     = "unikorn:data_source"
+
+	containerFormatBare = "bare" // there's no const in gophercloud for this, so we have our own.
+)
+
 var (
 	ErrConflict     = errors.New("resource conflict error")
 	ErrKeyUndefined = errors.New("a required key was not defined")
+)
+
+const (
+	imageCacheTTL = 5 * time.Minute
 )
 
 type providerCredentials struct {
@@ -101,6 +130,10 @@ type Provider struct {
 	_network  NetworkingInterface
 
 	lock sync.Mutex
+
+	// imageCache is used to downsample the OpenStack image API, because responses can
+	// take seconds. This reduces the effect of that latency on most callers.
+	imageCache *cache.TimeoutCache[[]images.Image]
 }
 
 var _ types.Provider = &Provider{}
@@ -116,6 +149,7 @@ func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Pro
 		client:        cli,
 		region:        region,
 		vlanAllocator: vlan.New(cli, region.Namespace, "openstack-region-provider", vlanSpec),
+		imageCache:    cache.New[[]images.Image](imageCacheTTL),
 	}
 
 	if err := p.serviceClientRefresh(ctx); err != nil {
@@ -467,10 +501,10 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 
 // imageOS extracts the image OS from the image properties.
 func (p *Provider) imageOS(image *images.Image) types.ImageOS {
-	kernel, _ := image.Properties["unikorn:os:kernel"].(string)
-	family, _ := image.Properties["unikorn:os:family"].(string)
-	distro, _ := image.Properties["unikorn:os:distro"].(string)
-	version, _ := image.Properties["unikorn:os:version"].(string)
+	kernel, _ := image.Properties[osKernelLabel].(string)
+	family, _ := image.Properties[osFamilyLabel].(string)
+	distro, _ := image.Properties[osDistroLabel].(string)
+	version, _ := image.Properties[osVersionLabel].(string)
 
 	result := types.ImageOS{
 		Kernel:  types.OsKernel(kernel),
@@ -479,11 +513,11 @@ func (p *Provider) imageOS(image *images.Image) types.ImageOS {
 		Version: version,
 	}
 
-	if variant, exists := image.Properties["unikorn:os:variant"].(string); exists {
+	if variant, exists := image.Properties[osVariantLabel].(string); exists {
 		result.Variant = &variant
 	}
 
-	if codename, exists := image.Properties["unikorn:os:codename"].(string); exists {
+	if codename, exists := image.Properties[osCodenameLabel].(string); exists {
 		result.Codename = &codename
 	}
 
@@ -495,9 +529,9 @@ func (p *Provider) imagePackages(image *images.Image) *types.ImagePackages {
 	result := make(types.ImagePackages)
 
 	for key, value := range image.Properties {
-		// Check if the key starts with "unikorn:package"
-		if strings.HasPrefix(key, "unikorn:package:") {
-			packageName := key[len("unikorn:package:"):]
+		// Check if the key starts with "unikorn:package:"
+		if strings.HasPrefix(key, packageLabelPrefix) {
+			packageName := key[len(packageLabelPrefix):]
 
 			if strValue, ok := value.(string); ok {
 				result[packageName] = strValue
@@ -508,7 +542,7 @@ func (p *Provider) imagePackages(image *images.Image) *types.ImagePackages {
 	// https://github.com/unikorn-cloud/specifications/blob/main/specifications/providers/openstack/flavors_and_images.md
 	// kubernetes_version was removed in v2.0.0 of the specification, but we still support it for backwards compatibility.
 	if _, exists := result["kubernetes"]; !exists {
-		if version, ok := image.Properties["unikorn:kubernetes_version"].(string); ok {
+		if version, ok := image.Properties[kubernetesVersionLabel].(string); ok {
 			result["kubernetes"] = version
 		}
 	}
@@ -517,7 +551,7 @@ func (p *Provider) imagePackages(image *images.Image) *types.ImagePackages {
 }
 
 func isPublicOrOrganizationOwnedImage(image *images.Image, organizationID string) bool {
-	value := image.Properties["unikorn:organization:id"]
+	value := image.Properties[organizationIDLabel]
 	return value == nil || value == organizationID
 }
 
@@ -533,8 +567,53 @@ func getPublicOrOrganizationOwnedImages(resources []images.Image, organizationID
 	return result
 }
 
+func (p *Provider) imageDiskFormat(image *images.Image) types.ImageDiskFormat {
+	return types.ImageDiskFormat(image.DiskFormat)
+}
+
+func (p *Provider) imageDataSource(image *images.Image) types.ImageDataSource {
+	if ds, ok := image.Properties[dataSourceLabel].(string); ok {
+		dataSource := types.ImageDataSource(ds)
+
+		if dataSource == types.ImageDataSourceFile || dataSource == types.ImageDataSourceURL {
+			return dataSource
+		}
+	}
+
+	// Images from before we started labeling won't have this label, so give them a reasonable default (`"file"` means uploaded).
+	// FIXME: less reasonably, this will also apply to values we didn't recognise, or which couldn't be cast to `string`.
+	return types.ImageDataSourceFile
+}
+
+func (p *Provider) imageStatus(image *images.Image, dataSource types.ImageDataSource) types.ImageStatus {
+	var status types.ImageStatus
+
+	switch image.Status {
+	case images.ImageStatusQueued:
+		if dataSource == types.ImageDataSourceFile {
+			status = types.ImageStatusPending
+		} else {
+			status = types.ImageStatusCreating
+		}
+	case images.ImageStatusSaving:
+		status = types.ImageStatusCreating
+	case images.ImageStatusActive:
+		status = types.ImageStatusReady
+	case images.ImageStatusKilled:
+		status = types.ImageStatusFailed
+	case images.ImageStatusDeleted, images.ImageStatusPendingDelete, images.ImageStatusDeactivated, images.ImageStatusImporting:
+		// These statuses are not directly mappable, mark them as failed.
+		status = types.ImageStatusFailed
+	}
+
+	return status
+}
+
 func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
-	virtualization, _ := image.Properties["unikorn:virtualization"].(string)
+	var organizationID *string
+	if temp, _ := image.Properties[organizationIDLabel].(string); temp != "" {
+		organizationID = &temp
+	}
 
 	size := image.MinDiskGigabytes
 
@@ -543,19 +622,27 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 		size = int((image.VirtualSize + (1 << 30) - 1) >> 30)
 	}
 
+	virtualization, _ := image.Properties[virtualizationLabel].(string)
+
+	dataSource := p.imageDataSource(image)
+
 	providerImage := types.Image{
 		ID:             image.ID,
 		Name:           image.Name,
+		OrganizationID: organizationID,
 		Created:        image.CreatedAt,
 		Modified:       image.UpdatedAt,
 		SizeGiB:        size,
 		Virtualization: types.ImageVirtualization(virtualization),
 		OS:             p.imageOS(image),
 		Packages:       p.imagePackages(image),
+		DiskFormat:     p.imageDiskFormat(image),
+		DataSource:     dataSource,
+		Status:         p.imageStatus(image, dataSource),
 	}
 
-	if gpuVendor, ok := image.Properties["unikorn:gpu_vendor"].(string); ok {
-		gpuDriver, ok := image.Properties["unikorn:gpu_driver_version"].(string)
+	if gpuVendor, ok := image.Properties[gpuVendorLabel].(string); ok {
+		gpuDriver, ok := image.Properties[gpuDriverVersionLabel].(string)
 		if !ok {
 			// TODO: it's perhaps better to just skip this one, rather than kill the entire service??
 			return nil, fmt.Errorf("%w: GPU driver is not defined for image %s", ErrKeyUndefined, image.ID)
@@ -566,7 +653,7 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 			Driver: gpuDriver,
 		}
 
-		if models, ok := image.Properties["unikorn:gpu_models"].(string); ok {
+		if models, ok := image.Properties[gpuModelsLabel].(string); ok {
 			gpu.Models = strings.Split(models, ",")
 		}
 
@@ -578,12 +665,7 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 
 // ListImages lists all available images.
 func (p *Provider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
-	imageService, err := p.image(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	resources, err := imageService.ListImages(ctx)
+	resources, err := p.listImages(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -604,8 +686,58 @@ func (p *Provider) ListImages(ctx context.Context, organizationID string) (types
 	return result, nil
 }
 
+func (p *Provider) listImages(ctx context.Context) ([]images.Image, error) {
+	if cached, found := p.imageCache.Get(); found {
+		return cached, nil
+	}
+
+	imageService, err := p.image(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	resources, err := imageService.ListImages(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	p.imageCache.Set(resources)
+
+	return resources, nil
+}
+
 // GetImage retrieves a specific image by its ID.
 func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
+	resource, err := p.getImage(ctx, imageID)
+	if err != nil {
+		if errors.Is(err, coreerrors.ErrResourceNotFound) {
+			return nil, fmt.Errorf("image %w", coreerrors.ErrResourceNotFound) // elide any more detail than this
+		}
+
+		return nil, err
+	}
+
+	if !isPublicOrOrganizationOwnedImage(resource, organizationID) {
+		return nil, fmt.Errorf("image %w", coreerrors.ErrResourceNotFound)
+	}
+
+	return p.convertImage(resource)
+}
+
+// getImage finds a particular image, given the ID. It checks the cache first, and if not
+// present, assumes that the cache is out of date and fetches from the provider.
+func (p *Provider) getImage(ctx context.Context, imageID string) (*images.Image, error) {
+	if cached, found := p.imageCache.Get(); found {
+		imageIndexFunc := func(image images.Image) bool {
+			return image.ID == imageID
+		}
+
+		index := slices.IndexFunc(cached, imageIndexFunc)
+		if index != -1 {
+			return &cached[index], nil
+		}
+	}
+
 	imageService, err := p.image(ctx)
 	if err != nil {
 		return nil, err
@@ -616,28 +748,137 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 		return nil, err
 	}
 
-	if !isPublicOrOrganizationOwnedImage(resource, organizationID) {
-		return nil, fmt.Errorf("%w: image %s", coreerrors.ErrResourceNotFound, imageID)
+	if resource.Visibility == images.ImageVisibilityPublic {
+		// Invalidate the cache as we had a cache miss.
+		p.imageCache.Invalidate()
 	}
+
+	return resource, nil
+}
+
+func setIfNotNil[T ~string](metadata map[string]string, key string, value *T) {
+	if value != nil {
+		metadata[key] = string(*value)
+	}
+}
+
+func (p *Provider) createImageMetadata(image *types.Image) (map[string]string, error) {
+	metadata := make(map[string]string)
+
+	metadata[osKernelLabel] = string(image.OS.Kernel)
+	metadata[osFamilyLabel] = string(image.OS.Family)
+	metadata[osDistroLabel] = string(image.OS.Distro)
+	metadata[osVersionLabel] = image.OS.Version
+	setIfNotNil(metadata, osVariantLabel, image.OS.Variant)
+	setIfNotNil(metadata, osCodenameLabel, image.OS.Codename)
+
+	if image.Packages != nil {
+		for name, version := range *image.Packages {
+			key := fmt.Sprintf("%s%s", packageLabelPrefix, name)
+			metadata[key] = version
+		}
+	}
+
+	if image.GPU != nil {
+		if image.GPU.Vendor == "" {
+			return nil, fmt.Errorf("%w: GPU vendor must be defined when GPU information is provided", ErrKeyUndefined)
+		}
+
+		if len(image.GPU.Models) == 0 {
+			return nil, fmt.Errorf("%w: GPU models must be defined when GPU information is provided", ErrKeyUndefined)
+		}
+
+		if image.GPU.Driver == "" {
+			return nil, fmt.Errorf("%w: GPU driver must be defined when GPU information is provided", ErrKeyUndefined)
+		}
+
+		gpuModels := strings.Join(image.GPU.Models, ",")
+
+		metadata[gpuVendorLabel] = string(image.GPU.Vendor)
+		metadata[gpuModelsLabel] = gpuModels
+		metadata[gpuDriverVersionLabel] = image.GPU.Driver
+	}
+
+	metadata[virtualizationLabel] = string(image.Virtualization)
+	setIfNotNil(metadata, organizationIDLabel, image.OrganizationID)
+	metadata[dataSourceLabel] = string(image.DataSource)
+
+	return metadata, nil
+}
+
+// CreateImageForUpload creates a new image resource for upload.
+func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
+	imageService, err := p.image(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	properties, err := p.createImageMetadata(image)
+	if err != nil {
+		return nil, err
+	}
+
+	opts := &images.CreateOpts{
+		Name:            image.Name,
+		Visibility:      ptr.To(images.ImageVisibilityPublic),
+		ContainerFormat: containerFormatBare,
+		DiskFormat:      string(image.DiskFormat),
+		Properties:      properties,
+	}
+
+	resource, err := imageService.CreateImage(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	p.imageCache.Invalidate()
 
 	return p.convertImage(resource)
 }
 
-var errTempNotImplemented = errors.New("not implemented (yet)")
-
-// CreateImageForUpload creates a new image resource for upload.
-func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
-	return nil, errTempNotImplemented
-}
-
-// UploadImage uploads data to an image.
+// UploadImageData uploads file data for an image.
 func (p *Provider) UploadImageData(ctx context.Context, imageID string, reader io.Reader) error {
-	return errTempNotImplemented
+	imageService, err := p.image(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err = imageService.UploadImageData(ctx, imageID, reader); err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return fmt.Errorf("image %w", coreerrors.ErrResourceNotFound)
+		}
+
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return types.ErrImageNotReadyForUpload
+		}
+
+		return err
+	}
+
+	return nil
 }
 
-// DeleteImage deletes an image.
 func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
-	return errTempNotImplemented
+	imageService, err := p.image(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err = imageService.DeleteImage(ctx, imageID); err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return fmt.Errorf("image %w", coreerrors.ErrResourceNotFound)
+		}
+
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return types.ErrImageStillInUse
+		}
+
+		return err
+	}
+
+	p.imageCache.Invalidate()
+
+	return nil
 }
 
 // ListExternalNetworks returns a list of external networks if the platform
