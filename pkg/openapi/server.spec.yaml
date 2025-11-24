@@ -2413,6 +2413,11 @@ components:
           $ref: '#/components/schemas/storageV2Spec'
         status:
           $ref: '#/components/schemas/storageV2Status'
+    storagesV2List:
+      description: A list of storages
+      type: array
+      items:
+        $ref: '#/components/schemas/storageV2Read'
   requestBodies:
     identityRequest:
       description: A request for an identity.
@@ -3226,10 +3231,9 @@ components:
       content:
         application/json:
           schema:
-            type: array
-            $ref: '#/components/schemas/storageV2Read'
+            $ref: '#/components/schemas/storagesV2List'
           example:
-            metadata:
+          - metadata:
               id: a64f9269-36e0-4312-b8d1-52d93d569b7b
               name: storage-name
               organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d

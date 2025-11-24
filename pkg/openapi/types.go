@@ -972,6 +972,9 @@ type StorageV2Update struct {
 	Spec StorageV2Spec `json:"spec"`
 }
 
+// StoragesV2List A list of storages
+type StoragesV2List = []StorageV2Read
+
 // FilestorageIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type FilestorageIDParameter = KubernetesNameParameter
 
@@ -1077,8 +1080,8 @@ type ServersV2Response = ServersV2Read
 // SshKeyResponse An SSH key.
 type SshKeyResponse = SshKey
 
-// StorageListV2Response A storage read only group.
-type StorageListV2Response = StorageV2Read
+// StorageListV2Response A list of storages
+type StorageListV2Response = StoragesV2List
 
 // StorageV2Response A storage read only group.
 type StorageV2Response = StorageV2Read
