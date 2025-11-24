@@ -27,17 +27,17 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
-	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack"
+	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/imagedata"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/kaptinlin/jsonschema"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -63,9 +63,8 @@ var imagePropertySchemaV2 []byte
 
 // ImageClient wraps the generic client because gophercloud is unsafe.
 type ImageClient struct {
-	client     *gophercloud.ServiceClient
-	options    *unikornv1.RegionOpenstackImageSpec
-	imageCache *cache.TimeoutCache[[]images.Image]
+	client  *gophercloud.ServiceClient
+	options *unikornv1.RegionOpenstackImageSpec
 }
 
 // NewImageClient provides a simple one-liner to start computing.
@@ -81,9 +80,8 @@ func NewImageClient(ctx context.Context, provider CredentialProvider, options *u
 	}
 
 	c := &ImageClient{
-		client:     client,
-		options:    options,
-		imageCache: cache.New[[]images.Image](time.Hour),
+		client:  client,
+		options: options,
 	}
 
 	return c, nil
@@ -140,6 +138,13 @@ func ImageSignatureValid(image *images.Image, signingKeyRaw []byte) bool {
 
 // verifyImageSignature asserts the image is trustworthy for use with our goodselves.
 func (c *ImageClient) verifyImageSignature(image *images.Image) bool {
+	// We only verify images that are not tied to an organization.
+	// Images that are tied to an organization are custom images, which will not be signed by us.
+	organizationID, _ := image.Properties[organizationIDLabel].(string)
+	if organizationID != "" {
+		return true
+	}
+
 	if c.options == nil || c.options.Selector == nil || c.options.Selector.SigningKey == nil {
 		return true
 	}
@@ -155,13 +160,9 @@ func ImageSchemaValid(image *images.Image, schema *jsonschema.Schema) bool {
 	return schema.Validate(image.Properties).Valid
 }
 
-// imageValid returns true when the image is active, matches the schema and optionally
-// is signed by a trusted image building pipeline.
+// imageValid returns true when the image is matches the schema and optionally is signed
+// by a trusted image building pipeline.
 func (c *ImageClient) imageValid(image *images.Image, schema *jsonschema.Schema) bool {
-	if image.Status != "active" {
-		return false
-	}
-
 	if !ImageSchemaValid(image, schema) {
 		return false
 	}
@@ -177,12 +178,36 @@ func ImageSchema() (*jsonschema.Schema, error) {
 	return jsonschema.NewCompiler().Compile(imagePropertySchemaV2)
 }
 
+// CreateImage creates a new image.
+func (c *ImageClient) CreateImage(ctx context.Context, opts *images.CreateOpts) (*images.Image, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "POST /image/v2/images", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	return images.Create(ctx, c.client, opts).Extract()
+}
+
+func (c *ImageClient) UploadImageData(ctx context.Context, id string, reader io.Reader) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "PUT /image/v2/images/{image_id}/file", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	return imagedata.Upload(ctx, c.client, id, reader).ExtractErr()
+}
+
+func (c *ImageClient) UpdateImage(ctx context.Context, id string, opts images.UpdateOpts) (*images.Image, error) {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "PATCH /image/v2/images/{image_id}", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	return images.Update(ctx, c.client, id, opts).Extract()
+}
+
 // ListImages returns a list of images.
 func (c *ImageClient) ListImages(ctx context.Context) ([]images.Image, error) {
-	if result, ok := c.imageCache.Get(); ok {
-		return result, nil
-	}
-
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, "GET /image/v2/images", trace.WithSpanKind(trace.SpanKindClient))
@@ -217,25 +242,39 @@ func (c *ImageClient) ListImages(ctx context.Context) ([]images.Image, error) {
 		return a.CreatedAt.Compare(b.CreatedAt)
 	})
 
-	c.imageCache.Set(result)
-
 	return result, nil
 }
 
+// GetImage retrieves a specific image by its ID.
 func (c *ImageClient) GetImage(ctx context.Context, id string) (*images.Image, error) {
-	result, err := c.ListImages(ctx)
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "GET /image/v2/images/{image_id}", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	schema, err := ImageSchema()
 	if err != nil {
 		return nil, err
 	}
 
-	imageIndexFunc := func(image images.Image) bool {
-		return image.ID == id
+	result, err := images.Get(ctx, c.client, id).Extract()
+	if err != nil {
+		return nil, err
 	}
 
-	index := slices.IndexFunc(result, imageIndexFunc)
-	if index < 0 {
-		return nil, fmt.Errorf("%w: image %s", types.ErrResourceNotFound, id)
+	// REVIEW_ME: Ideally, we should move the image validation to the caller side.
+	if !c.imageValid(result, schema) {
+		return nil, fmt.Errorf("%w: image not valid", types.ErrResourceNotFound)
 	}
 
-	return &result[index], nil
+	return result, nil
+}
+
+func (c *ImageClient) DeleteImage(ctx context.Context, id string) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, "DELETE /image/v2/images/{image_id}", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	return images.Delete(ctx, c.client, id).ExtractErr()
 }
