@@ -1625,7 +1625,7 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 	}
 
 	openstackSecurityGroup, err := networking.GetSecurityGroup(ctx, securityGroup)
-	if err != nil && errors.Is(err, ErrNotFound) {
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}
 
