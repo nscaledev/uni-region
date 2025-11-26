@@ -207,11 +207,20 @@ func openstackRouterPortsFixture(openstackRouter *routers.Router, openstackSubne
 	}
 }
 
+//nolint:unparam
 func securityGroupRuleFixtureSingle(t *testing.T, dir regionv1.SecurityGroupRuleDirection, proto regionv1.SecurityGroupRuleProtocol, port int, prefix string) regionv1.SecurityGroupRule {
 	t.Helper()
 
-	_, cidr, err := net.ParseCIDR(prefix)
-	require.NoError(t, err)
+	var p *corev1.IPv4Prefix
+
+	if prefix != "" {
+		_, cidr, err := net.ParseCIDR(prefix)
+		require.NoError(t, err)
+
+		p = &corev1.IPv4Prefix{
+			IPNet: *cidr,
+		}
+	}
 
 	return regionv1.SecurityGroupRule{
 		Direction: dir,
@@ -219,9 +228,7 @@ func securityGroupRuleFixtureSingle(t *testing.T, dir regionv1.SecurityGroupRule
 		Port: &regionv1.SecurityGroupRulePort{
 			Number: ptr.To(port),
 		},
-		CIDR: &corev1.IPv4Prefix{
-			IPNet: *cidr,
-		},
+		CIDR: p,
 	}
 }
 
@@ -583,6 +590,7 @@ func TestReconcileSecurityGroupRules(t *testing.T) {
 
 		securityGroup := securityGroupFixture(
 			securityGroupRuleFixtureSingle(t, regionv1.Ingress, regionv1.TCP, 22, "172.16.0.0/12"),
+			securityGroupRuleFixtureSingle(t, regionv1.Ingress, regionv1.Any, 0, ""),
 		)
 
 		openstackSecurityGroup := openstackSecurityGroupFixture(securityGroup, openstackSecurityGroupRuleFixtureDefault())
@@ -590,6 +598,7 @@ func TestReconcileSecurityGroupRules(t *testing.T) {
 		networking := mock.NewMockSecurityGroupInterface(c)
 		networking.EXPECT().ListSecurityGroupRules(t.Context(), openstackSecurityGroup.ID).Return(openstackSecurityGroup.Rules, nil)
 		networking.EXPECT().CreateSecurityGroupRule(t.Context(), openstackSecurityGroup.ID, rules.DirIngress, rules.ProtocolTCP, 22, 22, "172.16.0.0/12").Return(nil, nil)
+		networking.EXPECT().CreateSecurityGroupRule(t.Context(), openstackSecurityGroup.ID, rules.DirIngress, rules.ProtocolAny, 0, 0, "").Return(nil, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
