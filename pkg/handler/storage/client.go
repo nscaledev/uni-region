@@ -34,10 +34,12 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
+	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -60,27 +62,6 @@ func New(client client.Client, namespace string, identity identityclient.APIClie
 		namespace: namespace,
 		identity:  identity,
 	}
-}
-
-func convertRoute(in *regionv1.Route) *openapi.Route {
-	return &openapi.Route{
-		Prefix:  in.Prefix.String(),
-		Nexthop: in.NextHop.String(),
-	}
-}
-
-func convertRoutes(in []regionv1.Route) *openapi.Routes {
-	if len(in) == 0 {
-		return nil
-	}
-
-	out := make(openapi.Routes, len(in))
-
-	for i := range in {
-		out[i] = *convertRoute(&in[i])
-	}
-
-	return &out
 }
 
 func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
@@ -193,26 +174,12 @@ func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2R
 	return convertV2(result), nil
 }
 
-// convertCreateToUpdateRequest marshals a create request into an update request
-// that can be used with generate().  Updates are a subset of creates (without the
-// immutable bits).
-func convertCreateToUpdateRequest(in *openapi.NetworkV2Create) (*openapi.NetworkV2Update, error) {
-	t, err := json.Marshal(in)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to marshal request").WithError(err)
-	}
-
-	out := &openapi.NetworkV2Update{}
-
-	if err := json.Unmarshal(t, out); err != nil {
-		return nil, errors.OAuth2ServerError("failed to unmarshal request").WithError(err)
-	}
-
-	return out, nil
-}
-
 func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.StorageV2Update) (*regionv1.FileStorage, error) {
 
+	size, err := convertSize(request.Spec.Size)
+	if err != nil {
+		return nil, errors.HTTPNotFound()
+	}
 	out := &regionv1.FileStorage{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.namespace).
 			WithOrganization(organizationID).
@@ -221,7 +188,9 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 			WithLabel(constants.ResourceAPIVersionLabel, constants.MarshalAPIVersion(2)).
 			Get(),
 		Spec: regionv1.FileStorageSpec{
-			Tags: conversion.GenerateTagList(request.Metadata.Tags),
+			Tags:        conversion.GenerateTagList(request.Metadata.Tags),
+			Size:        size,
+			Attachments: convertAttachmentList(request.Spec.Attachments),
 		},
 	}
 
@@ -234,6 +203,20 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 	}
 
 	return out, nil
+}
+
+func convertAttachmentList(in *openapi.StorageAttachmentV2Spec) []regionv1.Attachment {
+	out := make([]regionv1.Attachment, len(in.NetworkIds))
+	for i := range in.NetworkIds {
+		out[i] = regionv1.Attachment{
+			NetworkID: in.NetworkIds[i].Id,
+		}
+	}
+	return out
+}
+
+func convertSize(size string) (resource.Quantity, error) {
+	return resource.ParseQuantity(size)
 }
 
 type createSaga struct {
@@ -251,7 +234,7 @@ func newCreateSaga(client *Client, request *openapi.StorageV2Create) *createSaga
 	}
 }
 
-// createAllocation creates an allocation for the network ID and then attaches
+// createAllocation creates an allocation for the storage ID and then attaches
 // the allocation ID to the network for persistence.
 func (s *createSaga) createAllocation(ctx context.Context) error {
 	required := identityapi.ResourceAllocationList{
@@ -279,7 +262,7 @@ func (s *createSaga) deleteAllocation(ctx context.Context) error {
 func (s *createSaga) Actions() []saga.Action {
 	return []saga.Action{
 		saga.NewAction("validate request", s.validateRequest, nil),
-		saga.NewAction("create quota allocation", s.createAllocation, s.deleteAllocation),
+		// saga.NewAction("create quota allocation", s.createAllocation, s.deleteAllocation),
 		saga.NewAction("create filestorage", s.createFileStorage, nil),
 	}
 }
@@ -356,6 +339,7 @@ func (c *Client) Delete(ctx context.Context, storageID string) error {
 	return identity.New(c.client, c.namespace).Delete(ctx, organizationID, projectID, resource.Labels[constants.IdentityLabel])
 }
 
+// todo(schristoff): we should get status from Gets
 func (c *Client) GetV2Raw(ctx context.Context, storageID string) (*regionv1.FileStorage, error) {
 	result := &regionv1.FileStorage{}
 
@@ -398,8 +382,28 @@ func (s *createSaga) createFileStorage(ctx context.Context) error {
 }
 
 func (s *createSaga) validateRequest(ctx context.Context) error {
+	storageClassKey := client.ObjectKey{
+		Name:      s.request.Spec.StorageClassId,
+		Namespace: s.client.namespace,
+	}
+	storageType := regionv1.FileStorageClass{}
+	err := s.client.client.Get(ctx, storageClassKey, &storageType)
+	if err != nil {
+		return errors.OAuth2ServerError("filestorage class does not exist").WithError(err)
+	}
+	networkClient := network.New(s.client.client, s.client.namespace, s.client.identity)
+	for _, v := range s.request.Spec.Attachments.NetworkIds {
+		_, err = networkClient.GetV2(ctx, v.Id)
+		if err != nil {
+			return errors.OAuth2ServerError("network attachment ID not found").WithError(err)
+		}
+	}
 
-	filestorage, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId)
+	updateRequest, err := convertCreateToUpdateRequest(s.request)
+	if err != nil {
+		return err
+	}
+	filestorage, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.ProjectId, updateRequest)
 	if err != nil {
 		return err
 	}
@@ -408,3 +412,21 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 
 	return nil
 }
+
+func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.StorageV2Update, error) {
+	t, err := json.Marshal(in)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to marshal request").WithError(err)
+	}
+
+	out := &openapi.StorageV2Update{}
+
+	if err := json.Unmarshal(t, out); err != nil {
+		return nil, errors.OAuth2ServerError("failed to unmarshal request").WithError(err)
+	}
+
+	return out, nil
+}
+
+// convert for CRD to OpenAPI
+// generate for OpenAPI to CRD

@@ -2296,6 +2296,8 @@ components:
           type: array
           items:
             type: object
+            required:
+              - id
             properties:
               id:
                 type: string 
@@ -2304,6 +2306,7 @@ components:
       type: object
       required:
       - networkIds
+      - id
       properties:
         networkIds:
           type: array
@@ -2376,6 +2379,7 @@ components:
             required:
             - organizationId
             - projectId
+            - regionId
             - storageClassId
             properties:
               storageClassId:
@@ -2383,6 +2387,9 @@ components:
                 type: string
               organizationId:
                 description: The organization to provision the resource in.
+                type: string
+              regionId:
+                description: The region ID to provision the storage into.
                 type: string
               projectId:
                 description: The project to provision the resource in.

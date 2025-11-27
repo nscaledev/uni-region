@@ -867,7 +867,7 @@ type SshKey struct {
 // StorageAttachmentV2Spec Describes the network attachment for storage
 type StorageAttachmentV2Spec struct {
 	NetworkIds []struct {
-		Id *string `json:"id,omitempty"`
+		Id string `json:"id"`
 	} `json:"networkIds"`
 }
 
@@ -912,6 +912,9 @@ type StorageV2Create struct {
 
 		// ProjectId The project to provision the resource in.
 		ProjectId string `json:"projectId"`
+
+		// RegionId The region ID to provision the storage into.
+		RegionId string `json:"regionId"`
 
 		// Size size of the storage
 		Size string `json:"size"`
