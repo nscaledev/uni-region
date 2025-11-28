@@ -28,9 +28,13 @@ type Options struct {
 	// cacheMaxAge defines the max age for cachable items e.g. images and
 	// flavors don't change all that often.
 	CacheMaxAge time.Duration
+
+	// ImageUploadSizeLimit defines the maximum size for image uploads in bytes.
+	ImageUploadSizeLimit int64
 }
 
 // AddFlags adds the options flags to the given flag set.
 func (o *Options) AddFlags(f *pflag.FlagSet) {
 	f.DurationVar(&o.CacheMaxAge, "cache-max-age", 24*time.Hour, "How long to cache long-lived queries in the browser.")
+	f.Int64Var(&o.ImageUploadSizeLimit, "image-upload-size-limit", 30*1024*1024*1024, "The maximum size for image uploads in bytes.") // Default to 30GB.
 }

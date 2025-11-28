@@ -23,6 +23,9 @@ spec:
         {{- include "unikorn.otlp.flags" . | nindent 8 }}
         {{- include "unikorn.mtls.flags" . | nindent 8 }}
         {{- include "unikorn.identity.flags" . | nindent 8 }}
+        env:
+        - name: TMPDIR
+          value: /staging # to match the volume mount below
         ports:
         - name: http
           containerPort: 6080
@@ -34,6 +37,14 @@ spec:
           {{- .Values.server.resources | toYaml | nindent 10 }}
         securityContext:
           readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /staging
+          name: staging
+
       serviceAccountName: {{ .Release.Name }}-server
       securityContext:
         runAsNonRoot: true
+      volumes:
+      - name: staging
+        persistentVolumeClaim:
+          claimName: image-upload-staging
