@@ -20,8 +20,8 @@ const (
 
 // Defines values for ImageDiskFormat.
 const (
-	Qcow2 ImageDiskFormat = "qcow2"
-	Raw   ImageDiskFormat = "raw"
+	ImageDiskFormatQcow2 ImageDiskFormat = "qcow2"
+	ImageDiskFormatRaw   ImageDiskFormat = "raw"
 )
 
 // Defines values for ImageVirtualization.
