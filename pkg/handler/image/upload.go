@@ -112,10 +112,10 @@ func extractFileFromTarball(ctx context.Context, data io.Reader, format types.Im
 	return stagedFile, nil
 }
 
-func uploadImageData(ctx context.Context, imageID string, diskFormat types.ImageDiskFormat, sourceReader io.Reader, provider provider) error {
+func uploadImageData(ctx context.Context, imageID string, diskFormat types.ImageDiskFormat, sourceReader io.Reader, provider Provider) error {
 	gzipReader, err := gzip.NewReader(sourceReader)
 	if err != nil {
-		return errors.OAuth2ServerError("The server encountered an unexpected error while receiving the image data").WithError(err)
+		return errors.OAuth2InvalidRequest("The request does not have valid image data").WithError(err)
 	}
 
 	sourceReader = gzipReader

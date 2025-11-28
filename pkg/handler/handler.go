@@ -19,9 +19,7 @@ limitations under the License.
 package handler
 
 import (
-	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
@@ -38,6 +36,8 @@ import (
 )
 
 type Handler struct {
+	*ImageHandler
+
 	// client gives cached access to Kubernetes.
 	client client.Client
 
@@ -53,18 +53,14 @@ type Handler struct {
 
 func New(client client.Client, namespace string, options *Options, identity *identityapi.ClientWithResponses) (*Handler, error) {
 	h := &Handler{
-		client:    client,
-		namespace: namespace,
-		options:   options,
-		identity:  identity,
+		client:       client,
+		namespace:    namespace,
+		options:      options,
+		identity:     identity,
+		ImageHandler: NewImageHandler(client, namespace, options),
 	}
 
 	return h, nil
-}
-
-func (h *Handler) setCacheable(w http.ResponseWriter) {
-	w.Header().Add("Cache-Control", fmt.Sprintf("max-age=%d", h.options.CacheMaxAge/time.Second))
-	w.Header().Add("Cache-Control", "private")
 }
 
 func (h *Handler) setUncacheable(w http.ResponseWriter) {
@@ -115,7 +111,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetw
 		return
 	}
 
-	h.setCacheable(w)
+	h.options.setCacheable(w)
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
@@ -131,7 +127,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(w ht
 		return
 	}
 
-	h.setCacheable(w)
+	h.options.setCacheable(w)
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 

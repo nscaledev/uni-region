@@ -18,6 +18,8 @@ limitations under the License.
 package handler
 
 import (
+	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -37,4 +39,9 @@ type Options struct {
 func (o *Options) AddFlags(f *pflag.FlagSet) {
 	f.DurationVar(&o.CacheMaxAge, "cache-max-age", 24*time.Hour, "How long to cache long-lived queries in the browser.")
 	f.Int64Var(&o.ImageUploadSizeLimit, "image-upload-size-limit", 30*1024*1024*1024, "The maximum size for image uploads in bytes.") // Default to 30GB.
+}
+
+func (o *Options) setCacheable(w http.ResponseWriter) {
+	w.Header().Add("Cache-Control", fmt.Sprintf("max-age=%d", o.CacheMaxAge/time.Second))
+	w.Header().Add("Cache-Control", "private")
 }
