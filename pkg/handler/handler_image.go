@@ -94,8 +94,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImage
 	}
 
 	// Limit the number of bytes we are prepared to read as an upload, as a defensive measure.
-	body := http.MaxBytesReader(w, r.Body, h.options.ImageUploadSizeLimit)
-	defer body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, h.options.ImageUploadSizeLimit)
 
 	// In the following we are trying to determine how to proceed with the request, based on its content type and encoding.
 	// We'll handle the request format here, and pass the bytes on to the client to process.
