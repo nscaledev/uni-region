@@ -17,31 +17,31 @@ import (
 	gomock "go.uber.org/mock/gomock"
 )
 
-// Mockprovider is a mock of provider interface.
-type Mockprovider struct {
+// MockProvider is a mock of Provider interface.
+type MockProvider struct {
 	ctrl     *gomock.Controller
-	recorder *MockproviderMockRecorder
+	recorder *MockProviderMockRecorder
 }
 
-// MockproviderMockRecorder is the mock recorder for Mockprovider.
-type MockproviderMockRecorder struct {
-	mock *Mockprovider
+// MockProviderMockRecorder is the mock recorder for MockProvider.
+type MockProviderMockRecorder struct {
+	mock *MockProvider
 }
 
-// NewMockprovider creates a new mock instance.
-func NewMockprovider(ctrl *gomock.Controller) *Mockprovider {
-	mock := &Mockprovider{ctrl: ctrl}
-	mock.recorder = &MockproviderMockRecorder{mock}
+// NewMockProvider creates a new mock instance.
+func NewMockProvider(ctrl *gomock.Controller) *MockProvider {
+	mock := &MockProvider{ctrl: ctrl}
+	mock.recorder = &MockProviderMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *Mockprovider) EXPECT() *MockproviderMockRecorder {
+func (m *MockProvider) EXPECT() *MockProviderMockRecorder {
 	return m.recorder
 }
 
 // CreateImageForUpload mocks base method.
-func (m *Mockprovider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
+func (m *MockProvider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateImageForUpload", ctx, image)
 	ret0, _ := ret[0].(*types.Image)
@@ -50,13 +50,13 @@ func (m *Mockprovider) CreateImageForUpload(ctx context.Context, image *types.Im
 }
 
 // CreateImageForUpload indicates an expected call of CreateImageForUpload.
-func (mr *MockproviderMockRecorder) CreateImageForUpload(ctx, image any) *gomock.Call {
+func (mr *MockProviderMockRecorder) CreateImageForUpload(ctx, image any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateImageForUpload", reflect.TypeOf((*Mockprovider)(nil).CreateImageForUpload), ctx, image)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateImageForUpload", reflect.TypeOf((*MockProvider)(nil).CreateImageForUpload), ctx, image)
 }
 
 // DeleteImage mocks base method.
-func (m *Mockprovider) DeleteImage(ctx context.Context, imageID string) error {
+func (m *MockProvider) DeleteImage(ctx context.Context, imageID string) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DeleteImage", ctx, imageID)
 	ret0, _ := ret[0].(error)
@@ -64,13 +64,13 @@ func (m *Mockprovider) DeleteImage(ctx context.Context, imageID string) error {
 }
 
 // DeleteImage indicates an expected call of DeleteImage.
-func (mr *MockproviderMockRecorder) DeleteImage(ctx, imageID any) *gomock.Call {
+func (mr *MockProviderMockRecorder) DeleteImage(ctx, imageID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteImage", reflect.TypeOf((*Mockprovider)(nil).DeleteImage), ctx, imageID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteImage", reflect.TypeOf((*MockProvider)(nil).DeleteImage), ctx, imageID)
 }
 
 // GetImage mocks base method.
-func (m *Mockprovider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
+func (m *MockProvider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetImage", ctx, organizationID, imageID)
 	ret0, _ := ret[0].(*types.Image)
@@ -79,13 +79,13 @@ func (m *Mockprovider) GetImage(ctx context.Context, organizationID, imageID str
 }
 
 // GetImage indicates an expected call of GetImage.
-func (mr *MockproviderMockRecorder) GetImage(ctx, organizationID, imageID any) *gomock.Call {
+func (mr *MockProviderMockRecorder) GetImage(ctx, organizationID, imageID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetImage", reflect.TypeOf((*Mockprovider)(nil).GetImage), ctx, organizationID, imageID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetImage", reflect.TypeOf((*MockProvider)(nil).GetImage), ctx, organizationID, imageID)
 }
 
 // ListImages mocks base method.
-func (m *Mockprovider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
+func (m *MockProvider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListImages", ctx, organizationID)
 	ret0, _ := ret[0].(types.ImageList)
@@ -94,13 +94,13 @@ func (m *Mockprovider) ListImages(ctx context.Context, organizationID string) (t
 }
 
 // ListImages indicates an expected call of ListImages.
-func (mr *MockproviderMockRecorder) ListImages(ctx, organizationID any) *gomock.Call {
+func (mr *MockProviderMockRecorder) ListImages(ctx, organizationID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListImages", reflect.TypeOf((*Mockprovider)(nil).ListImages), ctx, organizationID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListImages", reflect.TypeOf((*MockProvider)(nil).ListImages), ctx, organizationID)
 }
 
 // UploadImageData mocks base method.
-func (m *Mockprovider) UploadImageData(ctx context.Context, imageID string, reader io.Reader) error {
+func (m *MockProvider) UploadImageData(ctx context.Context, imageID string, reader io.Reader) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UploadImageData", ctx, imageID, reader)
 	ret0, _ := ret[0].(error)
@@ -108,7 +108,7 @@ func (m *Mockprovider) UploadImageData(ctx context.Context, imageID string, read
 }
 
 // UploadImageData indicates an expected call of UploadImageData.
-func (mr *MockproviderMockRecorder) UploadImageData(ctx, imageID, reader any) *gomock.Call {
+func (mr *MockProviderMockRecorder) UploadImageData(ctx, imageID, reader any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UploadImageData", reflect.TypeOf((*Mockprovider)(nil).UploadImageData), ctx, imageID, reader)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UploadImageData", reflect.TypeOf((*MockProvider)(nil).UploadImageData), ctx, imageID, reader)
 }

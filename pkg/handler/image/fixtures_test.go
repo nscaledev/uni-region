@@ -57,11 +57,11 @@ func newTestProviderImage(status types.ImageStatus) *types.Image {
 
 // newTestMockProvider creates a new mock provider with a gomock controller.
 // The controller is automatically cleaned up when the test finishes.
-func newTestMockProvider(t *testing.T) *mock.Mockprovider {
+func newTestMockProvider(t *testing.T) *mock.MockProvider {
 	t.Helper()
 
 	mockController := gomock.NewController(t)
 	t.Cleanup(mockController.Finish)
 
-	return mock.NewMockprovider(mockController)
+	return mock.NewMockProvider(mockController)
 }

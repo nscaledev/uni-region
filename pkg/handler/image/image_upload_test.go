@@ -37,7 +37,7 @@ import (
 
 //go:generate mockgen -source=image.go -destination=mock/interfaces.go -package=mock
 
-func newTestUploadSaga(provider provider, sourceURL string) *createImageForUploadSaga {
+func newTestUploadSaga(provider Provider, sourceURL string) *createImageForUploadSaga {
 	diskFormat := openapi.ImageDiskFormatRaw
 
 	return &createImageForUploadSaga{

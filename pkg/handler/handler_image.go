@@ -33,26 +33,47 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/image"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
+type ImageHandler struct {
+	client      client.Client
+	namespace   string
+	options     *Options
+	getProvider image.GetProviderFunc
+}
+
+func NewImageHandler(client client.Client, namespace string, options *Options) *ImageHandler {
+	return &ImageHandler{
+		client:      client,
+		namespace:   namespace,
+		options:     options,
+		getProvider: image.DefaultGetProvider,
+	}
+}
+
+func (h *ImageHandler) imageClient() *image.Client {
+	return image.NewClient(h.client, h.namespace, h.getProvider)
+}
+
+func (h *ImageHandler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
 	if err := rbac.AllowOrganizationScope(r.Context(), "region:images", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	result, err := image.NewClient(h.client, h.namespace).ListImages(r.Context(), organizationID, regionID)
+	result, err := h.imageClient().ListImages(r.Context(), organizationID, regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	h.setCacheable(w)
+	h.options.setCacheable(w)
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
-func (h *Handler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
+func (h *ImageHandler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
 	if err := rbac.AllowOrganizationScope(r.Context(), "region:images", identityapi.Create, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -64,7 +85,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w ht
 		return
 	}
 
-	result, err := image.NewClient(h.client, h.namespace).CreateImage(r.Context(), organizationID, regionID, &request)
+	result, err := h.imageClient().CreateImage(r.Context(), organizationID, regionID, &request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -73,13 +94,13 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w ht
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
-func (h *Handler) DeleteApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter, imageID openapi.ImageIDParameter) {
+func (h *ImageHandler) DeleteApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter, imageID openapi.ImageIDParameter) {
 	if err := rbac.AllowOrganizationScope(r.Context(), "region:images", identityapi.Delete, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
 
-	if err := image.NewClient(h.client, h.namespace).DeleteImage(r.Context(), organizationID, regionID, imageID); err != nil {
+	if err := h.imageClient().DeleteImage(r.Context(), organizationID, regionID, imageID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -87,7 +108,7 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDRegionsRegionIDImagesIma
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (h *Handler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDData(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter, imageID openapi.ImageIDParameter) {
+func (h *ImageHandler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDData(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter, imageID openapi.ImageIDParameter) {
 	if err := rbac.AllowOrganizationScope(r.Context(), "region:images", identityapi.Create, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -135,7 +156,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImage
 
 	defer filedata.Close()
 
-	result, err := image.NewClient(h.client, h.namespace).UploadImage(r.Context(), organizationID, regionID, imageID, contentType, filedata)
+	result, err := h.imageClient().UploadImage(r.Context(), organizationID, regionID, imageID, contentType, filedata)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return

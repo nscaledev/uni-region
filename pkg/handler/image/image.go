@@ -38,28 +38,36 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+type GetProviderFunc func(context.Context, client.Client, string, string) (Provider, error)
+
 type Client struct {
-	client    client.Client
-	namespace string
+	client      client.Client
+	namespace   string
+	getProvider GetProviderFunc
 }
 
-func NewClient(client client.Client, namespace string) *Client {
+func DefaultGetProvider(ctx context.Context, c client.Client, namespace, regionID string) (Provider, error) {
+	return providers.New(ctx, c, namespace, regionID)
+}
+
+func NewClient(client client.Client, namespace string, getProvider GetProviderFunc) *Client {
 	return &Client{
-		client:    client,
-		namespace: namespace,
+		client:      client,
+		namespace:   namespace,
+		getProvider: getProvider,
 	}
 }
 
 var ErrFailedImageFetch = goerrors.New("image fetch failed")
 var ErrProviderResource = goerrors.New("conflict with resource at provider")
 
-type provider interface {
+type Provider interface {
 	types.ImageRead
 	types.ImageWrite
 }
 
-func (c *Client) provider(ctx context.Context, regionID string) (provider, error) {
-	return providers.New(ctx, c.client, c.namespace, regionID)
+func (c *Client) provider(ctx context.Context, regionID string) (Provider, error) {
+	return c.getProvider(ctx, c.client, c.namespace, regionID)
 }
 
 func (c *Client) ListImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {
@@ -204,7 +212,7 @@ type createImageForUploadSaga struct {
 	sourceFormat   *openapi.ImageDiskFormat
 	sourceURL      *string
 	image          *types.Image
-	provider       provider
+	provider       Provider
 
 	result *types.Image
 }
