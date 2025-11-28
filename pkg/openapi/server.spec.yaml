@@ -2616,6 +2616,9 @@ components:
         multipart/form-data:
           schema:
             $ref: '#/components/schemas/imageUpload'
+          encoding:
+            file:
+              contentType: application/tar+gzip,application/gzip
           example:
             file: (binary file data)
     networkRequest:
