@@ -27,9 +27,9 @@ import (
 func ConvertGpuVendor(in types.GPUVendor) openapi.GpuVendor {
 	switch in {
 	case types.Nvidia:
-		return openapi.NVIDIA
+		return openapi.GpuVendorNVIDIA
 	case types.AMD:
-		return openapi.AMD
+		return openapi.GpuVendorAMD
 	}
 
 	return ""

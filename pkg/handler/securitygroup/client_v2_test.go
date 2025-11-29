@@ -44,7 +44,7 @@ func TestValidation(t *testing.T) {
 		{
 			name: "Allow Any Ingress Protocol From Anywhere",
 			rule: &openapi.SecurityGroupRuleV2{
-				Direction: openapi.Ingress,
+				Direction: openapi.NetworkDirectionIngress,
 				Protocol:  openapi.NetworkProtocolAny,
 			},
 			expected: &regionv1.SecurityGroupRule{
@@ -55,7 +55,7 @@ func TestValidation(t *testing.T) {
 		{
 			name: "Allow Any Ingress Protocol From a Prefix",
 			rule: &openapi.SecurityGroupRuleV2{
-				Direction: openapi.Ingress,
+				Direction: openapi.NetworkDirectionIngress,
 				Protocol:  openapi.NetworkProtocolAny,
 				Prefix:    &prefix,
 			},
@@ -73,7 +73,7 @@ func TestValidation(t *testing.T) {
 		{
 			name: "Reject Any Ingress Protocol From Anywhere With a Port",
 			rule: &openapi.SecurityGroupRuleV2{
-				Direction: openapi.Ingress,
+				Direction: openapi.NetworkDirectionIngress,
 				Protocol:  openapi.NetworkProtocolAny,
 				Port:      &portStart,
 			},
@@ -82,7 +82,7 @@ func TestValidation(t *testing.T) {
 		{
 			name: "Allow Layer 4 Ingress Protocol From Anywhere With a Port",
 			rule: &openapi.SecurityGroupRuleV2{
-				Direction: openapi.Ingress,
+				Direction: openapi.NetworkDirectionIngress,
 				Protocol:  openapi.NetworkProtocolTcp,
 				Port:      &portStart,
 			},
@@ -97,7 +97,7 @@ func TestValidation(t *testing.T) {
 		{
 			name: "Allow Layer 4 Ingress Protocol From Anywhere With a Port Range",
 			rule: &openapi.SecurityGroupRuleV2{
-				Direction: openapi.Ingress,
+				Direction: openapi.NetworkDirectionIngress,
 				Protocol:  openapi.NetworkProtocolTcp,
 				Port:      &portStart,
 				PortMax:   &portEnd,
@@ -116,7 +116,7 @@ func TestValidation(t *testing.T) {
 		{
 			name: "Regect Layer 4 Ingress Protocol From Anywhere With an Invalid Port Range",
 			rule: &openapi.SecurityGroupRuleV2{
-				Direction: openapi.Ingress,
+				Direction: openapi.NetworkDirectionIngress,
 				Protocol:  openapi.NetworkProtocolTcp,
 				Port:      &portEnd,
 				PortMax:   &portStart,
