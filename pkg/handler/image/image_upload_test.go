@@ -29,13 +29,17 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/unikorn-cloud/core/pkg/server/saga"
+	"github.com/unikorn-cloud/region/pkg/handler/image/mock"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"k8s.io/utils/ptr"
 )
 
-//go:generate mockgen -source=image.go -destination=mock/interfaces.go -package=mock
+const (
+	testOrganizationID = "test-org-id"
+	testRegionID       = "test-region-id"
+)
 
 func newTestUploadSaga(provider Provider, sourceURL string) *createImageForUploadSaga {
 	diskFormat := openapi.ImageDiskFormatRaw
@@ -55,13 +59,13 @@ func newTestUploadSaga(provider Provider, sourceURL string) *createImageForUploa
 func TestUploadFromURL_Success(t *testing.T) {
 	t.Parallel()
 
-	providerImage := newTestProviderImage(types.ImageStatusReady)
+	providerImage := mock.NewTestProviderImage(types.ImageStatusReady)
 
 	rawFileContent := make([]byte, 512)
 	rawFileContent[510], rawFileContent[511] = 0x55, 0xAA
 
 	// Create a valid tar.gz containing a raw disk image
-	tarGzData := tarballedReader(files{"disk.raw": rawFileContent})(t)
+	tarGzData := mock.TarballedReader(mock.Files{"disk.raw": rawFileContent})(t)
 	tarGzBytes, err := io.ReadAll(tarGzData)
 	require.NoError(t, err)
 
@@ -75,7 +79,7 @@ func TestUploadFromURL_Success(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	mockProvider := newTestMockProvider(t)
+	mockProvider := mock.NewTestMockProvider(t)
 
 	// Expect CreateImageForUpload to be called during saga execution
 	mockProvider.EXPECT().
@@ -84,7 +88,7 @@ func TestUploadFromURL_Success(t *testing.T) {
 
 	// Expect provider calls from the async goroutine
 	mockProvider.EXPECT().
-		UploadImageData(gomock.Any(), testImageID, expectedReaderBytes(rawFileContent)).
+		UploadImageData(gomock.Any(), providerImage.ID, expectedReaderBytes(rawFileContent)).
 		DoAndReturn(func(ctx context.Context, imageID string, reader io.Reader) error {
 			defer close(uploadComplete)
 			return nil
@@ -103,7 +107,7 @@ func TestUploadFromURL_Success(t *testing.T) {
 	result, err := s.Result()
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, testImageID, result.ID)
+	require.Equal(t, providerImage.ID, result.ID)
 
 	// Wait for the async upload to complete
 	select {
@@ -151,14 +155,14 @@ func TestUploadFromURL_FetchFailures(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			providerImage := newTestProviderImage(types.ImageStatusPending)
+			providerImage := mock.NewTestProviderImage(types.ImageStatusPending)
 
 			// Channel to signal when the upload attempt completes
 			uploadAttempted := make(chan struct{})
 
 			server := createServer(uploadAttempted)
 
-			mockProvider := newTestMockProvider(t)
+			mockProvider := mock.NewTestMockProvider(t)
 
 			// Expect CreateImageForUpload to be called during saga execution
 			mockProvider.EXPECT().
@@ -181,7 +185,7 @@ func TestUploadFromURL_FetchFailures(t *testing.T) {
 			result, err := s.Result()
 			require.NoError(t, err)
 			require.NotNil(t, result)
-			require.Equal(t, testImageID, result.ID)
+			require.Equal(t, providerImage.ID, result.ID)
 
 			// Wait for the HTTP request to be attempted
 			select {
