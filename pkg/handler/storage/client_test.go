@@ -28,6 +28,7 @@ import (
 )
 
 func TestConvertAttachmentList(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input *openapi.StorageAttachmentV2Spec
@@ -62,10 +63,11 @@ func TestConvertAttachmentList(t *testing.T) {
 }
 
 func TestConvertV2List(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input *regionv1.FileStorageList
-		want  openapi.StoragesV2List
+		want  openapi.StorageV2List
 	}{
 		{
 			name: "test list",
@@ -88,7 +90,7 @@ func TestConvertV2List(t *testing.T) {
 					},
 				},
 			},
-			want: openapi.StoragesV2List{
+			want: openapi.StorageV2List{
 				openapi.StorageV2Read{
 					Metadata: corev1.ProjectScopedResourceReadMetadata{
 						CreatedBy:          nil,
@@ -140,6 +142,7 @@ func TestConvertV2List(t *testing.T) {
 }
 
 func TestConvertV2(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input *regionv1.FileStorage

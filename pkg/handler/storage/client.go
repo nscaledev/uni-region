@@ -33,7 +33,6 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -77,10 +76,8 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 	}
 }
 
-func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageParams) (openapi.StoragesV2List, error) {
-	selector := labels.SelectorFromSet(map[string]string{
-		constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
-	})
+func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageParams) (openapi.StorageV2List, error) {
+	selector := labels.Everything()
 
 	var err error
 
@@ -88,6 +85,11 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageP
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to add identity label selector").WithError(err)
 	}
+
+	//schristoff: pullinmaintofix
+	// if rbac.HasNoMatches(err) {
+	// 	return nil, nil
+	// }
 
 	selector, err = util.AddRegionIDQuery(selector, params.RegionID)
 	if err != nil {
@@ -122,8 +124,8 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageP
 	return convertV2List(result), nil
 }
 
-func convertV2List(in *regionv1.FileStorageList) openapi.StoragesV2List {
-	out := make(openapi.StoragesV2List, len(in.Items))
+func convertV2List(in *regionv1.FileStorageList) openapi.StorageV2List {
+	out := make(openapi.StorageV2List, len(in.Items))
 
 	for i := range in.Items {
 		out[i] = *convertV2(&in.Items[i])
@@ -145,21 +147,6 @@ func (c *Client) GetRaw(ctx context.Context, storageID string) (*regionv1.FileSt
 
 	if err := rbac.AllowProjectScope(ctx, "region:filestorage:v2", identityapi.Read, result.Labels[coreconstants.OrganizationLabel], result.Labels[coreconstants.ProjectLabel]); err != nil {
 		return nil, err
-	}
-
-	// Only allow access to resources created by this API (temporarily).
-	v, ok := result.Labels[constants.ResourceAPIVersionLabel]
-	if !ok {
-		return nil, errors.HTTPNotFound()
-	}
-
-	version, err := constants.UnmarshalAPIVersion(v)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to parse API version")
-	}
-
-	if version != 2 {
-		return nil, errors.HTTPNotFound()
 	}
 
 	return result, nil
@@ -185,7 +172,6 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 			WithOrganization(organizationID).
 			WithProject(projectID).
 			WithLabel(constants.RegionLabel, regionID).
-			WithLabel(constants.ResourceAPIVersionLabel, constants.MarshalAPIVersion(2)).
 			Get(),
 		Spec: regionv1.FileStorageSpec{
 			Tags:        conversion.GenerateTagList(request.Metadata.Tags),
@@ -315,7 +301,7 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 }
 
 func (c *Client) Delete(ctx context.Context, storageID string) error {
-	resource, err := c.GetV2Raw(ctx, storageID)
+	resource, err := c.GetRaw(ctx, storageID)
 	if err != nil {
 		return err
 	}
@@ -331,44 +317,10 @@ func (c *Client) Delete(ctx context.Context, storageID string) error {
 		return nil
 	}
 
-	// The V2 API doesn't expose service principals, but they are mapped 1:1 to networks, so as the
-	// real root of the tree we actually delete that and allow cascading deletion to do the
-	// rest.
-	return identity.New(c.client, c.namespace).Delete(ctx, organizationID, projectID, resource.Labels[constants.IdentityLabel])
-}
-
-// todo(schristoff): we should get status from Gets
-func (c *Client) GetV2Raw(ctx context.Context, storageID string) (*regionv1.FileStorage, error) {
-	result := &regionv1.FileStorage{}
-
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: storageID}, result); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, errors.OAuth2ServerError("unable to lookup file storage").WithError(err)
+	if err := c.client.Delete(ctx, resource); err != nil {
+		return errors.OAuth2ServerError("delete failed").WithError(err)
 	}
-
-	if err := rbac.AllowProjectScope(ctx, "region:filestorage:v2", identityapi.Read, result.Labels[coreconstants.OrganizationLabel], result.Labels[coreconstants.ProjectLabel]); err != nil {
-		return nil, err
-	}
-
-	// Only allow access to resources created by this API (temporarily).
-	v, ok := result.Labels[constants.ResourceAPIVersionLabel]
-	if !ok {
-		return nil, errors.HTTPNotFound()
-	}
-
-	version, err := constants.UnmarshalAPIVersion(v)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to parse API version")
-	}
-
-	if version != 2 {
-		return nil, errors.HTTPNotFound()
-	}
-
-	return result, nil
+	return nil
 }
 
 func (s *createSaga) createFileStorage(ctx context.Context) error {

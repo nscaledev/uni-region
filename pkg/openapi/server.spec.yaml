@@ -2306,7 +2306,6 @@ components:
       type: object
       required:
       - networkIds
-      - id
       properties:
         networkIds:
           type: array
@@ -2420,8 +2419,8 @@ components:
           $ref: '#/components/schemas/storageV2Spec'
         status:
           $ref: '#/components/schemas/storageV2Status'
-    storagesV2List:
-      description: A list of storages
+    storageV2List:
+      description: A list of storage
       type: array
       items:
         $ref: '#/components/schemas/storageV2Read'
@@ -3238,7 +3237,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/storagesV2List'
+            $ref: '#/components/schemas/storageV2List'
           example:
           - metadata:
               id: a64f9269-36e0-4312-b8d1-52d93d569b7b
