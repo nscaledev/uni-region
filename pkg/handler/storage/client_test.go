@@ -138,3 +138,68 @@ func TestConvertV2List(t *testing.T) {
 	}
 
 }
+
+func TestConvertV2(t *testing.T) {
+	tests := []struct {
+		name  string
+		input *regionv1.FileStorage
+		want  *openapi.StorageV2Read
+	}{
+		{
+			name: "basic conversion",
+			input: &regionv1.FileStorage{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "FileStorage",
+					APIVersion: "v1alpha1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-filestorage",
+					Namespace: "default",
+					Labels: map[string]string{
+						"app": "mock",
+					},
+				},
+				Spec:   regionv1.FileStorageSpec{},
+				Status: regionv1.FileStorageStatus{},
+			},
+			want: &openapi.StorageV2Read{
+				Metadata: corev1.ProjectScopedResourceReadMetadata{
+					CreatedBy:          nil,
+					CreationTime:       time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC),
+					DeletionTime:       nil,
+					Description:        nil,
+					HealthStatus:       "unknown",
+					Id:                 "test-filestorage",
+					ModifiedBy:         nil,
+					ModifiedTime:       nil,
+					Name:               "",
+					OrganizationId:     "",
+					ProjectId:          "",
+					ProvisioningStatus: "unknown",
+				},
+				Spec: openapi.StorageV2Spec{
+					Attachments: &openapi.StorageAttachmentV2Spec{},
+					Size:        "",
+					StorageType: openapi.StorageTypeV2Spec{},
+				},
+				Status: openapi.StorageV2Status{
+					Attachments:    nil,
+					RegionId:       "",
+					StorageClassId: "",
+					Usage: openapi.StorageUsageV2Spec{
+						Capacity: "",
+						Free:     nil,
+						Used:     nil,
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := convertV2(tt.input)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
