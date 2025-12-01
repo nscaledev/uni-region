@@ -223,7 +223,6 @@ type createSaga struct {
 	client  *Client
 	request *openapi.StorageV2Create
 
-	identity    *regionv1.Identity
 	filestorage *regionv1.FileStorage
 }
 
@@ -262,7 +261,6 @@ func (s *createSaga) deleteAllocation(ctx context.Context) error {
 func (s *createSaga) Actions() []saga.Action {
 	return []saga.Action{
 		saga.NewAction("validate request", s.validateRequest, nil),
-		// saga.NewAction("create quota allocation", s.createAllocation, s.deleteAllocation),
 		saga.NewAction("create filestorage", s.createFileStorage, nil),
 	}
 }
@@ -427,6 +425,3 @@ func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.Storage
 
 	return out, nil
 }
-
-// convert for CRD to OpenAPI
-// generate for OpenAPI to CRD
