@@ -25,14 +25,14 @@ OpenStack is an open source cloud provider that allows on premise provisioning o
 It allows a vertically integrated stack from server to application, so you have full control over the platform.
 This obviously entails a support crew to keep it up and running!
 
-For further info see the [OpenStack provider documentation](pkg/providers/openstack/README.md).
+For further info see the [OpenStack provider documentation](pkg/providers/internal/openstack/README.md).
 
 ### Kubernetes
 
 Kubernetes regions allow Kubernetes clusters from any cloud provider to be consumed and increase capacity without the hassle of physical infrastructure.
 Kubernetes regions are exposed to end users with virtual Kubernetes clusters.
 
-For further info see the [Kubernetes provider documentation](pkg/providers/kubernetes/README.md).
+For further info see the [Kubernetes provider documentation](pkg/providers/internal/kubernetes/README.md).
 
 ## Installation
 

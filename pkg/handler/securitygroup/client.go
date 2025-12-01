@@ -36,6 +36,7 @@ import (
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -60,10 +61,16 @@ func New(client client.Client, namespace string) *Client {
 // convertProtocol from a Kubernetes representation into an API one.
 func convertProtocol(in unikornv1.SecurityGroupRuleProtocol) openapi.NetworkProtocol {
 	switch in {
+	case unikornv1.Any:
+		return openapi.NetworkProtocolAny
+	case unikornv1.ICMP:
+		return openapi.NetworkProtocolIcmp
 	case unikornv1.TCP:
-		return openapi.Tcp
+		return openapi.NetworkProtocolTcp
 	case unikornv1.UDP:
-		return openapi.Udp
+		return openapi.NetworkProtocolUdp
+	case unikornv1.VRRP:
+		return openapi.NetworkProtocolVrrp
 	}
 
 	return ""
@@ -82,8 +89,12 @@ func convertDirection(in unikornv1.SecurityGroupRuleDirection) openapi.NetworkDi
 }
 
 // convertPort from a Kubernetes representation into an API one.
-func convertPort(in unikornv1.SecurityGroupRulePort) openapi.SecurityGroupRulePort {
-	out := openapi.SecurityGroupRulePort{}
+func convertPort(in *unikornv1.SecurityGroupRulePort) *openapi.SecurityGroupRulePort {
+	if in == nil {
+		return nil
+	}
+
+	out := &openapi.SecurityGroupRulePort{}
 
 	if in.Number != nil {
 		out.Number = in.Number
@@ -104,8 +115,11 @@ func convertRule(in *unikornv1.SecurityGroupRule) *openapi.SecurityGroupRule {
 	out := &openapi.SecurityGroupRule{
 		Direction: convertDirection(in.Direction),
 		Protocol:  convertProtocol(in.Protocol),
-		Cidr:      in.CIDR.String(),
 		Port:      convertPort(in.Port),
+	}
+
+	if in.CIDR != nil {
+		out.Cidr = ptr.To(in.CIDR.String())
 	}
 
 	return out
@@ -150,10 +164,16 @@ func generateProtocol(in openapi.NetworkProtocol) unikornv1.SecurityGroupRulePro
 	var out unikornv1.SecurityGroupRuleProtocol
 
 	switch in {
-	case openapi.Tcp:
+	case openapi.NetworkProtocolAny:
+		out = unikornv1.Any
+	case openapi.NetworkProtocolIcmp:
+		out = unikornv1.ICMP
+	case openapi.NetworkProtocolTcp:
 		out = unikornv1.TCP
-	case openapi.Udp:
+	case openapi.NetworkProtocolUdp:
 		out = unikornv1.UDP
+	case openapi.NetworkProtocolVrrp:
+		out = unikornv1.VRRP
 	}
 
 	return out
@@ -174,8 +194,12 @@ func generateDirection(in openapi.NetworkDirection) unikornv1.SecurityGroupRuleD
 }
 
 // generatePort from an API representation into a Kubernetes one.
-func generatePort(in openapi.SecurityGroupRulePort) unikornv1.SecurityGroupRulePort {
-	out := unikornv1.SecurityGroupRulePort{}
+func generatePort(in *openapi.SecurityGroupRulePort) *unikornv1.SecurityGroupRulePort {
+	if in == nil {
+		return nil
+	}
+
+	out := &unikornv1.SecurityGroupRulePort{}
 
 	if in.Number != nil {
 		out.Number = in.Number
@@ -191,20 +215,36 @@ func generatePort(in openapi.SecurityGroupRulePort) unikornv1.SecurityGroupRuleP
 	return out
 }
 
-// generateRule a new resource from a request.
-func generateRule(in *openapi.SecurityGroupRule) (*unikornv1.SecurityGroupRule, error) {
-	_, prefix, err := net.ParseCIDR(in.Cidr)
+func generatePrefix(in *string) (*unikorncorev1.IPv4Prefix, error) {
+	if in == nil {
+		//nolint:nilnil
+		return nil, nil
+	}
+
+	_, prefix, err := net.ParseCIDR(*in)
 	if err != nil {
 		return nil, errors.OAuth2InvalidRequest("unable to parse prefix").WithError(err)
+	}
+
+	out := &unikorncorev1.IPv4Prefix{
+		IPNet: *prefix,
+	}
+
+	return out, nil
+}
+
+// generateRule a new resource from a request.
+func generateRule(in *openapi.SecurityGroupRule) (*unikornv1.SecurityGroupRule, error) {
+	prefix, err := generatePrefix(in.Cidr)
+	if err != nil {
+		return nil, err
 	}
 
 	out := &unikornv1.SecurityGroupRule{
 		Direction: generateDirection(in.Direction),
 		Protocol:  generateProtocol(in.Protocol),
 		Port:      generatePort(in.Port),
-		CIDR: &unikorncorev1.IPv4Prefix{
-			IPNet: *prefix,
-		},
+		CIDR:      prefix,
 	}
 
 	return out, nil

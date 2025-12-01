@@ -26,7 +26,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/handler/region"
+	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 
 	"k8s.io/apimachinery/pkg/labels"
 
@@ -36,7 +36,6 @@ import (
 // Provisioner encapsulates control plane provisioning.
 type Provisioner struct {
 	provisioners.Metadata
-
 	// server is the server we're provisioning.
 	server *unikornv1.Server
 }
@@ -90,8 +89,6 @@ func (p *Provisioner) identityListOptions() *client.ListOptions {
 }
 
 // Provision implements the Provision interface.
-//
-//nolint:cyclop
 func (p *Provisioner) Provision(ctx context.Context) error {
 	cli, err := coreclient.FromContext(ctx)
 	if err != nil {
@@ -112,13 +109,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return fmt.Errorf("%w: failed to add security group references", err)
 	}
 
-	provider, err := region.NewClient(cli, p.server.Namespace).Provider(ctx, p.server.Labels[constants.RegionLabel])
-	if err != nil {
-		return err
-	}
-
-	// Inhibit provisioning until consumed resources are ready.
-	identity, err := p.getIdentity(ctx, cli)
+	provider, identity, err := base.ProviderAndIdentity(ctx, p.server)
 	if err != nil {
 		return err
 	}
@@ -151,12 +142,7 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
-	provider, err := region.NewClient(cli, p.server.Namespace).Provider(ctx, p.server.Labels[constants.RegionLabel])
-	if err != nil {
-		return err
-	}
-
-	identity, err := p.getIdentity(ctx, cli)
+	provider, identity, err := base.ProviderAndIdentity(ctx, p.server)
 	if err != nil {
 		return err
 	}
@@ -180,14 +166,4 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func (p *Provisioner) getIdentity(ctx context.Context, cli client.Client) (*unikornv1.Identity, error) {
-	identity := &unikornv1.Identity{}
-
-	if err := cli.Get(ctx, client.ObjectKey{Namespace: p.server.Namespace, Name: p.server.Labels[constants.IdentityLabel]}, identity); err != nil {
-		return nil, err
-	}
-
-	return identity, nil
 }

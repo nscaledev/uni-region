@@ -616,7 +616,7 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 	}
 
 	if !isPublicOrOrganizationOwnedImage(resource, organizationID) {
-		return nil, fmt.Errorf("%w: image %s", ErrResourceNotFound, imageID)
+		return nil, fmt.Errorf("%w: image %s", types.ErrResourceNotFound, imageID)
 	}
 
 	return p.convertImage(resource)
@@ -721,7 +721,7 @@ func roleNameToID(roles []roles.Role, name string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("%w: role %s", ErrResourceNotFound, name)
+	return "", fmt.Errorf("%w: role %s", types.ErrResourceNotFound, name)
 }
 
 // getRequiredProjectManagerRoles returns the roles required for a manager to create, manage
@@ -1416,7 +1416,12 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 
 // securityGroupRulePortRange expands a security group port into a start-end range as
 // required by Neutron.
+// TODO: surely we can do this checking in validating admission policies...
 func securityGroupRulePortRange(port *unikornv1.SecurityGroupRulePort) (int, int, error) {
+	if port == nil {
+		return 0, 0, nil
+	}
+
 	if port.Number != nil {
 		return *port.Number, *port.Number, nil
 	}
@@ -1428,20 +1433,70 @@ func securityGroupRulePortRange(port *unikornv1.SecurityGroupRulePort) (int, int
 	return 0, 0, fmt.Errorf("%w: at least one of number or range must be defined for security rule", ErrKeyUndefined)
 }
 
+// generateDirection takes our API and converts it to OpenStack's.
+func generateDirection(in unikornv1.SecurityGroupRuleDirection) rules.RuleDirection {
+	return rules.RuleDirection(in)
+}
+
+// convertDirection takes OpenStack's API and converts it into ours.
+// NOTE: the gophercloud results API isn't type safe for some reason.
+func convertDirection(in string) unikornv1.SecurityGroupRuleDirection {
+	return unikornv1.SecurityGroupRuleDirection(in)
+}
+
+// generateProtocol takes our API and converts it to OpenStack's.
+func generateProtocol(in unikornv1.SecurityGroupRuleProtocol) rules.RuleProtocol {
+	if in == unikornv1.Any {
+		return rules.ProtocolAny
+	}
+
+	return rules.RuleProtocol(in)
+}
+
+// convertProtocol takes OpenStack's API and converts it into ours.
+// NOTE: the gophercloud results API isn't type safe for some reason.
+func convertProtocol(in string) unikornv1.SecurityGroupRuleProtocol {
+	if in == string(rules.ProtocolAny) {
+		return unikornv1.Any
+	}
+
+	return unikornv1.SecurityGroupRuleProtocol(in)
+}
+
 // securityGroupRuleID generates a deterministic, but unique, ID for a security group rule.
-func securityGroupRuleID(direction, protocol string, startPort, endPort int, prefix string) string {
+func securityGroupRuleID(direction unikornv1.SecurityGroupRuleDirection, protocol unikornv1.SecurityGroupRuleProtocol, startPort, endPort int, prefix string) string {
+	// Prefix may be empty, but for debug purposes give it a name so it's not confusing
+	// when debugging this.
+	if prefix == "" {
+		prefix = "any"
+	}
+
 	return fmt.Sprintf("%s,%s,%d-%d,%s", direction, protocol, startPort, endPort, prefix)
 }
 
 // securityGroupRuleIDFromSecurityGroupRule generates a deterministic, but unique, ID for a security group rule.
 func securityGroupRuleIDFromSecurityGroupRule(rule *unikornv1.SecurityGroupRule) (string, error) {
 	// The data is a tuple of direction, protocol, port and prefix.
-	start, end, err := securityGroupRulePortRange(&rule.Port)
+	start, end, err := securityGroupRulePortRange(rule.Port)
 	if err != nil {
 		return "", err
 	}
 
-	return securityGroupRuleID(string(rule.Direction), string(rule.Protocol), start, end, rule.CIDR.String()), nil
+	var prefix string
+
+	if rule.CIDR != nil {
+		prefix = rule.CIDR.String()
+	}
+
+	return securityGroupRuleID(rule.Direction, rule.Protocol, start, end, prefix), nil
+}
+
+// securityGroupRuleIDFromOpenstackSecurityGroupRule generates a deterministic, but unique, ID for a security group rule.
+func securityGroupRuleIDFromOpenstackSecurityGroupRule(rule *rules.SecGroupRule) string {
+	direction := convertDirection(rule.Direction)
+	protocol := convertProtocol(rule.Protocol)
+
+	return securityGroupRuleID(direction, protocol, rule.PortRangeMin, rule.PortRangeMax, rule.RemoteIPPrefix)
 }
 
 func listOpenstackSecurityGroupRules(ctx context.Context, client SecurityGroupInterface, securityGroupID string) (map[string]*rules.SecGroupRule, error) {
@@ -1455,9 +1510,7 @@ func listOpenstackSecurityGroupRules(ctx context.Context, client SecurityGroupIn
 	for i := range resources {
 		rule := &resources[i]
 
-		id := securityGroupRuleID(rule.Direction, rule.Protocol, rule.PortRangeMin, rule.PortRangeMax, rule.RemoteIPPrefix)
-
-		out[id] = rule
+		out[securityGroupRuleIDFromOpenstackSecurityGroupRule(rule)] = rule
 	}
 
 	return out, nil
@@ -1467,7 +1520,7 @@ func listOpenstackSecurityGroupRules(ctx context.Context, client SecurityGroupIn
 func generateSecurityGroupRules(securityGroup *unikornv1.SecurityGroup) (map[string]*unikornv1.SecurityGroupRule, error) {
 	out := map[string]*unikornv1.SecurityGroupRule{
 		// Secret hidden rule that comes by default, don't delete it by accident!
-		securityGroupRuleID("egress", "", 0, 0, ""): nil,
+		securityGroupRuleID(unikornv1.Egress, unikornv1.Any, 0, 0, ""): nil,
 	}
 
 	for i := range securityGroup.Spec.Rules {
@@ -1487,6 +1540,8 @@ func generateSecurityGroupRules(securityGroup *unikornv1.SecurityGroup) (map[str
 // reconcileSecurityGroupRules generates two sets of IDs from existing and requested security group
 // rules, does a boolean difference, and uses that to either create or delete rules from the security
 // group.
+//
+//nolint:cyclop
 func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup, openstackSecurityGroup *groups.SecGroup) error {
 	log := log.FromContext(ctx)
 
@@ -1524,15 +1579,21 @@ func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, client Secur
 
 		rule := requested[id]
 
-		direction := rules.RuleDirection(rule.Direction)
-		protocol := rules.RuleProtocol(rule.Protocol)
+		direction := generateDirection(rule.Direction)
+		protocol := generateProtocol(rule.Protocol)
 
-		portStart, portEnd, err := securityGroupRulePortRange(&rule.Port)
+		portStart, portEnd, err := securityGroupRulePortRange(rule.Port)
 		if err != nil {
 			return err
 		}
 
-		if _, err := client.CreateSecurityGroupRule(ctx, openstackSecurityGroup.ID, direction, protocol, portStart, portEnd, rule.CIDR.String()); err != nil {
+		var prefix string
+
+		if rule.CIDR != nil {
+			prefix = rule.CIDR.String()
+		}
+
+		if _, err := client.CreateSecurityGroupRule(ctx, openstackSecurityGroup.ID, direction, protocol, portStart, portEnd, prefix); err != nil {
 			return err
 		}
 	}
@@ -1607,7 +1668,7 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 	}
 
 	openstackSecurityGroup, err := networking.GetSecurityGroup(ctx, securityGroup)
-	if err != nil && errors.Is(err, ErrNotFound) {
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}
 
@@ -2031,7 +2092,7 @@ func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1
 	result, err := compute.CreateRemoteConsole(ctx, openstackServer.ID)
 	if err != nil {
 		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return "", fmt.Errorf("%w: server is being deprovisioned", ErrResourceDependency)
+			return "", fmt.Errorf("%w: server is being deprovisioned", types.ErrResourceDependency)
 		}
 
 		return "", err
@@ -2054,7 +2115,7 @@ func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Ide
 	result, err := compute.ShowConsoleOutput(ctx, openstackServer.ID, length)
 	if err != nil {
 		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return "", fmt.Errorf("%w: server is being deprovisioned", ErrResourceDependency)
+			return "", fmt.Errorf("%w: server is being deprovisioned", types.ErrResourceDependency)
 		}
 
 		return "", err

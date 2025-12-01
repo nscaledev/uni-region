@@ -1,6 +1,5 @@
 /*
-Copyright 2022-2024 EscherCloud.
-Copyright 2024-2025 the Unikorn Authors.
+Copyright 2025 the Unikorn Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,18 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package openstack
+package securitygroup
 
-import (
-	"errors"
-)
+//nolint:gochecknoglobals
+var GenerateRule = generateRuleV2
 
-var (
-	// ErrResourceNotFound is returned when a named resource cannot
-	// be looked up (we have to do it ourselves) and it cannot be found.
-	ErrResourceNotFound = errors.New("requested resource not found")
-
-	// ErrResourceDependency is returned when a resource is in unexpected
-	// state or condition.
-	ErrResourceDependency = errors.New("resource dependency error")
-)
+//nolint:gochecknoglobals
+var ConvertRuleListV2 = convertRuleListV2

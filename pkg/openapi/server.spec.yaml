@@ -6,7 +6,7 @@ info:
     by end users.  Region related functionality is typically exposed by higher level services
     e.g. Compute and Kubernetes, that provide subsets of resources that are compatible with
     that service.
-  version: 1.10.0
+  version: 1.11.0
 paths:
   /api/v1/organizations/{organizationID}/regions:
     description: |-
@@ -1827,7 +1827,7 @@ components:
         range:
           $ref: '#/components/schemas/securityGroupRulePortRange'
     securityGroupRulePortRange:
-      description: The port range to allow traffic.
+      description: The port range to allow traffic, valid for layer 4 protocols only e.g. TCP, UDP.
       type: object
       required:
       - start
@@ -1850,19 +1850,24 @@ components:
       - ingress
       - egress
     networkProtocol:
-      description: The protocol to allow.
+      description: The layer 3+ protocol to allow.
       type: string
       enum:
+      - any
+      - icmp
       - tcp
       - udp
+      - vrrp
     securityGroupRule:
-      description: A security group rule's specification.
+      description: |-
+        A security group rule's specification, this operates at OSI layer 3 and above.
+        If omitted the CIDR prefix defaults to 0.0.0.0/0 e.g. allow from anywhere.
+        The port can only be specified for layer 4 protocols e.g. TCP or UDP, and if
+        omitted this default to all ports.
       type: object
       required:
       - direction
       - protocol
-      - port
-      - cidr
       properties:
         direction:
           $ref: '#/components/schemas/networkDirection'
@@ -1877,6 +1882,36 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/securityGroupRule'
+    securityGroupRuleV2:
+      description: |-
+        A security group rule's specification, this operates at OSI layer 3 and above.
+        If omitted the prefix defaults to 0.0.0.0/0 e.g. allow from anywhere.
+      type: object
+      required:
+      - direction
+      - protocol
+      properties:
+        direction:
+          $ref: '#/components/schemas/networkDirection'
+        protocol:
+          $ref: '#/components/schemas/networkProtocol'
+        port:
+          description: Port number for layer 4 protocols, if not specified matches all ports.
+          type: integer
+          minimum: 1
+          maximum: 65535
+        portMax:
+          description: maxumum port number for layer 4 protocols to include a range.
+          type: integer
+          minimum: 1
+          maximum: 65535
+        prefix:
+          $ref: '#/components/schemas/ipv4Address'
+    securityGroupRuleV2List:
+      description: A set of security group rules to apply.
+      type: array
+      items:
+        $ref: '#/components/schemas/securityGroupRuleV2'
     securityGroupSpec:
       description: A security group's specification.
       type: object
@@ -1919,7 +1954,7 @@ components:
       - rules
       properties:
         rules:
-          $ref: '#/components/schemas/securityGroupRuleList'
+          $ref: '#/components/schemas/securityGroupRuleV2List'
     securityGroupV2CreateSpec:
       description: A security group's specification.
       type: object
@@ -2538,8 +2573,7 @@ components:
               rules:
               - direction: ingress
                 protocol: tcp
-                port:
-                  number: 80
+                port: 80
                 cidr: 172.16.0.0/12
     securityGroupV2UpdateRequest:
       description: A request for a security group.
@@ -2558,8 +2592,7 @@ components:
               rules:
               - direction: ingress
                 protocol: tcp
-                port:
-                  number: 80
+                port: 80
                 cidr: 172.16.0.0/12
     serverRequest:
       description: A request for a server.
@@ -2988,8 +3021,7 @@ components:
               rules:
               - direction: ingress
                 protocol: tcp
-                port:
-                  number: 80
+                port: 80
                 cidr: 172.16.0.0/12
             status:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
@@ -3014,8 +3046,7 @@ components:
               rules:
               - direction: ingress
                 protocol: tcp
-                port:
-                  number: 80
+                port: 80
                 cidr: 172.16.0.0/12
             status:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a

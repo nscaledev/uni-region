@@ -554,15 +554,21 @@ type SecurityGroupStatus struct {
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=tcp;udp
+// +kubebuilder:validation:Enum=any;icmp;tcp;udp;vrrp
 type SecurityGroupRuleProtocol string
+
+const (
+	Any  SecurityGroupRuleProtocol = "any"
+	ICMP SecurityGroupRuleProtocol = "icmp"
+	TCP  SecurityGroupRuleProtocol = "tcp"
+	UDP  SecurityGroupRuleProtocol = "udp"
+	VRRP SecurityGroupRuleProtocol = "vrrp"
+)
 
 // +kubebuilder:validation:Enum=ingress;egress
 type SecurityGroupRuleDirection string
 
 const (
-	TCP     SecurityGroupRuleProtocol  = "tcp"
-	UDP     SecurityGroupRuleProtocol  = "udp"
 	Ingress SecurityGroupRuleDirection = "ingress"
 	Egress  SecurityGroupRuleDirection = "egress"
 )
@@ -590,9 +596,9 @@ type SecurityGroupRule struct {
 	// Protocol is the protocol of the rule.
 	Protocol SecurityGroupRuleProtocol `json:"protocol"`
 	// Port is the port or range of ports.
-	Port SecurityGroupRulePort `json:"port"`
+	Port *SecurityGroupRulePort `json:"port,omitempty"`
 	// CIDR is the CIDR block to allow traffic from.
-	CIDR *unikornv1core.IPv4Prefix `json:"cidr"`
+	CIDR *unikornv1core.IPv4Prefix `json:"cidr,omitempty"`
 }
 
 // OpenstackSecurityGroupList is a typed list of security groups.
@@ -775,7 +781,7 @@ type FileStorage struct {
 
 // FileStorageSpec defines the storage request.
 type FileStorageSpec struct {
-	// Name of the FileStorageClass.
+	// StorageClassID is the storage class ID.
 	StorageClassID string `json:"storageClassID"`
 
 	// Size is the total size of the storage class.
@@ -806,7 +812,10 @@ const (
 )
 
 type FileStorageStatus struct {
+	// Current service state of a file storage.
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	// MountPath is the path where the file storage is mounted.
+	MountPath *string `json:"mountPath,omitempty"`
 }
 
 // Attachment has the network identifier for the storage.
@@ -827,11 +836,11 @@ type FileStorageClassList struct {
 	Items           []FileStorageClass `json:"items"`
 }
 
-// FileStorageClass defines the status of storage.
+// FileStorageClass defines the storage protocols, optional QoS guarantees and the service provider.
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:scope=Namespaced,categories=unikorn
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="protocol",type="string",JSONPath=".spec.protocol"
+// +kubebuilder:printcolumn:name="protocols",type="string",JSONPath=".spec.protocols"
 // +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
 type FileStorageClass struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -842,8 +851,37 @@ type FileStorageClass struct {
 
 // FileStorageClassSpec defines the FileStorageClass.
 type FileStorageClassSpec struct {
-	// Protocol defines the protocol of the storage class being used.
-	Protocol Protocol `json:"protocol,omitempty"`
+	// Provisioner is the name of the provisioner to use for the file storage class.
+	Provisioner string `json:"provisioner"`
+	// Protocols specifies the storage protocols (e.g., NFSv3, NFSv4) supported by this class.
+	Protocols []Protocol `json:"protocols,omitempty"`
 }
 
 type FileStorageClassStatus struct{}
+
+// FileStorageProvisionerList is a list of the FileStorageProvisioner type.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type FileStorageProvisionerList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []FileStorageProvisioner `json:"items"`
+}
+
+// FileStorageProvisioner defines the file storage provisioner.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type FileStorageProvisioner struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Status            FileStorageProvisionerStatus `json:"status,omitempty"`
+	Spec              FileStorageProvisionerSpec   `json:"spec"`
+}
+
+type FileStorageProvisionerSpec struct {
+	// ConfigRef is the reference to the config map for the file storage provisioner.
+	ConfigRef *NamespacedObject `json:"configRef,omitempty"`
+}
+
+type FileStorageProvisionerStatus struct{}

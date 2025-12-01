@@ -79,7 +79,7 @@ spec:
                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                 x-kubernetes-int-or-string: true
               storageClassID:
-                description: Name of the FileStorageClass.
+                description: StorageClassID is the storage class ID.
                 type: string
               tags:
                 description: |-
@@ -107,6 +107,7 @@ spec:
           status:
             properties:
               conditions:
+                description: Current service state of a file storage.
                 items:
                   description: |-
                     Condition is a generic condition type for use across all resource types.
@@ -155,6 +156,9 @@ spec:
                   - type
                   type: object
                 type: array
+              mountPath:
+                description: MountPath is the path where the file storage is mounted.
+                type: string
             type: object
         required:
         - spec

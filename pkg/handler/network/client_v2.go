@@ -101,6 +101,10 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2NetworksPara
 
 	selector, err = rbac.AddOrganizationAndProjectIDQuery(ctx, selector, util.OrganizationIDQuery(params.OrganizationID), util.ProjectIDQuery(params.ProjectID))
 	if err != nil {
+		if rbac.HasNoMatches(err) {
+			return nil, nil
+		}
+
 		return nil, errors.OAuth2ServerError("failed to add identity label selector").WithError(err)
 	}
 

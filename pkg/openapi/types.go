@@ -19,9 +19,9 @@ const (
 
 // Defines values for ImageVirtualization.
 const (
-	Any         ImageVirtualization = "any"
-	Baremetal   ImageVirtualization = "baremetal"
-	Virtualized ImageVirtualization = "virtualized"
+	ImageVirtualizationAny         ImageVirtualization = "any"
+	ImageVirtualizationBaremetal   ImageVirtualization = "baremetal"
+	ImageVirtualizationVirtualized ImageVirtualization = "virtualized"
 )
 
 // Defines values for InstanceLifecyclePhase.
@@ -40,8 +40,11 @@ const (
 
 // Defines values for NetworkProtocol.
 const (
-	Tcp NetworkProtocol = "tcp"
-	Udp NetworkProtocol = "udp"
+	NetworkProtocolAny  NetworkProtocol = "any"
+	NetworkProtocolIcmp NetworkProtocol = "icmp"
+	NetworkProtocolTcp  NetworkProtocol = "tcp"
+	NetworkProtocolUdp  NetworkProtocol = "udp"
+	NetworkProtocolVrrp NetworkProtocol = "vrrp"
 )
 
 // Defines values for OsDistro.
@@ -311,7 +314,7 @@ type KubernetesNameParameter = string
 // NetworkDirection The direction of the rule.
 type NetworkDirection string
 
-// NetworkProtocol The protocol to allow.
+// NetworkProtocol The layer 3+ protocol to allow.
 type NetworkProtocol string
 
 // NetworkRead A network.
@@ -542,18 +545,21 @@ type SecurityGroupRead struct {
 	Spec SecurityGroupSpec `json:"spec"`
 }
 
-// SecurityGroupRule A security group rule's specification.
+// SecurityGroupRule A security group rule's specification, this operates at OSI layer 3 and above.
+// If omitted the CIDR prefix defaults to 0.0.0.0/0 e.g. allow from anywhere.
+// The port can only be specified for layer 4 protocols e.g. TCP or UDP, and if
+// omitted this default to all ports.
 type SecurityGroupRule struct {
 	// Cidr An IPv4 address.
-	Cidr Ipv4Address `json:"cidr"`
+	Cidr *Ipv4Address `json:"cidr,omitempty"`
 
 	// Direction The direction of the rule.
 	Direction NetworkDirection `json:"direction"`
 
 	// Port The port definition to allow traffic.
-	Port SecurityGroupRulePort `json:"port"`
+	Port *SecurityGroupRulePort `json:"port,omitempty"`
 
-	// Protocol The protocol to allow.
+	// Protocol The layer 3+ protocol to allow.
 	Protocol NetworkProtocol `json:"protocol"`
 }
 
@@ -565,11 +571,11 @@ type SecurityGroupRulePort struct {
 	// Number The port to allow.
 	Number *int `json:"number,omitempty"`
 
-	// Range The port range to allow traffic.
+	// Range The port range to allow traffic, valid for layer 4 protocols only e.g. TCP, UDP.
 	Range *SecurityGroupRulePortRange `json:"range,omitempty"`
 }
 
-// SecurityGroupRulePortRange The port range to allow traffic.
+// SecurityGroupRulePortRange The port range to allow traffic, valid for layer 4 protocols only e.g. TCP, UDP.
 type SecurityGroupRulePortRange struct {
 	// End The end of the port range.
 	End int `json:"end"`
@@ -577,6 +583,28 @@ type SecurityGroupRulePortRange struct {
 	// Start The start of the port range.
 	Start int `json:"start"`
 }
+
+// SecurityGroupRuleV2 A security group rule's specification, this operates at OSI layer 3 and above.
+// If omitted the prefix defaults to 0.0.0.0/0 e.g. allow from anywhere.
+type SecurityGroupRuleV2 struct {
+	// Direction The direction of the rule.
+	Direction NetworkDirection `json:"direction"`
+
+	// Port Port number for layer 4 protocols, if not specified matches all ports.
+	Port *int `json:"port,omitempty"`
+
+	// PortMax maxumum port number for layer 4 protocols to include a range.
+	PortMax *int `json:"portMax,omitempty"`
+
+	// Prefix An IPv4 address.
+	Prefix *Ipv4Address `json:"prefix,omitempty"`
+
+	// Protocol The layer 3+ protocol to allow.
+	Protocol NetworkProtocol `json:"protocol"`
+}
+
+// SecurityGroupRuleV2List A set of security group rules to apply.
+type SecurityGroupRuleV2List = []SecurityGroupRuleV2
 
 // SecurityGroupSpec A security group's specification.
 type SecurityGroupSpec struct {
@@ -599,7 +627,7 @@ type SecurityGroupV2CreateSpec struct {
 	NetworkId string `json:"networkId"`
 
 	// Rules A set of security group rules to apply.
-	Rules SecurityGroupRuleList `json:"rules"`
+	Rules SecurityGroupRuleV2List `json:"rules"`
 }
 
 // SecurityGroupV2Read A security group.
@@ -617,7 +645,7 @@ type SecurityGroupV2Read struct {
 // SecurityGroupV2Spec A security group's specification.
 type SecurityGroupV2Spec struct {
 	// Rules A set of security group rules to apply.
-	Rules SecurityGroupRuleList `json:"rules"`
+	Rules SecurityGroupRuleV2List `json:"rules"`
 }
 
 // SecurityGroupV2Status Read only status information about a security group.

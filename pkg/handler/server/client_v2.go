@@ -281,6 +281,10 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2ServersParam
 
 	selector, err = rbac.AddOrganizationAndProjectIDQuery(ctx, selector, util.OrganizationIDQuery(params.OrganizationID), util.ProjectIDQuery(params.ProjectID))
 	if err != nil {
+		if rbac.HasNoMatches(err) {
+			return nil, nil
+		}
+
 		return nil, errors.OAuth2ServerError("failed to add identity label selector").WithError(err)
 	}
 
@@ -400,7 +404,7 @@ func (c *Client) UpdateV2(ctx context.Context, serverID string, request *openapi
 		return nil, err
 	}
 
-	if err := rbac.AllowProjectScope(ctx, "region:securitygroups:v2", identityapi.Delete, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel]); err != nil {
+	if err := rbac.AllowProjectScope(ctx, "region:servers", identityapi.Delete, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel]); err != nil {
 		return nil, err
 	}
 
@@ -452,7 +456,14 @@ func (c *Client) DeleteV2(ctx context.Context, serverID string) error {
 	return nil
 }
 
-func (c *Client) getServerIdentityAndProvider(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, types.Provider, error) {
+// serverProvider gloms together the operations needed to provision servers.
+type serverProvider interface {
+	types.Server
+	types.ServerConsole
+	types.Identity
+}
+
+func (c *Client) getServerIdentityAndProvider(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, serverProvider, error) {
 	server, err := c.GetV2Raw(ctx, serverID)
 	if err != nil {
 		return nil, nil, nil, err

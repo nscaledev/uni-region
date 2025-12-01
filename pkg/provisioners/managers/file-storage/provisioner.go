@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package securitygroup
+package filestorage
 
 import (
 	"context"
@@ -23,20 +23,20 @@ import (
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 )
 
 // Provisioner encapsulates control plane provisioning.
 type Provisioner struct {
 	provisioners.Metadata
-	// securitygroup is the security group we're provisioning.
-	securitygroup *unikornv1.SecurityGroup
+
+	// fileStorage is the server we're provisioning.
+	fileStorage *unikornv1.FileStorage
 }
 
 // New returns a new initialized provisioner object.
 func New(_ manager.ControllerOptions) provisioners.ManagerProvisioner {
 	return &Provisioner{
-		securitygroup: &unikornv1.SecurityGroup{},
+		fileStorage: &unikornv1.FileStorage{},
 	}
 }
 
@@ -44,39 +44,19 @@ func New(_ manager.ControllerOptions) provisioners.ManagerProvisioner {
 var _ provisioners.ManagerProvisioner = &Provisioner{}
 
 func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
-	return p.securitygroup
+	return p.fileStorage
 }
 
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
-	provider, identity, err := base.ProviderAndIdentity(ctx, p.securitygroup)
-	if err != nil {
-		return err
-	}
-
-	// Inhibit provisioning until the identity is ready, as we may need the identity information
-	// to create the security group e.g. the project ID in the case of OpenStack.
-	if err := manager.ResourceReady(ctx, identity); err != nil {
-		return err
-	}
-
-	if err := provider.CreateSecurityGroup(ctx, identity, p.securitygroup); err != nil {
-		return err
-	}
-
+	// Plan:
+	// 1) Resolve the provisioner
+	// 2) Call the provisioner
+	// 3) Update the file storage status
 	return nil
 }
 
-// Deprovision implements the Provision interface.
+// Deprovision implements the Deprovision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	provider, identity, err := base.ProviderAndIdentity(ctx, p.securitygroup)
-	if err != nil {
-		return err
-	}
-
-	if err := provider.DeleteSecurityGroup(ctx, identity, p.securitygroup); err != nil {
-		return err
-	}
-
 	return nil
 }

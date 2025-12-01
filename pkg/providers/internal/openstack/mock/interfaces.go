@@ -24,7 +24,7 @@ import (
 	ports "github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
 	subnets "github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 	v1alpha1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-	openstack "github.com/unikorn-cloud/region/pkg/providers/openstack"
+	openstack "github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
 	gomock "go.uber.org/mock/gomock"
 )
 

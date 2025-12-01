@@ -20,10 +20,11 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
-	"fmt"
 	"slices"
 
+	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
@@ -38,16 +39,56 @@ import (
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
+func convertPrefixV2(in *corev1.IPv4Prefix) *string {
+	if in == nil {
+		return nil
+	}
+
+	return ptr.To(in.String())
+}
+
+func convertRuleV2(in *regionv1.SecurityGroupRule) *openapi.SecurityGroupRuleV2 {
+	out := &openapi.SecurityGroupRuleV2{
+		Direction: convertDirection(in.Direction),
+		Protocol:  convertProtocol(in.Protocol),
+		Prefix:    convertPrefixV2(in.CIDR),
+	}
+
+	if in.Protocol == regionv1.TCP || in.Protocol == regionv1.UDP && in.Port != nil {
+		if in.Port != nil {
+			if in.Port.Number != nil {
+				out.Port = in.Port.Number
+			} else if in.Port.Range != nil {
+				out.Port = &in.Port.Range.Start
+				out.PortMax = &in.Port.Range.End
+			}
+		}
+	}
+
+	return out
+}
+
+func convertRuleListV2(in []regionv1.SecurityGroupRule) openapi.SecurityGroupRuleV2List {
+	out := make(openapi.SecurityGroupRuleV2List, len(in))
+
+	for i := range in {
+		out[i] = *convertRuleV2(&in[i])
+	}
+
+	return out
+}
+
 func convertV2(in *regionv1.SecurityGroup) *openapi.SecurityGroupV2Read {
 	return &openapi.SecurityGroupV2Read{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.SecurityGroupV2Spec{
-			Rules: convertRuleList(in.Spec.Rules),
+			Rules: convertRuleListV2(in.Spec.Rules),
 		},
 		Status: openapi.SecurityGroupV2Status{
 			RegionId:  in.Labels[constants.RegionLabel],
@@ -75,6 +116,10 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2Securitygrou
 
 	selector, err = rbac.AddOrganizationAndProjectIDQuery(ctx, selector, util.OrganizationIDQuery(params.OrganizationID), util.ProjectIDQuery(params.ProjectID))
 	if err != nil {
+		if rbac.HasNoMatches(err) {
+			return nil, nil
+		}
+
 		return nil, errors.OAuth2ServerError("failed to add identity label selector").WithError(err)
 	}
 
@@ -176,25 +221,77 @@ func convertCreateToUpdateRequest(in *openapi.SecurityGroupV2Create) (*openapi.S
 	return out, nil
 }
 
-// validateV2 checks things JSON schema cannot.
-func validateV2(request *openapi.SecurityGroupV2Update) error {
-	if request.Spec.Rules != nil {
-		for i, rule := range request.Spec.Rules {
-			if rule.Port.Number == nil && rule.Port.Range == nil {
-				return errors.OAuth2InvalidRequest(fmt.Sprintf("rule index %d must have port number or range set", i))
-			}
+func protocolIsLayer4(in openapi.NetworkProtocol) bool {
+	return in == openapi.NetworkProtocolTcp || in == openapi.NetworkProtocolUdp
+}
 
-			if rule.Port.Range != nil && rule.Port.Range.Start >= rule.Port.Range.End {
-				return errors.OAuth2InvalidRequest(fmt.Sprintf("rule index %d must have a range where start < end", i))
-			}
+func validateRule(in *openapi.SecurityGroupRuleV2) error {
+	if !protocolIsLayer4(in.Protocol) && in.Port != nil {
+		return errors.OAuth2InvalidRequest("rule specified ports for a layer 3 protocol")
+	}
+
+	if protocolIsLayer4(in.Protocol) && in.Port != nil && in.PortMax != nil {
+		if *in.Port >= *in.PortMax {
+			return errors.OAuth2InvalidRequest("rule must have a range where start < end")
 		}
 	}
 
 	return nil
 }
 
+func generateRuleV2(in *openapi.SecurityGroupRuleV2) (*regionv1.SecurityGroupRule, error) {
+	prefix, err := generatePrefix(in.Prefix)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := validateRule(in); err != nil {
+		return nil, err
+	}
+
+	out := &regionv1.SecurityGroupRule{
+		Direction: generateDirection(in.Direction),
+		Protocol:  generateProtocol(in.Protocol),
+		CIDR:      prefix,
+	}
+
+	if in.Protocol == openapi.NetworkProtocolTcp || in.Protocol == openapi.NetworkProtocolUdp {
+		if in.Port != nil {
+			if in.PortMax != nil {
+				out.Port = &regionv1.SecurityGroupRulePort{
+					Range: &regionv1.SecurityGroupRulePortRange{
+						Start: *in.Port,
+						End:   *in.PortMax,
+					},
+				}
+			} else {
+				out.Port = &regionv1.SecurityGroupRulePort{
+					Number: in.Port,
+				}
+			}
+		}
+	}
+
+	return out, nil
+}
+
+func generateRuleListV2(in openapi.SecurityGroupRuleV2List) ([]regionv1.SecurityGroupRule, error) {
+	out := make([]regionv1.SecurityGroupRule, len(in))
+
+	for i := range in {
+		t, err := generateRuleV2(&in[i])
+		if err != nil {
+			return nil, err
+		}
+
+		out[i] = *t
+	}
+
+	return out, nil
+}
+
 func (c *Client) generateV2(ctx context.Context, organizationID, projectID string, request *openapi.SecurityGroupV2Update, network *regionv1.Network) (*regionv1.SecurityGroup, error) {
-	rules, err := generateRuleList(request.Spec.Rules)
+	rules, err := generateRuleListV2(request.Spec.Rules)
 	if err != nil {
 		return nil, err
 	}
@@ -248,10 +345,6 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.SecurityGroupV2C
 		return nil, err
 	}
 
-	if err := validateV2(commonRequest); err != nil {
-		return nil, err
-	}
-
 	resource, err := c.generateV2(ctx, organizationID, projectID, commonRequest, network)
 	if err != nil {
 		return nil, err
@@ -284,10 +377,6 @@ func (c *Client) UpdateV2(ctx context.Context, securityGroupID string, request *
 		return nil, err
 	}
 
-	if err := validateV2(request); err != nil {
-		return nil, err
-	}
-
 	required, err := c.generateV2(ctx, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel], request, network)
 	if err != nil {
 		return nil, err
@@ -317,6 +406,10 @@ func (c *Client) DeleteV2(ctx context.Context, securityGroupID string) error {
 
 	if resource.DeletionTimestamp != nil {
 		return nil
+	}
+
+	if len(manager.GetResourceReferences(resource)) > 0 {
+		return errors.HTTPForbidden("security group is in use and callot be deleted")
 	}
 
 	if err := c.client.Delete(ctx, resource, util.ForegroundDeleteOptions()); err != nil {
