@@ -29,4 +29,11 @@ var (
 	// ErrResourceDependency is returned when a resource is in unexpected
 	// state or condition.
 	ErrResourceDependency = errors.New("resource dependency error")
+
+	// ErrImageNotReadyForUpload is returned when the image record at the provider is not in a state
+	// for receiving image file data.
+	ErrImageNotReadyForUpload = errors.New("image is not in a desired state for upload")
+
+	// ErrImageStillInUse is returned when a image cannot be deleted because it's in active use.
+	ErrImageStillInUse = errors.New("image is still in use by one or more servers")
 )

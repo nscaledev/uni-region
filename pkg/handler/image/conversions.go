@@ -17,11 +17,16 @@ limitations under the License.
 package image
 
 import (
+	"errors"
+	"fmt"
+
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/handler/conversion"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 )
+
+var ErrUnknownDiskFormat = errors.New("unknown image format")
 
 func convertImageVirtualization(in types.ImageVirtualization) openapi.ImageVirtualization {
 	switch in {
@@ -128,4 +133,104 @@ func convertImages(in []types.Image) openapi.Images {
 	}
 
 	return out
+}
+
+func generateImageVirtualization(source openapi.ImageVirtualization) types.ImageVirtualization {
+	switch source {
+	case openapi.ImageVirtualizationVirtualized:
+		return types.Virtualized
+	case openapi.ImageVirtualizationBaremetal:
+		return types.Baremetal
+	case openapi.ImageVirtualizationAny:
+		return types.Any
+	default:
+		return ""
+	}
+}
+
+func generateOSKernel(source openapi.OsKernel) types.OsKernel {
+	switch source {
+	case openapi.OsKernelLinux:
+		return types.Linux
+	default:
+		return ""
+	}
+}
+
+func generateOSFamily(source openapi.OsFamily) types.OsFamily {
+	switch source {
+	case openapi.OsFamilyDebian:
+		return types.Debian
+	case openapi.OsFamilyRedhat:
+		return types.Redhat
+	default:
+		return ""
+	}
+}
+
+func generateOSDistro(source openapi.OsDistro) types.OsDistro {
+	switch source {
+	case openapi.OsDistroRocky:
+		return types.Rocky
+	case openapi.OsDistroUbuntu:
+		return types.Ubuntu
+	default:
+		return ""
+	}
+}
+
+func generatePackages(source openapi.SoftwareVersions) types.ImagePackages {
+	target := make(types.ImagePackages, len(source))
+
+	for name, version := range source {
+		target[name] = version
+	}
+
+	return target
+}
+
+func generateGPUVendor(source openapi.GpuVendor) types.GPUVendor {
+	switch source {
+	case openapi.GpuVendorNVIDIA:
+		return types.Nvidia
+	case openapi.GpuVendorAMD:
+		return types.AMD
+	default:
+		return ""
+	}
+}
+
+func generateImageGPU(source *openapi.ImageGpu) *types.ImageGPU {
+	var models []string
+	if source.Models != nil {
+		models = *source.Models
+	}
+
+	return &types.ImageGPU{
+		Vendor: generateGPUVendor(source.Vendor),
+		Driver: source.Driver,
+		Models: models,
+	}
+}
+
+func generateImageOS(source *openapi.ImageOS) *types.ImageOS {
+	return &types.ImageOS{
+		Kernel:   generateOSKernel(source.Kernel),
+		Family:   generateOSFamily(source.Family),
+		Distro:   generateOSDistro(source.Distro),
+		Variant:  source.Variant,
+		Codename: source.Codename,
+		Version:  source.Version,
+	}
+}
+
+func generateDiskFormat(source openapi.ImageDiskFormat) (types.ImageDiskFormat, error) {
+	switch source {
+	case openapi.ImageDiskFormatRaw:
+		return types.ImageDiskFormatRaw, nil
+	case openapi.ImageDiskFormatQcow2:
+		return types.ImageDiskFormatQCOW2, nil
+	default:
+		return "", fmt.Errorf("%w: %s", ErrUnknownDiskFormat, source)
+	}
 }

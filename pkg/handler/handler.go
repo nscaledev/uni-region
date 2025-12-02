@@ -20,9 +20,7 @@ package handler
 
 import (
 	"context"
-	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
@@ -30,7 +28,6 @@ import (
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
-	"github.com/unikorn-cloud/region/pkg/handler/image"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/securitygroup"
@@ -41,6 +38,8 @@ import (
 )
 
 type Handler struct {
+	*ImageHandler
+
 	// client gives cached access to Kubernetes.
 	client client.Client
 
@@ -60,11 +59,12 @@ type Handler struct {
 
 func New(client client.Client, namespace string, options *Options, issuer *identityclient.TokenIssuer, identity *identityclient.Client) (*Handler, error) {
 	h := &Handler{
-		client:    client,
-		namespace: namespace,
-		options:   options,
-		issuer:    issuer,
-		identity:  identity,
+		client:       client,
+		namespace:    namespace,
+		options:      options,
+		issuer:       issuer,
+		identity:     identity,
+		ImageHandler: NewImageHandler(client, namespace, options),
 	}
 
 	return h, nil
@@ -85,11 +85,6 @@ func (h *Handler) getIdentityAPIClient(ctx context.Context) (identityapi.ClientW
 	}
 
 	return client, nil
-}
-
-func (h *Handler) setCacheable(w http.ResponseWriter) {
-	w.Header().Add("Cache-Control", fmt.Sprintf("max-age=%d", h.options.CacheMaxAge/time.Second))
-	w.Header().Add("Cache-Control", "private")
 }
 
 func (h *Handler) setUncacheable(w http.ResponseWriter) {
@@ -140,7 +135,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetw
 		return
 	}
 
-	h.setCacheable(w)
+	h.options.setCacheable(w)
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
@@ -156,23 +151,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(w ht
 		return
 	}
 
-	h.setCacheable(w)
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
-}
-
-func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
-	if err := rbac.AllowOrganizationScope(r.Context(), "region:images", identityapi.Read, organizationID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := image.NewClient(h.client, h.namespace).ListImages(r.Context(), organizationID, regionID)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	h.setCacheable(w)
+	h.options.setCacheable(w)
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
