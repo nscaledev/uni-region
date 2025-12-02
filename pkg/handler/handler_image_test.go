@@ -20,12 +20,16 @@ package handler
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -33,6 +37,7 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/handler/image"
 	"github.com/unikorn-cloud/region/pkg/handler/image/mock"
+	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -332,6 +337,110 @@ func TestImageHandler_Upload_GoodRequests(t *testing.T) {
 			)
 
 			require.Equal(t, http.StatusOK, w.Code)
+		})
+	}
+}
+
+func waitForChannel[T any](t *testing.T, c chan T) T {
+	t.Helper()
+
+	var result T
+
+	assert.Eventually(t, func() bool {
+		select {
+		case result = <-c:
+			return true
+		default:
+			return false
+		}
+	}, 2*time.Second, time.Second/4)
+
+	return result
+}
+
+func TestImageHandler_Fetch_Good(t *testing.T) {
+	t.Parallel()
+
+	testcases := map[string]struct {
+		imageFormat   types.ImageDiskFormat
+		expectedBytes []byte
+		responseFunc  func(*testing.T) io.Reader
+	}{
+		"raw disk tarball": {
+			imageFormat:   types.ImageDiskFormatRaw,
+			expectedBytes: rawFileBytes(),
+			responseFunc:  mock.TarballedReader(mock.Files{"disk.raw": rawFileBytes()}),
+		},
+		"qcow2 disk tarball": {
+			imageFormat:   types.ImageDiskFormatQCOW2,
+			expectedBytes: qcow2FileBytes(),
+			responseFunc:  mock.TarballedReader(mock.Files{"disk.qcow2": qcow2FileBytes()}),
+		},
+	}
+
+	for name, testcase := range testcases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+
+			mockProvider := mock.NewMockProvider(mockCtrl)
+
+			providerImage := mock.NewTestProviderImage(types.ImageStatusPending)
+			providerImage.DiskFormat = testcase.imageFormat
+
+			mockProvider.EXPECT().
+				CreateImageForUpload(gomock.Any(), gomock.AssignableToTypeOf(providerImage)).
+				Return(providerImage, nil)
+
+			uploadCalled := make(chan struct{})
+
+			mockProvider.EXPECT().
+				UploadImageData(gomock.Any(), providerImage.ID, expectedReaderBytes(testcase.expectedBytes)).
+				DoAndReturn(func(context.Context, string, io.Reader) error {
+					close(uploadCalled)
+					return nil
+				}) // i.e., no error
+
+			handler := newTestImageHandler(t, mockProvider)
+
+			responseBody := testcase.responseFunc(t)
+			serverCalled := make(chan error)
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, err := io.Copy(w, responseBody)
+				serverCalled <- err
+			}))
+			t.Cleanup(server.Close)
+
+			u := fmt.Sprintf("/api/v1/organizations/%s/regions/%s/images", testOrganizationID, testRegionID)
+
+			createRequest := &openapi.ImageCreateRequest{
+				Spec: openapi.ImageCreateSpec{
+					SourceURL: &server.URL,
+				},
+			}
+
+			requestBody, err := json.Marshal(createRequest)
+			require.NoError(t, err)
+
+			req, err := http.NewRequest(http.MethodPost, u, bytes.NewBuffer(requestBody))
+			require.NoError(t, err)
+
+			req = req.WithContext(contextWithCreateImagePermission(t))
+
+			w := httptest.NewRecorder()
+
+			handler.PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages(
+				w, req, testOrganizationID, testRegionID,
+			)
+
+			require.Equal(t, http.StatusOK, w.Code)
+
+			require.NoError(t, waitForChannel(t, serverCalled))
+			waitForChannel(t, uploadCalled)
 		})
 	}
 }
