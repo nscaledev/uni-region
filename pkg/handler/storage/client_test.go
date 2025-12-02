@@ -22,11 +22,12 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
 	corev1 "github.com/unikorn-cloud/core/pkg/openapi"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/unikorn-cloud/region/pkg/openapi"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestGenerateAttachmentList(t *testing.T) {
