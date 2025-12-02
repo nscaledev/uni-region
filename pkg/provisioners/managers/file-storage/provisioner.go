@@ -18,11 +18,18 @@ package filestorage
 
 import (
 	"context"
+	"errors"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
+	coreclient "github.com/unikorn-cloud/core/pkg/client"
+	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	filestorageprovisioners "github.com/unikorn-cloud/region/pkg/file-storage/provisioners"
+	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Provisioner encapsulates control plane provisioning.
@@ -49,14 +56,79 @@ func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
-	// Plan:
-	// 1) Resolve the provisioner
-	// 2) Call the provisioner
-	// 3) Update the file storage status
+	cli, err := coreclient.FromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	storageclient, err := p.getFileStorageProvisioner(ctx, cli)
+	if err != nil {
+		return err
+	}
+
+	if err := p.reconcileFileStorage(ctx, storageclient); err != nil {
+		return err
+	}
+
+	if err := p.reconcileNetworkAttachments(ctx, cli, storageclient); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 // Deprovision implements the Deprovision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
+	cli, err := coreclient.FromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	storageclient, err := p.getFileStorageProvisioner(ctx, cli)
+	if err != nil {
+		return err
+	}
+
+	// all networks must be detached before deletion
+	if err := p.detachNetworks(ctx, storageclient); err != nil {
+		return err
+	}
+
+	if err := p.deleteFileStorage(ctx, storageclient); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (p *Provisioner) getFileStorageProvisioner(ctx context.Context, cli client.Client) (types.Client, error) {
+	storageClass := &unikornv1.FileStorageClass{}
+	key := client.ObjectKey{
+		Namespace: p.fileStorage.GetNamespace(),
+		Name:      p.fileStorage.Spec.StorageClassID,
+	}
+
+	if err := cli.Get(ctx, key, storageClass); err != nil {
+		return nil, err
+	}
+
+	return filestorageprovisioners.NewClient(ctx, cli, p.fileStorage.GetNamespace(), storageClass)
+}
+
+func (p *Provisioner) makeID() *types.ID {
+	projectID := p.fileStorage.Labels[coreconstants.ProjectLabel]
+
+	return &types.ID{
+		ProjectID:     projectID,
+		FileStorageID: p.fileStorage.Name,
+	}
+}
+
+// ignoreNotFound ignores ErrNotFound errors.
+func ignoreNotFound(err error) error {
+	if errors.Is(err, types.ErrNotFound) {
+		return nil
+	}
+
+	return err
 }

@@ -39,6 +39,11 @@ type IPRange struct {
 }
 
 type Attachment struct {
-	VlanID  int64
+	VlanID  int
 	IPRange *IPRange
+}
+
+type ID struct {
+	ProjectID     string
+	FileStorageID string
 }

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package agent
+package client
 
 import (
 	"context"
@@ -24,14 +24,18 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+
+	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
 )
 
 const timeout = 30 * time.Second
 
 var (
-	ErrNoSuccess   = errors.New("nats: empty success response")
-	ErrRemoteError = errors.New("nats: remote error")
+	ErrNoSuccess         = errors.New("nats: empty success response")
+	ErrProvisionerConfig = errors.New("nats: missing or invalid provisioner configuration")
 )
+
+type EmptyResponse struct{}
 
 type CreateFileSystem struct {
 	RemoteIdentifier  `json:",inline"`
@@ -50,7 +54,15 @@ type CreateMountTarget struct {
 	EndIP            string `json:"endIp"`
 }
 
-type CreateMountTargetResponse struct{}
+type DeleteFileSystem struct {
+	RemoteIdentifier `json:",inline"`
+	Force            bool `json:"force"`
+}
+
+type DeleteMountTarget struct {
+	RemoteIdentifier `json:",inline"`
+	VlanID           int64 `json:"vlanId"`
+}
 
 type GetFileSystem struct {
 	RemoteIdentifier `json:",inline"`
@@ -88,8 +100,13 @@ type ResizeResponse struct {
 }
 
 type NatsResponseEnvelope[T any] struct {
-	Error   string `json:"error,omitempty"`
-	Success *T     `json:"success,omitempty"`
+	Error   *ResponseError `json:"error,omitempty"`
+	Success *T             `json:"success,omitempty"`
+}
+
+type ResponseError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 type RemoteIdentifier struct {
@@ -122,8 +139,8 @@ func doRequest[T any](ctx context.Context, nc *nats.Conn, subject string, req an
 		return nil, fmt.Errorf("decode %q response: %w", subject, err)
 	}
 
-	if env.Error != "" {
-		return nil, fmt.Errorf("%w: remote error on %s: %s", ErrRemoteError, subject, env.Error)
+	if env.Error != nil {
+		return nil, remoteErrorFromEnvelope(env.Error)
 	}
 
 	if env.Success == nil {
@@ -131,4 +148,16 @@ func doRequest[T any](ctx context.Context, nc *nats.Conn, subject string, req an
 	}
 
 	return env.Success, nil
+}
+
+// remoteErrorFromEnvelope maps structured remote errors to local typed errors.
+func remoteErrorFromEnvelope(errResp *ResponseError) error {
+	switch errResp.Code {
+	case "invalid_request":
+		return fmt.Errorf("%w: %s", types.ErrInvalidRequest, errResp.Message)
+	case "not_found":
+		return fmt.Errorf("%w: %s", types.ErrNotFound, errResp.Message)
+	default:
+		return fmt.Errorf("%w: %s: %s", types.ErrRemoteError, errResp.Code, errResp.Message)
+	}
 }

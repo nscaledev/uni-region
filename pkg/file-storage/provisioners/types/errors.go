@@ -17,15 +17,12 @@ limitations under the License.
 package types
 
 import (
-	"context"
+	"errors"
+	"fmt"
 )
 
-type Client interface {
-	GetDetails(ctx context.Context, id *ID) (*FileStorageDetails, error)
-	ListAttachments(ctx context.Context, id *ID) (*FileStorageAttachments, error)
-	Create(ctx context.Context, id *ID, size int64, rootSquashEnabled bool) (*FileStorageDetails, error)
-	Delete(ctx context.Context, id *ID, force bool) error
-	AttachNetwork(ctx context.Context, id *ID, vlanID int, ipRange *IPRange) error
-	DetachNetwork(ctx context.Context, id *ID, vlanID int) error
-	Resize(ctx context.Context, id *ID, size int64) error
-}
+var (
+	ErrRemoteError    = errors.New("agent: remote error")
+	ErrInvalidRequest = fmt.Errorf("%w: invalid request", ErrRemoteError)
+	ErrNotFound       = fmt.Errorf("%w: not found", ErrRemoteError)
+)
