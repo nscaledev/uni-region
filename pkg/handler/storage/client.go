@@ -103,7 +103,8 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageP
 
 	result := &regionv1.FileStorageList{}
 
-	if err := c.client.List(ctx, result, options); err != nil {
+	err = c.client.List(ctx, result, options)
+	if err != nil {
 		return nil, errors.OAuth2ServerError("unable to list storage").WithError(err)
 	}
 
@@ -137,7 +138,8 @@ func generateV2List(in *regionv1.FileStorageList) openapi.StorageV2List {
 func (c *Client) GetRaw(ctx context.Context, storageID string) (*regionv1.FileStorage, error) {
 	result := &regionv1.FileStorage{}
 
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: storageID}, result); err != nil {
+	err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: storageID}, result)
+	if err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
@@ -145,7 +147,10 @@ func (c *Client) GetRaw(ctx context.Context, storageID string) (*regionv1.FileSt
 		return nil, errors.OAuth2ServerError("unable to lookup storage").WithError(err)
 	}
 
-	if err := rbac.AllowProjectScope(ctx, "region:filestorage:v2", identityapi.Read, result.Labels[coreconstants.OrganizationLabel], result.Labels[coreconstants.ProjectLabel]); err != nil {
+	err = rbac.AllowProjectScope(ctx, "region:filestorage:v2", identityapi.Read,
+		result.Labels[coreconstants.OrganizationLabel], result.Labels[coreconstants.ProjectLabel])
+
+	if err != nil {
 		return nil, err
 	}
 
@@ -162,11 +167,11 @@ func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2R
 }
 
 func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.StorageV2Update) (*regionv1.FileStorage, error) {
-
 	size, err := convertSize(request.Spec.Size)
 	if err != nil {
 		return nil, errors.HTTPNotFound()
 	}
+
 	out := &regionv1.FileStorage{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.namespace).
 			WithOrganization(organizationID).
@@ -180,11 +185,13 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 		},
 	}
 
-	if err := util.InjectUserPrincipal(ctx, organizationID, projectID); err != nil {
+	err = util.InjectUserPrincipal(ctx, organizationID, projectID)
+	if err != nil {
 		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
 	}
 
-	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
+	err = common.SetIdentityMetadata(ctx, &out.ObjectMeta)
+	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
 	}
 
@@ -198,6 +205,7 @@ func generateAttachmentList(in *openapi.StorageAttachmentV2Spec) []regionv1.Atta
 			NetworkID: in.NetworkIds[i].Id,
 		}
 	}
+
 	return out
 }
 
@@ -320,6 +328,7 @@ func (c *Client) Delete(ctx context.Context, storageID string) error {
 	if err := c.client.Delete(ctx, resource); err != nil {
 		return errors.OAuth2ServerError("delete failed").WithError(err)
 	}
+
 	return nil
 }
 
@@ -337,11 +346,14 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 		Namespace: s.client.namespace,
 	}
 	storageType := regionv1.FileStorageClass{}
+	networkClient := network.New(s.client.client, s.client.namespace, s.client.identity)
+
 	err := s.client.client.Get(ctx, storageClassKey, &storageType)
+
 	if err != nil {
 		return errors.OAuth2ServerError("filestorage class does not exist").WithError(err)
 	}
-	networkClient := network.New(s.client.client, s.client.namespace, s.client.identity)
+
 	for _, v := range s.request.Spec.Attachments.NetworkIds {
 		_, err = networkClient.GetV2(ctx, v.Id)
 		if err != nil {
@@ -353,6 +365,7 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	filestorage, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.ProjectId, updateRequest)
 	if err != nil {
 		return err

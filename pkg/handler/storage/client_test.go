@@ -72,10 +72,14 @@ func TestGenerateV2List(t *testing.T) {
 		want  openapi.StorageV2List
 	}{
 		{
-			name: "test list",
+			name: "test with data",
 			input: &regionv1.FileStorageList{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "FileStorageList",
+					APIVersion: "v1alpha1",
+				},
 				Items: []regionv1.FileStorage{
-					regionv1.FileStorage{
+					{
 						TypeMeta: metav1.TypeMeta{
 							Kind:       "FileStorage",
 							APIVersion: "v1alpha1",
@@ -137,11 +141,11 @@ func TestGenerateV2List(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			got := generateV2List(tt.input)
 			require.Equal(t, tt.want, got)
 		})
 	}
-
 }
 
 func TestConvertV2(t *testing.T) {
