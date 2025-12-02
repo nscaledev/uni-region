@@ -121,10 +121,10 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageP
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	return convertV2List(result), nil
+	return generateV2List(result), nil
 }
 
-func convertV2List(in *regionv1.FileStorageList) openapi.StorageV2List {
+func generateV2List(in *regionv1.FileStorageList) openapi.StorageV2List {
 	out := make(openapi.StorageV2List, len(in.Items))
 
 	for i := range in.Items {
@@ -176,7 +176,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 		Spec: regionv1.FileStorageSpec{
 			Tags:        conversion.GenerateTagList(request.Metadata.Tags),
 			Size:        size,
-			Attachments: convertAttachmentList(request.Spec.Attachments),
+			Attachments: generateAttachmentList(request.Spec.Attachments),
 		},
 	}
 
@@ -191,7 +191,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 	return out, nil
 }
 
-func convertAttachmentList(in *openapi.StorageAttachmentV2Spec) []regionv1.Attachment {
+func generateAttachmentList(in *openapi.StorageAttachmentV2Spec) []regionv1.Attachment {
 	out := make([]regionv1.Attachment, len(in.NetworkIds))
 	for i := range in.NetworkIds {
 		out[i] = regionv1.Attachment{

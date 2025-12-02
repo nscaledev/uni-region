@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+//nolint:revive
 package storage
 
 import (
@@ -27,8 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestConvertAttachmentList(t *testing.T) {
-	t.Parallel()
+func TestGenerateAttachmentList(t *testing.T) {
 	tests := []struct {
 		name  string
 		input *openapi.StorageAttachmentV2Spec
@@ -56,14 +56,14 @@ func TestConvertAttachmentList(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := convertAttachmentList(tt.input)
+			t.Parallel()
+			got := generateAttachmentList(tt.input)
 			require.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func TestConvertV2List(t *testing.T) {
-	t.Parallel()
+func TestGenerateV2List(t *testing.T) {
 	tests := []struct {
 		name  string
 		input *regionv1.FileStorageList
@@ -134,7 +134,8 @@ func TestConvertV2List(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := convertV2List(tt.input)
+			t.Parallel()
+			got := generateV2List(tt.input)
 			require.Equal(t, tt.want, got)
 		})
 	}
@@ -142,7 +143,6 @@ func TestConvertV2List(t *testing.T) {
 }
 
 func TestConvertV2(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		name  string
 		input *regionv1.FileStorage
