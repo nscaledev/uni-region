@@ -106,7 +106,7 @@ func extractFileFromTarball(ctx context.Context, data io.Reader, format types.Im
 	}
 
 	if stagedFile == nil {
-		return nil, errors.OAuth2InvalidRequest("The provided file does not contain a valid disk image")
+		return nil, errors.OAuth2InvalidRequest("The provided file does not contain a disk image of the expected format").WithValues("format", format)
 	}
 
 	return stagedFile, nil
@@ -125,7 +125,7 @@ func uploadImageData(ctx context.Context, imageID string, diskFormat types.Image
 	// relying on our own upstream call completing.
 	staged, err := extractFileFromTarball(ctx, sourceReader, diskFormat)
 	if err != nil {
-		return errors.OAuth2ServerError("The server encountered an unexpected error while receiving the image data").WithError(err)
+		return errors.OAuth2InvalidRequest("extracting file from tarball").WithError(err)
 	}
 
 	defer func() {

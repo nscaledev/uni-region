@@ -105,12 +105,29 @@ func contextWithCreateImagePermission(t *testing.T) context.Context {
 	})
 }
 
-func TestImageHandler_ProviderResponses(t *testing.T) {
-	t.Parallel()
-
-	// Create test image data. This is used for all the tests.
+func rawFileBytes() []byte {
 	rawFileContent := make([]byte, 512)
 	rawFileContent[510], rawFileContent[511] = 0x55, 0xAA
+
+	return rawFileContent
+}
+
+func qcow2FileBytes() []byte {
+	return []byte{'Q', 'F', 'I', 0xfb}
+}
+
+func tarGzippedFile(t *testing.T, filename string, data []byte) io.Reader {
+	t.Helper()
+
+	return mock.TarballedReader(mock.Files{filename: data})(t)
+}
+
+func TestImageHandler_Upload_ProviderResponses(t *testing.T) {
+	t.Parallel()
+
+	rawFileContent := rawFileBytes()
+
+	// Create test image data. This is used for all the tests.
 
 	testcases := map[string]struct {
 		setupMock          func(*mock.MockProvider)
@@ -187,7 +204,9 @@ func TestImageHandler_ProviderResponses(t *testing.T) {
 			mockProvider := mock.NewTestMockProvider(t)
 			testcase.setupMock(mockProvider)
 
-			tarGzData := mock.TarballedReader(mock.Files{"disk.raw": rawFileContent})(t)
+			// This is a known good request (as verified below), so the result
+			// will depend on the provider's response.
+			tarGzData := tarGzippedFile(t, "disk.raw", rawFileContent)
 			req := createMultipartRequest(t, tarGzData)
 
 			// Add a fake context with authorization (normally added by middleware)
@@ -207,15 +226,20 @@ func TestImageHandler_ProviderResponses(t *testing.T) {
 	}
 }
 
-func TestImageHandler_BadRequests(t *testing.T) {
+func TestImageHandler_Upload_BadRequests(t *testing.T) {
 	t.Parallel()
 
 	testcases := map[string]struct {
 		invalidData io.Reader
 	}{
 		"invalid gzip": {
-			// Create request with invalid gzip data
 			invalidData: bytes.NewBufferString("this is not valid gzip data"),
+		},
+		"wrong disk file": {
+			invalidData: tarGzippedFile(t, "disk.qcow2", qcow2FileBytes()), // the filename is the wrong one
+		},
+		"invalid disk file": {
+			invalidData: tarGzippedFile(t, "disk.raw", qcow2FileBytes()), // the filename is right, but not the contents
 		},
 	}
 
@@ -248,6 +272,66 @@ func TestImageHandler_BadRequests(t *testing.T) {
 
 			// Verify server error response
 			require.Equal(t, http.StatusBadRequest, w.Code)
+		})
+	}
+}
+
+func TestImageHandler_Upload_GoodRequests(t *testing.T) {
+	t.Parallel()
+
+	testcases := map[string]struct {
+		imageFormat   types.ImageDiskFormat
+		expectedBytes []byte
+		requestFunc   func(t *testing.T) *http.Request
+	}{
+		"raw disk tarball form POST": {
+			imageFormat:   types.ImageDiskFormatRaw,
+			expectedBytes: rawFileBytes(),
+			// Create request with invalid gzip data
+			requestFunc: func(t *testing.T) *http.Request { //nolint:thelper
+				return createMultipartRequest(t, tarGzippedFile(t, "disk.raw", rawFileBytes()))
+			},
+		},
+		"qcow2 disk tarball form POST": {
+			imageFormat:   types.ImageDiskFormatQCOW2,
+			expectedBytes: qcow2FileBytes(),
+			requestFunc: func(t *testing.T) *http.Request { //nolint:thelper
+				return createMultipartRequest(t, tarGzippedFile(t, "disk.qcow2", qcow2FileBytes()))
+			},
+		},
+	}
+
+	for name, testcase := range testcases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+
+			mockProvider := mock.NewMockProvider(mockCtrl)
+
+			providerImage := mock.NewTestProviderImage(types.ImageStatusPending)
+			providerImage.DiskFormat = testcase.imageFormat
+
+			mockProvider.EXPECT().
+				GetImage(gomock.Any(), testOrganizationID, testImageID).
+				Return(providerImage, nil)
+			mockProvider.EXPECT().
+				UploadImageData(gomock.Any(), providerImage.ID, expectedReaderBytes(testcase.expectedBytes)).
+				Return(nil) // i.e., no error
+
+			handler := newTestImageHandler(t, mockProvider)
+
+			req := testcase.requestFunc(t)
+			req = req.WithContext(contextWithCreateImagePermission(t))
+
+			w := httptest.NewRecorder()
+
+			handler.PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDData(
+				w, req, testOrganizationID, testRegionID, testImageID,
+			)
+
+			require.Equal(t, http.StatusOK, w.Code)
 		})
 	}
 }
