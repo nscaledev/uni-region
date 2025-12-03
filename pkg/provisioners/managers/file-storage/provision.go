@@ -22,9 +22,11 @@ import (
 	"fmt"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	"github.com/unikorn-cloud/core/pkg/manager"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -67,7 +69,7 @@ func (p *Provisioner) reconcileFileStorage(ctx context.Context, driver types.Dri
 	return nil
 }
 
-func (p *Provisioner) reconcileNetworkAttachments(ctx context.Context, driver types.Driver) error {
+func (p *Provisioner) reconcileNetworkAttachments(ctx context.Context, cli client.Client, driver types.Driver, reference string) error {
 	desiredSet, err := p.buildDesiredNetworkSet()
 	if err != nil {
 		return err
@@ -78,7 +80,7 @@ func (p *Provisioner) reconcileNetworkAttachments(ctx context.Context, driver ty
 		return err
 	}
 
-	if err := p.attachMissingNetworks(ctx, driver, desiredSet, currentSet); err != nil {
+	if err := p.attachMissingNetworks(ctx, cli, driver, desiredSet, currentSet, reference); err != nil {
 		return err
 	}
 
@@ -125,7 +127,7 @@ func (p *Provisioner) buildCurrentNetworkSet(ctx context.Context, driver types.D
 }
 
 // attachMissingNetworks attaches networks that are desired but not yet attached.
-func (p *Provisioner) attachMissingNetworks(ctx context.Context, driver types.Driver, desiredSet map[int]unikornv1.Attachment, currentSet map[int]struct{}) error {
+func (p *Provisioner) attachMissingNetworks(ctx context.Context, cli client.Client, driver types.Driver, desiredSet map[int]unikornv1.Attachment, currentSet map[int]struct{}, reference string) error {
 	log := log.FromContext(ctx)
 
 	for vlan, attachment := range desiredSet {
@@ -134,6 +136,11 @@ func (p *Provisioner) attachMissingNetworks(ctx context.Context, driver types.Dr
 		}
 
 		log.V(1).Info("attaching network", "vlan", vlan)
+
+		// Add references to any resources we consume.
+		if err := manager.AddResourceReference(ctx, cli, &unikornv1.Network{}, client.ObjectKey{Namespace: p.fileStorage.Namespace, Name: attachment.NetworkID}, reference); err != nil {
+			return fmt.Errorf("%w: failed to add network references", err)
+		}
 
 		if err := driver.AttachNetwork(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, &attachment); err != nil {
 			return err
