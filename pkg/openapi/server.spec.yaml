@@ -2330,10 +2330,10 @@ components:
         networkIDs:
           $ref: '#/components/schemas/networkIDList'
     networkIDList:
-      description: Describes a list of network ids 
+      description: A list of network IDs 
       type: array
       items:
-        description: Describes a network ids
+        description: A network identifier
         type: string
     storageAttachmentV2Status:
       description: Describes the network attachment for storage
@@ -2358,7 +2358,7 @@ components:
       - storageType
       properties:
         size:
-          description: size of the storage 
+          description: Size of the storage in bytes 
           type: integer
         storageType: 
           $ref: '#/components/schemas/storageTypeV2Spec'

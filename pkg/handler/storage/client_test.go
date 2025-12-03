@@ -27,6 +27,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -64,7 +65,7 @@ func TestGenerateAttachmentList(t *testing.T) {
 	}
 }
 
-func TestGenerateV2List(t *testing.T) {
+func TestConvertV2List(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -92,7 +93,9 @@ func TestGenerateV2List(t *testing.T) {
 								"app": "mock",
 							},
 						},
-						Spec:   regionv1.FileStorageSpec{},
+						Spec: regionv1.FileStorageSpec{
+							Size: *resource.NewQuantity(int64(1024), resource.BinarySI),
+						},
 						Status: regionv1.FileStorageStatus{},
 					},
 				},
@@ -100,19 +103,10 @@ func TestGenerateV2List(t *testing.T) {
 			want: openapi.StorageV2List{
 				openapi.StorageV2Read{
 					Metadata: corev1.ProjectScopedResourceReadMetadata{
-						CreatedBy:          nil,
 						CreationTime:       time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC),
-						DeletionTime:       nil,
-						Description:        nil,
 						HealthStatus:       corev1.ResourceHealthStatus("unknown"),
 						Id:                 "test-filestorage",
-						ModifiedBy:         nil,
-						ModifiedTime:       nil,
-						Name:               "",
-						OrganizationId:     "",
-						ProjectId:          "",
 						ProvisioningStatus: corev1.ResourceProvisioningStatus("unknown"),
-						Tags:               nil,
 					},
 
 					Spec: openapi.StorageV2Spec{
@@ -144,8 +138,8 @@ func TestGenerateV2List(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := generateV2List(tt.input)
-			require.Equal(t, tt.want, got)
+			got := convertV2List(tt.input)
+			require.Equal(t, tt.want, got, "input", tt.input)
 		})
 	}
 }
@@ -177,18 +171,9 @@ func TestConvertV2(t *testing.T) {
 			},
 			want: &openapi.StorageV2Read{
 				Metadata: corev1.ProjectScopedResourceReadMetadata{
-					CreatedBy:          nil,
-					CreationTime:       time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC),
-					DeletionTime:       nil,
-					Description:        nil,
-					HealthStatus:       "unknown",
-					Id:                 "test-filestorage",
-					ModifiedBy:         nil,
-					ModifiedTime:       nil,
-					Name:               "",
-					OrganizationId:     "",
-					ProjectId:          "",
-					ProvisioningStatus: "unknown",
+					CreationTime: time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC),
+					HealthStatus: "unknown",
+					Id:           "test-filestorage",
 				},
 				Spec: openapi.StorageV2Spec{
 					Attachments: &openapi.StorageAttachmentV2Spec{},
@@ -196,14 +181,7 @@ func TestConvertV2(t *testing.T) {
 					StorageType: openapi.StorageTypeV2Spec{},
 				},
 				Status: openapi.StorageV2Status{
-					Attachments:    nil,
-					RegionId:       "",
-					StorageClassId: "",
-					Usage: openapi.StorageUsageV2Spec{
-						Capacity: "",
-						Free:     nil,
-						Used:     nil,
-					},
+					Usage: openapi.StorageUsageV2Spec{},
 				},
 			},
 		},

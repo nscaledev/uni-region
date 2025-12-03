@@ -20,7 +20,6 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
-	"fmt"
 	"slices"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -34,7 +33,6 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
@@ -70,6 +68,7 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 		Spec: openapi.StorageV2Spec{
 			Attachments: &openapi.StorageAttachmentV2Spec{},
 			StorageType: openapi.StorageTypeV2Spec{},
+			Size:        in.Spec.Size.Size(),
 		},
 		Status: openapi.StorageV2Status{
 			RegionId: in.Labels[constants.RegionLabel],
@@ -122,14 +121,14 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageP
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	return generateV2List(result), nil
+	return convertV2List(result), nil
 }
 
-func generateV2List(in *regionv1.FileStorageList) openapi.StorageV2List {
+func convertV2List(in *regionv1.FileStorageList) openapi.StorageV2List {
 	out := make(openapi.StorageV2List, len(in.Items))
 
-	for i := range in.Items {
-		out[i] = *convertV2(&in.Items[i])
+	for i, v := range in.Items {
+		out[i] = *convertV2(&v)
 	}
 
 	return out
@@ -167,10 +166,7 @@ func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2R
 }
 
 func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.StorageV2Update) (*regionv1.FileStorage, error) {
-	size, err := convertSize(request.Spec.Size)
-	if err != nil {
-		return nil, errors.HTTPNotFound()
-	}
+	size := convertSize(request.Spec.Size)
 
 	out := &regionv1.FileStorage{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.namespace).
@@ -180,12 +176,12 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 			Get(),
 		Spec: regionv1.FileStorageSpec{
 			Tags:        conversion.GenerateTagList(request.Metadata.Tags),
-			Size:        size,
+			Size:        *size,
 			Attachments: generateAttachmentList(request.Spec.Attachments),
 		},
 	}
 
-	err = util.InjectUserPrincipal(ctx, organizationID, projectID)
+	err := util.InjectUserPrincipal(ctx, organizationID, projectID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
 	}
@@ -209,8 +205,9 @@ func generateAttachmentList(in *openapi.StorageAttachmentV2Spec) []regionv1.Atta
 	return out
 }
 
-func convertSize(size int) (resource.Quantity, error) {
-	return resource.ParseQuantity(fmt.Sprintf("%d", size))
+func convertSize(size int) *resource.Quantity {
+	return resource.NewQuantity(int64(size), resource.BinarySI)
+
 }
 
 func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.StorageV2Update, error) {
@@ -226,28 +223,6 @@ func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.Storage
 	}
 
 	return out, nil
-}
-
-type createSaga struct {
-	client  *Client
-	request *openapi.StorageV2Create
-
-	filestorage *regionv1.FileStorage
-}
-
-func (s *createSaga) Actions() []saga.Action {
-	return []saga.Action{
-		saga.NewAction("validate request", s.validateRequest, nil),
-		saga.NewAction("create quota allocation", s.createAllocation, s.deleteAllocation),
-		saga.NewAction("create filestorage", s.createFileStorage, nil),
-	}
-}
-
-func newCreateSaga(client *Client, request *openapi.StorageV2Create) *createSaga {
-	return &createSaga{
-		client:  client,
-		request: request,
-	}
 }
 
 func (c *Client) CreateV2(ctx context.Context, request *openapi.StorageV2Create) (*openapi.StorageV2Read, error) {
@@ -322,116 +297,4 @@ func (c *Client) Delete(ctx context.Context, storageID string) error {
 	}
 
 	return nil
-}
-
-func (c *Client) generateAllocation(size int) identityapi.ResourceAllocationList {
-	return identityapi.ResourceAllocationList{
-		{
-			Kind:      "filestorage",
-			Committed: size,
-		},
-	}
-}
-
-func (s *createSaga) createAllocation(ctx context.Context) error {
-	required := s.client.generateAllocation(s.request.Spec.Size)
-
-	return identityclient.NewAllocations(s.client.client, s.client.identity).Create(ctx, s.filestorage, required)
-}
-
-func (s *createSaga) deleteAllocation(ctx context.Context) error {
-	if err := identityclient.NewAllocations(s.client.client, s.client.identity).Delete(ctx, s.filestorage); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *createSaga) createFileStorage(ctx context.Context) error {
-	if err := s.client.client.Create(ctx, s.filestorage); err != nil {
-		return errors.OAuth2ServerError("unable to create filestorage").WithError(err)
-	}
-
-	return nil
-}
-
-func (s *createSaga) validateRequest(ctx context.Context) error {
-	storageClassKey := client.ObjectKey{
-		Name:      s.request.Spec.StorageClassId,
-		Namespace: s.client.namespace,
-	}
-	storageType := regionv1.FileStorageClass{}
-	networkClient := network.New(s.client.client, s.client.namespace, s.client.identity)
-
-	err := s.client.client.Get(ctx, storageClassKey, &storageType)
-
-	if err != nil {
-		return errors.OAuth2ServerError("filestorage class does not exist").WithError(err)
-	}
-
-	for _, v := range s.request.Spec.Attachments.NetworkIDs {
-		_, err = networkClient.GetV2(ctx, v)
-		if err != nil {
-			return errors.OAuth2ServerError("network attachment ID not found").WithError(err)
-		}
-	}
-
-	updateRequest, err := convertCreateToUpdateRequest(s.request)
-	if err != nil {
-		return err
-	}
-
-	filestorage, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.ProjectId, updateRequest)
-	if err != nil {
-		return err
-	}
-
-	s.filestorage = filestorage
-
-	return nil
-}
-
-type updateSaga struct {
-	client         *Client
-	organizationID string
-	regionID       string
-	current        *regionv1.FileStorage
-	updated        *regionv1.FileStorage
-}
-
-func newUpdateSaga(client *Client, organizationID, regionID string, current, updated *regionv1.FileStorage) *updateSaga {
-	return &updateSaga{
-		client:         client,
-		organizationID: organizationID,
-		regionID:       regionID,
-		current:        current,
-		updated:        updated,
-	}
-}
-
-func (s *updateSaga) updateAllocation(ctx context.Context) error {
-	required := s.client.generateAllocation(s.updated.Spec.Size.Size())
-
-	return identityclient.NewAllocations(s.client.client, s.client.identity).Update(ctx, s.current, required)
-}
-
-func (s *updateSaga) revertAllocation(ctx context.Context) error {
-	required := s.client.generateAllocation(s.current.Spec.Size.Size())
-
-	return identityclient.NewAllocations(s.client.client, s.client.identity).Update(ctx, s.current, required)
-}
-
-func (s *updateSaga) updateStorage(ctx context.Context) error {
-	if err := s.client.client.Patch(ctx, s.updated, client.MergeFrom(s.current)); err != nil {
-		return errors.OAuth2ServerError("unable to update filestorage").WithError(err)
-	}
-
-	return nil
-}
-
-func (s *updateSaga) Actions() []saga.Action {
-	return []saga.Action{
-		saga.NewAction("update quota allocation", s.updateAllocation, s.revertAllocation),
-		saga.NewAction("update storage", s.updateStorage, nil),
-	}
 }
