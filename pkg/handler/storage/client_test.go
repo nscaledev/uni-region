@@ -31,6 +31,7 @@ import (
 )
 
 func TestGenerateAttachmentList(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input *openapi.StorageAttachmentV2Spec
@@ -66,6 +67,7 @@ func TestGenerateAttachmentList(t *testing.T) {
 }
 
 func TestGenerateV2List(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input *regionv1.FileStorageList
@@ -149,6 +151,7 @@ func TestGenerateV2List(t *testing.T) {
 }
 
 func TestConvertV2(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input *regionv1.FileStorage
@@ -207,6 +210,7 @@ func TestConvertV2(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := convertV2(tt.input)
 			require.Equal(t, tt.want, got)
 		})

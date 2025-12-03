@@ -213,6 +213,21 @@ func convertSize(size string) (resource.Quantity, error) {
 	return resource.ParseQuantity(size)
 }
 
+func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.StorageV2Update, error) {
+	t, err := json.Marshal(in)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to marshal request").WithError(err)
+	}
+
+	out := &openapi.StorageV2Update{}
+
+	if err := json.Unmarshal(t, out); err != nil {
+		return nil, errors.OAuth2ServerError("failed to unmarshal request").WithError(err)
+	}
+
+	return out, nil
+}
+
 type createSaga struct {
 	client  *Client
 	request *openapi.StorageV2Create
@@ -220,42 +235,18 @@ type createSaga struct {
 	filestorage *regionv1.FileStorage
 }
 
+func (s *createSaga) Actions() []saga.Action {
+	return []saga.Action{
+		saga.NewAction("validate request", s.validateRequest, nil),
+		saga.NewAction("create quota allocation", s.createAllocation, s.deleteAllocation),
+		saga.NewAction("create filestorage", s.createFileStorage, nil),
+	}
+}
+
 func newCreateSaga(client *Client, request *openapi.StorageV2Create) *createSaga {
 	return &createSaga{
 		client:  client,
 		request: request,
-	}
-}
-
-// createAllocation creates an allocation for the storage ID and then attaches
-// the allocation ID to the network for persistence.
-func (s *createSaga) createAllocation(ctx context.Context) error {
-	required := identityapi.ResourceAllocationList{
-		{
-			Kind:      "filestorage",
-			Committed: 1,
-		},
-	}
-
-	if err := identityclient.NewAllocations(s.client.client, s.client.identity).Create(ctx, s.filestorage, required); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *createSaga) deleteAllocation(ctx context.Context) error {
-	if err := identityclient.NewAllocations(s.client.client, s.client.identity).Delete(ctx, s.filestorage); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *createSaga) Actions() []saga.Action {
-	return []saga.Action{
-		saga.NewAction("validate request", s.validateRequest, nil),
-		saga.NewAction("create filestorage", s.createFileStorage, nil),
 	}
 }
 
@@ -332,6 +323,31 @@ func (c *Client) Delete(ctx context.Context, storageID string) error {
 	return nil
 }
 
+// createAllocation creates an allocation for the storage ID and then attaches
+// the allocation ID to the storage for persistence.
+func (s *createSaga) createAllocation(ctx context.Context) error {
+	required := identityapi.ResourceAllocationList{
+		{
+			Kind:      "filestorage",
+			Committed: 1,
+		},
+	}
+
+	if err := identityclient.NewAllocations(s.client.client, s.client.identity).Create(ctx, s.filestorage, required); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *createSaga) deleteAllocation(ctx context.Context) error {
+	if err := identityclient.NewAllocations(s.client.client, s.client.identity).Delete(ctx, s.filestorage); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (s *createSaga) createFileStorage(ctx context.Context) error {
 	if err := s.client.client.Create(ctx, s.filestorage); err != nil {
 		return errors.OAuth2ServerError("unable to create filestorage").WithError(err)
@@ -374,19 +390,4 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 	s.filestorage = filestorage
 
 	return nil
-}
-
-func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.StorageV2Update, error) {
-	t, err := json.Marshal(in)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to marshal request").WithError(err)
-	}
-
-	out := &openapi.StorageV2Update{}
-
-	if err := json.Unmarshal(t, out); err != nil {
-		return nil, errors.OAuth2ServerError("failed to unmarshal request").WithError(err)
-	}
-
-	return out, nil
 }
