@@ -71,11 +71,15 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 			Size:        in.Spec.Size.Size(),
 		},
 		Status: openapi.StorageV2Status{
-			RegionId: in.Labels[constants.RegionLabel],
+			RegionId:       in.Labels[constants.RegionLabel],
+			StorageClassId: in.Spec.StorageClassID,
 		},
 	}
+
 }
 
+// ListV2 takes an openapi get api request and returns all storage items found via the k8s client within scope
+// and attempts to sort them
 func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageParams) (openapi.StorageV2List, error) {
 	selector := labels.Everything()
 
@@ -156,6 +160,7 @@ func (c *Client) GetRaw(ctx context.Context, storageID string) (*regionv1.FileSt
 	return result, nil
 }
 
+// Get returns an openapi storage object by converting the output from the regionv1 object
 func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2Read, error) {
 	result, err := c.GetRaw(ctx, storageID)
 	if err != nil {
@@ -225,8 +230,12 @@ func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.Storage
 	return out, nil
 }
 
+// CreateV2 creates the storage object and returns the finalized object as a read
+// it does this leveraging the saga system which acts as a tape to enable rollbacks
+// in case of errors
 func (c *Client) CreateV2(ctx context.Context, request *openapi.StorageV2Create) (*openapi.StorageV2Read, error) {
-	if err := rbac.AllowProjectScope(ctx, "region:filestorage:v2", identityapi.Create, request.Spec.OrganizationId, request.Spec.ProjectId); err != nil {
+	if err := rbac.AllowProjectScope(ctx, "region:filestorage:v2", identityapi.Create,
+		request.Spec.OrganizationId, request.Spec.ProjectId); err != nil {
 		return nil, err
 	}
 
@@ -239,6 +248,9 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.StorageV2Create)
 	return convertV2(s.filestorage), nil
 }
 
+// Update takes the openapi update object and returns the finalized object as a read
+// it leverages the update saga system, which acts as a tape to enable rollbacks
+// in case of errors
 func (c *Client) Update(ctx context.Context, storageID string, request *openapi.StorageV2Update) (*openapi.StorageV2Read, error) {
 	current, err := c.GetRaw(ctx, storageID)
 	if err != nil {
@@ -275,6 +287,7 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	return convertV2(updated), nil
 }
 
+// Delete should be an update saga????
 func (c *Client) Delete(ctx context.Context, storageID string) error {
 	resource, err := c.GetRaw(ctx, storageID)
 	if err != nil {

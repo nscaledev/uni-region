@@ -177,7 +177,7 @@ func TestConvertV2(t *testing.T) {
 				},
 				Spec: openapi.StorageV2Spec{
 					Attachments: &openapi.StorageAttachmentV2Spec{},
-					Size:        1024,
+					Size:        3,
 					StorageType: openapi.StorageTypeV2Spec{},
 				},
 				Status: openapi.StorageV2Status{
