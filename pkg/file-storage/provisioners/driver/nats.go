@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package client
+package driver
 
 import (
 	"context"
@@ -31,8 +31,16 @@ import (
 const timeout = 30 * time.Second
 
 var (
-	ErrNoSuccess         = errors.New("nats: empty success response")
-	ErrProvisionerConfig = errors.New("nats: missing or invalid provisioner configuration")
+	ErrNoSuccess    = errors.New("nats: empty success response")
+	ErrDriverConfig = errors.New("nats: missing or invalid driver configuration")
+)
+
+const (
+	SubjectKey        = "nats_subject"
+	URLKey            = "nats_url"
+	CAFileKey         = "nats_ca_file"
+	ClientCertFileKey = "nats_client_cert_file"
+	ClientKeyFileKey  = "nats_client_key_file"
 )
 
 type EmptyResponse struct{}

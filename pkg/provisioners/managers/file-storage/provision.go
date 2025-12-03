@@ -20,14 +20,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
-	"net"
 
-	"github.com/unikorn-cloud/core/pkg/manager"
+	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -35,12 +32,11 @@ var (
 	ErrInvalidNetwork = errors.New("invalid network")
 )
 
-func (p *Provisioner) reconcileFileStorage(ctx context.Context, cli types.Client) error {
+func (p *Provisioner) reconcileFileStorage(ctx context.Context, driver types.Driver) error {
 	log := log.FromContext(ctx)
-	id := p.makeID()
 
 	// Fetch current file storage details
-	fs, err := cli.GetDetails(ctx, id)
+	fs, err := driver.GetDetails(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name)
 	if ignoreNotFound(err) != nil {
 		return err
 	}
@@ -50,8 +46,8 @@ func (p *Provisioner) reconcileFileStorage(ctx context.Context, cli types.Client
 
 	// If the resource doesn't exist, create it
 	if fs == nil {
-		log.V(1).Info("creating file storage", "id", id)
-		created, err := cli.Create(ctx, id, desiredSize, desiredRootSquash)
+		log.V(1).Info("creating file storage", "id", p.fileStorage.Name)
+		created, err := driver.Create(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, desiredSize, desiredRootSquash)
 
 		p.fileStorage.Status.MountPath = &created.Path
 
@@ -63,93 +59,59 @@ func (p *Provisioner) reconcileFileStorage(ctx context.Context, cli types.Client
 
 	// If it exists but the size differs, resize it
 	if fs.Size.Value() != desiredSize {
-		log.V(1).Info("resizing file storage", "id", id)
-		return cli.Resize(ctx, id, desiredSize)
+		log.V(1).Info("resizing file storage", "id", p.fileStorage.Name)
+		return driver.Resize(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, desiredSize)
 	}
 
 	// Already in desired state
 	return nil
 }
 
-func (p *Provisioner) reconcileNetworkAttachments(ctx context.Context, cli client.Client, storageclient types.Client) error {
-	id := p.makeID()
-
-	desiredSet, err := p.buildDesiredNetworkSet(ctx, cli)
+func (p *Provisioner) reconcileNetworkAttachments(ctx context.Context, driver types.Driver) error {
+	desiredSet, err := p.buildDesiredNetworkSet()
 	if err != nil {
 		return err
 	}
 
-	currentSet, err := p.buildCurrentNetworkSet(ctx, storageclient, id)
+	currentSet, err := p.buildCurrentNetworkSet(ctx, driver)
 	if err != nil {
 		return err
 	}
 
-	if err := p.attachMissingNetworks(ctx, storageclient, id, desiredSet, currentSet); err != nil {
+	if err := p.attachMissingNetworks(ctx, driver, desiredSet, currentSet); err != nil {
 		return err
 	}
 
-	if err := p.detachStaleNetworks(ctx, storageclient, id, desiredSet, currentSet); err != nil {
+	if err := p.detachStaleNetworks(ctx, driver, desiredSet, currentSet); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (p *Provisioner) getNetwork(ctx context.Context, cli client.Client, networkID string) (*unikornv1.Network, *unikornv1.OpenstackNetwork, error) {
-	network := &unikornv1.Network{}
-	key := client.ObjectKey{
-		Namespace: p.fileStorage.GetNamespace(),
-		Name:      networkID,
-	}
-
-	if err := cli.Get(ctx, key, network); err != nil {
-		return nil, nil, err
-	}
-
-	// Inhibit provisioning until the network is ready, as we may need the network information
-	// to create attachments e.g. the vlanid in the case of OpenStack.
-	if err := manager.ResourceReady(ctx, network); err != nil {
-		return nil, nil, err
-	}
-
-	// don't
-	openstacknetwork := &unikornv1.OpenstackNetwork{}
-	if err := cli.Get(ctx, key, openstacknetwork); err != nil {
-		return nil, nil, err
-	}
-
-	return network, openstacknetwork, nil
-}
-
 // buildDesiredNetworkSet constructs the desired VLAN -> networkInfo map
 // from the FileStorage spec.
-func (p *Provisioner) buildDesiredNetworkSet(ctx context.Context, cli client.Client) (map[int]networkInfo, error) {
-	desiredSet := make(map[int]networkInfo, len(p.fileStorage.Spec.Attachments))
+func (p *Provisioner) buildDesiredNetworkSet() (map[int]unikornv1.Attachment, error) {
+	desiredSet := make(map[int]unikornv1.Attachment, len(p.fileStorage.Spec.Attachments))
 
 	for _, a := range p.fileStorage.Spec.Attachments {
-		network, openstackNetwork, err := p.getNetwork(ctx, cli, a.NetworkID)
-		if err != nil {
-			return nil, err
+		if a.SegmentationID == nil {
+			return nil, fmt.Errorf("%w: network %s has nil SegmentationID", ErrInvalidNetwork, a.NetworkID)
 		}
 
-		if openstackNetwork.Spec.VlanID == nil {
-			return nil, fmt.Errorf("%w: network %s has nil VlanID", ErrInvalidNetwork, a.NetworkID)
+		if a.IPRange == nil {
+			return nil, fmt.Errorf("%w: network %s has nil IPRange", ErrInvalidNetwork, a.NetworkID)
 		}
 
-		ipRange := storageRange(network.Spec.Prefix.IPNet)
-
-		desiredSet[*openstackNetwork.Spec.VlanID] = networkInfo{
-			VlanID:  *openstackNetwork.Spec.VlanID,
-			IPRange: ipRange,
-		}
+		desiredSet[*a.SegmentationID] = a
 	}
 
 	return desiredSet, nil
 }
 
 // buildCurrentNetworkSet returns a set of currently attached VLAN IDs.
-func (p *Provisioner) buildCurrentNetworkSet(ctx context.Context, cli types.Client, id *types.ID) (map[int]struct{}, error) {
-	attachments, err := cli.ListAttachments(ctx, id)
+func (p *Provisioner) buildCurrentNetworkSet(ctx context.Context, driver types.Driver) (map[int]struct{}, error) {
+	attachments, err := driver.ListAttachments(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name)
 	if err = ignoreNotFound(err); err != nil {
 		return nil, err
 	}
@@ -163,17 +125,17 @@ func (p *Provisioner) buildCurrentNetworkSet(ctx context.Context, cli types.Clie
 }
 
 // attachMissingNetworks attaches networks that are desired but not yet attached.
-func (p *Provisioner) attachMissingNetworks(ctx context.Context, cli types.Client, id *types.ID, desiredSet map[int]networkInfo, currentSet map[int]struct{}) error {
+func (p *Provisioner) attachMissingNetworks(ctx context.Context, driver types.Driver, desiredSet map[int]unikornv1.Attachment, currentSet map[int]struct{}) error {
 	log := log.FromContext(ctx)
 
-	for vlan, d := range desiredSet {
+	for vlan, attachment := range desiredSet {
 		if _, exists := currentSet[vlan]; exists {
 			continue
 		}
 
 		log.V(1).Info("attaching network", "vlan", vlan)
 
-		if err := cli.AttachNetwork(ctx, id, d.VlanID, d.IPRange); err != nil {
+		if err := driver.AttachNetwork(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, &attachment); err != nil {
 			return err
 		}
 	}
@@ -182,7 +144,7 @@ func (p *Provisioner) attachMissingNetworks(ctx context.Context, cli types.Clien
 }
 
 // detachStaleNetworks detaches networks that are currently attached but no longer desired.
-func (p *Provisioner) detachStaleNetworks(ctx context.Context, cli types.Client, id *types.ID, desiredSet map[int]networkInfo, currentSet map[int]struct{}) error {
+func (p *Provisioner) detachStaleNetworks(ctx context.Context, driver types.Driver, desiredSet map[int]unikornv1.Attachment, currentSet map[int]struct{}) error {
 	log := log.FromContext(ctx)
 
 	for vlan := range currentSet {
@@ -192,30 +154,10 @@ func (p *Provisioner) detachStaleNetworks(ctx context.Context, cli types.Client,
 
 		log.V(1).Info("detaching network", "vlan", vlan)
 
-		if err := cli.DetachNetwork(ctx, id, vlan); err != nil {
+		if err := driver.DetachNetwork(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, vlan); err != nil {
 			return err
 		}
 	}
 
 	return nil
-}
-
-func storageRange(prefix net.IPNet) *types.IPRange {
-	ba := big.NewInt(0).SetBytes(prefix.IP)
-
-	// Start.
-	bs := big.NewInt(0).Add(ba, big.NewInt(16))
-
-	// End.
-	be := big.NewInt(0).Add(ba, big.NewInt(19))
-
-	return &types.IPRange{
-		Start: net.IP(bs.Bytes()),
-		End:   net.IP(be.Bytes()),
-	}
-}
-
-type networkInfo struct {
-	VlanID  int
-	IPRange *types.IPRange
 }

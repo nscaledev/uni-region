@@ -20,13 +20,12 @@ import (
 	"context"
 	"errors"
 
+	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
 )
 
-func (p *Provisioner) detachNetworks(ctx context.Context, cli types.Client) error {
-	id := p.makeID()
-
-	attachments, err := cli.ListAttachments(ctx, id)
+func (p *Provisioner) detachNetworks(ctx context.Context, driver types.Driver) error {
+	attachments, err := driver.ListAttachments(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name)
 	if err != nil {
 		// ErrNotFound means there are no attachments; nothing to do.
 		if errors.Is(err, types.ErrNotFound) {
@@ -37,7 +36,7 @@ func (p *Provisioner) detachNetworks(ctx context.Context, cli types.Client) erro
 	}
 
 	for _, att := range attachments.Items {
-		if err := cli.DetachNetwork(ctx, id, att.VlanID); err != nil {
+		if err := driver.DetachNetwork(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, att.VlanID); err != nil {
 			return err
 		}
 	}
@@ -45,8 +44,6 @@ func (p *Provisioner) detachNetworks(ctx context.Context, cli types.Client) erro
 	return nil
 }
 
-func (p *Provisioner) deleteFileStorage(ctx context.Context, cli types.Client) error {
-	id := p.makeID()
-
-	return cli.Delete(ctx, id, true)
+func (p *Provisioner) deleteFileStorage(ctx context.Context, driver types.Driver) error {
+	return driver.Delete(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, true)
 }

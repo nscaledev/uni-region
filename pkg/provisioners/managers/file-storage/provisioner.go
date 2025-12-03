@@ -22,7 +22,6 @@ import (
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
-	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -61,16 +60,16 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
-	storageclient, err := p.getFileStorageProvisioner(ctx, cli)
+	driver, err := p.getFileStorageDriver(ctx, cli)
 	if err != nil {
 		return err
 	}
 
-	if err := p.reconcileFileStorage(ctx, storageclient); err != nil {
+	if err := p.reconcileFileStorage(ctx, driver); err != nil {
 		return err
 	}
 
-	if err := p.reconcileNetworkAttachments(ctx, cli, storageclient); err != nil {
+	if err := p.reconcileNetworkAttachments(ctx, driver); err != nil {
 		return err
 	}
 
@@ -84,24 +83,24 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
-	storageclient, err := p.getFileStorageProvisioner(ctx, cli)
+	driver, err := p.getFileStorageDriver(ctx, cli)
 	if err != nil {
 		return err
 	}
 
 	// all networks must be detached before deletion
-	if err := p.detachNetworks(ctx, storageclient); err != nil {
+	if err := p.detachNetworks(ctx, driver); err != nil {
 		return err
 	}
 
-	if err := p.deleteFileStorage(ctx, storageclient); err != nil {
+	if err := p.deleteFileStorage(ctx, driver); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (p *Provisioner) getFileStorageProvisioner(ctx context.Context, cli client.Client) (types.Client, error) {
+func (p *Provisioner) getFileStorageDriver(ctx context.Context, cli client.Client) (types.Driver, error) {
 	storageClass := &unikornv1.FileStorageClass{}
 	key := client.ObjectKey{
 		Namespace: p.fileStorage.GetNamespace(),
@@ -112,16 +111,7 @@ func (p *Provisioner) getFileStorageProvisioner(ctx context.Context, cli client.
 		return nil, err
 	}
 
-	return filestorageprovisioners.NewClient(ctx, cli, p.fileStorage.GetNamespace(), storageClass)
-}
-
-func (p *Provisioner) makeID() *types.ID {
-	projectID := p.fileStorage.Labels[coreconstants.ProjectLabel]
-
-	return &types.ID{
-		ProjectID:     projectID,
-		FileStorageID: p.fileStorage.Name,
-	}
+	return filestorageprovisioners.NewDriver(ctx, cli, p.fileStorage.GetNamespace(), storageClass)
 }
 
 // ignoreNotFound ignores ErrNotFound errors.

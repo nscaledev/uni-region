@@ -42,8 +42,3 @@ type Attachment struct {
 	VlanID  int
 	IPRange *IPRange
 }
-
-type ID struct {
-	ProjectID     string
-	FileStorageID string
-}

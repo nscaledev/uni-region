@@ -18,14 +18,16 @@ package types
 
 import (
 	"context"
+
+	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 )
 
-type Client interface {
-	GetDetails(ctx context.Context, id *ID) (*FileStorageDetails, error)
-	ListAttachments(ctx context.Context, id *ID) (*FileStorageAttachments, error)
-	Create(ctx context.Context, id *ID, size int64, rootSquashEnabled bool) (*FileStorageDetails, error)
-	Delete(ctx context.Context, id *ID, force bool) error
-	AttachNetwork(ctx context.Context, id *ID, vlanID int, ipRange *IPRange) error
-	DetachNetwork(ctx context.Context, id *ID, vlanID int) error
-	Resize(ctx context.Context, id *ID, size int64) error
+type Driver interface {
+	GetDetails(ctx context.Context, projectID string, fileStorageID string) (*FileStorageDetails, error)
+	ListAttachments(ctx context.Context, projectID string, fileStorageID string) (*FileStorageAttachments, error)
+	Create(ctx context.Context, projectID string, fileStorageID string, size int64, rootSquashEnabled bool) (*FileStorageDetails, error)
+	Delete(ctx context.Context, projectID string, fileStorageID string, force bool) error
+	AttachNetwork(ctx context.Context, projectID string, fileStorageID string, attachment *unikornv1.Attachment) error
+	DetachNetwork(ctx context.Context, projectID string, fileStorageID string, segmentationID int) error
+	Resize(ctx context.Context, projectID string, fileStorageID string, size int64) error
 }

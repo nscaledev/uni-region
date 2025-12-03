@@ -21,7 +21,7 @@ import (
 	"errors"
 
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-	filestorageclient "github.com/unikorn-cloud/region/pkg/file-storage/provisioners/client"
+	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/driver"
 	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -34,7 +34,7 @@ var (
 	ErrProvisionerNotFound = errors.New("file storage provisioner not found")
 )
 
-func NewClient(ctx context.Context, c client.Client, namespace string, fileStorageClass *unikornv1.FileStorageClass) (types.Client, error) {
+func NewDriver(ctx context.Context, c client.Client, namespace string, fileStorageClass *unikornv1.FileStorageClass) (types.Driver, error) {
 	var provisioner unikornv1.FileStorageProvisioner
 
 	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: fileStorageClass.Spec.Provisioner}, &provisioner); err != nil {
@@ -45,5 +45,5 @@ func NewClient(ctx context.Context, c client.Client, namespace string, fileStora
 		return nil, err
 	}
 
-	return filestorageclient.New(ctx, c, &provisioner)
+	return driver.New(ctx, c, &provisioner)
 }
