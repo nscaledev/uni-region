@@ -292,8 +292,9 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	updated.Annotations = required.Annotations
 	updated.Spec = required.Spec
 
-	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
-		return nil, errors.OAuth2ServerError("unable to update filestorage").WithError(err)
+	s := newUpdateSaga(c, organizationID, regionID, current, updated)
+	if err := saga.Run(ctx, s); err != nil {
+		return nil, err
 	}
 
 	return convertV2(updated), nil
@@ -323,21 +324,19 @@ func (c *Client) Delete(ctx context.Context, storageID string) error {
 	return nil
 }
 
-// createAllocation creates an allocation for the storage ID and then attaches
-// the allocation ID to the storage for persistence.
-func (s *createSaga) createAllocation(ctx context.Context) error {
-	required := identityapi.ResourceAllocationList{
+func (c *Client) generateAllocation(ctx context.Context, size int) identityapi.ResourceAllocationList {
+	return identityapi.ResourceAllocationList{
 		{
 			Kind:      "filestorage",
-			Committed: s.request.Spec.Size,
+			Committed: size,
 		},
 	}
+}
 
-	if err := identityclient.NewAllocations(s.client.client, s.client.identity).Create(ctx, s.filestorage, required); err != nil {
-		return err
-	}
+func (s *createSaga) createAllocation(ctx context.Context) error {
+	required := s.client.generateAllocation(ctx, s.request.Spec.Size)
 
-	return nil
+	return identityclient.NewAllocations(s.client.client, s.client.identity).Create(ctx, s.filestorage, required)
 }
 
 func (s *createSaga) deleteAllocation(ctx context.Context) error {
@@ -390,4 +389,49 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 	s.filestorage = filestorage
 
 	return nil
+}
+
+type updateSaga struct {
+	client         *Client
+	organizationID string
+	regionID       string
+	current        *regionv1.FileStorage
+	updated        *regionv1.FileStorage
+}
+
+func newUpdateSaga(client *Client, organizationID, regionID string, current, updated *regionv1.FileStorage) *updateSaga {
+	return &updateSaga{
+		client:         client,
+		organizationID: organizationID,
+		regionID:       regionID,
+		current:        current,
+		updated:        updated,
+	}
+}
+
+func (s *updateSaga) updateAllocation(ctx context.Context) error {
+	required := s.client.generateAllocation(ctx, s.updated.Spec.Size.Size())
+
+	return identityclient.NewAllocations(s.client.client, s.client.identity).Update(ctx, s.current, required)
+}
+
+func (s *updateSaga) revertAllocation(ctx context.Context) error {
+	required := s.client.generateAllocation(ctx, s.current.Spec.Size.Size())
+
+	return identityclient.NewAllocations(s.client.client, s.client.identity).Update(ctx, s.current, required)
+}
+
+func (s *updateSaga) updateStorage(ctx context.Context) error {
+	if err := s.client.client.Patch(ctx, s.updated, client.MergeFrom(s.current)); err != nil {
+		return errors.OAuth2ServerError("unable to update filestorage").WithError(err)
+	}
+
+	return nil
+}
+
+func (s *updateSaga) Actions() []saga.Action {
+	return []saga.Action{
+		saga.NewAction("update quota allocation", s.updateAllocation, s.revertAllocation),
+		saga.NewAction("update storage", s.updateStorage, nil),
+	}
 }
