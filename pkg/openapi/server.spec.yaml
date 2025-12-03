@@ -2325,17 +2325,16 @@ components:
       description: Describes the network attachment for storage
       type: object
       required:
-      - networkIds
+      - networkIDs
       properties:
-        networkIds:
-          type: array
-          items:
-            type: object
-            required:
-              - id
-            properties:
-              id:
-                type: string 
+        networkIDs:
+          $ref: '#/components/schemas/networkIDList'
+    networkIDList:
+      description: Describes a list of network ids 
+      type: array
+      items:
+        description: Describes a network ids
+        type: string
     storageAttachmentV2Status:
       description: Describes the network attachment for storage
       type: object
@@ -2360,7 +2359,7 @@ components:
       properties:
         size:
           description: size of the storage 
-          type: string
+          type: integer
         storageType: 
           $ref: '#/components/schemas/storageTypeV2Spec'
         attachments:
@@ -2687,7 +2686,7 @@ components:
               projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
               storageClassId: c7568e2d-f9ab-453d-9a3a-51375f78426b
               regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
-              size: 200Ti
+              size: 200
               storageType:
                 nfs:
                   rootsquash: true
@@ -2705,7 +2704,7 @@ components:
               - name: tag-name
                 value: tag-value
             spec:
-              size: 200Ti
+              size: 200
               storageType:
                 nfs:
                   rootsquash: true
@@ -3246,7 +3245,7 @@ components:
               - name: tag-name
                 value: tag-value
             spec:
-              size: 200Ti
+              size: 200
               storageType:
                 nfs:
                   rootsquash: true
@@ -3284,7 +3283,7 @@ components:
               - name: tag-name
                 value: tag-value
             spec:
-              size: 200Ti
+              size: 200
               storageType:
                 nfs:
                   rootsquash: true

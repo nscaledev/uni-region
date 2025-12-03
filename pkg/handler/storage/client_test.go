@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//nolint:revive,testpackage
+//nolint:testpackage
 package storage
 
 import (
@@ -40,11 +40,7 @@ func TestGenerateAttachmentList(t *testing.T) {
 		{
 			name: "single attachment",
 			input: &openapi.StorageAttachmentV2Spec{
-				NetworkIds: []struct {
-					Id string `json:"id"`
-				}{
-					{Id: "net-1"},
-				},
+				NetworkIDs: openapi.NetworkIDList{"net-1"},
 			},
 			want: []regionv1.Attachment{
 				{NetworkID: "net-1"},
@@ -56,7 +52,6 @@ func TestGenerateAttachmentList(t *testing.T) {
 			want:  []regionv1.Attachment{},
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -118,9 +113,9 @@ func TestGenerateV2List(t *testing.T) {
 
 					Spec: openapi.StorageV2Spec{
 						Attachments: &openapi.StorageAttachmentV2Spec{
-							NetworkIds: nil,
+							NetworkIDs: openapi.NetworkIDList{"net-1"},
 						},
-						Size: "",
+						Size: 1024,
 						StorageType: openapi.StorageTypeV2Spec{
 							NFS: nil,
 						},
@@ -191,7 +186,7 @@ func TestConvertV2(t *testing.T) {
 				},
 				Spec: openapi.StorageV2Spec{
 					Attachments: &openapi.StorageAttachmentV2Spec{},
-					Size:        "",
+					Size:        1024,
 					StorageType: openapi.StorageTypeV2Spec{},
 				},
 				Status: openapi.StorageV2Status{

@@ -20,6 +20,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -86,10 +87,9 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageP
 		return nil, errors.OAuth2ServerError("failed to add identity label selector").WithError(err)
 	}
 
-	//schristoff: pullinmaintofix
-	// if rbac.HasNoMatches(err) {
-	// 	return nil, nil
-	// }
+	if rbac.HasNoMatches(err) {
+		return nil, nil
+	}
 
 	selector, err = util.AddRegionIDQuery(selector, params.RegionID)
 	if err != nil {
@@ -199,18 +199,18 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 }
 
 func generateAttachmentList(in *openapi.StorageAttachmentV2Spec) []regionv1.Attachment {
-	out := make([]regionv1.Attachment, len(in.NetworkIds))
-	for i := range in.NetworkIds {
+	out := make([]regionv1.Attachment, len(in.NetworkIDs))
+	for i := range in.NetworkIDs {
 		out[i] = regionv1.Attachment{
-			NetworkID: in.NetworkIds[i].Id,
+			NetworkID: in.NetworkIDs[i],
 		}
 	}
 
 	return out
 }
 
-func convertSize(size string) (resource.Quantity, error) {
-	return resource.ParseQuantity(size)
+func convertSize(size int) (resource.Quantity, error) {
+	return resource.ParseQuantity(fmt.Sprintf("%d", size))
 }
 
 func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.StorageV2Update, error) {
@@ -329,7 +329,7 @@ func (s *createSaga) createAllocation(ctx context.Context) error {
 	required := identityapi.ResourceAllocationList{
 		{
 			Kind:      "filestorage",
-			Committed: 1,
+			Committed: s.request.Spec.Size,
 		},
 	}
 
@@ -370,8 +370,8 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 		return errors.OAuth2ServerError("filestorage class does not exist").WithError(err)
 	}
 
-	for _, v := range s.request.Spec.Attachments.NetworkIds {
-		_, err = networkClient.GetV2(ctx, v.Id)
+	for _, v := range s.request.Spec.Attachments.NetworkIDs {
+		_, err = networkClient.GetV2(ctx, v)
 		if err != nil {
 			return errors.OAuth2ServerError("network attachment ID not found").WithError(err)
 		}
