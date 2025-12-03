@@ -33,9 +33,9 @@ import (
 func convertRegionType(in unikornv1.Provider) openapi.RegionType {
 	switch in {
 	case unikornv1.ProviderKubernetes:
-		return openapi.Kubernetes
+		return openapi.RegionTypeKubernetes
 	case unikornv1.ProviderOpenstack:
-		return openapi.Openstack
+		return openapi.RegionTypeOpenstack
 	}
 
 	return ""
