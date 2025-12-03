@@ -324,7 +324,7 @@ func (c *Client) Delete(ctx context.Context, storageID string) error {
 	return nil
 }
 
-func (c *Client) generateAllocation(ctx context.Context, size int) identityapi.ResourceAllocationList {
+func (c *Client) generateAllocation(size int) identityapi.ResourceAllocationList {
 	return identityapi.ResourceAllocationList{
 		{
 			Kind:      "filestorage",
@@ -334,7 +334,7 @@ func (c *Client) generateAllocation(ctx context.Context, size int) identityapi.R
 }
 
 func (s *createSaga) createAllocation(ctx context.Context) error {
-	required := s.client.generateAllocation(ctx, s.request.Spec.Size)
+	required := s.client.generateAllocation(s.request.Spec.Size)
 
 	return identityclient.NewAllocations(s.client.client, s.client.identity).Create(ctx, s.filestorage, required)
 }
@@ -410,13 +410,13 @@ func newUpdateSaga(client *Client, organizationID, regionID string, current, upd
 }
 
 func (s *updateSaga) updateAllocation(ctx context.Context) error {
-	required := s.client.generateAllocation(ctx, s.updated.Spec.Size.Size())
+	required := s.client.generateAllocation(s.updated.Spec.Size.Size())
 
 	return identityclient.NewAllocations(s.client.client, s.client.identity).Update(ctx, s.current, required)
 }
 
 func (s *updateSaga) revertAllocation(ctx context.Context) error {
-	required := s.client.generateAllocation(ctx, s.current.Spec.Size.Size())
+	required := s.client.generateAllocation(s.current.Spec.Size.Size())
 
 	return identityclient.NewAllocations(s.client.client, s.client.identity).Update(ctx, s.current, required)
 }
