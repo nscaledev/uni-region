@@ -3245,7 +3245,7 @@ components:
               - name: tag-name
                 value: tag-value
             spec:
-              size: 200
+              size: "200"
               storageType:
                 nfs:
                   rootsquash: true
@@ -3283,7 +3283,7 @@ components:
               - name: tag-name
                 value: tag-value
             spec:
-              size: 200
+              size: "200"
               storageType:
                 nfs:
                   rootsquash: true
