@@ -39,7 +39,7 @@ func TestGenerateAttachmentList(t *testing.T) {
 		want  []regionv1.Attachment
 	}{
 		{
-			name: "single attachment",
+			name: "test with limited values",
 			input: &openapi.StorageAttachmentV2Spec{
 				NetworkIDs: openapi.NetworkIDList{"net-1"},
 			},
@@ -73,7 +73,7 @@ func TestConvertV2List(t *testing.T) {
 		want  openapi.StorageV2List
 	}{
 		{
-			name: "test with data",
+			name: "test with zero values",
 			input: &regionv1.FileStorageList{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "FileStorageList",
@@ -148,7 +148,7 @@ func TestConvertV2(t *testing.T) {
 		want  *openapi.StorageV2Read
 	}{
 		{
-			name: "basic conversion",
+			name: "test with zero values",
 			input: &regionv1.FileStorage{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "FileStorage",
