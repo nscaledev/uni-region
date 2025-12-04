@@ -1,0 +1,43 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: securitygroup-resources.compute.unikorn-cloud.org
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups:
+      - region.unikorn-cloud.org
+      apiVersions:
+      - '*'
+      resources:
+      - securitygroups
+      operations:
+      - CREATE
+      - UPDATE
+  validations:
+  - expression: "object.metadata.?labels[?'unikorn-cloud.org/name'].orValue('') != ''"
+    message: Resource must contain a unikorn-cloud.org/name label
+  - expression: "object.metadata.?labels[?'unikorn-cloud.org/organization'].orValue('') != ''"
+    message: Resource must contain a unikorn-cloud.org/organization label
+  - expression: "oldObject == null || oldObject.metadata.?labels[?'principal.unikorn-cloud.org/organization'].orValue('') ==  object.metadata.?labels[?'principal.unikorn-cloud.org/organization'].orValue('')"
+    message: Resource principal/unikorn-cloud.org/organization label is immutable
+  - expression: "object.metadata.?labels[?'unikorn-cloud.org/project'].orValue('') != ''"
+    message: Resource must contain a unikorn-cloud.org/project label
+  - expression: "oldObject == null || oldObject.metadata.?labels[?'principal.unikorn-cloud.org/project'].orValue('') ==  object.metadata.?labels[?'principal.unikorn-cloud.org/project'].orValue('')"
+    message: Resource principal/unikorn-cloud.org/project label is immutable
+  - expression: "object.metadata.?labels[?'regions.unikorn-cloud.org/identity-id'].orValue('') != ''"
+    message: Resource must contain a regions.unikorn-cloud.org/identity-id label
+  - expression: "object.metadata.?labels[?'regions.unikorn-cloud.org/region-id'].orValue('') != ''"
+    message: Resource must contain a regions.unikorn-cloud.org/region-id label
+  - expression: "object.metadata.?labels[?'regions.unikorn-cloud.org/network-id'].orValue('') != ''"
+    message: Resource must contain a regions.unikorn-cloud.org/network-id label
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: securitygroup-resources.compute.unikorn-cloud.org
+spec:
+  policyName: securitygroup-resources.compute.unikorn-cloud.org
+  validationActions:
+  - Deny

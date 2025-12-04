@@ -35,6 +35,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
 
@@ -372,6 +373,31 @@ func (c *Client) Get(ctx context.Context, organizationID, projectID, securityGro
 	return convert(result), nil
 }
 
+func metadataMutator(required, current metav1.Object) error {
+	req := required.GetLabels()
+	if req == nil {
+		req = map[string]string{}
+	}
+
+	cur := current.GetLabels()
+
+	if v, ok := cur[constants.IdentityLabel]; ok {
+		req[constants.IdentityLabel] = v
+	}
+
+	if v, ok := cur[constants.RegionLabel]; ok {
+		req[constants.RegionLabel] = v
+	}
+
+	if v, ok := cur[constants.NetworkLabel]; ok {
+		req[constants.NetworkLabel] = v
+	}
+
+	required.SetLabels(req)
+
+	return nil
+}
+
 // Update a resource.
 func (c *Client) Update(ctx context.Context, organizationID, projectID, identityID, securityGroupID string, request *openapi.SecurityGroupWrite) (*openapi.SecurityGroupRead, error) {
 	required, err := c.generate(ctx, organizationID, projectID, identityID, request)
@@ -381,6 +407,10 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 
 	current, err := c.GetRaw(ctx, organizationID, projectID, securityGroupID)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := conversion.UpdateObjectMetadata(required, current, common.IdentityMetadataMutator, metadataMutator); err != nil {
 		return nil, err
 	}
 
