@@ -19,6 +19,7 @@ package driver
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/nats-io/nats.go"
@@ -80,22 +81,20 @@ func New(ctx context.Context, cli client.Client, provisioner *unikornv1.FileStor
 }
 
 func connectToNATS(options *Options) (*nats.Conn, error) {
-	var (
-		conn *nats.Conn
-		err  error
-	)
+	u, err := url.Parse(options.URL)
+	if err != nil {
+		return nil, err
+	}
 
-	if strings.HasPrefix(options.URL, "tls") {
-		conn, err = nats.Connect(
+	if u.Scheme == "tls" {
+		return nats.Connect(
 			options.URL,
 			nats.RootCAs(options.CAFile),
 			nats.ClientCert(options.ClientCertFile, options.ClientKeyFile))
-	} else {
-		// Connect without TLS for non-secure connection
-		conn, err = nats.Connect(options.URL)
 	}
 
-	return conn, err
+	// Connect without TLS for non-secure connection
+	return nats.Connect(options.URL)
 }
 
 func options(cm *corev1.ConfigMap) (*Options, error) {
