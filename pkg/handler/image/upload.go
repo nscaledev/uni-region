@@ -35,10 +35,12 @@ import (
 type uploadFileFunc func(context.Context, io.Reader) error
 
 func dispatchUpload(ctx context.Context, contentType string, diskFormat types.ImageDiskFormat, data io.Reader, k uploadFileFunc) error {
+
 	switch contentType {
 	case "application/tar+gzip":
 		return extractFileFromTarGzip(ctx, data, diskFormat, k)
 	case "application/octet-stream":
+		// FIXME here, or somewhere, we should check the file data against the expected format. In k?
 		return k(ctx, data)
 	}
 

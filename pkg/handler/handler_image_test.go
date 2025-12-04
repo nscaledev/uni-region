@@ -123,6 +123,7 @@ func createGzipRequest(t *testing.T, contentType string, data []byte) *http.Requ
 	gzipWriter := gzip.NewWriter(body)
 	_, err := gzipWriter.Write(data)
 	require.NoError(t, err)
+	require.NoError(t, gzipWriter.Close())
 
 	req := httptest.NewRequest(http.MethodPost, urlForPost(), body)
 	req.Header.Set("Content-Type", contentType)
@@ -162,8 +163,6 @@ func TestImageHandler_Upload_ProviderResponses(t *testing.T) {
 	t.Parallel()
 
 	rawFileContent := rawFileBytes()
-
-	// Create test image data. This is used for all the tests.
 
 	testcases := map[string]struct {
 		setupMock          func(*mock.MockProvider)
@@ -407,17 +406,17 @@ func TestImageHandler_Fetch_Good(t *testing.T) {
 	t.Parallel()
 
 	testcases := map[string]struct {
-		imageFormat   types.ImageDiskFormat
+		imageFormat   openapi.ImageDiskFormat
 		expectedBytes []byte
 		responseFunc  func(*testing.T) io.Reader
 	}{
 		"raw disk tarball": {
-			imageFormat:   types.ImageDiskFormatRaw,
+			imageFormat:   openapi.ImageDiskFormatRaw,
 			expectedBytes: rawFileBytes(),
 			responseFunc:  mock.TarballedReader(mock.Files{"disk.raw": rawFileBytes()}),
 		},
 		"qcow2 disk tarball": {
-			imageFormat:   types.ImageDiskFormatQCOW2,
+			imageFormat:   openapi.ImageDiskFormatQcow2,
 			expectedBytes: qcow2FileBytes(),
 			responseFunc:  mock.TarballedReader(mock.Files{"disk.qcow2": qcow2FileBytes()}),
 		},
@@ -425,7 +424,8 @@ func TestImageHandler_Fetch_Good(t *testing.T) {
 
 	for name, testcase := range testcases {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
+			println(name)
+			//	t.Parallel()
 
 			mockCtrl := gomock.NewController(t)
 			defer mockCtrl.Finish()
@@ -433,7 +433,6 @@ func TestImageHandler_Fetch_Good(t *testing.T) {
 			mockProvider := mock.NewMockProvider(mockCtrl)
 
 			providerImage := mock.NewTestProviderImage(types.ImageStatusPending)
-			providerImage.DiskFormat = testcase.imageFormat
 
 			mockProvider.EXPECT().
 				CreateImageForUpload(gomock.Any(), gomock.AssignableToTypeOf(providerImage)).
@@ -454,6 +453,7 @@ func TestImageHandler_Fetch_Good(t *testing.T) {
 			serverCalled := make(chan error)
 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/tar+gzip")
 				w.WriteHeader(http.StatusOK)
 				_, err := io.Copy(w, responseBody)
 				serverCalled <- err
@@ -464,7 +464,8 @@ func TestImageHandler_Fetch_Good(t *testing.T) {
 
 			createRequest := &openapi.ImageCreateRequest{
 				Spec: openapi.ImageCreateSpec{
-					SourceURL: &server.URL,
+					SourceURL:    &server.URL,
+					SourceFormat: &testcase.imageFormat,
 				},
 			}
 
