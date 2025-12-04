@@ -314,6 +314,9 @@ type KubernetesNameParameter = string
 // NetworkDirection The direction of the rule.
 type NetworkDirection string
 
+// NetworkIDList A list of network IDs
+type NetworkIDList = []string
+
 // NetworkProtocol The layer 3+ protocol to allow.
 type NetworkProtocol string
 
@@ -894,9 +897,8 @@ type SshKey struct {
 
 // StorageAttachmentV2Spec Describes the network attachment for storage
 type StorageAttachmentV2Spec struct {
-	NetworkIds []struct {
-		Id *string `json:"id,omitempty"`
-	} `json:"networkIds"`
+	// NetworkIDs A list of network IDs
+	NetworkIDs NetworkIDList `json:"networkIDs"`
 }
 
 // StorageAttachmentV2Status Describes the network attachment for storage
@@ -941,7 +943,10 @@ type StorageV2Create struct {
 		// ProjectId The project to provision the resource in.
 		ProjectId string `json:"projectId"`
 
-		// Size size of the storage
+		// RegionId The region ID to provision the storage into.
+		RegionId string `json:"regionId"`
+
+		// Size Size of the storage
 		Size string `json:"size"`
 
 		// StorageClassId The storage class ID to provision the storage into.
@@ -951,6 +956,9 @@ type StorageV2Create struct {
 		StorageType StorageTypeV2Spec `json:"storageType"`
 	} `json:"spec"`
 }
+
+// StorageV2List A list of storage
+type StorageV2List = []StorageV2Read
 
 // StorageV2Read A storage read only group.
 type StorageV2Read struct {
@@ -969,7 +977,7 @@ type StorageV2Spec struct {
 	// Attachments Describes the network attachment for storage
 	Attachments *StorageAttachmentV2Spec `json:"attachments,omitempty"`
 
-	// Size size of the storage
+	// Size Size of the storage
 	Size string `json:"size"`
 
 	// StorageType A storage's type
@@ -1105,8 +1113,8 @@ type ServersV2Response = ServersV2Read
 // SshKeyResponse An SSH key.
 type SshKeyResponse = SshKey
 
-// StorageListV2Response A storage read only group.
-type StorageListV2Response = StorageV2Read
+// StorageListV2Response A list of storage
+type StorageListV2Response = StorageV2List
 
 // StorageV2Response A storage read only group.
 type StorageV2Response = StorageV2Read
