@@ -22,11 +22,14 @@ import (
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
+
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -66,6 +69,7 @@ func (s *createSaga) createAllocation(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	required := s.client.generateAllocation(convertedSize)
 
 	return identityclient.NewAllocations(s.client.client, s.client.identity).Create(ctx, s.filestorage, required)
