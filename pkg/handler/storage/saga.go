@@ -18,6 +18,7 @@ package storage
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
@@ -61,7 +62,11 @@ func (c *Client) generateAllocation(size int) identityapi.ResourceAllocationList
 }
 
 func (s *createSaga) createAllocation(ctx context.Context) error {
-	required := s.client.generateAllocation(s.request.Spec.Size)
+	convertedSize, err := strconv.Atoi(s.request.Spec.Size)
+	if err != nil {
+		return err
+	}
+	required := s.client.generateAllocation(convertedSize)
 
 	return identityclient.NewAllocations(s.client.client, s.client.identity).Create(ctx, s.filestorage, required)
 }

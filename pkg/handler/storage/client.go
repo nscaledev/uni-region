@@ -68,7 +68,7 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 		Spec: openapi.StorageV2Spec{
 			Attachments: &openapi.StorageAttachmentV2Spec{},
 			StorageType: openapi.StorageTypeV2Spec{},
-			Size:        in.Spec.Size.Size(),
+			Size:        in.Spec.Size.String(),
 		},
 		Status: openapi.StorageV2Status{
 			RegionId:       in.Labels[constants.RegionLabel],
@@ -171,7 +171,10 @@ func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2R
 }
 
 func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.StorageV2Update) (*regionv1.FileStorage, error) {
-	size := convertSize(request.Spec.Size)
+	size, err := convertSize(request.Spec.Size)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("unable to convert size to resource.Quantity").WithError(err)
+	}
 
 	out := &regionv1.FileStorage{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.namespace).
@@ -186,7 +189,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 		},
 	}
 
-	err := util.InjectUserPrincipal(ctx, organizationID, projectID)
+	err = util.InjectUserPrincipal(ctx, organizationID, projectID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
 	}
@@ -210,9 +213,12 @@ func generateAttachmentList(in *openapi.StorageAttachmentV2Spec) []regionv1.Atta
 	return out
 }
 
-func convertSize(size int) *resource.Quantity {
-	return resource.NewQuantity(int64(size), resource.BinarySI)
-
+func convertSize(size string) (*resource.Quantity, error) {
+	quantity, err := resource.ParseQuantity(size)
+	if err != nil {
+		return nil, err
+	}
+	return &quantity, nil
 }
 
 func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.StorageV2Update, error) {

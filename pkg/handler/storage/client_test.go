@@ -27,7 +27,6 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -93,9 +92,7 @@ func TestConvertV2List(t *testing.T) {
 								"app": "mock",
 							},
 						},
-						Spec: regionv1.FileStorageSpec{
-							Size: *resource.NewQuantity(int64(1024), resource.BinarySI),
-						},
+						Spec:   regionv1.FileStorageSpec{},
 						Status: regionv1.FileStorageStatus{},
 					},
 				},
@@ -110,10 +107,8 @@ func TestConvertV2List(t *testing.T) {
 					},
 
 					Spec: openapi.StorageV2Spec{
-						Attachments: &openapi.StorageAttachmentV2Spec{
-							NetworkIDs: openapi.NetworkIDList{"net-1"},
-						},
-						Size: 1024,
+						Size:        "0",
+						Attachments: &openapi.StorageAttachmentV2Spec{},
 						StorageType: openapi.StorageTypeV2Spec{
 							NFS: nil,
 						},
@@ -139,7 +134,7 @@ func TestConvertV2List(t *testing.T) {
 			t.Parallel()
 
 			got := convertV2List(tt.input)
-			require.Equal(t, tt.want, got, "input", tt.input)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -160,24 +155,22 @@ func TestConvertV2(t *testing.T) {
 					APIVersion: "v1alpha1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-filestorage",
+					Name:      "",
 					Namespace: "default",
 					Labels: map[string]string{
 						"app": "mock",
 					},
 				},
-				Spec:   regionv1.FileStorageSpec{},
-				Status: regionv1.FileStorageStatus{},
+				Spec: regionv1.FileStorageSpec{},
 			},
 			want: &openapi.StorageV2Read{
 				Metadata: corev1.ProjectScopedResourceReadMetadata{
-					CreationTime: time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC),
-					HealthStatus: "unknown",
-					Id:           "test-filestorage",
+					HealthStatus:       corev1.ResourceHealthStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
 				},
 				Spec: openapi.StorageV2Spec{
+					Size:        "0",
 					Attachments: &openapi.StorageAttachmentV2Spec{},
-					Size:        3,
 					StorageType: openapi.StorageTypeV2Spec{},
 				},
 				Status: openapi.StorageV2Status{

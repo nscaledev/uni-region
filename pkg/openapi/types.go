@@ -314,7 +314,7 @@ type KubernetesNameParameter = string
 // NetworkDirection The direction of the rule.
 type NetworkDirection string
 
-// NetworkIDList Describes a list of network ids
+// NetworkIDList A list of network IDs
 type NetworkIDList = []string
 
 // NetworkProtocol The layer 3+ protocol to allow.
@@ -897,7 +897,7 @@ type SshKey struct {
 
 // StorageAttachmentV2Spec Describes the network attachment for storage
 type StorageAttachmentV2Spec struct {
-	// NetworkIDs Describes a list of network ids
+	// NetworkIDs A list of network IDs
 	NetworkIDs NetworkIDList `json:"networkIDs"`
 }
 
@@ -946,8 +946,8 @@ type StorageV2Create struct {
 		// RegionId The region ID to provision the storage into.
 		RegionId string `json:"regionId"`
 
-		// Size size of the storage
-		Size int `json:"size"`
+		// Size Size of the storage
+		Size string `json:"size"`
 
 		// StorageClassId The storage class ID to provision the storage into.
 		StorageClassId string `json:"storageClassId"`
@@ -977,8 +977,8 @@ type StorageV2Spec struct {
 	// Attachments Describes the network attachment for storage
 	Attachments *StorageAttachmentV2Spec `json:"attachments,omitempty"`
 
-	// Size size of the storage
-	Size int `json:"size"`
+	// Size Size of the storage
+	Size string `json:"size"`
 
 	// StorageType A storage's type
 	StorageType StorageTypeV2Spec `json:"storageType"`
