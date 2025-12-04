@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/manager"
@@ -84,7 +85,7 @@ func (p *Provisioner) reconcileNetworkAttachments(ctx context.Context, cli clien
 		return err
 	}
 
-	if err := p.detachStaleNetworks(ctx, driver, desiredSet, currentSet); err != nil {
+	if err := p.detachStaleNetworks(ctx, cli, driver, desiredSet, currentSet, reference); err != nil {
 		return err
 	}
 
@@ -151,7 +152,7 @@ func (p *Provisioner) attachMissingNetworks(ctx context.Context, cli client.Clie
 }
 
 // detachStaleNetworks detaches networks that are currently attached but no longer desired.
-func (p *Provisioner) detachStaleNetworks(ctx context.Context, driver types.Driver, desiredSet map[int]unikornv1.Attachment, currentSet map[int]struct{}) error {
+func (p *Provisioner) detachStaleNetworks(ctx context.Context, cli client.Client, driver types.Driver, desiredSet map[int]unikornv1.Attachment, currentSet map[int]struct{}, reference string) error {
 	log := log.FromContext(ctx)
 
 	for vlan := range currentSet {
@@ -166,5 +167,38 @@ func (p *Provisioner) detachStaleNetworks(ctx context.Context, driver types.Driv
 		}
 	}
 
+	// Remove references to networks no longer attached. Since the driver (vast) is the source of truth for attachments but does not track network IDs,
+	// we must list all candidate networks and check which are no longer referenced in fileStorage attachments.
+	networks := &unikornv1.NetworkList{}
+	if err := cli.List(ctx, networks, p.identityListOptions()); err != nil {
+		return err
+	}
+
+	for _, network := range networks.Items {
+		// skip networks that don't have this reference.
+		if !slices.Contains(network.Finalizers, reference) {
+			continue
+		}
+
+		// if the fileStorage still has an attachment to this network, keep the reference.
+		if p.isNetworkStillAttached(network.Name) {
+			continue
+		}
+
+		if err := manager.RemoveResourceReference(ctx, cli, &unikornv1.Network{}, client.ObjectKeyFromObject(&network), reference); err != nil {
+			return fmt.Errorf("%w: failed to remove network references", err)
+		}
+	}
+
 	return nil
+}
+
+func (p *Provisioner) isNetworkStillAttached(networkName string) bool {
+	for _, attachment := range p.fileStorage.Spec.Attachments {
+		if attachment.NetworkID == networkName {
+			return true
+		}
+	}
+
+	return false
 }
