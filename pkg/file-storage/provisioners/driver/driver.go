@@ -231,6 +231,10 @@ func (p *Client) Delete(ctx context.Context, projectID string, fileStorageID str
 }
 
 func (p *Client) AttachNetwork(ctx context.Context, projectID string, fileStorageID string, attachment *unikornv1.Attachment) error {
+	if attachment.SegmentationID == nil || attachment.IPRange == nil {
+		return fmt.Errorf("%w: missing segmentation ID or IP range", ErrInvalidAttachment)
+	}
+
 	tracer := otel.GetTracerProvider().Tracer(constants.Application)
 
 	_, span := tracer.Start(ctx, fmt.Sprintf("POST /file-storage/%s/attachments/%d", fileStorageID, *attachment.SegmentationID), trace.WithSpanKind(trace.SpanKindClient))

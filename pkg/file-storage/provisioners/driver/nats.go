@@ -31,8 +31,9 @@ import (
 const timeout = 30 * time.Second
 
 var (
-	ErrNoSuccess    = errors.New("nats: empty success response")
-	ErrDriverConfig = errors.New("nats: missing or invalid driver configuration")
+	ErrNoSuccess         = errors.New("nats: empty success response")
+	ErrDriverConfig      = errors.New("nats: missing or invalid driver configuration")
+	ErrInvalidAttachment = errors.New("invalid attachment")
 )
 
 const (
