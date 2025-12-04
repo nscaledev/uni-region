@@ -27,6 +27,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
@@ -48,13 +49,16 @@ type Client struct {
 	client client.Client
 	// namespace we are running in.
 	namespace string
+	// identity is an identity client for RBAC access.
+	identity *identityclient.Client
 }
 
 // NewClient creates a new client.
-func NewClient(client client.Client, namespace string) *Client {
+func New(client client.Client, namespace string, identity *identityclient.Client) *Client {
 	return &Client{
 		client:    client,
 		namespace: namespace,
+		identity:  identity,
 	}
 }
 

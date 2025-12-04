@@ -282,8 +282,10 @@ func (h *Handler) GetApiV2ServersServerIDConsolesessions(w http.ResponseWriter, 
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
+// todo(schristoff): logic for identity has been re-wrangled
+// between v1 and v2. figure it out ¯\_(ツ)_/¯
 func (h *Handler) storageClient() *storage.Client {
-	return storage.NewClient(h.client, h.namespace)
+	return storage.New(h.client, h.namespace, h.getIdentityAPIClient)
 }
 
 func (h *Handler) GetApiV2Filestorage(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2FilestorageParams) {
