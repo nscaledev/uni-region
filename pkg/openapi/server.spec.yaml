@@ -1575,7 +1575,7 @@ components:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/imageCreateSpec'
-    imageUpload:
+    imageUploadForm:
       description: Image upload form.
       type: object
       required:
@@ -1585,6 +1585,10 @@ components:
           description: The image file data to upload.
           type: string
           format: binary
+    imageUploadData:
+      description: Image upload as byte stream.
+      type: string
+      format: binary
     gpuSpec:
       description: GPU specification.
       type: object
@@ -2615,12 +2619,17 @@ components:
       content:
         multipart/form-data:
           schema:
-            $ref: '#/components/schemas/imageUpload'
+            $ref: '#/components/schemas/imageUploadForm'
           encoding:
             file:
               contentType: application/tar+gzip,application/gzip
           example:
             file: (binary file data)
+        application/octet-stream:
+          # according to https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.0.0.md#considerations-for-file-uploads,
+          # this is functionally equivalent to */*.
+          schema:
+            $ref: '#/components/schemas/imageUploadData'
     networkRequest:
       description: A request for a network.
       content:

@@ -220,7 +220,9 @@ func TestUploadImageData(t *testing.T) {
 				diskFormat = f
 			}
 
-			err := uploadImageData(ctx, imageID, diskFormat, reader, mockProvider)
+			upload := uploadToProvider(imageID, mockProvider)
+
+			err := dispatchUpload(ctx, "application/tar+gzip", diskFormat, reader, upload)
 			require.Equal(t, testCase.ExpectedError, err != nil, "got error %s", err)
 		})
 	}

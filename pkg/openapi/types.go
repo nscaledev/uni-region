@@ -333,8 +333,11 @@ type ImageSpec struct {
 	Virtualization ImageVirtualization `json:"virtualization"`
 }
 
-// ImageUpload Image upload form.
-type ImageUpload struct {
+// ImageUploadData Image upload as byte stream.
+type ImageUploadData = openapi_types.File
+
+// ImageUploadForm Image upload form.
+type ImageUploadForm struct {
 	// File The image file data to upload.
 	File openapi_types.File `json:"file"`
 }
@@ -1320,7 +1323,7 @@ type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSer
 type PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesJSONRequestBody = ImageCreate
 
 // PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDDataMultipartRequestBody defines body for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDData for multipart/form-data ContentType.
-type PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDDataMultipartRequestBody = ImageUpload
+type PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageIDDataMultipartRequestBody = ImageUploadForm
 
 // PostApiV2FilestorageJSONRequestBody defines body for PostApiV2Filestorage for application/json ContentType.
 type PostApiV2FilestorageJSONRequestBody = StorageV2Create

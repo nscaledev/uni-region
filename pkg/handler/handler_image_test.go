@@ -19,6 +19,7 @@ package handler
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -78,6 +79,11 @@ func newTestImageHandler(t *testing.T, mockProvider *mock.MockProvider) *ImageHa
 	return handler
 }
 
+func urlForPost() string {
+	return fmt.Sprintf("/api/v1/organizations/%s/regions/%s/images/%s/data",
+		testOrganizationID, testRegionID, testImageID)
+}
+
 // createMultipartRequest creates an HTTP request with multipart form data.
 func createMultipartRequest(t *testing.T, data io.Reader) *http.Request {
 	t.Helper()
@@ -94,8 +100,33 @@ func createMultipartRequest(t *testing.T, data io.Reader) *http.Request {
 	err = writer.Close()
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/organizations/"+testOrganizationID+"/regions/"+testRegionID+"/images/"+testImageID+"/data", body)
+	req := httptest.NewRequest(http.MethodPost, urlForPost(), body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	return req
+}
+
+func createBytesRequest(t *testing.T, contentType string, data []byte) *http.Request {
+	t.Helper()
+
+	body := bytes.NewBuffer(data)
+	req := httptest.NewRequest(http.MethodPost, urlForPost(), body)
+	req.Header.Set("Content-Type", contentType)
+
+	return req
+}
+
+func createGzipRequest(t *testing.T, contentType string, data []byte) *http.Request {
+	t.Helper()
+
+	body := &bytes.Buffer{}
+	gzipWriter := gzip.NewWriter(body)
+	_, err := gzipWriter.Write(data)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, urlForPost(), body)
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("Content-Encoding", "gzip")
 
 	return req
 }
@@ -302,6 +333,20 @@ func TestImageHandler_Upload_GoodRequests(t *testing.T) {
 			expectedBytes: qcow2FileBytes(),
 			requestFunc: func(t *testing.T) *http.Request { //nolint:thelper
 				return createMultipartRequest(t, tarGzippedFile(t, "disk.qcow2", qcow2FileBytes()))
+			},
+		},
+		"raw disk POST": {
+			imageFormat:   types.ImageDiskFormatRaw,
+			expectedBytes: rawFileBytes(),
+			requestFunc: func(t *testing.T) *http.Request { //nolint:thelper
+				return createBytesRequest(t, "application/octet-stream", rawFileBytes())
+			},
+		},
+		"gzipped POST": {
+			imageFormat:   types.ImageDiskFormatRaw,
+			expectedBytes: rawFileBytes(),
+			requestFunc: func(t *testing.T) *http.Request { //nolint:thelper
+				return createGzipRequest(t, "application/octet-stream", rawFileBytes())
 			},
 		},
 	}

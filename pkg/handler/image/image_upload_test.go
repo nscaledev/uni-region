@@ -74,6 +74,7 @@ func TestUploadFromURL_Success(t *testing.T) {
 
 	// Set up httptest server to serve the tar.gz file
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/tar+gzip")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(tarGzBytes)
 	}))

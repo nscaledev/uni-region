@@ -21,7 +21,6 @@ import (
 	"compress/gzip"
 	"context"
 	goerrors "errors"
-	"fmt"
 	"io"
 	"os"
 
@@ -31,6 +30,53 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+// uploadFileFunc is the common denominator for what to do with image file data,
+// once it's been extracted from the request.
+type uploadFileFunc func(context.Context, io.Reader) error
+
+func dispatchUpload(ctx context.Context, contentType string, diskFormat types.ImageDiskFormat, data io.Reader, k uploadFileFunc) error {
+	switch contentType {
+	case "application/tar+gzip":
+		return extractFileFromTarGzip(ctx, data, diskFormat, k)
+	case "application/octet-stream":
+		return k(ctx, data)
+	}
+
+	return errors.OAuth2InvalidRequest("unrecognized content type").WithValues("content-type", contentType)
+}
+
+// extractFileFromTarGzip finds the file in question in a .tar.gz, and passes it to the
+// next stage `k`. It's done this way so that this func can do its own tidy-up.
+func extractFileFromTarGzip(ctx context.Context, source io.Reader, format types.ImageDiskFormat, k uploadFileFunc) error {
+	gzipReader, err := gzip.NewReader(source)
+	if err != nil {
+		return errors.OAuth2InvalidRequest("The request does not have valid image data").WithError(err)
+	}
+	defer gzipReader.Close()
+
+	staged, err := extractFileFromTarball(ctx, gzipReader, format)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		staged.Close()
+
+		if err := os.Remove(staged.Name()); err != nil {
+			log.FromContext(ctx).Error(err, "failed to remove temporary disk image file", "file", staged.Name())
+		}
+	}()
+
+	return k(ctx, staged)
+}
+
+// extractFileFromTarball is a special case of getting the image file contents from a request;
+// it assumes the bytes to be read are a tar file containing a file, named either
+// `disk.raw“ or `disk.qcow2` (as determined by the disk format given when the image record
+// was created). This seems a bit unusual, but is supported by e.g., GCP:
+//
+//	https://docs.cloud.google.com/migrate/virtual-machines/docs/5.0/migrate/image_import)
+//
 //nolint:cyclop // I consider this easy enough to grok.
 func extractFileFromTarball(ctx context.Context, data io.Reader, format types.ImageDiskFormat) (*os.File, error) {
 	var (
@@ -80,7 +126,7 @@ func extractFileFromTarball(ctx context.Context, data io.Reader, format types.Im
 		if header.Name == expectedFilename {
 			validatingReader, err := validatingReaderFunc(tarReader)
 			if err != nil {
-				return nil, err
+				return nil, errors.OAuth2InvalidRequest("the file is not a valid image of the format given").WithError(err)
 			}
 
 			tempFile, err := os.CreateTemp(os.TempDir(), "disk_")
@@ -110,40 +156,4 @@ func extractFileFromTarball(ctx context.Context, data io.Reader, format types.Im
 	}
 
 	return stagedFile, nil
-}
-
-func uploadImageData(ctx context.Context, imageID string, diskFormat types.ImageDiskFormat, sourceReader io.Reader, provider Provider) error {
-	gzipReader, err := gzip.NewReader(sourceReader)
-	if err != nil {
-		return errors.OAuth2InvalidRequest("The request does not have valid image data").WithError(err)
-	}
-
-	sourceReader = gzipReader
-	defer gzipReader.Close()
-
-	// Stage the image upload into a temp file, so that we can close the request without
-	// relying on our own upstream call completing.
-	staged, err := extractFileFromTarball(ctx, sourceReader, diskFormat)
-	if err != nil {
-		return errors.OAuth2InvalidRequest("extracting file from tarball").WithError(err)
-	}
-
-	defer func() {
-		staged.Close()
-
-		if err := os.Remove(staged.Name()); err != nil {
-			log.FromContext(ctx).Error(err, "failed to remove temporary disk image file", "file", staged.Name())
-		}
-	}()
-
-	if err = provider.UploadImageData(ctx, imageID, staged); err != nil {
-		if goerrors.Is(err, types.ErrImageNotReadyForUpload) {
-			err = fmt.Errorf("%w: image data has already been uploaded", ErrProviderResource)
-			return errors.HTTPConflict().WithError(err)
-		}
-
-		return errors.OAuth2ServerError("The server encountered an unexpected error while uploading the image data").WithError(err)
-	}
-
-	return nil
 }

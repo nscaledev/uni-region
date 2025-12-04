@@ -139,6 +139,23 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 	return convertImage(result), nil
 }
 
+// uploadToProvider returns a callback `uploadFileFunc` that will stream the callback's
+// io.Reader to the provider given.
+func uploadToProvider(imageID string, provider Provider) uploadFileFunc {
+	return func(ctx context.Context, reader io.Reader) error {
+		if err := provider.UploadImageData(ctx, imageID, reader); err != nil {
+			if goerrors.Is(err, types.ErrImageNotReadyForUpload) {
+				err = fmt.Errorf("%w: image data has already been uploaded", ErrProviderResource)
+				return errors.HTTPConflict().WithError(err)
+			}
+
+			return errors.OAuth2ServerError("The server encountered an unexpected error while uploading the image data").WithError(err)
+		}
+
+		return nil
+	}
+}
+
 func (c *Client) UploadImage(ctx context.Context, organizationID, regionID, imageID string, contentType string, data io.Reader) (*openapi.ImageResponse, error) {
 	provider, err := c.provider(ctx, regionID)
 	if err != nil {
@@ -162,8 +179,10 @@ func (c *Client) UploadImage(ctx context.Context, organizationID, regionID, imag
 		return nil, errors.HTTPNotFound()
 	}
 
-	if err := uploadImageData(ctx, imageID, image.DiskFormat, data, provider); err != nil {
-		return nil, err
+	uploadErr := dispatchUpload(ctx, contentType, image.DiskFormat, data, uploadToProvider(image.ID, provider))
+
+	if uploadErr != nil {
+		return nil, uploadErr
 	}
 
 	return convertImage(image), nil
@@ -296,7 +315,9 @@ func (s *createImageForUploadSaga) uploadFromURL(ctx context.Context, source str
 		return fmt.Errorf("%w: non-OK status code (%s) from fetching source", ErrFailedImageFetch, res.Status)
 	}
 
-	if err := uploadImageData(ctx, s.result.ID, s.result.DiskFormat, res.Body, s.provider); err != nil {
+	contentType := res.Header.Get("Content-Type")
+
+	if err := dispatchUpload(ctx, contentType, s.image.DiskFormat, res.Body, uploadToProvider(s.result.ID, s.provider)); err != nil {
 		return err
 	}
 

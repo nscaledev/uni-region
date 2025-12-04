@@ -18,10 +18,13 @@ limitations under the License.
 package handler
 
 import (
+	"compress/gzip"
 	goerrors "errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -117,6 +120,11 @@ func (h *ImageHandler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages
 	// Limit the number of bytes we are prepared to read as an upload, as a defensive measure.
 	r.Body = http.MaxBytesReader(w, r.Body, h.options.ImageUploadSizeLimit)
 
+	if err := maybeDecompress(r); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
 	// In the following we are trying to determine how to proceed with the request, based on its content type and encoding.
 	// We'll handle the request format here, and pass the bytes on to the client to process.
 	var read func(*http.Request) (io.ReadCloser, string, error)
@@ -132,6 +140,10 @@ func (h *ImageHandler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages
 				logger.Error(err, "cleaning up after multipart/form-data parsing")
 			}
 		}(log.FromContext(r.Context()))
+	case "application/octet-stream", "application/tar+gzip": // these can be left to the upload func to figure out
+		read = func(*http.Request) (io.ReadCloser, string, error) {
+			return r.Body, contentType, nil
+		}
 	default:
 		errors.HandleError(w, r, fmt.Errorf("%w: Content-Type not handled by this endpoint", errors.ErrRequest))
 		return
@@ -176,10 +188,47 @@ func parseMultipartFormData(r *http.Request) (io.ReadCloser, string, error) {
 		return nil, "", err
 	}
 
-	return partReader, partHeader.Header.Get("Content-Type"), nil
+	contentType := sniffContentType(partHeader)
+
+	return partReader, contentType, nil
 }
 
 func mainHeaderValue(header string) string {
 	before, _, _ := strings.Cut(header, ";")
 	return before
+}
+
+func sniffContentType(partHeader *multipart.FileHeader) string {
+	ct := partHeader.Header.Get("Content-Type")
+
+	// Sometimes we'll get a pre-sniffed content type; sometimes we have to
+	// have a guess ourselves.
+	if ct == "application/octet-stream" {
+		switch {
+		case strings.HasSuffix(partHeader.Filename, ".tar.gz"):
+			return "application/tar+gzip"
+		case strings.HasSuffix(partHeader.Filename, ".tar"):
+			return "application/tar"
+		}
+	}
+
+	return ct
+}
+
+func maybeDecompress(r *http.Request) error {
+	// It's non-standard to set this on a request -- you would usually set `Accept-Encoding` on a **request**
+	// to indicate you can handle a compressed **response**, then the server can gzip it and set `Content-Encoding`
+	// on its response. But it's helpful for CLIs to be able to save bandwidth by compressing image files,
+	// so we support it.
+	if slices.Contains(r.Header.Values("Content-Encoding"), "gzip") {
+		gzipReader, err := gzip.NewReader(r.Body)
+		if err != nil {
+			httperr := fmt.Errorf("%w: Content-Encoding indicated gzipped content, but not a valid gzip", errors.ErrRequest)
+			return httperr
+		}
+
+		r.Body = gzipReader
+	}
+
+	return nil
 }
