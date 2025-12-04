@@ -68,7 +68,7 @@ func (c *Client) convert(ctx context.Context, in *unikornv1.Identity) *openapi.I
 	//nolint:exhaustive,gocritic
 	switch in.Spec.Provider {
 	case unikornv1.ProviderOpenstack:
-		out.Spec.Type = openapi.Openstack
+		out.Spec.Type = openapi.RegionTypeOpenstack
 
 		var openstackIdentity unikornv1.OpenstackIdentity
 
