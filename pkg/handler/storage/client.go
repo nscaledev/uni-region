@@ -85,11 +85,12 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageP
 
 	selector, err = rbac.AddOrganizationAndProjectIDQuery(ctx, selector, util.OrganizationIDQuery(params.OrganizationID), util.ProjectIDQuery(params.ProjectID))
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to add identity label selector").WithError(err)
-	}
+		if rbac.HasNoMatches(err) {
+			//todo(schristoff): discuss
+			return nil, nil
+		}
 
-	if rbac.HasNoMatches(err) {
-		return nil, nil
+		return nil, errors.OAuth2ServerError("failed to add identity label selector").WithError(err)
 	}
 
 	selector, err = util.AddRegionIDQuery(selector, params.RegionID)
