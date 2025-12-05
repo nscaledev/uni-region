@@ -43,13 +43,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// Client provides a restful API for networks.
+// Client provides a restful API for storage.
 type Client struct {
 	// client ia a Kubernetes client.
 	client client.Client
 	// namespace we are running in.
 	namespace string
-	// identity allows quota allocation.
+	// identity is an identity client for RBAC access.
 	identity identityclient.APIClientGetter
 }
 
@@ -77,8 +77,7 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 	}
 }
 
-// ListV2 takes an openapi get api request and returns all storage items found via the k8s client within scope
-// and attempts to sort them.
+// ListV2 satisfies an http get to return all storage items within a project.
 func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageParams) (openapi.StorageV2List, error) {
 	selector := labels.Everything()
 
@@ -86,11 +85,11 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageP
 
 	selector, err = rbac.AddOrganizationAndProjectIDQuery(ctx, selector, util.OrganizationIDQuery(params.OrganizationID), util.ProjectIDQuery(params.ProjectID))
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to add identity label selector").WithError(err)
-	}
+		if rbac.HasNoMatches(err) {
+			return nil, nil
+		}
 
-	if rbac.HasNoMatches(err) {
-		return nil, nil
+		return nil, errors.OAuth2ServerError("failed to add identity label selector").WithError(err)
 	}
 
 	selector, err = util.AddRegionIDQuery(selector, params.RegionID)
@@ -159,7 +158,7 @@ func (c *Client) GetRaw(ctx context.Context, storageID string) (*regionv1.FileSt
 	return result, nil
 }
 
-// Get returns an openapi storage object by converting the output from the regionv1 object.
+// Get returns a storage object for a specific storageID.
 func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2Read, error) {
 	result, err := c.GetRaw(ctx, storageID)
 	if err != nil {
@@ -236,8 +235,8 @@ func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.Storage
 	return out, nil
 }
 
-// CreateV2 creates the storage object and returns the finalized object as a read
-// it does this leveraging the saga system which acts as a tape to enable rollbacks
+// CreateV2 satisifies an http PUT action by creating a unique storage object.
+// It does this leveraging the saga system which acts as a tape to enable rollbacks
 // in case of errors.
 func (c *Client) CreateV2(ctx context.Context, request *openapi.StorageV2Create) (*openapi.StorageV2Read, error) {
 	if err := rbac.AllowProjectScope(ctx, "region:filestorage:v2", identityapi.Create,
@@ -254,7 +253,8 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.StorageV2Create)
 	return convertV2(s.filestorage), nil
 }
 
-// Update takes the openapi update object and returns the finalized object as a read
+// Update satisifies an http POST action by updating the storage object attached
+// to the storage ID.
 // it leverages the update saga system, which acts as a tape to enable rollbacks
 // in case of errors.
 func (c *Client) Update(ctx context.Context, storageID string, request *openapi.StorageV2Update) (*openapi.StorageV2Read, error) {
@@ -293,7 +293,9 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	return convertV2(updated), nil
 }
 
-// Delete should be an update saga????
+// Delete satisfies the http DELETE action by removing the client.
+// It does not leverage the saga system because we can rely on finalizers
+// to handle this for us.
 func (c *Client) Delete(ctx context.Context, storageID string) error {
 	resource, err := c.GetRaw(ctx, storageID)
 	if err != nil {
