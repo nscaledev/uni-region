@@ -123,7 +123,10 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 	router.NotFound(http.HandlerFunc(handler.NotFound))
 	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
 
-	authorizer := openapimiddlewareremote.NewAuthorizer(client, s.IdentityOptions, &s.ClientOptions)
+	authorizer, err := openapimiddlewareremote.NewAuthorizer(client, s.IdentityOptions, &s.ClientOptions)
+	if err != nil {
+		return nil, err
+	}
 
 	// Middleware specified here is applied to all requests post-routing.
 	// NOTE: these are applied in reverse order!!
@@ -137,9 +140,13 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 	}
 
 	issuer := identityclient.NewTokenIssuer(client, s.IdentityOptions, &s.ClientOptions, constants.ServiceDescriptor())
-	identity := identityclient.New(client, s.IdentityOptions, &s.ClientOptions)
 
-	handlerInterface, err := handler.New(client, s.CoreOptions.Namespace, &s.HandlerOptions, issuer, identity)
+	identity, err := identityclient.New(client, s.IdentityOptions, &s.ClientOptions).APIClient(context.TODO(), issuer)
+	if err != nil {
+		return nil, err
+	}
+
+	handlerInterface, err := handler.New(client, s.CoreOptions.Namespace, &s.HandlerOptions, identity)
 	if err != nil {
 		return nil, err
 	}

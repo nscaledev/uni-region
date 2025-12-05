@@ -283,7 +283,7 @@ func (h *Handler) GetApiV2ServersServerIDConsolesessions(w http.ResponseWriter, 
 }
 
 func (h *Handler) storageClient() *storage.Client {
-	return storage.New(h.client, h.namespace, h.getIdentityAPIClient)
+	return storage.New(h.client, h.namespace, h.identity)
 }
 
 func (h *Handler) GetApiV2Filestorage(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2FilestorageParams) {
@@ -295,6 +295,7 @@ func (h *Handler) GetApiV2Filestorage(w http.ResponseWriter, r *http.Request, pa
 
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
+
 func (h *Handler) PostApiV2Filestorage(w http.ResponseWriter, r *http.Request) {
 	request := &openapi.StorageV2Create{}
 
@@ -311,6 +312,7 @@ func (h *Handler) PostApiV2Filestorage(w http.ResponseWriter, r *http.Request) {
 
 	util.WriteJSONResponse(w, r, http.StatusCreated, result)
 }
+
 func (h *Handler) DeleteApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter) {
 	if err := h.storageClient().Delete(r.Context(), filestorageID); err != nil {
 		errors.HandleError(w, r, err)
@@ -319,6 +321,7 @@ func (h *Handler) DeleteApiV2StorageFilestorageFilestorageID(w http.ResponseWrit
 
 	w.WriteHeader(http.StatusAccepted)
 }
+
 func (h *Handler) GetApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter) {
 	result, err := h.storageClient().Get(r.Context(), filestorageID)
 	if err != nil {
@@ -328,6 +331,7 @@ func (h *Handler) GetApiV2StorageFilestorageFilestorageID(w http.ResponseWriter,
 
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
+
 func (h *Handler) PutApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, fileStorageID openapi.FilestorageIDParameter) {
 	request := &openapi.StorageV2Update{}
 
