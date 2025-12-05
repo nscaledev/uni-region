@@ -13,7 +13,7 @@ These services have a common requirement on a compute cloud/region to provision 
 
 At present this region controller is monolithic, offering region discovery and routing to allow scoped provisioning and deprovisioning or the aforementioned hardware prerequisites.
 
-Given this service holds elevated privilege credentials to all of those clouds, it make it somewhat of a honey pot.
+Given this service holds elevated privilege credentials to all of those clouds, it makes it somewhat of a honey pot.
 Eventually, the goal is to have this act as a purely discovery and routing service, and platform specific region controllers live in those platforms, including their credentials.
 The end goal being the compromise of one, doesn't affect the others, limiting blast radius, and not having to disseminate credentials across the internet, they would reside locally in the cloud platform's AS to improve security guarantees.
 
@@ -69,34 +69,6 @@ The configures the service to be exposed on the specified host using an ingress 
 The OIDC configuration allows token validation at the API.
 
 Regions define cloud instances to expose to clients.
-
-
-### Contributing
-
-#### Linter Help
-To ensure code quality throughout the `nscaledev` organization we have configured various linters, [shown here](https://github.com/nscaledev/uni-region/blob/main/.golangci.yam).
-
-##### GCI Sections
-For "GCI" all imports in a Go file must be in a [particular order](https://golangci-lint.run/docs/formatters/configuration/#gci):
-- Standard (contains all imports from the standard library)
-- Default (contains all imports that could not be matched to another section)
-- Prefix (github.com/unikorn-cloud)
-- Prefix (k8s.io)
-- Prefix (sigs.k8s.io)
-
-##### TestPackage
-The [maratori testpackage](https://github.com/maratori/testpackage) focuses on "black box testing", or testing primarily 
-exported functionality. This means all test files must be in a package that 
-has "*_test" appended to it. For example:
-```
-package store_test
-```
-
-If testing exported functionality is necessary for the contribution, then
-adding the following above the imports section will allow bypassing this.
-```
-//nolint:testpackage
-```
 
 ## What Next?
 
