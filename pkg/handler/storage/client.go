@@ -50,11 +50,11 @@ type Client struct {
 	// namespace we are running in.
 	namespace string
 	// identity is an identity client for RBAC access.
-	identity *identityclient.Client
+	identity identityclient.APIClientGetter
 }
 
-// NewClient creates a new client.
-func New(client client.Client, namespace string, identity *identityclient.Client) *Client {
+// New creates a new client.
+func New(client client.Client, namespace string, identity identityclient.APIClientGetter) *Client {
 	return &Client{
 		client:    client,
 		namespace: namespace,
