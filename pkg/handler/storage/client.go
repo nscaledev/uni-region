@@ -158,7 +158,7 @@ func (c *Client) GetRaw(ctx context.Context, storageID string) (*regionv1.FileSt
 	return result, nil
 }
 
-// Get returns a storage object for a specific storageID
+// Get returns a storage object for a specific storageID.
 func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2Read, error) {
 	result, err := c.GetRaw(ctx, storageID)
 	if err != nil {
