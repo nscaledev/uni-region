@@ -84,12 +84,9 @@ func (p *Provisioner) identityClient(ctx context.Context) (identityapi.ClientWit
 		return nil, err
 	}
 
-	token, err := identityclient.NewTokenIssuer(client, p.options.identityOptions, &p.options.clientOptions, constants.ServiceDescriptor()).Issue(ctx)
-	if err != nil {
-		return nil, err
-	}
+	issuer := identityclient.NewTokenIssuer(client, p.options.identityOptions, &p.options.clientOptions, constants.ServiceDescriptor())
 
-	return identityclient.New(client, p.options.identityOptions, &p.options.clientOptions).ControllerClient(ctx, token, p.network)
+	return identityclient.New(client, p.options.identityOptions, &p.options.clientOptions).ControllerClient(ctx, issuer, p.network)
 }
 
 // Provision implements the Provision interface.
@@ -130,7 +127,12 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 	}
 
 	if v, ok := p.network.Labels[constants.ResourceAPIVersionLabel]; ok && v == constants.MarshalAPIVersion(2) {
-		if err := identityclient.NewAllocations(cli, p.identityClient).Delete(ctx, p.network); err != nil {
+		api, err := p.identityClient(ctx)
+		if err != nil {
+			return err
+		}
+
+		if err := identityclient.NewAllocations(cli, api).Delete(ctx, p.network); err != nil {
 			return err
 		}
 	}

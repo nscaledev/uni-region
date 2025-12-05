@@ -27,8 +27,8 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
-	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
@@ -49,11 +49,11 @@ type Client struct {
 	// namespace we are running in.
 	namespace string
 	// identity allows quota allocation.
-	identity identityclient.APIClientGetter
+	identity identityapi.ClientWithResponsesInterface
 }
 
 // New creates a new client.
-func New(client client.Client, namespace string, identity identityclient.APIClientGetter) *Client {
+func New(client client.Client, namespace string, identity identityapi.ClientWithResponsesInterface) *Client {
 	return &Client{
 		client:    client,
 		namespace: namespace,
