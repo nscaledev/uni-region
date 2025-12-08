@@ -1214,21 +1214,21 @@ type GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSer
 // GetApiV1OrganizationsOrganizationIDSecuritygroupsParams defines parameters for GetApiV1OrganizationsOrganizationIDSecuritygroups.
 type GetApiV1OrganizationsOrganizationIDSecuritygroupsParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",
-	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 }
 
 // GetApiV1OrganizationsOrganizationIDServersParams defines parameters for GetApiV1OrganizationsOrganizationIDServers.
 type GetApiV1OrganizationsOrganizationIDServersParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",
-	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 }
 
 // GetApiV2FilestorageParams defines parameters for GetApiV2Filestorage.
 type GetApiV2FilestorageParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",
-	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 
 	// OrganizationID Allows resources to be filtered by organization.
@@ -1244,7 +1244,7 @@ type GetApiV2FilestorageParams struct {
 // GetApiV2NetworksParams defines parameters for GetApiV2Networks.
 type GetApiV2NetworksParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",
-	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 
 	// OrganizationID Allows resources to be filtered by organization.
@@ -1260,7 +1260,7 @@ type GetApiV2NetworksParams struct {
 // GetApiV2SecuritygroupsParams defines parameters for GetApiV2Securitygroups.
 type GetApiV2SecuritygroupsParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",
-	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 
 	// OrganizationID Allows resources to be filtered by organization.
@@ -1279,7 +1279,7 @@ type GetApiV2SecuritygroupsParams struct {
 // GetApiV2ServersParams defines parameters for GetApiV2Servers.
 type GetApiV2ServersParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",
-	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 
 	// OrganizationID Allows resources to be filtered by organization.

@@ -142,6 +142,7 @@ paths:
     post:
       description: |-
         Upload image data to a compute image.
+      tags: ["unikorn-cloud.org/ignore-request-body"]
       security:
       - oauth2Authentication: []
       requestBody:
