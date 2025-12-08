@@ -95,7 +95,11 @@ func TestConvertV2List(t *testing.T) {
 								"app": "mock",
 							},
 						},
-						Spec:   regionv1.FileStorageSpec{},
+						Spec: regionv1.FileStorageSpec{
+							NFS: &regionv1.NFS{
+								RootSquash: true,
+							},
+						},
 						Status: regionv1.FileStorageStatus{},
 					},
 				},
@@ -113,7 +117,9 @@ func TestConvertV2List(t *testing.T) {
 						Size:        "0",
 						Attachments: &openapi.StorageAttachmentV2Spec{},
 						StorageType: openapi.StorageTypeV2Spec{
-							NFS: nil,
+							NFS: &openapi.NFSV2Spec{
+								RootSquash: true,
+							},
 						},
 					},
 
@@ -164,7 +170,11 @@ func TestConvertV2(t *testing.T) {
 						"app": "mock",
 					},
 				},
-				Spec: regionv1.FileStorageSpec{},
+				Spec: regionv1.FileStorageSpec{
+					NFS: &regionv1.NFS{
+						RootSquash: true,
+					},
+				},
 			},
 			want: &openapi.StorageV2Read{
 				Metadata: corev1.ProjectScopedResourceReadMetadata{
@@ -174,7 +184,11 @@ func TestConvertV2(t *testing.T) {
 				Spec: openapi.StorageV2Spec{
 					Size:        "0",
 					Attachments: &openapi.StorageAttachmentV2Spec{},
-					StorageType: openapi.StorageTypeV2Spec{},
+					StorageType: openapi.StorageTypeV2Spec{
+						NFS: &openapi.NFSV2Spec{
+							RootSquash: true,
+						},
+					},
 				},
 				Status: openapi.StorageV2Status{
 					Usage: openapi.StorageUsageV2Spec{},

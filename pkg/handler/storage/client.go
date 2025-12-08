@@ -187,6 +187,9 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 			Tags:        conversion.GenerateTagList(request.Metadata.Tags),
 			Size:        *size,
 			Attachments: generateAttachmentList(request.Spec.Attachments),
+			NFS: &regionv1.NFS{
+				RootSquash: checkRootSquash(request.Spec.StorageType.NFS),
+			},
 		},
 	}
 
@@ -201,6 +204,15 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 	}
 
 	return out, nil
+}
+
+// checkRootSquash sets the Rootsquash default to true
+// this is only called on generates
+func checkRootSquash(NFS *openapi.NFSV2Spec) bool {
+	if NFS != nil {
+		return NFS.RootSquash
+	}
+	return true
 }
 
 func generateAttachmentList(in *openapi.StorageAttachmentV2Spec) []regionv1.Attachment {
