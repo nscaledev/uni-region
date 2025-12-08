@@ -66,8 +66,12 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.StorageV2Spec{
 			Attachments: &openapi.StorageAttachmentV2Spec{},
-			StorageType: openapi.StorageTypeV2Spec{},
-			Size:        in.Spec.Size.String(),
+			StorageType: openapi.StorageTypeV2Spec{
+				NFS: &openapi.NFSV2Spec{
+					RootSquash: in.Spec.NFS.RootSquash,
+				},
+			},
+			Size: in.Spec.Size.String(),
 		},
 		Status: openapi.StorageV2Status{
 			RegionId:       in.Labels[constants.RegionLabel],
