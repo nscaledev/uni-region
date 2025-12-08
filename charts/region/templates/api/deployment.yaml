@@ -23,6 +23,7 @@ spec:
         {{- include "unikorn.otlp.flags" . | nindent 8 }}
         {{- include "unikorn.mtls.flags" . | nindent 8 }}
         {{- include "unikorn.identity.flags" . | nindent 8 }}
+        - --server-read-timeout=0
         env:
         - name: TMPDIR
           value: /staging # to match the volume mount below

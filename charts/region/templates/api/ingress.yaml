@@ -10,6 +10,8 @@ metadata:
     {{- if (include "unikorn.ingress.externalDNS" .) }}
     external-dns.alpha.kubernetes.io/hostname: {{ include "unikorn.region.host" . }}
     {{- end }}
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
 spec:
   {{- if .Values.ingress.class }}
   ingressClassName: {{ .Values.ingress.class }}
