@@ -29,6 +29,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
@@ -76,7 +77,7 @@ func TestConvertV2List(t *testing.T) {
 		want  openapi.StorageV2List
 	}{
 		{
-			name: "test with zero values",
+			name: "test with limited values",
 			input: &regionv1.FileStorageList{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "FileStorageList",
@@ -117,6 +118,75 @@ func TestConvertV2List(t *testing.T) {
 						Size: "0",
 						Attachments: &openapi.StorageAttachmentV2Spec{
 							NetworkIDs: []string{},
+						},
+						StorageType: openapi.StorageTypeV2Spec{
+							NFS: &openapi.NFSV2Spec{
+								RootSquash: true,
+							},
+						},
+					},
+
+					Status: openapi.StorageV2Status{
+						Attachments:    nil,
+						RegionId:       "",
+						StorageClassId: "",
+						Usage: openapi.StorageUsageV2Spec{
+							Capacity: "",
+							Free:     nil,
+							Used:     nil,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "test with attachments, and size",
+			input: &regionv1.FileStorageList{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "FileStorageList",
+					APIVersion: "v1alpha1",
+				},
+				Items: []regionv1.FileStorage{
+					{
+						TypeMeta: metav1.TypeMeta{
+							Kind:       "FileStorage",
+							APIVersion: "v1alpha1",
+						},
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-filestorage",
+							Namespace: "default",
+							Labels: map[string]string{
+								"app": "mock",
+							},
+						},
+						Spec: regionv1.FileStorageSpec{
+							NFS: &regionv1.NFS{
+								RootSquash: true,
+							},
+							Size: *resource.NewQuantity(int64(100), resource.BinarySI),
+							Attachments: []regionv1.Attachment{
+								{
+									NetworkID: "net-1",
+								},
+							},
+						},
+						Status: regionv1.FileStorageStatus{},
+					},
+				},
+			},
+			want: openapi.StorageV2List{
+				openapi.StorageV2Read{
+					Metadata: corev1.ProjectScopedResourceReadMetadata{
+						CreationTime:       time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC),
+						HealthStatus:       corev1.ResourceHealthStatus("unknown"),
+						Id:                 "test-filestorage",
+						ProvisioningStatus: corev1.ResourceProvisioningStatus("unknown"),
+					},
+
+					Spec: openapi.StorageV2Spec{
+						Size: "100",
+						Attachments: &openapi.StorageAttachmentV2Spec{
+							NetworkIDs: []string{"{net-1}"},
 						},
 						StorageType: openapi.StorageTypeV2Spec{
 							NFS: &openapi.NFSV2Spec{
