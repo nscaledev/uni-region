@@ -1165,6 +1165,26 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/filestorage/classes:
+    description: |-
+      Lists all available storage classes, detailing supported protocols, capacity limits, and service characteristics. Enables users to discover storage options suitable for their workloads.
+    get:
+      description: List storage classes.
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: '#/components/parameters/regionIDQueryParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/storageClassListV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 components:
   parameters:
     organizationIDParameter:
@@ -2458,6 +2478,42 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/storageV2Read'
+    storageClassListV2Read:
+      description: A list of storage classes.
+      type: array
+      items:
+        $ref: '#/components/schemas/storageClassV2Read'
+    storageClassV2Read:
+      description: A storage class.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceReadMetadata'
+        spec:
+          $ref: '#/components/schemas/storageClassV2Spec'
+    storageClassV2Spec:
+      description: A storage class's specification.
+      type: object
+      required:
+      - regionId
+      - protocols
+      properties:
+        regionId:
+          description: The region an storage class is provisioned in.
+          type: string
+        protocols:
+          type: array
+          items:
+            $ref: '#/components/schemas/storageClassProtocolType'
+    storageClassProtocolType:
+      description: The protocol type of the storage class.
+      type: string
+      enum:
+      - nfsv3
+      - nfsv4
   requestBodies:
     identityRequest:
       description: A request for an identity.
@@ -3301,6 +3357,25 @@ components:
                 networkIds:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
                 provisioningStatus: provisioned
+    storageClassListV2Response:
+      description: A list of storage classes.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/storageClassListV2Read'
+          example:
+          - metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: storage-class-name
+              creationTime: 2024-05-31T14:11:00Z
+              description: A small description of the storage class.
+              provisioningStatus: provisioned
+              healthStatus: healthy
+            spec:
+              regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
+              protocols: 
+                - nfsv3
+                - nfsv4
   securitySchemes:
     oauth2Authentication:
       description: Operation requires OAuth 2.0 bearer token authentication.

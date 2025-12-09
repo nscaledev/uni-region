@@ -23,11 +23,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	corev1 "github.com/unikorn-cloud/core/pkg/openapi"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 func TestGenerateAttachmentList(t *testing.T) {
@@ -185,6 +188,115 @@ func TestConvertV2(t *testing.T) {
 			t.Parallel()
 
 			got := convertV2(tt.input)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestConvertClass(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input *regionv1.FileStorageClass
+		want  *openapi.StorageClassV2Read
+	}{
+		{
+			name: "zero values",
+			input: &regionv1.FileStorageClass{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "FileStorageClass",
+					APIVersion: "v1alpha1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "",
+					Namespace: "default",
+				},
+				Spec: regionv1.FileStorageClassSpec{},
+			},
+			want: &openapi.StorageClassV2Read{
+				Metadata: corev1.ResourceReadMetadata{
+					HealthStatus:       corev1.ResourceHealthStatusHealthy,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned,
+				},
+				Spec: openapi.StorageClassV2Spec{
+					Protocols: []openapi.StorageClassProtocolType{},
+				},
+			},
+		},
+		{
+			name: "with region label and protocols",
+			input: &regionv1.FileStorageClass{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "FileStorageClass",
+					APIVersion: "v1alpha1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "sc-1",
+					Namespace: "default",
+					Labels: map[string]string{
+						constants.RegionLabel:   "region-1",
+						coreconstants.NameLabel: "sc-name",
+					},
+					Annotations: map[string]string{
+						coreconstants.DescriptionAnnotation: "description",
+					},
+				},
+				Spec: regionv1.FileStorageClassSpec{
+					Protocols: []regionv1.Protocol{regionv1.NFSv3, regionv1.NFSv4},
+				},
+			},
+			want: &openapi.StorageClassV2Read{
+				Metadata: corev1.ResourceReadMetadata{
+					Id:                 "sc-1",
+					HealthStatus:       corev1.ResourceHealthStatusHealthy,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned,
+					Description:        ptr.To("description"),
+					Name:               "sc-name",
+				},
+				Spec: openapi.StorageClassV2Spec{
+					RegionId:  "region-1",
+					Protocols: []openapi.StorageClassProtocolType{openapi.StorageClassProtocolTypeNfsv3, openapi.StorageClassProtocolTypeNfsv4},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := convertClass(tt.input)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestConvertProtocols(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input []regionv1.Protocol
+		want  []openapi.StorageClassProtocolType
+	}{
+		{
+			name:  "empty",
+			input: nil,
+			want:  []openapi.StorageClassProtocolType{},
+		},
+		{
+			name:  "nfsv3 and nfsv4",
+			input: []regionv1.Protocol{regionv1.NFSv3, regionv1.NFSv4},
+			want:  []openapi.StorageClassProtocolType{openapi.StorageClassProtocolTypeNfsv3, openapi.StorageClassProtocolTypeNfsv4},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := convertProtocols(tt.input)
 			require.Equal(t, tt.want, got)
 		})
 	}

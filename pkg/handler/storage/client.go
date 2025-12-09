@@ -319,3 +319,56 @@ func (c *Client) Delete(ctx context.Context, storageID string) error {
 
 	return nil
 }
+
+func (c *Client) ListClasses(ctx context.Context, params openapi.GetApiV2FilestorageClassesParams) (openapi.StorageClassListV2Read, error) {
+	selector, err := util.AddRegionIDQuery(labels.Everything(), params.RegionID)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to add region label selector").WithError(err)
+	}
+
+	result := &regionv1.FileStorageClassList{}
+	options := &client.ListOptions{
+		Namespace:     c.namespace,
+		LabelSelector: selector,
+	}
+
+	if err := c.client.List(ctx, result, options); err != nil {
+		return nil, errors.OAuth2ServerError("unable to list storage classes").WithError(err)
+	}
+
+	slices.SortStableFunc(result.Items, func(a, b regionv1.FileStorageClass) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+
+	return convertClassList(result), nil
+}
+
+func convertClassList(in *regionv1.FileStorageClassList) openapi.StorageClassListV2Read {
+	out := make(openapi.StorageClassListV2Read, len(in.Items))
+
+	for i := range in.Items {
+		out[i] = *convertClass(&in.Items[i])
+	}
+
+	return out
+}
+
+func convertClass(in *regionv1.FileStorageClass) *openapi.StorageClassV2Read {
+	return &openapi.StorageClassV2Read{
+		Metadata: conversion.ResourceReadMetadata(in, nil),
+		Spec: openapi.StorageClassV2Spec{
+			RegionId:  in.Labels[constants.RegionLabel],
+			Protocols: convertProtocols(in.Spec.Protocols),
+		},
+	}
+}
+
+func convertProtocols(in []regionv1.Protocol) []openapi.StorageClassProtocolType {
+	out := make([]openapi.StorageClassProtocolType, len(in))
+
+	for i := range in {
+		out[i] = openapi.StorageClassProtocolType(in[i])
+	}
+
+	return out
+}
