@@ -197,8 +197,8 @@ type ClientInterface interface {
 
 	PostApiV2Filestorage(ctx context.Context, body PostApiV2FilestorageJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetApiV2FilestorageClasses request
-	GetApiV2FilestorageClasses(ctx context.Context, params *GetApiV2FilestorageClassesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetApiV2Filestorageclasses request
+	GetApiV2Filestorageclasses(ctx context.Context, params *GetApiV2FilestorageclassesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetApiV2Networks request
 	GetApiV2Networks(ctx context.Context, params *GetApiV2NetworksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -746,8 +746,8 @@ func (c *Client) PostApiV2Filestorage(ctx context.Context, body PostApiV2Filesto
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetApiV2FilestorageClasses(ctx context.Context, params *GetApiV2FilestorageClassesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetApiV2FilestorageClassesRequest(c.Server, params)
+func (c *Client) GetApiV2Filestorageclasses(ctx context.Context, params *GetApiV2FilestorageclassesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV2FilestorageclassesRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2808,8 +2808,8 @@ func NewPostApiV2FilestorageRequestWithBody(server string, contentType string, b
 	return req, nil
 }
 
-// NewGetApiV2FilestorageClassesRequest generates requests for GetApiV2FilestorageClasses
-func NewGetApiV2FilestorageClassesRequest(server string, params *GetApiV2FilestorageClassesParams) (*http.Request, error) {
+// NewGetApiV2FilestorageclassesRequest generates requests for GetApiV2Filestorageclasses
+func NewGetApiV2FilestorageclassesRequest(server string, params *GetApiV2FilestorageclassesParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -2817,7 +2817,7 @@ func NewGetApiV2FilestorageClassesRequest(server string, params *GetApiV2Filesto
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/v2/filestorage/classes")
+	operationPath := fmt.Sprintf("/api/v2/filestorageclasses")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -4170,8 +4170,8 @@ type ClientWithResponsesInterface interface {
 
 	PostApiV2FilestorageWithResponse(ctx context.Context, body PostApiV2FilestorageJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV2FilestorageResponse, error)
 
-	// GetApiV2FilestorageClassesWithResponse request
-	GetApiV2FilestorageClassesWithResponse(ctx context.Context, params *GetApiV2FilestorageClassesParams, reqEditors ...RequestEditorFn) (*GetApiV2FilestorageClassesResponse, error)
+	// GetApiV2FilestorageclassesWithResponse request
+	GetApiV2FilestorageclassesWithResponse(ctx context.Context, params *GetApiV2FilestorageclassesParams, reqEditors ...RequestEditorFn) (*GetApiV2FilestorageclassesResponse, error)
 
 	// GetApiV2NetworksWithResponse request
 	GetApiV2NetworksWithResponse(ctx context.Context, params *GetApiV2NetworksParams, reqEditors ...RequestEditorFn) (*GetApiV2NetworksResponse, error)
@@ -5058,7 +5058,7 @@ func (r PostApiV2FilestorageResponse) StatusCode() int {
 	return 0
 }
 
-type GetApiV2FilestorageClassesResponse struct {
+type GetApiV2FilestorageclassesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *StorageClassListV2Response
@@ -5069,7 +5069,7 @@ type GetApiV2FilestorageClassesResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetApiV2FilestorageClassesResponse) Status() string {
+func (r GetApiV2FilestorageclassesResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -5077,7 +5077,7 @@ func (r GetApiV2FilestorageClassesResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetApiV2FilestorageClassesResponse) StatusCode() int {
+func (r GetApiV2FilestorageclassesResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -6061,13 +6061,13 @@ func (c *ClientWithResponses) PostApiV2FilestorageWithResponse(ctx context.Conte
 	return ParsePostApiV2FilestorageResponse(rsp)
 }
 
-// GetApiV2FilestorageClassesWithResponse request returning *GetApiV2FilestorageClassesResponse
-func (c *ClientWithResponses) GetApiV2FilestorageClassesWithResponse(ctx context.Context, params *GetApiV2FilestorageClassesParams, reqEditors ...RequestEditorFn) (*GetApiV2FilestorageClassesResponse, error) {
-	rsp, err := c.GetApiV2FilestorageClasses(ctx, params, reqEditors...)
+// GetApiV2FilestorageclassesWithResponse request returning *GetApiV2FilestorageclassesResponse
+func (c *ClientWithResponses) GetApiV2FilestorageclassesWithResponse(ctx context.Context, params *GetApiV2FilestorageclassesParams, reqEditors ...RequestEditorFn) (*GetApiV2FilestorageclassesResponse, error) {
+	rsp, err := c.GetApiV2Filestorageclasses(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetApiV2FilestorageClassesResponse(rsp)
+	return ParseGetApiV2FilestorageclassesResponse(rsp)
 }
 
 // GetApiV2NetworksWithResponse request returning *GetApiV2NetworksResponse
@@ -7948,15 +7948,15 @@ func ParsePostApiV2FilestorageResponse(rsp *http.Response) (*PostApiV2Filestorag
 	return response, nil
 }
 
-// ParseGetApiV2FilestorageClassesResponse parses an HTTP response from a GetApiV2FilestorageClassesWithResponse call
-func ParseGetApiV2FilestorageClassesResponse(rsp *http.Response) (*GetApiV2FilestorageClassesResponse, error) {
+// ParseGetApiV2FilestorageclassesResponse parses an HTTP response from a GetApiV2FilestorageclassesWithResponse call
+func ParseGetApiV2FilestorageclassesResponse(rsp *http.Response) (*GetApiV2FilestorageclassesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetApiV2FilestorageClassesResponse{
+	response := &GetApiV2FilestorageclassesResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

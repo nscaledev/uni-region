@@ -349,7 +349,7 @@ func (h *Handler) PutApiV2StorageFilestorageFilestorageID(w http.ResponseWriter,
 	util.WriteJSONResponse(w, r, http.StatusCreated, result)
 }
 
-func (h *Handler) GetApiV2FilestorageClasses(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2FilestorageClassesParams) {
+func (h *Handler) GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2FilestorageclassesParams) {
 	result, err := h.storageClient().ListClasses(r.Context(), params)
 	if err != nil {
 		errors.HandleError(w, r, err)

@@ -1223,8 +1223,8 @@ type GetApiV2FilestorageParams struct {
 	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
 }
 
-// GetApiV2FilestorageClassesParams defines parameters for GetApiV2FilestorageClasses.
-type GetApiV2FilestorageClassesParams struct {
+// GetApiV2FilestorageclassesParams defines parameters for GetApiV2Filestorageclasses.
+type GetApiV2FilestorageclassesParams struct {
 	// RegionID Allows resources to be filtered by region.
 	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
 }

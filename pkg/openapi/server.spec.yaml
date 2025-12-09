@@ -1165,7 +1165,7 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/filestorage/classes:
+  /api/v2/filestorageclasses:
     description: |-
       Lists all available storage classes, detailing supported protocols, capacity limits, and service characteristics. Enables users to discover storage options suitable for their workloads.
     get:

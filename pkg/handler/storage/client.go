@@ -320,7 +320,7 @@ func (c *Client) Delete(ctx context.Context, storageID string) error {
 	return nil
 }
 
-func (c *Client) ListClasses(ctx context.Context, params openapi.GetApiV2FilestorageClassesParams) (openapi.StorageClassListV2Read, error) {
+func (c *Client) ListClasses(ctx context.Context, params openapi.GetApiV2FilestorageclassesParams) (openapi.StorageClassListV2Read, error) {
 	selector, err := util.AddRegionIDQuery(labels.Everything(), params.RegionID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to add region label selector").WithError(err)
