@@ -24,6 +24,7 @@ import (
 	"slices"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	"github.com/unikorn-cloud/core/pkg/manager"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
@@ -450,6 +451,10 @@ func (c *Client) DeleteV2(ctx context.Context, networkID string) error {
 
 	if resource.DeletionTimestamp != nil {
 		return nil
+	}
+
+	if len(manager.GetResourceReferences(resource)) > 0 {
+		return errors.HTTPForbidden("network is in use and cannot be deleted")
 	}
 
 	// The V2 API doesn't expose service principals, but they are mapped 1:1 to networks, so as the

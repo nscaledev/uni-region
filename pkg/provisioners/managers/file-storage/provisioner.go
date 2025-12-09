@@ -18,11 +18,21 @@ package filestorage
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
+	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/constants"
+	filestorageprovisioners "github.com/unikorn-cloud/region/pkg/file-storage/provisioners"
+	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
+
+	"k8s.io/apimachinery/pkg/labels"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Provisioner encapsulates control plane provisioning.
@@ -49,14 +59,97 @@ func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
-	// Plan:
-	// 1) Resolve the provisioner
-	// 2) Call the provisioner
-	// 3) Update the file storage status
+	cli, err := coreclient.FromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	driver, err := p.getFileStorageDriver(ctx, cli)
+	if err != nil {
+		return err
+	}
+
+	reference, err := manager.GenerateResourceReference(cli, p.fileStorage)
+	if err != nil {
+		return err
+	}
+
+	if err := p.reconcileFileStorage(ctx, driver); err != nil {
+		return err
+	}
+
+	if err := p.reconcileNetworkAttachments(ctx, cli, driver, reference); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 // Deprovision implements the Deprovision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
+	cli, err := coreclient.FromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	driver, err := p.getFileStorageDriver(ctx, cli)
+	if err != nil {
+		return err
+	}
+
+	// all networks must be detached before deletion
+	if err := p.detachNetworks(ctx, driver); err != nil {
+		return err
+	}
+
+	if err := p.deleteFileStorage(ctx, driver); err != nil {
+		return err
+	}
+
+	// Once we know the file storage is gone, remove references to allow deletion of the network.
+	reference, err := manager.GenerateResourceReference(cli, p.fileStorage)
+	if err != nil {
+		return err
+	}
+
+	if err := manager.ClearResourceReferences(ctx, cli, &unikornv1.NetworkList{}, p.identityListOptions(), reference); err != nil {
+		return fmt.Errorf("%w: failed to clear network references", err)
+	}
+
 	return nil
+}
+
+func (p *Provisioner) getFileStorageDriver(ctx context.Context, cli client.Client) (types.Driver, error) {
+	storageClass := &unikornv1.FileStorageClass{}
+	key := client.ObjectKey{
+		Namespace: p.fileStorage.GetNamespace(),
+		Name:      p.fileStorage.Spec.StorageClassID,
+	}
+
+	if err := cli.Get(ctx, key, storageClass); err != nil {
+		return nil, err
+	}
+
+	return filestorageprovisioners.NewDriver(ctx, cli, p.fileStorage.GetNamespace(), storageClass)
+}
+
+// identityListOptions lists all resources associated with an identity.
+func (p *Provisioner) identityListOptions() *client.ListOptions {
+	selector := map[string]string{
+		constants.IdentityLabel: p.fileStorage.Labels[constants.IdentityLabel],
+	}
+
+	return &client.ListOptions{
+		Namespace:     p.fileStorage.Namespace,
+		LabelSelector: labels.SelectorFromSet(selector),
+	}
+}
+
+// ignoreNotFound ignores ErrNotFound errors.
+func ignoreNotFound(err error) error {
+	if errors.Is(err, types.ErrNotFound) {
+		return nil
+	}
+
+	return err
 }

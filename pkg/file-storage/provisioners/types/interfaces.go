@@ -22,11 +22,12 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 )
 
-type Provisioner interface {
-	GetDetails(ctx context.Context, fs *unikornv1.FileStorage) (*FileStorageDetails, error)
-	ListAttachments(ctx context.Context, fs *unikornv1.FileStorage, network *unikornv1.Network) (*FileStorageAttachments, error)
-	Create(ctx context.Context, fs *unikornv1.FileStorage) (*FileStorageDetails, error)
-	AttachNetwork(ctx context.Context, fs *unikornv1.FileStorage, network *unikornv1.Network) error
-	DetachNetwork(ctx context.Context, fs *unikornv1.FileStorage, network *unikornv1.Network) error
-	Resize(ctx context.Context, fs *unikornv1.FileStorage) error
+type Driver interface {
+	GetDetails(ctx context.Context, projectID string, fileStorageID string) (*FileStorageDetails, error)
+	ListAttachments(ctx context.Context, projectID string, fileStorageID string) (*FileStorageAttachments, error)
+	Create(ctx context.Context, projectID string, fileStorageID string, size int64, rootSquashEnabled bool) (*FileStorageDetails, error)
+	Delete(ctx context.Context, projectID string, fileStorageID string, force bool) error
+	AttachNetwork(ctx context.Context, projectID string, fileStorageID string, attachment *unikornv1.Attachment) error
+	DetachNetwork(ctx context.Context, projectID string, fileStorageID string, segmentationID int) error
+	Resize(ctx context.Context, projectID string, fileStorageID string, size int64) error
 }

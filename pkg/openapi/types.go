@@ -70,6 +70,12 @@ const (
 	RegionTypeOpenstack  RegionType = "openstack"
 )
 
+// Defines values for StorageClassProtocolType.
+const (
+	StorageClassProtocolTypeNfsv3 StorageClassProtocolType = "nfsv3"
+	StorageClassProtocolTypeNfsv4 StorageClassProtocolType = "nfsv4"
+)
+
 // NFSV2Spec NFS specific
 type NFSV2Spec struct {
 	// RootSquash root squash
@@ -911,6 +917,29 @@ type StorageAttachmentV2Status struct {
 	} `json:"networkIds"`
 }
 
+// StorageClassListV2Read A list of storage classes.
+type StorageClassListV2Read = []StorageClassV2Read
+
+// StorageClassProtocolType The protocol type of the storage class.
+type StorageClassProtocolType string
+
+// StorageClassV2Read A storage class.
+type StorageClassV2Read struct {
+	// Metadata Metadata required by all resource reads.
+	Metadata externalRef0.ResourceReadMetadata `json:"metadata"`
+
+	// Spec A storage class's specification.
+	Spec StorageClassV2Spec `json:"spec"`
+}
+
+// StorageClassV2Spec A storage class's specification.
+type StorageClassV2Spec struct {
+	Protocols []StorageClassProtocolType `json:"protocols"`
+
+	// RegionId The region an storage class is provisioned in.
+	RegionId string `json:"regionId"`
+}
+
 // StorageTypeV2Spec A storage's type
 type StorageTypeV2Spec struct {
 	// NFS NFS specific
@@ -1113,6 +1142,9 @@ type ServersV2Response = ServersV2Read
 // SshKeyResponse An SSH key.
 type SshKeyResponse = SshKey
 
+// StorageClassListV2Response A list of storage classes.
+type StorageClassListV2Response = StorageClassListV2Read
+
 // StorageListV2Response A list of storage
 type StorageListV2Response = StorageV2List
 
@@ -1164,21 +1196,21 @@ type GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSer
 // GetApiV1OrganizationsOrganizationIDSecuritygroupsParams defines parameters for GetApiV1OrganizationsOrganizationIDSecuritygroups.
 type GetApiV1OrganizationsOrganizationIDSecuritygroupsParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",
-	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 }
 
 // GetApiV1OrganizationsOrganizationIDServersParams defines parameters for GetApiV1OrganizationsOrganizationIDServers.
 type GetApiV1OrganizationsOrganizationIDServersParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",
-	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 }
 
 // GetApiV2FilestorageParams defines parameters for GetApiV2Filestorage.
 type GetApiV2FilestorageParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",
-	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 
 	// OrganizationID Allows resources to be filtered by organization.
@@ -1191,10 +1223,16 @@ type GetApiV2FilestorageParams struct {
 	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
 }
 
+// GetApiV2FilestorageclassesParams defines parameters for GetApiV2Filestorageclasses.
+type GetApiV2FilestorageclassesParams struct {
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+}
+
 // GetApiV2NetworksParams defines parameters for GetApiV2Networks.
 type GetApiV2NetworksParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",
-	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 
 	// OrganizationID Allows resources to be filtered by organization.
@@ -1210,7 +1248,7 @@ type GetApiV2NetworksParams struct {
 // GetApiV2SecuritygroupsParams defines parameters for GetApiV2Securitygroups.
 type GetApiV2SecuritygroupsParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",
-	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 
 	// OrganizationID Allows resources to be filtered by organization.
@@ -1229,7 +1267,7 @@ type GetApiV2SecuritygroupsParams struct {
 // GetApiV2ServersParams defines parameters for GetApiV2Servers.
 type GetApiV2ServersParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",
-	// thus when encoded you get "?tag=foo%3Dcat&bar%3Ddog".
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
 	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 
 	// OrganizationID Allows resources to be filtered by organization.
