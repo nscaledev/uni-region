@@ -117,7 +117,9 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 
 	// Middleware specified here is applied to all requests pre-routing.
 	router := chi.NewRouter()
-	router.Use(timeout.Middleware(s.ServerOptions.RequestTimeout))
+	if s.ServerOptions.RequestTimeout > 0 {
+		router.Use(timeout.Middleware(s.ServerOptions.RequestTimeout))
+	}
 	router.Use(opentelemetry.Middleware(constants.Application, constants.Version))
 	router.Use(cors.Middleware(schema, &s.CORSOptions))
 	router.NotFound(http.HandlerFunc(handler.NotFound))
