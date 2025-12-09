@@ -20,7 +20,9 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
+	"strconv"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
@@ -293,6 +295,17 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	required, err := c.generateV2(ctx, organizationID, projectID, regionID, request)
 	if err != nil {
 		return nil, err
+	}
+
+	// check that the requested size is bigger than the current size
+	desiredsize, err := strconv.ParseInt(request.Spec.Size, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	currentsize, _ := current.Spec.Size.AsInt64()
+	if currentsize > desiredsize {
+		return nil, errors.OAuth2InvalidRequest(fmt.Sprintf("request size: %o must be"+
+			"greater than current size: %o", desiredsize, currentsize))
 	}
 
 	updated := current.DeepCopy()
