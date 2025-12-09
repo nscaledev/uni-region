@@ -68,7 +68,9 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 	return &openapi.StorageV2Read{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.StorageV2Spec{
-			Attachments: &openapi.StorageAttachmentV2Spec{},
+			Attachments: &openapi.StorageAttachmentV2Spec{
+				NetworkIDs: convertAttachments(in.Spec.Attachments),
+			},
 			StorageType: openapi.StorageTypeV2Spec{
 				NFS: &openapi.NFSV2Spec{
 					RootSquash: in.Spec.NFS.RootSquash,
@@ -81,6 +83,15 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 			StorageClassId: in.Spec.StorageClassID,
 		},
 	}
+}
+
+func convertAttachments(in []regionv1.Attachment) openapi.NetworkIDList {
+	out := make(openapi.NetworkIDList, len(in))
+	for i := range in {
+		out[i] = fmt.Sprint(in[i])
+	}
+	return out
+
 }
 
 // ListV2 satisfies an http get to return all storage items within a project.
@@ -305,7 +316,7 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	}
 	currentsize, _ := current.Spec.Size.AsInt64()
 	if currentsize > desiredsize {
-		return nil, errors.OAuth2InvalidRequest(fmt.Sprintf("request size: %o must be"+
+		return nil, errors.OAuth2InvalidRequest(fmt.Sprintf("requested size: %o must be"+
 			"greater than current size: %o", desiredsize, currentsize))
 	}
 
