@@ -114,8 +114,10 @@ func TestConvertV2List(t *testing.T) {
 					},
 
 					Spec: openapi.StorageV2Spec{
-						Size:        "0",
-						Attachments: &openapi.StorageAttachmentV2Spec{},
+						Size: "0",
+						Attachments: &openapi.StorageAttachmentV2Spec{
+							NetworkIDs: []string{},
+						},
 						StorageType: openapi.StorageTypeV2Spec{
 							NFS: &openapi.NFSV2Spec{
 								RootSquash: true,
