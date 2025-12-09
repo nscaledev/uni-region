@@ -20,9 +20,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
-	"fmt"
 	"slices"
-	"strconv"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
@@ -308,23 +306,6 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	required, err := c.generateV2(ctx, organizationID, projectID, regionID, request)
 	if err != nil {
 		return nil, err
-	}
-
-	// check that the requested size is bigger than the current size
-	requestedsize, err := strconv.ParseInt(request.Spec.Size, 10, 64)
-	if err != nil {
-		return nil, err
-	}
-
-	currentsize, passed := current.Spec.Size.AsInt64()
-	if !passed {
-		return nil, errors.OAuth2InvalidRequest(fmt.Sprintf("failed converting %v"+
-			"current size from quantity to int64", current.Spec.Size))
-	}
-
-	if currentsize > requestedsize {
-		return nil, errors.OAuth2InvalidRequest(fmt.Sprintf("requested size: %o must be"+
-			"greater than current size: %o", requestedsize, currentsize))
 	}
 
 	updated := current.DeepCopy()
