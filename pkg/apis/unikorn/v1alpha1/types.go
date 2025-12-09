@@ -820,7 +820,21 @@ type FileStorageStatus struct {
 
 // Attachment has the network identifier for the storage.
 type Attachment struct {
+	// NetworkID is the network ID for the attachment.
 	NetworkID string `json:"networkID"`
+	// SegmentationID is the VLAN ID for the attachment.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=4094
+	SegmentationID *int `json:"segmentationID,omitempty"`
+	// IPRange is the IP range for the attachment.
+	IPRange *AttachmentIPRange `json:"ipRange,omitempty"`
+}
+
+type AttachmentIPRange struct {
+	// Start is the start IP address for the attachment.
+	Start unikornv1core.IPv4Address `json:"startIP"`
+	// End is the end IP address for the attachment.
+	End unikornv1core.IPv4Address `json:"endIP"`
 }
 
 // NFS has the configuration for NFS type.

@@ -56,8 +56,29 @@ spec:
                 items:
                   description: Attachment has the network identifier for the storage.
                   properties:
+                    ipRange:
+                      description: IPRange is the IP range for the attachment.
+                      properties:
+                        endIP:
+                          description: End is the end IP address for the attachment.
+                          pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])$
+                          type: string
+                        startIP:
+                          description: Start is the start IP address for the attachment.
+                          pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])$
+                          type: string
+                      required:
+                      - endIP
+                      - startIP
+                      type: object
                     networkID:
+                      description: NetworkID is the network ID for the attachment.
                       type: string
+                    segmentationID:
+                      description: SegmentationID is the VLAN ID for the attachment.
+                      maximum: 4094
+                      minimum: 1
+                      type: integer
                   required:
                   - networkID
                   type: object
