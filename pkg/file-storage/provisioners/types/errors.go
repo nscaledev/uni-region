@@ -17,28 +17,12 @@ limitations under the License.
 package types
 
 import (
-	"net"
-
-	"k8s.io/apimachinery/pkg/api/resource"
+	"errors"
+	"fmt"
 )
 
-type FileStorageDetails struct {
-	Size              *resource.Quantity
-	Path              string
-	RootSquashEnabled bool
-	UsedCapacity      *resource.Quantity
-}
-
-type FileStorageAttachments struct {
-	Items []Attachment
-}
-
-type IPRange struct {
-	Start net.IP
-	End   net.IP
-}
-
-type Attachment struct {
-	VlanID  int
-	IPRange *IPRange
-}
+var (
+	ErrRemoteError    = errors.New("agent: remote error")
+	ErrInvalidRequest = fmt.Errorf("%w: invalid request", ErrRemoteError)
+	ErrNotFound       = fmt.Errorf("%w: not found", ErrRemoteError)
+)
