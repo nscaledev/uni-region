@@ -336,6 +336,10 @@ func (c *Client) ListClasses(ctx context.Context, params openapi.GetApiV2Filesto
 		return nil, errors.OAuth2ServerError("unable to list storage classes").WithError(err)
 	}
 
+	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.FileStorageClass) bool {
+		return rbac.AllowOrganizationScope(ctx, "region:filestorageclasses:v2", identityapi.Read, resource.Labels[coreconstants.OrganizationLabel]) != nil
+	})
+
 	slices.SortStableFunc(result.Items, func(a, b regionv1.FileStorageClass) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
