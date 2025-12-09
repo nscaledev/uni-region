@@ -108,6 +108,15 @@ type ServerInterface interface {
 	// (POST /api/v2/filestorage)
 	PostApiV2Filestorage(w http.ResponseWriter, r *http.Request)
 
+	// (DELETE /api/v2/filestorage/{filestorageID})
+	DeleteApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter)
+
+	// (GET /api/v2/filestorage/{filestorageID})
+	GetApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter)
+
+	// (PUT /api/v2/filestorage/{filestorageID})
+	PutApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter)
+
 	// (GET /api/v2/filestorageclasses)
 	GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request, params GetApiV2FilestorageclassesParams)
 
@@ -176,15 +185,6 @@ type ServerInterface interface {
 
 	// (POST /api/v2/servers/{serverID}/stop)
 	PostApiV2ServersServerIDStop(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter)
-
-	// (DELETE /api/v2/storage/filestorage/{filestorageID})
-	DeleteApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter)
-
-	// (GET /api/v2/storage/filestorage/{filestorageID})
-	GetApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter)
-
-	// (PUT /api/v2/storage/filestorage/{filestorageID})
-	PutApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -346,6 +346,21 @@ func (_ Unimplemented) PostApiV2Filestorage(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// (DELETE /api/v2/filestorage/{filestorageID})
+func (_ Unimplemented) DeleteApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /api/v2/filestorage/{filestorageID})
+func (_ Unimplemented) GetApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PUT /api/v2/filestorage/{filestorageID})
+func (_ Unimplemented) PutApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (GET /api/v2/filestorageclasses)
 func (_ Unimplemented) GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request, params GetApiV2FilestorageclassesParams) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -458,21 +473,6 @@ func (_ Unimplemented) PostApiV2ServersServerIDStart(w http.ResponseWriter, r *h
 
 // (POST /api/v2/servers/{serverID}/stop)
 func (_ Unimplemented) PostApiV2ServersServerIDStop(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// (DELETE /api/v2/storage/filestorage/{filestorageID})
-func (_ Unimplemented) DeleteApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// (GET /api/v2/storage/filestorage/{filestorageID})
-func (_ Unimplemented) GetApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// (PUT /api/v2/storage/filestorage/{filestorageID})
-func (_ Unimplemented) PutApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2007,6 +2007,99 @@ func (siw *ServerInterfaceWrapper) PostApiV2Filestorage(w http.ResponseWriter, r
 	handler.ServeHTTP(w, r)
 }
 
+// DeleteApiV2FilestorageFilestorageID operation middleware
+func (siw *ServerInterfaceWrapper) DeleteApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "filestorageID" -------------
+	var filestorageID FilestorageIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filestorageID", chi.URLParam(r, "filestorageID"), &filestorageID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteApiV2FilestorageFilestorageID(w, r, filestorageID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetApiV2FilestorageFilestorageID operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "filestorageID" -------------
+	var filestorageID FilestorageIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filestorageID", chi.URLParam(r, "filestorageID"), &filestorageID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV2FilestorageFilestorageID(w, r, filestorageID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutApiV2FilestorageFilestorageID operation middleware
+func (siw *ServerInterfaceWrapper) PutApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "filestorageID" -------------
+	var filestorageID FilestorageIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filestorageID", chi.URLParam(r, "filestorageID"), &filestorageID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutApiV2FilestorageFilestorageID(w, r, filestorageID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetApiV2Filestorageclasses operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request) {
 
@@ -2794,99 +2887,6 @@ func (siw *ServerInterfaceWrapper) PostApiV2ServersServerIDStop(w http.ResponseW
 	handler.ServeHTTP(w, r)
 }
 
-// DeleteApiV2StorageFilestorageFilestorageID operation middleware
-func (siw *ServerInterfaceWrapper) DeleteApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	// ------------- Path parameter "filestorageID" -------------
-	var filestorageID FilestorageIDParameter
-
-	err = runtime.BindStyledParameterWithOptions("simple", "filestorageID", chi.URLParam(r, "filestorageID"), &filestorageID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageID", Err: err})
-		return
-	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteApiV2StorageFilestorageFilestorageID(w, r, filestorageID)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetApiV2StorageFilestorageFilestorageID operation middleware
-func (siw *ServerInterfaceWrapper) GetApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	// ------------- Path parameter "filestorageID" -------------
-	var filestorageID FilestorageIDParameter
-
-	err = runtime.BindStyledParameterWithOptions("simple", "filestorageID", chi.URLParam(r, "filestorageID"), &filestorageID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageID", Err: err})
-		return
-	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetApiV2StorageFilestorageFilestorageID(w, r, filestorageID)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// PutApiV2StorageFilestorageFilestorageID operation middleware
-func (siw *ServerInterfaceWrapper) PutApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	// ------------- Path parameter "filestorageID" -------------
-	var filestorageID FilestorageIDParameter
-
-	err = runtime.BindStyledParameterWithOptions("simple", "filestorageID", chi.URLParam(r, "filestorageID"), &filestorageID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageID", Err: err})
-		return
-	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PutApiV2StorageFilestorageFilestorageID(w, r, filestorageID)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -3094,6 +3094,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v2/filestorage", wrapper.PostApiV2Filestorage)
 	})
 	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v2/filestorage/{filestorageID}", wrapper.DeleteApiV2FilestorageFilestorageID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v2/filestorage/{filestorageID}", wrapper.GetApiV2FilestorageFilestorageID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v2/filestorage/{filestorageID}", wrapper.PutApiV2FilestorageFilestorageID)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/filestorageclasses", wrapper.GetApiV2Filestorageclasses)
 	})
 	r.Group(func(r chi.Router) {
@@ -3161,15 +3170,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v2/servers/{serverID}/stop", wrapper.PostApiV2ServersServerIDStop)
-	})
-	r.Group(func(r chi.Router) {
-		r.Delete(options.BaseURL+"/api/v2/storage/filestorage/{filestorageID}", wrapper.DeleteApiV2StorageFilestorageFilestorageID)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v2/storage/filestorage/{filestorageID}", wrapper.GetApiV2StorageFilestorageFilestorageID)
-	})
-	r.Group(func(r chi.Router) {
-		r.Put(options.BaseURL+"/api/v2/storage/filestorage/{filestorageID}", wrapper.PutApiV2StorageFilestorageFilestorageID)
 	})
 
 	return r
