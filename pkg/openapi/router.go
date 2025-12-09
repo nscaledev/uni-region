@@ -108,6 +108,9 @@ type ServerInterface interface {
 	// (POST /api/v2/filestorage)
 	PostApiV2Filestorage(w http.ResponseWriter, r *http.Request)
 
+	// (GET /api/v2/filestorageclasses)
+	GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request, params GetApiV2FilestorageclassesParams)
+
 	// (GET /api/v2/networks)
 	GetApiV2Networks(w http.ResponseWriter, r *http.Request, params GetApiV2NetworksParams)
 
@@ -340,6 +343,11 @@ func (_ Unimplemented) GetApiV2Filestorage(w http.ResponseWriter, r *http.Reques
 
 // (POST /api/v2/filestorage)
 func (_ Unimplemented) PostApiV2Filestorage(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /api/v2/filestorageclasses)
+func (_ Unimplemented) GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request, params GetApiV2FilestorageclassesParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1999,6 +2007,39 @@ func (siw *ServerInterfaceWrapper) PostApiV2Filestorage(w http.ResponseWriter, r
 	handler.ServeHTTP(w, r)
 }
 
+// GetApiV2Filestorageclasses operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetApiV2FilestorageclassesParams
+
+	// ------------- Optional query parameter "regionID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "regionID", r.URL.Query(), &params.RegionID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "regionID", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV2Filestorageclasses(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetApiV2Networks operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV2Networks(w http.ResponseWriter, r *http.Request) {
 
@@ -3051,6 +3092,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v2/filestorage", wrapper.PostApiV2Filestorage)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v2/filestorageclasses", wrapper.GetApiV2Filestorageclasses)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/networks", wrapper.GetApiV2Networks)
