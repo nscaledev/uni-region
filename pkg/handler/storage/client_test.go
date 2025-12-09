@@ -140,7 +140,7 @@ func TestConvertV2List(t *testing.T) {
 			},
 		},
 		{
-			name: "test with attachments, and size",
+			name: "test with data",
 			input: &regionv1.FileStorageList{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "FileStorageList",
@@ -255,8 +255,10 @@ func TestConvertV2(t *testing.T) {
 					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
 				},
 				Spec: openapi.StorageV2Spec{
-					Size:        "0",
-					Attachments: &openapi.StorageAttachmentV2Spec{},
+					Size: "0",
+					Attachments: &openapi.StorageAttachmentV2Spec{
+						NetworkIDs: []string{},
+					},
 					StorageType: openapi.StorageTypeV2Spec{
 						NFS: &openapi.NFSV2Spec{
 							RootSquash: true,
