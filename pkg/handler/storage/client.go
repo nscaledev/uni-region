@@ -220,12 +220,13 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 	return out, nil
 }
 
-// checkRootSquash sets the Rootsquash default to true
-// this is only called on generates
-func checkRootSquash(NFS *openapi.NFSV2Spec) bool {
-	if NFS != nil {
-		return NFS.RootSquash
+// checkRootSquash sets the Rootsquash bool, defaults to true
+// this is only called on 'generates'.
+func checkRootSquash(nfs *openapi.NFSV2Spec) bool {
+	if nfs != nil {
+		return nfs.RootSquash
 	}
+
 	return true
 }
 
@@ -310,14 +311,20 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	}
 
 	// check that the requested size is bigger than the current size
-	desiredsize, err := strconv.ParseInt(request.Spec.Size, 10, 64)
+	requestedsize, err := strconv.ParseInt(request.Spec.Size, 10, 64)
 	if err != nil {
 		return nil, err
 	}
-	currentsize, _ := current.Spec.Size.AsInt64()
-	if currentsize > desiredsize {
+
+	currentsize, passed := current.Spec.Size.AsInt64()
+	if !passed {
+		return nil, errors.OAuth2InvalidRequest(fmt.Sprintf("failed converting %v"+
+			"current size from quantity to int64", current.Spec.Size))
+	}
+
+	if currentsize > requestedsize {
 		return nil, errors.OAuth2InvalidRequest(fmt.Sprintf("requested size: %o must be"+
-			"greater than current size: %o", desiredsize, currentsize))
+			"greater than current size: %o", requestedsize, currentsize))
 	}
 
 	updated := current.DeepCopy()
