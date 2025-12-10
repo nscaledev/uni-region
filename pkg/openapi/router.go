@@ -101,43 +101,43 @@ type ServerInterface interface {
 
 	// (GET /api/v1/organizations/{organizationID}/servers)
 	GetApiV1OrganizationsOrganizationIDServers(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, params GetApiV1OrganizationsOrganizationIDServersParams)
-
+	// List file storage
 	// (GET /api/v2/filestorage)
 	GetApiV2Filestorage(w http.ResponseWriter, r *http.Request, params GetApiV2FilestorageParams)
-
+	// Create file storage
 	// (POST /api/v2/filestorage)
 	PostApiV2Filestorage(w http.ResponseWriter, r *http.Request)
-
+	// List file storage classes
 	// (GET /api/v2/filestorageclasses)
 	GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request, params GetApiV2FilestorageclassesParams)
-
+	// List networks
 	// (GET /api/v2/networks)
 	GetApiV2Networks(w http.ResponseWriter, r *http.Request, params GetApiV2NetworksParams)
-
+	// Create network
 	// (POST /api/v2/networks)
 	PostApiV2Networks(w http.ResponseWriter, r *http.Request)
-
+	// Delete network
 	// (DELETE /api/v2/networks/{networkID})
 	DeleteApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter)
-
+	// Get network
 	// (GET /api/v2/networks/{networkID})
 	GetApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter)
-
+	// Update network
 	// (PUT /api/v2/networks/{networkID})
 	PutApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter)
-
+	// List security groups
 	// (GET /api/v2/securitygroups)
 	GetApiV2Securitygroups(w http.ResponseWriter, r *http.Request, params GetApiV2SecuritygroupsParams)
-
+	// Create security group
 	// (POST /api/v2/securitygroups)
 	PostApiV2Securitygroups(w http.ResponseWriter, r *http.Request)
-
+	// Delete security group
 	// (DELETE /api/v2/securitygroups/{securityGroupID})
 	DeleteApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, securityGroupID SecurityGroupIDParameter)
-
+	// Get security group
 	// (GET /api/v2/securitygroups/{securityGroupID})
 	GetApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, securityGroupID SecurityGroupIDParameter)
-
+	// Update security group
 	// (PUT /api/v2/securitygroups/{securityGroupID})
 	PutApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, securityGroupID SecurityGroupIDParameter)
 
@@ -176,13 +176,13 @@ type ServerInterface interface {
 
 	// (POST /api/v2/servers/{serverID}/stop)
 	PostApiV2ServersServerIDStop(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter)
-
+	// Delete file storage
 	// (DELETE /api/v2/storage/filestorage/{filestorageID})
 	DeleteApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter)
-
+	// Get file storage
 	// (GET /api/v2/storage/filestorage/{filestorageID})
 	GetApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter)
-
+	// Update file storage
 	// (PUT /api/v2/storage/filestorage/{filestorageID})
 	PutApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter)
 }
@@ -336,66 +336,79 @@ func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDServers(w http.Respons
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List file storage
 // (GET /api/v2/filestorage)
 func (_ Unimplemented) GetApiV2Filestorage(w http.ResponseWriter, r *http.Request, params GetApiV2FilestorageParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Create file storage
 // (POST /api/v2/filestorage)
 func (_ Unimplemented) PostApiV2Filestorage(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List file storage classes
 // (GET /api/v2/filestorageclasses)
 func (_ Unimplemented) GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request, params GetApiV2FilestorageclassesParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List networks
 // (GET /api/v2/networks)
 func (_ Unimplemented) GetApiV2Networks(w http.ResponseWriter, r *http.Request, params GetApiV2NetworksParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Create network
 // (POST /api/v2/networks)
 func (_ Unimplemented) PostApiV2Networks(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Delete network
 // (DELETE /api/v2/networks/{networkID})
 func (_ Unimplemented) DeleteApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Get network
 // (GET /api/v2/networks/{networkID})
 func (_ Unimplemented) GetApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Update network
 // (PUT /api/v2/networks/{networkID})
 func (_ Unimplemented) PutApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List security groups
 // (GET /api/v2/securitygroups)
 func (_ Unimplemented) GetApiV2Securitygroups(w http.ResponseWriter, r *http.Request, params GetApiV2SecuritygroupsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Create security group
 // (POST /api/v2/securitygroups)
 func (_ Unimplemented) PostApiV2Securitygroups(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Delete security group
 // (DELETE /api/v2/securitygroups/{securityGroupID})
 func (_ Unimplemented) DeleteApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, securityGroupID SecurityGroupIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Get security group
 // (GET /api/v2/securitygroups/{securityGroupID})
 func (_ Unimplemented) GetApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, securityGroupID SecurityGroupIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Update security group
 // (PUT /api/v2/securitygroups/{securityGroupID})
 func (_ Unimplemented) PutApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, securityGroupID SecurityGroupIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -461,16 +474,19 @@ func (_ Unimplemented) PostApiV2ServersServerIDStop(w http.ResponseWriter, r *ht
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Delete file storage
 // (DELETE /api/v2/storage/filestorage/{filestorageID})
 func (_ Unimplemented) DeleteApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Get file storage
 // (GET /api/v2/storage/filestorage/{filestorageID})
 func (_ Unimplemented) GetApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Update file storage
 // (PUT /api/v2/storage/filestorage/{filestorageID})
 func (_ Unimplemented) PutApiV2StorageFilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
