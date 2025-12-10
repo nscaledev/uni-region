@@ -348,9 +348,6 @@ type NetworkReadSpec struct {
 
 	// RegionId The region an identity is provisioned in.
 	RegionId string `json:"regionId"`
-
-	// Type The region's provider type.
-	Type RegionType `json:"type"`
 }
 
 // NetworkSpecOpenstack An openstack network.

@@ -1708,8 +1708,6 @@ components:
           type: string
         dnsNameservers:
           $ref: '#/components/schemas/ipv4AddressList'
-        type:
-          $ref: '#/components/schemas/regionType'
         regionId:
           description: The region an identity is provisioned in.
           type: string
