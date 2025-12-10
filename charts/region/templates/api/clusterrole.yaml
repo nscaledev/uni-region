@@ -10,6 +10,8 @@ rules:
   - region.unikorn-cloud.org
   resources:
   - regions
+  - filestorageclasses
+  - filestorageprovisioners
   verbs:
   - list
   - watch
@@ -23,8 +25,6 @@ rules:
   - securitygrouprules
   - servers
   - filestorages
-  - filestorageclasses
-  - filestorageprovisioners
   verbs:
   - list
   - watch
