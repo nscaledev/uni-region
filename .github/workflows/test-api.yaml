@@ -1,0 +1,45 @@
+name: API Tests
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  API-Tests:
+    runs-on: ubuntu-latest
+    env:
+      API_BASE_URL: ${{ secrets.API_BASE_URL }}
+      API_AUTH_TOKEN: ${{ secrets.API_AUTH_TOKEN }}
+      TEST_ORG_ID: ${{ secrets.TEST_ORG_ID }}
+      TEST_PROJECT_ID: ${{ secrets.TEST_PROJECT_ID }}
+      TEST_REGION_ID: ${{ secrets.TEST_REGION_ID }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Setup Go
+      uses: actions/setup-go@v3
+      with:
+        go-version-file: go.mod
+        cache: true
+    
+    - name: Touch
+      run: make touch
+    
+    - name: Run API Tests
+      if: github.event_name == 'workflow_dispatch'
+      run: make test-api
+    
+    - name: Archive API Test Results
+      uses: actions/upload-artifact@v4
+      with:
+        name: api-test-results
+        path: test/api/test-results.json
+    
+    - name: Archive API Test JUnit Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: api-test-junit
+        path: test/api/junit.xml
