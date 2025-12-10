@@ -7,3 +7,4 @@ cover.out
 cover.html
 go.work.sum
 go.work
+test/.env

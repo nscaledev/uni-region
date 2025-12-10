@@ -18,7 +18,6 @@ limitations under the License.
 package api
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -26,7 +25,6 @@ import (
 
 	"github.com/onsi/ginkgo/v2"
 
-	"github.com/unikorn-cloud/core/pkg/openapi"
 	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 )
@@ -44,6 +42,12 @@ type APIClient struct {
 	*coreclient.APIClient
 	config    *TestConfig
 	endpoints *Endpoints
+}
+
+// GetListRegionsPath returns the path for listing regions.
+// This is useful for tests that need direct access to the endpoint path.
+func (c *APIClient) GetListRegionsPath(orgID string) string {
+	return c.endpoints.ListRegions(orgID)
 }
 
 // NewAPIClient creates a new Region API client.
@@ -78,28 +82,84 @@ func newAPIClientWithConfig(config *TestConfig, baseURL string) *APIClient {
 	}
 }
 
-// Example API methods, taken from what in uni-compute:
-//
 // ListRegions lists all regions for an organization.
-// func (c *APIClient) ListRegions(ctx context.Context, orgID string) (regionopenapi.Regions, error) {
-// 	path := c.endpoints.ListRegions(orgID)
-// 	return coreclient.ListResource[regionopenapi.RegionRead](ctx, c.APIClient, path, ...)
-// }
-//
-// CreateIdentity creates a new identity in a project.
-// func (c *APIClient) CreateIdentity(ctx context.Context, orgID, projectID string, identity regionopenapi.IdentityWrite) (*openapi.ResourceReadMetadata, error) {
-// 	path := c.endpoints.CreateIdentity(orgID, projectID)
-// 	body, _ := json.Marshal(identity)
-// 	_, respBody, err := c.DoRequest(ctx, http.MethodPost, path, bytes.NewReader(body), http.StatusCreated)
-// 	...
-// }
+func (c *APIClient) ListRegions(ctx context.Context, orgID string) (regionopenapi.Regions, error) {
+	path := c.endpoints.ListRegions(orgID)
 
-// Suppress unused import warnings - remove when you add actual methods.
-var (
-	_ = bytes.NewReader
-	_ = context.Background
-	_ = json.Marshal
-	_ = http.MethodGet
-	_ = openapi.ResourceReadMetadata{}
-	_ = regionopenapi.Regions{}
-)
+	return coreclient.ListResource[regionopenapi.RegionRead](
+		ctx,
+		c.APIClient,
+		path,
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "regions",
+			ResourceID:     orgID,
+			ResourceIDType: "organization",
+		},
+	)
+}
+
+// GetRegionDetail gets detailed information about a specific region.
+func (c *APIClient) GetRegionDetail(ctx context.Context, orgID, regionID string) (*regionopenapi.RegionDetailRead, error) {
+	path := c.endpoints.GetRegionDetail(orgID, regionID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	if err != nil {
+		return nil, fmt.Errorf("getting region detail: %w", err)
+	}
+
+	var regionDetail regionopenapi.RegionDetailRead
+	if err := json.Unmarshal(respBody, &regionDetail); err != nil {
+		return nil, fmt.Errorf("unmarshaling region detail: %w", err)
+	}
+
+	return &regionDetail, nil
+}
+
+// ListFlavors lists all flavors available in a region.
+func (c *APIClient) ListFlavors(ctx context.Context, orgID, regionID string) (regionopenapi.Flavors, error) {
+	path := c.endpoints.ListFlavors(orgID, regionID)
+
+	return coreclient.ListResource[regionopenapi.Flavor](
+		ctx,
+		c.APIClient,
+		path,
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "flavors",
+			ResourceID:     regionID,
+			ResourceIDType: "region",
+		},
+	)
+}
+
+// ListImages lists all images available in a region.
+func (c *APIClient) ListImages(ctx context.Context, orgID, regionID string) (regionopenapi.Images, error) {
+	path := c.endpoints.ListImages(orgID, regionID)
+
+	return coreclient.ListResource[regionopenapi.Image](
+		ctx,
+		c.APIClient,
+		path,
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "images",
+			ResourceID:     regionID,
+			ResourceIDType: "region",
+		},
+	)
+}
+
+// ListExternalNetworks lists all external networks available in a region.
+func (c *APIClient) ListExternalNetworks(ctx context.Context, orgID, regionID string) (regionopenapi.ExternalNetworks, error) {
+	path := c.endpoints.ListExternalNetworks(orgID, regionID)
+
+	return coreclient.ListResource[regionopenapi.ExternalNetwork](
+		ctx,
+		c.APIClient,
+		path,
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "externalNetworks",
+			ResourceID:     regionID,
+			ResourceIDType: "region",
+		},
+	)
+}
