@@ -424,6 +424,12 @@ func (c *Client) Update(ctx context.Context, networkID string, request *openapi.
 		return nil, err
 	}
 
+	if required.Annotations == nil {
+		required.Annotations = map[string]string{}
+	}
+
+	required.Annotations[coreconstants.AllocationAnnotation] = current.Annotations[coreconstants.AllocationAnnotation]
+
 	updated := current.DeepCopy()
 	updated.Labels = required.Labels
 	updated.Annotations = required.Annotations
