@@ -289,7 +289,7 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 		return nil, err
 	}
 
-	if request.Spec.Size < storagedetails.UsedCapacity.String() {
+	if request.Spec.Size >= storagedetails.UsedCapacity.String() {
 		return nil, err
 	}
 	//
