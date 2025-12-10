@@ -13,6 +13,7 @@ jobs:
       API_AUTH_TOKEN: ${{ secrets.API_AUTH_TOKEN }}
       TEST_ORG_ID: ${{ secrets.TEST_ORG_ID }}
       TEST_PROJECT_ID: ${{ secrets.TEST_PROJECT_ID }}
+      TEST_SECONDARY_PROJECT_ID: ${{ secrets.TEST_SECONDARY_PROJECT_ID }}
       TEST_REGION_ID: ${{ secrets.TEST_REGION_ID }}
 
     steps:
