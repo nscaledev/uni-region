@@ -19,14 +19,12 @@ limitations under the License.
 package handler
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
-	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
@@ -50,41 +48,19 @@ type Handler struct {
 	// options allows behaviour to be defined on the CLI.
 	options *Options
 
-	// issuer provides privilge escallation for the API so the end user doesn't
-	// have to be granted unnecessary privilige.
-	issuer *identityclient.TokenIssuer
-
 	// identity is an identity client for RBAC access.
-	identity *identityclient.Client
+	identity *identityapi.ClientWithResponses
 }
 
-func New(client client.Client, namespace string, options *Options, issuer *identityclient.TokenIssuer, identity *identityclient.Client) (*Handler, error) {
+func New(client client.Client, namespace string, options *Options, identity *identityapi.ClientWithResponses) (*Handler, error) {
 	h := &Handler{
 		client:    client,
 		namespace: namespace,
 		options:   options,
-		issuer:    issuer,
 		identity:  identity,
 	}
 
 	return h, nil
-}
-
-// getIdentityAPIClient gets a client to talk to the identity service, this must not
-// be cached as the token is only short lived.  Said problem goes away when we use
-// SPIFFE as a workload identity layer.
-func (h *Handler) getIdentityAPIClient(ctx context.Context) (identityapi.ClientWithResponsesInterface, error) {
-	token, err := h.issuer.Issue(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	client, err := h.identity.APIClient(ctx, token)
-	if err != nil {
-		return nil, err
-	}
-
-	return client, nil
 }
 
 func (h *Handler) setCacheable(w http.ResponseWriter) {
@@ -243,7 +219,7 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 }
 
 func (h *Handler) networkClient() *network.Client {
-	return network.New(h.client, h.namespace, h.getIdentityAPIClient)
+	return network.New(h.client, h.namespace, h.identity)
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
