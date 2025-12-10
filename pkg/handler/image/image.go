@@ -176,6 +176,28 @@ func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imag
 	return nil
 }
 
+// --- Create + fetch saga ---
+//
+// This is a core/pkg/server/saga that creates the image record, then starts a background fetch
+// of the image from the source URL given in the request.
+
+// uploadToProvider returns a callback `uploadFileFunc` that will stream the callback's
+// io.Reader to the provider given.
+func uploadToProvider(imageID string, provider Provider) uploadFileFunc {
+	return func(ctx context.Context, reader io.Reader) error {
+		if err := provider.UploadImageData(ctx, imageID, reader); err != nil {
+			if goerrors.Is(err, types.ErrImageNotReadyForUpload) {
+				err = fmt.Errorf("%w: image data has already been uploaded", ErrProviderResource)
+				return errors.HTTPConflict().WithError(err)
+			}
+
+			return errors.OAuth2ServerError("The server encountered an unexpected error while uploading the image data").WithError(err)
+		}
+
+		return nil
+	}
+}
+
 type createImageForUploadSaga struct {
 	client         *Client
 	organizationID string
@@ -260,7 +282,9 @@ func (s *createImageForUploadSaga) uploadFromURL(ctx context.Context, source str
 		return fmt.Errorf("%w: non-OK status code (%s) from fetching source", ErrFailedImageFetch, res.Status)
 	}
 
-	if err := uploadImageData(ctx, s.result.ID, s.result.DiskFormat, res.Body, s.provider); err != nil {
+	contentType := res.Header.Get("Content-Type")
+
+	if err := dispatchUpload(ctx, contentType, s.image.DiskFormat, res.Body, uploadToProvider(s.result.ID, s.provider)); err != nil {
 		return err
 	}
 

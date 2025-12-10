@@ -38,6 +38,8 @@ import (
 	"k8s.io/utils/ptr"
 )
 
+const imageID = "b3796b32-57d3-40cf-b43e-d227c0c5a70b"
+
 func expectedReaderBytes(content []byte) gomock.Matcher {
 	return gomock.Cond(func(reader io.Reader) bool {
 		actual, err := io.ReadAll(reader)
@@ -49,10 +51,24 @@ func expectedReaderBytes(content []byte) gomock.Matcher {
 	})
 }
 
+func expectUploadOfBytes(data []byte) func(*mock.MockProvider) {
+	return func(provider *mock.MockProvider) {
+		provider.EXPECT().
+			UploadImageData(gomock.Any(), imageID, expectedReaderBytes(data)).
+			Return(nil)
+	}
+}
+
+func bytesReader(data []byte) func(*testing.T) io.Reader {
+	return func(t *testing.T) io.Reader {
+		t.Helper()
+
+		return bytes.NewBuffer(data)
+	}
+}
+
 func TestUploadImageData(t *testing.T) {
 	t.Parallel()
-
-	imageID := "b3796b32-57d3-40cf-b43e-d227c0c5a70b"
 
 	expectedImage := &openapi.Image{
 		Metadata: coreopenapi.StaticResourceMetadata{
@@ -99,6 +115,7 @@ func TestUploadImageData(t *testing.T) {
 		ReaderSetupFunc   func(t *testing.T) io.Reader
 		ProviderSetupFunc func(provider *mock.MockProvider)
 		DiskFormat        types.ImageDiskFormat
+		ContentType       string
 		ExpectedError     bool
 		ExpectedImage     *openapi.Image
 	}
@@ -171,27 +188,35 @@ func TestUploadImageData(t *testing.T) {
 			ExpectedImage: nil,
 		},
 		{
-			Name:            "succeeds in uploading raw image data",
-			ReaderSetupFunc: fakeRawDiskReader,
-			ProviderSetupFunc: func(provider *mock.MockProvider) {
-				provider.EXPECT().
-					UploadImageData(gomock.Any(), imageID, expectedReaderBytes(rawFileContent)).
-					Return(nil)
-			},
-			ExpectedError: false,
-			ExpectedImage: expectedImage,
+			Name:              "succeeds in uploading tarballed raw image file",
+			ReaderSetupFunc:   fakeRawDiskReader,
+			ProviderSetupFunc: expectUploadOfBytes(rawFileContent),
+			ExpectedError:     false,
+			ExpectedImage:     expectedImage,
 		},
 		{
-			Name:            "succeeds in uploading qcow2 image data",
-			ReaderSetupFunc: fakeQcow2Reader,
-			ProviderSetupFunc: func(provider *mock.MockProvider) {
-				provider.EXPECT().
-					UploadImageData(gomock.Any(), imageID, expectedReaderBytes(qcow2FileContent)).
-					Return(nil)
-			},
-			DiskFormat:    types.ImageDiskFormatQCOW2,
-			ExpectedError: false,
-			ExpectedImage: expectedImage,
+			Name:              "succeeds in uploading tarballed qcow2 image file",
+			ReaderSetupFunc:   fakeQcow2Reader,
+			ProviderSetupFunc: expectUploadOfBytes(qcow2FileContent),
+			DiskFormat:        types.ImageDiskFormatQCOW2,
+			ExpectedError:     false,
+			ExpectedImage:     expectedImage,
+		},
+		{
+			Name:              "succeeds in uploading .raw",
+			ReaderSetupFunc:   bytesReader(rawFileContent),
+			ContentType:       "application/octet-stream",
+			ProviderSetupFunc: expectUploadOfBytes(rawFileContent),
+			DiskFormat:        types.ImageDiskFormatRaw,
+			ExpectedImage:     expectedImage,
+		},
+		{
+			Name:              "succeeds in uploading .qcow2",
+			ReaderSetupFunc:   bytesReader(qcow2FileContent),
+			ContentType:       "application/octet-stream",
+			ProviderSetupFunc: expectUploadOfBytes(qcow2FileContent),
+			DiskFormat:        types.ImageDiskFormatQCOW2,
+			ExpectedImage:     expectedImage,
 		},
 	}
 
@@ -220,7 +245,14 @@ func TestUploadImageData(t *testing.T) {
 				diskFormat = f
 			}
 
-			err := uploadImageData(ctx, imageID, diskFormat, reader, mockProvider)
+			contentType := "application/tar+gzip"
+			if ct := testCase.ContentType; ct != "" {
+				contentType = ct
+			}
+
+			upload := uploadToProvider(imageID, mockProvider)
+
+			err := dispatchUpload(ctx, contentType, diskFormat, reader, upload)
 			require.Equal(t, testCase.ExpectedError, err != nil, "got error %s", err)
 		})
 	}

@@ -47,7 +47,6 @@ const (
 	testNamespace      = "test-ns"
 	testOrganizationID = "3d84f1f2-4a41-44d5-98ab-8b282d00abb9"
 	testRegionID       = "test-region"
-	testImageID        = "b3796b32-57d3-40cf-b43e-d227c0c5a70b"
 )
 
 // expectedReaderBytes creates a gomock matcher that compares reader contents.
