@@ -30,18 +30,32 @@ func NewEndpoints() *Endpoints {
 	return &Endpoints{}
 }
 
-// Example endpoint patterns, taken from what in uni-compute:
-//
-// func (e *Endpoints) ListRegions(orgID string) string {
-// 	return fmt.Sprintf("/api/v1/organizations/%s/regions",
-// 		url.PathEscape(orgID))
-// }
-//
-// func (e *Endpoints) CreateIdentity(orgID, projectID string) string {
-// 	return fmt.Sprintf("/api/v1/organizations/%s/projects/%s/identities",
-// 		url.PathEscape(orgID), url.PathEscape(projectID))
-// }
+// ListRegions returns the endpoint for listing all regions in an organization.
+func (e *Endpoints) ListRegions(orgID string) string {
+	return fmt.Sprintf("/api/v1/organizations/%s/regions",
+		url.PathEscape(orgID))
+}
 
-// Suppress unused warnings - remove this when I add the actual endpoints.
-var _ = fmt.Sprint
-var _ = url.PathEscape
+// GetRegionDetail returns the endpoint for getting detailed region information.
+func (e *Endpoints) GetRegionDetail(orgID, regionID string) string {
+	return fmt.Sprintf("/api/v1/organizations/%s/regions/%s/detail",
+		url.PathEscape(orgID), url.PathEscape(regionID))
+}
+
+// ListFlavors returns the endpoint for listing flavors in a region.
+func (e *Endpoints) ListFlavors(orgID, regionID string) string {
+	return fmt.Sprintf("/api/v1/organizations/%s/regions/%s/flavors",
+		url.PathEscape(orgID), url.PathEscape(regionID))
+}
+
+// ListImages returns the endpoint for listing images in a region.
+func (e *Endpoints) ListImages(orgID, regionID string) string {
+	return fmt.Sprintf("/api/v1/organizations/%s/regions/%s/images",
+		url.PathEscape(orgID), url.PathEscape(regionID))
+}
+
+// ListExternalNetworks returns the endpoint for listing external networks in a region.
+func (e *Endpoints) ListExternalNetworks(orgID, regionID string) string {
+	return fmt.Sprintf("/api/v1/organizations/%s/regions/%s/externalnetworks",
+		url.PathEscape(orgID), url.PathEscape(regionID))
+}
