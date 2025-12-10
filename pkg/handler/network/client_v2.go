@@ -41,6 +41,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
 
@@ -401,6 +402,40 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.NetworkV2Create)
 	return convertV2(s.network), nil
 }
 
+func metadataMutator(required, current metav1.Object) error {
+	req := required.GetAnnotations()
+	if req == nil {
+		req = map[string]string{}
+	}
+
+	cur := current.GetAnnotations()
+
+	if v, ok := cur[coreconstants.AllocationAnnotation]; ok {
+		req[coreconstants.AllocationAnnotation] = v
+	}
+
+	required.SetAnnotations(req)
+
+	req = required.GetLabels()
+	if req == nil {
+		req = map[string]string{}
+	}
+
+	cur = current.GetLabels()
+
+	if v, ok := cur[constants.IdentityLabel]; ok {
+		req[constants.IdentityLabel] = v
+	}
+
+	if v, ok := cur[constants.RegionLabel]; ok {
+		req[constants.RegionLabel] = v
+	}
+
+	required.SetLabels(req)
+
+	return nil
+}
+
 func (c *Client) Update(ctx context.Context, networkID string, request *openapi.NetworkV2Update) (*openapi.NetworkV2Read, error) {
 	current, err := c.GetV2Raw(ctx, networkID)
 	if err != nil {
@@ -421,6 +456,10 @@ func (c *Client) Update(ctx context.Context, networkID string, request *openapi.
 
 	required, err := c.generateV2(ctx, organizationID, projectID, regionID, request, &current.Spec.Prefix.IPNet)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := conversion.UpdateObjectMetadata(required, current, common.IdentityMetadataMutator, metadataMutator); err != nil {
 		return nil, err
 	}
 
