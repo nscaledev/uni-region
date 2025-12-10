@@ -70,6 +70,34 @@ The OIDC configuration allows token validation at the API.
 
 Regions define cloud instances to expose to clients.
 
+## Running Tests
+
+### Local Testing
+
+1. Copy the example config:
+   ```bash
+   cp test/.env.example test/.env
+   ```
+
+2. Update `test/.env` with your values:
+   - `API_BASE_URL` - Region API server URL
+   - `API_AUTH_TOKEN` - Service token from console
+   - `TEST_ORG_ID`, `TEST_PROJECT_ID`, `TEST_REGION_ID` - Test data IDs
+
+3. Run tests:
+   ```bash
+   make test-api                                              # Run all tests
+   make test-api-verbose                                      # Verbose output
+   make test-api-focus FOCUS="should return all available"   # Run focused tests
+   ```
+
+### GitHub Actions
+
+Trigger the workflow manually from the Actions tab:
+1. Go to **Actions** → **API Tests**
+2. Click **Run workflow**
+3. View results in the workflow run and download test artifacts
+
 ## What Next?
 
 The region controller is useless as it is, and requires a service provider to use it to yield a consumable resource.
