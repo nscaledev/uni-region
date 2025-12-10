@@ -283,7 +283,7 @@ func (h *Handler) GetApiV2ServersServerIDConsolesessions(w http.ResponseWriter, 
 }
 
 func (h *Handler) storageClient() *storage.Client {
-	return storage.New(h.client, h.namespace, h.getIdentityAPIClient)
+	return storage.New(h.client, h.namespace, h.identity)
 }
 
 func (h *Handler) GetApiV2Filestorage(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2FilestorageParams) {

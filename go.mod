@@ -9,11 +9,11 @@ require (
 	github.com/gophercloud/utils v0.0.0-20231010081019-80377eca5d56
 	github.com/kaptinlin/jsonschema v0.2.3
 	github.com/oapi-codegen/runtime v1.1.1
-	github.com/spf13/pflag v1.0.6
+	github.com/spf13/pflag v1.0.10
 	github.com/spjmurray/go-util v0.1.3
-	github.com/stretchr/testify v1.10.0
-	github.com/unikorn-cloud/core v1.11.0
-	github.com/unikorn-cloud/identity v1.11.1-0.20251201095443-43a13d934782
+	github.com/stretchr/testify v1.11.1
+	github.com/unikorn-cloud/core v1.11.1-0.20251209154055-f40c79722347
+	github.com/unikorn-cloud/identity v1.11.1-0.20251210103822-d8584c983def
 	go.opentelemetry.io/otel v1.35.0
 	go.opentelemetry.io/otel/sdk v1.35.0
 	go.opentelemetry.io/otel/trace v1.35.0

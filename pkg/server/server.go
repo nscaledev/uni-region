@@ -62,6 +62,9 @@ type Server struct {
 
 	// CORSOptions are for remote resource sharing.
 	CORSOptions cors.Options
+
+	// OpenAPIOptions are for OpenAPI processing.
+	OpenAPIOptions openapimiddleware.Options
 }
 
 func (s *Server) AddFlags(flags *pflag.FlagSet) {
@@ -75,6 +78,7 @@ func (s *Server) AddFlags(flags *pflag.FlagSet) {
 	s.ClientOptions.AddFlags(flags)
 	s.IdentityOptions.AddFlags(flags)
 	s.CORSOptions.AddFlags(flags)
+	s.OpenAPIOptions.AddFlags(flags)
 }
 
 func (s *Server) SetupLogging() {
@@ -123,7 +127,10 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 	router.NotFound(http.HandlerFunc(handler.NotFound))
 	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
 
-	authorizer := openapimiddlewareremote.NewAuthorizer(client, s.IdentityOptions, &s.ClientOptions)
+	authorizer, err := openapimiddlewareremote.NewAuthorizer(client, s.IdentityOptions, &s.ClientOptions)
+	if err != nil {
+		return nil, err
+	}
 
 	// Middleware specified here is applied to all requests post-routing.
 	// NOTE: these are applied in reverse order!!
@@ -132,14 +139,18 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 		ErrorHandlerFunc: handler.HandleError,
 		Middlewares: []openapi.MiddlewareFunc{
 			audit.Middleware(schema, constants.Application, constants.Version),
-			openapimiddleware.Middleware(authorizer, schema),
+			openapimiddleware.Middleware(&s.OpenAPIOptions, authorizer, schema),
 		},
 	}
 
 	issuer := identityclient.NewTokenIssuer(client, s.IdentityOptions, &s.ClientOptions, constants.ServiceDescriptor())
-	identity := identityclient.New(client, s.IdentityOptions, &s.ClientOptions)
 
-	handlerInterface, err := handler.New(client, s.CoreOptions.Namespace, &s.HandlerOptions, issuer, identity)
+	identity, err := identityclient.New(client, s.IdentityOptions, &s.ClientOptions).APIClient(context.TODO(), issuer)
+	if err != nil {
+		return nil, err
+	}
+
+	handlerInterface, err := handler.New(client, s.CoreOptions.Namespace, &s.HandlerOptions, identity)
 	if err != nil {
 		return nil, err
 	}
