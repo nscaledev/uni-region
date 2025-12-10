@@ -22,6 +22,9 @@ rules:
   - securitygroups
   - securitygrouprules
   - servers
+  - filestorages
+  - filestorageclasses
+  - filestorageprovisioners
   verbs:
   - list
   - watch
