@@ -33,6 +33,7 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	filedriver "github.com/unikorn-cloud/region/pkg/file-storage/provisioners/driver"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
@@ -51,6 +52,9 @@ type Client struct {
 	namespace string
 	// identity is an identity client for RBAC access.
 	identity identityclient.APIClientGetter
+
+	//fcdriver
+
 }
 
 // New creates a new client.
@@ -274,6 +278,21 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	organizationID := current.Labels[coreconstants.OrganizationLabel]
 	projectID := current.Labels[coreconstants.ProjectLabel]
 	regionID := current.Labels[constants.RegionLabel]
+
+	// schristoff: fix
+	fcdriver, err := filedriver.New(ctx, c.client, &regionv1.FileStorageProvisioner{})
+	if err != nil {
+		return nil, err
+	}
+	storagedetails, err := fcdriver.GetDetails(ctx, projectID, storageID)
+	if err != nil {
+		return nil, err
+	}
+
+	if request.Spec.Size < storagedetails.UsedCapacity.String() {
+		return nil, err
+	}
+	//
 
 	required, err := c.generateV2(ctx, organizationID, projectID, regionID, request)
 	if err != nil {
