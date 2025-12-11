@@ -681,6 +681,8 @@ paths:
     get:
       description: List networks.
       summary: List networks
+      tags:
+      - Networks
       security:
       - oauth2Authentication: []
       parameters:
@@ -702,6 +704,8 @@ paths:
     post:
       description: Create a new network.
       summary: Create network
+      tags:
+      - Networks
       security:
       - oauth2Authentication: []
       requestBody:
@@ -727,6 +731,8 @@ paths:
     get:
       description: Get a network.
       summary: Get network
+      tags:
+      - Networks
       security:
       - oauth2Authentication: []
       responses:
@@ -743,6 +749,8 @@ paths:
     put:
       description: Update a network.
       summary: Update network
+      tags:
+      - Networks
       security:
       - oauth2Authentication: []
       requestBody:
@@ -761,6 +769,8 @@ paths:
     delete:
       description: Delete a network.
       summary: Delete network
+      tags:
+      - Networks
       security:
       - oauth2Authentication: []
       responses:
@@ -781,6 +791,8 @@ paths:
     get:
       description: List security groups.
       summary: List security groups
+      tags:
+      - Security groups
       security:
       - oauth2Authentication: []
       parameters:
@@ -803,6 +815,8 @@ paths:
     post:
       description: Create a new security group.
       summary: Create security group
+      tags:
+      - Security groups
       security:
       - oauth2Authentication: []
       requestBody:
@@ -827,6 +841,8 @@ paths:
     get:
       description: Get a security group.
       summary: Get security group
+      tags:
+      - Security groups
       security:
       - oauth2Authentication: []
       responses:
@@ -843,6 +859,8 @@ paths:
     put:
       description: Update a security group.
       summary: Update security group
+      tags:
+      - Security groups
       security:
       - oauth2Authentication: []
       requestBody:
@@ -861,6 +879,8 @@ paths:
     delete:
       description: Delete a security groups.
       summary: Delete security group
+      tags:
+      - Security groups
       security:
       - oauth2Authentication: []
       responses:
@@ -1130,6 +1150,8 @@ paths:
     get:
       description: List storage for project.
       summary: List file storage
+      tags:
+      - File storage
       security:
       - oauth2Authentication: []
       parameters:
@@ -1151,6 +1173,8 @@ paths:
     post:
       description: Create a new storage.
       summary: Create file storage
+      tags:
+      - File storage
       security:
       - oauth2Authentication: []
       requestBody:
@@ -1174,6 +1198,8 @@ paths:
     get:
       description: Get all storage information this ID.
       summary: Get file storage
+      tags:
+      - File storage
       security:
       - oauth2Authentication: []
       responses:
@@ -1190,6 +1216,8 @@ paths:
     put:
       description: Update this storage.
       summary: Update file storage
+      tags:
+      - File storage
       security:
       - oauth2Authentication: []
       requestBody:
@@ -1208,6 +1236,8 @@ paths:
     delete:
       description: Delete a storage.
       summary: Delete file storage
+      tags:
+      - File storage
       security:
       - oauth2Authentication: []
       responses:
@@ -1227,6 +1257,8 @@ paths:
     get:
       description: List storage classes.
       summary: List file storage classes
+      tags:
+      - File storage classes
       security:
       - oauth2Authentication: []
       parameters:
