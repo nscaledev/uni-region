@@ -762,7 +762,7 @@ type ServerSpec struct {
 // ServerStatus A server's status.
 type ServerStatus struct {
 	// Phase The lifecycle phase of an instance.
-	Phase InstanceLifecyclePhase `json:"phase"`
+	Phase *InstanceLifecyclePhase `json:"phase,omitempty"`
 
 	// PrivateIP The private IP address of the server.
 	PrivateIP *string `json:"privateIP,omitempty"`

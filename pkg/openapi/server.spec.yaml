@@ -2221,8 +2221,6 @@ components:
     serverStatus:
       description: A server's status.
       type: object
-      required:
-      - phase
       properties:
         phase:
           $ref: '#/components/schemas/instanceLifecyclePhase'
