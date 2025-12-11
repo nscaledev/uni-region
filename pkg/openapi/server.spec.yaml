@@ -1701,7 +1701,6 @@ components:
       - regionId
       - prefix
       - dnsNameservers
-      - type
       properties:
         prefix:
           description: An IPv4 prefix for the network.
