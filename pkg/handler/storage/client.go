@@ -346,6 +346,24 @@ func (c *Client) ListClasses(ctx context.Context, params openapi.GetApiV2Filesto
 	return convertClassList(result), nil
 }
 
+func (c *Client) GetStorageClass(ctx context.Context, storageClassID string) (*openapi.StorageClassV2Read, error) {
+	result := &regionv1.FileStorageClass{}
+
+	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: storageClassID}, result); err != nil {
+		if kerrors.IsNotFound(err) {
+			return nil, errors.HTTPNotFound().WithError(err)
+		}
+
+		return nil, errors.OAuth2ServerError("unable to lookup storage class").WithError(err)
+	}
+
+	if err := rbac.AllowOrganizationScope(ctx, "region:filestorageclass:v2", identityapi.Read, result.Labels[coreconstants.OrganizationLabel]); err != nil {
+		return nil, err
+	}
+
+	return convertClass(result), nil
+}
+
 func convertClassList(in *regionv1.FileStorageClassList) openapi.StorageClassListV2Read {
 	out := make(openapi.StorageClassListV2Read, len(in.Items))
 
