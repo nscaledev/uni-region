@@ -38,10 +38,12 @@
                         "type":"string"
                 },
                 "unikorn:package:kubernetes":{
-			"type":"string"
+                        "type":"string",
+                        "pattern": "^v\\d+\\.\\d+\\.\\d+$"
                 },
                 "unikorn:package:slurmd":{
-                        "type":"string"
+                        "type":"string",
+                        "pattern": "^v\\d+\\.\\d+\\.\\d+$"
                 },
                 "unikorn:gpu_vendor":{
                         "type":"string",
