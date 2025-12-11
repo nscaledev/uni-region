@@ -26,6 +26,7 @@ import (
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
+	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -90,24 +91,16 @@ func (s *createSaga) createFileStorage(ctx context.Context) error {
 }
 
 func (s *createSaga) validateRequest(ctx context.Context) error {
-	storageClassKey := client.ObjectKey{
-		Name:      s.request.Spec.StorageClassId,
-		Namespace: s.client.namespace,
-	}
-	storageType := regionv1.FileStorageClass{}
-	networkClient := network.New(s.client.client, s.client.namespace, s.client.identity)
-
-	err := s.client.client.Get(ctx, storageClassKey, &storageType)
-
-	if err != nil {
-		return errors.OAuth2ServerError("filestorage class does not exist").WithError(err)
+	if err := s.validateRegion(ctx, s.request.Spec.RegionId); err != nil {
+		return err
 	}
 
-	for _, v := range s.request.Spec.Attachments.NetworkIDs {
-		_, err = networkClient.GetV2(ctx, v)
-		if err != nil {
-			return errors.OAuth2ServerError("network attachment not found").WithError(err).WithValues("networkID", v)
-		}
+	if err := s.validateStorageClass(ctx, s.request.Spec.StorageClassId); err != nil {
+		return err
+	}
+
+	if err := s.validateNetworks(ctx, s.request.Spec.Attachments.NetworkIDs); err != nil {
+		return err
 	}
 
 	updateRequest, err := convertCreateToUpdateRequest(s.request)
@@ -115,12 +108,45 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 		return err
 	}
 
-	filestorage, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.ProjectId, updateRequest)
+	filestorage, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId, updateRequest)
 	if err != nil {
 		return err
 	}
 
 	s.filestorage = filestorage
+
+	return nil
+}
+
+func (s *createSaga) validateRegion(ctx context.Context, regionID string) error {
+	regionClient := region.NewClient(s.client.client, s.client.namespace)
+
+	if _, err := regionClient.GetDetail(ctx, regionID); err != nil {
+		return errors.OAuth2ServerError("region does not exist").WithError(err)
+	}
+
+	return nil
+}
+
+func (s *createSaga) validateStorageClass(ctx context.Context, storageClassID string) error {
+	if _, err := s.client.GetStorageClass(ctx, storageClassID); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *createSaga) validateNetworks(ctx context.Context, networkIDs []string) error {
+	networkClient := network.New(s.client.client, s.client.namespace, s.client.identity)
+
+	for _, id := range networkIDs {
+		if _, err := networkClient.GetV2(ctx, id); err != nil {
+			return errors.
+				OAuth2ServerError("network attachment not found").
+				WithError(err).
+				WithValues("networkID", id)
+		}
+	}
 
 	return nil
 }
