@@ -37,10 +37,10 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
+	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/providers/types"
 )
 
 var (
@@ -234,7 +234,7 @@ func (c *ImageClient) GetImage(ctx context.Context, id string) (*images.Image, e
 
 	index := slices.IndexFunc(result, imageIndexFunc)
 	if index < 0 {
-		return nil, fmt.Errorf("%w: image %s", types.ErrResourceNotFound, id)
+		return nil, fmt.Errorf("%w: image %s", coreerrors.ErrResourceNotFound, id)
 	}
 
 	return &result[index], nil

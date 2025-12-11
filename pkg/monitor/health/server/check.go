@@ -18,18 +18,15 @@ package server
 
 import (
 	"context"
-	"errors"
+	goerrors "errors"
 	"fmt"
 
+	"github.com/unikorn-cloud/core/pkg/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
-)
-
-var (
-	ErrConsistency = errors.New("consistency error")
 )
 
 // Checker for server health.
@@ -52,7 +49,7 @@ func New(client client.Client, namespace string) *Checker {
 func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server) error {
 	identityID, ok := server.Labels[constants.IdentityLabel]
 	if !ok {
-		return fmt.Errorf("%w: server %s missing identity label", ErrConsistency, server.Name)
+		return fmt.Errorf("%w: server %s missing identity label", errors.ErrConsistency, server.Name)
 	}
 
 	identity := &unikornv1.Identity{}
@@ -63,7 +60,7 @@ func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server) err
 
 	regionID, ok := server.Labels[constants.RegionLabel]
 	if !ok {
-		return fmt.Errorf("%w: server %s missing region label", ErrConsistency, server.Name)
+		return fmt.Errorf("%w: server %s missing region label", errors.ErrConsistency, server.Name)
 	}
 
 	provider, err := providers.New(ctx, c.client, c.namespace, regionID)
@@ -99,6 +96,14 @@ func (c *Checker) Check(ctx context.Context) error {
 
 	for i := range servers.Items {
 		if err := c.checkServer(ctx, &servers.Items[i]); err != nil {
+			// If a server is stuck in an error state and has no matching
+			// machine in the provider, this will get raised, we don't want
+			// to prevent other servers from reconciling their power state
+			// due to one bad actor!
+			if goerrors.Is(err, errors.ErrResourceNotFound) {
+				continue
+			}
+
 			return err
 		}
 	}

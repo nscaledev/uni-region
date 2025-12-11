@@ -26,6 +26,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
@@ -123,7 +124,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 	}
 
 	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
-		if goerrors.Is(err, types.ErrResourceNotFound) {
+		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return nil, errors.HTTPNotFound()
 		}
 
@@ -167,7 +168,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	}
 
 	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
-		if goerrors.Is(err, types.ErrResourceNotFound) {
+		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return nil, errors.HTTPNotFound()
 		}
 

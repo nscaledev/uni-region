@@ -616,7 +616,7 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 	}
 
 	if !isPublicOrOrganizationOwnedImage(resource, organizationID) {
-		return nil, fmt.Errorf("%w: image %s", types.ErrResourceNotFound, imageID)
+		return nil, fmt.Errorf("%w: image %s", coreerrors.ErrResourceNotFound, imageID)
 	}
 
 	return p.convertImage(resource)
@@ -721,7 +721,7 @@ func roleNameToID(roles []roles.Role, name string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("%w: role %s", types.ErrResourceNotFound, name)
+	return "", fmt.Errorf("%w: role %s", coreerrors.ErrResourceNotFound, name)
 }
 
 // getRequiredProjectManagerRoles returns the roles required for a manager to create, manage
@@ -1145,7 +1145,7 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 		return result, nil
 	}
 
-	if !errors.Is(err, ErrNotFound) {
+	if !errors.Is(err, coreerrors.ErrResourceNotFound) {
 		return nil, err
 	}
 
@@ -1198,7 +1198,7 @@ func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, 
 
 	result, err := client.GetSubnet(ctx, network)
 	if err != nil {
-		if !errors.Is(err, ErrNotFound) {
+		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
 			return nil, err
 		}
 
@@ -1244,7 +1244,7 @@ func (p *Provider) reconcileRouter(ctx context.Context, client RouterInterface, 
 		return result, nil
 	}
 
-	if !errors.Is(err, ErrNotFound) {
+	if !errors.Is(err, coreerrors.ErrResourceNotFound) {
 		return nil, err
 	}
 
@@ -1341,17 +1341,17 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 	}
 
 	openstackNetwork, err := networking.GetNetwork(ctx, network)
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
 		return err
 	}
 
 	subnet, err := networking.GetSubnet(ctx, network)
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
 		return err
 	}
 
 	router, err := networking.GetRouter(ctx, network)
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
 		return err
 	}
 
@@ -1611,7 +1611,7 @@ func (p *Provider) reconcileSecurityGroup(ctx context.Context, client SecurityGr
 		return result, nil
 	}
 
-	if !errors.Is(err, ErrNotFound) {
+	if !errors.Is(err, coreerrors.ErrResourceNotFound) {
 		return nil, err
 	}
 
@@ -1668,7 +1668,7 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 	}
 
 	openstackSecurityGroup, err := networking.GetSecurityGroup(ctx, securityGroup)
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
 		return err
 	}
 
@@ -1795,7 +1795,7 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 
 	port, err := client.GetServerPort(ctx, server)
 	if err != nil {
-		if !errors.Is(err, ErrNotFound) {
+		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
 			return nil, err
 		}
 
@@ -1850,7 +1850,7 @@ func (p *Provider) reconcileFloatingIP(ctx context.Context, client FloatingIPInt
 		return nil
 	}
 
-	if !errors.Is(err, ErrNotFound) {
+	if !errors.Is(err, coreerrors.ErrResourceNotFound) {
 		return err
 	}
 
@@ -1950,7 +1950,7 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 	}
 
 	openstackServer, err := compute.GetServer(ctx, server)
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
 		return err
 	}
 
@@ -1968,14 +1968,14 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 	}
 
 	port, err := networking.GetServerPort(ctx, server)
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
 		return err
 	}
 
 	//nolint:nestif
 	if port != nil {
 		floatingip, err := networking.GetFloatingIP(ctx, port.ID)
-		if err != nil && !errors.Is(err, ErrNotFound) {
+		if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
 			return err
 		}
 
