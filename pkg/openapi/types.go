@@ -17,6 +17,12 @@ const (
 	GpuVendorNVIDIA GpuVendor = "NVIDIA"
 )
 
+// Defines values for ImageDiskFormat.
+const (
+	ImageDiskFormatQcow2 ImageDiskFormat = "qcow2"
+	ImageDiskFormatRaw   ImageDiskFormat = "raw"
+)
+
 // Defines values for ImageVirtualization.
 const (
 	ImageVirtualizationAny         ImageVirtualization = "any"
@@ -247,6 +253,39 @@ type Image struct {
 	// Spec An image.
 	Spec ImageSpec `json:"spec"`
 }
+
+// ImageCreate A compute image create request.
+type ImageCreate struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A compute image specification.
+	Spec ImageCreateSpec `json:"spec"`
+}
+
+// ImageCreateSpec A compute image specification.
+type ImageCreateSpec struct {
+	// Gpu The GPU driver if installed.
+	Gpu *ImageGpu `json:"gpu,omitempty"`
+
+	// Os An operating system description.
+	Os ImageOS `json:"os"`
+
+	// SoftwareVersions Image preinstalled version version metadata.
+	SoftwareVersions *SoftwareVersions `json:"softwareVersions,omitempty"`
+
+	// SourceFormat The disk format of the image. If not provided, the value defaults to `raw`.
+	SourceFormat *ImageDiskFormat `json:"sourceFormat,omitempty"`
+
+	// SourceURL A URL to upload the image from.
+	SourceURL string `json:"sourceURL"`
+
+	// Virtualization What type of machine the image is for.
+	Virtualization ImageVirtualization `json:"virtualization"`
+}
+
+// ImageDiskFormat The disk format of the image. If not provided, the value defaults to `raw`.
+type ImageDiskFormat string
 
 // ImageGpu The GPU driver if installed.
 type ImageGpu struct {
@@ -1040,6 +1079,9 @@ type FilestorageIDParameter = KubernetesNameParameter
 // IdentityIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type IdentityIDParameter = KubernetesNameParameter
 
+// ImageIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
+type ImageIDParameter = KubernetesNameParameter
+
 // LengthParameter defines model for lengthParameter.
 type LengthParameter = int
 
@@ -1090,6 +1132,9 @@ type IdentitiesResponse = IdentitiesRead
 
 // IdentityResponse A provider specific identity.
 type IdentityResponse = IdentityRead
+
+// ImageResponse An image.
+type ImageResponse = Image
 
 // ImagesResponse A list of images that are compatible with this platform.
 type ImagesResponse = Images
@@ -1150,6 +1195,9 @@ type StorageV2Response = StorageV2Read
 
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
+
+// ImageCreateRequest A compute image create request.
+type ImageCreateRequest = ImageCreate
 
 // NetworkRequest A network request.
 type NetworkRequest = NetworkWrite
@@ -1303,6 +1351,9 @@ type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSe
 
 // PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody defines body for PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID for application/json ContentType.
 type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDJSONRequestBody = ServerWrite
+
+// PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages for application/json ContentType.
+type PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesJSONRequestBody = ImageCreate
 
 // PostApiV2FilestorageJSONRequestBody defines body for PostApiV2Filestorage for application/json ContentType.
 type PostApiV2FilestorageJSONRequestBody = StorageV2Create
