@@ -53,6 +53,8 @@ type Client struct {
 	namespace string
 	// identity is an identity client for RBAC access.
 	identity identityclient.APIClientGetter
+	// actually we need this here
+	fcdriver *filedriver.Client
 }
 
 // New creates a new client.
@@ -74,6 +76,7 @@ func convertV2(in *regionv1.FileStorage, fsdetails ...*types.FileStorageDetails)
 			Size:        in.Spec.Size.String(),
 		},
 		Status: openapi.StorageV2Status{
+			Attachments:    convertAttachments(),
 			RegionId:       in.Labels[constants.RegionLabel],
 			StorageClassId: in.Spec.StorageClassID,
 			Usage: openapi.StorageUsageV2Spec{
@@ -82,6 +85,32 @@ func convertV2(in *regionv1.FileStorage, fsdetails ...*types.FileStorageDetails)
 			},
 		},
 	}
+}
+
+func (c *Client) convertV2Update(in *regionv1.FileStorage, fsdetails ...*types.FileStorageDetails) *openapi.StorageV2Read {
+	used := fsdetails[0].UsedCapacity.String()
+	return &openapi.StorageV2Read{
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
+		Spec: openapi.StorageV2Spec{
+			Attachments: &openapi.StorageAttachmentV2Spec{},
+			StorageType: openapi.StorageTypeV2Spec{},
+			Size:        in.Spec.Size.String(),
+		},
+		Status: openapi.StorageV2Status{
+			Attachments:    c.convertAttachments(),
+			RegionId:       in.Labels[constants.RegionLabel],
+			StorageClassId: in.Spec.StorageClassID,
+			Usage: openapi.StorageUsageV2Spec{
+				Used:     &used,
+				Capacity: fsdetails[0].Size.String(),
+			},
+		},
+	}
+}
+
+func (c *Client) convertAttachments() *openapi.StorageAttachmentV2Status {
+	// :)
+	c.fcdriver.ListAttachments(ctx)
 }
 
 // ListV2 satisfies an http get to return all storage items within a project.
@@ -282,12 +311,12 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	projectID := current.Labels[coreconstants.ProjectLabel]
 	regionID := current.Labels[constants.RegionLabel]
 
-	// schristoff: fix
-	fcdriver, err := filedriver.New(ctx, c.client, &regionv1.FileStorageProvisioner{})
-	if err != nil {
+	if err = c.createFCDriver(ctx); err != nil {
 		return nil, err
 	}
-	storagedetails, err := fcdriver.GetDetails(ctx, projectID, storageID)
+
+	// Check the the requested capacity does not exceed used capacity
+	storagedetails, err := c.fcdriver.GetDetails(ctx, projectID, storageID)
 	if err != nil {
 		return nil, err
 	}
@@ -312,6 +341,18 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	}
 
 	return convertV2(updated, storagedetails), nil
+}
+
+// createFCDriver generated the driver into the client, this
+// is only needed on update type requests.
+func (c *Client) createFCDriver(ctx context.Context) error {
+	fcdriver, err := filedriver.New(ctx, c.client, &regionv1.FileStorageProvisioner{})
+	if err != nil {
+		return err
+	}
+	c.fcdriver = fcdriver
+	return nil
+
 }
 
 // Delete satisfies the http DELETE action by removing the client.
