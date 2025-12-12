@@ -53,9 +53,6 @@ type Client struct {
 	namespace string
 	// identity is an identity client for RBAC access.
 	identity identityclient.APIClientGetter
-
-	//fcdriver
-
 }
 
 // New creates a new client.
