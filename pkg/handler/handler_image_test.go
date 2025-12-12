@@ -76,12 +76,12 @@ func newTestImageHandler(t *testing.T, mockProvider *mock.MockProvider) *ImageHa
 	return handler
 }
 
-func contextWithCreateImagePermission(t *testing.T) context.Context {
+func contextWithImagePermissions(t *testing.T) context.Context {
 	t.Helper()
 
 	return rbac.NewContext(t.Context(), &idopenapi.Acl{
 		Global: &idopenapi.AclEndpoints{
-			idopenapi.AclEndpoint{Name: "region:images", Operations: []idopenapi.AclOperation{"create"}},
+			idopenapi.AclEndpoint{Name: "region:images", Operations: []idopenapi.AclOperation{"create", "read", "delete"}},
 		},
 	})
 }
@@ -112,6 +112,53 @@ func waitForChannel[T any](t *testing.T, c chan T) T {
 	}, 2*time.Second, time.Second/4)
 
 	return result
+}
+
+func requireParseJSON[T any](t *testing.T, body io.Reader, out T) {
+	t.Helper()
+
+	bytes, err := io.ReadAll(body)
+	require.NoError(t, err)
+
+	require.NoError(t, json.Unmarshal(bytes, out))
+}
+
+func TestImageHandler_List_Active(t *testing.T) {
+	t.Parallel()
+
+	activeImage := *mock.NewTestProviderImage(types.ImageStatusReady)
+	activeImage.Name = "good"
+
+	inactiveImages := []types.Image{
+		*mock.NewTestProviderImage(types.ImageStatusPending),
+		*mock.NewTestProviderImage(types.ImageStatusCreating),
+		*mock.NewTestProviderImage(types.ImageStatusFailed),
+	}
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	mockProvider := mock.NewMockProvider(mockCtrl)
+	mockProvider.EXPECT().ListImages(gomock.Any(), testOrganizationID).Return(
+		append(inactiveImages, activeImage), nil,
+	)
+
+	handler := newTestImageHandler(t, mockProvider)
+
+	u := fmt.Sprintf("/api/v1/organizations/%s/regions/%s/images", testOrganizationID, testRegionID)
+	req := httptest.NewRequest(http.MethodGet, u, nil)
+	req = req.WithContext(contextWithImagePermissions(t))
+
+	res := httptest.NewRecorder()
+	handler.GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(res, req, testOrganizationID, testRegionID)
+
+	require.Equal(t, http.StatusOK, res.Result().StatusCode)
+
+	var response openapi.ImagesResponse
+
+	requireParseJSON(t, res.Result().Body, &response)
+	require.Len(t, response, 1)
+	assert.Equal(t, "good", response[0].Metadata.Name)
 }
 
 func TestImageHandler_Fetch_Good(t *testing.T) {
@@ -186,7 +233,7 @@ func TestImageHandler_Fetch_Good(t *testing.T) {
 			req, err := http.NewRequest(http.MethodPost, u, bytes.NewBuffer(requestBody))
 			require.NoError(t, err)
 
-			req = req.WithContext(contextWithCreateImagePermission(t))
+			req = req.WithContext(contextWithImagePermissions(t))
 
 			w := httptest.NewRecorder()
 

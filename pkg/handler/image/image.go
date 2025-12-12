@@ -71,7 +71,7 @@ func (c *Client) provider(ctx context.Context, regionID string) (Provider, error
 	return c.getProvider(ctx, c.client, c.namespace, regionID)
 }
 
-func (c *Client) ListImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {
+func (c *Client) listImages(ctx context.Context, organizationID, regionID string, filterFn func(types.Image) bool) (openapi.Images, error) {
 	provider, err := c.provider(ctx, regionID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
@@ -82,12 +82,27 @@ func (c *Client) ListImages(ctx context.Context, organizationID, regionID string
 		return nil, errors.OAuth2ServerError("failed to list images").WithError(err)
 	}
 
+	if filterFn != nil {
+		result = slices.Clone(result)
+		result = slices.DeleteFunc(result, filterFn)
+	}
+
 	// Apply ordering guarantees, ordered by name.
 	slices.SortStableFunc(result, func(a, b types.Image) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 
 	return convertImages(result), nil
+}
+
+func (c *Client) ListActiveImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {
+	return c.listImages(ctx, organizationID, regionID, func(image types.Image) bool {
+		return image.Status != types.ImageStatusReady
+	})
+}
+
+func (c *Client) ListAllImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {
+	return c.listImages(ctx, organizationID, regionID, nil) // no filter
 }
 
 func (c *Client) CreateImage(ctx context.Context, organizationID, regionID string, request *openapi.ImageCreateRequest) (*openapi.ImageResponse, error) {
