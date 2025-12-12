@@ -69,9 +69,7 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 				NetworkIDs: convertAttachmentsList(in.Spec.Attachments),
 			},
 			StorageType: openapi.StorageTypeV2Spec{
-				NFS: &openapi.NFSV2Spec{
-					RootSquash: in.Spec.NFS.RootSquash,
-				},
+				NFS: checkRegionNFS(in.Spec.NFS),
 			},
 			Size: in.Spec.Size.String(),
 		},
@@ -79,6 +77,17 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 			RegionId:       in.Labels[constants.RegionLabel],
 			StorageClassId: in.Spec.StorageClassID,
 		},
+	}
+}
+
+func checkRegionNFS(in *regionv1.NFS) *openapi.NFSV2Spec {
+	if in == nil {
+		return &openapi.NFSV2Spec{
+			RootSquash: true,
+		}
+	}
+	return &openapi.NFSV2Spec{
+		RootSquash: in.RootSquash,
 	}
 }
 
