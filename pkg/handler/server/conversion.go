@@ -30,6 +30,8 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
+	"k8s.io/utils/ptr"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -142,18 +144,18 @@ func convertUserData(in []byte) *[]byte {
 	return &in
 }
 
-func convertInstanceLifecyclePhase(in unikornv1.InstanceLifecyclePhase) openapi.InstanceLifecyclePhase {
+func convertInstanceLifecyclePhase(in unikornv1.InstanceLifecyclePhase) *openapi.InstanceLifecyclePhase {
 	switch in {
 	case unikornv1.InstanceLifecyclePhasePending:
-		return openapi.InstanceLifecyclePhasePending
+		return ptr.To(openapi.InstanceLifecyclePhasePending)
 	case unikornv1.InstanceLifecyclePhaseRunning:
-		return openapi.InstanceLifecyclePhaseRunning
+		return ptr.To(openapi.InstanceLifecyclePhaseRunning)
 	case unikornv1.InstanceLifecyclePhaseStopping:
-		return openapi.InstanceLifecyclePhaseStopping
+		return ptr.To(openapi.InstanceLifecyclePhaseStopping)
 	case unikornv1.InstanceLifecyclePhaseStopped:
-		return openapi.InstanceLifecyclePhaseStopped
+		return ptr.To(openapi.InstanceLifecyclePhaseStopped)
 	default:
-		return ""
+		return nil
 	}
 }
 

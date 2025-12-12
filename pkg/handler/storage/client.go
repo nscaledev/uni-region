@@ -27,7 +27,6 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
-	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
@@ -49,12 +48,12 @@ type Client struct {
 	client client.Client
 	// namespace we are running in.
 	namespace string
-	// identity is an identity client for RBAC access.
-	identity identityclient.APIClientGetter
+	// identity allows quota allocation.
+	identity identityapi.ClientWithResponsesInterface
 }
 
 // New creates a new client.
-func New(client client.Client, namespace string, identity identityclient.APIClientGetter) *Client {
+func New(client client.Client, namespace string, identity identityapi.ClientWithResponsesInterface) *Client {
 	return &Client{
 		client:    client,
 		namespace: namespace,
@@ -384,6 +383,24 @@ func (c *Client) ListClasses(ctx context.Context, params openapi.GetApiV2Filesto
 	})
 
 	return convertClassList(result), nil
+}
+
+func (c *Client) GetStorageClass(ctx context.Context, storageClassID string) (*openapi.StorageClassV2Read, error) {
+	result := &regionv1.FileStorageClass{}
+
+	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: storageClassID}, result); err != nil {
+		if kerrors.IsNotFound(err) {
+			return nil, errors.HTTPNotFound().WithError(err)
+		}
+
+		return nil, errors.OAuth2ServerError("unable to lookup storage class").WithError(err)
+	}
+
+	if err := rbac.AllowOrganizationScope(ctx, "region:filestorageclass:v2", identityapi.Read, result.Labels[coreconstants.OrganizationLabel]); err != nil {
+		return nil, err
+	}
+
+	return convertClass(result), nil
 }
 
 func convertClassList(in *regionv1.FileStorageClassList) openapi.StorageClassListV2Read {

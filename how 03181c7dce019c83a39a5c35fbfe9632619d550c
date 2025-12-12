@@ -1,0 +1,2143 @@
+[33mcommit 695899f334515ec62a1ef68f6665b4f3f1d04fcf[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mdocs[m[33m, [m[1;31morigin/docs[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Dec 11 09:56:50 2025 +0000
+
+    Add Documentation Tags for Grouping
+
+[33mcommit 03181c7dce019c83a39a5c35fbfe9632619d550c[m[33m ([m[1;33mtag: [m[1;33mv1.12.0-rc1.1[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmain[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Dec 10 17:36:09 2025 +0000
+
+    Version v1.12.0-rc1.1 (#266)
+    
+    Removes a redundant field from API validation that was never used and
+    also never populated and is now causing errors, as it should, yay!
+
+[33mcommit 47cf514b24782ba11f48966dcac29db0ff29795a[m[33m ([m[1;33mtag: [m[1;33mv1.12.0-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Dec 10 13:27:50 2025 +0000
+
+    Version v1.12.0-rc1 (#265)
+
+[33mcommit 13d5db91bde8dc960c6e9260e1c0a802d0d2144f[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Dec 10 13:08:14 2025 +0000
+
+    Quick Fix to Network Allocations (#264)
+    
+    Modifying a network does not preserve the allocation ID.  This is a
+    temporary fix in lieu of a better solution.
+
+[33mcommit 55d0b6f931c62c11db371b386b8d45ce009ddf06[m
+Author: nsricardor <167014746+nsricardor@users.noreply.github.com>
+Date:   Thu Dec 11 01:59:22 2025 +1300
+
+    fix: update API cluster role to support file storage operations (#259)
+    
+    Adds permissions for filestorages, filestorageclasses, and filestorageprovisioners resources to the API cluster role to support file storage operations.
+
+[33mcommit 33e968b4e4bed1d6ea60a401877977ce0f1a5968[m
+Author: nsricardor <167014746+nsricardor@users.noreply.github.com>
+Date:   Thu Dec 11 01:39:02 2025 +1300
+
+    fix: update file storage API endpoint paths (#263)
+    
+    Co-authored-by: Simon Murray <spjmurray@yahoo.co.uk>
+
+[33mcommit db49a7980f9cac99846e54383b473bb9a6d5f7b8[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Dec 10 12:30:10 2025 +0000
+
+    API Performance (#255)
+    
+    This basically pulls in the new client base from the identity service
+    that enables client caching.
+
+[33mcommit ae21e3d08d692335b1ea34847ac9978d416d9786[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Dec 10 09:51:11 2025 +0000
+
+    Add OpenAPI Schema Summaries (#261)
+    
+    Provides short nav style summaries and makes non-user facing operations
+    hidden from sight.
+
+[33mcommit 07078255224920750a5eb39d2873eb6eecdd1c15[m
+Author: nsricardor <167014746+nsricardor@users.noreply.github.com>
+Date:   Wed Dec 10 05:23:42 2025 +1300
+
+    feat: Add file storage classes API endpoint [INST-305] (#257)
+    
+    Implements GET /api/v2/filestorageclasses endpoint to list available file storage classes filtered by region. Adds handler function, storage client method with conversion logic, comprehensive unit tests for conversion functions, and updates generated OpenAPI client code.
+
+[33mcommit 09849549606eca09beb38a8bc2d76b4fe0b1552e[m
+Author: nsricardor <167014746+nsricardor@users.noreply.github.com>
+Date:   Tue Dec 9 22:21:18 2025 +1300
+
+    Implement file-storage provisioner [INST-277] (#251)
+    
+    This PR implements the file storage provisioner, refactors the file storage agent into a driver package, and extends the file-storage attachments CRD with VLANID and IP range support.
+    Note: The driver package will be migrated to its own standalone application in a future update.
+
+[33mcommit 794c8100ba94f4ed46359220baf264babf7b04c8[m
+Author: schristoff <28318173+schristoff@users.noreply.github.com>
+Date:   Fri Dec 5 11:50:04 2025 +0100
+
+    (feat): Add calls to storage handlers in HTTP action functions  (#254)
+    
+    Links the API handler to the API client.
+
+[33mcommit c460eabaf6f2b79134a2d0a0ae7c8ad6f3ae9018[m
+Author: schristoff <28318173+schristoff@users.noreply.github.com>
+Date:   Thu Dec 4 12:36:43 2025 +0100
+
+    (feat): add storage handler and fix storage api types (#246)
+    
+    updates openapi types to be able to convert to crd objects more effectively, adds handlers to deal with type conversion
+
+[33mcommit c4975373b03b94921b65f728c65ef7f093eeaa5d[m
+Author: Michael Bridgen <michael.bridgen@nscale.com>
+Date:   Tue Dec 2 09:46:38 2025 +0000
+
+    Stable generated names for enum values (#242)
+    
+    * Force oapi-codegen to use stable enum value names
+    
+    Recently (6f64488), a change introduced a new enum value which was the
+    same as another enum name, and this cause oapi-codegen to give the
+    enum value names a prefix, to avoid a collision.
+    
+    To avoid dumb breakages like this in the future, this commit adds a
+    flag to openapi/config.yaml which will force it to always prefix enum
+    value names. This avoid accidentally breaking things with an innocent
+    OpenAPI spec change; and makes it possible to break the schema out in
+    multiple files without those names reverting back to shorthands and
+    colliding again.
+    
+    * Generate OpenAPI files when making on Mac
+    
+    The recipes for bin/amd64... and bin/arm64 were different; the one for
+    arm64 did not have the generated OpenAPI files as a prerequisite. This
+    caused me confusion, building on my Mac, until I ran `make -d`.
+
+[33mcommit 5aca3822194bfc842f63aa894fab85c4556a9a7a[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Dec 1 10:19:03 2025 +0000
+
+    Fix API Query Filtering (#250)
+    
+    There was a bug in the label selector code whereby project labels were
+    not correctly matched by admin users, or at all for regular users with
+    the wrong project, which could lead to the project query being a no-op
+    and not actually working as advertised.  This picks up the new code.
+
+[33mcommit 145063f19e4087d575ab428a5df7cc5b5e09f634[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Nov 27 11:02:52 2025 +0000
+
+    Fix Protocol Translation (#249)
+    
+    So evidently, the documentation says "any" is valid for a security group
+    rule, but it isn't and needs to be translated to an empty string.  I've
+    added bi-directional translation to retain the current, legible, rule
+    names, which would be damned confusing if we had an empty protocol.
+
+[33mcommit 3b82d3c9e8e4afea28bf874c92aa8bb8a004cde1[m
+Author: Michael Bridgen <michael.bridgen@nscale.com>
+Date:   Wed Nov 26 13:30:03 2025 +0000
+
+    Fix links from top README to provider READMEs (#248)
+
+[33mcommit a2fa7f88f39d9d419307da6eff22547a1b29ecd8[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Nov 25 11:46:27 2025 +0000
+
+    Fix Security Group Delete Idempotency (#247)
+    
+    What was seen in the wild was a security group stuck in deletion with it
+    unable to proceed due to the resource not being found.  In literally
+    every other handler this is ignored, and assumes that the resource has
+    been cleaned up.  In this instance a single ! missing.
+    
+    I would add tests, but it's really complicated at this level to mock out
+    the OpenStack clients, so will add a backlog task to investigate and
+    action.  These will neet to apply to all top level reconcile and delete
+    functions for all resources, hence my reticence to tackle this now.
+
+[33mcommit 0e113b2e5160252f950e1c25da77d3665bd439c3[m[33m ([m[1;33mtag: [m[1;33mv1.11.0[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Nov 24 10:57:21 2025 +0000
+
+    Version v1.11.0 (#245)
+
+[33mcommit 5a920480d7a8b284c5fc87b17fe15e1d1103a8c7[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Nov 21 12:11:36 2025 +0000
+
+    Fix Empty Security Group Rule (#244)
+    
+    The rules array is required, mainly as a convenience thing for the UX
+    side of things so you don't have to create and delete it, just push and
+    pop directly.  Unfortunately the read conversion spotted when the input
+    was empty and returned nil, rather than an empty array, which caused the
+    OpenAPI code to throw a wobbly.  Always allocate an array, even if
+    empty.
+
+[33mcommit 329900ef0f60da93c925ebb827bcfc080afbb744[m
+Author: Michael Bridgen <michael.bridgen@nscale.com>
+Date:   Fri Nov 21 10:29:17 2025 +0000
+
+    Refactor: break down provisioners, provider interface, and region handler (#238)
+    
+    * Break the Provider interface down
+    
+    This means the clients in pkg/handlers can have more precise
+    requirements, which makes them easier to test and limits the blast
+    radius on changes.
+    
+    * Move provider implementations to internal/
+    
+    It's easier to make changes if implementations are internal, and not
+    exported API. Certainly, consumers of this module should not be
+    calling into the providers directly.
+    
+    To guard this, move the OpenStack and Kubernetes implementations into
+    `internal/`. This means a few imports change -- but only a few, most
+    packages did not import an implementation directly :tada:. Some
+    (generic) errors from OpenStack must move to the more providers/types/
+    package, since they are checked from other packages.
+    
+    * Factor out common provisioner shortcuts
+    
+    The provisioner (managers) all use a similar "get client, get
+    identity, get provider" pattern. This factors some shortcuts out. As a
+    bonus I can remove a nolint on one of the provisioner methods.
+    
+    * Use a more specific provider for server v2 handler
+    
+    The types.Provider interface is used implicitly in many places, but
+    named mostly in the provisioners rather than the handlers. One place
+    it is named is in server v2 handlers, where it's used directly. For
+    the sake of precision and easier fake injection, it can be narrowed.
+    
+    * Move conversion funcs out of region.go
+    
+    This moves the flavor conversion funcs out of region, either into
+    `pkg/handler/conversion` so they can be used elsewhere, or into
+    `./conversion.go` for the sake of tidiness.
+    
+    * Move image handler code out into its own package
+    
+    This makes it easy to test on its own, and to add incrementally to the
+    handlers (e.g., for image upload) with less chance of conflicts.
+
+[33mcommit a8c4eb120ea6238a8074c1327912442bcda0d3f7[m[33m ([m[1;33mtag: [m[1;33mv1.11.0-rc5[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Nov 20 14:14:28 2025 +0000
+
+    Version v1.11.0-rc5 (#241)
+
+[33mcommit 1aee1ea546ff5208d5854340ee82b776ab311835[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Nov 20 09:40:31 2025 +0000
+
+    Fix CVE-2025-47914 (#240)
+
+[33mcommit 454f4da062630eba99f070e4f4c7cc8c61e796c3[m
+Author: nsricardor <167014746+nsricardor@users.noreply.github.com>
+Date:   Thu Nov 20 08:38:00 2025 +1300
+
+    feat: add file storage provisioner [INST-214] (#229)
+    
+    Adds basic framework for a storage provisioner.
+
+[33mcommit d69f0bd904e4e2066e90a5f6acee8f81dffdde61[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Nov 19 15:40:20 2025 +0000
+
+    Add Merge Job (#236)
+    
+    Gets to parity with the other repos and generates code coverage reports
+    against the main branch so pull requests have something to compare
+    against.
+
+[33mcommit a59835f881b106b2128799541f64448f1fa49d0a[m[33m ([m[1;33mtag: [m[1;33mv1.11.0-rc4[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Nov 19 15:10:17 2025 +0000
+
+    Version v1.11.0-rc4 (#235)
+
+[33mcommit 041a6c43501d188b958f90d4ab816d668c0b4f53[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Nov 19 14:00:23 2025 +0000
+
+    Fix Update V2 (#234)
+    
+    Proving how fragile RBAC is.  Change securitygroups to servers.
+
+[33mcommit d0cc5f5563e1596e8ee3f7e47a905344e4baa37b[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Nov 19 13:14:43 2025 +0000
+
+    Inhibit In-Use Security Group Deletion (#233)
+    
+    Deletion of a security group that is in use by multiple instances may
+    cause some very strange side effects.  For safety, check the references
+    on the security group before allowing deletion.
+
+[33mcommit 3a39c3de15c175e539fccd34018acfb70859c161[m[33m ([m[1;33mtag: [m[1;33mv1.11.0-rc3[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Nov 18 10:39:25 2025 +0000
+
+    Fix Crash in Security Group Handler (#232)
+    
+    The CRD ports can now be nil, we don't check for this in the conversion
+    and it causes a segfault.
+
+[33mcommit 7b0c2a505c00bf6e9e71e6845ad9df379c5f95fe[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Nov 18 09:56:59 2025 +0000
+
+    Version v1.11.0-rc3 (#231)
+
+[33mcommit a3c7b8849ec97053aeb7193f6246d6aa64d409ef[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Nov 18 09:38:29 2025 +0000
+
+    Fix Network Quota Deallocation (#230)
+    
+    V2 networks will carve an allocation out of quotas (to limit VLAN
+    starvation), but V1 networks don't.  We need to make the provisioner
+    deallocation conditional based on what version of resource we are
+    dealing with so we don't break legacy functionality.
+
+[33mcommit 6f64488a7659fc94416c639e694d0874666a11f5[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Nov 17 15:40:28 2025 +0000
+
+    Extend Security Groups V2 (#228)
+    
+    The main goal here is to enable ICMP, but while we are at it we can also
+    allow rules for any protocol, and also VRRP, which could be useful.
+    This reworks the API to be less tedious at the handler level, and also
+    removes a few contraints.  This allows you to "allow all from anywhere",
+    "allow all from a CIDR", "allow all TCP from anywhere" etc. etc.  This
+    also expands some error reporting to stop silly things like specifying a
+    port when you aren't using a layer 4 protocol.
+
+[33mcommit 9634d6707bcd5473b344bae5a57844823a0a7090[m
+Author: schristoff <28318173+schristoff@users.noreply.github.com>
+Date:   Mon Nov 17 11:44:35 2025 +0100
+
+    feat: OpenAPI Storage Schema (#210)
+    
+    Adds in a schema and API endpoints for file storage integration.
+
+[33mcommit 41b5633c031a5b386fdafe3d94dd7ba59e5501e8[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Nov 17 10:02:55 2025 +0000
+
+    Fix Cascading Deletion (#227)
+
+[33mcommit 3467953c7a1fc80831667a8bb5ee66d5dd5d1c48[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Nov 17 09:12:07 2025 +0000
+
+    Add DHCP Host Routes (#226)
+    
+    We allow servers to egress trafic from different source IP addresses to
+    facilitate NFV, but we don't handle the return trip.  We use DHCP host
+    routes to add, update and propagate routes to all servers on the
+    network, thus if VPN node is forwarding traffic from 10.0.0.0/8, we can
+    add routes on all the hosts that says send 10.0.0.0/8 to the VPN node.
+
+[33mcommit 7f6adf21441c1a370189633e1d67dffecb9f40ae[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Nov 14 11:38:21 2025 +0000
+
+    Update Network Address Ranges (#225)
+    
+    The general idea here is to have fixed things like storage and other
+    nefarious network hacks at the start of the range (as opposed to the
+    end), so you can potentially grow the subnet in future without having
+    multiple DHCP ranges needed to be defined.
+
+[33mcommit 0dbaea02733e8ebb5b4f7e21a14ea88dca78b39c[m
+Author: schristoff <28318173+schristoff@users.noreply.github.com>
+Date:   Fri Nov 14 11:31:57 2025 +0100
+
+    remove extra slashes in api endpoints (#216)
+    
+    Signed-off-by: schristoff <28318173+schristoff@users.noreply.github.com>
+
+[33mcommit b3b4ea84687210ec3cf6791adf464df00c18b05b[m[33m ([m[1;33mtag: [m[1;33mv1.11.0-rc2[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Nov 13 17:39:25 2025 +0000
+
+    Version v1.11.0-rc2 (#224)
+
+[33mcommit 75b5295fa4e3ec954730b1d897be1bd36787358c[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Nov 13 16:56:17 2025 +0000
+
+    Fix Server Delete Race (#223)
+    
+    When the instance service tries to delete the node it adds the "wait for
+    children to vanish" finalizer, even though there are no children.  This
+    interestingly ended up in lockstep with the deprovisioning, instances
+    adding the finalizer, server controller not being able to update the
+    status because the resource version had changed, etc, etc.  Remove the
+    erroneous use of said finalizer.
+
+[33mcommit ccca973b9f8bba7a436717398afd702cfe7d5742[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Nov 13 16:16:59 2025 +0000
+
+    Add SSH Retrieval Method (#222)
+    
+    Previously we'd rely on the the SSH key being communicated to the
+    compute service when it provisioned a service principal.  Now however
+    the user creates a the principal (via a network), so we simply add an
+    API to do this for us.
+
+[33mcommit 59c81aecee868b736d93809bcb60fb16348c9ede[m[33m ([m[1;33mtag: [m[1;33mv1.11.0-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Nov 13 14:17:15 2025 +0000
+
+    Version v1.11.0-rc1 (#221)
+
+[33mcommit 3b54f4b7f975ccc9f41d305c61fe7f92fa9e1f2c[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Nov 13 11:23:03 2025 +0000
+
+    Fix Actions (#220)
+    
+    Pin Helm to v3 as v4 gets a little bit more strict as regards its
+    interpretation of a semver.
+
+[33mcommit c4ae00401572aa3e7fa0664a3c11bc0c12515949[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Nov 11 12:39:30 2025 +0000
+
+    Generate Server Configuration (#217)
+    
+    Oops forgot to add this!
+
+[33mcommit 4498942723dac71b938a840d08ec04723d27f597[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Nov 11 09:36:56 2025 +0000
+
+    Remove v1.10.0 Upgraders (#215)
+
+[33mcommit 5055b0ae94e8a27703ff99a44b12cf914a3cd6ef[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Nov 11 09:25:46 2025 +0000
+
+    Simplify V2 APIs (#213)
+    
+    For all the read, update delete APis we do a primary key lookup by ID,
+    then validate RBAC, so the organization/project ID parameters in the
+    paths are totally redundant and can be removed.  This just leaves
+    creation, which we handle now in the same way we do for other immutable
+    values e.g. network IDs, as body parameters.  This vastly simplifies the
+    APIs and code.  List APIs now use query parameters to scope responses.
+
+[33mcommit 43fd013d910ca5b3c73089f009e840f1bae35eb5[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Nov 6 09:44:08 2025 +0000
+
+    Fix Constant Reconcile in Compute (#214)
+    
+    Rather naively we use reflect.DeepEqual to determine whether an update
+    is required, but in this case even encoding to JSON doesn't help.  What
+    we see is the required address pair has a CIDR and no MAC address,
+    however what's returned by the API actually has "" as the MAC e.g. it's
+    set irrespective of whether or not the underlying database entry is
+    populated.  Make the population conditional.
+
+[33mcommit 5ac6738b259a5a636c61f35048a1eba40edd7ce2[m
+Author: alansy-nscale <alan.sy@nscale.com>
+Date:   Tue Nov 4 12:49:46 2025 +0000
+
+    fix: avoid empty struct copies when filtering images (#212)
+
+[33mcommit 5bdcc6307e8454b7e3f0a4a457f9644f1072f490[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Nov 3 15:46:54 2025 +0000
+
+    Servers V2 Fixes (#211)
+
+[33mcommit d39194eac415891ec23fa6ef986df8981253d423[m
+Author: schristoff <28318173+schristoff@users.noreply.github.com>
+Date:   Mon Nov 3 14:06:13 2025 +0100
+
+    feat: Add ServerStorage Specification (CRD) (#197)
+    
+    Adds a storage class, that acts like ingress classes (with immutable, platform defined configuration), and storage which basically asks for a slice of said storage class.
+    
+    ---------
+    
+    Signed-off-by: Sarah Christoff <28318173+schristoff@users.noreply.github.com>
+
+[33mcommit 03d5d6a4f45e5731b1b6e9598e3c6db5d9a816cd[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Oct 31 11:57:06 2025 +0000
+
+    Servers V2 (#209)
+    
+    Although the V1 API already does what we need it to, we can take this
+    opportunity to do some cleanups to the data structures, making it more
+    organized and simpler.  We do also need this API as the old one requires
+    identities, which will not be exposed to the higher order V2 services.
+
+[33mcommit df009d617570ec1602c47707980d4855794b1349[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Oct 30 09:52:23 2025 +0000
+
+    Fix Network Propagation (#208)
+    
+    CAPO needs to have intrusive access to the OpenStack network and subnet
+    IDs, and now there is no way to get at this with the removal of the osn
+    resources.  For now, cache the results in the network status to make
+    them available over the API.  For now this is a private API, so safe,
+    but it's deprecated and will be removed eventually.  Much like the
+    identity API it'll probably need an admin route temporarily.  In the
+    future we should just create our own provider then we don't need to
+    reveal any internals and just pass around unikorn network IDs.
+
+[33mcommit b38f6136a58545a7b98587b11ef84e832f2d1883[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Oct 29 13:40:51 2025 +0000
+
+    Security Groups V2 (#207)
+    
+    Adds the new security groups API that makes them top level (after RBAC)
+    API resources.  They also now require a network to belong to, rather
+    than an identity, which is specified during creation only.
+
+[33mcommit 7be24ab4f303a65f850b709011a2efc5af90db51[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Oct 28 13:41:13 2025 +0000
+
+    Fix Private IP Reporting (#206)
+    
+    We need to set this when the port is created.
+
+[33mcommit 4a6c46f7e48cbfd38dac3f686871e2b59c65de0d[m[33m ([m[1;33mtag: [m[1;33mv1.10.0[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Oct 28 12:01:34 2025 +0000
+
+    Version v1.10.0 (#205)
+
+[33mcommit 77a39ffab4dbd49a238ef9e94e4b3cc07ef33729[m[33m ([m[1;33mtag: [m[1;33mv1.10.0-rc2[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Oct 27 14:08:29 2025 +0000
+
+    Version v1.10.0-rc2 (#204)
+
+[33mcommit 6c24886b5b26a021ace50a91f4795a8c1274b7ea[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Oct 27 14:05:59 2025 +0000
+
+    Fix Provider Networks (#203)
+    
+    In order to provision provider networks, we need to do it as a
+    provileged user with the "manager" role, but bound to the correct
+    project for the service principal.
+
+[33mcommit 7c3015225f251b0557a2cb0ce84daff0f6aa73ca[m[33m ([m[1;33mtag: [m[1;33mv1.10.0-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Oct 24 13:55:10 2025 +0100
+
+    Version v1.10.0-rc1 (#202)
+
+[33mcommit 00ee599e90a5cad164c6b18daa789f8cbddf96cf[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Oct 23 19:23:17 2025 +0100
+
+    Finish Off Reconciler Testing (#201)
+    
+    This covers 99% of most users common expectations, does it create a
+    resource, does it ignore it if it already exists, does it update it if
+    it needs to be, does it need deeting if it's no longer needed?
+
+[33mcommit 726dfc2c835c414234581c4fde4551154e212a7c[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Oct 23 12:02:57 2025 +0100
+
+    Openstack Resource Migration (#200)
+    
+    The old way was keeping CRDs as records of resource IDs.  The new way is
+    to poll openstack using predictable names.  We need to migrate networks,
+    security groups and servers to this new methodology, which ostensibly
+    means delete the Openstack* CRDs.  Before we do this in a later release,
+    each controller needs to poll for it's managed Openstack CRD, do any
+    renames, and delete the resource.  An added complexity is that security
+    groups reference networks, and servers reference both, so inhibit
+    controller start up until the dependent resource controller have
+    performed their upgrades.
+
+[33mcommit d60f67f7e9f7dd47db123e0f7187bb3ece952dc0[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Oct 21 15:53:09 2025 +0100
+
+    Provider Test Framework (#198)
+    
+    Do the bare minimum to check the behaviour of individual reconcilers,
+    this helps to ensure things are actually testable, and also legible.  A
+    few interfaces have been changed to this end, but nothing major.
+
+[33mcommit fd5bea2c3ade83013fa1b5651be5f81d04b24c80[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Oct 21 10:47:31 2025 +0100
+
+    Refactor Provider For Unit Test (#196)
+    
+    This turns the individual clients into a collection of interfaces, then
+    adjusts call sites to use the interface of least privilege.  This
+    affords us the ability to mock it out and increase test coverage without
+    having to talk to any thing that looks like OpenStack.
+
+[33mcommit 2fa11f6ab685e1cce759cd9c2420cfdeda4bb6ce[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Oct 20 12:52:37 2025 +0100
+
+    Rework Servers Logic (#195)
+    
+    Much the same as before. However... it quickly became apparent that
+    servers refer to to networks and security groups and they may be in
+    either the old world or the new (and the same actually appplies to
+    security groups being part of networks).  This caused what can only be
+    described as spaghetti code that would have been next to impossible to
+    maintain.  So this deletes all the legacy stuff and goes all in on the
+    new/correct way of doing it.  The underlying OpenStack clients have been
+    made more type safe, thus limiting the scope for errors to a couple
+    places, rather than being sprinkled all over the provider.
+    
+    This does however mean the next bit of work will be the migration task.
+
+[33mcommit b815362a969eec8debb73668313ab2f9e3a7189f[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Oct 17 14:16:48 2025 +0100
+
+    Rework the Security Group Logic (#194)
+    
+    Like its network predecessor, this makes security groups use OpenStack
+    as the source of truth.
+
+[33mcommit 7ae5e45ce5421509b7dc52d80a58d90fdaa310cc[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Oct 17 13:22:52 2025 +0100
+
+    Start Moving Off Stateful CRDs (#193)
+    
+    When we create a resource, we then save state about the resource e.g.
+    it's ID, which we can then refer to later, either to prevent recreation
+    during reconcile, or to delete the resource.  Which is all well and good
+    until that state doesn't get saved, and you have resources floating
+    about that no one knows about.
+    
+    The solution to this dilema is to not save state, and use OpenStack as
+    our source of truth.  To do this we need to be able to look for
+    resources to see whether they exist, and for that we need a predictable
+    but unique name.
+    
+    This particular change implments the pattern for the networking layer.
+    For now, we will use the presence of an OpenstackNetwork resource to
+    trigger the execution of the legacy code path, just to keep the size
+    down.  Eventually we should be able to live migrate by reading the
+    OpenstackNetwork resources, and renaming all the resources before
+    finally deleting the OpenstackNetwork.
+
+[33mcommit 92e54889da496b54a18096fb1dcb10b486e9fa3b[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Oct 16 16:32:57 2025 +0100
+
+    Network V2 (#192)
+    
+    implements the new networks API, which extends the original with extra
+    endpoints, extra query filters, new saga pattern based rollback on
+    error.  The provider will leave a suitable gap in the DHCP allocation in
+    order for NFS storage to be plumbed in.
+
+[33mcommit 45802f60065c9a829bdb9fa80da3a7372191b81f[m[33m ([m[1;33mtag: [m[1;33mv1.9.0[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Oct 13 14:57:32 2025 +0100
+
+    Version v1.9.0 (#191)
+
+[33mcommit 2adfbf0d5ebdb898f02a5f08f13238580ce6770b[m[33m ([m[1;33mtag: [m[1;33mv1.9.0-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Oct 13 12:33:22 2025 +0100
+
+    Version v1.9.0-rc1 (#190)
+
+[33mcommit 52d492b77ef2a07a6b0e44d135d99c735f71a3a7[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Oct 10 16:07:21 2025 +0100
+
+    Bump Core (#188)
+    
+    Moves the RBAC stuff that checks direct ID resource access is allowed
+    based on orgnaization/project into core.
+
+[33mcommit 4368084176d4366c624ad894001cedd7bde4c597[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Oct 7 13:21:25 2025 +0100
+
+    Add Identity References to Projects (#184)
+    
+    Networks will very shortly be top level user created things, and as such
+    will need to be deleted on project deletion.  We need to inhibit project
+    deletion until we know all networks are cleaned up, so we add references
+    to the root node, the cloud identity, to pull this off.
+
+[33mcommit 85bcda006588cce0454bec5964aad9a3b55c6788[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Oct 6 15:18:21 2025 +0100
+
+    Bump Core Libraries (#185)
+
+[33mcommit cb40b0534e37351980886028df89a3b07f43ebbd[m[33m ([m[1;33mtag: [m[1;33mv1.8.0[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Oct 2 13:55:37 2025 +0100
+
+    Version v1.8.0 (#183)
+
+[33mcommit 674ebe0911258a986e6660584b1a5bbd271dfc92[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Oct 2 11:25:34 2025 +0100
+
+    Update Go Action Again (#182)
+
+[33mcommit ca8708310e023716699ba5971d81891d71cb226d[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Oct 2 11:03:57 2025 +0100
+
+    Update Go Action (#181)
+
+[33mcommit 1887c4bb7643c7580ca56ac3ca215fd434c17236[m[33m ([m[1;33mtag: [m[1;33mv1.8.0-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Oct 2 10:46:24 2025 +0100
+
+    Version v1.8.0-rc1 (#180)
+
+[33mcommit e6b6944096b6a2c8568838f5a049664f2ee3fea8[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Oct 1 16:10:48 2025 +0100
+
+    Make Identity Deletion Better (#179)
+    
+    There is a race where stuff can be deleted in openstack, but still have a
+    record in the osi, so it'll attempt to delete it and fail, stuck in
+    error for all eternity.  We need to make openstack the source of truth,
+    so delete if we know about it, and allow 404s.
+    
+    We need to be even better, what if something was provisioned but not
+    recorded, we should think about being able to lookup resources on
+    reconcile/delete rather than relying on the cache.
+
+[33mcommit b0b3a9fe14b1a60c293e79f783aface2a9327d50[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Sep 30 14:48:28 2025 +0100
+
+    Add Server to Network References (#178)
+    
+    If you try to delete a network when it still has servers (ports)
+    attached then it will throw an error.  We can prevent these from being
+    surfaced by adding references from the server to the network to inhibit
+    deletion until we are done with them.
+
+[33mcommit 167fc780855f136b33c7ad035de0ce2a23431d15[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Sep 30 13:59:29 2025 +0100
+
+    Rethink Console Output (#177)
+    
+    Using a POST which forces the use of a Content-Type header and a body is
+    a bit excessive, when we really just want a nice generic length query
+    parameter.  This also has knock on effects in the compute service.
+
+[33mcommit 64e4fde1d9a9ee48c2b0d3678b2c081d9af9160e[m
+Author: alansy-nscale <alan.sy@nscale.com>
+Date:   Tue Sep 30 11:58:06 2025 +0100
+
+    feat: add APIs to access the VNC console and retrieve the console output (#169)
+
+[33mcommit 0cc157269557ea09d948897e70d43364ac2d5458[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Sep 30 09:33:50 2025 +0100
+
+    Add More Controller Cleanups (#176)
+    
+    Spot where there is code repetition in the fast path and refactor it so
+    that everything uses library calls e.g. fix it once, fix it everywhere.
+    Also makes code far easier to reason about!
+
+[33mcommit 77621f400c7031b2574e280616c77d216e37cb9d[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Sep 25 16:08:06 2025 +0100
+
+    Fix Security Group Deletion (#175)
+    
+    As it stands security groups will be deleted when identities are, and
+    will error until all server ports stop using them.  This adds server
+    references to security groups (and keeps then in sync) to mostly prevent
+    this (there are abviously some races, but less so now).  This will allow
+    security groups to be independently managed from clusters and instances
+    in the very near future.
+
+[33mcommit 2a8024d56de4680d2712bbbb9e04b0a10e8be58c[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Sep 24 15:01:26 2025 +0100
+
+    Remove Security Group Rule Controller (#174)
+    
+    This is unnecessary cruft, we should model a security group as an atomic
+    thing which means we can do validation across rules.  This hugely
+    simplifies the APIs, removes a bunch on controllers and other nasty
+    dependencies when deleting etc.
+
+[33mcommit 9eb790080cebe4d6ef1c762a6f3afd850bb7caf0[m[33m ([m[1;33mtag: [m[1;33mv1.7.0[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Sep 23 14:33:52 2025 +0100
+
+    Version v1.7.0 (#173)
+
+[33mcommit fe8bc10bdc1b15d9405a5250c388a822e4fd4804[m[33m ([m[1;33mtag: [m[1;33mv1.7.0-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Sep 23 13:46:56 2025 +0100
+
+    Version v1.7.0-rc1 (#172)
+
+[33mcommit ba64a8f54168e5e7761d77de538e5036b814aba6[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Sep 23 12:22:32 2025 +0100
+
+    Add in Image Filtering Tests (#171)
+    
+    Adds in some testing to ensure image filtering actually works as
+    expected and also ensures it doesn't get broken at any point.
+
+[33mcommit 80eceacfea126e39237b67dbacdb0f3701554459[m
+Author: alansy-nscale <alan.sy@nscale.com>
+Date:   Tue Sep 23 11:46:46 2025 +0100
+
+    New Access Control for Images (#170)
+    
+    Adds some new option to allow an image to be scoped to a specific organization facilitating private images, and subsequently image uploads.
+
+[33mcommit 3314c928ebe5137ddcaa62f83bc7a6d8d50f812b[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Sep 16 14:12:15 2025 +0100
+
+    Update Upgrade API (#168)
+
+[33mcommit ec3e5a31edbe3c9abb09db8c1f9cb3bf2b44cfb7[m
+Author: alansy-nscale <alan.sy@nscale.com>
+Date:   Mon Sep 15 10:37:02 2025 +0100
+
+    Extract Lifecycle Phase Enum into Shared Schema (#167)
+    
+    Enable sharing of the lifecycle phase schema across projects.  Fixes a bug with reboot semantics triggering the wrong kind.
+
+[33mcommit 1ea4064e667207a99cc5c04cb087b9c8f1630a77[m
+Author: alansy-nscale <alan.sy@nscale.com>
+Date:   Thu Sep 4 09:38:07 2025 +0100
+
+    Add Server Power Lifecycle Management APIs (#166)
+    
+    Adds the ability to stop/start/reboot machines via the API.
+
+[33mcommit 9bbfb19f754d26c7d1a334074b43b1ca92901f9b[m[33m ([m[1;33mtag: [m[1;33mv1.6.0[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Sep 1 16:00:06 2025 +0100
+
+    Version v1.6.0 (#165)
+
+[33mcommit 27fd1648b514789ef8c161e9c3f2a84daded0797[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Sep 1 14:27:46 2025 +0100
+
+    Remove Branding (#164)
+
+[33mcommit bf41fd6e1a91ec9c25607423a1328ebeeaf08eef[m[33m ([m[1;33mtag: [m[1;33mv1.6.0-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Sep 1 10:02:13 2025 +0100
+
+    Version v1.6.0-rc1 (#163)
+
+[33mcommit 34b0714b0d323e924fafb9a66eebb74dea59130e[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Aug 28 15:48:18 2025 +0100
+
+    BUmp Core Library (#162)
+    
+    This brings in a fix so that servers actually appear to be deleted when
+    they are!
+
+[33mcommit d90ceafb616d1a51cb902791456f92bd83673cbc[m[33m ([m[1;33mtag: [m[1;33mv1.5.0[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Aug 20 14:10:31 2025 +0100
+
+    Version v1.5.0 (#161)
+
+[33mcommit ddde2a7c958f68de42b7e5d13fefee0921f5f9c1[m
+Author: alansy-nscale <alan.sy@nscale.com>
+Date:   Tue Aug 19 13:14:11 2025 +0100
+
+    Fix Security Group Rules Filtering (#160)
+
+[33mcommit bd323c0d0e3b99ace0be4c647359cd39d0a0cf0f[m[33m ([m[1;33mtag: [m[1;33mv1.4.0[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Jul 31 14:35:36 2025 +0100
+
+    Version v1.4.0 (#159)
+
+[33mcommit 18c7cc3f1800df1c3cce3ce4517580863fc97580[m[33m ([m[1;33mtag: [m[1;33mv1.4.0-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Jul 31 11:06:56 2025 +0100
+
+    Version v1.4.0-rc1 (#158)
+
+[33mcommit ad15b06bb56d283e61eec87955e3a6a2fbf7e931[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Jul 24 11:51:49 2025 +0100
+
+    Principal Propagation (#155)
+    
+    As a leaf service, this simply updates to the new principal aware
+    identity interfaces so it's propagated down to the Kubernetes resources.
+    This can be used to add properties to VMs and bare metal instances which
+    can then be polled for billing purposes, for those who like to do it
+    from the bottom, rather than just look at the cluster.  This hasn't been
+    done yet to limit initial scope.
+    
+    The client however, that will be consumed by the compute service has
+    been extended to allow additional mutation functions, specifically
+    principal header injection.
+
+[33mcommit a20d77b918da5a2071be4b5c66d29d750eaede09[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Jul 14 12:36:01 2025 +0100
+
+    Allow Kubernetes Regions to Specify a Domain (#157)
+    
+    This allows virtual Kubernetes clusters to have different domain names
+    based on where they are located, which may aid in supporting said
+    virtual clusters without a load of back and forth.
+    
+    Fixes #156.
+
+[33mcommit 857f98bea594e93bad4c860a0f945d10d5553c5c[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Jun 24 15:01:56 2025 +0100
+
+    Move to Common Tag Selection (#154)
+    
+    Uses tag selection definitions and functions that are now homes in Core
+    so other services can take advantage of them.
+
+[33mcommit 8b0c01edfb0710f33ea9c5ba2508e14cbb5583a2[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Jun 23 13:47:40 2025 +0100
+
+    Fix Release Action (#153)
+    
+    Use the super glob to ignore branch pushed with a / in them to avoid
+    running spurious release jobs when dependency-bot does what it does.
+
+[33mcommit bcf7126db839944798b10346482aab6c09921860[m
+Author: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>
+Date:   Mon Jun 23 12:42:07 2025 +0100
+
+    Bump github.com/go-chi/chi/v5 from 5.2.1 to 5.2.2 (#152)
+    
+    Bumps [github.com/go-chi/chi/v5](https://github.com/go-chi/chi) from 5.2.1 to 5.2.2.
+    - [Release notes](https://github.com/go-chi/chi/releases)
+    - [Changelog](https://github.com/go-chi/chi/blob/master/CHANGELOG.md)
+    - [Commits](https://github.com/go-chi/chi/compare/v5.2.1...v5.2.2)
+    
+    ---
+    updated-dependencies:
+    - dependency-name: github.com/go-chi/chi/v5
+      dependency-version: 5.2.2
+      dependency-type: direct:production
+    ...
+    
+    Signed-off-by: dependabot[bot] <support@github.com>
+    Co-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>
+
+[33mcommit eea50d380efdfbe9a5c2af1d4e94738b7e542534[m[33m ([m[1;33mtag: [m[1;33mv1.3.0[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Jun 6 10:41:01 2025 +0100
+
+    Version v1.3.0 (#151)
+
+[33mcommit 30c7baa7a09c5cfcee05c5f9973683c8a01bab51[m[33m ([m[1;33mtag: [m[1;33mv1.3.0-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Jun 6 09:14:45 2025 +0100
+
+    Version v1.3.0-rc1 (#150)
+
+[33mcommit 7eff352922f06aec2e9203cf769cc6eeb1ec24dd[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Jun 5 16:41:03 2025 +0100
+
+    Allow Deployment Resource Limit Modification (#149)
+    
+    Allow memory limits to be overidden for when we run into memory
+    pressure.
+
+[33mcommit 75742b37d25c3ed966a5bbd4fc65101ca11fd02d[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Jun 5 13:35:05 2025 +0100
+
+    Server Health Checks (#148)
+    
+    Ultimately this adds a health status to server resources.  This happens
+    in two places, during provisioning and as part of an asynchronous
+    monitor.  As there is a bit of shared code bewteen these two, the vast
+    majority of this work refactors that sharing into existence.
+
+[33mcommit fb72c768591df56d6a7fe0d34aaa9a8b43acacbd[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Jun 4 16:20:37 2025 +0100
+
+    Add Monitor Boilerplate (#147)
+    
+    We need to periodically poll the provider backend to get the server
+    health status so this can then be propagated to the compute service.
+
+[33mcommit e7019c94bbf680cdf2de31d2c80ba31946b55b5c[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Jun 4 15:40:48 2025 +0100
+
+    Simplify Server API (#146)
+    
+    The API was tailored in a way to possibly provide an image selector, but
+    that's not necessary, and in most cases undesirable and it may lead to
+    accidental upgrades/deletions, so KISS.  This is a breaking change, but
+    it's a private API anyway so will be handled in compute.
+    
+    Fixes #141.
+
+[33mcommit 5032af683800b3ac478cfe771e5194c9bfd0aa4b[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Jun 4 14:28:42 2025 +0100
+
+    Refactor Handler (#145)
+    
+    Handlers should not be used in line, they should delegate to a specific
+    client so the logic could be shared, plus everything works in a
+    consistent fashion then which makes cross repository changes e.g.
+    filtering etc. a lot less painful.
+    
+    Also, while we are in the area, I spotted a serious security bug where
+    when accessing a resource directly by ID (e.g. GET/PUT/DELETE), we
+    weren't checking that resource organization and project matched those
+    that we specified at the API (and thus sanitized by RBAC).  The key part
+    here is if you know an ID, and have access to any project, you can
+    delete any resource.  This is a problem specific to the region
+    controller as everything else uses namespaces for segregation.  It's
+    also not really much of a problem as nothing directly accesses the
+    region controller.
+    
+    Fixes #144
+
+[33mcommit bc4b36ca34175ce17b645cbfe39f3fc37e97a87a[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Jun 3 11:30:03 2025 +0100
+
+    Add Tag Filtering (#143)
+    
+    The compute service needs access to the security groups and servers for
+    a specific cluster, we usually do client side filtering, but that seems
+    a little fragile, so we move this to server side filtering.
+    
+    Fixes #140.
+
+[33mcommit b3a3cccd85eff71b9e3216fb544447fa62ba205a[m[33m ([m[1;33mtag: [m[1;33mv1.2.0[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Jun 2 17:02:59 2025 +0100
+
+    Version v1.2.0 (#142)
+
+[33mcommit 7226817daef7fb7acb895e4c2436fba693aa3025[m[33m ([m[1;33mtag: [m[1;33mv1.2.0-rc2[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri May 30 12:15:30 2025 +0100
+
+    Allow Openstack Resource Updates (#139)
+    
+    Specifically allow floating IPs and security groups to be added to and
+    removed from ports.  Allows servers to be updated at the API in order to
+    favilitate this from the compute controller.  Also unifies some OpenAPI
+    stuff do reads and writes of resources can be compared.
+
+[33mcommit 606fbd1edf8de826a09f60bab8632af22637541a[m[33m ([m[1;33mtag: [m[1;33mv1.2.0-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu May 29 15:59:16 2025 +0100
+
+    Fix OpenAPI Firewall Types (#138)
+
+[33mcommit d06d39ff8a9b9460652c6f7373a99b0cd329c884[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu May 29 15:10:39 2025 +0100
+
+    Enhance Compute Part 1 (#137)
+    
+    The server controller does wait on server groups being ready, however
+    it's a bit agressive with its error status and makes for bad UX, so just
+    yield.
+
+[33mcommit 8d13c0a068c9479b43cf8dca12339c0d7287d5da[m[33m ([m[1;33mtag: [m[1;33mv1.1.0[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue May 27 09:56:42 2025 +0100
+
+    Version v1.1.0 (#136)
+
+[33mcommit d93468145322d7c6cd56b0016854a2ce6d7cad71[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu May 22 14:21:54 2025 +0100
+
+    Improve API Documentation (#134)
+    
+    As we now present this as a live service, we want the documentation to
+    be as solid as possible to self support end users.  This also goes
+    through the torturous process of aspell given prose is interleaved with
+    code.
+
+[33mcommit 2103a4f39cc57e99f40db8c4532a38781beba695[m[33m ([m[1;33mtag: [m[1;33mv1.1.0-rc3[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue May 20 14:35:49 2025 +0100
+
+    Resource Health Status 2 (#133)
+    
+    Update to more working CRD types.
+
+[33mcommit 758ccf7780139d75103df9ca50d38385fc7aecd8[m[33m ([m[1;33mtag: [m[1;33mv1.1.0-rc2[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon May 19 14:09:24 2025 +0100
+
+    Resource Health Status 1 (#132)
+    
+    Identity seems to work well enough, throw in this rough draft so we can
+    inherit into the Kubernetes and Compute services.
+
+[33mcommit c57aaa3441f367e1a63d08f2a257f08c7da26a8c[m[33m ([m[1;33mtag: [m[1;33mv1.1.0-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri May 16 10:35:48 2025 +0100
+
+    Upgrade Libraries (#131)
+
+[33mcommit ec0492d4bf92fa601da3664da36423b374015ef9[m[33m ([m[1;33mtag: [m[1;33mv1.0.0[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed May 14 12:48:17 2025 +0100
+
+    Version v1.0.0 (#130)
+
+[33mcommit 14406b03a3dadf2e97d3652abac7efdaaf064dac[m[33m ([m[1;33mtag: [m[1;33mv1.0.0-rc2[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed May 14 11:53:08 2025 +0100
+
+    Verison v1.0.0-rc2 (#129)
+
+[33mcommit 907ca26a69e9f0a9d77995966428b0fb5e35f5e1[m[33m ([m[1;33mtag: [m[1;33mv1.0.0-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue May 13 14:18:24 2025 +0100
+
+    Version 1.0.0-rc1 (#128)
+
+[33mcommit 77f6996eab6e3d995a68b1982004d9b9fc334806[m[33m ([m[1;33mtag: [m[1;33mv0.1.55-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri May 9 10:43:29 2025 +0100
+
+    Fix Region Detail (#127)
+    
+    Downstream services require access to region features.
+
+[33mcommit 47e3e1af31d1b558fbbea4dd1c2f8f59c4d0a971[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu May 8 15:17:06 2025 +0100
+
+    Update Helm Core (#126)
+    
+    Updates mTLS handling and unifies image pull secrets, namespaces all
+    resources to the release name, so it's not hard coded.
+
+[33mcommit 12706117c960207481a955cc047647b7e31d42d3[m[33m ([m[1;33mtag: [m[1;33mv0.1.54[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri May 2 12:19:52 2025 +0100
+
+    Version v0.1.54 (#124)
+
+[33mcommit 1d829ad55776a607a16895695f6027e340a271a4[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu May 1 10:26:12 2025 +0100
+
+    Fix Kubernetes Provider Readme (#123)
+    
+    Cocked up the Prometheus installation guide.
+
+[33mcommit 425ce887ad0bd2bfa07479c30f6d224a4e85a8de[m[33m ([m[1;33mtag: [m[1;33mv0.1.54-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Apr 30 14:44:27 2025 +0100
+
+    Upgrade Libraries and Toochain (#250) (#122)
+    
+    Primarily for Kubernetes 1.33.x support.  However, on this occasion I
+    discovered the linter was not even correctly configured!  I had wondered
+    in the past why some iffy code was making it through and now I know!
+
+[33mcommit 0c9c54f6d9b8dacfd78133c4a6108ae38d4ab1ff[m[33m ([m[1;33mtag: [m[1;33mv0.1.53[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Apr 29 13:12:48 2025 +0100
+
+    Version v0.1.53 (#121)
+
+[33mcommit 8310980a68da1e77c6f4248f61ec1ab1b259f725[m[33m ([m[1;33mtag: [m[1;33mv0.1.53-rc4[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Apr 28 15:18:09 2025 +0100
+
+    Version v0.1.53-rc4 (#120)
+
+[33mcommit fcb4e37ff26e8b090f1a323c796b03ab3972eb9c[m[33m ([m[1;33mtag: [m[1;33mv0.1.53-rc3[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Apr 24 11:07:52 2025 +0100
+
+    Version v0.1.53-rc3 (#119)
+
+[33mcommit ab192df0df327a25beaef3b78cfe680bcd54f38e[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Apr 24 11:05:52 2025 +0100
+
+    Fix CVE-2025-22872 (#118)
+
+[33mcommit fceb3d1fe3c659dfb5028ae64a830719227dc8d3[m[33m ([m[1;33mtag: [m[1;33mv0.1.53-rc2[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Apr 24 10:13:10 2025 +0100
+
+    Fix Security Hole (#117)
+    
+    Having the level of detail change on an API is just too dangerous, a
+    privileged process can read the data then expose it all too easily.
+    Instead make a new endpoint that must be called to get privileged data,
+    then there is no danger of a "region read" accidentially exposing
+    things.
+
+[33mcommit 11f8ce883c9a9dcfa73e6c8a064f41afd232b743[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Apr 14 13:50:00 2025 +0100
+
+    Kubernetes Region Documentation (#116)
+
+[33mcommit 2ff30057f9401ad4987b9f0fce50dc8cf3ef0e43[m[33m ([m[1;33mtag: [m[1;33mv0.1.53-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Apr 10 13:52:51 2025 +0100
+
+    K8S Lite (#115)
+    
+    Adds a kubernetes region type, provides a way to get access to the
+    kubeconfig from the Kubernetes controller, creates a method to allow
+    "flavors" to be derived from the cluster that's handed to us.
+    
+    Implements #103
+
+[33mcommit acceb53bfb10e59c6f187e1981bb82c99b1409f1[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Apr 10 10:23:42 2025 +0100
+
+    Automate Image Selection (#113)
+    
+    Prior to this change, we let the user select what images were presented
+    to the user.  Since the time when this was written, we have released a
+    versioned specification that controls what consitutes a usable image,
+    taking into account UX requirements, and those of various higher level
+    services e.g. Kubernetes.  Remove the capability for a user to manaually
+    select images and instead use the schema defined by the specification.
+    The signing key is still available to verify the provenance of an image
+    on platforms where users can, legitmately, create a valid image
+    compatible with the schema.
+    
+    Fixes #112
+
+[33mcommit b5da83985222bb1992a974bb8bcb3e4c1bc443a8[m
+Author: Michael Bridgen <mikeb@squaremobius.net>
+Date:   Fri Mar 28 08:54:30 2025 +0000
+
+    Remove overly generic go build rule (#114)
+    
+    The pattern `bin/%` matches e.g.,
+    `bin/amd64-linux/unikorn-controller`, but will bind `$*` to
+    `amd64-linux/unikorn-controller` in the recipe and thereby fail.
+    
+    The (GNU) make pre-installed in MacOS falls foul of this, but
+    brew-installed GNU make runs OK. Still, let's avoid ambiguity if we
+    don't need it.
+
+[33mcommit 79ed4f20373d1bdfac5c5781e639322aab5c5353[m[33m ([m[1;33mtag: [m[1;33mv0.1.52[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Mar 19 13:16:16 2025 +0000
+
+    Version v0.1.52 (#111)
+
+[33mcommit 7e89e23ccef57757b817bee23fff45849b8bf75b[m[33m ([m[1;33mtag: [m[1;33mv0.1.52-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Mar 13 16:36:41 2025 +0000
+
+    Fix NGINX Security Hole (#110)
+
+[33mcommit 467a729f9fa69e9c6eff307ba1c004e3224fe4d9[m[33m ([m[1;33mtag: [m[1;33mv0.1.51[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Mar 13 13:20:09 2025 +0000
+
+    Version v0.1.51 (#109)
+
+[33mcommit a01c8f740f99ff1477f2783b6243b112912b5e82[m[33m ([m[1;33mtag: [m[1;33mv0.1.51-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Mar 12 14:00:12 2025 +0000
+
+    Allow Unlimited Snapshots (#108)
+    
+    We really really need to go back and revisit the quota stuff or we're
+    leaving the entire system at risk of a denial of service attack by some
+    errant workload...
+
+[33mcommit 73504485a344b6a173959cf854363fa2dc73d600[m[33m ([m[1;33mtag: [m[1;33mv0.1.50[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Mar 6 10:18:22 2025 +0000
+
+    Version v0.1.50 (#107)
+
+[33mcommit 807a4ff72699d09810fb1cdb338b733eac427c3e[m[33m ([m[1;33mtag: [m[1;33mv0.1.50-rc2[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Mar 5 14:22:43 2025 +0000
+
+    Version v0.1.50-rc2 (#106)
+
+[33mcommit dc7935815896c3a23e7db7694085a5152658faa7[m
+Author: nsricardor <167014746+nsricardor@users.noreply.github.com>
+Date:   Sat Mar 1 00:50:05 2025 +1300
+
+    Add support for configuring Port Allowed Address Pairs (#105)
+
+[33mcommit 9d558140373c21d5d7fa4faa5b1d0be4dd80c365[m[33m ([m[1;33mtag: [m[1;33mv0.1.50-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Feb 27 14:20:20 2025 +0000
+
+    Update Libraries (#104)
+    
+    Fixes CVE-2025-27144
+
+[33mcommit 1787ed746c0cabe8f003139e35041c2ec1d7f9c6[m[33m ([m[1;33mtag: [m[1;33mv0.1.49[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Feb 20 09:31:53 2025 +0000
+
+    Version v0.1.49 (#102)
+
+[33mcommit eed3927ac820996ed7b57c722bc6dc8c24c4d05d[m[33m ([m[1;33mtag: [m[1;33mv0.1.49-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Feb 18 13:19:43 2025 +0000
+
+    Bump Identity (#101)
+
+[33mcommit 5655fa0bcaee36afc0457cf0bb460865015d4b74[m[33m ([m[1;33mtag: [m[1;33mv0.1.48[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Feb 5 12:05:54 2025 +0000
+
+    Version v0.1.48 (#100)
+
+[33mcommit bc2499dce160f81ed1386dcc8b8631ed7c100ebc[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Feb 3 16:00:26 2025 +0000
+
+    Add Actions Permissions (#99)
+
+[33mcommit 151273b8c818acbec5c68d1c76908a902f63d18a[m[33m ([m[1;33mtag: [m[1;33mv0.1.48-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Jan 28 18:19:21 2025 +0000
+
+    Upgrade Toolchain (#98)
+    
+    Primarily a preemptive fix for CVE-2024-45336 and CVE-2024-45341.  Also
+    upgrades all libraries
+
+[33mcommit fc705a3766a99843cc101596b0ad4601b1d60454[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Jan 2 11:28:30 2025 +0000
+
+    Update Code Generator (#96)
+
+[33mcommit 07dd0453fc2d3ae99284548a8f3bb590b3449647[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Jan 2 11:20:24 2025 +0000
+
+    Fix Header Idempotency (#95)
+
+[33mcommit 7bc6856b3ebc9162ee6cc0de79ed28dd7d773e0b[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Jan 2 10:45:39 2025 +0000
+
+    Upgrade Libraries (#94)
+    
+    Primarily to fix CVE-2024-45338 which Dependabot seemed unable to do
+    handsfree from the pub... this also updates all license headers for the
+    year ahead.
+
+[33mcommit 8620ca866b6bf847553b34841fd4232fbd2bd42f[m
+Author: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>
+Date:   Thu Dec 12 10:02:32 2024 +0000
+
+    Bump golang.org/x/crypto from 0.28.0 to 0.31.0 (#93)
+    
+    Bumps [golang.org/x/crypto](https://github.com/golang/crypto) from 0.28.0 to 0.31.0.
+    - [Commits](https://github.com/golang/crypto/compare/v0.28.0...v0.31.0)
+    
+    ---
+    updated-dependencies:
+    - dependency-name: golang.org/x/crypto
+      dependency-type: direct:production
+    ...
+    
+    Signed-off-by: dependabot[bot] <support@github.com>
+    Co-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>
+
+[33mcommit 9413030db2c222629ad9dafd81bf0faeb5977df3[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Dec 11 10:36:48 2024 +0000
+
+    Update Actions (#92)
+
+[33mcommit dddcbb0ebefe1f3aaad6353910900360135b7913[m[33m ([m[1;33mtag: [m[1;33mv0.1.47-rc5[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Dec 11 09:51:59 2024 +0000
+
+    Expose SSH Private Keys (#91)
+    
+    Higher level services that have access to the identity resources can do
+    with it as they require, but not necessarily give it away to end users.
+
+[33mcommit 661e0e4c397f8624953481c15c5fd314efc2cba3[m
+Author: nsricardor <167014746+nsricardor@users.noreply.github.com>
+Date:   Wed Dec 11 03:51:26 2024 +1300
+
+    Drop image selector (#90)
+
+[33mcommit 12d5a82882a52b5a0d8ae2972fe6de086024ca8d[m[33m ([m[1;33mtag: [m[1;33mv0.1.47-rc4[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Dec 5 11:02:00 2024 +0000
+
+    Add Image Sizes (#88)
+    
+    When selecting an image based on metadata we need to raise an error, or
+    select a version that will actual fit on the selected flavor, or limit
+    flavor selection to those that will work with the image.  Or vice versa!
+
+[33mcommit 5d6055ebd5597c6802e00e66d0063fae578858ce[m[33m ([m[1;33mtag: [m[1;33mv0.1.47-rc3[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Dec 5 10:02:56 2024 +0000
+
+    Version v0.1.47-rc3 (#87)
+
+[33mcommit a7a389e622ade8deae4a912d5c64c03ab9ebc6ec[m
+Author: nsricardor <167014746+nsricardor@users.noreply.github.com>
+Date:   Thu Dec 5 22:54:48 2024 +1300
+
+    Support for version 2.0.0 of the Unikorn image specification for Openstack (#86)
+
+[33mcommit c98ccfa1cb98c247b2327b0e98aca4ed685f9070[m[33m ([m[1;33mtag: [m[1;33mv0.1.47-rc2[m[33m)[m
+Author: nsricardor <167014746+nsricardor@users.noreply.github.com>
+Date:   Wed Dec 4 23:03:45 2024 +1300
+
+    Add server userdata to support server configuration and init scripts (#85)
+
+[33mcommit eceab852648441238a3f75de4d98c90b025abf68[m[33m ([m[1;33mtag: [m[1;33mv0.1.47-rc1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Dec 3 14:57:19 2024 +0000
+
+    Version 0.1.47-rc1 (#84)
+    
+    This is just to unblock development of compute and the UI.
+
+[33mcommit 1cfab33cbea64234671f05a3c36a901b58a993eb[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Dec 3 09:40:02 2024 +0000
+
+    Add More Image Metadata (#83)
+    
+    From experimentation it's abundantly clear that for UX the OS needs to
+    be more prescriptive and accurate in its filed naming.
+
+[33mcommit 3debb83f5980494f05053bd89c9755f5403cd05a[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Dec 2 13:57:02 2024 +0000
+
+    Add OS Framework (#82)
+    
+    Just extend the APIs, and thus the OpenAPI schema so it can be consumed
+    by upstream services.
+
+[33mcommit 65949d74aad9280af24fac37fa61620231943747[m[33m ([m[1;33mtag: [m[1;33mv0.1.46[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Nov 27 13:58:14 2024 +0000
+
+    Add Resource Tags (#80)
+
+[33mcommit 7ccbe68e83230b091fa0183d5f36fe7ffd02f7ca[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Nov 27 10:23:12 2024 +0000
+
+    Improve Cascading Cleanup (#78)
+    
+    Servers need to be deleted before networks, networks before identities
+    etc.  Kubernetes provides this via cascading foregroud deletion and
+    blocking owner deletion.  This basically removes a bunch of code where
+    we were doing this ourselves.  While it works via the API, be damn sure
+    you use `kubectl delete --cascade=foreground` via the CLI if ever
+    needed.
+    
+    Implements #75
+
+[33mcommit b0a2bcf50b28297403cc9cc96142793a2f065a8c[m
+Author: nsricardor <167014746+nsricardor@users.noreply.github.com>
+Date:   Wed Nov 27 23:10:56 2024 +1300
+
+    Return server status (#79)
+
+[33mcommit b595dff66898b8589e50764a41ec3251206912c4[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Nov 25 14:05:25 2024 +0000
+
+    Make Network Handling More Generic (#76)
+    
+    The compute service needs a network to attach servers to, and the only
+    way that is possible is with a VLAN provider network, which isn't going
+    to work for like 90% of users, so make the provisioning more generic so
+    we only worry about VLANs if we need to.
+
+[33mcommit 9534f2c2bd0b11c9eca09c15a1fe37ee8969020d[m
+Author: nsricardor <167014746+nsricardor@users.noreply.github.com>
+Date:   Tue Nov 26 02:48:35 2024 +1300
+
+    Add Server Provisioner (#73)
+    
+    Allow servers to be provisioned on a network, with security groups, and a default SSH key.  End product is you can fully provision a server and SSH into it, thus making it useful.
+
+[33mcommit 6bbdf3cc80c4aa6e7a372c9ab1155b2dcedb8bac[m
+Author: nsricardor <167014746+nsricardor@users.noreply.github.com>
+Date:   Sat Nov 16 00:14:33 2024 +1300
+
+    Add api to manage servers (#72)
+    
+    Adds REST API for server management.
+
+[33mcommit eb9f10fd9240a94ab5f68cfe34972a53c6ae1ebb[m
+Author: nsricardor <167014746+nsricardor@users.noreply.github.com>
+Date:   Thu Nov 7 22:33:36 2024 +1300
+
+    Add Server Controller part 1 (#71)
+    
+    Adds in a MVP server CRD, and all the necessary controller scaffolding.
+
+[33mcommit 985973bf41bd398dbc3c1a3122c5012621bd1782[m[33m ([m[1;33mtag: [m[1;33mv0.1.45[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Nov 5 09:22:54 2024 +0000
+
+    Remove Flavor Filtering (#70)
+    
+    We filter based on vcpu/ram/swap as required by kubeadm, but this is a
+    domain specific thing, rather than generic, so remove this and delegate
+    handling to the kubernetes service.
+    
+    Implements #67
+
+[33mcommit 204e54a8cb782e8f0d08df0390cb1c85cff92a40[m
+Author: nsricardor <167014746+nsricardor@users.noreply.github.com>
+Date:   Sat Nov 2 01:50:58 2024 +1300
+
+    Add Security Group support (#65)
+    
+    Adds in CRDs and controllers to allow security groups to be managed for an identity.
+
+[33mcommit 13365e6e1a81cd93beec604520da85b277cce21b[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Oct 31 09:57:14 2024 +0000
+
+    Upgrade OpenAPI Codegen (#69)
+    
+    v1 is deprecated so we need to upgrade to v2 in order to avoid a bunch
+    of warnings all over the show.
+
+[33mcommit 482412411dafa0634eff987a08638ab04bc26a4d[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Oct 31 09:40:37 2024 +0000
+
+    Remove Excess Events Permissions (#68)
+
+[33mcommit 840973161b88ab17a95357ade2c34cab182513b3[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Oct 21 10:53:11 2024 +0100
+
+    Add Grype Ignores (#66)
+
+[33mcommit e16efa6393abd1251b4825b7f7120a823720d228[m[33m ([m[1;33mtag: [m[1;33mv0.1.44[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Oct 18 14:52:01 2024 +0100
+
+    GPU Count Ambiguity (#64)
+    
+    We used to report logical GPUs based on what was needed for cluster
+    autoscaling, but users may be confued if UX elements talk about logical
+    things rather than phyiscal, so support both.  And also update compilers
+    and other jazz.
+
+[33mcommit 800433c9600d268c705e564fc882307b5fb79d99[m[33m ([m[1;33mtag: [m[1;33mv0.1.43[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Oct 3 13:14:53 2024 +0100
+
+    Update Core Libraries (#62)
+    
+    Brings in shared namespace flag handling.
+
+[33mcommit dbd69e5f33998844bf53db0bed76635575358eb7[m[33m ([m[1;33mtag: [m[1;33mv0.1.42[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Oct 1 14:25:57 2024 +0100
+
+    Fix Blockstorage Quotas (#61)
+    
+    Beacuse like anything openstack, smaller is better.  Like she never
+    said...
+
+[33mcommit 3fc5d075582c5940f71e30bf359896267485771c[m[33m ([m[1;33mtag: [m[1;33mv0.1.41[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Sep 30 14:42:50 2024 +0100
+
+    Fix Router Provision Bug (#60)
+    
+    Error is not getting propagated, and annoyingly the linter didn't pick
+    this up, meaning we say it's okay when a router fails to provision e.g.
+    no more IP addresses, and we get a SIGSEGV.
+
+[33mcommit 92161c60aeb5467f0d84f1e92754728f0cb94f3d[m[33m ([m[1;33mtag: [m[1;33mv0.1.40[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Sep 5 16:56:20 2024 +0100
+
+    Turbo Charge Authentication (#59)
+
+[33mcommit e5703f4ee1d72259334761a494f398676bf6575c[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Sep 5 11:24:01 2024 +0100
+
+    Update OpenStack Provider Docs (#58)
+    
+    As we require more policies now, redirect the user to the single source
+    of truth rather than duplicating effort.  DRY and all.
+
+[33mcommit 09197d358dd95362806b43a6b03da729bfa6025a[m[33m ([m[1;33mtag: [m[1;33mv0.1.39[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Sep 3 12:55:55 2024 +0100
+
+    Update Compute Quota Defaults (#56)
+    
+    Cores and RAM are all good, but you also need instances to be set to
+    allow large cluster sizes.
+
+[33mcommit 61180cc0bf90b0e5d11a64804381eb6421031c1a[m[33m ([m[1;33mtag: [m[1;33mv0.1.38[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Sep 3 09:16:29 2024 +0100
+
+    Add Quota Management Support (Part 1) (#55)
+    
+    Without this, you'll not get very far with Openstack's defaults!  This
+    adds in an endpoint that can read and update quotas.  These are
+    explciitly scoped to the identity (as that maps to an OpenStack project
+    where quotas reside), and implicitly to the client e.g.
+    unikorn-kubernetes/unikorn-baremetal, so they can independently affect
+    quotas in a shared identity without having to know about one another.
+    
+    This first part adds in the necessary APIs that allow quotas to be
+    created by a client, trigger an identity reconcile and are implicitly
+    deleted on identity deletion.
+
+[33mcommit f0675b6564daa7cbd620a58cd17f8aff2ac85df4[m[33m ([m[1;33mtag: [m[1;33mv0.1.37[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Aug 30 11:17:52 2024 +0100
+
+    Hack Quotas (#54)
+    
+    This unblocks wider testing, I've got a less stupid approach in the
+    works, but there's a few points I need to mull over.
+
+[33mcommit c84ca03eeb5258b2fb378af8045639cf6304558f[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Aug 30 11:06:47 2024 +0100
+
+    Add in Ephemeral SSH Support (#53)
+    
+    This gives us an emergency backdoor for support, because you can't turn
+    back time and suddenely magic SSH into existence when stuff does go
+    wrong.
+
+[33mcommit 52c3ac6d2c2dd83a5a0d7acc4e7e44b40be081d3[m[33m ([m[1;33mtag: [m[1;33mv0.1.36[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Aug 27 16:57:41 2024 +0100
+
+    Update Core and Deps (#52)
+
+[33mcommit aef5f42344750a87726312e224cc0496073f0073[m[33m ([m[1;33mtag: [m[1;33mv0.1.35[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Aug 23 12:06:25 2024 +0100
+
+    Add a Physical Network View (#51)
+
+[33mcommit 56d832a54a47d14452653f08f467a70d307876f8[m[33m ([m[1;33mtag: [m[1;33mv0.1.34[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Aug 22 09:47:47 2024 +0100
+
+    Rejig Neutron VLAN Provisioning (#47)
+    
+    So it transpires we were trying to piggy back on the stellar work by SCS
+    for identity and allow a domain admin for provider networks, but alas
+    Neutron has zero visibility of domains, and secondly only "admin" and
+    "advsvc" can provision in a different project (hard coded, not a
+    policy).  Out one remaining option is to create a context that is for
+    the "manager" user, but scoped to the user's project, and that can allow
+    the provider network to be provisioned.
+
+[33mcommit 679a90901e0aeea4702610d7c53f40f917e4b7bb[m[33m ([m[1;33mtag: [m[1;33mv0.1.33[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Aug 16 09:33:25 2024 +0100
+
+    Identity Controller Boilerplate (#50)
+    
+    At present, when provisioning in a cluster, it blocks a long time
+    waiting for OpenStack to do what it needs to do.  This has a knock on
+    effect for UX in that said delay is visible in the UI and CLI tools.
+    This lays down the groundwork to make this asychronous so we don't hold
+    up uer interaction, but we do cluster provisioning.  This is a template
+    also for phyiscal network provisioning that takes even longer, and
+    causes request timeouts that need to be avoided.
+
+[33mcommit b4b82f17f0e0d1bf548fbcfab64c5106f75db539[m[33m ([m[1;33mtag: [m[1;33mv0.1.32[m[33m)[m
+Author: Nick Jones <nick@dischord.org>
+Date:   Thu Aug 1 16:03:44 2024 +0100
+
+    Scope various client requests to a project (#44)
+    
+    The default API policies for OpenStack were amended almost unversally
+    (across projects) with the 2023.1 release to limit information returned
+    from client requests that are not scoped to a project, see the Glance
+    release notes for example:
+    
+    https://docs.openstack.org/releasenotes/glance/2023.1.html#upgrade-notes
+
+[33mcommit 9fab8f8d95022bbb9cb80780763f4a2cf713719e[m[33m ([m[1;33mtag: [m[1;33mv0.1.31[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Aug 1 14:17:08 2024 +0100
+
+    Add Region Feature Flags (#46)
+    
+    Some clouds may have baremetal nodes, and some may not, so we need to
+    make an intelligent descision whether the provision a provider network
+    for clusters or not.  Imbue the regions API with this power.
+
+[33mcommit 254b921527d3c28dfd0bdcfbb5827f9f4dff0b2f[m[33m ([m[1;33mtag: [m[1;33mv0.1.30[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Aug 1 10:03:23 2024 +0100
+
+    Add Server Group Cleanup (#45)
+    
+    Nova just orphans things on project deletion, which leaves a bunch of
+    server groups hanging around in the aether, so we should play nice and
+    clean these up for it, and make life easier on our platform teams.  Also
+    while here standarize the trace output on service name (as given in
+    openstack versions show) and add a method to make debug easier.
+
+[33mcommit e54ec1e0928721e9a0a06550ae7aad8ef6a6bf75[m[33m ([m[1;33mtag: [m[1;33mv0.1.29[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Jul 31 13:30:01 2024 +0100
+
+    Some Cleanups (#43)
+    
+    We're passing around two types when handling identities and it gets a
+    bit messy with multiple copies, which leads to bugs due to missed fields
+    and the like.  Also steath in the server groups provisioning which has
+    been missing for some time.
+
+[33mcommit efe2a38a20e5ba74801e3cb01e1bd0509efdbb45[m[33m ([m[1;33mtag: [m[1;33mv0.1.28[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Jul 30 09:11:13 2024 +0100
+
+    Fix Sorting (#42)
+
+[33mcommit 44e54402f2c208f522c10454be7cc8ff4e9ce7a3[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Jul 26 10:28:48 2024 +0100
+
+    Sort Identities (#41)
+
+[33mcommit 8efdd18f1a1c5c4cff41769730b9958df055090b[m[33m ([m[1;33mtag: [m[1;33mv0.1.27[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Jul 26 10:17:38 2024 +0100
+
+    Rework Flavor Configuraiton (#40)
+    
+    Make flavors behave the same as external networks and images by having
+    an idiomatic selector.  Separate out the metadata to keep selection and
+    mutation distinct.  Allow flavors to be mutated to skirt around naughty
+    operators who lie.
+
+[33mcommit 17d2c2e786bb73ac4dc61c00bc0e1f5569a60c9b[m[33m ([m[1;33mtag: [m[1;33mv0.1.26[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Jul 25 13:41:38 2024 +0100
+
+    External Network Selection and Image Meta (#39)
+    
+    In most cases I've ever seen, for various reasons, there are multiple
+    external networks.  We need to provide selection criteria to pick ones
+    that actually work.  Additionally, migrate to the new image metadata
+    specification to enhance selection for a flavor.
+
+[33mcommit 71a94fddd04df520c34866025e42ca3e658e313d[m[33m ([m[1;33mtag: [m[1;33mv0.1.25[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Jul 22 13:29:03 2024 +0100
+
+    Fix Region Chart (#38)
+    
+    Add in a resource separator, lest regions vanish.
+
+[33mcommit 2ab96d60eb96648ae8a00c09a6c49a55a706b885[m
+Author: Nick Jones <nick@dischord.org>
+Date:   Mon Jul 22 09:45:51 2024 +0100
+
+    Nuke _member_ role requirement (#37)
+    
+    The _member_ role is a vestige from OpenStack days of yore and no longer
+    exists on recent versions by default.  Do as the TODO suggests and
+    remove it.
+
+[33mcommit d96a05c935a096f9ff3880ccbc79de7c063929b5[m[33m ([m[1;33mtag: [m[1;33mv0.1.24[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Jul 19 13:20:54 2024 +0100
+
+    Improve Auditing (#36)
+
+[33mcommit 588df83ff862b875d8afc8cd6c3fb792fb58ea05[m[33m ([m[1;33mtag: [m[1;33mv0.1.23[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Jul 17 10:43:41 2024 +0100
+
+    Add Identity Deletion (#35)
+    
+    Finish off the job so we can delete identities when not done
+    automatically i.e. there is a bug that's about to be fixed :D
+
+[33mcommit 2dd8010dbfa8b266b1e6a44695ae0e730b6e824b[m[33m ([m[1;33mtag: [m[1;33mv0.1.22[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Jul 17 08:54:27 2024 +0100
+
+    Update Creation Auditing (#34)
+    
+    To actually audit resource creation meaningfully, we need to get the
+    resource ID, and the only way to do that in a generic way is to return
+    the generated resource in all POST APIs.
+
+[33mcommit 769f78730006a7e840083fa3ded633ecea84d7ea[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Jul 15 13:25:31 2024 +0100
+
+    Move Specifications (#33)
+
+[33mcommit 60a7d96c19fbb294ad8f7eb207869b795bab7c84[m[33m ([m[1;33mtag: [m[1;33mv0.1.21[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Jul 15 09:44:11 2024 +0100
+
+    Make Regions Organization Scoped (#32)
+    
+    After playing with the UI, it semms quite apparent that mapping a region
+    ID to a name, when the region is itself project scoped is quite heavy
+    weight and unwieldy.  To remedy this we move regions back to the
+    organization scope so we need only a single lookup, relying on RBAC
+    information to do any filtering.  This also splits up regions and
+    instrastructure so readers can map to regions, but not create identities
+    etc.
+
+[33mcommit 347e802edf5c8d235d988f47fc00424fa2617a3f[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Jul 15 09:34:10 2024 +0100
+
+    Make Regions Organization Scoped (#31)
+    
+    After playing with the UI, it semms quite apparent that mapping a region
+    ID to a name, when the region is itself project scoped is quite heavy
+    weight and unwieldy.  To remedy this we move regions back to the
+    organization scope so we need only a single lookup, relying on RBAC
+    information to do any filtering.  This also splits up regions and
+    instrastructure so readers can map to regions, but not create identities
+    etc.
+
+[33mcommit e228e66cec44df9d2d93cd5b3eb8d5398996a31b[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Jul 10 10:07:44 2024 +0100
+
+    Finish Identity View (#30)
+    
+    This has identified a number of UX problems, in that we can list
+    identities for an organization, but then we need to get regions per
+    identity (project) to correctly scope regions to translate from ID to
+    name.  I suspect that perhaps regions should be defined at the
+    organization level - not the project, identities should have a regionID
+    property much like clusters, then we can handle those in a geenric
+    fashion and promote region scoped metadata to a top level core thing.
+
+[33mcommit 8135ebea4aca41455cffa28172653de12d08cfcb[m[33m ([m[1;33mtag: [m[1;33mv0.1.20[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Jul 9 16:16:44 2024 +0100
+
+    Audit Logging (#29)
+    
+    Along with library and toolchain upgrades.
+
+[33mcommit 4cc88386ba67b75bf3927e85a4a3b6d0ac1435d3[m[33m ([m[1;33mtag: [m[1;33mv0.1.19[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Jul 4 15:51:32 2024 +0100
+
+    RBAC Done Properly (#28)
+    
+    Use new and improved RBAC.
+
+[33mcommit 12a6d70f2959c4f1618736a511881e4c9b9dac5d[m[33m ([m[1;33mtag: [m[1;33mv0.1.18[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Jul 1 14:04:54 2024 +0100
+
+    Physical Network API (#27)
+    
+    Add in an API for physical network creation, adjust the identit API to
+    keep things in whack with everything else (mostly).
+
+[33mcommit 0f77f78b5f7e3bb57a374e81429986819eaca408[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Jun 26 17:28:42 2024 +0100
+
+    Add VLAN Allocation Stub and Configuration (#26)
+    
+    Allows the user to define the exact VLAN ID ranges they want to have
+    managed (so as to play nice with people who want to do things by hand or
+    in a mutli-tenant environment), and ensures VLANs are allocated from
+    these ranges.
+
+[33mcommit 8d241c623c8a3c2b9f9d4804c18134b04aa70165[m[33m ([m[1;33mtag: [m[1;33mv0.1.17[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Jun 26 12:40:12 2024 +0100
+
+    Update Flavor APIs (#25)
+    
+    Brings this all inline with the specification so we can do more
+    intelligent image selection and offer a richer user experience, in a
+    more flexible and less intrusive fashion.
+
+[33mcommit 87c3681bfd59e84d32b0816505f79948a3c20b14[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Jun 26 12:21:58 2024 +0100
+
+    Add Flavors and Images Metadata Spec (#24)
+
+[33mcommit e4e3fd2a1d3d6ca7fcae3bc0e2bc6a2bd2da0d9f[m[33m ([m[1;33mtag: [m[1;33mv0.1.16[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Jun 20 14:00:54 2024 +0100
+
+    Lower Memory Requests (#23)
+    
+    Region's requests are far too high and prevent scheduling on
+    relatively constrained platforms.
+
+[33mcommit f67966ee91294ac0bd1f10cadb8f3bd1bae53b79[m[33m ([m[1;33mtag: [m[1;33mv0.1.15[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Jun 19 15:42:25 2024 +0100
+
+    Fix Image Listing (#22)
+    
+    When listing images, unscoped, OpenStack will error if someone has a
+    shared image, rather than filtering it out, sigh.  Manually filter on
+    public images.
+
+[33mcommit 285673c59503d21bddde85955f18acc57d05f930[m[33m ([m[1;33mtag: [m[1;33mv0.1.14[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Jun 19 11:05:32 2024 +0100
+
+    Use Shared Ingress Templates (#21)
+
+[33mcommit 29379b7b149444d4b5f7cc8ef733570a711b9558[m[33m ([m[1;33mtag: [m[1;33mv0.1.13[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Jun 18 15:12:51 2024 +0100
+
+    Fix Release (#20)
+
+[33mcommit 889010c853a93405a12c10465054dbf584286581[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Jun 18 14:21:35 2024 +0100
+
+    Use Common Helm Templates (#19)
+
+[33mcommit 6d5316db08f1486a48137135d8c7c851501a4d9e[m[33m ([m[1;33mtag: [m[1;33mv0.1.12[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Jun 17 14:59:24 2024 +0100
+
+    Make Region Secret Namespace Implicit (#18)
+
+[33mcommit 6b19834b322e3a77aab0d9a7cd9935303db8d9f4[m[33m ([m[1;33mtag: [m[1;33mv0.1.11[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Jun 17 14:23:01 2024 +0100
+
+    Tweak Helm (#17)
+    
+    Fix discrepency between certain uses of hostnames.
+
+[33mcommit 4396362d845c69cf5a3a02a49b3ea766b3d1c42e[m[33m ([m[1;33mtag: [m[1;33mv0.1.10[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Jun 17 13:12:51 2024 +0100
+
+    Improve Helm (#16)
+    
+    Pick a select few values and replace with templates that can get their
+    value from a global.
+
+[33mcommit c4b388faf4912530609013a3c7debc0bc5e80f86[m[33m ([m[1;33mtag: [m[1;33mv0.1.9[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Jun 14 11:20:45 2024 +0100
+
+    Make Everything Project Scoped (#15)
+    
+    We will need to start locking down APIs to specific projects that
+    require role permissions to be present, rather than at the organization
+    level, so do this now rather that risk later pain.  It does have the
+    benefit that we can now scope regions and other jazz to a specific
+    project in an organizations etc.
+
+[33mcommit bc3f575ace3facd1fc3316f41f0b96691bda2845[m[33m ([m[1;33mtag: [m[1;33mv0.1.8[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Jun 14 10:48:15 2024 +0100
+
+    Add Standardized RBAC (#14)
+    
+    Make everything organization scoped, so we can apply RBAC rules.
+
+[33mcommit 2ba0ae69aca2f28bee23953186371cc8b32b2049[m[33m ([m[1;33mtag: [m[1;33mv0.1.7[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Jun 13 15:30:53 2024 +0100
+
+    Tweak Client (#13)
+    
+    This works out better with how the servers are initialised for now.
+
+[33mcommit 66df9d65a4172a79f484a4195e3380d7727a9d17[m[33m ([m[1;33mtag: [m[1;33mv0.1.6[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Jun 13 13:50:49 2024 +0100
+
+    Use Shared CA (#12)
+    
+    Core now installs a shared CA to be be used by cluster microservices
+    making key distribution easier.  Use that rather than self-signing.
+
+[33mcommit b57d3af5329f60b8f56fdc71d95be40ae8264c26[m[33m ([m[1;33mtag: [m[1;33mv0.1.5[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Jun 12 14:08:30 2024 +0100
+
+    Rename Chart (#11)
+    
+    For make consistency.
+
+[33mcommit 6685be955c1ed00c01bb6c33673c7d162085e140[m[33m ([m[1;33mtag: [m[1;33mv0.1.4[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Jun 12 09:40:42 2024 +0100
+
+    A Prerequisite Documents (#10)
+
+[33mcommit 74fee22a9f6c5b5afd04205470fe5846590b78cb[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Wed Jun 12 09:38:06 2024 +0100
+
+    Update Documentation (#9)
+
+[33mcommit 9bc5e6bdcc3c8eb6c2908470abc31424c0468a12[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Tue Jun 11 14:05:27 2024 +0100
+
+    Import Identity Reaper (#8)
+    
+    In lieu of a proper solution that involves APIs and access tokens import
+    the reaper, let it listen to all events in the system, filtered by the
+    specific reason that a cluster would raise when deprovioning is done
+    asynchronously and then delete that identity.
+
+[33mcommit ab9c8e3ab427ac3bc74e02e145995b70f1316b03[m[33m ([m[1;33mtag: [m[1;33mv0.1.3[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Jun 10 13:51:32 2024 +0100
+
+    Support External Networks (#7)
+    
+    Damnit CAPO!!!!  It does infer the external network, and when I say
+    "the" I mean only one, or it has a hissy fit, so we need to arbitrarily
+    choose one for it.
+
+[33mcommit 242270d17ee4a8bcc9db27b8536669270460fe70[m[33m ([m[1;33mtag: [m[1;33mv0.1.2[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Mon Jun 10 11:31:31 2024 +0100
+
+    Wire Up Identity Provisioner (#6)
+
+[33mcommit 84b4fa7ed8f15e382bbe7a6634b31f9c83f93b51[m[33m ([m[1;33mtag: [m[1;33mv0.1.1[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Jun 7 13:32:10 2024 +0100
+
+    Fix Identity API Metadata (#5)
+
+[33mcommit d4995a3e1e352fa1dcfaef252a909c4ef688bfc4[m[33m ([m[1;33mtag: [m[1;33mv0.1.0[m[33m)[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Fri Jun 7 12:07:05 2024 +0100
+
+    Improve Region Cloud APIs (#4)
+    
+    Make everything use the generic metadata methodology.  Make everything
+    more flexible and provide better support for heterogenous GPU compute by
+    exposing GPU on both images and flavors to allow better matching.
+
+[33mcommit a6af8324f3b82df8e7305eb655076b2a9ac98fec[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Jun 6 16:08:00 2024 +0100
+
+    Create Identity Management Stubs (#3)
+    
+    To provision a Kubernetes cluster (with CAPO) we simply need a cloud
+    config and the external network ID (but maybe not any more...).  We also
+    need to make note of the project and user IDs so when the cluster is
+    deprovisioned we can clean them up.  We wrap all this as an identity
+    object, the cluster creation requests an identity, gets back all the
+    credentials it needs to create the cluster.  The k8s controller can
+    remember the identity ID as an annotation, and when the time comes
+    delete the identity.  Pertinent information is also saved as a custom
+    resource.  We can even extend the API to create a provider network in
+    the context of the identity, or a compute instance... you can see where
+    this is going.  All in a nice provider agnostic way!
+
+[33mcommit 54a2ad1666913771c4c931a1fc9324888d5bf059[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Jun 6 14:50:40 2024 +0100
+
+    Get Service Functional (#2)
+    
+    Test and get working the Helm deployment, and start to expand the API to
+    be useful to the Kubernetes service.
+
+[33mcommit 5b971d041b213e357991334d0df804b57f60dc74[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Jun 6 13:33:06 2024 +0100
+
+    Import Code from Unikorn (#1)
+    
+    Pull in enough to make it build and pass CI checks.
+
+[33mcommit b8d6b13a2fa1959d4bbf458a8a4444a0e596aba9[m
+Author: Simon Murray <spjmurray@yahoo.co.uk>
+Date:   Thu Jun 6 09:24:24 2024 +0100
+
+    Add in Repository Boilerplate

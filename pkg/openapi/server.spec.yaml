@@ -19,6 +19,7 @@ paths:
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
     get:
+      x-hidden: true
       description: |-
         List all regions.
       security:
@@ -39,6 +40,7 @@ paths:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/regionIDParameter'
     get:
+      x-hidden: true
       description: |-
         Get a detailed view of the region.
       security:
@@ -60,6 +62,7 @@ paths:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/regionIDParameter'
     get:
+      x-hidden: true
       description: |-
         Lists all compute flavors.
       security:
@@ -79,6 +82,7 @@ paths:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/regionIDParameter'
     get:
+      x-hidden: true
       description: |-
         Lists all compute images.
       security:
@@ -102,6 +106,7 @@ paths:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/regionIDParameter'
     get:
+      x-hidden: true
       description: Get a list of external networks.
       security:
       - oauth2Authentication: []
@@ -126,6 +131,7 @@ paths:
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
     get:
+      x-hidden: true
       description: Get all identities scoped to an organization.
       security:
       - oauth2Authentication: []
@@ -151,6 +157,7 @@ paths:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/projectIDParameter'
     post:
+      x-hidden: true
       description: Create a new identity in the region.
       security:
       - oauth2Authentication: []
@@ -179,6 +186,7 @@ paths:
     - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/identityIDParameter'
     get:
+      x-hidden: true
       description: Get a single identity.
       security:
       - oauth2Authentication: []
@@ -194,6 +202,7 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
+      x-hidden: true
       description: Delete an identity and any resources associated with it.
       security:
       - oauth2Authentication: []
@@ -218,6 +227,7 @@ paths:
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
     get:
+      x-hidden: true
       description: List networks.
       security:
       - oauth2Authentication: []
@@ -242,6 +252,7 @@ paths:
     - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/identityIDParameter'
     post:
+      x-hidden: true
       description: Create a new network.
       security:
       - oauth2Authentication: []
@@ -269,6 +280,7 @@ paths:
     - $ref: '#/components/parameters/identityIDParameter'
     - $ref: '#/components/parameters/networkIDParameter'
     get:
+      x-hidden: true
       description: Get a physical network.
       security:
       - oauth2Authentication: []
@@ -284,6 +296,7 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
+      x-hidden: true
       description: Delete a new network.
       security:
       - oauth2Authentication: []
@@ -306,6 +319,7 @@ paths:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
     get:
+      x-hidden: true
       description: List security groups.
       security:
       - oauth2Authentication: []
@@ -329,6 +343,7 @@ paths:
     - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/identityIDParameter'
     post:
+      x-hidden: true
       description: Create a new security group.
       security:
       - oauth2Authentication: []
@@ -355,6 +370,7 @@ paths:
     - $ref: '#/components/parameters/identityIDParameter'
     - $ref: '#/components/parameters/securityGroupIDParameter'
     get:
+      x-hidden: true
       description: Get a security group.
       security:
       - oauth2Authentication: []
@@ -370,6 +386,7 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
+      x-hidden: true
       description: Updates a security group.
       security:
       - oauth2Authentication: []
@@ -387,6 +404,7 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
+      x-hidden: true
       description: Delete a security group.
       security:
       - oauth2Authentication: []
@@ -408,6 +426,7 @@ paths:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
     get:
+      x-hidden: true
       description: List servers.
       security:
       - oauth2Authentication: []
@@ -430,6 +449,7 @@ paths:
     - $ref: '#/components/parameters/projectIDParameter'
     - $ref: '#/components/parameters/identityIDParameter'
     post:
+      x-hidden: true
       description: Create a new server.
       security:
       - oauth2Authentication: []
@@ -455,6 +475,7 @@ paths:
     - $ref: '#/components/parameters/identityIDParameter'
     - $ref: '#/components/parameters/serverIDParameter'
     get:
+      x-hidden: true
       description: Get a server.
       security:
       - oauth2Authentication: []
@@ -470,6 +491,7 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
+      x-hidden: true
       description: Update a server.
       security:
       - oauth2Authentication: []
@@ -487,6 +509,7 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
+      x-hidden: true
       description: Delete a server.
       security:
       - oauth2Authentication: []
@@ -510,6 +533,7 @@ paths:
     - $ref: '#/components/parameters/identityIDParameter'
     - $ref: '#/components/parameters/serverIDParameter'
     post:
+      x-hidden: true
       x-no-body: true
       description: Start a server that was previously stopped via the stop endpoint.
       security:
@@ -534,6 +558,7 @@ paths:
     - $ref: '#/components/parameters/identityIDParameter'
     - $ref: '#/components/parameters/serverIDParameter'
     post:
+      x-hidden: true
       x-no-body: true
       description: Stop a running server. The server can be restarted later via the start endpoint.
       security:
@@ -558,6 +583,7 @@ paths:
     - $ref: '#/components/parameters/identityIDParameter'
     - $ref: '#/components/parameters/serverIDParameter'
     post:
+      x-hidden: true
       x-no-body: true
       description: Soft reboot a server.
       security:
@@ -582,6 +608,7 @@ paths:
     - $ref: '#/components/parameters/identityIDParameter'
     - $ref: '#/components/parameters/serverIDParameter'
     post:
+      x-hidden: true
       x-no-body: true
       description: Hard reboot a server.
       security:
@@ -606,6 +633,7 @@ paths:
     - $ref: '#/components/parameters/identityIDParameter'
     - $ref: '#/components/parameters/serverIDParameter'
     get:
+      x-hidden: true
       description: Create a new console session for a server.
       security:
       - oauth2Authentication: []
@@ -630,6 +658,7 @@ paths:
     - $ref: '#/components/parameters/serverIDParameter'
     - $ref: '#/components/parameters/lengthParameter'
     get:
+      x-hidden: true
       description: Get the console output for a server.
       security:
       - oauth2Authentication: []
@@ -651,6 +680,9 @@ paths:
       /24 CIDR range, of which the top /25 is reserved for storage integration.
     get:
       description: List networks.
+      summary: List networks
+      tags:
+      - Networks
       security:
       - oauth2Authentication: []
       parameters:
@@ -671,6 +703,9 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     post:
       description: Create a new network.
+      summary: Create network
+      tags:
+      - Networks
       security:
       - oauth2Authentication: []
       requestBody:
@@ -695,6 +730,9 @@ paths:
     - $ref: '#/components/parameters/networkIDParameter'
     get:
       description: Get a network.
+      summary: Get network
+      tags:
+      - Networks
       security:
       - oauth2Authentication: []
       responses:
@@ -710,6 +748,9 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
       description: Update a network.
+      summary: Update network
+      tags:
+      - Networks
       security:
       - oauth2Authentication: []
       requestBody:
@@ -727,6 +768,9 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       description: Delete a network.
+      summary: Delete network
+      tags:
+      - Networks
       security:
       - oauth2Authentication: []
       responses:
@@ -746,6 +790,9 @@ paths:
       all egress traffic from a server, ingress traffic must be explcitly allowed.
     get:
       description: List security groups.
+      summary: List security groups
+      tags:
+      - Security groups
       security:
       - oauth2Authentication: []
       parameters:
@@ -767,6 +814,9 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     post:
       description: Create a new security group.
+      summary: Create security group
+      tags:
+      - Security groups
       security:
       - oauth2Authentication: []
       requestBody:
@@ -790,6 +840,9 @@ paths:
     - $ref: '#/components/parameters/securityGroupIDParameter'
     get:
       description: Get a security group.
+      summary: Get security group
+      tags:
+      - Security groups
       security:
       - oauth2Authentication: []
       responses:
@@ -805,6 +858,9 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
       description: Update a security group.
+      summary: Update security group
+      tags:
+      - Security groups
       security:
       - oauth2Authentication: []
       requestBody:
@@ -822,6 +878,9 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       description: Delete a security groups.
+      summary: Delete security group
+      tags:
+      - Security groups
       security:
       - oauth2Authentication: []
       responses:
@@ -839,6 +898,7 @@ paths:
     description: |-
       Manages servers.
     get:
+      x-hidden: true
       description: List servers.
       security:
       - oauth2Authentication: []
@@ -860,6 +920,7 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     post:
+      x-hidden: true
       description: Create a new server.
       security:
       - oauth2Authentication: []
@@ -882,6 +943,7 @@ paths:
     parameters:
     - $ref: '#/components/parameters/serverIDParameter'
     get:
+      x-hidden: true
       description: Get a server.
       security:
       - oauth2Authentication: []
@@ -897,6 +959,7 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
+      x-hidden: true
       description: Update a server.
       security:
       - oauth2Authentication: []
@@ -914,6 +977,7 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
+      x-hidden: true
       description: Delete a server.
       security:
       - oauth2Authentication: []
@@ -934,6 +998,7 @@ paths:
     parameters:
     - $ref: '#/components/parameters/serverIDParameter'
     get:
+      x-hidden: true
       description: Retrieve the SSH key for a server.
       security:
       - oauth2Authentication: []
@@ -954,6 +1019,7 @@ paths:
     parameters:
     - $ref: '#/components/parameters/serverIDParameter'
     post:
+      x-hidden: true
       x-no-body: true
       description: Start a server that was previously stopped via the stop endpoint.
       security:
@@ -975,6 +1041,7 @@ paths:
     parameters:
     - $ref: '#/components/parameters/serverIDParameter'
     post:
+      x-hidden: true
       x-no-body: true
       description: Stop a running server. The server can be restarted later via the start endpoint.
       security:
@@ -996,6 +1063,7 @@ paths:
     parameters:
     - $ref: '#/components/parameters/serverIDParameter'
     post:
+      x-hidden: true
       x-no-body: true
       description: Soft reboot a server.
       security:
@@ -1017,6 +1085,7 @@ paths:
     parameters:
     - $ref: '#/components/parameters/serverIDParameter'
     post:
+      x-hidden: true
       x-no-body: true
       description: Hard reboot a server.
       security:
@@ -1038,6 +1107,7 @@ paths:
     parameters:
     - $ref: '#/components/parameters/serverIDParameter'
     get:
+      x-hidden: true
       description: Create a new console session for a server.
       security:
       - oauth2Authentication: []
@@ -1059,6 +1129,7 @@ paths:
     - $ref: '#/components/parameters/serverIDParameter'
     - $ref: '#/components/parameters/lengthParameter'
     get:
+      x-hidden: true
       description: Get the console output for a server.
       security:
       - oauth2Authentication: []
@@ -1078,6 +1149,9 @@ paths:
       Manages project scoped storage. Returns a list of all storage, regardless of type. 
     get:
       description: List storage for project.
+      summary: List file storage
+      tags:
+      - File storage
       security:
       - oauth2Authentication: []
       parameters:
@@ -1098,6 +1172,9 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     post:
       description: Create a new storage.
+      summary: Create file storage
+      tags:
+      - File storage
       security:
       - oauth2Authentication: []
       requestBody:
@@ -1113,13 +1190,16 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
-  /api/v2/storage/filestorage/{filestorageID}:
+  /api/v2/filestorage/{filestorageID}:
     description: |-
       Manages project scoped storage. 
     parameters:
     - $ref: '#/components/parameters/filestorageIDParameter'
     get:
       description: Get all storage information this ID.
+      summary: Get file storage
+      tags:
+      - File storage
       security:
       - oauth2Authentication: []
       responses:
@@ -1135,6 +1215,9 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
       description: Update this storage.
+      summary: Update file storage
+      tags:
+      - File storage
       security:
       - oauth2Authentication: []
       requestBody:
@@ -1152,6 +1235,9 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       description: Delete a storage.
+      summary: Delete file storage
+      tags:
+      - File storage
       security:
       - oauth2Authentication: []
       responses:
@@ -1170,6 +1256,9 @@ paths:
       Lists all available storage classes, detailing supported protocols, capacity limits, and service characteristics. Enables users to discover storage options suitable for their workloads.
     get:
       description: List storage classes.
+      summary: List file storage classes
+      tags:
+      - File storage classes
       security:
       - oauth2Authentication: []
       parameters:
@@ -1644,15 +1733,12 @@ components:
       - regionId
       - prefix
       - dnsNameservers
-      - type
       properties:
         prefix:
           description: An IPv4 prefix for the network.
           type: string
         dnsNameservers:
           $ref: '#/components/schemas/ipv4AddressList'
-        type:
-          $ref: '#/components/schemas/regionType'
         regionId:
           description: The region an identity is provisioned in.
           type: string
@@ -2135,8 +2221,6 @@ components:
     serverStatus:
       description: A server's status.
       type: object
-      required:
-      - phase
       properties:
         phase:
           $ref: '#/components/schemas/instanceLifecyclePhase'

@@ -348,9 +348,6 @@ type NetworkReadSpec struct {
 
 	// RegionId The region an identity is provisioned in.
 	RegionId string `json:"regionId"`
-
-	// Type The region's provider type.
-	Type RegionType `json:"type"`
 }
 
 // NetworkSpecOpenstack An openstack network.
@@ -765,7 +762,7 @@ type ServerSpec struct {
 // ServerStatus A server's status.
 type ServerStatus struct {
 	// Phase The lifecycle phase of an instance.
-	Phase InstanceLifecyclePhase `json:"phase"`
+	Phase *InstanceLifecyclePhase `json:"phase,omitempty"`
 
 	// PrivateIP The private IP address of the server.
 	PrivateIP *string `json:"privateIP,omitempty"`
@@ -1310,6 +1307,9 @@ type PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSer
 // PostApiV2FilestorageJSONRequestBody defines body for PostApiV2Filestorage for application/json ContentType.
 type PostApiV2FilestorageJSONRequestBody = StorageV2Create
 
+// PutApiV2FilestorageFilestorageIDJSONRequestBody defines body for PutApiV2FilestorageFilestorageID for application/json ContentType.
+type PutApiV2FilestorageFilestorageIDJSONRequestBody = StorageV2Update
+
 // PostApiV2NetworksJSONRequestBody defines body for PostApiV2Networks for application/json ContentType.
 type PostApiV2NetworksJSONRequestBody = NetworkV2Create
 
@@ -1327,6 +1327,3 @@ type PostApiV2ServersJSONRequestBody = ServerV2Create
 
 // PutApiV2ServersServerIDJSONRequestBody defines body for PutApiV2ServersServerID for application/json ContentType.
 type PutApiV2ServersServerIDJSONRequestBody = ServerV2Update
-
-// PutApiV2StorageFilestorageFilestorageIDJSONRequestBody defines body for PutApiV2StorageFilestorageFilestorageID for application/json ContentType.
-type PutApiV2StorageFilestorageFilestorageIDJSONRequestBody = StorageV2Update
