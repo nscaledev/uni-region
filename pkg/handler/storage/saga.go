@@ -20,6 +20,7 @@ import (
 	"context"
 	"strconv"
 
+	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
@@ -129,8 +130,13 @@ func (s *createSaga) validateRegion(ctx context.Context, regionID string) error 
 }
 
 func (s *createSaga) validateStorageClass(ctx context.Context, storageClassID string) error {
-	if _, err := s.client.GetStorageClass(ctx, storageClassID); err != nil {
+	sc, err := s.client.GetStorageClass(ctx, storageClassID)
+	if err != nil {
 		return err
+	}
+
+	if sc.Spec.RegionId != s.request.Spec.RegionId {
+		return errors.OAuth2ServerError("storage class not available in region").WithError(err)
 	}
 
 	return nil
@@ -140,11 +146,16 @@ func (s *createSaga) validateNetworks(ctx context.Context, networkIDs []string) 
 	networkClient := network.New(s.client.client, s.client.namespace, s.client.identity)
 
 	for _, id := range networkIDs {
-		if _, err := networkClient.GetV2(ctx, id); err != nil {
+		network, err := networkClient.GetV2(ctx, id)
+		if err != nil {
 			return errors.
 				OAuth2ServerError("network attachment not found").
 				WithError(err).
 				WithValues("networkID", id)
+		}
+
+		if network.Metadata.ProjectId != s.request.Spec.ProjectId {
+			return errors.OAuth2ServerError("network not available in project").WithError(err)
 		}
 	}
 
@@ -169,6 +180,27 @@ func newUpdateSaga(client *Client, organizationID, regionID string, current, upd
 	}
 }
 
+func (s *updateSaga) validateRequest(ctx context.Context) error {
+	networkClient := network.New(s.client.client, s.client.namespace, s.client.identity)
+
+	for _, attachment := range s.updated.Spec.Attachments {
+		network, err := networkClient.GetV2(ctx, attachment.NetworkID)
+		if err != nil {
+			return errors.
+				OAuth2ServerError("network attachment not found").
+				WithError(err).
+				WithValues("networkID", attachment.NetworkID)
+		}
+
+		projectID := s.current.Labels[coreconstants.ProjectLabel]
+		if network.Metadata.ProjectId != projectID {
+			return errors.OAuth2ServerError("network not available in project").WithError(err)
+		}
+	}
+
+	return nil
+}
+
 func (s *updateSaga) updateAllocation(ctx context.Context) error {
 	required := s.client.generateAllocation(s.updated.Spec.Size.Size())
 
@@ -191,6 +223,7 @@ func (s *updateSaga) updateStorage(ctx context.Context) error {
 
 func (s *updateSaga) Actions() []saga.Action {
 	return []saga.Action{
+		saga.NewAction("validate request", s.validateRequest, nil),
 		saga.NewAction("update quota allocation", s.updateAllocation, s.revertAllocation),
 		saga.NewAction("update storage", s.updateStorage, nil),
 	}
