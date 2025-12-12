@@ -32,6 +32,8 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	filedriver "github.com/unikorn-cloud/region/pkg/file-storage/provisioners/driver"
+	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
@@ -61,7 +63,8 @@ func New(client client.Client, namespace string, identity identityapi.ClientWith
 	}
 }
 
-func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
+func convertV2(in *regionv1.FileStorage, fsdetails ...*types.FileStorageDetails) *openapi.StorageV2Read {
+	used := fsdetails[0].UsedCapacity.String()
 	return &openapi.StorageV2Read{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.StorageV2Spec{
@@ -72,6 +75,10 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 		Status: openapi.StorageV2Status{
 			RegionId:       in.Labels[constants.RegionLabel],
 			StorageClassId: in.Spec.StorageClassID,
+			Usage: openapi.StorageUsageV2Spec{
+				Used:     &used,
+				Capacity: fsdetails[0].Size.String(),
+			},
 		},
 	}
 }
@@ -274,6 +281,20 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	projectID := current.Labels[coreconstants.ProjectLabel]
 	regionID := current.Labels[constants.RegionLabel]
 
+	// schristoff: fix
+	fcdriver, err := filedriver.New(ctx, c.client, &regionv1.FileStorageProvisioner{})
+	if err != nil {
+		return nil, err
+	}
+	storagedetails, err := fcdriver.GetDetails(ctx, projectID, storageID)
+	if err != nil {
+		return nil, err
+	}
+
+	if request.Spec.Size >= storagedetails.UsedCapacity.String() {
+		return nil, err
+	}
+
 	required, err := c.generateV2(ctx, organizationID, projectID, regionID, request)
 	if err != nil {
 		return nil, err
@@ -289,7 +310,7 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 		return nil, err
 	}
 
-	return convertV2(updated), nil
+	return convertV2(updated, storagedetails), nil
 }
 
 // Delete satisfies the http DELETE action by removing the client.
