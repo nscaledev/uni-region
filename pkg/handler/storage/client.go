@@ -86,6 +86,7 @@ func checkRegionNFS(in *regionv1.NFS) *openapi.NFSV2Spec {
 			RootSquash: true,
 		}
 	}
+
 	return &openapi.NFSV2Spec{
 		RootSquash: in.RootSquash,
 	}
