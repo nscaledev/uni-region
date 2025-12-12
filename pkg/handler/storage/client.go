@@ -65,15 +65,41 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 	return &openapi.StorageV2Read{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.StorageV2Spec{
-			Attachments: &openapi.StorageAttachmentV2Spec{},
-			StorageType: openapi.StorageTypeV2Spec{},
-			Size:        in.Spec.Size.String(),
+			Attachments: &openapi.StorageAttachmentV2Spec{
+				NetworkIDs: convertAttachmentsList(in.Spec.Attachments),
+			},
+			StorageType: openapi.StorageTypeV2Spec{
+				NFS: checkRegionNFS(in.Spec.NFS),
+			},
+			Size: in.Spec.Size.String(),
 		},
 		Status: openapi.StorageV2Status{
 			RegionId:       in.Labels[constants.RegionLabel],
 			StorageClassId: in.Spec.StorageClassID,
 		},
 	}
+}
+
+func checkRegionNFS(in *regionv1.NFS) *openapi.NFSV2Spec {
+	if in == nil {
+		return &openapi.NFSV2Spec{
+			RootSquash: true,
+		}
+	}
+
+	return &openapi.NFSV2Spec{
+		RootSquash: in.RootSquash,
+	}
+}
+
+func convertAttachmentsList(in []regionv1.Attachment) openapi.NetworkIDList {
+	out := make(openapi.NetworkIDList, len(in))
+
+	for i := range in {
+		out[i] = in[i].NetworkID
+	}
+
+	return out
 }
 
 // ListV2 satisfies an http get to return all storage items within a project.
@@ -183,6 +209,9 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 			Tags:        conversion.GenerateTagList(request.Metadata.Tags),
 			Size:        *size,
 			Attachments: generateAttachmentList(request.Spec.Attachments),
+			NFS: &regionv1.NFS{
+				RootSquash: checkRootSquash(request.Spec.StorageType.NFS),
+			},
 		},
 	}
 
@@ -197,6 +226,16 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 	}
 
 	return out, nil
+}
+
+// checkRootSquash sets the Rootsquash bool, defaults to true
+// this is only called on 'generates'.
+func checkRootSquash(nfs *openapi.NFSV2Spec) bool {
+	if nfs != nil {
+		return nfs.RootSquash
+	}
+
+	return true
 }
 
 func generateAttachmentList(in *openapi.StorageAttachmentV2Spec) []regionv1.Attachment {
