@@ -167,7 +167,7 @@ func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2R
 	return convertV2(result), nil
 }
 
-func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.StorageV2Update) (*regionv1.FileStorage, error) {
+func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.StorageV2Update, storageClassID string) (*regionv1.FileStorage, error) {
 	size, err := convertSize(request.Spec.Size)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("unable to convert size to resource.Quantity").WithError(err)
@@ -180,9 +180,10 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 			WithLabel(constants.RegionLabel, regionID).
 			Get(),
 		Spec: regionv1.FileStorageSpec{
-			Tags:        conversion.GenerateTagList(request.Metadata.Tags),
-			Size:        *size,
-			Attachments: generateAttachmentList(request.Spec.Attachments),
+			Tags:           conversion.GenerateTagList(request.Metadata.Tags),
+			Size:           *size,
+			Attachments:    generateAttachmentList(request.Spec.Attachments),
+			StorageClassID: storageClassID,
 		},
 	}
 
@@ -274,7 +275,7 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	projectID := current.Labels[coreconstants.ProjectLabel]
 	regionID := current.Labels[constants.RegionLabel]
 
-	required, err := c.generateV2(ctx, organizationID, projectID, regionID, request)
+	required, err := c.generateV2(ctx, organizationID, projectID, regionID, request, current.Spec.StorageClassID)
 	if err != nil {
 		return nil, err
 	}
