@@ -248,7 +248,7 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 	}
 
 	if len(result) == 0 {
-		return nil, ErrNotFound
+		return nil, errors.ErrResourceNotFound
 	}
 
 	if len(result) > 1 {

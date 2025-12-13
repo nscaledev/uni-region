@@ -19,7 +19,6 @@ package openstack
 
 import (
 	"context"
-	goerrors "errors"
 	"fmt"
 	"slices"
 	"time"
@@ -44,10 +43,6 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 
 	"k8s.io/utils/ptr"
-)
-
-var (
-	ErrNotFound = goerrors.New("resource not found")
 )
 
 // NetworkClient wraps the generic client because gophercloud is unsafe.
@@ -187,7 +182,7 @@ func (c *NetworkClient) GetNetwork(ctx context.Context, network *unikornv1.Netwo
 	}
 
 	if len(result) == 0 {
-		return nil, ErrNotFound
+		return nil, errors.ErrResourceNotFound
 	}
 
 	if len(result) > 1 {
@@ -262,7 +257,7 @@ func (c *NetworkClient) GetSubnet(ctx context.Context, network *unikornv1.Networ
 	}
 
 	if len(result) == 0 {
-		return nil, ErrNotFound
+		return nil, errors.ErrResourceNotFound
 	}
 
 	if len(result) > 1 {
@@ -349,7 +344,7 @@ func (c *NetworkClient) GetRouter(ctx context.Context, network *unikornv1.Networ
 	}
 
 	if len(result) == 0 {
-		return nil, ErrNotFound
+		return nil, errors.ErrResourceNotFound
 	}
 
 	if len(result) > 1 {
@@ -445,7 +440,7 @@ func (c *NetworkClient) GetSecurityGroup(ctx context.Context, securityGroup *uni
 	}
 
 	if len(result) == 0 {
-		return nil, ErrNotFound
+		return nil, errors.ErrResourceNotFound
 	}
 
 	if len(result) > 1 {
@@ -560,7 +555,7 @@ func (c *NetworkClient) GetFloatingIP(ctx context.Context, portID string) (*floa
 	}
 
 	if len(result) == 0 {
-		return nil, ErrNotFound
+		return nil, errors.ErrResourceNotFound
 	}
 
 	if len(result) > 1 {
@@ -678,7 +673,7 @@ func (c *NetworkClient) GetServerPort(ctx context.Context, server *unikornv1.Ser
 	}
 
 	if len(result) == 0 {
-		return nil, ErrNotFound
+		return nil, errors.ErrResourceNotFound
 	}
 
 	if len(result) > 1 {
