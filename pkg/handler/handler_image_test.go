@@ -32,7 +32,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	idopenapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/handler/image"
 	"github.com/unikorn-cloud/region/pkg/handler/image/mock"
@@ -47,6 +47,7 @@ const (
 	testNamespace      = "test-ns"
 	testOrganizationID = "3d84f1f2-4a41-44d5-98ab-8b282d00abb9"
 	testRegionID       = "test-region"
+	testAllocationID   = "01d6c2e9-912d-40ab-9b9a-e0aee1df48f1"
 )
 
 // expectedReaderBytes creates a gomock matcher that compares reader contents.
@@ -62,11 +63,11 @@ func expectedReaderBytes(content []byte) gomock.Matcher {
 }
 
 // newTestImageHandler creates an ImageHandler with a mock provider injected.
-func newTestImageHandler(t *testing.T, mockProvider *mock.MockProvider) *ImageHandler {
+func newTestImageHandler(t *testing.T, mockAllocationClient image.AllocationClient, mockProvider *mock.MockProvider) *ImageHandler {
 	t.Helper()
 
 	c := fake.NewClientBuilder().Build()
-	handler := NewImageHandler(c, testNamespace, &Options{ImageUploadSizeLimit: 10 << 30})
+	handler := NewImageHandler(c, testNamespace, &Options{ImageUploadSizeLimit: 10 << 30}, mockAllocationClient)
 
 	// Inject the mock provider
 	handler.getProvider = func(context.Context, client.Client, string, string) (image.Provider, error) {
@@ -79,9 +80,9 @@ func newTestImageHandler(t *testing.T, mockProvider *mock.MockProvider) *ImageHa
 func contextWithImagePermissions(t *testing.T) context.Context {
 	t.Helper()
 
-	return rbac.NewContext(t.Context(), &idopenapi.Acl{
-		Global: &idopenapi.AclEndpoints{
-			idopenapi.AclEndpoint{Name: "region:images", Operations: []idopenapi.AclOperation{"create", "read", "delete"}},
+	return rbac.NewContext(t.Context(), &identityapi.Acl{
+		Global: &identityapi.AclEndpoints{
+			identityapi.AclEndpoint{Name: "region:images", Operations: []identityapi.AclOperation{"create", "read", "delete"}},
 		},
 	})
 }
@@ -138,12 +139,14 @@ func TestImageHandler_List_Active(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
+	mockAllocationClient := mock.NewTestMockAllocationClient(t)
+
 	mockProvider := mock.NewMockProvider(mockCtrl)
 	mockProvider.EXPECT().ListImages(gomock.Any(), testOrganizationID).Return(
 		append(inactiveImages, activeImage), nil,
 	)
 
-	handler := newTestImageHandler(t, mockProvider)
+	handler := newTestImageHandler(t, mockAllocationClient, mockProvider)
 
 	u := fmt.Sprintf("/api/v1/organizations/%s/regions/%s/images", testOrganizationID, testRegionID)
 	req := httptest.NewRequest(http.MethodGet, u, nil)
@@ -159,6 +162,25 @@ func TestImageHandler_List_Active(t *testing.T) {
 	requireParseJSON(t, res.Result().Body, &response)
 	require.Len(t, response, 1)
 	assert.Equal(t, "good", response[0].Metadata.Name)
+}
+
+func setupMockAllocationClient(t *testing.T) image.AllocationClient {
+	t.Helper()
+
+	mockAllocationClient := mock.NewTestMockAllocationClient(t)
+
+	resourceAllocations := identityapi.ResourceAllocationList{
+		{
+			Kind:      "images",
+			Committed: 1,
+		},
+	}
+
+	mockAllocationClient.EXPECT().
+		OrganizationScopedCreateRaw(gomock.Any(), testOrganizationID, gomock.Regex(`images\.region\.unikorn-cloud\.org\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}`), resourceAllocations).
+		Return(testAllocationID, nil)
+
+	return mockAllocationClient
 }
 
 func TestImageHandler_Fetch_Good(t *testing.T) {
@@ -188,6 +210,8 @@ func TestImageHandler_Fetch_Good(t *testing.T) {
 			mockCtrl := gomock.NewController(t)
 			defer mockCtrl.Finish()
 
+			mockIdentity := setupMockAllocationClient(t)
+
 			mockProvider := mock.NewMockProvider(mockCtrl)
 
 			providerImage := mock.NewTestProviderImage(types.ImageStatusPending)
@@ -205,7 +229,7 @@ func TestImageHandler_Fetch_Good(t *testing.T) {
 					return nil
 				}) // i.e., no error
 
-			handler := newTestImageHandler(t, mockProvider)
+			handler := newTestImageHandler(t, mockIdentity, mockProvider)
 
 			responseBody := testcase.responseFunc(t)
 			serverCalled := make(chan error)

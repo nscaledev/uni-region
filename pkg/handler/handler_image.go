@@ -31,23 +31,30 @@ import (
 )
 
 type ImageHandler struct {
-	client      client.Client
-	namespace   string
-	options     *Options
-	getProvider image.GetProviderFunc
+	client           client.Client
+	namespace        string
+	options          *Options
+	allocationClient image.AllocationClient
+	getProvider      image.GetProviderFunc
 }
 
-func NewImageHandler(client client.Client, namespace string, options *Options) *ImageHandler {
+func NewImageHandler(client client.Client, namespace string, options *Options, allocationClient image.AllocationClient) *ImageHandler {
 	return &ImageHandler{
-		client:      client,
-		namespace:   namespace,
-		options:     options,
-		getProvider: image.DefaultGetProvider,
+		client:           client,
+		namespace:        namespace,
+		options:          options,
+		allocationClient: allocationClient,
+		getProvider:      image.DefaultGetProvider,
 	}
 }
 
 func (h *ImageHandler) imageClient() *image.Client {
-	return image.NewClient(h.client, h.namespace, h.getProvider)
+	return image.NewClient(
+		h.client,
+		h.namespace,
+		h.allocationClient,
+		h.getProvider,
+	)
 }
 
 func (h *ImageHandler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {

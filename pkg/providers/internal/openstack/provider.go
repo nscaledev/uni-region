@@ -83,6 +83,8 @@ const (
 
 	organizationIDLabel = "unikorn:organization:id"
 	dataSourceLabel     = "unikorn:data_source"
+	generatedIDLabel    = "unikorn:generated_id"
+	allocationIDLabel   = "unikorn:allocation_id"
 
 	containerFormatBare = "bare" // there's no const in gophercloud for this, so we have our own.
 )
@@ -615,6 +617,16 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 		organizationID = &temp
 	}
 
+	var allocationID *string
+	if temp, _ := image.Properties[allocationIDLabel].(string); temp != "" {
+		allocationID = &temp
+	}
+
+	var generateID *string
+	if temp, _ := image.Properties[generatedIDLabel].(string); temp != "" {
+		generateID = &temp
+	}
+
 	size := image.MinDiskGigabytes
 
 	if size == 0 {
@@ -630,6 +642,8 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 		ID:             image.ID,
 		Name:           image.Name,
 		OrganizationID: organizationID,
+		AllocationID:   allocationID,
+		GeneratedID:    generateID,
 		Created:        image.CreatedAt,
 		Modified:       image.UpdatedAt,
 		SizeGiB:        size,
@@ -802,6 +816,18 @@ func (p *Provider) createImageMetadata(image *types.Image) (map[string]string, e
 	metadata[virtualizationLabel] = string(image.Virtualization)
 	setIfNotNil(metadata, organizationIDLabel, image.OrganizationID)
 	metadata[dataSourceLabel] = string(image.DataSource)
+
+	if image.AllocationID == nil {
+		return nil, fmt.Errorf("%w: allocation ID must be defined for new images", ErrKeyUndefined)
+	}
+
+	metadata[allocationIDLabel] = *image.AllocationID
+
+	if image.GeneratedID == nil {
+		return nil, fmt.Errorf("%w: generated ID must be defined for new images", ErrKeyUndefined)
+	}
+
+	metadata[generatedIDLabel] = *image.GeneratedID
 
 	return metadata, nil
 }
