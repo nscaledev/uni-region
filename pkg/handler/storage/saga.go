@@ -136,7 +136,7 @@ func (s *createSaga) validateStorageClass(ctx context.Context, storageClassID st
 	}
 
 	if sc.Spec.RegionId != s.request.Spec.RegionId {
-		return errors.OAuth2ServerError("storage class not available in region").WithError(err)
+		return errors.OAuth2InvalidRequest("storage class not available in region").WithError(err)
 	}
 
 	return nil
@@ -155,7 +155,7 @@ func (s *createSaga) validateNetworks(ctx context.Context, networkIDs []string) 
 		}
 
 		if network.Metadata.ProjectId != s.request.Spec.ProjectId {
-			return errors.OAuth2ServerError("network not available in project").WithError(err)
+			return errors.OAuth2InvalidRequest("network not available in project").WithError(err)
 		}
 	}
 
@@ -187,14 +187,14 @@ func (s *updateSaga) validateRequest(ctx context.Context) error {
 		network, err := networkClient.GetV2(ctx, attachment.NetworkID)
 		if err != nil {
 			return errors.
-				OAuth2ServerError("network attachment not found").
+				OAuth2InvalidRequest("network attachment not found").
 				WithError(err).
 				WithValues("networkID", attachment.NetworkID)
 		}
 
 		projectID := s.current.Labels[coreconstants.ProjectLabel]
 		if network.Metadata.ProjectId != projectID {
-			return errors.OAuth2ServerError("network not available in project").WithError(err)
+			return errors.OAuth2InvalidRequest("network not available in project").WithError(err)
 		}
 	}
 
