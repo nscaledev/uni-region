@@ -18,6 +18,7 @@ limitations under the License.
 package storage
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -25,6 +26,9 @@ import (
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	corev1 "github.com/unikorn-cloud/core/pkg/openapi"
+	identityauth "github.com/unikorn-cloud/identity/pkg/middleware/authorization"
+	identityopenapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	"github.com/unikorn-cloud/identity/pkg/principal"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -389,4 +393,180 @@ func TestConvertProtocols(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestGenerateV2(t *testing.T) {
+	t.Parallel()
+
+	inputBuilder := &generateV2InputBuilder{}
+
+	tests := []struct {
+		name  string
+		input *generateV2Input
+		want  *regionv1.FileStorage
+	}{
+		{
+			name:  "generate FileStorage",
+			input: inputBuilder.Default().Run(),
+			want: &regionv1.FileStorage{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Labels: map[string]string{
+						constants.RegionLabel:                    "reg-1",
+						coreconstants.NameLabel:                  "test-filestorage",
+						coreconstants.OrganizationLabel:          "org-1",
+						coreconstants.ProjectLabel:               "proj-1",
+						coreconstants.OrganizationPrincipalLabel: "org-1",
+						coreconstants.ProjectPrincipalLabel:      "proj-1",
+					},
+					Annotations: map[string]string{
+						coreconstants.CreatorAnnotation:          "user-1",
+						coreconstants.CreatorPrincipalAnnotation: "actor@example.com",
+					},
+				},
+				Spec: regionv1.FileStorageSpec{
+					Size:           resource.MustParse("10Gi"),
+					StorageClassID: "sc-1",
+					Attachments:    []regionv1.Attachment{{NetworkID: "net-1"}},
+					NFS: &regionv1.NFS{
+						RootSquash: true,
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			client, ctx := newClientAndContext(t, &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
+
+			got, err := client.generateV2(ctx, tt.input.organizationID, tt.input.projectID, tt.input.regionID, tt.input.request, tt.input.storageClassID)
+
+			require.NoError(t, err)
+			require.NotNil(t, got)
+
+			// Name is dynamically generated; just assert it's present, then ignore it.
+			require.NotEmpty(t, got.Name)
+			got.Name = ""
+
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestGenerateV2Validations(t *testing.T) {
+	t.Parallel()
+
+	inputBuilder := &generateV2InputBuilder{}
+
+	tests := []struct {
+		name          string
+		input         *generateV2Input
+		principal     *principal.Principal
+		authorization *identityauth.Info
+		want          string
+	}{
+		{
+			name:          "invalid size",
+			input:         inputBuilder.WithSize("invalid").Run(),
+			principal:     &principal.Principal{Actor: "actor@example.com"},
+			authorization: &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}},
+			want:          "unable to convert size to resource.Quantity",
+		},
+		{
+			name:          "missing principal",
+			input:         inputBuilder.Default().Run(),
+			authorization: &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}},
+			want:          "unable to set principal information",
+		},
+		{
+			name:      "missing authorization",
+			input:     inputBuilder.Default().Run(),
+			principal: &principal.Principal{Actor: "actor@example.com"},
+			want:      "failed to set identity metadata",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c, ctx := newClientAndContext(t, tt.authorization, tt.principal)
+
+			got, err := c.generateV2(ctx, tt.input.organizationID, tt.input.projectID, tt.input.regionID, tt.input.request, tt.input.storageClassID)
+
+			require.Nil(t, got)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.want)
+		})
+	}
+}
+
+type generateV2Input struct {
+	organizationID string
+	projectID      string
+	regionID       string
+	storageClassID string
+	request        *openapi.StorageV2Update
+}
+
+type generateV2InputBuilder struct {
+	input *generateV2Input
+}
+
+func newDefaultGenerateV2Input() *generateV2Input {
+	return &generateV2Input{
+		organizationID: "org-1",
+		projectID:      "proj-1",
+		regionID:       "reg-1",
+		storageClassID: "sc-1",
+		request: &openapi.StorageV2Update{
+			Metadata: corev1.ResourceWriteMetadata{
+				Name: "test-filestorage",
+			},
+			Spec: openapi.StorageV2Spec{
+				Size:        "10Gi",
+				Attachments: &openapi.StorageAttachmentV2Spec{NetworkIDs: openapi.NetworkIDList{"net-1"}},
+			},
+		},
+	}
+}
+
+func (b *generateV2InputBuilder) Default() *generateV2InputBuilder {
+	b.input = newDefaultGenerateV2Input()
+
+	return b
+}
+
+func (b *generateV2InputBuilder) WithSize(size string) *generateV2InputBuilder {
+	if b.input == nil {
+		b.input = newDefaultGenerateV2Input()
+	}
+
+	b.input.request.Spec.Size = size
+
+	return b
+}
+
+func (b *generateV2InputBuilder) Run() *generateV2Input {
+	return b.input
+}
+
+func newClientAndContext(t *testing.T, auth *identityauth.Info, principalInfo *principal.Principal) (*Client, context.Context) {
+	t.Helper()
+
+	client := &Client{namespace: "default"}
+	ctx := t.Context()
+
+	if auth != nil {
+		ctx = identityauth.NewContext(ctx, auth)
+	}
+
+	if principalInfo != nil {
+		ctx = principal.NewContext(ctx, principalInfo)
+	}
+
+	return client, ctx
 }

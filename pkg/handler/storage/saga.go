@@ -109,7 +109,7 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 		return err
 	}
 
-	filestorage, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId, updateRequest)
+	filestorage, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId, updateRequest, s.request.Spec.StorageClassId)
 	if err != nil {
 		return err
 	}
