@@ -493,16 +493,7 @@ func TestGenerateV2Validations(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			c := &Client{namespace: "default"}
-			ctx := t.Context()
-
-			if tt.authorization != nil {
-				ctx = identityauth.NewContext(ctx, tt.authorization)
-			}
-
-			if tt.principal != nil {
-				ctx = principal.NewContext(ctx, tt.principal)
-			}
+			c, ctx := newClientAndContext(t, tt.authorization, tt.principal)
 
 			got, err := c.generateV2(ctx, tt.input.organizationID, tt.input.projectID, tt.input.regionID, tt.input.request, tt.input.storageClassID)
 
