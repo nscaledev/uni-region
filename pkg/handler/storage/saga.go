@@ -64,7 +64,9 @@ func (c *Client) generateAllocation(size int64) identityapi.ResourceAllocationLi
 }
 
 func (s *createSaga) createAllocation(ctx context.Context) error {
-	required := s.client.generateAllocation(s.request.Spec.SizeGiB)
+	// We want to preserve that all sizes stored in k8s is in bytes
+	quantity := gibToQuantity(s.request.Spec.SizeGiB)
+	required := s.client.generateAllocation(quantity.Value())
 
 	return identityclient.NewAllocations(s.client.client, s.client.identity).Create(ctx, s.filestorage, required)
 }

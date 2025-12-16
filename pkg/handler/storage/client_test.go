@@ -167,7 +167,7 @@ func TestConvertV2List(t *testing.T) {
 							NFS: &regionv1.NFS{
 								RootSquash: true,
 							},
-							Size: *convertSize(100),
+							Size: *gibToQuantity(int64(100)),
 							Attachments: []regionv1.Attachment{
 								{
 									NetworkID: "net-1",
@@ -248,7 +248,7 @@ func TestConvertV2(t *testing.T) {
 					},
 				},
 				Spec: regionv1.FileStorageSpec{
-					Size: *convertSize(int64(2)),
+					Size: *gibToQuantity(int64(2)),
 					NFS: &regionv1.NFS{
 						RootSquash: true,
 					},
@@ -312,7 +312,7 @@ func TestConvertV2SizeConversion(t *testing.T) {
 					},
 				},
 				Spec: regionv1.FileStorageSpec{
-					Size: *convertSize(int64(2)),
+					Size: *gibToQuantity(int64(2)),
 					NFS: &regionv1.NFS{
 						RootSquash: true,
 					},

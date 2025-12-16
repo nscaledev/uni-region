@@ -71,7 +71,7 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 			StorageType: openapi.StorageTypeV2Spec{
 				NFS: checkRegionNFS(in.Spec.NFS),
 			},
-			SizeGiB: (in.Spec.Size.Value() / (1 << 30)),
+			SizeGiB: quantityToSizeGiB(in.Spec.Size),
 		},
 		Status: openapi.StorageV2Status{
 			RegionId:       in.Labels[constants.RegionLabel],
@@ -202,7 +202,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 			Get(),
 		Spec: regionv1.FileStorageSpec{
 			Tags:        conversion.GenerateTagList(request.Metadata.Tags),
-			Size:        *convertSize(request.Spec.SizeGiB),
+			Size:        *gibToQuantity(request.Spec.SizeGiB),
 			Attachments: generateAttachmentList(request.Spec.Attachments),
 			NFS: &regionv1.NFS{
 				RootSquash: checkRootSquash(request.Spec.StorageType.NFS),
@@ -243,10 +243,6 @@ func generateAttachmentList(in *openapi.StorageAttachmentV2Spec) []regionv1.Atta
 	}
 
 	return out
-}
-
-func convertSize(size int64) *resource.Quantity {
-	return resource.NewQuantity((size * (1 << 30)), resource.BinarySI)
 }
 
 func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.StorageV2Update, error) {
@@ -422,4 +418,12 @@ func convertProtocols(in []regionv1.Protocol) []openapi.StorageClassProtocolType
 	}
 
 	return out
+}
+
+func quantityToSizeGiB(quantity resource.Quantity) int64 {
+	return (quantity.Value() / (1 << 30))
+}
+
+func gibToQuantity(size int64) *resource.Quantity {
+	return resource.NewQuantity((size * (1 << 30)), resource.BinarySI)
 }
