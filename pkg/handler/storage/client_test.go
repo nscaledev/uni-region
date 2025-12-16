@@ -119,8 +119,10 @@ func TestConvertV2List(t *testing.T) {
 					},
 
 					Spec: openapi.StorageV2Spec{
-						SizeGiB:     0,
-						Attachments: &openapi.StorageAttachmentV2Spec{},
+						SizeGiB: 0,
+						Attachments: &openapi.StorageAttachmentV2Spec{
+							NetworkIDs: []string{},
+						},
 						StorageType: openapi.StorageTypeV2Spec{
 							NFS: &openapi.NFSV2Spec{
 								RootSquash: true,
@@ -165,7 +167,7 @@ func TestConvertV2List(t *testing.T) {
 							NFS: &regionv1.NFS{
 								RootSquash: true,
 							},
-							Size: *resource.NewQuantity(int64(100), resource.BinarySI),
+							Size: *convertSize(100),
 							Attachments: []regionv1.Attachment{
 								{
 									NetworkID: "net-1",
@@ -231,7 +233,7 @@ func TestConvertV2(t *testing.T) {
 		want  *openapi.StorageV2Read
 	}{
 		{
-			name: "test with zero values",
+			name: "test with limited values",
 			input: &regionv1.FileStorage{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "FileStorage",
@@ -245,6 +247,7 @@ func TestConvertV2(t *testing.T) {
 					},
 				},
 				Spec: regionv1.FileStorageSpec{
+					Size: *convertSize(int64(2)),
 					NFS: &regionv1.NFS{
 						RootSquash: true,
 					},
@@ -257,7 +260,7 @@ func TestConvertV2(t *testing.T) {
 					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
 				},
 				Spec: openapi.StorageV2Spec{
-					SizeGiB: 0,
+					SizeGiB: 2,
 					Attachments: &openapi.StorageAttachmentV2Spec{
 						NetworkIDs: []string{},
 					},
@@ -278,6 +281,11 @@ func TestConvertV2(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
+			// Check that convertV2 is giving us bytes
+			// if what we want is 2GiB on the other end
+			if tt.want.Spec.SizeGiB == 2 {
+				require.Equal(t, int64(2147483648), tt.input.Spec.Size.Value())
+			}
 			got := convertV2(tt.input)
 			require.Equal(t, tt.want, got)
 		})
@@ -423,7 +431,7 @@ func TestGenerateV2(t *testing.T) {
 					},
 				},
 				Spec: regionv1.FileStorageSpec{
-					Size:           resource.MustParse("10Gi"),
+					Size:           *resource.NewQuantity(int64(10737418240), resource.BinarySI),
 					StorageClassID: "sc-1",
 					Attachments:    []regionv1.Attachment{{NetworkID: "net-1"}},
 					NFS: &regionv1.NFS{
@@ -466,13 +474,6 @@ func TestGenerateV2Validations(t *testing.T) {
 		authorization *identityauth.Info
 		want          string
 	}{
-		{
-			name:          "invalid size",
-			input:         inputBuilder.WithSize(-1).Run(),
-			principal:     &principal.Principal{Actor: "actor@example.com"},
-			authorization: &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}},
-			want:          "unable to convert size to resource.Quantity",
-		},
 		{
 			name:          "missing principal",
 			input:         inputBuilder.Default().Run(),
