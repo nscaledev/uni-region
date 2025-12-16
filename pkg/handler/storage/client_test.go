@@ -281,11 +281,71 @@ func TestConvertV2(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			// Check that convertV2 is giving us bytes
-			// if what we want is 2GiB on the other end
-			if tt.want.Spec.SizeGiB == 2 {
-				require.Equal(t, int64(2147483648), tt.input.Spec.Size.Value())
-			}
+			got := convertV2(tt.input)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestConvertV2SizeConversion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input *regionv1.FileStorage
+		want  *openapi.StorageV2Read
+	}{
+		{
+			name: "test with limited values",
+			input: &regionv1.FileStorage{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "FileStorage",
+					APIVersion: "v1alpha1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "",
+					Namespace: "default",
+					Labels: map[string]string{
+						"app": "mock",
+					},
+				},
+				Spec: regionv1.FileStorageSpec{
+					Size: *convertSize(int64(2)),
+					NFS: &regionv1.NFS{
+						RootSquash: true,
+					},
+					Attachments: []regionv1.Attachment{},
+				},
+			},
+			want: &openapi.StorageV2Read{
+				Metadata: corev1.ProjectScopedResourceReadMetadata{
+					HealthStatus:       corev1.ResourceHealthStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+				},
+				Spec: openapi.StorageV2Spec{
+					SizeGiB: 2,
+					Attachments: &openapi.StorageAttachmentV2Spec{
+						NetworkIDs: []string{},
+					},
+					StorageType: openapi.StorageTypeV2Spec{
+						NFS: &openapi.NFSV2Spec{
+							RootSquash: true,
+						},
+					},
+				},
+				Status: openapi.StorageV2Status{
+					Usage: openapi.StorageUsageV2Spec{},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, int64(2147483648), tt.input.Spec.Size.Value())
+
 			got := convertV2(tt.input)
 			require.Equal(t, tt.want, got)
 		})
