@@ -119,10 +119,8 @@ func TestConvertV2List(t *testing.T) {
 					},
 
 					Spec: openapi.StorageV2Spec{
-						Size: "0",
-						Attachments: &openapi.StorageAttachmentV2Spec{
-							NetworkIDs: []string{},
-						},
+						SizeGiB:     0,
+						Attachments: &openapi.StorageAttachmentV2Spec{},
 						StorageType: openapi.StorageTypeV2Spec{
 							NFS: &openapi.NFSV2Spec{
 								RootSquash: true,
@@ -188,7 +186,7 @@ func TestConvertV2List(t *testing.T) {
 					},
 
 					Spec: openapi.StorageV2Spec{
-						Size: "100",
+						SizeGiB: 100,
 						Attachments: &openapi.StorageAttachmentV2Spec{
 							NetworkIDs: []string{"net-1"},
 						},
@@ -259,7 +257,7 @@ func TestConvertV2(t *testing.T) {
 					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
 				},
 				Spec: openapi.StorageV2Spec{
-					Size: "0",
+					SizeGiB: 0,
 					Attachments: &openapi.StorageAttachmentV2Spec{
 						NetworkIDs: []string{},
 					},
@@ -470,7 +468,7 @@ func TestGenerateV2Validations(t *testing.T) {
 	}{
 		{
 			name:          "invalid size",
-			input:         inputBuilder.WithSize("invalid").Run(),
+			input:         inputBuilder.WithSize(-1).Run(),
 			principal:     &principal.Principal{Actor: "actor@example.com"},
 			authorization: &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}},
 			want:          "unable to convert size to resource.Quantity",
@@ -527,7 +525,7 @@ func newDefaultGenerateV2Input() *generateV2Input {
 				Name: "test-filestorage",
 			},
 			Spec: openapi.StorageV2Spec{
-				Size:        "10Gi",
+				SizeGiB:     10,
 				Attachments: &openapi.StorageAttachmentV2Spec{NetworkIDs: openapi.NetworkIDList{"net-1"}},
 			},
 		},
@@ -540,12 +538,12 @@ func (b *generateV2InputBuilder) Default() *generateV2InputBuilder {
 	return b
 }
 
-func (b *generateV2InputBuilder) WithSize(size string) *generateV2InputBuilder {
+func (b *generateV2InputBuilder) WithSize(size int) *generateV2InputBuilder {
 	if b.input == nil {
 		b.input = newDefaultGenerateV2Input()
 	}
 
-	b.input.request.Spec.Size = size
+	b.input.request.Spec.SizeGiB = int64(size)
 
 	return b
 }

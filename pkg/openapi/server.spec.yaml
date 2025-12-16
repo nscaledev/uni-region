@@ -2545,12 +2545,13 @@ components:
       description: A storage's specification.
       type: object
       required:
-      - size
+      - sizeGiB
       - storageType
       properties:
-        size:
-          description: Size of the storage 
-          type: string
+        sizeGiB:
+          description: size in GiB of the storage 
+          type: integer
+          format: int64
         storageType: 
           $ref: '#/components/schemas/storageTypeV2Spec'
         attachments:
@@ -2605,6 +2606,7 @@ components:
             - projectId
             - regionId
             - storageClassId
+            - sizeGiB
             properties:
               storageClassId:
                 description: The storage class ID to provision the storage into.
@@ -2942,7 +2944,7 @@ components:
               projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
               storageClassId: c7568e2d-f9ab-453d-9a3a-51375f78426b
               regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
-              size: "200"
+              sizeGiB: 200
               storageType:
                 nfs:
                   rootsquash: true
@@ -2960,7 +2962,7 @@ components:
               - name: tag-name
                 value: tag-value
             spec:
-              size: "200"
+              sizeGiB: 200
               storageType:
                 nfs:
                   rootsquash: true
@@ -3531,7 +3533,7 @@ components:
               - name: tag-name
                 value: tag-value
             spec:
-              size: "200"
+              sizeGiB: 200
               storageType:
                 nfs:
                   rootsquash: true
@@ -3569,7 +3571,7 @@ components:
               - name: tag-name
                 value: tag-value
             spec:
-              size: "200"
+              sizeGiB: 200
               storageType:
                 nfs:
                   rootsquash: true

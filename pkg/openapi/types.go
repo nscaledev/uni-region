@@ -1011,8 +1011,8 @@ type StorageV2Create struct {
 		// RegionId The region ID to provision the storage into.
 		RegionId string `json:"regionId"`
 
-		// Size Size of the storage
-		Size string `json:"size"`
+		// SizeGiB size in GiB of the storage
+		SizeGiB int64 `json:"sizeGiB"`
 
 		// StorageClassId The storage class ID to provision the storage into.
 		StorageClassId string `json:"storageClassId"`
@@ -1042,8 +1042,8 @@ type StorageV2Spec struct {
 	// Attachments Describes the network attachment for storage
 	Attachments *StorageAttachmentV2Spec `json:"attachments,omitempty"`
 
-	// Size Size of the storage
-	Size string `json:"size"`
+	// SizeGiB size in GiB of the storage
+	SizeGiB int64 `json:"sizeGiB"`
 
 	// StorageType A storage's type
 	StorageType StorageTypeV2Spec `json:"storageType"`

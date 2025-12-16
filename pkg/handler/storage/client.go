@@ -71,7 +71,7 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 			StorageType: openapi.StorageTypeV2Spec{
 				NFS: checkRegionNFS(in.Spec.NFS),
 			},
-			Size: in.Spec.Size.String(),
+			SizeGiB: (in.Spec.Size.Value() / (1 << 30)),
 		},
 		Status: openapi.StorageV2Status{
 			RegionId:       in.Labels[constants.RegionLabel],
@@ -194,11 +194,6 @@ func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2R
 }
 
 func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.StorageV2Update, storageClassID string) (*regionv1.FileStorage, error) {
-	size, err := convertSize(request.Spec.Size)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to convert size to resource.Quantity").WithError(err)
-	}
-
 	out := &regionv1.FileStorage{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.namespace).
 			WithOrganization(organizationID).
@@ -207,7 +202,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 			Get(),
 		Spec: regionv1.FileStorageSpec{
 			Tags:        conversion.GenerateTagList(request.Metadata.Tags),
-			Size:        *size,
+			Size:        *convertSize(request.Spec.SizeGiB),
 			Attachments: generateAttachmentList(request.Spec.Attachments),
 			NFS: &regionv1.NFS{
 				RootSquash: checkRootSquash(request.Spec.StorageType.NFS),
@@ -216,7 +211,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 		},
 	}
 
-	err = util.InjectUserPrincipal(ctx, organizationID, projectID)
+	err := util.InjectUserPrincipal(ctx, organizationID, projectID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
 	}
@@ -250,13 +245,8 @@ func generateAttachmentList(in *openapi.StorageAttachmentV2Spec) []regionv1.Atta
 	return out
 }
 
-func convertSize(size string) (*resource.Quantity, error) {
-	quantity, err := resource.ParseQuantity(size)
-	if err != nil {
-		return nil, err
-	}
-
-	return &quantity, nil
+func convertSize(size int64) *resource.Quantity {
+	return resource.NewQuantity((size * (1 << 30)), resource.BinarySI)
 }
 
 func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.StorageV2Update, error) {
