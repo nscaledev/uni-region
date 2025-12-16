@@ -1,5 +1,5 @@
 /*
-Copyright 2024-2025 the Unikorn Authors.
+Copyright 2025 the Unikorn Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,20 +17,12 @@ limitations under the License.
 package compute_test
 
 import (
-	"bytes"
-	"cmp"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
-	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -48,8 +40,6 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/middleware/timeout"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/middleware/audit"
-	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
-	"github.com/unikorn-cloud/identity/pkg/rbac"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler"
@@ -57,6 +47,15 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+const (
+	// Test organization IDs.
+	testOrg123      = "test-org-123"
+	testOrgEmpty    = "test-org-empty"
+	testOrgNonExist = "nonexistent-org"
+	testOrgTimeout  = "test-org-timeout"
+	testOrgMixed    = "test-org-mixed"
 )
 
 var (
@@ -163,6 +162,7 @@ var _ = Describe("Region Provider Verification", func() {
 			verifier := provider.NewVerifier()
 
 			// Create state handlers map
+			// we create the state handlers map here so we can use it in the verifier tests.
 			stateHandlers := createStateHandlers(ctx, stateManager)
 
 			// Run verification
@@ -207,234 +207,118 @@ var _ = Describe("Region Provider Verification", func() {
 	})
 })
 
-// mockACLMiddleware injects a mock ACL into the request context for contract testing.
-// This allows the handler to bypass RBAC checks without requiring real authentication.
-// For contract testing, we create an ACL that grants read permissions to all test organizations.
-func mockACLMiddleware() func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Create a mock ACL that grants read permissions for all region endpoints
-			// to all test organizations used in contract tests
-			testOrgs := []string{
-				"test-org-123",
-				"test-org-empty",
-				"nonexistent-org",
-				"test-org-timeout",
-				"test-org-mixed",
-			}
-
-			// Create endpoints that grant read access to all region resources
-			endpoints := identityapi.AclEndpoints{
-				{Name: "region:regions", Operations: identityapi.AclOperations{identityapi.Read}},
-				{Name: "region:flavors", Operations: identityapi.AclOperations{identityapi.Read}},
-				{Name: "region:images", Operations: identityapi.AclOperations{identityapi.Read}},
-				{Name: "region:externalnetworks", Operations: identityapi.AclOperations{identityapi.Read}},
-				{Name: "region:regions/detail", Operations: identityapi.AclOperations{identityapi.Read}},
-			}
-
-			// Create organizations list with all test orgs
-			organizations := make(identityapi.AclOrganizationList, 0, len(testOrgs))
-			for _, orgID := range testOrgs {
-				organizations = append(organizations, identityapi.AclOrganization{
-					Id:        orgID,
-					Endpoints: &endpoints,
-				})
-			}
-
-			mockACL := &identityapi.Acl{
-				Organizations: &organizations,
-			}
-
-			// Inject the mock ACL into the request context
-			ctx := rbac.NewContext(r.Context(), mockACL)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-}
-
-// regionSortingMiddleware sorts regions responses for Pact contract testing.
-// Pact Go v2 requires a specific order, so we sort by type (OpenStack before Kubernetes)
-// and then by name to ensure consistent ordering that matches the consumer's expectations.
-func regionSortingMiddleware() func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !shouldInterceptRegionsRequest(r) {
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			recorder := captureResponse(w, next, r)
-			copyHeaders(w, recorder)
-
-			if !shouldProcessResponse(recorder) {
-				writeResponseAsIs(w, recorder)
-				return
-			}
-
-			processAndWriteRegionsResponse(w, recorder)
-		})
-	}
-}
-
-// shouldInterceptRegionsRequest checks if this is a GET request to the regions list endpoint.
-func shouldInterceptRegionsRequest(r *http.Request) bool {
-	if r.Method != http.MethodGet {
-		return false
-	}
-
-	// Pattern: /api/v1/organizations/{orgID}/regions
-	path := r.URL.Path
-
-	return strings.HasSuffix(path, "/regions") && !strings.Contains(path, "/regions/")
-}
-
-// captureResponse captures the handler response using a recorder.
-func captureResponse(w http.ResponseWriter, next http.Handler, r *http.Request) *responseRecorder {
-	recorder := &responseRecorder{
-		ResponseWriter: w,
-		body:           &bytes.Buffer{},
-		statusCode:     http.StatusOK,
-		headers:        make(http.Header),
-	}
-	next.ServeHTTP(recorder, r)
-
-	return recorder
-}
-
-// copyHeaders copies all headers from the recorder to the response writer.
-func copyHeaders(w http.ResponseWriter, recorder *responseRecorder) {
-	for key, values := range recorder.headers {
-		for _, value := range values {
-			w.Header().Add(key, value)
-		}
-	}
-}
-
-// shouldProcessResponse checks if the response should be processed (200 OK).
-func shouldProcessResponse(recorder *responseRecorder) bool {
-	return recorder.statusCode == http.StatusOK
-}
-
-// writeResponseAsIs writes the recorded response without modification.
-func writeResponseAsIs(w http.ResponseWriter, recorder *responseRecorder) {
-	w.WriteHeader(recorder.statusCode)
-	_, _ = io.Copy(w, recorder.body)
-}
-
-// processAndWriteRegionsResponse parses, transforms, sorts, and writes the regions response.
-func processAndWriteRegionsResponse(w http.ResponseWriter, recorder *responseRecorder) {
-	var regions []openapi.RegionRead
-	if err := json.Unmarshal(recorder.body.Bytes(), &regions); err != nil {
-		writeResponseAsIs(w, recorder)
-		return
-	}
-
-	transformRegionIDs(regions)
-	sortRegions(regions)
-
-	sortedJSON, err := json.Marshal(regions)
-	if err != nil {
-		writeResponseAsIs(w, recorder)
-		return
-	}
-
-	w.WriteHeader(recorder.statusCode)
-	_, _ = w.Write(sortedJSON)
-}
-
-// transformRegionIDs converts region IDs from names to UUIDs for Pact testing.
-func transformRegionIDs(regions []openapi.RegionRead) {
-	for i := range regions {
-		if regions[i].Metadata.Id != "" {
-			regions[i].Metadata.Id = nameToUUID(regions[i].Metadata.Name)
-		}
-	}
-}
-
-// sortRegions sorts by type (OpenStack first) then by name.
-func sortRegions(regions []openapi.RegionRead) {
-	slices.SortStableFunc(regions, func(a, b openapi.RegionRead) int {
-		if a.Spec.Type != b.Spec.Type {
-			if a.Spec.Type == openapi.RegionTypeOpenstack {
-				return -1
-			}
-
-			if b.Spec.Type == openapi.RegionTypeOpenstack {
-				return 1
-			}
-		}
-
-		return cmp.Compare(a.Metadata.Name, b.Metadata.Name)
-	})
-}
-
-// responseRecorder captures the response for processing.
-type responseRecorder struct {
-	http.ResponseWriter
-	body       *bytes.Buffer
-	statusCode int
-	headers    http.Header
-}
-
-func (r *responseRecorder) Write(b []byte) (int, error) {
-	return r.body.Write(b)
-}
-
-func (r *responseRecorder) WriteHeader(statusCode int) {
-	r.statusCode = statusCode
-}
-
-func (r *responseRecorder) Header() http.Header {
-	if r.headers == nil {
-		r.headers = make(http.Header)
-	}
-
-	return r.headers
-}
-
-// nameToUUID generates a deterministic UUID from a region name.
-// This is used for contract testing where the provider returns region names as IDs,
-// but the pact expects UUID format. The same name will always generate the same UUID.
-func nameToUUID(name string) string {
-	// Use SHA256 to hash the name and generate a deterministic UUID
-	hash := sha256.Sum256([]byte("region-id:" + name))
-	hashHex := hex.EncodeToString(hash[:])
-
-	// Format as UUID: 8-4-4-4-12
-	// Take first 32 hex characters and format them
-	return fmt.Sprintf("%s-%s-%s-%s-%s",
-		hashHex[0:8],
-		hashHex[8:12],
-		hashHex[12:16],
-		hashHex[16:20],
-		hashHex[20:32],
-	)
-}
-
 // createStateHandlers creates the state handlers map for pact verification.
 func createStateHandlers(ctx context.Context, stateManager *StateManager) models.StateHandlers {
 	return models.StateHandlers{
 		"organization test-org-123 exists with OpenStack regions": func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			err := stateManager.HandleOrganizationWithOpenStackRegions(ctx, setup, "test-org-123")
+			err := stateManager.HandleOrganizationWithOpenStackRegions(ctx, setup, testOrg123)
 			return nil, err
 		},
 		"organization test-org-empty exists with no regions": func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			err := stateManager.HandleOrganizationWithNoRegions(ctx, setup, "test-org-empty")
+			err := stateManager.HandleOrganizationWithNoRegions(ctx, setup, testOrgEmpty)
 			return nil, err
 		},
 		"organization nonexistent-org does not exist": func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			err := stateManager.HandleOrganizationDoesNotExist(ctx, setup, "nonexistent-org")
+			err := stateManager.HandleOrganizationDoesNotExist(ctx, setup, testOrgNonExist)
 			return nil, err
 		},
 		"organization test-org-timeout exists": func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			err := stateManager.HandleOrganizationExists(ctx, setup, "test-org-timeout")
+			err := stateManager.HandleOrganizationExists(ctx, setup, testOrgTimeout)
 			return nil, err
 		},
 		"organization test-org-mixed exists with mixed region types": func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			err := stateManager.HandleOrganizationWithMixedRegions(ctx, setup, "test-org-mixed")
+			err := stateManager.HandleOrganizationWithMixedRegions(ctx, setup, testOrgMixed)
 			return nil, err
 		},
 	}
+}
+
+// buildServerOptions creates server configuration options for contract testing.
+func buildServerOptions(listenAddr string) options.ServerOptions {
+	return options.ServerOptions{
+		ListenAddress:     listenAddr,
+		ReadTimeout:       30 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		RequestTimeout:    30 * time.Second,
+	}
+}
+
+// buildCORSOptions creates CORS configuration options for contract testing.
+func buildCORSOptions() cors.Options {
+	return cors.Options{
+		AllowedOrigins: []string{"*"}, // Allow all origins for contract testing
+	}
+}
+
+// buildRouter creates and configures the Chi router with middleware.
+func buildRouter(serverOpts options.ServerOptions, schema *coreapi.Schema, corsOpts *cors.Options) *chi.Mux {
+	router := chi.NewRouter()
+	router.Use(timeout.Middleware(serverOpts.RequestTimeout))
+	router.Use(opentelemetry.Middleware(constants.Application, constants.Version))
+	router.Use(cors.Middleware(schema, corsOpts))
+
+	// Create list of test organizations for mock ACL
+	testOrgs := []string{
+		testOrg123,
+		testOrgEmpty,
+		testOrgNonExist,
+		testOrgTimeout,
+		testOrgMixed,
+	}
+
+	router.Use(MockACLMiddleware(testOrgs)) // Inject mock ACL for contract testing
+	router.Use(RegionSortingMiddleware())   // Sort regions for Pact contract testing
+	router.NotFound(http.HandlerFunc(handler.NotFound))
+	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
+
+	return router
+}
+
+// buildChiServerOptions creates Chi server options for contract testing.
+// Authorization middleware is skipped to allow Pact verification without real auth tokens.
+func buildChiServerOptions(router *chi.Mux, schema *coreapi.Schema) openapi.ChiServerOptions {
+	return openapi.ChiServerOptions{
+		BaseRouter:       router,
+		ErrorHandlerFunc: handler.HandleError,
+		Middlewares: []openapi.MiddlewareFunc{
+			// Audit middleware for logging (keeps the same middleware chain structure)
+			audit.Middleware(schema, constants.Application, constants.Version),
+			// Authorization middleware is skipped for contract testing
+		},
+	}
+}
+
+// createHandlerInterface creates the region handler with dependencies.
+func createHandlerInterface(ctx context.Context, k8sClient client.Client, namespace string) *handler.Handler {
+	// Create identity client options (minimal config for testing)
+	identityOpts := &identityclient.Options{}
+	clientOpts := coreclient.HTTPClientOptions{}
+
+	issuer := identityclient.NewTokenIssuer(k8sClient, identityOpts, &clientOpts, constants.ServiceDescriptor())
+
+	identity, err := identityclient.New(k8sClient, identityOpts, &clientOpts).APIClient(ctx, issuer)
+	if err != nil {
+		panic(fmt.Sprintf("failed to create identity client: %v", err))
+	}
+
+	handlerOpts := handler.Options{}
+
+	handlerInterface, err := handler.New(k8sClient, namespace, &handlerOpts, identity)
+	if err != nil {
+		panic(fmt.Sprintf("failed to create handler: %v", err))
+	}
+
+	return handlerInterface
+}
+
+// startServerAsync starts the HTTP server in a background goroutine.
+func startServerAsync(httpServer *http.Server) {
+	go func() {
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			fmt.Printf("Server error: %v\n", err)
+		}
+	}()
 }
 
 // startTestServer creates and starts a test instance of the region server.
@@ -446,61 +330,16 @@ func startTestServer(ctx context.Context, k8sClient client.Client, listenAddr st
 		panic(fmt.Sprintf("failed to create schema: %v", err))
 	}
 
-	corsOpts := cors.Options{
-		AllowedOrigins: []string{"*"}, // Allow all origins for contract testing
-	}
-
-	serverOpts := options.ServerOptions{
-		ListenAddress:     listenAddr,
-		ReadTimeout:       30 * time.Second,
-		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		RequestTimeout:    30 * time.Second,
-	}
+	serverOpts := buildServerOptions(listenAddr)
+	corsOpts := buildCORSOptions()
+	router := buildRouter(serverOpts, schema, &corsOpts)
+	chiServerOptions := buildChiServerOptions(router, schema)
 
 	coreOpts := options.CoreOptions{
 		Namespace: "default",
 	}
 
-	// Setup router with middleware
-	router := chi.NewRouter()
-	router.Use(timeout.Middleware(serverOpts.RequestTimeout))
-	router.Use(opentelemetry.Middleware(constants.Application, constants.Version))
-	router.Use(cors.Middleware(schema, &corsOpts))
-	router.Use(mockACLMiddleware())       // Inject mock ACL for contract testing
-	router.Use(regionSortingMiddleware()) // Sort regions for Pact contract testing
-	router.NotFound(http.HandlerFunc(handler.NotFound))
-	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
-
-	// Create identity client options (minimal config for testing)
-	identityOpts := &identityclient.Options{}
-	clientOpts := coreclient.HTTPClientOptions{}
-
-	// For contract testing, we skip authorization middleware
-	// This allows Pact to verify the API contract without needing real auth tokens
-	chiServerOptions := openapi.ChiServerOptions{
-		BaseRouter:       router,
-		ErrorHandlerFunc: handler.HandleError,
-		Middlewares: []openapi.MiddlewareFunc{
-			// Audit middleware for logging (keeps the same middleware chain structure)
-			audit.Middleware(schema, constants.Application, constants.Version),
-			// Authorization middleware is skipped for contract testing
-		},
-	}
-
-	issuer := identityclient.NewTokenIssuer(k8sClient, identityOpts, &clientOpts, constants.ServiceDescriptor())
-
-	identity, err := identityclient.New(k8sClient, identityOpts, &clientOpts).APIClient(ctx, issuer)
-	if err != nil {
-		panic(fmt.Sprintf("failed to create identity client: %v", err))
-	}
-
-	handlerOpts := handler.Options{}
-
-	handlerInterface, err := handler.New(k8sClient, coreOpts.Namespace, &handlerOpts, identity)
-	if err != nil {
-		panic(fmt.Sprintf("failed to create handler: %v", err))
-	}
+	handlerInterface := createHandlerInterface(ctx, k8sClient, coreOpts.Namespace)
 
 	httpServer := &http.Server{
 		Addr:              listenAddr,
@@ -510,12 +349,7 @@ func startTestServer(ctx context.Context, k8sClient client.Client, listenAddr st
 		Handler:           openapi.HandlerWithOptions(handlerInterface, chiServerOptions),
 	}
 
-	// Start server in a goroutine
-	go func() {
-		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			fmt.Printf("Server error: %v\n", err)
-		}
-	}()
+	startServerAsync(httpServer)
 
 	return httpServer
 }
