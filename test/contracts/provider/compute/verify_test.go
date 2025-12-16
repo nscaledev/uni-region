@@ -140,6 +140,7 @@ var _ = Describe("Region Provider Verification", func() {
 				return err
 			}
 			conn.Close()
+
 			return nil
 		}, 10*time.Second, 100*time.Millisecond).Should(Succeed())
 	})
@@ -257,94 +258,114 @@ func mockACLMiddleware() func(http.Handler) http.Handler {
 func regionSortingMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Only intercept GET requests to the regions list endpoint
-			if r.Method != http.MethodGet {
+			if !shouldInterceptRegionsRequest(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			// Check if this is a regions list endpoint
-			// Pattern: /api/v1/organizations/{orgID}/regions
-			path := r.URL.Path
-			if !strings.HasSuffix(path, "/regions") || strings.Contains(path, "/regions/") {
-				next.ServeHTTP(w, r)
+			recorder := captureResponse(w, next, r)
+			copyHeaders(w, recorder)
+
+			if !shouldProcessResponse(recorder) {
+				writeResponseAsIs(w, recorder)
 				return
 			}
 
-			// Create a response writer that captures the response
-			recorder := &responseRecorder{
-				ResponseWriter: w,
-				body:           &bytes.Buffer{},
-				statusCode:     http.StatusOK,
-				headers:        make(http.Header),
-			}
-
-			// Call the next handler
-			next.ServeHTTP(recorder, r)
-
-			// Copy all headers from the original response
-			for key, values := range recorder.headers {
-				for _, value := range values {
-					w.Header().Add(key, value)
-				}
-			}
-
-			// Only process successful JSON responses
-			if recorder.statusCode != http.StatusOK {
-				// Copy the response as-is for non-200 responses
-				w.WriteHeader(recorder.statusCode)
-				_, _ = io.Copy(w, recorder.body)
-				return
-			}
-
-			// Parse the JSON response
-			var regions []openapi.RegionRead
-			if err := json.Unmarshal(recorder.body.Bytes(), &regions); err != nil {
-				// If parsing fails, just write the original response
-				w.WriteHeader(recorder.statusCode)
-				_, _ = io.Copy(w, recorder.body)
-				return
-			}
-
-			// Convert region IDs from names to UUIDs for Pact contract testing
-			// The provider returns region names as IDs, but the pact expects UUIDs
-			for i := range regions {
-				if regions[i].Metadata.Id != "" {
-					// Generate a deterministic UUID from the region name
-					regions[i].Metadata.Id = nameToUUID(regions[i].Metadata.Name)
-				}
-			}
-
-			// Sort regions: OpenStack first, then Kubernetes, then by name
-			// This ensures consistent ordering for Pact contract testing (Pact Go v2 limitation)
-			slices.SortStableFunc(regions, func(a, b openapi.RegionRead) int {
-				// Sort by type: OpenStack before Kubernetes
-				if a.Spec.Type != b.Spec.Type {
-					if a.Spec.Type == openapi.RegionTypeOpenstack {
-						return -1
-					}
-					if b.Spec.Type == openapi.RegionTypeOpenstack {
-						return 1
-					}
-				}
-				// Then sort by name
-				return cmp.Compare(a.Metadata.Name, b.Metadata.Name)
-			})
-
-			// Marshal the sorted response
-			sortedJSON, err := json.Marshal(regions)
-			if err != nil {
-				// If marshaling fails, write the original response
-				w.WriteHeader(recorder.statusCode)
-				_, _ = io.Copy(w, recorder.body)
-				return
-			}
-
-			// Write the sorted response (headers already copied above)
-			w.WriteHeader(recorder.statusCode)
-			_, _ = w.Write(sortedJSON)
+			processAndWriteRegionsResponse(w, recorder)
 		})
 	}
+}
+
+// shouldInterceptRegionsRequest checks if this is a GET request to the regions list endpoint.
+func shouldInterceptRegionsRequest(r *http.Request) bool {
+	if r.Method != http.MethodGet {
+		return false
+	}
+
+	// Pattern: /api/v1/organizations/{orgID}/regions
+	path := r.URL.Path
+
+	return strings.HasSuffix(path, "/regions") && !strings.Contains(path, "/regions/")
+}
+
+// captureResponse captures the handler response using a recorder.
+func captureResponse(w http.ResponseWriter, next http.Handler, r *http.Request) *responseRecorder {
+	recorder := &responseRecorder{
+		ResponseWriter: w,
+		body:           &bytes.Buffer{},
+		statusCode:     http.StatusOK,
+		headers:        make(http.Header),
+	}
+	next.ServeHTTP(recorder, r)
+
+	return recorder
+}
+
+// copyHeaders copies all headers from the recorder to the response writer.
+func copyHeaders(w http.ResponseWriter, recorder *responseRecorder) {
+	for key, values := range recorder.headers {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+}
+
+// shouldProcessResponse checks if the response should be processed (200 OK).
+func shouldProcessResponse(recorder *responseRecorder) bool {
+	return recorder.statusCode == http.StatusOK
+}
+
+// writeResponseAsIs writes the recorded response without modification.
+func writeResponseAsIs(w http.ResponseWriter, recorder *responseRecorder) {
+	w.WriteHeader(recorder.statusCode)
+	_, _ = io.Copy(w, recorder.body)
+}
+
+// processAndWriteRegionsResponse parses, transforms, sorts, and writes the regions response.
+func processAndWriteRegionsResponse(w http.ResponseWriter, recorder *responseRecorder) {
+	var regions []openapi.RegionRead
+	if err := json.Unmarshal(recorder.body.Bytes(), &regions); err != nil {
+		writeResponseAsIs(w, recorder)
+		return
+	}
+
+	transformRegionIDs(regions)
+	sortRegions(regions)
+
+	sortedJSON, err := json.Marshal(regions)
+	if err != nil {
+		writeResponseAsIs(w, recorder)
+		return
+	}
+
+	w.WriteHeader(recorder.statusCode)
+	_, _ = w.Write(sortedJSON)
+}
+
+// transformRegionIDs converts region IDs from names to UUIDs for Pact testing.
+func transformRegionIDs(regions []openapi.RegionRead) {
+	for i := range regions {
+		if regions[i].Metadata.Id != "" {
+			regions[i].Metadata.Id = nameToUUID(regions[i].Metadata.Name)
+		}
+	}
+}
+
+// sortRegions sorts by type (OpenStack first) then by name.
+func sortRegions(regions []openapi.RegionRead) {
+	slices.SortStableFunc(regions, func(a, b openapi.RegionRead) int {
+		if a.Spec.Type != b.Spec.Type {
+			if a.Spec.Type == openapi.RegionTypeOpenstack {
+				return -1
+			}
+
+			if b.Spec.Type == openapi.RegionTypeOpenstack {
+				return 1
+			}
+		}
+
+		return cmp.Compare(a.Metadata.Name, b.Metadata.Name)
+	})
 }
 
 // responseRecorder captures the response for processing.
@@ -367,6 +388,7 @@ func (r *responseRecorder) Header() http.Header {
 	if r.headers == nil {
 		r.headers = make(http.Header)
 	}
+
 	return r.headers
 }
 
@@ -467,10 +489,15 @@ func startTestServer(ctx context.Context, k8sClient client.Client, listenAddr st
 	}
 
 	issuer := identityclient.NewTokenIssuer(k8sClient, identityOpts, &clientOpts, constants.ServiceDescriptor())
-	identity := identityclient.New(k8sClient, identityOpts, &clientOpts)
+
+	identity, err := identityclient.New(k8sClient, identityOpts, &clientOpts).APIClient(ctx, issuer)
+	if err != nil {
+		panic(fmt.Sprintf("failed to create identity client: %v", err))
+	}
 
 	handlerOpts := handler.Options{}
-	handlerInterface, err := handler.New(k8sClient, coreOpts.Namespace, &handlerOpts, issuer, identity)
+
+	handlerInterface, err := handler.New(k8sClient, coreOpts.Namespace, &handlerOpts, identity)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create handler: %v", err))
 	}
