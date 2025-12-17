@@ -80,6 +80,7 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 			StorageClassId: in.Spec.StorageClassID,
 		},
 	}
+
 	return storageRead
 }
 
@@ -111,15 +112,18 @@ func (c *Client) updateWithSizeList(ctx context.Context, in *openapi.StorageV2Li
 			return err
 		}
 	}
+
 	return nil
 }
 
-// updateWithSize takes in the filestorage and filestorage
+// updateWithSize calls to the filestorage driver and gets the capacity
+// and used capacity from VAST.
 func (c *Client) updateWithSize(ctx context.Context, in *openapi.StorageV2Read) error {
 	fcdriver, err := c.getFileStorageDetails(ctx, in.Status.StorageClassId)
 	if err != nil {
 		return err
 	}
+
 	fsdetails, err := fcdriver.GetDetails(ctx, in.Metadata.ProjectId, in.Status.StorageClassId)
 	if err != nil {
 		return err
@@ -128,6 +132,7 @@ func (c *Client) updateWithSize(ctx context.Context, in *openapi.StorageV2Read) 
 	usedGiB := fmt.Sprintf("%d", quantityToSizeGiB(*fsdetails.UsedCapacity))
 	in.Status.Usage.Used = &usedGiB
 	in.Status.Usage.Capacity = fsdetails.Size.String()
+
 	return nil
 }
 
@@ -342,13 +347,16 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	regionID := current.Labels[constants.RegionLabel]
 
 	required, err := c.generateV2(ctx, organizationID, projectID, regionID, request, current.Spec.StorageClassID)
+	if err != nil {
+		return nil, err
+	}
 
 	fcdriver, err := c.getFileStorageDetails(ctx, storageID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Check the the requested capacity does not exceed used capacity
+	// Check that requested capacity does not exceed used capacity.
 	storagedetails, err := fcdriver.GetDetails(ctx, projectID, storageID)
 	if err != nil {
 		return nil, err
@@ -377,8 +385,11 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	return storage, nil
 }
 
-func (c *Client) getFileStorageDetails(ctx context.Context, storageClassId string) (*filedriver.Client, error) {
-	provisioner, err := c.GetStorageProvisioner(ctx, c.namespace, storageClassId)
+func (c *Client) getFileStorageDetails(ctx context.Context, storageClassID string) (*filedriver.Client, error) {
+	provisioner, err := c.GetStorageProvisioner(ctx, c.namespace, storageClassID)
+	if err != nil {
+		return nil, err
+	}
 
 	fcdriver, err := filedriver.New(ctx, c.client, &provisioner)
 	if err != nil {
@@ -386,7 +397,6 @@ func (c *Client) getFileStorageDetails(ctx context.Context, storageClassId strin
 	}
 
 	return fcdriver, nil
-
 }
 
 // Delete satisfies the http DELETE action by removing the client.
@@ -487,6 +497,7 @@ func (c *Client) GetStorageProvisioner(ctx context.Context, namespace string, st
 
 		return provisioner, err
 	}
+
 	return provisioner, nil
 }
 
