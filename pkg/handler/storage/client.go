@@ -32,6 +32,7 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
@@ -194,6 +195,18 @@ func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2R
 }
 
 func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.StorageV2Update, storageClassID string) (*regionv1.FileStorage, error) {
+	networkClient := network.New(c.client, c.namespace, c.identity)
+
+	err := util.InjectUserPrincipal(ctx, organizationID, projectID)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
+	}
+
+	attachments, err := generateAttachmentList(ctx, networkClient, request.Spec.Attachments)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("unable to generate attachment list").WithError(err)
+	}
+
 	out := &regionv1.FileStorage{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.namespace).
 			WithOrganization(organizationID).
@@ -203,17 +216,12 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 		Spec: regionv1.FileStorageSpec{
 			Tags:        conversion.GenerateTagList(request.Metadata.Tags),
 			Size:        *gibToQuantity(request.Spec.SizeGiB),
-			Attachments: generateAttachmentList(request.Spec.Attachments),
+			Attachments: attachments,
 			NFS: &regionv1.NFS{
 				RootSquash: checkRootSquash(request.Spec.StorageType.NFS),
 			},
 			StorageClassID: storageClassID,
 		},
-	}
-
-	err := util.InjectUserPrincipal(ctx, organizationID, projectID)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
 	}
 
 	err = common.SetIdentityMetadata(ctx, &out.ObjectMeta)
@@ -234,15 +242,42 @@ func checkRootSquash(nfs *openapi.NFSV2Spec) bool {
 	return true
 }
 
-func generateAttachmentList(in *openapi.StorageAttachmentV2Spec) []regionv1.Attachment {
-	out := make([]regionv1.Attachment, len(in.NetworkIDs))
-	for i := range in.NetworkIDs {
-		out[i] = regionv1.Attachment{
-			NetworkID: in.NetworkIDs[i],
+func generateAttachmentList(ctx context.Context, networkClient *network.Client, in *openapi.StorageAttachmentV2Spec) ([]regionv1.Attachment, error) {
+	networkIDs := in.NetworkIDs
+	out := make([]regionv1.Attachment, len(networkIDs))
+
+	for i, networkID := range networkIDs {
+		network, err := networkClient.GetV2Raw(ctx, networkID)
+		if err != nil {
+			return nil, errors.OAuth2ServerError("unable to get network").WithError(err)
 		}
+
+		attachment, err := generateAttachment(network)
+		if err != nil {
+			return nil, err
+		}
+
+		out[i] = *attachment
 	}
 
-	return out
+	return out, nil
+}
+
+func generateAttachment(network *regionv1.Network) (*regionv1.Attachment, error) {
+	networkID := network.Name
+
+	// FIXME: this part of the network status is destined for deprecation, since it is not generic.
+	// Because FileStorage needs details that are only available through the status at present,
+	// I have used it (conditionally) here until there is a reliable, generic way to get that info.
+	if network.Status.Openstack == nil {
+		return nil, errors.OAuth2ServerError("network requested is not a suitable network") // TODO: use 422, or supply better information here.
+	}
+
+	return &regionv1.Attachment{
+		NetworkID:      networkID,
+		IPRange:        network.Status.Openstack.StorageRange,
+		SegmentationID: network.Status.Openstack.VlanID,
+	}, nil
 }
 
 func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.StorageV2Update, error) {
