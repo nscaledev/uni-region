@@ -64,7 +64,7 @@ func New(client client.Client, namespace string, identity identityapi.ClientWith
 }
 
 func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
-	storageRead := &openapi.StorageV2Read{
+	return &openapi.StorageV2Read{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.StorageV2Spec{
 			Attachments: &openapi.StorageAttachmentV2Spec{
@@ -80,8 +80,6 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 			StorageClassId: in.Spec.StorageClassID,
 		},
 	}
-
-	return storageRead
 }
 
 func checkRegionNFS(in *regionv1.NFS) *openapi.NFSV2Spec {
