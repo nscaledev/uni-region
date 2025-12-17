@@ -1377,7 +1377,7 @@ func dhcpRange(prefix net.IPNet) (string, string) {
 
 // storageRange returns a range from the prefix that comes from the first /25
 // but leaves some spare IPs around for various uses.
-func storageRange(prefix net.IPNet) (string, string) {
+func storageRange(prefix net.IPNet) *unikornv1.AttachmentIPRange {
 	ba := big.NewInt(0).SetBytes(prefix.IP)
 
 	// Start.
@@ -1389,7 +1389,10 @@ func storageRange(prefix net.IPNet) (string, string) {
 	start := net.IP(bs.Bytes())
 	end := net.IP(be.Bytes())
 
-	return start.String(), end.String()
+	return &unikornv1.AttachmentIPRange{
+		Start: unikornv1core.IPv4Address{IP: start},
+		End:   unikornv1core.IPv4Address{IP: end},
+	}
 }
 
 func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface, network *unikornv1.Network) (*NetworkExt, error) {
@@ -1400,6 +1403,7 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 		log.V(1).Info("L2 network already exists")
 
 		network.Status.Openstack.NetworkID = ptr.To(result.ID)
+
 		if result.NetworkType == "vlan" {
 			if vlanID, err := strconv.Atoi(result.SegmentationID); err != nil {
 				network.Status.Openstack.VlanID = &vlanID
@@ -1441,6 +1445,7 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 
 	network.Status.Openstack.NetworkID = ptr.To(result.ID)
 	network.Status.Openstack.VlanID = vlanID
+	network.Status.Openstack.StorageRange = storageRange(network.Spec.Prefix.IPNet)
 
 	return result, nil
 }

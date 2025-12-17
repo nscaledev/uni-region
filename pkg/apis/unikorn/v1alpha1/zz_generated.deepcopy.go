@@ -839,6 +839,11 @@ func (in *NetworkStatusOpenstack) DeepCopyInto(out *NetworkStatusOpenstack) {
 		*out = new(int)
 		**out = **in
 	}
+	if in.StorageRange != nil {
+		in, out := &in.StorageRange, &out.StorageRange
+		*out = new(AttachmentIPRange)
+		(*in).DeepCopyInto(*out)
+	}
 	return
 }
 
