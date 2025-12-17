@@ -20,6 +20,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -32,6 +33,7 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	filedriver "github.com/unikorn-cloud/region/pkg/file-storage/provisioners/driver"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
@@ -102,6 +104,36 @@ func convertAttachmentsList(in []regionv1.Attachment) openapi.NetworkIDList {
 	return out
 }
 
+func (c *Client) updateWithSizeList(ctx context.Context, in *openapi.StorageV2List) error {
+	for _, v := range *in {
+		if err := c.updateWithSize(ctx, &v); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// updateWithSize calls to the filestorage driver and gets the capacity
+// and used capacity from VAST.
+func (c *Client) updateWithSize(ctx context.Context, in *openapi.StorageV2Read) error {
+	fcdriver, err := c.getFileStorageDetails(ctx, in.Status.StorageClassId)
+	if err != nil {
+		return err
+	}
+
+	fsdetails, err := fcdriver.GetDetails(ctx, in.Metadata.ProjectId, in.Status.StorageClassId)
+	if err != nil {
+		return err
+	}
+
+	usedGiB := fmt.Sprintf("%d", quantityToSizeGiB(*fsdetails.UsedCapacity))
+	in.Status.Usage.Used = &usedGiB
+	in.Status.Usage.Capacity = fsdetails.Size.String()
+
+	return nil
+}
+
 // ListV2 satisfies an http get to return all storage items within a project.
 func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageParams) (openapi.StorageV2List, error) {
 	selector := labels.Everything()
@@ -148,7 +180,13 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageP
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	return convertV2List(result), nil
+	storageList := convertV2List(result)
+
+	if err := c.updateWithSizeList(ctx, &storageList); err != nil {
+		return nil, err
+	}
+
+	return storageList, nil
 }
 
 func convertV2List(in *regionv1.FileStorageList) openapi.StorageV2List {
@@ -190,7 +228,13 @@ func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2R
 		return nil, err
 	}
 
-	return convertV2(result), nil
+	storage := convertV2(result)
+
+	if err := c.updateWithSize(ctx, storage); err != nil {
+		return nil, err
+	}
+
+	return storage, nil
 }
 
 func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.StorageV2Update, storageClassID string) (*regionv1.FileStorage, error) {
@@ -305,6 +349,21 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 		return nil, err
 	}
 
+	fcdriver, err := c.getFileStorageDetails(ctx, storageID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check that requested capacity does not exceed used capacity.
+	storagedetails, err := fcdriver.GetDetails(ctx, projectID, storageID)
+	if err != nil {
+		return nil, err
+	}
+
+	if request.Spec.SizeGiB >= quantityToSizeGiB(*storagedetails.UsedCapacity) {
+		return nil, err
+	}
+
 	updated := current.DeepCopy()
 	updated.Labels = required.Labels
 	updated.Annotations = required.Annotations
@@ -315,7 +374,27 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 		return nil, err
 	}
 
-	return convertV2(updated), nil
+	storage := convertV2(updated)
+
+	if err := c.updateWithSize(ctx, storage); err != nil {
+		return nil, err
+	}
+
+	return storage, nil
+}
+
+func (c *Client) getFileStorageDetails(ctx context.Context, storageClassID string) (*filedriver.Client, error) {
+	provisioner, err := c.GetStorageProvisioner(ctx, c.namespace, storageClassID)
+	if err != nil {
+		return nil, err
+	}
+
+	fcdriver, err := filedriver.New(ctx, c.client, &provisioner)
+	if err != nil {
+		return nil, err
+	}
+
+	return fcdriver, nil
 }
 
 // Delete satisfies the http DELETE action by removing the client.
@@ -388,6 +467,36 @@ func (c *Client) GetStorageClass(ctx context.Context, storageClassID string) (*o
 	}
 
 	return convertClass(result), nil
+}
+
+// GetStorageProvisioner takes the kubernetes namespace and storageClassId to
+// get the file storage class object which allows us to access the file storage provisioner.
+func (c *Client) GetStorageProvisioner(ctx context.Context, namespace string, storageClassID string) (regionv1.FileStorageProvisioner, error) {
+	var provisioner regionv1.FileStorageProvisioner
+
+	// look up storage class object
+	class := &regionv1.FileStorageClass{}
+	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: storageClassID}, class); err != nil {
+		if kerrors.IsNotFound(err) {
+			return provisioner, errors.HTTPNotFound().WithError(err)
+		}
+
+		return provisioner, errors.OAuth2ServerError("unable to lookup storage class").WithError(err)
+	}
+
+	if err := rbac.AllowOrganizationScope(ctx, "region:filestorageclass:v2", identityapi.Read, class.Labels[coreconstants.OrganizationLabel]); err != nil {
+		return provisioner, err
+	}
+
+	if err := c.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: class.Spec.Provisioner}, &provisioner); err != nil {
+		if kerrors.IsNotFound(err) {
+			return provisioner, errors.HTTPNotFound().WithError(err)
+		}
+
+		return provisioner, err
+	}
+
+	return provisioner, nil
 }
 
 func convertClassList(in *regionv1.FileStorageClassList) openapi.StorageClassListV2Read {
