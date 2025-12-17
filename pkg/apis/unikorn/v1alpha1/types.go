@@ -432,6 +432,10 @@ type NetworkStatusOpenstack struct {
 	NetworkID *string `json:"networkID,omitempty"`
 	// SubnetID is the subnet ID.
 	SubnetID *string `json:"subnetID,omitempty"`
+	// VlanID is the VLAN ID for this network
+	VlanID *int `json:"vlanID,omitempty"`
+	// StorageRange gives the start and end IP addresses for attaching to storage (e.g., FileStorage)
+	StorageRange *AttachmentIPRange `json:"storageRange,omitempty"`
 }
 
 type NetworkStatus struct {

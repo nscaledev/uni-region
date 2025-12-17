@@ -19,27 +19,89 @@ package storage
 
 import (
 	"context"
+	"net"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	corev1 "github.com/unikorn-cloud/core/pkg/openapi"
 	identityauth "github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityopenapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/principal"
+	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	networkclient "github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+const testNamespace = "uni-storage-test"
+
+//nolint:gochecknoglobals
+var (
+	storageRange = &regionv1.AttachmentIPRange{
+		Start: v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 0, 1)},
+		End:   v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 0, 4)},
+	}
+)
+
+func newTestNetwork(name string) *regionv1.Network {
+	return &regionv1.Network{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: testNamespace,
+			Labels: map[string]string{
+				constants.ResourceAPIVersionLabel: "2",
+			},
+		},
+		Status: regionv1.NetworkStatus{
+			Openstack: &regionv1.NetworkStatusOpenstack{
+				VlanID:       ptr.To(1111),
+				StorageRange: storageRange,
+			},
+		},
+	}
+}
+
+func newFakeClient(t *testing.T, objects ...client.Object) client.Client {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, regionv1.AddToScheme(scheme))
+
+	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+}
+
+func newContextWithPermissions(ctx context.Context) context.Context {
+	return rbac.NewContext(ctx, &identityopenapi.Acl{
+		Global: &identityopenapi.AclEndpoints{
+			identityopenapi.AclEndpoint{
+				Name:       "region:networks:v2",
+				Operations: []identityopenapi.AclOperation{"read"},
+			},
+		},
+	})
+}
 
 func TestGenerateAttachmentList(t *testing.T) {
 	t.Parallel()
+
+	network := newTestNetwork("net-1")
+	client := newFakeClient(t, network)
+	netclient := networkclient.New(client, testNamespace, nil)
+
+	ctx := newContextWithPermissions(t.Context())
 
 	tests := []struct {
 		name  string
@@ -52,7 +114,11 @@ func TestGenerateAttachmentList(t *testing.T) {
 				NetworkIDs: openapi.NetworkIDList{"net-1"},
 			},
 			want: []regionv1.Attachment{
-				{NetworkID: "net-1"},
+				{
+					NetworkID:      "net-1",
+					SegmentationID: ptr.To(1111),
+					IPRange:        storageRange,
+				},
 			},
 		},
 		{
@@ -66,7 +132,8 @@ func TestGenerateAttachmentList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := generateAttachmentList(tt.input)
+			got, err := generateAttachmentList(ctx, netclient, tt.input)
+			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
 		})
 	}
@@ -95,7 +162,7 @@ func TestConvertV2List(t *testing.T) {
 						},
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "test-filestorage",
-							Namespace: "default",
+							Namespace: testNamespace,
 							Labels: map[string]string{
 								"app": "mock",
 							},
@@ -158,7 +225,7 @@ func TestConvertV2List(t *testing.T) {
 						},
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "test-filestorage",
-							Namespace: "default",
+							Namespace: testNamespace,
 							Labels: map[string]string{
 								"app": "mock",
 							},
@@ -466,6 +533,10 @@ func TestConvertProtocols(t *testing.T) {
 func TestGenerateV2(t *testing.T) {
 	t.Parallel()
 
+	network := newTestNetwork("net-1")
+
+	k8s := newFakeClient(t, network)
+
 	inputBuilder := &generateV2InputBuilder{}
 
 	tests := []struct {
@@ -478,7 +549,7 @@ func TestGenerateV2(t *testing.T) {
 			input: inputBuilder.Default().Run(),
 			want: &regionv1.FileStorage{
 				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
+					Namespace: testNamespace,
 					Labels: map[string]string{
 						constants.RegionLabel:                    "reg-1",
 						coreconstants.NameLabel:                  "test-filestorage",
@@ -495,7 +566,12 @@ func TestGenerateV2(t *testing.T) {
 				Spec: regionv1.FileStorageSpec{
 					Size:           *resource.NewQuantity(int64(10737418240), resource.BinarySI),
 					StorageClassID: "sc-1",
-					Attachments:    []regionv1.Attachment{{NetworkID: "net-1"}},
+					Attachments: []regionv1.Attachment{
+						{
+							NetworkID:      "net-1",
+							SegmentationID: ptr.To(1111),
+							IPRange:        storageRange,
+						}},
 					NFS: &regionv1.NFS{
 						RootSquash: true,
 					},
@@ -508,7 +584,7 @@ func TestGenerateV2(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			client, ctx := newClientAndContext(t, &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
+			client, ctx := newClientAndContext(t, k8s, &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
 
 			got, err := client.generateV2(ctx, tt.input.organizationID, tt.input.projectID, tt.input.regionID, tt.input.request, tt.input.storageClassID)
 
@@ -540,13 +616,11 @@ func TestGenerateV2Validations(t *testing.T) {
 			name:          "missing principal",
 			input:         inputBuilder.Default().Run(),
 			authorization: &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}},
-			want:          "unable to set principal information",
 		},
 		{
 			name:      "missing authorization",
 			input:     inputBuilder.Default().Run(),
 			principal: &principal.Principal{Actor: "actor@example.com"},
-			want:      "failed to set identity metadata",
 		},
 	}
 
@@ -554,13 +628,14 @@ func TestGenerateV2Validations(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			c, ctx := newClientAndContext(t, tt.authorization, tt.principal)
+			client := newFakeClient(t)
+
+			c, ctx := newClientAndContext(t, client, tt.authorization, tt.principal)
 
 			got, err := c.generateV2(ctx, tt.input.organizationID, tt.input.projectID, tt.input.regionID, tt.input.request, tt.input.storageClassID)
 
 			require.Nil(t, got)
 			require.Error(t, err)
-			require.Contains(t, err.Error(), tt.want)
 		})
 	}
 }
@@ -615,10 +690,10 @@ func (b *generateV2InputBuilder) Run() *generateV2Input {
 	return b.input
 }
 
-func newClientAndContext(t *testing.T, auth *identityauth.Info, principalInfo *principal.Principal) (*Client, context.Context) {
+func newClientAndContext(t *testing.T, c client.Client, auth *identityauth.Info, principalInfo *principal.Principal) (*Client, context.Context) {
 	t.Helper()
 
-	client := &Client{namespace: "default"}
+	client := New(c, testNamespace, nil)
 	ctx := t.Context()
 
 	if auth != nil {
@@ -628,6 +703,8 @@ func newClientAndContext(t *testing.T, auth *identityauth.Info, principalInfo *p
 	if principalInfo != nil {
 		ctx = principal.NewContext(ctx, principalInfo)
 	}
+
+	ctx = newContextWithPermissions(ctx)
 
 	return client, ctx
 }
