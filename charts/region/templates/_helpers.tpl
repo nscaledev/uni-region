@@ -32,3 +32,7 @@ Create the container images
 {{- define "unikorn.serverControllerImage" -}}
 {{- .Values.serverController.image | default (printf "%s/unikorn-server-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
 {{- end }}
+
+{{- define "unikorn.fileStorageControllerImage" -}}
+{{- .Values.fileStorageController.image | default (printf "%s/unikorn-file-storage-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default .Chart.Version)) }}
+{{- end }}

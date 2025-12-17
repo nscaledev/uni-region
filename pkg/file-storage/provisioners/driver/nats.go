@@ -37,11 +37,9 @@ var (
 )
 
 const (
-	SubjectKey        = "nats_subject"
-	URLKey            = "nats_url"
-	CAFileKey         = "nats_ca_file"
-	ClientCertFileKey = "nats_client_cert_file"
-	ClientKeyFileKey  = "nats_client_key_file"
+	SubjectKey          = "nats_subject"
+	URLKey              = "nats_url"
+	ClientSecretNameKey = "nats_client_secret_name" //nolint:gosec
 )
 
 type EmptyResponse struct{}

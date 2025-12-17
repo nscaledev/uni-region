@@ -53,11 +53,15 @@ func (p *Provisioner) reconcileFileStorage(ctx context.Context, driver types.Dri
 	// If the resource doesn't exist, create it
 	if fs == nil {
 		log.V(1).Info("creating file storage", "id", p.fileStorage.Name)
+
 		created, err := driver.Create(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, desiredSize, desiredRootSquash)
+		if err != nil {
+			return err
+		}
 
 		p.fileStorage.Status.MountPath = &created.Path
 
-		return err // Returns nil if created successfully
+		return nil // Returns nil if created successfully
 	}
 
 	// ensure mountPath is set
