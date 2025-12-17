@@ -1445,7 +1445,6 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 
 	network.Status.Openstack.NetworkID = ptr.To(result.ID)
 	network.Status.Openstack.VlanID = vlanID
-	network.Status.Openstack.StorageRange = storageRange(network.Spec.Prefix.IPNet)
 
 	return result, nil
 }
@@ -1489,6 +1488,7 @@ func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, 
 		}
 
 		network.Status.Openstack.SubnetID = ptr.To(result.ID)
+		network.Status.Openstack.StorageRange = storageRange(network.Spec.Prefix.IPNet)
 
 		return result, nil
 	}
@@ -1500,6 +1500,7 @@ func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, 
 	}
 
 	network.Status.Openstack.SubnetID = ptr.To(result.ID)
+	network.Status.Openstack.StorageRange = storageRange(network.Spec.Prefix.IPNet)
 
 	return result, nil
 }
