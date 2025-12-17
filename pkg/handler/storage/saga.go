@@ -18,7 +18,6 @@ package storage
 
 import (
 	"context"
-	"strconv"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
@@ -55,22 +54,19 @@ func newCreateSaga(client *Client, request *openapi.StorageV2Create) *createSaga
 	}
 }
 
-func (c *Client) generateAllocation(size int) identityapi.ResourceAllocationList {
+func (c *Client) generateAllocation(size int64) identityapi.ResourceAllocationList {
 	return identityapi.ResourceAllocationList{
 		{
 			Kind:      "filestorage",
-			Committed: size,
+			Committed: int(size),
 		},
 	}
 }
 
 func (s *createSaga) createAllocation(ctx context.Context) error {
-	convertedSize, err := strconv.Atoi(s.request.Spec.Size)
-	if err != nil {
-		return err
-	}
-
-	required := s.client.generateAllocation(convertedSize)
+	// We want to preserve that all sizes stored in k8s is in bytes
+	quantity := gibToQuantity(s.request.Spec.SizeGiB)
+	required := s.client.generateAllocation(quantity.Value())
 
 	return identityclient.NewAllocations(s.client.client, s.client.identity).Create(ctx, s.filestorage, required)
 }
@@ -202,13 +198,13 @@ func (s *updateSaga) validateRequest(ctx context.Context) error {
 }
 
 func (s *updateSaga) updateAllocation(ctx context.Context) error {
-	required := s.client.generateAllocation(s.updated.Spec.Size.Size())
+	required := s.client.generateAllocation(s.updated.Spec.Size.Value())
 
 	return identityclient.NewAllocations(s.client.client, s.client.identity).Update(ctx, s.current, required)
 }
 
 func (s *updateSaga) revertAllocation(ctx context.Context) error {
-	required := s.client.generateAllocation(s.current.Spec.Size.Size())
+	required := s.client.generateAllocation(s.current.Spec.Size.Value())
 
 	return identityclient.NewAllocations(s.client.client, s.client.identity).Update(ctx, s.current, required)
 }

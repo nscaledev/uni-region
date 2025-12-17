@@ -119,7 +119,7 @@ func TestConvertV2List(t *testing.T) {
 					},
 
 					Spec: openapi.StorageV2Spec{
-						Size: "0",
+						SizeGiB: 0,
 						Attachments: &openapi.StorageAttachmentV2Spec{
 							NetworkIDs: []string{},
 						},
@@ -167,7 +167,7 @@ func TestConvertV2List(t *testing.T) {
 							NFS: &regionv1.NFS{
 								RootSquash: true,
 							},
-							Size: *resource.NewQuantity(int64(100), resource.BinarySI),
+							Size: *gibToQuantity(int64(100)),
 							Attachments: []regionv1.Attachment{
 								{
 									NetworkID: "net-1",
@@ -188,7 +188,7 @@ func TestConvertV2List(t *testing.T) {
 					},
 
 					Spec: openapi.StorageV2Spec{
-						Size: "100",
+						SizeGiB: 100,
 						Attachments: &openapi.StorageAttachmentV2Spec{
 							NetworkIDs: []string{"net-1"},
 						},
@@ -224,6 +224,7 @@ func TestConvertV2List(t *testing.T) {
 	}
 }
 
+//nolint:dupl
 func TestConvertV2(t *testing.T) {
 	t.Parallel()
 
@@ -233,7 +234,7 @@ func TestConvertV2(t *testing.T) {
 		want  *openapi.StorageV2Read
 	}{
 		{
-			name: "test with zero values",
+			name: "test with limited values",
 			input: &regionv1.FileStorage{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "FileStorage",
@@ -247,6 +248,7 @@ func TestConvertV2(t *testing.T) {
 					},
 				},
 				Spec: regionv1.FileStorageSpec{
+					Size: *gibToQuantity(int64(2)),
 					NFS: &regionv1.NFS{
 						RootSquash: true,
 					},
@@ -259,7 +261,7 @@ func TestConvertV2(t *testing.T) {
 					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
 				},
 				Spec: openapi.StorageV2Spec{
-					Size: "0",
+					SizeGiB: 2,
 					Attachments: &openapi.StorageAttachmentV2Spec{
 						NetworkIDs: []string{},
 					},
@@ -279,6 +281,72 @@ func TestConvertV2(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
+			got := convertV2(tt.input)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+//nolint:dupl
+func TestConvertV2SizeConversion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input *regionv1.FileStorage
+		want  *openapi.StorageV2Read
+	}{
+		{
+			name: "test with limited values",
+			input: &regionv1.FileStorage{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "FileStorage",
+					APIVersion: "v1alpha1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "",
+					Namespace: "default",
+					Labels: map[string]string{
+						"app": "mock",
+					},
+				},
+				Spec: regionv1.FileStorageSpec{
+					Size: *gibToQuantity(int64(2)),
+					NFS: &regionv1.NFS{
+						RootSquash: true,
+					},
+					Attachments: []regionv1.Attachment{},
+				},
+			},
+			want: &openapi.StorageV2Read{
+				Metadata: corev1.ProjectScopedResourceReadMetadata{
+					HealthStatus:       corev1.ResourceHealthStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+				},
+				Spec: openapi.StorageV2Spec{
+					SizeGiB: 2,
+					Attachments: &openapi.StorageAttachmentV2Spec{
+						NetworkIDs: []string{},
+					},
+					StorageType: openapi.StorageTypeV2Spec{
+						NFS: &openapi.NFSV2Spec{
+							RootSquash: true,
+						},
+					},
+				},
+				Status: openapi.StorageV2Status{
+					Usage: openapi.StorageUsageV2Spec{},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, int64(2147483648), tt.input.Spec.Size.Value())
 
 			got := convertV2(tt.input)
 			require.Equal(t, tt.want, got)
@@ -425,7 +493,7 @@ func TestGenerateV2(t *testing.T) {
 					},
 				},
 				Spec: regionv1.FileStorageSpec{
-					Size:           resource.MustParse("10Gi"),
+					Size:           *resource.NewQuantity(int64(10737418240), resource.BinarySI),
 					StorageClassID: "sc-1",
 					Attachments:    []regionv1.Attachment{{NetworkID: "net-1"}},
 					NFS: &regionv1.NFS{
@@ -468,13 +536,6 @@ func TestGenerateV2Validations(t *testing.T) {
 		authorization *identityauth.Info
 		want          string
 	}{
-		{
-			name:          "invalid size",
-			input:         inputBuilder.WithSize("invalid").Run(),
-			principal:     &principal.Principal{Actor: "actor@example.com"},
-			authorization: &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}},
-			want:          "unable to convert size to resource.Quantity",
-		},
 		{
 			name:          "missing principal",
 			input:         inputBuilder.Default().Run(),
@@ -527,7 +588,7 @@ func newDefaultGenerateV2Input() *generateV2Input {
 				Name: "test-filestorage",
 			},
 			Spec: openapi.StorageV2Spec{
-				Size:        "10Gi",
+				SizeGiB:     10,
 				Attachments: &openapi.StorageAttachmentV2Spec{NetworkIDs: openapi.NetworkIDList{"net-1"}},
 			},
 		},
@@ -540,12 +601,12 @@ func (b *generateV2InputBuilder) Default() *generateV2InputBuilder {
 	return b
 }
 
-func (b *generateV2InputBuilder) WithSize(size string) *generateV2InputBuilder {
+func (b *generateV2InputBuilder) WithSize(size int) *generateV2InputBuilder {
 	if b.input == nil {
 		b.input = newDefaultGenerateV2Input()
 	}
 
-	b.input.request.Spec.Size = size
+	b.input.request.Spec.SizeGiB = int64(size)
 
 	return b
 }
