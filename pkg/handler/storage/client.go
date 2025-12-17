@@ -20,6 +20,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -39,6 +40,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -77,8 +79,36 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 		Status: openapi.StorageV2Status{
 			RegionId:       in.Labels[constants.RegionLabel],
 			StorageClassId: in.Spec.StorageClassID,
+			Attachments:    convertStatusAttachmentList(in),
 		},
 	}
+}
+
+// NOTE: This returns attachment status based solely on FileStorage.Spec.Attachments (the desired state).
+// Because attachments may be reconciled asynchronously by the controller, this does not accurately reflect the actual state.
+// As a result, provisioning status is omitted (nil). This will be addressed in a future update.
+func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttachmentListV2Status {
+	if len(in.Spec.Attachments) == 0 {
+		return nil
+	}
+
+	out := make(openapi.StorageAttachmentListV2Status, len(in.Spec.Attachments))
+
+	for i, att := range in.Spec.Attachments {
+		var mountSource *string
+
+		// Only build MountSource if all required fields are non-nil.
+		if att.IPRange != nil && in.Status.MountPath != nil {
+			mountSource = ptr.To(fmt.Sprintf("%s:%s", att.IPRange.Start, *in.Status.MountPath))
+		}
+
+		out[i] = openapi.StorageAttachmentV2Status{
+			NetworkId:   att.NetworkID,
+			MountSource: mountSource,
+		}
+	}
+
+	return &out
 }
 
 func checkRegionNFS(in *regionv1.NFS) *openapi.NFSV2Spec {

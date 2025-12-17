@@ -937,6 +937,9 @@ type SshKey struct {
 	PrivateKey string `json:"privateKey"`
 }
 
+// StorageAttachmentListV2Status Describes the network attachments for storage
+type StorageAttachmentListV2Status = []StorageAttachmentV2Status
+
 // StorageAttachmentV2Spec Describes the network attachment for storage
 type StorageAttachmentV2Spec struct {
 	// NetworkIDs A list of network IDs
@@ -945,12 +948,14 @@ type StorageAttachmentV2Spec struct {
 
 // StorageAttachmentV2Status Describes the network attachment for storage
 type StorageAttachmentV2Status struct {
-	NetworkIds []struct {
-		Id *string `json:"id,omitempty"`
+	// MountSource The mount source for the attached storage in the format <host>:<path>.
+	MountSource *string `json:"mountSource,omitempty"`
 
-		// ProvisioningStatus The provisioning state of a resource.
-		ProvisioningStatus *externalRef0.ResourceProvisioningStatus `json:"provisioningStatus,omitempty"`
-	} `json:"networkIds"`
+	// NetworkId The network ID
+	NetworkId string `json:"networkId"`
+
+	// ProvisioningStatus The provisioning state of a resource.
+	ProvisioningStatus *externalRef0.ResourceProvisioningStatus `json:"provisioningStatus,omitempty"`
 }
 
 // StorageClassListV2Read A list of storage classes.
@@ -1051,8 +1056,8 @@ type StorageV2Spec struct {
 
 // StorageV2Status Read only status about storage
 type StorageV2Status struct {
-	// Attachments Describes the network attachment for storage
-	Attachments *StorageAttachmentV2Status `json:"attachments,omitempty"`
+	// Attachments Describes the network attachments for storage
+	Attachments *StorageAttachmentListV2Status `json:"attachments,omitempty"`
 
 	// RegionId The region an identity is provisioned in.
 	RegionId string `json:"regionId"`

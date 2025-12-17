@@ -237,11 +237,18 @@ func TestConvertV2List(t *testing.T) {
 							Size: *gibToQuantity(int64(100)),
 							Attachments: []regionv1.Attachment{
 								{
-									NetworkID: "net-1",
+									NetworkID:      "net-1",
+									SegmentationID: ptr.To(1111),
+									IPRange: &regionv1.AttachmentIPRange{
+										Start: v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 0, 1)},
+										End:   v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 0, 4)},
+									},
 								},
 							},
 						},
-						Status: regionv1.FileStorageStatus{},
+						Status: regionv1.FileStorageStatus{
+							MountPath: ptr.To("/export"),
+						},
 					},
 				},
 			},
@@ -267,7 +274,7 @@ func TestConvertV2List(t *testing.T) {
 					},
 
 					Status: openapi.StorageV2Status{
-						Attachments:    nil,
+						Attachments:    &openapi.StorageAttachmentListV2Status{{NetworkId: "net-1", MountSource: ptr.To("192.168.0.1:/export")}},
 						RegionId:       "",
 						StorageClassId: "",
 						Usage: openapi.StorageUsageV2Spec{
