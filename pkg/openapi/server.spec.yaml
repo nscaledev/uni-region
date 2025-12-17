@@ -2531,6 +2531,7 @@ components:
       type: object
       required:
       - networkIds
+      - provisioningStatus
       properties:
         networkIds:
           type: array
