@@ -1400,6 +1400,11 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 		log.V(1).Info("L2 network already exists")
 
 		network.Status.Openstack.NetworkID = ptr.To(result.ID)
+		if result.NetworkType == "vlan" {
+			if vlanID, err := strconv.Atoi(result.SegmentationID); err != nil {
+				network.Status.Openstack.VlanID = &vlanID
+			}
+		}
 
 		return result, nil
 	}
@@ -1435,6 +1440,7 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 	}
 
 	network.Status.Openstack.NetworkID = ptr.To(result.ID)
+	network.Status.Openstack.VlanID = vlanID
 
 	return result, nil
 }

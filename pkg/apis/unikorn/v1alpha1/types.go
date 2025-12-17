@@ -432,6 +432,8 @@ type NetworkStatusOpenstack struct {
 	NetworkID *string `json:"networkID,omitempty"`
 	// SubnetID is the subnet ID.
 	SubnetID *string `json:"subnetID,omitempty"`
+	// VlanID is the VLAN ID for this network
+	VlanID *int `json:"vlanID,omitempty"`
 }
 
 type NetworkStatus struct {

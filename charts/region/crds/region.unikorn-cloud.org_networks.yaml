@@ -165,6 +165,9 @@ spec:
                   subnetID:
                     description: SubnetID is the subnet ID.
                     type: string
+                  vlanID:
+                    description: VlanID is the VLAN ID for this network
+                    type: integer
                 type: object
             type: object
         required:
