@@ -32,6 +32,7 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
@@ -74,6 +75,7 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 			SizeGiB: quantityToSizeGiB(in.Spec.Size),
 		},
 		Status: openapi.StorageV2Status{
+			Attachments:    convertAttachments(),
 			RegionId:       in.Labels[constants.RegionLabel],
 			StorageClassId: in.Spec.StorageClassID,
 		},
@@ -100,6 +102,32 @@ func convertAttachmentsList(in []regionv1.Attachment) openapi.NetworkIDList {
 	}
 
 	return out
+}
+
+func (c *Client) convertV2Update(in *regionv1.FileStorage, fsdetails ...*types.FileStorageDetails) *openapi.StorageV2Read {
+	used := fsdetails[0].UsedCapacity.String()
+	return &openapi.StorageV2Read{
+		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
+		Spec: openapi.StorageV2Spec{
+			Attachments: &openapi.StorageAttachmentV2Spec{},
+			StorageType: openapi.StorageTypeV2Spec{},
+			Size:        in.Spec.Size.String(),
+		},
+		Status: openapi.StorageV2Status{
+			Attachments:    c.convertAttachments(),
+			RegionId:       in.Labels[constants.RegionLabel],
+			StorageClassId: in.Spec.StorageClassID,
+			Usage: openapi.StorageUsageV2Spec{
+				Used:     &used,
+				Capacity: fsdetails[0].Size.String(),
+			},
+		},
+	}
+}
+
+func (c *Client) convertAttachments() *openapi.StorageAttachmentV2Status {
+	// :)
+	c.fcdriver.ListAttachments(ctx)
 }
 
 // ListV2 satisfies an http get to return all storage items within a project.
@@ -301,6 +329,21 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	regionID := current.Labels[constants.RegionLabel]
 
 	required, err := c.generateV2(ctx, organizationID, projectID, regionID, request, current.Spec.StorageClassID)
+	if err = c.createFCDriver(ctx); err != nil {
+		return nil, err
+	}
+
+	// Check the the requested capacity does not exceed used capacity
+	storagedetails, err := c.fcdriver.GetDetails(ctx, projectID, storageID)
+	if err != nil {
+		return nil, err
+	}
+
+	if request.Spec.Size >= storagedetails.UsedCapacity.String() {
+		return nil, err
+	}
+
+	required, err := c.generateV2(ctx, organizationID, projectID, regionID, request)
 	if err != nil {
 		return nil, err
 	}
@@ -316,6 +359,18 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	}
 
 	return convertV2(updated), nil
+}
+
+// createFCDriver generated the driver into the client, this
+// is only needed on update type requests.
+func (c *Client) createFCDriver(ctx context.Context) error {
+	fcdriver, err := filedriver.New(ctx, c.client, &regionv1.FileStorageProvisioner{})
+	if err != nil {
+		return err
+	}
+	c.fcdriver = fcdriver
+	return nil
+
 }
 
 // Delete satisfies the http DELETE action by removing the client.
