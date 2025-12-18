@@ -52,7 +52,15 @@ const testNamespace = "uni-storage-test"
 var (
 	storageRange = &regionv1.AttachmentIPRange{
 		Start: v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 0, 1)},
-		End:   v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 0, 4)},
+		End:   v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 0, 127)},
+	}
+
+	// TODO: This gets directly compared to the byte representation of the calculated range;
+	// to avoid having to fiddle with converting 16 byte representations, I've just
+	// inlined the exact, 4-byte IPv4 representation here. This may be a bit brittle.
+	narrowedRange = &regionv1.AttachmentIPRange{
+		Start: v1alpha1.IPv4Address{IP: net.IP{192, 168, 0, 1}},
+		End:   v1alpha1.IPv4Address{IP: net.IP{192, 168, 0, 4}},
 	}
 )
 
@@ -117,7 +125,7 @@ func TestGenerateAttachmentList(t *testing.T) {
 				{
 					NetworkID:      "net-1",
 					SegmentationID: ptr.To(1111),
-					IPRange:        storageRange,
+					IPRange:        narrowedRange,
 				},
 			},
 		},
@@ -577,7 +585,7 @@ func TestGenerateV2(t *testing.T) {
 						{
 							NetworkID:      "net-1",
 							SegmentationID: ptr.To(1111),
-							IPRange:        storageRange,
+							IPRange:        narrowedRange,
 						}},
 					NFS: &regionv1.NFS{
 						RootSquash: true,
