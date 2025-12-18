@@ -427,7 +427,7 @@ func (c *Client) ListClasses(ctx context.Context, params openapi.GetApiV2Filesto
 	}
 
 	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.FileStorageClass) bool {
-		return rbac.AllowOrganizationScope(ctx, "region:filestorageclass:v2", identityapi.Read, resource.Labels[coreconstants.OrganizationLabel]) != nil
+		return authorizeFileStorageClassRead(ctx, &resource) != nil
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.FileStorageClass) int {
@@ -448,7 +448,7 @@ func (c *Client) GetStorageClass(ctx context.Context, storageClassID string) (*o
 		return nil, errors.OAuth2ServerError("unable to lookup storage class").WithError(err)
 	}
 
-	if err := rbac.AllowOrganizationScope(ctx, "region:filestorageclass:v2", identityapi.Read, result.Labels[coreconstants.OrganizationLabel]); err != nil {
+	if err := authorizeFileStorageClassRead(ctx, result); err != nil {
 		return nil, err
 	}
 
@@ -491,4 +491,16 @@ func quantityToSizeGiB(quantity resource.Quantity) int64 {
 
 func gibToQuantity(size int64) *resource.Quantity {
 	return resource.NewQuantity((size * (1 << 30)), resource.BinarySI)
+}
+
+// authorizeFileStorageClassRead enforces read permissions for a FileStorageClass.
+// If the storage class has an associated organization, access is allowed only if the caller has read permissions for that organization.
+// Otherwise, the class is accessible to all organizations.
+func authorizeFileStorageClassRead(ctx context.Context, resource *regionv1.FileStorageClass) error {
+	orgID := resource.Labels[coreconstants.OrganizationLabel]
+	if orgID == "" {
+		return nil
+	}
+
+	return rbac.AllowOrganizationScope(ctx, "region:filestorageclass:v2", identityapi.Read, orgID)
 }
