@@ -316,6 +316,10 @@ func generateAttachment(network *regionv1.Network) (*regionv1.Attachment, error)
 }
 
 func narrowStorageRange(in *regionv1.AttachmentIPRange) *regionv1.AttachmentIPRange {
+	if in == nil {
+		return nil
+	}
+
 	startIP := in.Start.To4() // NB assumes IPv4 address
 
 	bs := big.NewInt(0).SetBytes(startIP)

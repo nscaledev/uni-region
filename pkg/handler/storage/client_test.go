@@ -102,6 +102,17 @@ func newContextWithPermissions(ctx context.Context) context.Context {
 	})
 }
 
+func TestNarrowRange(t *testing.T) {
+	t.Parallel()
+
+	nr := narrowStorageRange(storageRange)
+	require.Equal(t, nr, narrowedRange)
+
+	// this can be nil, if it's not been set yet
+	nr = narrowStorageRange(nil)
+	require.Nilf(t, nr, "Expected nil output when nil input (and not a NPE panic)")
+}
+
 func TestGenerateAttachmentList(t *testing.T) {
 	t.Parallel()
 
