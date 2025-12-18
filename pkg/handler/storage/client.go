@@ -21,8 +21,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"net"
 	"slices"
 
+	unikorncorev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
@@ -303,11 +306,30 @@ func generateAttachment(network *regionv1.Network) (*regionv1.Attachment, error)
 		return nil, errors.OAuth2ServerError("network requested is not a suitable network") // TODO: use 422, or supply better information here.
 	}
 
+	ipRange := narrowStorageRange(network.Status.Openstack.StorageRange)
+
 	return &regionv1.Attachment{
 		NetworkID:      networkID,
-		IPRange:        network.Status.Openstack.StorageRange,
+		IPRange:        ipRange,
 		SegmentationID: network.Status.Openstack.VlanID,
 	}, nil
+}
+
+func narrowStorageRange(in *regionv1.AttachmentIPRange) *regionv1.AttachmentIPRange {
+	if in == nil {
+		return nil
+	}
+
+	startIP := in.Start.To4() // NB assumes IPv4 address
+
+	bs := big.NewInt(0).SetBytes(startIP)
+	be := big.NewInt(0).Add(bs, big.NewInt(3))
+	endIP := net.IP(be.Bytes())
+
+	return &regionv1.AttachmentIPRange{
+		Start: unikorncorev1.IPv4Address{IP: startIP},
+		End:   unikorncorev1.IPv4Address{IP: endIP},
+	}
 }
 
 func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.StorageV2Update, error) {
