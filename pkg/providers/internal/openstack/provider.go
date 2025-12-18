@@ -1405,7 +1405,10 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 		network.Status.Openstack.NetworkID = ptr.To(result.ID)
 
 		if result.NetworkType == "vlan" {
-			if vlanID, err := strconv.Atoi(result.SegmentationID); err != nil {
+			vlanID, err := strconv.Atoi(result.SegmentationID)
+			if err != nil {
+				log.Error(err, "failed to parse SegmentationID string into VLAN ID", "id", result.SegmentationID)
+			} else {
 				network.Status.Openstack.VlanID = &vlanID
 			}
 		}
