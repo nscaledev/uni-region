@@ -104,7 +104,7 @@ spec:
                           anyOf:
                           - type: integer
                           - type: string
-                          description: Disk allows the dick size to be specified.
+                          description: Disk allows the disk size to be specified.
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                           x-kubernetes-int-or-string: true
                         gpu:

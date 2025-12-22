@@ -97,7 +97,7 @@ type RegionKubernetesNodeSpec struct {
 	CPU *CPUSpec `json:"cpu"`
 	// Memory allows the memory amount to be specified.
 	Memory *resource.Quantity `json:"memory"`
-	// Disk allows the dick size to be specified.
+	// Disk allows the disk size to be specified.
 	Disk *resource.Quantity `json:"disk"`
 	// GPU defines additional GPU metadata.  When provided it will enable selection
 	// of images based on GPU vendor and model.
