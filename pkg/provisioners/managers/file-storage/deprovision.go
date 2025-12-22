@@ -45,5 +45,14 @@ func (p *Provisioner) detachNetworks(ctx context.Context, driver types.Driver) e
 }
 
 func (p *Provisioner) deleteFileStorage(ctx context.Context, driver types.Driver) error {
-	return driver.Delete(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, true)
+	if err := driver.Delete(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, true); err != nil {
+		// nothing to do.
+		if errors.Is(err, types.ErrNotFound) {
+			return nil
+		}
+
+		return err
+	}
+
+	return nil
 }
