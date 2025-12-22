@@ -360,7 +360,7 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 		return nil, err
 	}
 
-	if request.Spec.SizeGiB >= quantityToSizeGiB(*storagedetails.UsedCapacity) {
+	if request.Spec.SizeGiB < quantityToSizeGiB(*storagedetails.UsedCapacity) {
 		return nil, err
 	}
 
