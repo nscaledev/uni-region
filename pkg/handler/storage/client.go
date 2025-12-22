@@ -105,8 +105,20 @@ func convertAttachmentsList(in []regionv1.Attachment) openapi.NetworkIDList {
 }
 
 func (c *Client) updateWithSizeList(ctx context.Context, in *openapi.StorageV2List) error {
+	driverMap := make(map[client.ObjectKey]*filedriver.Client)
+
 	for _, v := range *in {
-		if err := c.updateWithSize(ctx, &v); err != nil {
+		driver, ok := driverMap[client.ObjectKey{Namespace: c.namespace, Name: v.Status.StorageClassId}]
+		if !ok {
+			fcdriver, err := c.getFileStorageDetails(ctx, v.Status.StorageClassId)
+			if err != nil {
+				return err
+			}
+			driverMap[client.ObjectKey{Namespace: c.namespace, Name: v.Status.StorageClassId}] = fcdriver
+			driver = fcdriver
+		}
+
+		if err := c.updateWithSize(ctx, &v, driver); err != nil {
 			return err
 		}
 	}
@@ -116,11 +128,7 @@ func (c *Client) updateWithSizeList(ctx context.Context, in *openapi.StorageV2Li
 
 // updateWithSize calls to the filestorage driver and gets the capacity
 // and used capacity from VAST.
-func (c *Client) updateWithSize(ctx context.Context, in *openapi.StorageV2Read) error {
-	fcdriver, err := c.getFileStorageDetails(ctx, in.Status.StorageClassId)
-	if err != nil {
-		return err
-	}
+func (c *Client) updateWithSize(ctx context.Context, in *openapi.StorageV2Read, fcdriver *filedriver.Client) error {
 
 	fsdetails, err := fcdriver.GetDetails(ctx, in.Metadata.ProjectId, in.Status.StorageClassId)
 	if err != nil {
@@ -230,7 +238,12 @@ func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2R
 
 	storage := convertV2(result)
 
-	if err := c.updateWithSize(ctx, storage); err != nil {
+	fcdriver, err := c.getFileStorageDetails(ctx, storageID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.updateWithSize(ctx, storage, fcdriver); err != nil {
 		return nil, err
 	}
 
@@ -376,7 +389,7 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 
 	storage := convertV2(updated)
 
-	if err := c.updateWithSize(ctx, storage); err != nil {
+	if err := c.updateWithSize(ctx, storage, fcdriver); err != nil {
 		return nil, err
 	}
 
