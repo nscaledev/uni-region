@@ -96,7 +96,7 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 		return err
 	}
 
-	if err := s.validateNetworks(ctx, s.request.Spec.Attachments.NetworkIDs); err != nil {
+	if err := s.validateAttachments(ctx, s.request.Spec.Attachments); err != nil {
 		return err
 	}
 
@@ -138,10 +138,14 @@ func (s *createSaga) validateStorageClass(ctx context.Context, storageClassID st
 	return nil
 }
 
-func (s *createSaga) validateNetworks(ctx context.Context, networkIDs []string) error {
+func (s *createSaga) validateAttachments(ctx context.Context, attachments *openapi.StorageAttachmentV2Spec) error {
+	if attachments == nil {
+		return nil
+	}
+
 	networkClient := network.New(s.client.client, s.client.namespace, s.client.identity)
 
-	for _, id := range networkIDs {
+	for _, id := range attachments.NetworkIDs {
 		network, err := networkClient.GetV2(ctx, id)
 		if err != nil {
 			return errors.
