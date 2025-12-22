@@ -20,7 +20,6 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
-	"fmt"
 	"slices"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -40,6 +39,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -135,9 +135,20 @@ func (c *Client) updateWithSize(ctx context.Context, in *openapi.StorageV2Read, 
 		return err
 	}
 
-	usedGiB := fmt.Sprintf("%d", quantityToSizeGiB(*fsdetails.UsedCapacity))
-	in.Status.Usage.Used = &usedGiB
-	in.Status.Usage.Capacity = fsdetails.Size.String()
+	if fsdetails.Size != nil {
+		in.Status.Usage = &openapi.StorageUsageV2Status{
+			CapacityGiB: quantityToSizeGiB(*fsdetails.Size),
+		}
+
+		if fsdetails.UsedCapacity != nil {
+			var free resource.Quantity
+			free.Add(*fsdetails.Size)
+			free.Sub(*fsdetails.UsedCapacity)
+
+			in.Status.Usage.UsedGiB = ptr.To(quantityToSizeGiB(*fsdetails.UsedCapacity))
+			in.Status.Usage.FreeGiB = ptr.To(quantityToSizeGiB(free))
+		}
+	}
 
 	return nil
 }
@@ -362,21 +373,6 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 		return nil, err
 	}
 
-	fcdriver, err := c.getFileStorageDetails(ctx, storageID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Check that requested capacity does not exceed used capacity.
-	storagedetails, err := fcdriver.GetDetails(ctx, projectID, storageID)
-	if err != nil {
-		return nil, err
-	}
-
-	if request.Spec.SizeGiB < quantityToSizeGiB(*storagedetails.UsedCapacity) {
-		return nil, err
-	}
-
 	updated := current.DeepCopy()
 	updated.Labels = required.Labels
 	updated.Annotations = required.Annotations
@@ -389,8 +385,29 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 
 	storage := convertV2(updated)
 
+	fcdriver, err := c.getFileStorageDetails(ctx, storageID)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := c.updateWithSize(ctx, storage, fcdriver); err != nil {
 		return nil, err
+	}
+
+	if storage.Status.Usage == nil {
+		//todo: evaluate better return
+		return nil, errors.OAuth2ServerError("unable to get usage")
+	}
+
+	if request.Spec.SizeGiB < storage.Status.Usage.CapacityGiB {
+		if storage.Status.Usage.UsedGiB == nil {
+			return nil, errors.OAuth2ServerError("unable to get used capacity")
+		}
+
+		if request.Spec.SizeGiB < *storage.Status.Usage.UsedGiB {
+			//todo: evaluate better return
+			return nil, errors.OAuth2ServerError("unable to shrink below used capacity")
+		}
 	}
 
 	return storage, nil

@@ -134,11 +134,6 @@ func TestConvertV2List(t *testing.T) {
 						Attachments:    nil,
 						RegionId:       "",
 						StorageClassId: "",
-						Usage: openapi.StorageUsageV2Spec{
-							Capacity: "",
-							Free:     nil,
-							Used:     nil,
-						},
 					},
 				},
 			},
@@ -203,11 +198,6 @@ func TestConvertV2List(t *testing.T) {
 						Attachments:    nil,
 						RegionId:       "",
 						StorageClassId: "",
-						Usage: openapi.StorageUsageV2Spec{
-							Capacity: "",
-							Free:     nil,
-							Used:     nil,
-						},
 					},
 				},
 			},
@@ -271,9 +261,7 @@ func TestConvertV2(t *testing.T) {
 						},
 					},
 				},
-				Status: openapi.StorageV2Status{
-					Usage: openapi.StorageUsageV2Spec{},
-				},
+				Status: openapi.StorageV2Status{},
 			},
 		},
 	}
@@ -335,9 +323,7 @@ func TestConvertV2SizeConversion(t *testing.T) {
 						},
 					},
 				},
-				Status: openapi.StorageV2Status{
-					Usage: openapi.StorageUsageV2Spec{},
-				},
+				Status: openapi.StorageV2Status{},
 			},
 		},
 	}
