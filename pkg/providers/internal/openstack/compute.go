@@ -19,7 +19,6 @@ package openstack
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -32,14 +31,13 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/remoteconsoles"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
-	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-	"github.com/unikorn-cloud/region/pkg/constants"
 
 	"k8s.io/utils/ptr"
 )
@@ -81,9 +79,7 @@ func NewComputeClient(ctx context.Context, provider CredentialProvider, options 
 // NOTE: while OpenStack can generate one for us, we have far more control doing it ourselves
 // thus allowing us to impose stricter security, and it's more provider agnostic that way.
 func (c *ComputeClient) CreateKeypair(ctx context.Context, name, publicKey string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "POST /compute/v2/os-keypairs", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "POST /compute/v2/os-keypairs")
 	defer span.End()
 
 	opts := &keypairs.CreateOpts{
@@ -96,9 +92,11 @@ func (c *ComputeClient) CreateKeypair(ctx context.Context, name, publicKey strin
 }
 
 func (c *ComputeClient) DeleteKeypair(ctx context.Context, name string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.key_pair.name", name),
+	)
 
-	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /compute/v2/os-keypairs/%s", name), trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "DELETE /compute/v2/os-keypairs/{name}", spanAttributes)
 	defer span.End()
 
 	return keypairs.Delete(ctx, c.client, name, nil).Err
@@ -136,9 +134,7 @@ func (c *ComputeClient) GetFlavors(ctx context.Context) ([]flavors.Flavor, error
 		return result, nil
 	}
 
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "GET /compute/v2/flavors", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "GET /compute/v2/flavors")
 	defer span.End()
 
 	page, err := flavors.ListDetail(c.client, &flavors.ListOpts{SortKey: "name"}).AllPages(ctx)
@@ -181,9 +177,7 @@ func (c *ComputeClient) GetFlavors(ctx context.Context) ([]flavors.Flavor, error
 // CreateServerGroup creates the named server group with the given policy and returns
 // the result.
 func (c *ComputeClient) CreateServerGroup(ctx context.Context, name string) (*servergroups.ServerGroup, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "POST /compute/v2/os-server-groups", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "POST /compute/v2/os-server-groups")
 	defer span.End()
 
 	opts := &servergroups.CreateOpts{
@@ -201,18 +195,18 @@ func (c *ComputeClient) CreateServerGroup(ctx context.Context, name string) (*se
 // DeleteServerGroup removes a server group, this exists because nova does do any cleanup
 // on project deletion and just orphans the resource.
 func (c *ComputeClient) DeleteServerGroup(ctx context.Context, id string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server_group.id", id),
+	)
 
-	_, span := tracer.Start(ctx, "DELETE /compute/v2/os-server-groups/"+id)
+	_, span := traceStart(ctx, "DELETE /compute/v2/os-server-groups/{id}", spanAttributes)
 	defer span.End()
 
 	return servergroups.Delete(ctx, c.client, id).ExtractErr()
 }
 
 func (c *ComputeClient) UpdateQuotas(ctx context.Context, projectID string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "PUT /compute/v2/os-quota-sets")
+	_, span := traceStart(ctx, "PUT /compute/v2/os-quota-sets")
 	defer span.End()
 
 	opts := &quotasets.UpdateOpts{
@@ -226,9 +220,7 @@ func (c *ComputeClient) UpdateQuotas(ctx context.Context, projectID string) erro
 }
 
 func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server) (*servers.Server, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "GET /compute/v2/servers")
+	_, span := traceStart(ctx, "GET /compute/v2/servers")
 	defer span.End()
 
 	name := server.Labels[coreconstants.NameLabel]
@@ -259,9 +251,7 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 }
 
 func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Server, keyName string, networks []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "POST /compute/v2/servers/")
+	_, span := traceStart(ctx, "POST /compute/v2/servers")
 	defer span.End()
 
 	schedulerHintOpts := servers.SchedulerHintOpts{}
@@ -290,9 +280,11 @@ func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Serv
 }
 
 func (c *ComputeClient) DeleteServer(ctx context.Context, id string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", id),
+	)
 
-	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /compute/v2/servers/%s", id))
+	_, span := traceStart(ctx, "DELETE /compute/v2/servers/{id}", spanAttributes)
 	defer span.End()
 
 	return servers.Delete(ctx, c.client, id).ExtractErr()
@@ -304,11 +296,13 @@ func (c *ComputeClient) RebootServer(ctx context.Context, id string, hard bool) 
 		rebootMethod = servers.HardReboot
 	}
 
-	action := fmt.Sprintf("%s reboot", strings.ToLower(string(rebootMethod)))
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", id),
+		attribute.String("compute.server.action", "reboot"),
+		attribute.String("compute.reboot.method", strings.ToLower(string(rebootMethod))),
+	)
 
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, fmt.Sprintf("POST /compute/v2/servers/%s/action (%s)", id, action))
+	_, span := traceStart(ctx, "POST /compute/v2/servers/{id}/action", spanAttributes)
 	defer span.End()
 
 	opts := servers.RebootOpts{
@@ -319,27 +313,35 @@ func (c *ComputeClient) RebootServer(ctx context.Context, id string, hard bool) 
 }
 
 func (c *ComputeClient) StartServer(ctx context.Context, id string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", id),
+		attribute.String("compute.server.action", "start"),
+	)
 
-	_, span := tracer.Start(ctx, fmt.Sprintf("POST /compute/v2/servers/%s/action (start)", id))
+	_, span := traceStart(ctx, "POST /compute/v2/servers/{id}/action", spanAttributes)
 	defer span.End()
 
 	return servers.Start(ctx, c.client, id).ExtractErr()
 }
 
 func (c *ComputeClient) StopServer(ctx context.Context, id string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", id),
+		attribute.String("compute.server.action", "stop"),
+	)
 
-	_, span := tracer.Start(ctx, fmt.Sprintf("POST /compute/v2/servers/%s/action (stop)", id))
+	_, span := traceStart(ctx, "POST /compute/v2/servers/{id}/action", spanAttributes)
 	defer span.End()
 
 	return servers.Stop(ctx, c.client, id).ExtractErr()
 }
 
 func (c *ComputeClient) CreateRemoteConsole(ctx context.Context, id string) (*remoteconsoles.RemoteConsole, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", id),
+	)
 
-	_, span := tracer.Start(ctx, fmt.Sprintf("POST /compute/v2/servers/%s/remote-consoles", id))
+	_, span := traceStart(ctx, "POST /compute/v2/servers/{id}/remote-consoles", spanAttributes)
 	defer span.End()
 
 	opts := remoteconsoles.CreateOpts{
@@ -351,9 +353,11 @@ func (c *ComputeClient) CreateRemoteConsole(ctx context.Context, id string) (*re
 }
 
 func (c *ComputeClient) ShowConsoleOutput(ctx context.Context, id string, length *int) (string, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", id),
+	)
 
-	_, span := tracer.Start(ctx, fmt.Sprintf("GET /compute/v2/servers/%s/console-output", id))
+	_, span := traceStart(ctx, "GET /compute/v2/servers/{id}/console-output", spanAttributes)
 	defer span.End()
 
 	opts := &servers.ShowConsoleOutputOpts{}
