@@ -19,6 +19,7 @@ package openstack
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -34,9 +35,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
-	"github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"k8s.io/utils/ptr"
 )
@@ -235,11 +236,11 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 	}
 
 	if len(result) == 0 {
-		return nil, errors.ErrResourceNotFound
+		return nil, fmt.Errorf("%w, no server found with name %s", types.ErrResourceNotFound, name)
 	}
 
 	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+		return nil, fmt.Errorf("%w: multiple servers found with name %s", types.ErrInternal, name)
 	}
 
 	return &result[0], nil

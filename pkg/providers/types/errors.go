@@ -22,9 +22,20 @@ import (
 )
 
 var (
-	// ErrResourceDependency is returned when a resource is in unexpected
-	// state or condition.
-	ErrResourceDependency = errors.New("resource dependency error")
+	// ErrUnimplemented is returned when a requested feature or operation is not implemented.
+	ErrUnimplemented = errors.New("unimplemented")
+
+	// ErrInvalidParameter is returned when an input parameter is invalid.
+	ErrInvalidParameter = errors.New("invalid parameter")
+
+	// ErrResourceNotFound is returned when a requested resource cannot be found.
+	ErrResourceNotFound = errors.New("resource not found")
+
+	// ErrConflict is returned when there is a conflict with the current state of the resource.
+	ErrConflict = errors.New("conflict")
+
+	// ErrInternal is returned when an unexpected internal error occurs.
+	ErrInternal = errors.New("internal")
 
 	// ErrImageNotReadyForUpload is returned when the image record at the provider is not in a state
 	// for receiving image file data.

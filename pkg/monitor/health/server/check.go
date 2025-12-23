@@ -25,6 +25,7 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -100,7 +101,7 @@ func (c *Checker) Check(ctx context.Context) error {
 			// machine in the provider, this will get raised, we don't want
 			// to prevent other servers from reconciling their power state
 			// due to one bad actor!
-			if goerrors.Is(err, errors.ErrResourceNotFound) {
+			if goerrors.Is(err, types.ErrResourceNotFound) {
 				continue
 			}
 

@@ -25,7 +25,6 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -37,19 +36,8 @@ import (
 	"github.com/kaptinlin/jsonschema"
 	"go.opentelemetry.io/otel/attribute"
 
-	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-)
-
-var (
-	// ErrPEMDecode is raised when the PEM decode failed for some reason.
-	ErrPEMDecode = errors.New("PEM decode error")
-
-	// ErrPEMType is raised when the encounter the wrong PEM type, e.g. PKCS#1.
-	ErrPEMType = errors.New("PEM type unsupported")
-
-	// ErrKeyType is raised when we encounter an unsupported key type.
-	ErrKeyType = errors.New("key type unsupported")
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 )
 
 // imagePropertySchemaV2 defines what consitutes a valid image e.g. contains all the
@@ -88,11 +76,11 @@ func NewImageClient(ctx context.Context, provider CredentialProvider, options *u
 func decodeSigningKey(signingKey []byte) (*ecdsa.PublicKey, error) {
 	pemBlock, _ := pem.Decode(signingKey)
 	if pemBlock == nil {
-		return nil, ErrPEMDecode
+		return nil, fmt.Errorf("%w: failed to decode signing key PEM", types.ErrInternal)
 	}
 
 	if pemBlock.Type != "PUBLIC KEY" {
-		return nil, fmt.Errorf("%w: %s", ErrPEMType, pemBlock.Type)
+		return nil, fmt.Errorf("%w: unexpected PEM block type %s for signing key", types.ErrInternal, pemBlock.Type)
 	}
 
 	key, err := x509.ParsePKIXPublicKey(pemBlock.Bytes)
@@ -102,7 +90,7 @@ func decodeSigningKey(signingKey []byte) (*ecdsa.PublicKey, error) {
 
 	ecKey, ok := key.(*ecdsa.PublicKey)
 	if !ok {
-		return nil, ErrKeyType
+		return nil, fmt.Errorf("%w: signing key is not an ECDSA public key", types.ErrInternal)
 	}
 
 	return ecKey, nil
@@ -258,7 +246,7 @@ func (c *ImageClient) GetImage(ctx context.Context, id string) (*images.Image, e
 
 	// REVIEW_ME: Ideally, we should move the image validation to the caller side.
 	if !c.imageValid(result, schema) {
-		return nil, fmt.Errorf("%w: image not valid", coreerrors.ErrResourceNotFound)
+		return nil, fmt.Errorf("%w: image not valid", types.ErrInternal)
 	}
 
 	return result, nil

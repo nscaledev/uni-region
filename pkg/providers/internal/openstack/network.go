@@ -19,6 +19,7 @@ package openstack
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"time"
 
@@ -35,9 +36,9 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"k8s.io/utils/ptr"
 )
@@ -175,11 +176,11 @@ func (c *NetworkClient) GetNetwork(ctx context.Context, network *unikornv1.Netwo
 	}
 
 	if len(result) == 0 {
-		return nil, errors.ErrResourceNotFound
+		return nil, fmt.Errorf("%w: no network found with name %s", types.ErrResourceNotFound, opts.Name)
 	}
 
 	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+		return nil, fmt.Errorf("%w: multiple networks found with name %s", types.ErrInternal, opts.Name)
 	}
 
 	return &result[0], nil
@@ -246,11 +247,11 @@ func (c *NetworkClient) GetSubnet(ctx context.Context, network *unikornv1.Networ
 	}
 
 	if len(result) == 0 {
-		return nil, errors.ErrResourceNotFound
+		return nil, fmt.Errorf("%w: no subnet found with name %s", types.ErrResourceNotFound, opts.Name)
 	}
 
 	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+		return nil, fmt.Errorf("%w: multiple subnets found with name %s", types.ErrInternal, opts.Name)
 	}
 
 	return &result[0], nil
@@ -329,11 +330,11 @@ func (c *NetworkClient) GetRouter(ctx context.Context, network *unikornv1.Networ
 	}
 
 	if len(result) == 0 {
-		return nil, errors.ErrResourceNotFound
+		return nil, fmt.Errorf("%w: no router found with name %s", types.ErrResourceNotFound, opts.Name)
 	}
 
 	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+		return nil, fmt.Errorf("%w: multiple routers found with name %s", types.ErrInternal, opts.Name)
 	}
 
 	return &result[0], nil
@@ -421,11 +422,11 @@ func (c *NetworkClient) GetSecurityGroup(ctx context.Context, securityGroup *uni
 	}
 
 	if len(result) == 0 {
-		return nil, errors.ErrResourceNotFound
+		return nil, fmt.Errorf("%w: no security group found with name %s", types.ErrResourceNotFound, opts.Name)
 	}
 
 	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+		return nil, fmt.Errorf("%w: multiple security groups found with name %s", types.ErrInternal, opts.Name)
 	}
 
 	return &result[0], nil
@@ -535,11 +536,11 @@ func (c *NetworkClient) GetFloatingIP(ctx context.Context, portID string) (*floa
 	}
 
 	if len(result) == 0 {
-		return nil, errors.ErrResourceNotFound
+		return nil, fmt.Errorf("%w: no floating IP found with port ID %s", types.ErrResourceNotFound, portID)
 	}
 
 	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+		return nil, fmt.Errorf("%w: multiple floating IPs found with port ID %s", types.ErrInternal, portID)
 	}
 
 	return &result[0], nil
@@ -645,11 +646,11 @@ func (c *NetworkClient) GetServerPort(ctx context.Context, server *unikornv1.Ser
 	}
 
 	if len(result) == 0 {
-		return nil, errors.ErrResourceNotFound
+		return nil, fmt.Errorf("%w: no port found with name %s", types.ErrResourceNotFound, opts.Name)
 	}
 
 	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+		return nil, fmt.Errorf("%w: multiple ports found with name %s", types.ErrInternal, opts.Name)
 	}
 
 	return &result[0], nil
