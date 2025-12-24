@@ -40,7 +40,16 @@ const (
 	testOrganizationID = "3d84f1f2-4a41-44d5-98ab-8b282d00abb9"
 )
 
-// newTestProviderImage creates a test provider image with the given parameters.
+func NewTestMockAllocationClient(t *testing.T) *MockAllocationClient {
+	t.Helper()
+
+	mockController := gomock.NewController(t)
+	t.Cleanup(mockController.Finish)
+
+	return NewMockAllocationClient(mockController)
+}
+
+// NewTestProviderImage creates a test provider image with the given parameters.
 // If organizationID is empty, it uses testOrganizationID as the default.
 func NewTestProviderImage(status types.ImageStatus) *types.Image {
 	return &types.Image{
@@ -56,7 +65,7 @@ func NewTestProviderImage(status types.ImageStatus) *types.Image {
 	}
 }
 
-// newTestMockProvider creates a new mock provider with a gomock controller.
+// NewTestMockProvider creates a new mock provider with a gomock controller.
 // The controller is automatically cleaned up when the test finishes.
 func NewTestMockProvider(t *testing.T) *MockProvider {
 	t.Helper()

@@ -23,6 +23,7 @@ import (
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
+	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
@@ -52,12 +53,14 @@ type Handler struct {
 }
 
 func New(client client.Client, namespace string, options *Options, identity *identityapi.ClientWithResponses) (*Handler, error) {
+	allocationClient := identityclient.NewAllocations(client, identity)
+
 	h := &Handler{
 		client:       client,
 		namespace:    namespace,
 		options:      options,
 		identity:     identity,
-		ImageHandler: NewImageHandler(client, namespace, options),
+		ImageHandler: NewImageHandler(client, namespace, options, allocationClient),
 	}
 
 	return h, nil

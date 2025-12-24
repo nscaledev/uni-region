@@ -13,9 +13,62 @@ import (
 	io "io"
 	reflect "reflect"
 
+	openapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	types "github.com/unikorn-cloud/region/pkg/providers/types"
 	gomock "go.uber.org/mock/gomock"
 )
+
+// MockAllocationClient is a mock of AllocationClient interface.
+type MockAllocationClient struct {
+	ctrl     *gomock.Controller
+	recorder *MockAllocationClientMockRecorder
+}
+
+// MockAllocationClientMockRecorder is the mock recorder for MockAllocationClient.
+type MockAllocationClientMockRecorder struct {
+	mock *MockAllocationClient
+}
+
+// NewMockAllocationClient creates a new mock instance.
+func NewMockAllocationClient(ctrl *gomock.Controller) *MockAllocationClient {
+	mock := &MockAllocationClient{ctrl: ctrl}
+	mock.recorder = &MockAllocationClientMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockAllocationClient) EXPECT() *MockAllocationClientMockRecorder {
+	return m.recorder
+}
+
+// OrganizationScopedCreateRaw mocks base method.
+func (m *MockAllocationClient) OrganizationScopedCreateRaw(ctx context.Context, organizationID, reference string, allocations openapi.ResourceAllocationList) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "OrganizationScopedCreateRaw", ctx, organizationID, reference, allocations)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// OrganizationScopedCreateRaw indicates an expected call of OrganizationScopedCreateRaw.
+func (mr *MockAllocationClientMockRecorder) OrganizationScopedCreateRaw(ctx, organizationID, reference, allocations any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OrganizationScopedCreateRaw", reflect.TypeOf((*MockAllocationClient)(nil).OrganizationScopedCreateRaw), ctx, organizationID, reference, allocations)
+}
+
+// OrganizationScopedDeleteRaw mocks base method.
+func (m *MockAllocationClient) OrganizationScopedDeleteRaw(ctx context.Context, organizationID, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "OrganizationScopedDeleteRaw", ctx, organizationID, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// OrganizationScopedDeleteRaw indicates an expected call of OrganizationScopedDeleteRaw.
+func (mr *MockAllocationClientMockRecorder) OrganizationScopedDeleteRaw(ctx, organizationID, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OrganizationScopedDeleteRaw", reflect.TypeOf((*MockAllocationClient)(nil).OrganizationScopedDeleteRaw), ctx, organizationID, id)
+}
 
 // MockProvider is a mock of Provider interface.
 type MockProvider struct {
