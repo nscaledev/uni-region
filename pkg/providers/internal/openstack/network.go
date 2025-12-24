@@ -19,11 +19,10 @@ package openstack
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"time"
 
-	gophercloud "github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/external"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/floatingips"
@@ -34,13 +33,11 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/networks"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-	"github.com/unikorn-cloud/region/pkg/constants"
 
 	"k8s.io/utils/ptr"
 )
@@ -90,9 +87,7 @@ func (c *NetworkClient) externalNetworks(ctx context.Context) ([]networks.Networ
 		return result, nil
 	}
 
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "GET /network/v2.0/networks", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "GET /network/v2.0/networks")
 	defer span.End()
 
 	affirmative := true
@@ -161,9 +156,7 @@ type NetworkExt struct {
 }
 
 func (c *NetworkClient) GetNetwork(ctx context.Context, network *unikornv1.Network) (*NetworkExt, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "GET /network/v2.0/networks", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "GET /network/v2.0/networks")
 	defer span.End()
 
 	opts := &networks.ListOpts{
@@ -196,9 +189,7 @@ func (c *NetworkClient) GetNetwork(ctx context.Context, network *unikornv1.Netwo
 // This requires https://github.com/unikorn-cloud/python-unikorn-openstack-policy
 // to be installed, see the README for further details on how this has to work.
 func (c *NetworkClient) CreateNetwork(ctx context.Context, network *unikornv1.Network, vlanID *int) (*NetworkExt, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "POST /network/v2.0/networks", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "POST /network/v2.0/networks")
 	defer span.End()
 
 	opts := &provider.CreateOptsExt{
@@ -228,18 +219,16 @@ func (c *NetworkClient) CreateNetwork(ctx context.Context, network *unikornv1.Ne
 }
 
 func (c *NetworkClient) DeleteNetwork(ctx context.Context, id string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /network/v2.0/networks/%s", id), trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "DELETE /network/v2.0/networks/{id}")
 	defer span.End()
+
+	span.SetAttributes(attribute.String("network.id", id))
 
 	return networks.Delete(ctx, c.client, id).ExtractErr()
 }
 
 func (c *NetworkClient) GetSubnet(ctx context.Context, network *unikornv1.Network) (*subnets.Subnet, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "GET /network/v2.0/subnets", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "GET /network/v2.0/subnets")
 	defer span.End()
 
 	opts := &subnets.ListOpts{
@@ -268,9 +257,7 @@ func (c *NetworkClient) GetSubnet(ctx context.Context, network *unikornv1.Networ
 }
 
 func (c *NetworkClient) CreateSubnet(ctx context.Context, network *unikornv1.Network, networkID, prefix, gatewayIP string, dnsNameservers []string, routes []subnets.HostRoute, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "POST /network/v2.0/subnets", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "POST /network/v2.0/subnets")
 	defer span.End()
 
 	opts := &subnets.CreateOpts{
@@ -293,10 +280,10 @@ func (c *NetworkClient) CreateSubnet(ctx context.Context, network *unikornv1.Net
 }
 
 func (c *NetworkClient) UpdateSubnet(ctx context.Context, subnetID string, dnsNameservers []string, routes []subnets.HostRoute) (*subnets.Subnet, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, fmt.Sprintf("PUT /network/v2.0/subnets/%s", subnetID), trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "PUT /network/v2.0/subnets/{id}")
 	defer span.End()
+
+	span.SetAttributes(attribute.String("subnet.id", subnetID))
 
 	opts := &subnets.UpdateOpts{
 		DNSNameservers: &dnsNameservers,
@@ -315,18 +302,16 @@ func (c *NetworkClient) UpdateSubnet(ctx context.Context, subnetID string, dnsNa
 }
 
 func (c *NetworkClient) DeleteSubnet(ctx context.Context, id string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /network/v2.0/subnets/%s", id), trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "DELETE /network/v2.0/subnets/{id}")
 	defer span.End()
+
+	span.SetAttributes(attribute.String("subnet.id", id))
 
 	return subnets.Delete(ctx, c.client, id).ExtractErr()
 }
 
 func (c *NetworkClient) GetRouter(ctx context.Context, network *unikornv1.Network) (*routers.Router, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "GET /network/v2.0/routers", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "GET /network/v2.0/routers")
 	defer span.End()
 
 	opts := routers.ListOpts{
@@ -360,9 +345,7 @@ func (c *NetworkClient) CreateRouter(ctx context.Context, network *unikornv1.Net
 		return nil, err
 	}
 
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "POST /network/v2.0/routers", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "POST /network/v2.0/routers")
 	defer span.End()
 
 	opts := &routers.CreateOpts{
@@ -381,19 +364,19 @@ func (c *NetworkClient) CreateRouter(ctx context.Context, network *unikornv1.Net
 }
 
 func (c *NetworkClient) DeleteRouter(ctx context.Context, id string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /network/v2.0/routers/%s", id), trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "DELETE /network/v2.0/routers/{id}")
 	defer span.End()
+
+	span.SetAttributes(attribute.String("router.id", id))
 
 	return routers.Delete(ctx, c.client, id).ExtractErr()
 }
 
 func (c *NetworkClient) AddRouterInterface(ctx context.Context, routerID, subnetID string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, fmt.Sprintf("PUT /network/v2.0/routers/%s/add_router_interface", routerID), trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "PUT /network/v2.0/routers/{id}/add_router_interface")
 	defer span.End()
+
+	span.SetAttributes(attribute.String("router.id", routerID))
 
 	opts := &routers.AddInterfaceOpts{
 		SubnetID: subnetID,
@@ -403,10 +386,10 @@ func (c *NetworkClient) AddRouterInterface(ctx context.Context, routerID, subnet
 }
 
 func (c *NetworkClient) RemoveRouterInterface(ctx context.Context, routerID, subnetID string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, fmt.Sprintf("PUT /network/v2.0/routers/%s/remove_router_interface", routerID), trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "PUT /network/v2.0/routers/{id}/remove_router_interface")
 	defer span.End()
+
+	span.SetAttributes(attribute.String("router.id", routerID))
 
 	opts := &routers.RemoveInterfaceOpts{
 		SubnetID: subnetID,
@@ -420,9 +403,7 @@ func securityGroupName(securityGroup *unikornv1.SecurityGroup) string {
 }
 
 func (c *NetworkClient) GetSecurityGroup(ctx context.Context, securityGroup *unikornv1.SecurityGroup) (*groups.SecGroup, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "GET /network/v2.0/securitygroups", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "GET /network/v2.0/securitygroups")
 	defer span.End()
 
 	opts := groups.ListOpts{
@@ -452,9 +433,7 @@ func (c *NetworkClient) GetSecurityGroup(ctx context.Context, securityGroup *uni
 
 // CreateSecurityGroup creates a new security group.
 func (c *NetworkClient) CreateSecurityGroup(ctx context.Context, securityGroup *unikornv1.SecurityGroup) (*groups.SecGroup, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "POST /network/v2.0/securitygroups", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "POST /network/v2.0/securitygroups")
 	defer span.End()
 
 	opts := &groups.CreateOpts{
@@ -471,20 +450,20 @@ func (c *NetworkClient) CreateSecurityGroup(ctx context.Context, securityGroup *
 
 // DeleteSecurityGroup deletes a security group.
 func (c *NetworkClient) DeleteSecurityGroup(ctx context.Context, securityGroupID string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /network/v2.0/securitygroups/%s", securityGroupID), trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "DELETE /network/v2.0/securitygroups/{id}")
 	defer span.End()
+
+	span.SetAttributes(attribute.String("security_group.id", securityGroupID))
 
 	return groups.Delete(ctx, c.client, securityGroupID).Err
 }
 
 // ListSecurityGroupRules does exactly that.
 func (c *NetworkClient) ListSecurityGroupRules(ctx context.Context, securityGroupID string) ([]rules.SecGroupRule, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, fmt.Sprintf("GET /network/v2.0/securitygroups/%s/rules", securityGroupID), trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "GET /network/v2.0/securitygroups/{id}/rules")
 	defer span.End()
+
+	span.SetAttributes(attribute.String("security_group.id", securityGroupID))
 
 	opts := rules.ListOpts{
 		SecGroupID: securityGroupID,
@@ -500,10 +479,10 @@ func (c *NetworkClient) ListSecurityGroupRules(ctx context.Context, securityGrou
 
 // CreateSecurityGroupRule adds a security group rule to a security group.
 func (c *NetworkClient) CreateSecurityGroupRule(ctx context.Context, securityGroupID string, direction rules.RuleDirection, protocol rules.RuleProtocol, portStart, portEnd int, prefix string) (*rules.SecGroupRule, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, fmt.Sprintf("POST /network/v2.0/securitygroups/%s/rules", securityGroupID), trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "POST /network/v2.0/securitygroups/{id}/rules")
 	defer span.End()
+
+	span.SetAttributes(attribute.String("security_group.id", securityGroupID))
 
 	opts := &rules.CreateOpts{
 		Description:    "unikorn managed security group rule",
@@ -526,18 +505,19 @@ func (c *NetworkClient) CreateSecurityGroupRule(ctx context.Context, securityGro
 
 // DeleteSecurityGroupRule deletes a security group rule from a security group.
 func (c *NetworkClient) DeleteSecurityGroupRule(ctx context.Context, securityGroupID, ruleID string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /network/v2.0/securitygroups/%s/rules/%s", securityGroupID, ruleID), trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "DELETE /network/v2.0/securitygroups/{security_group_id}/rules/{security_group_rule_id}")
 	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("security_group.id", securityGroupID),
+		attribute.String("security_group_rule.id", ruleID),
+	)
 
 	return rules.Delete(ctx, c.client, ruleID).Err
 }
 
 func (c *NetworkClient) GetFloatingIP(ctx context.Context, portID string) (*floatingips.FloatingIP, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "GET /network/v2.0/floatingips", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "GET /network/v2.0/floatingips")
 	defer span.End()
 
 	opts := &floatingips.ListOpts{
@@ -572,9 +552,7 @@ func (c *NetworkClient) CreateFloatingIP(ctx context.Context, portID string) (*f
 		return nil, err
 	}
 
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "POST /network/v2.0/floatingips", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "POST /network/v2.0/floatingips")
 	defer span.End()
 
 	opts := &floatingips.CreateOpts{
@@ -592,19 +570,17 @@ func (c *NetworkClient) CreateFloatingIP(ctx context.Context, portID string) (*f
 
 // DeleteFloatingIP deletes a floating IP.
 func (c *NetworkClient) DeleteFloatingIP(ctx context.Context, id string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /network/v2.0/floatingips/%s", id), trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "DELETE /network/v2.0/floatingips/{id}")
 	defer span.End()
+
+	span.SetAttributes(attribute.String("floating_ip.id", id))
 
 	return floatingips.Delete(ctx, c.client, id).Err
 }
 
 // ListServerPorts returns a list of ports for a server.
 func (c *NetworkClient) ListServerPorts(ctx context.Context, serverID string) ([]ports.Port, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "GET /network/v2.0/ports", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "GET /network/v2.0/ports")
 	defer span.End()
 
 	listOpts := ports.ListOpts{
@@ -625,9 +601,7 @@ func (c *NetworkClient) ListServerPorts(ctx context.Context, serverID string) ([
 }
 
 func (c *NetworkClient) ListRouterPorts(ctx context.Context, routerID string) ([]ports.Port, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "GET /network/v2.0/ports", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "GET /network/v2.0/ports")
 	defer span.End()
 
 	listOpts := ports.ListOpts{
@@ -653,9 +627,7 @@ func serverName(server *unikornv1.Server) string {
 }
 
 func (c *NetworkClient) GetServerPort(ctx context.Context, server *unikornv1.Server) (*ports.Port, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "GET /network/v2.0/ports", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "GET /network/v2.0/ports")
 	defer span.End()
 
 	opts := ports.ListOpts{
@@ -684,9 +656,7 @@ func (c *NetworkClient) GetServerPort(ctx context.Context, server *unikornv1.Ser
 }
 
 func (c *NetworkClient) CreateServerPort(ctx context.Context, server *unikornv1.Server, networkID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "POST /network/v2.0/ports", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "POST /network/v2.0/ports")
 	defer span.End()
 
 	opts := &ports.CreateOpts{
@@ -705,10 +675,10 @@ func (c *NetworkClient) CreateServerPort(ctx context.Context, server *unikornv1.
 }
 
 func (c *NetworkClient) UpdatePort(ctx context.Context, portID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "PUT /network/v2.0/ports/%s"+portID, trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "PUT /network/v2.0/ports/{id}")
 	defer span.End()
+
+	span.SetAttributes(attribute.String("port.id", portID))
 
 	opts := &ports.UpdateOpts{
 		AllowedAddressPairs: ptr.To(allowedAddressPairs),
@@ -724,10 +694,10 @@ func (c *NetworkClient) UpdatePort(ctx context.Context, portID string, securityG
 }
 
 func (c *NetworkClient) DeletePort(ctx context.Context, portID string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, fmt.Sprintf("DELETE /network/v2.0/ports/%s", portID), trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "DELETE /network/v2.0/ports/{id}")
 	defer span.End()
+
+	span.SetAttributes(attribute.String("port.id", portID))
 
 	return ports.Delete(ctx, c.client, portID).Err
 }
