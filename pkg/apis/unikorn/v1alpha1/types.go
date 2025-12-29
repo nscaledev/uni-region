@@ -828,6 +828,9 @@ type FileStorageStatus struct {
 	// Attachments reflects the observed attachment state per network.
 	// +listType=map
 	// +listMapKey=networkID
+	// +patchStrategy=merge
+	// +patchMergeKey=networkID
+	// +optional
 	Attachments []FileStorageAttachmentStatus `json:"attachments,omitempty"`
 }
 
@@ -847,6 +850,10 @@ type FileStorageAttachmentStatus struct {
 	NetworkID string `json:"networkID"`
 	// ProvisioningStatus indicates if this attachment is ready/failed/etc.
 	ProvisioningStatus AttachmentProvisioningStatus `json:"provisioningStatus"`
+	// SegmentationID is the VLAN ID for the attachment.
+	SegmentationID *int `json:"segmentationID,omitempty"`
+	// Human-readable message indicating details about the attachment.
+	Message string `json:"message"`
 }
 
 // Attachment has the network identifier for the storage.

@@ -140,6 +140,8 @@ func (p *Provisioner) attachMissingNetworks(ctx context.Context, cli client.Clie
 
 	for vlan, attachment := range desiredSet {
 		if _, exists := currentSet[vlan]; exists {
+			setNetworkAttachmentStatus(p.fileStorage, attachment.NetworkID, attachment.SegmentationID, unikornv1.AttachmentProvisioned, "")
+
 			continue
 		}
 
@@ -147,12 +149,18 @@ func (p *Provisioner) attachMissingNetworks(ctx context.Context, cli client.Clie
 
 		// Add references to any resources we consume.
 		if err := manager.AddResourceReference(ctx, cli, &unikornv1.Network{}, client.ObjectKey{Namespace: p.fileStorage.Namespace, Name: attachment.NetworkID}, reference); err != nil {
+			setNetworkAttachmentStatus(p.fileStorage, attachment.NetworkID, attachment.SegmentationID, unikornv1.AttachmentErrored, err.Error())
+
 			return fmt.Errorf("%w: failed to add network references", err)
 		}
 
 		if err := driver.AttachNetwork(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, &attachment); err != nil {
+			setNetworkAttachmentStatus(p.fileStorage, attachment.NetworkID, attachment.SegmentationID, unikornv1.AttachmentErrored, err.Error())
+
 			return err
 		}
+
+		setNetworkAttachmentStatus(p.fileStorage, attachment.NetworkID, attachment.SegmentationID, unikornv1.AttachmentProvisioned, "")
 	}
 
 	return nil
@@ -170,8 +178,12 @@ func (p *Provisioner) detachStaleNetworks(ctx context.Context, cli client.Client
 		log.V(1).Info("detaching network", "vlan", vlan)
 
 		if err := driver.DetachNetwork(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, vlan); err != nil {
+			setVLanAttachmentStatus(p.fileStorage, vlan, unikornv1.AttachmentProvisioned, err.Error())
+
 			return err
 		}
+
+		removeAttachmentStatus(p.fileStorage, vlan)
 	}
 
 	// Remove references to networks no longer attached. Since the driver (vast) is the source of truth for attachments but does not track network IDs,
@@ -216,4 +228,69 @@ func (p *Provisioner) isNetworkStillAttached(networkName string) bool {
 	}
 
 	return false
+}
+
+// setNetworkAttachmentStatus sets the corresponding attachment status returns true if the status are changed by this call.
+func setNetworkAttachmentStatus(fileStorage *unikornv1.FileStorage, networkID string, segmentationID *int, status unikornv1.AttachmentProvisioningStatus, message string) {
+	if fileStorage == nil {
+		return
+	}
+
+	matchNetworkID := func(as unikornv1.FileStorageAttachmentStatus) bool {
+		return as.NetworkID == networkID
+	}
+
+	i := slices.IndexFunc(fileStorage.Status.Attachments, matchNetworkID)
+	if i < 0 {
+		fileStorage.Status.Attachments = append(fileStorage.Status.Attachments, unikornv1.FileStorageAttachmentStatus{
+			NetworkID:          networkID,
+			SegmentationID:     segmentationID,
+			ProvisioningStatus: status,
+			Message:            message,
+		})
+
+		return
+	}
+
+	fileStorage.Status.Attachments[i].ProvisioningStatus = status
+	fileStorage.Status.Attachments[i].SegmentationID = segmentationID
+	fileStorage.Status.Attachments[i].Message = message
+}
+
+// setVLanAttachmentStatus sets the corresponding attachment status returns true if the status are changed by this call.
+func setVLanAttachmentStatus(fileStorage *unikornv1.FileStorage, segmentationID int, status unikornv1.AttachmentProvisioningStatus, message string) {
+	if fileStorage == nil {
+		return
+	}
+
+	matchSegmentationID := func(as unikornv1.FileStorageAttachmentStatus) bool {
+		return *as.SegmentationID == segmentationID
+	}
+
+	i := slices.IndexFunc(fileStorage.Status.Attachments, matchSegmentationID)
+	if i < 0 {
+		return
+	}
+
+	fileStorage.Status.Attachments[i].ProvisioningStatus = status
+	fileStorage.Status.Attachments[i].Message = message
+}
+
+// removeAttachmentStatus removes the attachment status for the given network ID.
+func removeAttachmentStatus(fileStorage *unikornv1.FileStorage, segmentationID int) {
+	if fileStorage == nil || len(fileStorage.Status.Attachments) == 0 {
+		return
+	}
+
+	// If there no attachment for the given network ID, return false.
+	matchSegmentationID := func(as unikornv1.FileStorageAttachmentStatus) bool {
+		return *as.SegmentationID == segmentationID
+	}
+
+	i := slices.IndexFunc(fileStorage.Status.Attachments, matchSegmentationID)
+	if i < 0 {
+		return
+	}
+
+	fileStorage.Status.Attachments = slices.Delete(fileStorage.Status.Attachments, i, i+1)
 }
