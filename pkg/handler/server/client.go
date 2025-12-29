@@ -198,26 +198,36 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	return convert(updated), nil
 }
 
-func (c *Client) Reboot(ctx context.Context, organizationID, projectID, identityID, serverID string, hard bool) error {
+func (c *Client) getServerIdentityAndProvider(ctx context.Context, organizationID, projectID, identityID, serverID string) (*unikornv1.Server, *unikornv1.Identity, serverProvider, error) {
 	current, err := c.get(ctx, organizationID, projectID, serverID)
 	if err != nil {
-		return err
-	}
-
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
-	if err != nil {
-		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, nil, nil, err
 	}
 
 	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
+	if err != nil {
+		return nil, nil, nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	return current, identity, provider, nil
+}
+
+func (c *Client) Reboot(ctx context.Context, organizationID, projectID, identityID, serverID string, hard bool) error {
+	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, identityID, serverID)
+	if err != nil {
 		return err
 	}
 
-	// REVIEW_ME: Do we want to track who rebooted the server, and when?
-	// REVIEW_ME: This action only reboots the server with the existing configuration, so updating the labels (creator/principal) seems a bit weird.
+	return c.reboot(ctx, identity, server, hard, provider)
+}
 
-	if err := provider.RebootServer(ctx, identity, current, hard); err != nil {
+func (c *Client) reboot(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool, provider serverProvider) error {
+	if err := provider.RebootServer(ctx, identity, server, hard); err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return errors.HTTPNotFound().WithError(err)
 		}
@@ -236,24 +246,17 @@ func (c *Client) Reboot(ctx context.Context, organizationID, projectID, identity
 	return nil
 }
 
-//nolint:dupl
 func (c *Client) Start(ctx context.Context, organizationID, projectID, identityID, serverID string) error {
-	current, err := c.get(ctx, organizationID, projectID, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, identityID, serverID)
 	if err != nil {
 		return err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
-	if err != nil {
-		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
-	}
+	return c.start(ctx, identity, server, provider)
+}
 
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
-	if err != nil {
-		return err
-	}
-
-	if err := provider.StartServer(ctx, identity, current); err != nil {
+func (c *Client) start(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, provider serverProvider) error {
+	if err := provider.StartServer(ctx, identity, server); err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return errors.HTTPNotFound().WithError(err)
 		}
@@ -265,35 +268,27 @@ func (c *Client) Start(ctx context.Context, organizationID, projectID, identityI
 		return errors.OAuth2ServerError("failed to start server").WithError(err)
 	}
 
-	// REVIEW_ME: Do we want to track who started the server, and when?
-	updated := current.DeepCopy()
+	updated := server.DeepCopy()
 	updated.Status.Phase = unikornv1.InstanceLifecyclePhasePending
 
-	if err := c.client.Status().Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+	if err := c.client.Status().Patch(ctx, updated, client.MergeFrom(server)); err != nil {
 		return errors.OAuth2ServerError("failed to patch server").WithError(err)
 	}
 
 	return nil
 }
 
-//nolint:dupl
 func (c *Client) Stop(ctx context.Context, organizationID, projectID, identityID, serverID string) error {
-	current, err := c.get(ctx, organizationID, projectID, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, identityID, serverID)
 	if err != nil {
 		return err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
-	if err != nil {
-		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
-	}
+	return c.stop(ctx, identity, server, provider)
+}
 
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
-	if err != nil {
-		return err
-	}
-
-	if err := provider.StopServer(ctx, identity, current); err != nil {
+func (c *Client) stop(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, provider serverProvider) error {
+	if err := provider.StopServer(ctx, identity, server); err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return errors.HTTPNotFound().WithError(err)
 		}
@@ -305,11 +300,10 @@ func (c *Client) Stop(ctx context.Context, organizationID, projectID, identityID
 		return errors.OAuth2ServerError("failed to stop server").WithError(err)
 	}
 
-	// REVIEW_ME: Do we want to track who stopped the server, and when?
-	updated := current.DeepCopy()
+	updated := server.DeepCopy()
 	updated.Status.Phase = unikornv1.InstanceLifecyclePhaseStopping
 
-	if err := c.client.Status().Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+	if err := c.client.Status().Patch(ctx, updated, client.MergeFrom(server)); err != nil {
 		return errors.OAuth2ServerError("failed to patch server").WithError(err)
 	}
 
@@ -335,22 +329,16 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, serverID
 }
 
 func (c *Client) CreateConsoleSession(ctx context.Context, organizationID, projectID, identityID, serverID string) (*openapi.ConsoleSessionResponse, error) {
-	current, err := c.get(ctx, organizationID, projectID, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, identityID, serverID)
 	if err != nil {
 		return nil, err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
-	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
-	}
+	return c.createConsoleSession(ctx, identity, server, provider)
+}
 
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
-	if err != nil {
-		return nil, err
-	}
-
-	url, err := provider.CreateConsoleSession(ctx, identity, current)
+func (c *Client) createConsoleSession(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, provider serverProvider) (*openapi.ConsoleSessionResponse, error) {
+	url, err := provider.CreateConsoleSession(ctx, identity, server)
 	if err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return nil, errors.HTTPNotFound().WithError(err)
@@ -371,22 +359,16 @@ func (c *Client) CreateConsoleSession(ctx context.Context, organizationID, proje
 }
 
 func (c *Client) GetConsoleOutput(ctx context.Context, organizationID, projectID, identityID, serverID string, params openapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams) (*openapi.ConsoleOutputResponse, error) {
-	current, err := c.get(ctx, organizationID, projectID, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, identityID, serverID)
 	if err != nil {
 		return nil, err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
-	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
-	}
+	return c.getConsoleOutput(ctx, identity, server, params.Length, provider)
+}
 
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
-	if err != nil {
-		return nil, err
-	}
-
-	contents, err := provider.GetConsoleOutput(ctx, identity, current, params.Length)
+func (c *Client) getConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, length *int, provider serverProvider) (*openapi.ConsoleOutputResponse, error) {
+	contents, err := provider.GetConsoleOutput(ctx, identity, server, length)
 	if err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return nil, errors.HTTPNotFound().WithError(err)
