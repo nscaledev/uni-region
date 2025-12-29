@@ -88,6 +88,10 @@ func (s *createSaga) createFileStorage(ctx context.Context) error {
 }
 
 func (s *createSaga) validateRequest(ctx context.Context) error {
+	if s.request.Spec.SizeGiB <= 0 {
+		return errors.OAuth2InvalidRequest("size must be greater or equal to 1GiB")
+	}
+
 	if err := s.validateRegion(ctx, s.request.Spec.RegionId); err != nil {
 		return err
 	}

@@ -392,6 +392,15 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 		return nil, err
 	}
 
+	if err := conversion.UpdateObjectMetadata(required, current, common.IdentityMetadataMutator); err != nil {
+		return nil, errors.OAuth2ServerError("failed to merge metadata").WithError(err)
+	}
+
+	// Preserve the allocation.
+	if v, ok := current.Annotations[coreconstants.AllocationAnnotation]; ok {
+		required.Annotations[coreconstants.AllocationAnnotation] = v
+	}
+
 	updated := current.DeepCopy()
 	updated.Labels = required.Labels
 	updated.Annotations = required.Annotations
