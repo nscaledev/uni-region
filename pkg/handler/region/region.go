@@ -55,10 +55,6 @@ func NewClient(client client.Client, namespace string) *Client {
 	}
 }
 
-func (c *Client) Provider(ctx context.Context, regionID string) (types.Provider, error) {
-	return providers.New(ctx, c.client, c.namespace, regionID)
-}
-
 func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
 	regions := &unikornv1.RegionList{}
 
@@ -86,7 +82,7 @@ func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.Regio
 }
 
 func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID string) (openapi.Flavors, error) {
-	provider, err := c.Provider(ctx, regionID)
+	provider, err := providers.New(ctx, c.client, c.namespace, regionID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
@@ -133,7 +129,7 @@ func convertExternalNetworks(in types.ExternalNetworks) openapi.ExternalNetworks
 }
 
 func (c *Client) ListExternalNetworks(ctx context.Context, regionID string) (openapi.ExternalNetworks, error) {
-	provider, err := c.Provider(ctx, regionID)
+	provider, err := providers.New(ctx, c.client, c.namespace, regionID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}

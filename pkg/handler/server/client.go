@@ -34,8 +34,8 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
-	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -118,7 +118,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 		return nil, err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, identity.Labels[constants.RegionLabel])
+	provider, err := providers.New(ctx, c.client, c.namespace, identity.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
@@ -162,7 +162,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 		return nil, err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, identity.Labels[constants.RegionLabel])
+	provider, err := providers.New(ctx, c.client, c.namespace, identity.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
@@ -207,7 +207,7 @@ func (c *Client) Reboot(ctx context.Context, organizationID, projectID, identity
 		return err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
+	provider, err := providers.New(ctx, c.client, c.namespace, current.Labels[constants.RegionLabel])
 	if err != nil {
 		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
@@ -243,7 +243,7 @@ func (c *Client) Start(ctx context.Context, organizationID, projectID, identityI
 		return err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
+	provider, err := providers.New(ctx, c.client, c.namespace, current.Labels[constants.RegionLabel])
 	if err != nil {
 		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
@@ -280,7 +280,7 @@ func (c *Client) Stop(ctx context.Context, organizationID, projectID, identityID
 		return err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
+	provider, err := providers.New(ctx, c.client, c.namespace, current.Labels[constants.RegionLabel])
 	if err != nil {
 		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
@@ -334,7 +334,7 @@ func (c *Client) CreateConsoleSession(ctx context.Context, organizationID, proje
 		return nil, err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
+	provider, err := providers.New(ctx, c.client, c.namespace, current.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
@@ -367,7 +367,7 @@ func (c *Client) GetConsoleOutput(ctx context.Context, organizationID, projectID
 		return nil, err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
+	provider, err := providers.New(ctx, c.client, c.namespace, current.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}

@@ -36,9 +36,9 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
-	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -474,7 +474,7 @@ func (c *Client) getServerIdentityAndProvider(ctx context.Context, serverID stri
 		return nil, nil, nil, err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, server.Labels[constants.RegionLabel])
+	provider, err := providers.New(ctx, c.client, c.namespace, server.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, nil, nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
