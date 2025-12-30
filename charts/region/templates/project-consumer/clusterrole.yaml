@@ -17,6 +17,7 @@ rules:
   - region.unikorn-cloud.org
   resources:
   - identities
+  - filestorages
   verbs:
   - list
   - watch
