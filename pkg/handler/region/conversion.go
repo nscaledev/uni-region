@@ -19,6 +19,7 @@ package region
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 
 	coreconversion "github.com/unikorn-cloud/core/pkg/server/conversion"
@@ -29,6 +30,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+var ErrResource = errors.New("resource error")
 
 func convertRegionType(in regionv1.Provider) openapi.RegionType {
 	switch in {

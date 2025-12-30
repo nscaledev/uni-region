@@ -719,7 +719,7 @@ func (b *generateV2InputBuilder) Run() *generateV2Input {
 func newClientAndContext(t *testing.T, c client.Client, auth *identityauth.Info, principalInfo *principal.Principal) (*Client, context.Context) {
 	t.Helper()
 
-	client := New(c, testNamespace, nil)
+	client := New(c, testNamespace, nil, nil)
 	ctx := t.Context()
 
 	if auth != nil {

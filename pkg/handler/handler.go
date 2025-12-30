@@ -27,7 +27,6 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
-	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/securitygroup"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -65,70 +64,6 @@ func New(client client.Client, namespace string, options *Options, identity *ide
 
 func (h *Handler) setUncacheable(w http.ResponseWriter) {
 	w.Header().Add("Cache-Control", "no-cache")
-}
-
-func (h *Handler) GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
-	if err := rbac.AllowOrganizationScope(r.Context(), "region:regions", identityapi.Read, organizationID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := region.NewClient(h.client, h.namespace).List(r.Context())
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	h.setUncacheable(w)
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
-}
-
-func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetail(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
-	if err := rbac.AllowOrganizationScope(r.Context(), "region:regions/detail", identityapi.Read, organizationID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := region.NewClient(h.client, h.namespace).GetDetail(r.Context(), regionID)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	h.setUncacheable(w)
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
-}
-
-func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
-	if err := rbac.AllowOrganizationScope(r.Context(), "region:externalnetworks", identityapi.Read, organizationID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := region.NewClient(h.client, h.namespace).ListExternalNetworks(r.Context(), regionID)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	h.options.setCacheable(w)
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
-}
-
-func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
-	if err := rbac.AllowOrganizationScope(r.Context(), "region:flavors", identityapi.Read, organizationID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := region.NewClient(h.client, h.namespace).ListFlavors(r.Context(), organizationID, regionID)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	h.options.setCacheable(w)
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {

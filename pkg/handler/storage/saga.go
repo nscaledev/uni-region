@@ -26,15 +26,15 @@ import (
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
-	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type createSaga struct {
-	client  *Client
-	request *openapi.StorageV2Create
+	client       *Client
+	regionClient RegionClient
+	request      *openapi.StorageV2Create
 
 	filestorage *regionv1.FileStorage
 }
@@ -47,10 +47,11 @@ func (s *createSaga) Actions() []saga.Action {
 	}
 }
 
-func newCreateSaga(client *Client, request *openapi.StorageV2Create) *createSaga {
+func newCreateSaga(client *Client, regionClient RegionClient, request *openapi.StorageV2Create) *createSaga {
 	return &createSaga{
-		client:  client,
-		request: request,
+		client:       client,
+		regionClient: regionClient,
+		request:      request,
 	}
 }
 
@@ -120,9 +121,7 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 }
 
 func (s *createSaga) validateRegion(ctx context.Context, regionID string) error {
-	regionClient := region.NewClient(s.client.client, s.client.namespace)
-
-	if _, err := regionClient.GetDetail(ctx, regionID); err != nil {
+	if _, err := s.regionClient.GetDetail(ctx, regionID); err != nil {
 		return errors.OAuth2ServerError("region does not exist").WithError(err)
 	}
 

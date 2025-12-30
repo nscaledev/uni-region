@@ -19,7 +19,6 @@ package region
 import (
 	"cmp"
 	"context"
-	goerrors "errors"
 	"fmt"
 	"slices"
 
@@ -35,23 +34,30 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var (
-	// ErrResource is raised when a resource is in a bad state.
-	ErrResource = goerrors.New("resource error")
+type GetProviderFunc func(ctx context.Context, c client.Client, namespace, regionID string) (Provider, error)
 
-	// ErrRegionNotFound is raised when a region doesn't exist.
-	ErrRegionNotFound = goerrors.New("region doesn't exist")
-)
+var _ Provider = (types.Provider)(nil)
 
-type Client struct {
-	client    client.Client
-	namespace string
+type Provider interface {
+	Flavors(ctx context.Context) (types.FlavorList, error)
+	ListExternalNetworks(ctx context.Context) (types.ExternalNetworks, error)
 }
 
-func NewClient(client client.Client, namespace string) *Client {
+func DefaultGetProvider(ctx context.Context, c client.Client, namespace, regionID string) (Provider, error) {
+	return providers.New(ctx, c, namespace, regionID)
+}
+
+type Client struct {
+	client      client.Client
+	namespace   string
+	getProvider GetProviderFunc
+}
+
+func NewClient(client client.Client, namespace string, getProvider GetProviderFunc) *Client {
 	return &Client{
-		client:    client,
-		namespace: namespace,
+		client:      client,
+		namespace:   namespace,
+		getProvider: getProvider,
 	}
 }
 
@@ -82,7 +88,7 @@ func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.Regio
 }
 
 func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID string) (openapi.Flavors, error) {
-	provider, err := providers.New(ctx, c.client, c.namespace, regionID)
+	provider, err := c.getProvider(ctx, c.client, c.namespace, regionID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
@@ -129,7 +135,7 @@ func convertExternalNetworks(in types.ExternalNetworks) openapi.ExternalNetworks
 }
 
 func (c *Client) ListExternalNetworks(ctx context.Context, regionID string) (openapi.ExternalNetworks, error) {
-	provider, err := providers.New(ctx, c.client, c.namespace, regionID)
+	provider, err := c.getProvider(ctx, c.client, c.namespace, regionID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}

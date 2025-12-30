@@ -37,6 +37,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
+	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
@@ -48,6 +49,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+type GetRegionClientFunc func(c client.Client, namespace string) RegionClient
+
+var _ RegionClient = (*region.Client)(nil)
+
+type RegionClient interface {
+	GetDetail(ctx context.Context, regionID string) (*openapi.RegionDetailRead, error)
+}
+
 // Client provides a restful API for storage.
 type Client struct {
 	// client ia a Kubernetes client.
@@ -56,14 +65,17 @@ type Client struct {
 	namespace string
 	// identity allows quota allocation.
 	identity identityapi.ClientWithResponsesInterface
+
+	regionClient RegionClient
 }
 
 // New creates a new client.
-func New(client client.Client, namespace string, identity identityapi.ClientWithResponsesInterface) *Client {
+func New(client client.Client, namespace string, identity identityapi.ClientWithResponsesInterface, regionClient RegionClient) *Client {
 	return &Client{
-		client:    client,
-		namespace: namespace,
-		identity:  identity,
+		client:       client,
+		namespace:    namespace,
+		identity:     identity,
+		regionClient: regionClient,
 	}
 }
 
@@ -356,7 +368,7 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.StorageV2Create)
 		return nil, err
 	}
 
-	s := newCreateSaga(c, request)
+	s := newCreateSaga(c, c.regionClient, request)
 
 	if err := saga.Run(ctx, s); err != nil {
 		return nil, err
