@@ -24,7 +24,7 @@ import (
 	"slices"
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
-	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/conversion"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
@@ -56,7 +56,7 @@ func NewClient(client client.Client, namespace string) *Client {
 }
 
 func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
-	regions := &unikornv1.RegionList{}
+	regions := &regionv1.RegionList{}
 
 	if err := c.client.List(ctx, regions, &client.ListOptions{Namespace: c.namespace}); err != nil {
 		return nil, err
@@ -66,7 +66,7 @@ func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
 }
 
 func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.RegionDetailRead, error) {
-	result := &unikornv1.Region{}
+	result := &regionv1.Region{}
 
 	fmt.Println("getting region", c.namespace, regionID)
 
