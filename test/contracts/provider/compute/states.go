@@ -18,6 +18,7 @@ package compute_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -49,6 +50,30 @@ const (
 	endpointOpenStackMain = "https://openstack.example.com:5000"
 )
 
+const (
+	// Pact state names - these must match the consumer contract states.
+	StateOrganizationExists          = "organization exists"
+	StateOrganizationHasRegions      = "organization has regions"
+	StateOrganizationHasNoRegions    = "organization has no regions"
+	StateOrganizationDoesNotExist    = "organization does not exist"
+	StateOrganizationHasMixedRegions = "organization has mixed regions"
+
+	// State parameter keys.
+	ParamOrganizationID = "organizationID"
+	ParamRegionType     = "regionType"
+	ParamRegionCount    = "regionCount"
+
+	// Region type parameter values.
+	RegionTypeOpenStack  = "openstack"
+	RegionTypeKubernetes = "kubernetes"
+	RegionTypeMixed      = "mixed"
+)
+
+var (
+	// ErrUnknownRegionType is returned when an unknown region type is specified.
+	ErrUnknownRegionType = errors.New("unknown region type")
+)
+
 // StateManager handles setting up and tearing down state for contract verification.
 type StateManager struct {
 	client    client.Client
@@ -71,6 +96,17 @@ func getTestNamespace() string {
 	}
 
 	return defaultTestNamespace
+}
+
+// getStringParam extracts a string parameter from state parameters.
+func getStringParam(params map[string]interface{}, key string, defaultValue string) string {
+	if val, ok := params[key]; ok {
+		if strVal, ok := val.(string); ok {
+			return strVal
+		}
+	}
+
+	return defaultValue
 }
 
 // RegionBuilder builds test regions following the builder pattern.
@@ -126,11 +162,20 @@ func (b *RegionBuilder) build() *unikornv1.Region {
 	return b.region
 }
 
-// HandleOrganizationWithOpenStackRegions sets up regions with OpenStack provider.
-// Note: The region service doesn't actually filter by organization - it returns all regions in the namespace.
-// The organizationID is only used for RBAC checks, not for filtering regions.
-func (sm *StateManager) HandleOrganizationWithOpenStackRegions(ctx context.Context, setup bool, orgID string) error {
-	fmt.Printf(">>> State handler: HandleOrganizationWithOpenStackRegions(setup=%v, orgID=%s)\n", setup, orgID)
+// HandleOrganizationState is the main parameterized state handler.
+// It uses state parameters to determine what setup to perform.
+func (sm *StateManager) HandleOrganizationState(ctx context.Context, setup bool, params map[string]interface{}) error {
+	// Pact wraps parameters in a "params" key, so we need to unwrap them
+	actualParams := params
+	if wrappedParams, ok := params["params"].(map[string]interface{}); ok {
+		actualParams = wrappedParams
+	}
+
+	orgID := getStringParam(actualParams, ParamOrganizationID, "test-org")
+	regionType := getStringParam(actualParams, ParamRegionType, "")
+
+	fmt.Printf(">>> State handler: HandleOrganizationState(setup=%v, orgID=%s, regionType=%s, params=%+v)\n",
+		setup, orgID, regionType, params)
 
 	if setup {
 		// Clean up any existing test regions first
@@ -138,93 +183,70 @@ func (sm *StateManager) HandleOrganizationWithOpenStackRegions(ctx context.Conte
 			return err
 		}
 
-		fmt.Printf("Creating OpenStack region %s for org %s\n", regionUSWest1, orgID)
-
-		// Create a simple OpenStack region with minimal required fields
-		region := newRegionBuilder(regionUSWest1, sm.namespace).
-			withOpenStack(endpointOpenStackTest, secretTestCredentials).
-			build()
-
-		return sm.createRegion(ctx, region)
+		// Create regions based on regionType parameter
+		switch regionType {
+		case RegionTypeOpenStack:
+			return sm.createOpenStackRegion(ctx, orgID)
+		case RegionTypeKubernetes:
+			return sm.createKubernetesRegion(ctx, orgID)
+		case RegionTypeMixed:
+			return sm.createMixedRegions(ctx, orgID)
+		case "":
+			// No regions - just cleanup was done above
+			fmt.Printf("No regions to create for org %s\n", orgID)
+			return nil
+		default:
+			return fmt.Errorf("%w: %s", ErrUnknownRegionType, regionType)
+		}
 	}
 
+	// Teardown - clean up all regions
 	fmt.Printf("Cleaning up regions for org %s\n", orgID)
 
 	return sm.cleanupAllRegions(ctx)
 }
 
-// HandleOrganizationWithNoRegions ensures no regions exist.
-func (sm *StateManager) HandleOrganizationWithNoRegions(ctx context.Context, setup bool, orgID string) error {
-	fmt.Printf(">>> State handler: HandleOrganizationWithNoRegions(setup=%v, orgID=%s)\n", setup, orgID)
+// createOpenStackRegion creates a single OpenStack region.
+func (sm *StateManager) createOpenStackRegion(ctx context.Context, orgID string) error {
+	fmt.Printf("Creating OpenStack region %s for org %s\n", regionUSWest1, orgID)
 
-	if setup {
-		fmt.Printf("Ensuring no regions exist for org %s\n", orgID)
-		// Just ensure all regions are deleted
-		return sm.cleanupAllRegions(ctx)
-	}
+	region := newRegionBuilder(regionUSWest1, sm.namespace).
+		withOpenStack(endpointOpenStackTest, secretTestCredentials).
+		build()
 
-	return nil
+	return sm.createRegion(ctx, region)
 }
 
-// HandleOrganizationDoesNotExist ensures no regions exist.
-func (sm *StateManager) HandleOrganizationDoesNotExist(ctx context.Context, setup bool, orgID string) error {
-	fmt.Printf(">>> State handler: HandleOrganizationDoesNotExist(setup=%v, orgID=%s)\n", setup, orgID)
+// createKubernetesRegion creates a single Kubernetes region.
+func (sm *StateManager) createKubernetesRegion(ctx context.Context, orgID string) error {
+	fmt.Printf("Creating Kubernetes region %s for org %s\n", regionKubernetes, orgID)
 
-	if setup {
-		fmt.Printf("Setting up non-existent org state for org %s (empty region list)\n", orgID)
-		return sm.cleanupAllRegions(ctx)
-	}
+	region := newRegionBuilder(regionKubernetes, sm.namespace).
+		withKubernetes(secretK8sKubeconfig).
+		build()
 
-	return nil
+	return sm.createRegion(ctx, region)
 }
 
-// HandleOrganizationExists sets up a basic state with no regions.
-func (sm *StateManager) HandleOrganizationExists(ctx context.Context, setup bool, orgID string) error {
-	fmt.Printf(">>> State handler: HandleOrganizationExists(setup=%v, orgID=%s)\n", setup, orgID)
+// createMixedRegions creates both OpenStack and Kubernetes regions.
+func (sm *StateManager) createMixedRegions(ctx context.Context, orgID string) error {
+	fmt.Printf("Creating mixed regions for org %s\n", orgID)
 
-	if setup {
-		fmt.Printf("Setting up basic state for org %s (no regions)\n", orgID)
-		// Ensure no regions exist
-		return sm.cleanupAllRegions(ctx)
+	// Create OpenStack region
+	openstackRegion := newRegionBuilder(regionOpenStack, sm.namespace).
+		withOpenStack(endpointOpenStackMain, secretOpenStackCredentials).
+		build()
+
+	if err := sm.createRegion(ctx, openstackRegion); err != nil {
+		return err
 	}
 
-	return nil
-}
+	// Create Kubernetes region
+	k8sRegion := newRegionBuilder(regionKubernetes, sm.namespace).
+		withKubernetes(secretK8sKubeconfig).
+		build()
 
-// HandleOrganizationWithMixedRegions sets up both OpenStack and Kubernetes regions.
-func (sm *StateManager) HandleOrganizationWithMixedRegions(ctx context.Context, setup bool, orgID string) error {
-	fmt.Printf(">>> State handler: HandleOrganizationWithMixedRegions(setup=%v, orgID=%s)\n", setup, orgID)
-
-	if setup {
-		// Clean up first
-		if err := sm.cleanupAllRegions(ctx); err != nil {
-			return err
-		}
-
-		fmt.Printf("Creating OpenStack region %s for org %s\n", regionOpenStack, orgID)
-
-		// Create OpenStack region using builder
-		openstackRegion := newRegionBuilder(regionOpenStack, sm.namespace).
-			withOpenStack(endpointOpenStackMain, secretOpenStackCredentials).
-			build()
-
-		if err := sm.createRegion(ctx, openstackRegion); err != nil {
-			return err
-		}
-
-		fmt.Printf("Creating Kubernetes region %s for org %s\n", regionKubernetes, orgID)
-
-		// Create Kubernetes region using builder
-		k8sRegion := newRegionBuilder(regionKubernetes, sm.namespace).
-			withKubernetes(secretK8sKubeconfig).
-			build()
-
-		return sm.createRegion(ctx, k8sRegion)
-	}
-
-	fmt.Printf("Cleaning up mixed regions for org %s\n", orgID)
-
-	return sm.cleanupAllRegions(ctx)
+	return sm.createRegion(ctx, k8sRegion)
 }
 
 // createRegion creates a region resource in Kubernetes.

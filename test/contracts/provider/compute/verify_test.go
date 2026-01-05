@@ -49,15 +49,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	// Test organization IDs.
-	testOrg123      = "test-org-123"
-	testOrgEmpty    = "test-org-empty"
-	testOrgNonExist = "nonexistent-org"
-	testOrgTimeout  = "test-org-timeout"
-	testOrgMixed    = "test-org-mixed"
-)
-
 var (
 	testingT *testing.T //nolint:gochecknoglobals // Required by pact-go verifier
 )
@@ -208,26 +199,67 @@ var _ = Describe("Region Provider Verification", func() {
 })
 
 // createStateHandlers creates the state handlers map for pact verification.
+// Uses parameterized states to make the contract tests more flexible and maintainable.
 func createStateHandlers(ctx context.Context, stateManager *StateManager) models.StateHandlers {
 	return models.StateHandlers{
-		"organization test-org-123 exists with OpenStack regions": func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			err := stateManager.HandleOrganizationWithOpenStackRegions(ctx, setup, testOrg123)
+		// Parameterized state handler - consumer provides organizationID and regionType
+		StateOrganizationHasRegions: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleOrganizationState(ctx, setup, state.Parameters)
+
 			return nil, err
 		},
-		"organization test-org-empty exists with no regions": func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			err := stateManager.HandleOrganizationWithNoRegions(ctx, setup, testOrgEmpty)
+
+		// State for organization with no regions
+		StateOrganizationHasNoRegions: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			// Pass empty regionType to indicate no regions should be created
+			params := make(map[string]interface{})
+			if state.Parameters != nil {
+				params = state.Parameters
+			}
+			err := stateManager.HandleOrganizationState(ctx, setup, params)
+
 			return nil, err
 		},
-		"organization nonexistent-org does not exist": func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			err := stateManager.HandleOrganizationDoesNotExist(ctx, setup, testOrgNonExist)
+
+		// State for non-existent organization (same as no regions)
+		StateOrganizationDoesNotExist: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			params := make(map[string]interface{})
+			if state.Parameters != nil {
+				params = state.Parameters
+			}
+			err := stateManager.HandleOrganizationState(ctx, setup, params)
+
 			return nil, err
 		},
-		"organization test-org-timeout exists": func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			err := stateManager.HandleOrganizationExists(ctx, setup, testOrgTimeout)
+
+		// Generic organization exists state
+		StateOrganizationExists: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			params := make(map[string]interface{})
+			if state.Parameters != nil {
+				params = state.Parameters
+			}
+			err := stateManager.HandleOrganizationState(ctx, setup, params)
+
 			return nil, err
 		},
-		"organization test-org-mixed exists with mixed region types": func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			err := stateManager.HandleOrganizationWithMixedRegions(ctx, setup, testOrgMixed)
+
+		// State for mixed region types
+		StateOrganizationHasMixedRegions: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			params := make(map[string]interface{})
+			if state.Parameters != nil {
+				params = state.Parameters
+			}
+			// Set regionType to mixed if not already set
+			if _, ok := params[ParamRegionType]; !ok {
+				params[ParamRegionType] = RegionTypeMixed
+			}
+			err := stateManager.HandleOrganizationState(ctx, setup, params)
+
 			return nil, err
 		},
 	}
@@ -258,17 +290,9 @@ func buildRouter(serverOpts options.ServerOptions, schema *coreapi.Schema, corsO
 	router.Use(opentelemetry.Middleware(constants.Application, constants.Version))
 	router.Use(cors.Middleware(schema, corsOpts))
 
-	// Create list of test organizations for mock ACL
-	testOrgs := []string{
-		testOrg123,
-		testOrgEmpty,
-		testOrgNonExist,
-		testOrgTimeout,
-		testOrgMixed,
-	}
-
-	router.Use(MockACLMiddleware(testOrgs)) // Inject mock ACL for contract testing
-	router.Use(RegionSortingMiddleware())   // Sort regions for Pact contract testing
+	// Mock ACL middleware allows all organizations for contract testing
+	router.Use(MockACLMiddleware(nil))    // Inject mock ACL for contract testing
+	router.Use(RegionSortingMiddleware()) // Sort regions for Pact contract testing
 	router.NotFound(http.HandlerFunc(handler.NotFound))
 	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
 
