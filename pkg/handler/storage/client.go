@@ -20,8 +20,12 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
+	"math/big"
+	"net"
 	"slices"
 
+	unikorncorev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
@@ -32,12 +36,14 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -71,13 +77,41 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 			StorageType: openapi.StorageTypeV2Spec{
 				NFS: checkRegionNFS(in.Spec.NFS),
 			},
-			Size: in.Spec.Size.String(),
+			SizeGiB: quantityToSizeGiB(in.Spec.Size),
 		},
 		Status: openapi.StorageV2Status{
 			RegionId:       in.Labels[constants.RegionLabel],
 			StorageClassId: in.Spec.StorageClassID,
+			Attachments:    convertStatusAttachmentList(in),
 		},
 	}
+}
+
+// NOTE: This returns attachment status based solely on FileStorage.Spec.Attachments (the desired state).
+// Because attachments may be reconciled asynchronously by the controller, this does not accurately reflect the actual state.
+// As a result, provisioning status is omitted (nil). This will be addressed in a future update.
+func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttachmentListV2Status {
+	if len(in.Spec.Attachments) == 0 {
+		return nil
+	}
+
+	out := make(openapi.StorageAttachmentListV2Status, len(in.Spec.Attachments))
+
+	for i, att := range in.Spec.Attachments {
+		var mountSource *string
+
+		// Only build MountSource if all required fields are non-nil.
+		if att.IPRange != nil && in.Status.MountPath != nil {
+			mountSource = ptr.To(fmt.Sprintf("%s:%s", att.IPRange.Start, *in.Status.MountPath))
+		}
+
+		out[i] = openapi.StorageAttachmentV2Status{
+			NetworkId:   att.NetworkID,
+			MountSource: mountSource,
+		}
+	}
+
+	return &out
 }
 
 func checkRegionNFS(in *regionv1.NFS) *openapi.NFSV2Spec {
@@ -194,9 +228,16 @@ func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2R
 }
 
 func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.StorageV2Update, storageClassID string) (*regionv1.FileStorage, error) {
-	size, err := convertSize(request.Spec.Size)
+	networkClient := network.New(c.client, c.namespace, c.identity)
+
+	err := util.InjectUserPrincipal(ctx, organizationID, projectID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to convert size to resource.Quantity").WithError(err)
+		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
+	}
+
+	attachments, err := generateAttachmentList(ctx, networkClient, request.Spec.Attachments)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("unable to generate attachment list").WithError(err)
 	}
 
 	out := &regionv1.FileStorage{
@@ -207,18 +248,13 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 			Get(),
 		Spec: regionv1.FileStorageSpec{
 			Tags:        conversion.GenerateTagList(request.Metadata.Tags),
-			Size:        *size,
-			Attachments: generateAttachmentList(request.Spec.Attachments),
+			Size:        *gibToQuantity(request.Spec.SizeGiB),
+			Attachments: attachments,
 			NFS: &regionv1.NFS{
 				RootSquash: checkRootSquash(request.Spec.StorageType.NFS),
 			},
 			StorageClassID: storageClassID,
 		},
-	}
-
-	err = util.InjectUserPrincipal(ctx, organizationID, projectID)
-	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
 	}
 
 	err = common.SetIdentityMetadata(ctx, &out.ObjectMeta)
@@ -239,24 +275,61 @@ func checkRootSquash(nfs *openapi.NFSV2Spec) bool {
 	return true
 }
 
-func generateAttachmentList(in *openapi.StorageAttachmentV2Spec) []regionv1.Attachment {
-	out := make([]regionv1.Attachment, len(in.NetworkIDs))
-	for i := range in.NetworkIDs {
-		out[i] = regionv1.Attachment{
-			NetworkID: in.NetworkIDs[i],
+func generateAttachmentList(ctx context.Context, networkClient *network.Client, in *openapi.StorageAttachmentV2Spec) ([]regionv1.Attachment, error) {
+	networkIDs := in.NetworkIDs
+	out := make([]regionv1.Attachment, len(networkIDs))
+
+	for i, networkID := range networkIDs {
+		network, err := networkClient.GetV2Raw(ctx, networkID)
+		if err != nil {
+			return nil, errors.OAuth2ServerError("unable to get network").WithError(err)
 		}
+
+		attachment, err := generateAttachment(network)
+		if err != nil {
+			return nil, err
+		}
+
+		out[i] = *attachment
 	}
 
-	return out
+	return out, nil
 }
 
-func convertSize(size string) (*resource.Quantity, error) {
-	quantity, err := resource.ParseQuantity(size)
-	if err != nil {
-		return nil, err
+func generateAttachment(network *regionv1.Network) (*regionv1.Attachment, error) {
+	networkID := network.Name
+
+	// FIXME: this part of the network status is destined for deprecation, since it is not generic.
+	// Because FileStorage needs details that are only available through the status at present,
+	// I have used it (conditionally) here until there is a reliable, generic way to get that info.
+	if network.Status.Openstack == nil {
+		return nil, errors.OAuth2ServerError("network requested is not a suitable network") // TODO: use 422, or supply better information here.
 	}
 
-	return &quantity, nil
+	ipRange := narrowStorageRange(network.Status.Openstack.StorageRange)
+
+	return &regionv1.Attachment{
+		NetworkID:      networkID,
+		IPRange:        ipRange,
+		SegmentationID: network.Status.Openstack.VlanID,
+	}, nil
+}
+
+func narrowStorageRange(in *regionv1.AttachmentIPRange) *regionv1.AttachmentIPRange {
+	if in == nil {
+		return nil
+	}
+
+	startIP := in.Start.To4() // NB assumes IPv4 address
+
+	bs := big.NewInt(0).SetBytes(startIP)
+	be := big.NewInt(0).Add(bs, big.NewInt(3))
+	endIP := net.IP(be.Bytes())
+
+	return &regionv1.AttachmentIPRange{
+		Start: unikorncorev1.IPv4Address{IP: startIP},
+		End:   unikorncorev1.IPv4Address{IP: endIP},
+	}
 }
 
 func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.StorageV2Update, error) {
@@ -319,6 +392,15 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 		return nil, err
 	}
 
+	if err := conversion.UpdateObjectMetadata(required, current, common.IdentityMetadataMutator); err != nil {
+		return nil, errors.OAuth2ServerError("failed to merge metadata").WithError(err)
+	}
+
+	// Preserve the allocation.
+	if v, ok := current.Annotations[coreconstants.AllocationAnnotation]; ok {
+		required.Annotations[coreconstants.AllocationAnnotation] = v
+	}
+
 	updated := current.DeepCopy()
 	updated.Labels = required.Labels
 	updated.Annotations = required.Annotations
@@ -376,7 +458,7 @@ func (c *Client) ListClasses(ctx context.Context, params openapi.GetApiV2Filesto
 	}
 
 	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.FileStorageClass) bool {
-		return rbac.AllowOrganizationScope(ctx, "region:filestorageclass:v2", identityapi.Read, resource.Labels[coreconstants.OrganizationLabel]) != nil
+		return authorizeFileStorageClassRead(ctx, &resource) != nil
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.FileStorageClass) int {
@@ -397,7 +479,7 @@ func (c *Client) GetStorageClass(ctx context.Context, storageClassID string) (*o
 		return nil, errors.OAuth2ServerError("unable to lookup storage class").WithError(err)
 	}
 
-	if err := rbac.AllowOrganizationScope(ctx, "region:filestorageclass:v2", identityapi.Read, result.Labels[coreconstants.OrganizationLabel]); err != nil {
+	if err := authorizeFileStorageClassRead(ctx, result); err != nil {
 		return nil, err
 	}
 
@@ -432,4 +514,24 @@ func convertProtocols(in []regionv1.Protocol) []openapi.StorageClassProtocolType
 	}
 
 	return out
+}
+
+func quantityToSizeGiB(quantity resource.Quantity) int64 {
+	return (quantity.Value() / (1 << 30))
+}
+
+func gibToQuantity(size int64) *resource.Quantity {
+	return resource.NewQuantity((size * (1 << 30)), resource.BinarySI)
+}
+
+// authorizeFileStorageClassRead enforces read permissions for a FileStorageClass.
+// If the storage class has an associated organization, access is allowed only if the caller has read permissions for that organization.
+// Otherwise, the class is accessible to all organizations.
+func authorizeFileStorageClassRead(ctx context.Context, resource *regionv1.FileStorageClass) error {
+	orgID := resource.Labels[coreconstants.OrganizationLabel]
+	if orgID == "" {
+		return nil
+	}
+
+	return rbac.AllowOrganizationScope(ctx, "region:filestorageclass:v2", identityapi.Read, orgID)
 }

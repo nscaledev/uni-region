@@ -113,9 +113,10 @@ func TestStorageRange(t *testing.T) {
 		Mask: net.IPMask{255, 255, 255, 0},
 	}
 
-	start, end := openstack.StorageRange(prefix)
-	require.Equal(t, "192.168.10.16", start)
-	require.Equal(t, "192.168.10.127", end)
+	r := openstack.StorageRange(prefix)
+	require.NotNil(t, r)
+	require.Equal(t, "192.168.10.16", r.Start.String())
+	require.Equal(t, "192.168.10.127", r.End.String())
 }
 
 const (

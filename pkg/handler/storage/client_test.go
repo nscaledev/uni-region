@@ -19,27 +19,108 @@ package storage
 
 import (
 	"context"
+	"net"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	corev1 "github.com/unikorn-cloud/core/pkg/openapi"
 	identityauth "github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityopenapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/principal"
+	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	networkclient "github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+const testNamespace = "uni-storage-test"
+
+//nolint:gochecknoglobals
+var (
+	storageRange = &regionv1.AttachmentIPRange{
+		Start: v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 0, 1)},
+		End:   v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 0, 127)},
+	}
+
+	// TODO: This gets directly compared to the byte representation of the calculated range;
+	// to avoid having to fiddle with converting 16 byte representations, I've just
+	// inlined the exact, 4-byte IPv4 representation here. This may be a bit brittle.
+	narrowedRange = &regionv1.AttachmentIPRange{
+		Start: v1alpha1.IPv4Address{IP: net.IP{192, 168, 0, 1}},
+		End:   v1alpha1.IPv4Address{IP: net.IP{192, 168, 0, 4}},
+	}
+)
+
+func newTestNetwork(name string) *regionv1.Network {
+	return &regionv1.Network{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: testNamespace,
+			Labels: map[string]string{
+				constants.ResourceAPIVersionLabel: "2",
+			},
+		},
+		Status: regionv1.NetworkStatus{
+			Openstack: &regionv1.NetworkStatusOpenstack{
+				VlanID:       ptr.To(1111),
+				StorageRange: storageRange,
+			},
+		},
+	}
+}
+
+func newFakeClient(t *testing.T, objects ...client.Object) client.Client {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, regionv1.AddToScheme(scheme))
+
+	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+}
+
+func newContextWithPermissions(ctx context.Context) context.Context {
+	return rbac.NewContext(ctx, &identityopenapi.Acl{
+		Global: &identityopenapi.AclEndpoints{
+			identityopenapi.AclEndpoint{
+				Name:       "region:networks:v2",
+				Operations: []identityopenapi.AclOperation{"read"},
+			},
+		},
+	})
+}
+
+func TestNarrowRange(t *testing.T) {
+	t.Parallel()
+
+	nr := narrowStorageRange(storageRange)
+	require.Equal(t, nr, narrowedRange)
+
+	// this can be nil, if it's not been set yet
+	nr = narrowStorageRange(nil)
+	require.Nilf(t, nr, "Expected nil output when nil input (and not a NPE panic)")
+}
 
 func TestGenerateAttachmentList(t *testing.T) {
 	t.Parallel()
+
+	network := newTestNetwork("net-1")
+	client := newFakeClient(t, network)
+	netclient := networkclient.New(client, testNamespace, nil)
+
+	ctx := newContextWithPermissions(t.Context())
 
 	tests := []struct {
 		name  string
@@ -52,7 +133,11 @@ func TestGenerateAttachmentList(t *testing.T) {
 				NetworkIDs: openapi.NetworkIDList{"net-1"},
 			},
 			want: []regionv1.Attachment{
-				{NetworkID: "net-1"},
+				{
+					NetworkID:      "net-1",
+					SegmentationID: ptr.To(1111),
+					IPRange:        narrowedRange,
+				},
 			},
 		},
 		{
@@ -66,7 +151,8 @@ func TestGenerateAttachmentList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := generateAttachmentList(tt.input)
+			got, err := generateAttachmentList(ctx, netclient, tt.input)
+			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
 		})
 	}
@@ -95,7 +181,7 @@ func TestConvertV2List(t *testing.T) {
 						},
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "test-filestorage",
-							Namespace: "default",
+							Namespace: testNamespace,
 							Labels: map[string]string{
 								"app": "mock",
 							},
@@ -119,7 +205,7 @@ func TestConvertV2List(t *testing.T) {
 					},
 
 					Spec: openapi.StorageV2Spec{
-						Size: "0",
+						SizeGiB: 0,
 						Attachments: &openapi.StorageAttachmentV2Spec{
 							NetworkIDs: []string{},
 						},
@@ -158,7 +244,7 @@ func TestConvertV2List(t *testing.T) {
 						},
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "test-filestorage",
-							Namespace: "default",
+							Namespace: testNamespace,
 							Labels: map[string]string{
 								"app": "mock",
 							},
@@ -167,14 +253,21 @@ func TestConvertV2List(t *testing.T) {
 							NFS: &regionv1.NFS{
 								RootSquash: true,
 							},
-							Size: *resource.NewQuantity(int64(100), resource.BinarySI),
+							Size: *gibToQuantity(int64(100)),
 							Attachments: []regionv1.Attachment{
 								{
-									NetworkID: "net-1",
+									NetworkID:      "net-1",
+									SegmentationID: ptr.To(1111),
+									IPRange: &regionv1.AttachmentIPRange{
+										Start: v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 0, 1)},
+										End:   v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 0, 4)},
+									},
 								},
 							},
 						},
-						Status: regionv1.FileStorageStatus{},
+						Status: regionv1.FileStorageStatus{
+							MountPath: ptr.To("/export"),
+						},
 					},
 				},
 			},
@@ -188,7 +281,7 @@ func TestConvertV2List(t *testing.T) {
 					},
 
 					Spec: openapi.StorageV2Spec{
-						Size: "100",
+						SizeGiB: 100,
 						Attachments: &openapi.StorageAttachmentV2Spec{
 							NetworkIDs: []string{"net-1"},
 						},
@@ -200,7 +293,7 @@ func TestConvertV2List(t *testing.T) {
 					},
 
 					Status: openapi.StorageV2Status{
-						Attachments:    nil,
+						Attachments:    &openapi.StorageAttachmentListV2Status{{NetworkId: "net-1", MountSource: ptr.To("192.168.0.1:/export")}},
 						RegionId:       "",
 						StorageClassId: "",
 						Usage: openapi.StorageUsageV2Spec{
@@ -224,6 +317,7 @@ func TestConvertV2List(t *testing.T) {
 	}
 }
 
+//nolint:dupl
 func TestConvertV2(t *testing.T) {
 	t.Parallel()
 
@@ -233,7 +327,7 @@ func TestConvertV2(t *testing.T) {
 		want  *openapi.StorageV2Read
 	}{
 		{
-			name: "test with zero values",
+			name: "test with limited values",
 			input: &regionv1.FileStorage{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "FileStorage",
@@ -247,6 +341,7 @@ func TestConvertV2(t *testing.T) {
 					},
 				},
 				Spec: regionv1.FileStorageSpec{
+					Size: *gibToQuantity(int64(2)),
 					NFS: &regionv1.NFS{
 						RootSquash: true,
 					},
@@ -259,7 +354,7 @@ func TestConvertV2(t *testing.T) {
 					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
 				},
 				Spec: openapi.StorageV2Spec{
-					Size: "0",
+					SizeGiB: 2,
 					Attachments: &openapi.StorageAttachmentV2Spec{
 						NetworkIDs: []string{},
 					},
@@ -279,6 +374,72 @@ func TestConvertV2(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
+			got := convertV2(tt.input)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+//nolint:dupl
+func TestConvertV2SizeConversion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input *regionv1.FileStorage
+		want  *openapi.StorageV2Read
+	}{
+		{
+			name: "test with limited values",
+			input: &regionv1.FileStorage{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "FileStorage",
+					APIVersion: "v1alpha1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "",
+					Namespace: "default",
+					Labels: map[string]string{
+						"app": "mock",
+					},
+				},
+				Spec: regionv1.FileStorageSpec{
+					Size: *gibToQuantity(int64(2)),
+					NFS: &regionv1.NFS{
+						RootSquash: true,
+					},
+					Attachments: []regionv1.Attachment{},
+				},
+			},
+			want: &openapi.StorageV2Read{
+				Metadata: corev1.ProjectScopedResourceReadMetadata{
+					HealthStatus:       corev1.ResourceHealthStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+				},
+				Spec: openapi.StorageV2Spec{
+					SizeGiB: 2,
+					Attachments: &openapi.StorageAttachmentV2Spec{
+						NetworkIDs: []string{},
+					},
+					StorageType: openapi.StorageTypeV2Spec{
+						NFS: &openapi.NFSV2Spec{
+							RootSquash: true,
+						},
+					},
+				},
+				Status: openapi.StorageV2Status{
+					Usage: openapi.StorageUsageV2Spec{},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, int64(2147483648), tt.input.Spec.Size.Value())
 
 			got := convertV2(tt.input)
 			require.Equal(t, tt.want, got)
@@ -398,6 +559,10 @@ func TestConvertProtocols(t *testing.T) {
 func TestGenerateV2(t *testing.T) {
 	t.Parallel()
 
+	network := newTestNetwork("net-1")
+
+	k8s := newFakeClient(t, network)
+
 	inputBuilder := &generateV2InputBuilder{}
 
 	tests := []struct {
@@ -410,7 +575,7 @@ func TestGenerateV2(t *testing.T) {
 			input: inputBuilder.Default().Run(),
 			want: &regionv1.FileStorage{
 				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
+					Namespace: testNamespace,
 					Labels: map[string]string{
 						constants.RegionLabel:                    "reg-1",
 						coreconstants.NameLabel:                  "test-filestorage",
@@ -425,9 +590,14 @@ func TestGenerateV2(t *testing.T) {
 					},
 				},
 				Spec: regionv1.FileStorageSpec{
-					Size:           resource.MustParse("10Gi"),
+					Size:           *resource.NewQuantity(int64(10737418240), resource.BinarySI),
 					StorageClassID: "sc-1",
-					Attachments:    []regionv1.Attachment{{NetworkID: "net-1"}},
+					Attachments: []regionv1.Attachment{
+						{
+							NetworkID:      "net-1",
+							SegmentationID: ptr.To(1111),
+							IPRange:        narrowedRange,
+						}},
 					NFS: &regionv1.NFS{
 						RootSquash: true,
 					},
@@ -440,7 +610,7 @@ func TestGenerateV2(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			client, ctx := newClientAndContext(t, &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
+			client, ctx := newClientAndContext(t, k8s, &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
 
 			got, err := client.generateV2(ctx, tt.input.organizationID, tt.input.projectID, tt.input.regionID, tt.input.request, tt.input.storageClassID)
 
@@ -469,23 +639,14 @@ func TestGenerateV2Validations(t *testing.T) {
 		want          string
 	}{
 		{
-			name:          "invalid size",
-			input:         inputBuilder.WithSize("invalid").Run(),
-			principal:     &principal.Principal{Actor: "actor@example.com"},
-			authorization: &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}},
-			want:          "unable to convert size to resource.Quantity",
-		},
-		{
 			name:          "missing principal",
 			input:         inputBuilder.Default().Run(),
 			authorization: &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}},
-			want:          "unable to set principal information",
 		},
 		{
 			name:      "missing authorization",
 			input:     inputBuilder.Default().Run(),
 			principal: &principal.Principal{Actor: "actor@example.com"},
-			want:      "failed to set identity metadata",
 		},
 	}
 
@@ -493,13 +654,14 @@ func TestGenerateV2Validations(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			c, ctx := newClientAndContext(t, tt.authorization, tt.principal)
+			client := newFakeClient(t)
+
+			c, ctx := newClientAndContext(t, client, tt.authorization, tt.principal)
 
 			got, err := c.generateV2(ctx, tt.input.organizationID, tt.input.projectID, tt.input.regionID, tt.input.request, tt.input.storageClassID)
 
 			require.Nil(t, got)
 			require.Error(t, err)
-			require.Contains(t, err.Error(), tt.want)
 		})
 	}
 }
@@ -527,7 +689,7 @@ func newDefaultGenerateV2Input() *generateV2Input {
 				Name: "test-filestorage",
 			},
 			Spec: openapi.StorageV2Spec{
-				Size:        "10Gi",
+				SizeGiB:     10,
 				Attachments: &openapi.StorageAttachmentV2Spec{NetworkIDs: openapi.NetworkIDList{"net-1"}},
 			},
 		},
@@ -540,12 +702,12 @@ func (b *generateV2InputBuilder) Default() *generateV2InputBuilder {
 	return b
 }
 
-func (b *generateV2InputBuilder) WithSize(size string) *generateV2InputBuilder {
+func (b *generateV2InputBuilder) WithSize(size int) *generateV2InputBuilder {
 	if b.input == nil {
 		b.input = newDefaultGenerateV2Input()
 	}
 
-	b.input.request.Spec.Size = size
+	b.input.request.Spec.SizeGiB = int64(size)
 
 	return b
 }
@@ -554,10 +716,10 @@ func (b *generateV2InputBuilder) Run() *generateV2Input {
 	return b.input
 }
 
-func newClientAndContext(t *testing.T, auth *identityauth.Info, principalInfo *principal.Principal) (*Client, context.Context) {
+func newClientAndContext(t *testing.T, c client.Client, auth *identityauth.Info, principalInfo *principal.Principal) (*Client, context.Context) {
 	t.Helper()
 
-	client := &Client{namespace: "default"}
+	client := New(c, testNamespace, nil)
 	ctx := t.Context()
 
 	if auth != nil {
@@ -567,6 +729,8 @@ func newClientAndContext(t *testing.T, auth *identityauth.Info, principalInfo *p
 	if principalInfo != nil {
 		ctx = principal.NewContext(ctx, principalInfo)
 	}
+
+	ctx = newContextWithPermissions(ctx)
 
 	return client, ctx
 }

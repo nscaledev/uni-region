@@ -18,6 +18,8 @@ package driver
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/url"
 	"strings"
@@ -48,11 +50,11 @@ type Client struct {
 }
 
 type Options struct {
-	Subject        string
-	URL            string
-	CAFile         string
-	ClientCertFile string
-	ClientKeyFile  string
+	Subject           string
+	URL               string
+	CACertificate     []byte
+	ClientCertificate []byte
+	ClientPrivateKey  []byte
 }
 
 var _ types.Driver = &Client{}
@@ -63,7 +65,7 @@ func New(ctx context.Context, cli client.Client, provisioner *unikornv1.FileStor
 		return nil, err
 	}
 
-	options, err := options(cm)
+	options, err := options(ctx, cli, cm)
 	if err != nil {
 		return nil, err
 	}
@@ -87,17 +89,29 @@ func connectToNATS(options *Options) (*nats.Conn, error) {
 	}
 
 	if u.Scheme == "tls" {
-		return nats.Connect(
-			options.URL,
-			nats.RootCAs(options.CAFile),
-			nats.ClientCert(options.ClientCertFile, options.ClientKeyFile))
+		tlsParser := func() (tls.Certificate, error) {
+			return tls.X509KeyPair(options.ClientCertificate, options.ClientPrivateKey)
+		}
+
+		caParser := func() (*x509.CertPool, error) {
+			pool := x509.NewCertPool()
+			if ok := pool.AppendCertsFromPEM(options.CACertificate); !ok {
+				return nil, fmt.Errorf("%w: failed to parse NATS client CA", ErrDriverConfig)
+			}
+
+			return pool, nil
+		}
+
+		tlsOption := nats.ClientTLSConfig(tlsParser, caParser)
+
+		return nats.Connect(options.URL, tlsOption)
 	}
 
 	// Connect without TLS for non-secure connection
 	return nats.Connect(options.URL)
 }
 
-func options(cm *corev1.ConfigMap) (*Options, error) {
+func options(ctx context.Context, cli client.Client, cm *corev1.ConfigMap) (*Options, error) {
 	required := func(key string) (string, error) {
 		val, ok := cm.Data[key]
 		if !ok || val == "" {
@@ -117,27 +131,37 @@ func options(cm *corev1.ConfigMap) (*Options, error) {
 		return nil, err
 	}
 
-	caFile, err := required(CAFileKey)
+	secretName, err := required(ClientSecretNameKey)
 	if err != nil {
 		return nil, err
 	}
 
-	clientCertFile, err := required(ClientCertFileKey)
-	if err != nil {
+	secret := &corev1.Secret{}
+	if err := cli.Get(ctx, client.ObjectKey{Namespace: cm.Namespace, Name: secretName}, secret); err != nil {
 		return nil, err
 	}
 
-	clientKeyFile, err := required(ClientKeyFileKey)
-	if err != nil {
-		return nil, err
+	ca, ok := secret.Data["ca.crt"]
+	if !ok {
+		return nil, fmt.Errorf("%w: missing ca.crt", ErrDriverConfig)
+	}
+
+	clientCert, ok := secret.Data["tls.crt"]
+	if !ok {
+		return nil, fmt.Errorf("%w: missing tls.crt", ErrDriverConfig)
+	}
+
+	clientKey, ok := secret.Data["tls.key"]
+	if !ok {
+		return nil, fmt.Errorf("%w: missing tls.key", ErrDriverConfig)
 	}
 
 	return &Options{
-		Subject:        subject,
-		URL:            url,
-		CAFile:         caFile,
-		ClientCertFile: clientCertFile,
-		ClientKeyFile:  clientKeyFile,
+		Subject:           subject,
+		URL:               url,
+		CACertificate:     ca,
+		ClientCertificate: clientCert,
+		ClientPrivateKey:  clientKey,
 	}, nil
 }
 

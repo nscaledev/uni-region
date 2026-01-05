@@ -1,0 +1,52 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-file-storage-controller
+  labels:
+    {{- include "unikorn.labels" . | nindent 4 }}
+rules:
+# Orchestrate Unikorn resources (my job).
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - filestorages
+  verbs:
+  - list
+  - watch
+  - patch
+  - update
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - filestorages/status
+  verbs:
+  - update
+  - patch
+# Manage references.
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - networks
+  verbs:
+  - list
+  - watch
+  - update
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - regions
+  - networks
+  - filestorages
+  - filestorageclasses
+  - filestorageprovisioners
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  - configmaps
+  verbs:
+  - list
+  - watch

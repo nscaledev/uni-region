@@ -21,10 +21,14 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/spf13/pflag"
+
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
+	identityclient "github.com/unikorn-cloud/identity/pkg/client"
+	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	filestorageprovisioners "github.com/unikorn-cloud/region/pkg/file-storage/provisioners"
@@ -35,18 +39,43 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// Options allows access to CLI options in the provisioner.
+type Options struct {
+	// identityOptions allow the identity host and CA to be set.
+	identityOptions *identityclient.Options
+	// clientOptions give access to client certificate information as
+	// we need to talk to identity to get a token, and then to delete
+	// the allocation.
+	clientOptions coreclient.HTTPClientOptions
+}
+
+func (o *Options) AddFlags(f *pflag.FlagSet) {
+	if o.identityOptions == nil {
+		o.identityOptions = identityclient.NewOptions()
+	}
+
+	o.identityOptions.AddFlags(f)
+	o.clientOptions.AddFlags(f)
+}
+
 // Provisioner encapsulates control plane provisioning.
 type Provisioner struct {
 	provisioners.Metadata
 
 	// fileStorage is the server we're provisioning.
 	fileStorage *unikornv1.FileStorage
+
+	// options are documented for the type.
+	options *Options
 }
 
 // New returns a new initialized provisioner object.
-func New(_ manager.ControllerOptions) provisioners.ManagerProvisioner {
+func New(options manager.ControllerOptions) provisioners.ManagerProvisioner {
+	o, _ := options.(*Options)
+
 	return &Provisioner{
 		fileStorage: &unikornv1.FileStorage{},
+		options:     o,
 	}
 }
 
@@ -116,7 +145,28 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return fmt.Errorf("%w: failed to clear network references", err)
 	}
 
+	// And finally remove the allocation
+	api, err := p.identityClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := identityclient.NewAllocations(cli, api).Delete(ctx, p.fileStorage); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (p *Provisioner) identityClient(ctx context.Context) (identityapi.ClientWithResponsesInterface, error) {
+	client, err := coreclient.FromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	issuer := identityclient.NewTokenIssuer(client, p.options.identityOptions, &p.options.clientOptions, constants.ServiceDescriptor())
+
+	return identityclient.New(client, p.options.identityOptions, &p.options.clientOptions).ControllerClient(ctx, issuer, p.fileStorage)
 }
 
 func (p *Provisioner) getFileStorageDriver(ctx context.Context, cli client.Client) (types.Driver, error) {

@@ -162,9 +162,28 @@ spec:
                   networkID:
                     description: NetworkID is the network ID.
                     type: string
+                  storageRange:
+                    description: StorageRange gives the start and end IP addresses
+                      for attaching to storage (e.g., FileStorage)
+                    properties:
+                      endIP:
+                        description: End is the end IP address for the attachment.
+                        pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])$
+                        type: string
+                      startIP:
+                        description: Start is the start IP address for the attachment.
+                        pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])$
+                        type: string
+                    required:
+                    - endIP
+                    - startIP
+                    type: object
                   subnetID:
                     description: SubnetID is the subnet ID.
                     type: string
+                  vlanID:
+                    description: VlanID is the VLAN ID for this network
+                    type: integer
                 type: object
             type: object
         required:

@@ -1255,6 +1255,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
@@ -1275,6 +1277,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
@@ -1293,6 +1297,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/filestorageclasses:
@@ -2526,31 +2532,36 @@ components:
       items:
         description: A network identifier
         type: string
+    storageAttachmentListV2Status:
+      description: Describes the network attachments for storage
+      type: array
+      items:
+        $ref: '#/components/schemas/storageAttachmentV2Status'
     storageAttachmentV2Status:
       description: Describes the network attachment for storage
       type: object
       required:
-      - networkIds
+      - networkId
       properties:
-        networkIds:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string 
-              provisioningStatus:
-                $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceProvisioningStatus'
+        networkId:
+          description: The network ID
+          type: string
+        mountSource:
+          description: The mount source for the attached storage in the format <host>:<path>.
+          type: string
+        provisioningStatus:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceProvisioningStatus'
     storageV2Spec:
       description: A storage's specification.
       type: object
       required:
-      - size
+      - sizeGiB
       - storageType
       properties:
-        size:
-          description: Size of the storage 
-          type: string
+        sizeGiB:
+          description: size in GiB of the storage 
+          type: integer
+          format: int64
         storageType: 
           $ref: '#/components/schemas/storageTypeV2Spec'
         attachments:
@@ -2572,7 +2583,7 @@ components:
         usage:
           $ref: '#/components/schemas/storageUsageV2Spec'
         attachments:
-         $ref: '#/components/schemas/storageAttachmentV2Status'
+         $ref: '#/components/schemas/storageAttachmentListV2Status'
     storageUsageV2Spec:
         description: Information about the usage of the storage
         type: object
@@ -2605,6 +2616,7 @@ components:
             - projectId
             - regionId
             - storageClassId
+            - sizeGiB
             properties:
               storageClassId:
                 description: The storage class ID to provision the storage into.
@@ -2942,7 +2954,7 @@ components:
               projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
               storageClassId: c7568e2d-f9ab-453d-9a3a-51375f78426b
               regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
-              size: "200"
+              sizeGiB: 200
               storageType:
                 nfs:
                   rootsquash: true
@@ -2960,12 +2972,12 @@ components:
               - name: tag-name
                 value: tag-value
             spec:
-              size: "200"
+              sizeGiB: 200
               storageType:
                 nfs:
                   rootsquash: true
-              attachements:
-                networkIds:
+              attachments:
+                networkIDs:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
   responses:
     regionsResponse:
@@ -3531,12 +3543,12 @@ components:
               - name: tag-name
                 value: tag-value
             spec:
-              size: "200"
+              sizeGiB: 200
               storageType:
                 nfs:
                   rootsquash: true
-              attachements:
-                networkIds:
+              attachments:
+                networkIDs:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
             status:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
@@ -3545,10 +3557,10 @@ components:
                   capacity: 100Ti
                   used: 88Ti
                   free: 12Ti
-              attachements:
-                networkIds:
-                  - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
-                provisioningStatus: provisioned
+              attachments:
+                - networkId: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
+                  mountSource: 10.0.0.16:/mnt/nfs
+                  provisioningStatus: provisioned
     storageListV2Response:
       description: A list of storages.
       content:
@@ -3569,12 +3581,12 @@ components:
               - name: tag-name
                 value: tag-value
             spec:
-              size: "200"
+              sizeGiB: 200
               storageType:
                 nfs:
                   rootsquash: true
-              attachements:
-                networkIds:
+              attachments:
+                networkIDs:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
             status:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
@@ -3583,10 +3595,10 @@ components:
                   capacity: 100Ti
                   used: 88Ti
                   free: 12Ti
-              attachements:
-                networkIds:
-                  - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
-                provisioningStatus: provisioned
+              attachments:
+                - networkId: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
+                  mountSource: 10.0.0.16:/mnt/nfs
+                  provisioningStatus: provisioned
     storageClassListV2Response:
       description: A list of storage classes.
       content:

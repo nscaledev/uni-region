@@ -97,7 +97,7 @@ type RegionKubernetesNodeSpec struct {
 	CPU *CPUSpec `json:"cpu"`
 	// Memory allows the memory amount to be specified.
 	Memory *resource.Quantity `json:"memory"`
-	// Disk allows the dick size to be specified.
+	// Disk allows the disk size to be specified.
 	Disk *resource.Quantity `json:"disk"`
 	// GPU defines additional GPU metadata.  When provided it will enable selection
 	// of images based on GPU vendor and model.
@@ -432,6 +432,10 @@ type NetworkStatusOpenstack struct {
 	NetworkID *string `json:"networkID,omitempty"`
 	// SubnetID is the subnet ID.
 	SubnetID *string `json:"subnetID,omitempty"`
+	// VlanID is the VLAN ID for this network
+	VlanID *int `json:"vlanID,omitempty"`
+	// StorageRange gives the start and end IP addresses for attaching to storage (e.g., FileStorage)
+	StorageRange *AttachmentIPRange `json:"storageRange,omitempty"`
 }
 
 type NetworkStatus struct {

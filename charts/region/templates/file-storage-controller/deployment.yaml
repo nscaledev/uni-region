@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-file-storage-controller
+  labels:
+    {{- include "unikorn.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-file-storage-controller
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-file-storage-controller
+    spec:
+      containers:
+      - name: {{ .Release.Name }}-file-storage-controller
+        image: {{ include "unikorn.fileStorageControllerImage" . }}
+        args:
+        {{- include "unikorn.core.flags" . | nindent 8 }}
+        {{- include "unikorn.otlp.flags" . | nindent 8 }}
+        {{- include "unikorn.identity.flags" . | nindent 8 }}
+        {{- include "unikorn.mtls.flags" . | nindent 8 }}
+        ports:
+        - name: http
+          containerPort: 6080
+        - name: prometheus
+          containerPort: 8080
+        - name: pprof
+          containerPort: 6060
+        resources:
+          {{- .Values.fileStorageController.resources | toYaml | nindent 10 }}
+        securityContext:
+          readOnlyRootFilesystem: true
+      serviceAccountName: {{ .Release.Name }}-file-storage-controller
+      securityContext:
+        runAsNonRoot: true
