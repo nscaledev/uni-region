@@ -165,45 +165,49 @@ func (b *RegionBuilder) build() *unikornv1.Region {
 // HandleOrganizationState is the main parameterized state handler.
 // It uses state parameters to determine what setup to perform.
 func (sm *StateManager) HandleOrganizationState(ctx context.Context, setup bool, params map[string]interface{}) error {
-	// Pact wraps parameters in a "params" key, so we need to unwrap them
-	actualParams := params
-	if wrappedParams, ok := params["params"].(map[string]interface{}); ok {
-		actualParams = wrappedParams
-	}
-
+	actualParams := unwrapPactParams(params)
 	orgID := getStringParam(actualParams, ParamOrganizationID, "test-org")
 	regionType := getStringParam(actualParams, ParamRegionType, "")
 
-	fmt.Printf(">>> State handler: HandleOrganizationState(setup=%v, orgID=%s, regionType=%s, params=%+v)\n",
-		setup, orgID, regionType, params)
+	fmt.Printf(">>> State handler: HandleOrganizationState(setup=%v, orgID=%s, regionType=%s)\n", setup, orgID, regionType)
 
 	if setup {
-		// Clean up any existing test regions first
-		if err := sm.cleanupAllRegions(ctx); err != nil {
-			return err
-		}
-
-		// Create regions based on regionType parameter
-		switch regionType {
-		case RegionTypeOpenStack:
-			return sm.createOpenStackRegion(ctx, orgID)
-		case RegionTypeKubernetes:
-			return sm.createKubernetesRegion(ctx, orgID)
-		case RegionTypeMixed:
-			return sm.createMixedRegions(ctx, orgID)
-		case "":
-			// No regions - just cleanup was done above
-			fmt.Printf("No regions to create for org %s\n", orgID)
-			return nil
-		default:
-			return fmt.Errorf("%w: %s", ErrUnknownRegionType, regionType)
-		}
+		return sm.setupRegions(ctx, orgID, regionType)
 	}
 
-	// Teardown - clean up all regions
 	fmt.Printf("Cleaning up regions for org %s\n", orgID)
 
 	return sm.cleanupAllRegions(ctx)
+}
+
+// unwrapPactParams extracts actual parameters from Pact's "params" wrapper.
+func unwrapPactParams(params map[string]interface{}) map[string]interface{} {
+	if wrappedParams, ok := params["params"].(map[string]interface{}); ok {
+		return wrappedParams
+	}
+
+	return params
+}
+
+// setupRegions creates regions based on the regionType parameter.
+func (sm *StateManager) setupRegions(ctx context.Context, orgID, regionType string) error {
+	if err := sm.cleanupAllRegions(ctx); err != nil {
+		return err
+	}
+
+	switch regionType {
+	case RegionTypeOpenStack:
+		return sm.createOpenStackRegion(ctx, orgID)
+	case RegionTypeKubernetes:
+		return sm.createKubernetesRegion(ctx, orgID)
+	case RegionTypeMixed:
+		return sm.createMixedRegions(ctx, orgID)
+	case "":
+		fmt.Printf("No regions to create for org %s\n", orgID)
+		return nil
+	default:
+		return fmt.Errorf("%w: %s", ErrUnknownRegionType, regionType)
+	}
 }
 
 // createOpenStackRegion creates a single OpenStack region.
