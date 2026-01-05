@@ -26,6 +26,7 @@ import (
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
+	"github.com/unikorn-cloud/region/pkg/handler/util/unit"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -66,7 +67,7 @@ func (c *Client) generateAllocation(size int64) identityapi.ResourceAllocationLi
 
 func (s *createSaga) createAllocation(ctx context.Context) error {
 	// We want to preserve that all sizes stored in k8s is in bytes
-	quantity := gibToQuantity(s.request.Spec.SizeGiB)
+	quantity := unit.ResourceQuantityGiB(s.request.Spec.SizeGiB)
 	required := s.client.generateAllocation(quantity.Value())
 
 	return identityclient.NewAllocations(s.client.client, s.client.identity).Create(ctx, s.filestorage, required)

@@ -35,9 +35,9 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	networkclient "github.com/unikorn-cloud/region/pkg/handler/network"
+	"github.com/unikorn-cloud/region/pkg/handler/util/unit"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -253,7 +253,7 @@ func TestConvertV2List(t *testing.T) {
 							NFS: &regionv1.NFS{
 								RootSquash: true,
 							},
-							Size: *gibToQuantity(int64(100)),
+							Size: *unit.ResourceQuantityGiB(100),
 							Attachments: []regionv1.Attachment{
 								{
 									NetworkID:      "net-1",
@@ -341,7 +341,7 @@ func TestConvertV2(t *testing.T) {
 					},
 				},
 				Spec: regionv1.FileStorageSpec{
-					Size: *gibToQuantity(int64(2)),
+					Size: *unit.ResourceQuantityGiB(2),
 					NFS: &regionv1.NFS{
 						RootSquash: true,
 					},
@@ -405,7 +405,7 @@ func TestConvertV2SizeConversion(t *testing.T) {
 					},
 				},
 				Spec: regionv1.FileStorageSpec{
-					Size: *gibToQuantity(int64(2)),
+					Size: *unit.ResourceQuantityGiB(2),
 					NFS: &regionv1.NFS{
 						RootSquash: true,
 					},
@@ -590,7 +590,7 @@ func TestGenerateV2(t *testing.T) {
 					},
 				},
 				Spec: regionv1.FileStorageSpec{
-					Size:           *resource.NewQuantity(int64(10737418240), resource.BinarySI),
+					Size:           *unit.ResourceQuantityGiB(10),
 					StorageClassID: "sc-1",
 					Attachments: []regionv1.Attachment{
 						{

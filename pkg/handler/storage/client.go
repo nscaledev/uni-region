@@ -39,10 +39,10 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
+	"github.com/unikorn-cloud/region/pkg/handler/util/unit"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
 
@@ -89,7 +89,7 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 			StorageType: openapi.StorageTypeV2Spec{
 				NFS: checkRegionNFS(in.Spec.NFS),
 			},
-			SizeGiB: quantityToSizeGiB(in.Spec.Size),
+			SizeGiB: unit.BytesToGiB(in.Spec.Size.Value()),
 		},
 		Status: openapi.StorageV2Status{
 			RegionId:       in.Labels[constants.RegionLabel],
@@ -260,7 +260,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 			Get(),
 		Spec: regionv1.FileStorageSpec{
 			Tags:        conversion.GenerateTagList(request.Metadata.Tags),
-			Size:        *gibToQuantity(request.Spec.SizeGiB),
+			Size:        *unit.ResourceQuantityGiB(request.Spec.SizeGiB),
 			Attachments: attachments,
 			NFS: &regionv1.NFS{
 				RootSquash: checkRootSquash(request.Spec.StorageType.NFS),
@@ -526,14 +526,6 @@ func convertProtocols(in []regionv1.Protocol) []openapi.StorageClassProtocolType
 	}
 
 	return out
-}
-
-func quantityToSizeGiB(quantity resource.Quantity) int64 {
-	return (quantity.Value() / (1 << 30))
-}
-
-func gibToQuantity(size int64) *resource.Quantity {
-	return resource.NewQuantity((size * (1 << 30)), resource.BinarySI)
 }
 
 // authorizeFileStorageClassRead enforces read permissions for a FileStorageClass.

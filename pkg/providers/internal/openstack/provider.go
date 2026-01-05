@@ -48,6 +48,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler/util/unit"
 	"github.com/unikorn-cloud/region/pkg/providers/allocation/vlan"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"github.com/unikorn-cloud/region/pkg/providers/util"
@@ -617,9 +618,10 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 
 	size := image.MinDiskGigabytes
 
+	// Round up to the nearest GiB.
 	if size == 0 {
-		// Round up to the nearest GiB.
-		size = int((image.VirtualSize + (1 << 30) - 1) >> 30)
+		roundedBytes := image.VirtualSize + unit.GiBToBytes(1) - 1
+		size = int(unit.BytesToGiB(roundedBytes))
 	}
 
 	virtualization, _ := image.Properties[virtualizationLabel].(string)

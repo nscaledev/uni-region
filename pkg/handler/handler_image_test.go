@@ -36,6 +36,7 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/handler/image"
 	"github.com/unikorn-cloud/region/pkg/handler/image/mock"
+	"github.com/unikorn-cloud/region/pkg/handler/util/unit"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
@@ -66,7 +67,7 @@ func newTestImageHandler(t *testing.T, mockProvider *mock.MockProvider) *ImageHa
 	t.Helper()
 
 	c := fake.NewClientBuilder().Build()
-	handler := NewImageHandler(c, testNamespace, &Options{ImageUploadSizeLimit: 10 << 30})
+	handler := NewImageHandler(c, testNamespace, &Options{ImageUploadSizeLimit: unit.GiBToBytes(10)})
 
 	// Inject the mock provider
 	handler.getProvider = func(context.Context, client.Client, string, string) (image.Provider, error) {

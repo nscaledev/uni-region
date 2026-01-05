@@ -18,6 +18,7 @@ package conversion
 
 import (
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/handler/util/unit"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
@@ -44,8 +45,8 @@ func ConvertFlavor(in *types.Flavor) *openapi.Flavor {
 		Spec: openapi.FlavorSpec{
 			Cpus:      in.CPUs,
 			CpuFamily: in.CPUFamily,
-			Memory:    int(in.Memory.Value()) >> 30,
-			Disk:      int(in.Disk.Value()) / 1000000000,
+			Memory:    int(unit.BytesToGiB(in.Memory.Value())),
+			Disk:      int(unit.BytesToGB(in.Disk.Value())),
 		},
 	}
 
@@ -57,7 +58,7 @@ func ConvertFlavor(in *types.Flavor) *openapi.Flavor {
 		out.Spec.Gpu = &openapi.GpuSpec{
 			Vendor:        ConvertGpuVendor(in.GPU.Vendor),
 			Model:         in.GPU.Model,
-			Memory:        int(in.GPU.Memory.Value()) >> 30,
+			Memory:        int(unit.BytesToGiB(in.GPU.Memory.Value())),
 			PhysicalCount: in.GPU.PhysicalCount,
 			LogicalCount:  in.GPU.LogicalCount,
 		}
