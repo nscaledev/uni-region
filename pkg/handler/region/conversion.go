@@ -17,23 +17,18 @@ limitations under the License.
 package region
 
 import (
-	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 
 	coreconversion "github.com/unikorn-cloud/core/pkg/server/conversion"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	corev1 "k8s.io/api/core/v1"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var ErrResource = errors.New("resource error")
-
-func convertRegionType(in regionv1.Provider) openapi.RegionType {
+func ConvertRegionType(in regionv1.Provider) openapi.RegionType {
 	switch in {
 	case regionv1.ProviderKubernetes:
 		return openapi.RegionTypeKubernetes
@@ -44,11 +39,11 @@ func convertRegionType(in regionv1.Provider) openapi.RegionType {
 	return ""
 }
 
-func convert(in *regionv1.Region) *openapi.RegionRead {
+func ConvertRegion(in *regionv1.Region) *openapi.RegionRead {
 	out := &openapi.RegionRead{
 		Metadata: coreconversion.ResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.RegionSpec{
-			Type: convertRegionType(in.Spec.Provider),
+			Type: ConvertRegionType(in.Spec.Provider),
 		},
 	}
 
@@ -62,37 +57,35 @@ func convert(in *regionv1.Region) *openapi.RegionRead {
 	return out
 }
 
-func (c *Client) convertDetail(ctx context.Context, in *regionv1.Region) (*openapi.RegionDetailRead, error) {
+func ConvertRegionDetail(sourceRegion *regionv1.Region, sourceSecret *corev1.Secret) (*openapi.RegionDetailRead, error) {
 	out := &openapi.RegionDetailRead{
-		Metadata: coreconversion.ResourceReadMetadata(in, in.Spec.Tags),
+		Metadata: coreconversion.ResourceReadMetadata(sourceRegion, sourceRegion.Spec.Tags),
 		Spec: openapi.RegionDetailSpec{
-			Type: convertRegionType(in.Spec.Provider),
+			Type: ConvertRegionType(sourceRegion.Spec.Provider),
 		},
 	}
 
 	// Calculate any region specific configuration.
-	switch in.Spec.Provider {
+	switch sourceRegion.Spec.Provider {
 	case regionv1.ProviderKubernetes:
-		secret := &corev1.Secret{}
-
-		if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: in.Spec.Kubernetes.KubeconfigSecret.Name}, secret); err != nil {
-			return nil, err
+		if sourceSecret == nil {
+			return nil, fmt.Errorf("%w: missing Kubernetes region secret", ErrInternal)
 		}
 
-		kubeconfig, ok := secret.Data["kubeconfig"]
+		kubeconfig, ok := sourceSecret.Data["kubeconfig"]
 		if !ok {
-			return nil, fmt.Errorf("%w: kubeconfig kye missing in region secret", ErrResource)
+			return nil, fmt.Errorf("%w: missing key 'kubeconfig' in region secret", ErrInternal)
 		}
 
 		out.Spec.Kubernetes = &openapi.RegionDetailKubernetes{
 			Kubeconfig: base64.RawURLEncoding.EncodeToString(kubeconfig),
 		}
 
-		if in.Spec.Kubernetes.DomainName != "" {
-			out.Spec.Kubernetes.DomainName = &in.Spec.Kubernetes.DomainName
+		if sourceRegion.Spec.Kubernetes.DomainName != "" {
+			out.Spec.Kubernetes.DomainName = &sourceRegion.Spec.Kubernetes.DomainName
 		}
 	case regionv1.ProviderOpenstack:
-		if in.Spec.Openstack.Network != nil && in.Spec.Openstack.Network.ProviderNetworks != nil {
+		if sourceRegion.Spec.Openstack.Network != nil && sourceRegion.Spec.Openstack.Network.ProviderNetworks != nil {
 			out.Spec.Features.PhysicalNetworks = true
 		}
 	}
@@ -100,11 +93,30 @@ func (c *Client) convertDetail(ctx context.Context, in *regionv1.Region) (*opena
 	return out, nil
 }
 
-func convertList(in *regionv1.RegionList) openapi.Regions {
+func ConvertRegions(in *regionv1.RegionList) openapi.Regions {
 	out := make(openapi.Regions, len(in.Items))
 
 	for i := range in.Items {
-		out[i] = *convert(&in.Items[i])
+		out[i] = *ConvertRegion(&in.Items[i])
+	}
+
+	return out
+}
+
+func ConvertExternalNetwork(in types.ExternalNetwork) openapi.ExternalNetwork {
+	out := openapi.ExternalNetwork{
+		Id:   in.ID,
+		Name: in.Name,
+	}
+
+	return out
+}
+
+func ConvertExternalNetworks(in types.ExternalNetworks) openapi.ExternalNetworks {
+	out := make(openapi.ExternalNetworks, len(in))
+
+	for i := range in {
+		out[i] = ConvertExternalNetwork(in[i])
 	}
 
 	return out

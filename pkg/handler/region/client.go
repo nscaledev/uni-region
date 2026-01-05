@@ -19,6 +19,7 @@ package region
 import (
 	"cmp"
 	"context"
+	goerrors "errors"
 	"fmt"
 	"slices"
 
@@ -29,10 +30,13 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
+	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+var ErrInternal = goerrors.New("internal")
 
 type GetProviderFunc func(ctx context.Context, c client.Client, namespace, regionID string) (Provider, error)
 
@@ -68,15 +72,19 @@ func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
 		return nil, err
 	}
 
-	return convertList(regions), nil
+	return ConvertRegions(regions), nil
 }
 
 func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.RegionDetailRead, error) {
-	result := &regionv1.Region{}
-
 	fmt.Println("getting region", c.namespace, regionID)
 
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: regionID}, result); err != nil {
+	objectKey := client.ObjectKey{
+		Namespace: c.namespace,
+		Name:      regionID,
+	}
+
+	var region regionv1.Region
+	if err := c.client.Get(ctx, objectKey, &region); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
@@ -84,7 +92,35 @@ func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.Regio
 		return nil, errors.OAuth2ServerError("unable to lookup region").WithError(err)
 	}
 
-	return c.convertDetail(ctx, result)
+	secret, err := c.getKubeconfigSecret(ctx, &region)
+	if err != nil {
+		return nil, errors.OAuth2ServerError("failed to retrieve kubeconfig secret").WithError(err)
+	}
+
+	return ConvertRegionDetail(&region, secret)
+}
+
+func (c *Client) getKubeconfigSecret(ctx context.Context, region *regionv1.Region) (*corev1.Secret, error) {
+	if region.Spec.Provider != regionv1.ProviderKubernetes {
+		//nolint:nilnil
+		return nil, nil
+	}
+
+	if region.Spec.Kubernetes == nil || region.Spec.Kubernetes.KubeconfigSecret == nil {
+		return nil, fmt.Errorf("%w: kubeconfig secret not defined for region", ErrInternal)
+	}
+
+	objectKey := client.ObjectKey{
+		Namespace: c.namespace,
+		Name:      region.Spec.Kubernetes.KubeconfigSecret.Name,
+	}
+
+	var secret corev1.Secret
+	if err := c.client.Get(ctx, objectKey, &secret); err != nil {
+		return nil, err
+	}
+
+	return &secret, nil
 }
 
 func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID string) (openapi.Flavors, error) {
@@ -115,25 +151,6 @@ func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID strin
 	return conversion.ConvertFlavors(result), nil
 }
 
-func convertExternalNetwork(in types.ExternalNetwork) openapi.ExternalNetwork {
-	out := openapi.ExternalNetwork{
-		Id:   in.ID,
-		Name: in.Name,
-	}
-
-	return out
-}
-
-func convertExternalNetworks(in types.ExternalNetworks) openapi.ExternalNetworks {
-	out := make(openapi.ExternalNetworks, len(in))
-
-	for i := range in {
-		out[i] = convertExternalNetwork(in[i])
-	}
-
-	return out
-}
-
 func (c *Client) ListExternalNetworks(ctx context.Context, regionID string) (openapi.ExternalNetworks, error) {
 	provider, err := c.getProvider(ctx, c.client, c.namespace, regionID)
 	if err != nil {
@@ -145,5 +162,5 @@ func (c *Client) ListExternalNetworks(ctx context.Context, regionID string) (ope
 		return nil, errors.OAuth2ServerError("failed to list external networks").WithError(err)
 	}
 
-	return convertExternalNetworks(result), nil
+	return ConvertExternalNetworks(result), nil
 }
