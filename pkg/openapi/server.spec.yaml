@@ -1255,6 +1255,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
@@ -1275,6 +1277,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
@@ -1293,6 +1297,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/filestorageclasses:
@@ -2970,8 +2976,8 @@ components:
               storageType:
                 nfs:
                   rootsquash: true
-              attachements:
-                networkIds:
+              attachments:
+                networkIDs:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
   responses:
     regionsResponse:
@@ -3541,8 +3547,8 @@ components:
               storageType:
                 nfs:
                   rootsquash: true
-              attachements:
-                networkIds:
+              attachments:
+                networkIDs:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
             status:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
@@ -3551,7 +3557,7 @@ components:
                   capacity: 100Ti
                   used: 88Ti
                   free: 12Ti
-              attachements:
+              attachments:
                 - networkId: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
                   mountSource: 10.0.0.16:/mnt/nfs
                   provisioningStatus: provisioned
@@ -3579,8 +3585,8 @@ components:
               storageType:
                 nfs:
                   rootsquash: true
-              attachements:
-                networkIds:
+              attachments:
+                networkIDs:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
             status:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
@@ -3589,7 +3595,7 @@ components:
                   capacity: 100Ti
                   used: 88Ti
                   free: 12Ti
-              attachements:
+              attachments:
                 - networkId: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
                   mountSource: 10.0.0.16:/mnt/nfs
                   provisioningStatus: provisioned

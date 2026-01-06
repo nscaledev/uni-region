@@ -1,6 +1,7 @@
 /*
 Copyright 2022-2024 EscherCloud.
 Copyright 2024-2025 the Unikorn Authors.
+Copyright 2026 Nscale.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -97,7 +98,7 @@ type RegionKubernetesNodeSpec struct {
 	CPU *CPUSpec `json:"cpu"`
 	// Memory allows the memory amount to be specified.
 	Memory *resource.Quantity `json:"memory"`
-	// Disk allows the dick size to be specified.
+	// Disk allows the disk size to be specified.
 	Disk *resource.Quantity `json:"disk"`
 	// GPU defines additional GPU metadata.  When provided it will enable selection
 	// of images based on GPU vendor and model.

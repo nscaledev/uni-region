@@ -1,5 +1,6 @@
 /*
 Copyright 2025 the Unikorn Authors.
+Copyright 2026 Nscale.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -390,6 +391,15 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	required, err := c.generateV2(ctx, organizationID, projectID, regionID, request, current.Spec.StorageClassID)
 	if err != nil {
 		return nil, err
+	}
+
+	if err := conversion.UpdateObjectMetadata(required, current, common.IdentityMetadataMutator); err != nil {
+		return nil, errors.OAuth2ServerError("failed to merge metadata").WithError(err)
+	}
+
+	// Preserve the allocation.
+	if v, ok := current.Annotations[coreconstants.AllocationAnnotation]; ok {
+		required.Annotations[coreconstants.AllocationAnnotation] = v
 	}
 
 	updated := current.DeepCopy()

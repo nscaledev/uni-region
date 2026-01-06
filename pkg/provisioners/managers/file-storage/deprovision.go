@@ -1,5 +1,6 @@
 /*
 Copyright 2024-2025 the Unikorn Authors.
+Copyright 2026 Nscale.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -45,5 +46,14 @@ func (p *Provisioner) detachNetworks(ctx context.Context, driver types.Driver) e
 }
 
 func (p *Provisioner) deleteFileStorage(ctx context.Context, driver types.Driver) error {
-	return driver.Delete(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, true)
+	if err := driver.Delete(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, true); err != nil {
+		// nothing to do.
+		if errors.Is(err, types.ErrNotFound) {
+			return nil
+		}
+
+		return err
+	}
+
+	return nil
 }

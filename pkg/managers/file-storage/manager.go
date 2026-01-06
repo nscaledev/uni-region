@@ -1,5 +1,6 @@
 /*
 Copyright 2024-2025 the Unikorn Authors.
+Copyright 2026 Nscale.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -45,7 +46,7 @@ func (*Factory) Metadata() util.ServiceDescriptor {
 
 // Options returns any options to be added to the CLI flags and passed to the reconciler.
 func (*Factory) Options() coremanager.ControllerOptions {
-	return nil
+	return &filestorage.Options{}
 }
 
 // Reconciler returns a new reconciler instance.

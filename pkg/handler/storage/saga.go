@@ -1,5 +1,6 @@
 /*
 Copyright 2025 the Unikorn Authors.
+Copyright 2026 Nscale.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -88,6 +89,10 @@ func (s *createSaga) createFileStorage(ctx context.Context) error {
 }
 
 func (s *createSaga) validateRequest(ctx context.Context) error {
+	if s.request.Spec.SizeGiB <= 0 {
+		return errors.OAuth2InvalidRequest("size must be greater or equal to 1GiB")
+	}
+
 	if err := s.validateRegion(ctx, s.request.Spec.RegionId); err != nil {
 		return err
 	}
@@ -96,7 +101,7 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 		return err
 	}
 
-	if err := s.validateNetworks(ctx, s.request.Spec.Attachments.NetworkIDs); err != nil {
+	if err := s.validateAttachments(ctx, s.request.Spec.Attachments); err != nil {
 		return err
 	}
 
@@ -138,10 +143,14 @@ func (s *createSaga) validateStorageClass(ctx context.Context, storageClassID st
 	return nil
 }
 
-func (s *createSaga) validateNetworks(ctx context.Context, networkIDs []string) error {
+func (s *createSaga) validateAttachments(ctx context.Context, attachments *openapi.StorageAttachmentV2Spec) error {
+	if attachments == nil {
+		return nil
+	}
+
 	networkClient := network.New(s.client.client, s.client.namespace, s.client.identity)
 
-	for _, id := range networkIDs {
+	for _, id := range attachments.NetworkIDs {
 		network, err := networkClient.GetV2(ctx, id)
 		if err != nil {
 			return errors.

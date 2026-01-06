@@ -1,5 +1,6 @@
 /*
 Copyright 2025 the Unikorn Authors.
+Copyright 2026 Nscale.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -346,7 +347,7 @@ func (h *Handler) PutApiV2FilestorageFilestorageID(w http.ResponseWriter, r *htt
 		return
 	}
 
-	util.WriteJSONResponse(w, r, http.StatusCreated, result)
+	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
 }
 
 func (h *Handler) GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2FilestorageclassesParams) {
