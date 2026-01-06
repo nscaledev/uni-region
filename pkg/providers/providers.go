@@ -34,9 +34,9 @@ var (
 	// ErrRegionNotFound is raised when a region doesn't exist.
 	ErrRegionNotFound = errors.New("region doesn't exist")
 
-	// ErrRegionProviderUnimplmented is raised when you haven't written
+	// ErrRegionProviderUnimplemented is raised when you haven't written
 	// it yet!
-	ErrRegionProviderUnimplmented = errors.New("region provider unimplmented")
+	ErrRegionProviderUnimplemented = errors.New("region provider unimplemented")
 )
 
 //nolint:gochecknoglobals
@@ -51,7 +51,7 @@ func newProvider(ctx context.Context, client client.Client, region *unikornv1.Re
 		return openstack.New(ctx, client, region)
 	}
 
-	return nil, ErrRegionProviderUnimplmented
+	return nil, ErrRegionProviderUnimplemented
 }
 
 // New returns a new provider for the given region.

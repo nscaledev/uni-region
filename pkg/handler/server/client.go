@@ -21,10 +21,7 @@ import (
 	"cmp"
 	"context"
 	goerrors "errors"
-	"net/http"
 	"slices"
-
-	"github.com/gophercloud/gophercloud/v2"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
@@ -37,7 +34,6 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
-	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -126,7 +122,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 
 	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
-			return nil, errors.HTTPNotFound()
+			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
 		return nil, errors.OAuth2ServerError("failed to retrieve image from provider").WithError(err)
@@ -170,7 +166,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 
 	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
-			return nil, errors.HTTPNotFound()
+			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
 		return nil, errors.OAuth2ServerError("failed to retrieve image from provider").WithError(err)
@@ -222,8 +218,11 @@ func (c *Client) Reboot(ctx context.Context, organizationID, projectID, identity
 	// REVIEW_ME: This action only reboots the server with the existing configuration, so updating the labels (creator/principal) seems a bit weird.
 
 	if err := provider.RebootServer(ctx, identity, current, hard); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			// REVIEW_ME: Should this return 409 instead? But we will probably need to add a new error type for that.
+		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
+			return errors.HTTPNotFound().WithError(err)
+		}
+
+		if goerrors.Is(err, coreerrors.ErrConflict) {
 			return errors.OAuth2InvalidRequest("server cannot be rebooted in its current state").WithError(err)
 		}
 
@@ -255,8 +254,11 @@ func (c *Client) Start(ctx context.Context, organizationID, projectID, identityI
 	}
 
 	if err := provider.StartServer(ctx, identity, current); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			// REVIEW_ME: Should this return 409 instead? But we will probably need to add a new error type for that.
+		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
+			return errors.HTTPNotFound().WithError(err)
+		}
+
+		if goerrors.Is(err, coreerrors.ErrConflict) {
 			return errors.OAuth2InvalidRequest("server cannot be started in its current state").WithError(err)
 		}
 
@@ -292,8 +294,11 @@ func (c *Client) Stop(ctx context.Context, organizationID, projectID, identityID
 	}
 
 	if err := provider.StopServer(ctx, identity, current); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			// REVIEW_ME: Should this return 409 instead? But we will probably need to add a new error type for that.
+		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
+			return errors.HTTPNotFound().WithError(err)
+		}
+
+		if goerrors.Is(err, coreerrors.ErrConflict) {
 			return errors.OAuth2InvalidRequest("server cannot be stopped in its current state").WithError(err)
 		}
 
@@ -347,9 +352,12 @@ func (c *Client) CreateConsoleSession(ctx context.Context, organizationID, proje
 
 	url, err := provider.CreateConsoleSession(ctx, identity, current)
 	if err != nil {
-		// REVIEW_ME: This looks odd. Shouldn't the ErrResourceDependency error be moved to the provider package?
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) || goerrors.Is(err, types.ErrResourceDependency) {
+		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return nil, errors.HTTPNotFound().WithError(err)
+		}
+
+		if goerrors.Is(err, coreerrors.ErrConflict) {
+			return nil, errors.OAuth2InvalidRequest("server cannot be accessed in its current state").WithError(err)
 		}
 
 		return nil, errors.OAuth2ServerError("failed to create console session").WithError(err)
@@ -380,12 +388,15 @@ func (c *Client) GetConsoleOutput(ctx context.Context, organizationID, projectID
 
 	contents, err := provider.GetConsoleOutput(ctx, identity, current, params.Length)
 	if err != nil {
-		// REVIEW_ME: This looks odd. Shouldn't the ErrResourceDependency error be moved to the provider package?
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) || goerrors.Is(err, types.ErrResourceDependency) {
+		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("failed to create console session").WithError(err)
+		if goerrors.Is(err, coreerrors.ErrConflict) {
+			return nil, errors.OAuth2InvalidRequest("server console output cannot be retrieved in its current state").WithError(err)
+		}
+
+		return nil, errors.OAuth2ServerError("failed to retrieve console output").WithError(err)
 	}
 
 	response := &openapi.ConsoleOutputResponse{
