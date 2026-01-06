@@ -318,6 +318,23 @@ publish-contracts-provider:
 	PUBLISH_VERIFICATION=true \
 	go test ./test/contracts/provider/... -v -count=1
 
+# Run contract verification in CI (Linux) with automatic publishing
+# Sets CI=true which triggers auto-publishing to Pact Broker
+# Requires: PACT_BROKER_URL, PACT_BROKER_USERNAME, PACT_BROKER_PASSWORD, PROVIDER_VERSION env vars
+.PHONY: test-contracts-ci
+test-contracts-ci:
+	@echo "Running provider contract verification in CI mode..."
+	@echo "Provider Version: $(PROVIDER_VERSION)"
+	@echo "Pact Broker URL: $(PACT_BROKER_URL)"
+	CGO_LDFLAGS="-L/usr/local/lib" \
+	LD_LIBRARY_PATH="/usr/local/lib:$$LD_LIBRARY_PATH" \
+	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
+	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
+	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
+	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
+	CI=true \
+	go test ./test/contracts/provider/... -v -count=1
+
 # Clean contract test artifacts
 .PHONY: test-contracts-clean
 test-contracts-clean:
