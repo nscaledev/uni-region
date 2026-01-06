@@ -37,7 +37,7 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 )
 
-type ExternalNetworkInterfsce interface {
+type ExternalNetworkInterface interface {
 	ExternalNetworks(ctx context.Context) ([]networks.Network, error)
 }
 
@@ -88,7 +88,7 @@ type PortInterface interface {
 }
 
 type NetworkingInterface interface {
-	ExternalNetworkInterfsce
+	ExternalNetworkInterface
 	NetworkInterface
 	SubnetInterface
 	RouterInterface

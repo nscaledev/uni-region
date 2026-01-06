@@ -36,12 +36,11 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/imagedata"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/kaptinlin/jsonschema"
-	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-	"github.com/unikorn-cloud/region/pkg/constants"
 )
 
 var (
@@ -181,27 +180,29 @@ func ImageSchema() (*jsonschema.Schema, error) {
 
 // CreateImage creates a new image.
 func (c *ImageClient) CreateImage(ctx context.Context, opts *images.CreateOpts) (*images.Image, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "POST /image/v2/images", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "POST /image/v2/images")
 	defer span.End()
 
 	return images.Create(ctx, c.client, opts).Extract()
 }
 
 func (c *ImageClient) UploadImageData(ctx context.Context, id string, reader io.Reader) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+	spanAttributes := trace.WithAttributes(
+		attribute.String("image.image.id", id),
+	)
 
-	_, span := tracer.Start(ctx, "PUT /image/v2/images/{image_id}/file", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "PUT /image/v2/images/{id}/file", spanAttributes)
 	defer span.End()
 
 	return imagedata.Upload(ctx, c.client, id, reader).ExtractErr()
 }
 
 func (c *ImageClient) UpdateImage(ctx context.Context, id string, opts images.UpdateOpts) (*images.Image, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+	spanAttributes := trace.WithAttributes(
+		attribute.String("image.image.id", id),
+	)
 
-	_, span := tracer.Start(ctx, "PATCH /image/v2/images/{image_id}", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "PATCH /image/v2/images/{id}", spanAttributes)
 	defer span.End()
 
 	return images.Update(ctx, c.client, id, opts).Extract()
@@ -209,9 +210,7 @@ func (c *ImageClient) UpdateImage(ctx context.Context, id string, opts images.Up
 
 // ListImages returns a list of images.
 func (c *ImageClient) ListImages(ctx context.Context) ([]images.Image, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "GET /image/v2/images", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "GET /image/v2/images")
 	defer span.End()
 
 	schema, err := ImageSchema()
@@ -248,9 +247,11 @@ func (c *ImageClient) ListImages(ctx context.Context) ([]images.Image, error) {
 
 // GetImage retrieves a specific image by its ID.
 func (c *ImageClient) GetImage(ctx context.Context, id string) (*images.Image, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+	spanAttributes := trace.WithAttributes(
+		attribute.String("image.image.id", id),
+	)
 
-	_, span := tracer.Start(ctx, "GET /image/v2/images/{image_id}", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "GET /image/v2/images/{id}", spanAttributes)
 	defer span.End()
 
 	schema, err := ImageSchema()
@@ -272,9 +273,11 @@ func (c *ImageClient) GetImage(ctx context.Context, id string) (*images.Image, e
 }
 
 func (c *ImageClient) DeleteImage(ctx context.Context, id string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+	spanAttributes := trace.WithAttributes(
+		attribute.String("image.image.id", id),
+	)
 
-	_, span := tracer.Start(ctx, "DELETE /image/v2/images/{image_id}", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "DELETE /image/v2/images/{id}", spanAttributes)
 	defer span.End()
 
 	return images.Delete(ctx, c.client, id).ExtractErr()
