@@ -23,10 +23,6 @@ import (
 )
 
 var (
-	// ErrResourceDependency is returned when a resource is in unexpected
-	// state or condition.
-	ErrResourceDependency = errors.New("resource dependency error")
-
 	// ErrImageNotReadyForUpload is returned when the image record at the provider is not in a state
 	// for receiving image file data.
 	ErrImageNotReadyForUpload = errors.New("image is not in a desired state for upload")

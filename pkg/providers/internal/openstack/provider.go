@@ -32,7 +32,7 @@ import (
 	"sync"
 	"time"
 
-	gophercloud "github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
@@ -86,11 +86,6 @@ const (
 	dataSourceLabel     = "unikorn:data_source"
 
 	containerFormatBare = "bare" // there's no const in gophercloud for this, so we have our own.
-)
-
-var (
-	ErrConflict     = errors.New("resource conflict error")
-	ErrKeyUndefined = errors.New("a required key was not defined")
 )
 
 const (
@@ -205,22 +200,22 @@ func (p *Provider) serviceClientRefresh(ctx context.Context) error {
 	// Create the core credential provider.
 	domainID, ok := secret.Data["domain-id"]
 	if !ok {
-		return fmt.Errorf("%w: domain-id", ErrKeyUndefined)
+		return fmt.Errorf("%w: domain-id", coreerrors.ErrKey)
 	}
 
 	userID, ok := secret.Data["user-id"]
 	if !ok {
-		return fmt.Errorf("%w: user-id", ErrKeyUndefined)
+		return fmt.Errorf("%w: user-id", coreerrors.ErrKey)
 	}
 
 	password, ok := secret.Data["password"]
 	if !ok {
-		return fmt.Errorf("%w: password", ErrKeyUndefined)
+		return fmt.Errorf("%w: password", coreerrors.ErrKey)
 	}
 
 	projectID, ok := secret.Data["project-id"]
 	if !ok {
-		return fmt.Errorf("%w: project-id", ErrKeyUndefined)
+		return fmt.Errorf("%w: project-id", coreerrors.ErrKey)
 	}
 
 	credentials := &providerCredentials{
@@ -363,9 +358,9 @@ func (p *Provider) getProviderFromServicePrincipal(ctx context.Context, identity
 	return p.getProviderFromServicePrincipalData(openstackIdentity)
 }
 
-// getPriviliegedProviderFromServicePrincipal binds itself to the service principal's project
+// getPrivilegedProviderFromServicePrincipal binds itself to the service principal's project
 // but uses the provider's top level admin credentials.
-func (p *Provider) getPriviliegedProviderFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
+func (p *Provider) getPrivilegedProviderFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return nil, err
@@ -411,7 +406,7 @@ func (p *Provider) networkFromServicePrincipal(ctx context.Context, identity *un
 // privilegedNetworkFromServicePrincipal gets a network client scoped to the service principal's
 // project but with "manager" credentials.
 func (p *Provider) privilegedNetworkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
-	provider, err := p.getPriviliegedProviderFromServicePrincipal(ctx, identity)
+	provider, err := p.getPrivilegedProviderFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return nil, err
 	}
@@ -646,7 +641,7 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 		gpuDriver, ok := image.Properties[gpuDriverVersionLabel].(string)
 		if !ok {
 			// TODO: it's perhaps better to just skip this one, rather than kill the entire service??
-			return nil, fmt.Errorf("%w: GPU driver is not defined for image %s", ErrKeyUndefined, image.ID)
+			return nil, fmt.Errorf("%w: GPU driver is not defined for image %s", coreerrors.ErrKey, image.ID)
 		}
 
 		gpu := &types.ImageGPU{
@@ -711,15 +706,16 @@ func (p *Provider) listImages(ctx context.Context) ([]images.Image, error) {
 func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
 	resource, err := p.getImage(ctx, imageID)
 	if err != nil {
-		if errors.Is(err, coreerrors.ErrResourceNotFound) {
-			return nil, fmt.Errorf("image %w", coreerrors.ErrResourceNotFound) // elide any more detail than this
-		}
-
 		return nil, err
 	}
 
 	if !isPublicOrOrganizationOwnedImage(resource, organizationID) {
-		return nil, fmt.Errorf("image %w", coreerrors.ErrResourceNotFound)
+		return nil, fmt.Errorf(
+			"%w: image %s is not accessible to organization %s",
+			coreerrors.ErrResourceNotFound,
+			imageID,
+			organizationID,
+		)
 	}
 
 	return p.convertImage(resource)
@@ -746,6 +742,10 @@ func (p *Provider) getImage(ctx context.Context, imageID string) (*images.Image,
 
 	resource, err := imageService.GetImage(ctx, imageID)
 	if err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return nil, fmt.Errorf("%w: no image found with ID %s", coreerrors.ErrResourceNotFound, imageID)
+		}
+
 		return nil, err
 	}
 
@@ -782,15 +782,15 @@ func (p *Provider) createImageMetadata(image *types.Image) (map[string]string, e
 
 	if image.GPU != nil {
 		if image.GPU.Vendor == "" {
-			return nil, fmt.Errorf("%w: GPU vendor must be defined when GPU information is provided", ErrKeyUndefined)
+			return nil, fmt.Errorf("%w: GPU vendor must be defined when GPU information is provided", coreerrors.ErrKey)
 		}
 
 		if len(image.GPU.Models) == 0 {
-			return nil, fmt.Errorf("%w: GPU models must be defined when GPU information is provided", ErrKeyUndefined)
+			return nil, fmt.Errorf("%w: GPU models must be defined when GPU information is provided", coreerrors.ErrKey)
 		}
 
 		if image.GPU.Driver == "" {
-			return nil, fmt.Errorf("%w: GPU driver must be defined when GPU information is provided", ErrKeyUndefined)
+			return nil, fmt.Errorf("%w: GPU driver must be defined when GPU information is provided", coreerrors.ErrKey)
 		}
 
 		gpuModels := strings.Join(image.GPU.Models, ",")
@@ -1705,7 +1705,7 @@ func securityGroupRulePortRange(port *unikornv1.SecurityGroupRulePort) (int, int
 		return port.Range.Start, port.Range.End, nil
 	}
 
-	return 0, 0, fmt.Errorf("%w: at least one of number or range must be defined for security rule", ErrKeyUndefined)
+	return 0, 0, fmt.Errorf("%w: security group rule contains no port number or range", coreerrors.ErrConsistency)
 }
 
 // generateDirection takes our API and converts it to OpenStack's.
@@ -2284,10 +2284,15 @@ func (p *Provider) RebootServer(ctx context.Context, identity *unikornv1.Identit
 	}
 
 	if err := compute.RebootServer(ctx, openstackServer.ID, hard); err != nil {
-		// ignore not found errors
-		if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return err
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return fmt.Errorf("%w: no server found with ID %s", coreerrors.ErrResourceNotFound, openstackServer.ID)
 		}
+
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return fmt.Errorf("%w: server %s cannot be rebooted in its current state", coreerrors.ErrConflict, openstackServer.ID)
+		}
+
+		return err
 	}
 
 	return nil
@@ -2305,10 +2310,15 @@ func (p *Provider) StartServer(ctx context.Context, identity *unikornv1.Identity
 	}
 
 	if err := compute.StartServer(ctx, openstackServer.ID); err != nil {
-		// ignore not found errors
-		if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return err
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return fmt.Errorf("%w: no server found with ID %s", coreerrors.ErrResourceNotFound, openstackServer.ID)
 		}
+
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return fmt.Errorf("%w: server %s cannot be started in its current state", coreerrors.ErrConflict, openstackServer.ID)
+		}
+
+		return err
 	}
 
 	return nil
@@ -2326,10 +2336,15 @@ func (p *Provider) StopServer(ctx context.Context, identity *unikornv1.Identity,
 	}
 
 	if err := compute.StopServer(ctx, openstackServer.ID); err != nil {
-		// ignore not found errors
-		if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return err
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return fmt.Errorf("%w: no server found with ID %s", coreerrors.ErrResourceNotFound, openstackServer.ID)
 		}
+
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return fmt.Errorf("%w: server %s cannot be stopped in its current state", coreerrors.ErrConflict, openstackServer.ID)
+		}
+
+		return err
 	}
 
 	return nil
@@ -2367,7 +2382,11 @@ func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1
 	result, err := compute.CreateRemoteConsole(ctx, openstackServer.ID)
 	if err != nil {
 		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return "", fmt.Errorf("%w: server is being deprovisioned", types.ErrResourceDependency)
+			return "", fmt.Errorf("%w: no server found with ID %s", coreerrors.ErrResourceNotFound, openstackServer.ID)
+		}
+
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return "", fmt.Errorf("%w: server %s cannot be accessed in its current state", coreerrors.ErrConflict, openstackServer.ID)
 		}
 
 		return "", err
@@ -2390,7 +2409,11 @@ func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Ide
 	result, err := compute.ShowConsoleOutput(ctx, openstackServer.ID, length)
 	if err != nil {
 		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return "", fmt.Errorf("%w: server is being deprovisioned", types.ErrResourceDependency)
+			return "", fmt.Errorf("%w: no server found with ID %s", coreerrors.ErrResourceNotFound, openstackServer.ID)
+		}
+
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return "", fmt.Errorf("%w: console output of server %s cannot be retrieved in its current state", coreerrors.ErrConflict, openstackServer.ID)
 		}
 
 		return "", err
