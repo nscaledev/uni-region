@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 /*
 Copyright 2025 the Unikorn Authors.
 Copyright 2026 Nscale.
