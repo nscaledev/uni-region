@@ -132,7 +132,7 @@ func TestGenerateAttachmentList(t *testing.T) {
 		{
 			name: "test with limited values",
 			input: &openapi.StorageAttachmentV2Spec{
-				NetworkIDs: openapi.NetworkIDList{"net-1"},
+				NetworkIds: openapi.NetworkIDList{"net-1"},
 			},
 			want: []regionv1.Attachment{
 				{
@@ -209,7 +209,7 @@ func TestConvertV2List(t *testing.T) {
 					Spec: openapi.StorageV2Spec{
 						SizeGiB: 0,
 						Attachments: &openapi.StorageAttachmentV2Spec{
-							NetworkIDs: []string{},
+							NetworkIds: []string{},
 						},
 						StorageType: openapi.StorageTypeV2Spec{
 							NFS: &openapi.NFSV2Spec{
@@ -280,7 +280,7 @@ func TestConvertV2List(t *testing.T) {
 					Spec: openapi.StorageV2Spec{
 						SizeGiB: 100,
 						Attachments: &openapi.StorageAttachmentV2Spec{
-							NetworkIDs: []string{"net-1"},
+							NetworkIds: []string{"net-1"},
 						},
 						StorageType: openapi.StorageTypeV2Spec{
 							NFS: &openapi.NFSV2Spec{
@@ -348,7 +348,7 @@ func TestConvertV2(t *testing.T) {
 				Spec: openapi.StorageV2Spec{
 					SizeGiB: 2,
 					Attachments: &openapi.StorageAttachmentV2Spec{
-						NetworkIDs: []string{},
+						NetworkIds: []string{},
 					},
 					StorageType: openapi.StorageTypeV2Spec{
 						NFS: &openapi.NFSV2Spec{
@@ -410,7 +410,7 @@ func TestConvertV2SizeConversion(t *testing.T) {
 				Spec: openapi.StorageV2Spec{
 					SizeGiB: 2,
 					Attachments: &openapi.StorageAttachmentV2Spec{
-						NetworkIDs: []string{},
+						NetworkIds: []string{},
 					},
 					StorageType: openapi.StorageTypeV2Spec{
 						NFS: &openapi.NFSV2Spec{
@@ -756,7 +756,7 @@ func newDefaultGenerateV2Input() *generateV2Input {
 			},
 			Spec: openapi.StorageV2Spec{
 				SizeGiB:     10,
-				Attachments: &openapi.StorageAttachmentV2Spec{NetworkIDs: openapi.NetworkIDList{"net-1"}},
+				Attachments: &openapi.StorageAttachmentV2Spec{NetworkIds: openapi.NetworkIDList{"net-1"}},
 			},
 		},
 	}

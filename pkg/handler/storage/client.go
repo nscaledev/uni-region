@@ -83,7 +83,7 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.StorageV2Spec{
 			Attachments: &openapi.StorageAttachmentV2Spec{
-				NetworkIDs: convertAttachmentsList(in.Spec.Attachments),
+				NetworkIds: convertAttachmentsList(in.Spec.Attachments),
 			},
 			StorageType: openapi.StorageTypeV2Spec{
 				NFS: checkRegionNFS(in.Spec.NFS),
@@ -357,7 +357,7 @@ func checkRootSquash(nfs *openapi.NFSV2Spec) bool {
 }
 
 func generateAttachmentList(ctx context.Context, networkClient *network.Client, in *openapi.StorageAttachmentV2Spec) ([]regionv1.Attachment, error) {
-	networkIDs := in.NetworkIDs
+	networkIDs := in.NetworkIds
 	out := make([]regionv1.Attachment, len(networkIDs))
 
 	for i, networkID := range networkIDs {
