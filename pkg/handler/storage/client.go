@@ -65,7 +65,8 @@ type Client struct {
 	// identity allows quota allocation.
 	identity identityapi.ClientWithResponsesInterface
 
-	//(todo)filedriver
+	// GetFileStorageDriverFunc is used for test mocking to be able
+	// to abstract the Filestorage Driver
 	GetFileStorageDriverFunc func(ctx context.Context, storageClassID string) (Driver, error)
 }
 
@@ -169,6 +170,7 @@ func (c *Client) updateWithSizeList(ctx context.Context, in *openapi.StorageV2Li
 	return nil
 }
 
+// nolint:cyclop
 // updateWithSize calls to the filestorage driver and gets the capacity
 // and used capacity from VAST.
 func (c *Client) updateWithSize(ctx context.Context, in *openapi.StorageV2Read, fcdriver Driver) error {

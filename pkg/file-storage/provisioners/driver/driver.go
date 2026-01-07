@@ -64,18 +64,19 @@ func New(ctx context.Context, cli client.Client, provisioner *unikornv1.FileStor
 	cm := &corev1.ConfigMap{}
 
 	if provisioner == nil {
-		return nil, fmt.Errorf("provisioner is nil")
+		return nil, fmt.Errorf("%w: provisioner is nil", ErrDriverConfig)
 	}
 
 	if provisioner.Spec.ConfigRef == nil {
-		return nil, fmt.Errorf("provisioner configref is nil")
+		return nil, fmt.Errorf("%w: provisioner configref is nil", ErrDriverConfig)
 	}
 
 	ref := *provisioner.Spec.ConfigRef
 
 	if ref.Namespace == "" || ref.Name == "" {
 		return nil, fmt.Errorf(
-			"file storage class provisioner not properly set, got Namespace=%q, Name=%q",
+			"%w: file storage class provisioner not properly set, got Namespace=%q, Name=%q",
+			ErrDriverConfig,
 			ref.Namespace,
 			ref.Name,
 		)

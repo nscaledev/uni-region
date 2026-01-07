@@ -25,8 +25,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -46,6 +44,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const testNamespace = "uni-storage-test"
@@ -665,9 +666,14 @@ func TestGet(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			ctx := t.Context()
+
 			obj := defaultFSK8sObjects()
+
 			obj = append(obj, &tt.input)
+
 			c, ctx := newClientwithObjectandContext(t, ctx, obj...)
 			fc := &fileClient{
 				Client: c.client,
@@ -806,11 +812,11 @@ func newClientwithObjectandContext(t *testing.T, ctx context.Context, initObjs .
 
 	scheme := runtime.NewScheme()
 
-	regionv1.AddToScheme(scheme)
+	require.NoError(t, regionv1.AddToScheme(scheme))
 
-	//Add configmaps and secrets to the mock
-	metav1.AddMetaToScheme(scheme)
-	k8sv1.AddToScheme(scheme)
+	// Add configmaps and secrets to the mock
+	require.NoError(t, metav1.AddMetaToScheme(scheme))
+	require.NoError(t, k8sv1.AddToScheme(scheme))
 
 	k8sClient := fake.NewClientBuilder().
 		WithScheme(scheme).
@@ -840,7 +846,7 @@ func newClientwithObjectandContext(t *testing.T, ctx context.Context, initObjs .
 }
 
 // Creates a FileStorageProvisioner and FileStorageClass
-// k8s client objects
+// k8s client objects.
 func defaultFSK8sObjects() []client.Object {
 	return []client.Object{
 		&regionv1.FileStorageProvisioner{
@@ -865,7 +871,7 @@ func defaultFSK8sObjects() []client.Object {
 	}
 }
 
-// Mock file storage driver functionality
+// Mock file storage driver functionality.
 var _ Driver = &fileClient{}
 
 type fileClient struct {
@@ -880,9 +886,4 @@ func (c *fileClient) GetDetails(ctx context.Context, projectID string,
 		RootSquashEnabled: true,
 		UsedCapacity:      resource.NewQuantity(512*1024*1024, resource.BinarySI),
 	}, nil
-}
-
-func (c *fileClient) ListAttachments(ctx context.Context, projectID string,
-	fileStorageID string) (*types.FileStorageAttachments, error) {
-	return nil, nil
 }
