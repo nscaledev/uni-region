@@ -62,6 +62,25 @@ var _ types.Driver = &Client{}
 
 func New(ctx context.Context, cli client.Client, provisioner *unikornv1.FileStorageProvisioner) (*Client, error) {
 	cm := &corev1.ConfigMap{}
+
+	if provisioner == nil {
+		return nil, fmt.Errorf("provisioner is nil")
+	}
+
+	if provisioner.Spec.ConfigRef == nil {
+		return nil, fmt.Errorf("provisioner configref is nil")
+	}
+
+	ref := *provisioner.Spec.ConfigRef
+
+	if ref.Namespace == "" || ref.Name == "" {
+		return nil, fmt.Errorf(
+			"file storage class provisioner not properly set, got Namespace=%q, Name=%q",
+			ref.Namespace,
+			ref.Name,
+		)
+	}
+
 	if err := cli.Get(ctx, client.ObjectKey{Namespace: provisioner.Spec.ConfigRef.Namespace, Name: provisioner.Spec.ConfigRef.Name}, cm); err != nil {
 		return nil, err
 	}
