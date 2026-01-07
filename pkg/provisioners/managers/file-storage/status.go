@@ -1,5 +1,6 @@
 /*
 Copyright 2024-2025 the Unikorn Authors.
+Copyright 2026 Nscale.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -79,10 +80,5 @@ func removeAttachmentStatus(fileStorage *unikornv1.FileStorage, segmentationID i
 		return *as.SegmentationID == segmentationID
 	}
 
-	i := slices.IndexFunc(fileStorage.Status.Attachments, matchSegmentationID)
-	if i < 0 {
-		return
-	}
-
-	fileStorage.Status.Attachments = slices.Delete(fileStorage.Status.Attachments, i, i+1)
+	fileStorage.Status.Attachments = slices.DeleteFunc(fileStorage.Status.Attachments, matchSegmentationID)
 }
