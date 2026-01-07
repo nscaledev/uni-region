@@ -789,7 +789,7 @@ type FileStorageSpec struct {
 	// StorageClassID is the storage class ID.
 	StorageClassID string `json:"storageClassID"`
 
-	// Size is the total size of the storage class.
+	// Size is the total size of the file storage.
 	Size resource.Quantity `json:"size"`
 
 	// Attachments are the network attachments for the storage.
@@ -817,10 +817,44 @@ const (
 )
 
 type FileStorageStatus struct {
+	// ObservedGeneration is the most recent generation observed by the controller.
+	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
 	// Current service state of a file storage.
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	// Size is the currently provisioned/observed size of the file storage.
+	// (May differ from spec.size while provisioning/resizing.)
+	Size *resource.Quantity `json:"size,omitempty"`
 	// MountPath is the path where the file storage is mounted.
 	MountPath *string `json:"mountPath,omitempty"`
+	// Attachments reflects the observed attachment state per network.
+	// +listType=map
+	// +listMapKey=networkID
+	// +patchStrategy=merge
+	// +patchMergeKey=networkID
+	// +optional
+	Attachments []FileStorageAttachmentStatus `json:"attachments,omitempty"`
+}
+
+// AttachmentProvisioningStatus describes the state of a single attachment.
+// +kubebuilder:validation:Enum=Provisioning;Provisioned;Errored;Deprovisioning
+type AttachmentProvisioningStatus string
+
+const (
+	AttachmentProvisioning   AttachmentProvisioningStatus = "Provisioning"
+	AttachmentProvisioned    AttachmentProvisioningStatus = "Provisioned"
+	AttachmentErrored        AttachmentProvisioningStatus = "Errored"
+	AttachmentDeprovisioning AttachmentProvisioningStatus = "Deprovisioning"
+)
+
+type FileStorageAttachmentStatus struct {
+	// NetworkID is the network ID for the attachment.
+	NetworkID string `json:"networkID"`
+	// ProvisioningStatus indicates if this attachment is ready/failed/etc.
+	ProvisioningStatus AttachmentProvisioningStatus `json:"provisioningStatus"`
+	// SegmentationID is the VLAN ID for the attachment.
+	SegmentationID *int `json:"segmentationID,omitempty"`
+	// Human-readable message indicating details about the attachment.
+	Message string `json:"message"`
 }
 
 // Attachment has the network identifier for the storage.

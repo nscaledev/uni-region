@@ -141,6 +141,8 @@ func (p *Provisioner) attachMissingNetworks(ctx context.Context, cli client.Clie
 
 	for vlan, attachment := range desiredSet {
 		if _, exists := currentSet[vlan]; exists {
+			setNetworkAttachmentStatus(p.fileStorage, attachment.NetworkID, attachment.SegmentationID, unikornv1.AttachmentProvisioned, "")
+
 			continue
 		}
 
@@ -148,12 +150,18 @@ func (p *Provisioner) attachMissingNetworks(ctx context.Context, cli client.Clie
 
 		// Add references to any resources we consume.
 		if err := manager.AddResourceReference(ctx, cli, &unikornv1.Network{}, client.ObjectKey{Namespace: p.fileStorage.Namespace, Name: attachment.NetworkID}, reference); err != nil {
+			setNetworkAttachmentStatus(p.fileStorage, attachment.NetworkID, attachment.SegmentationID, unikornv1.AttachmentErrored, err.Error())
+
 			return fmt.Errorf("%w: failed to add network references", err)
 		}
 
 		if err := driver.AttachNetwork(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, &attachment); err != nil {
+			setNetworkAttachmentStatus(p.fileStorage, attachment.NetworkID, attachment.SegmentationID, unikornv1.AttachmentErrored, err.Error())
+
 			return err
 		}
+
+		setNetworkAttachmentStatus(p.fileStorage, attachment.NetworkID, attachment.SegmentationID, unikornv1.AttachmentProvisioned, "")
 	}
 
 	return nil
@@ -171,8 +179,12 @@ func (p *Provisioner) detachStaleNetworks(ctx context.Context, cli client.Client
 		log.V(1).Info("detaching network", "vlan", vlan)
 
 		if err := driver.DetachNetwork(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, vlan); err != nil {
+			setVLanAttachmentStatus(p.fileStorage, vlan, unikornv1.AttachmentErrored, err.Error())
+
 			return err
 		}
+
+		removeAttachmentStatus(p.fileStorage, vlan)
 	}
 
 	// Remove references to networks no longer attached. Since the driver (vast) is the source of truth for attachments but does not track network IDs,
