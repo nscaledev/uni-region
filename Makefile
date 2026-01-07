@@ -204,30 +204,32 @@ validate-docs: $(OPENAPI_FILES)
 license:
 	go run github.com/unikorn-cloud/core/hack/check_license
 
+GINKGO_INTEGRATION_TEST_FLAGS = --json-report=test-results.json --junit-report=junit.xml --tags=integration
+
 # API test targets
 .PHONY: test-api
 test-api: test-api-setup
-	cd test/api/suites && ginkgo run -v --show-node-events --json-report=test-results.json --junit-report=junit.xml
+	cd test/api/suites && ginkgo run -v --show-node-events $(GINKGO_INTEGRATION_TEST_FLAGS)
 
 .PHONY: test-api-verbose
 test-api-verbose: test-api-setup
-	cd test/api/suites && ginkgo run -v --show-node-events --json-report=test-results.json --junit-report=junit.xml
+	cd test/api/suites && ginkgo run -v --show-node-events $(GINKGO_INTEGRATION_TEST_FLAGS)
 
 .PHONY: test-api-focus
 test-api-focus: test-api-setup
-	cd test/api/suites && LOG_REQUESTS=true LOG_RESPONSES=true ginkgo run -v --focus="$(FOCUS)" --json-report=test-results.json --junit-report=junit.xml
+	cd test/api/suites && LOG_REQUESTS=true LOG_RESPONSES=true ginkgo run -v --focus="$(FOCUS)" $(GINKGO_INTEGRATION_TEST_FLAGS)
 
 .PHONY: test-api-suite
 test-api-suite: test-api-setup
-	cd test/api/suites && ginkgo run $(SUITE) --json-report=test-results.json --junit-report=junit.xml
+	cd test/api/suites && ginkgo run $(SUITE) $(GINKGO_INTEGRATION_TEST_FLAGS)
 
 .PHONY: test-api-parallel
 test-api-parallel: test-api-setup
-	cd test/api/suites && ginkgo run --procs=4 --json-report=test-results.json --junit-report=junit.xml
+	cd test/api/suites && ginkgo run --procs=4 $(GINKGO_INTEGRATION_TEST_FLAGS)
 
 .PHONY: test-api-ci
 test-api-ci: test-api-setup
-	cd test/api/suites && ginkgo run --randomize-all --randomize-suites --race --json-report=test-results.json --junit-report=junit.xml --output-interceptor-mode=none
+	cd test/api/suites && ginkgo run --randomize-all --randomize-suites --race $(GINKGO_INTEGRATION_TEST_FLAGS) --output-interceptor-mode=none
 
 .PHONY: test-api-setup
 test-api-setup:
