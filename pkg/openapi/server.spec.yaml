@@ -2554,9 +2554,9 @@ components:
       description: Describes the network attachment for storage
       type: object
       required:
-      - networkIDs
+      - networkIds
       properties:
-        networkIDs:
+        networkIds:
           $ref: '#/components/schemas/networkIDList'
     networkIDList:
       description: A list of network IDs 
@@ -2574,7 +2574,6 @@ components:
       type: object
       required:
       - networkId
-      - networkIds
       - provisioningStatus
       properties:
         networkId:
@@ -2617,7 +2616,7 @@ components:
           $ref: '#/components/schemas/storageUsageV2Status'
         attachments:
          $ref: '#/components/schemas/storageAttachmentListV2Status'
-    storageUsageV2Spec:
+    storageUsageV2Status:
         description: Information about the usage of the storage
         type: object
         required:
@@ -3013,7 +3012,7 @@ components:
                 nfs:
                   rootsquash: true
               attachments:
-                networkIDs:
+                networkIds:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
   responses:
     regionsResponse:
@@ -3584,7 +3583,7 @@ components:
                 nfs:
                   rootsquash: true
               attachments:
-                networkIDs:
+                networkIds:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
             status:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
@@ -3622,7 +3621,7 @@ components:
                 nfs:
                   rootsquash: true
               attachments:
-                networkIDs:
+                networkIds:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
             status:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a

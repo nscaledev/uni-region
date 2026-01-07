@@ -616,7 +616,6 @@ func TestGenerateV2(t *testing.T) {
 
 func TestGet(t *testing.T) {
 	t.Parallel()
-	ns := "default"
 
 	tests := []struct {
 		name     string
@@ -627,7 +626,7 @@ func TestGet(t *testing.T) {
 			name: "passing conditions",
 			input: regionv1.FileStorage{
 				ObjectMeta: metav1.ObjectMeta{
-					Namespace: ns,
+					Namespace: testNamespace,
 					Name:      "fs-1",
 					Labels: map[string]string{
 						constants.RegionLabel:                    "reg-1",
@@ -667,9 +666,9 @@ func TestGet(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			obj := defaultFSK8sObjects(ns)
+			obj := defaultFSK8sObjects()
 			obj = append(obj, &tt.input)
-			c, ctx := newClientwithObjectandContext(t, ctx, ns, obj...)
+			c, ctx := newClientwithObjectandContext(t, ctx, obj...)
 			fc := &fileClient{
 				Client: c.client,
 			}
@@ -802,7 +801,7 @@ func newClientAndContext(t *testing.T, c client.Client, auth *identityauth.Info,
 	return client, ctx
 }
 
-func newClientwithObjectandContext(t *testing.T, ctx context.Context, namespace string, initObjs ...client.Object) (*Client, context.Context) {
+func newClientwithObjectandContext(t *testing.T, ctx context.Context, initObjs ...client.Object) (*Client, context.Context) {
 	t.Helper()
 
 	scheme := runtime.NewScheme()
@@ -820,7 +819,7 @@ func newClientwithObjectandContext(t *testing.T, ctx context.Context, namespace 
 
 	c := &Client{
 		client:    k8sClient,
-		namespace: namespace,
+		namespace: testNamespace,
 	}
 
 	oapiacl := &identityopenapi.Acl{Global: &identityopenapi.AclEndpoints{
@@ -842,13 +841,13 @@ func newClientwithObjectandContext(t *testing.T, ctx context.Context, namespace 
 
 // Creates a FileStorageProvisioner and FileStorageClass
 // k8s client objects
-func defaultFSK8sObjects(ns string) []client.Object {
+func defaultFSK8sObjects() []client.Object {
 	return []client.Object{
 		&regionv1.FileStorageProvisioner{
 			Spec: regionv1.FileStorageProvisionerSpec{
 				ConfigRef: &regionv1.NamespacedObject{
 					Name:      "sc-1",
-					Namespace: ns,
+					Namespace: testNamespace,
 				},
 			},
 		},
@@ -859,7 +858,7 @@ func defaultFSK8sObjects(ns string) []client.Object {
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "sc-1",
-				Namespace: ns,
+				Namespace: testNamespace,
 			},
 			Spec: regionv1.FileStorageClassSpec{},
 		},

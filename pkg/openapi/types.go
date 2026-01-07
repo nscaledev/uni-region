@@ -942,8 +942,8 @@ type StorageAttachmentListV2Status = []StorageAttachmentV2Status
 
 // StorageAttachmentV2Spec Describes the network attachment for storage
 type StorageAttachmentV2Spec struct {
-	// NetworkIDs A list of network IDs
-	NetworkIDs NetworkIDList `json:"networkIDs"`
+	// NetworkIds A list of network IDs
+	NetworkIds NetworkIDList `json:"networkIds"`
 }
 
 // StorageAttachmentV2Status Describes the network attachment for storage
@@ -955,7 +955,7 @@ type StorageAttachmentV2Status struct {
 	NetworkId string `json:"networkId"`
 
 	// ProvisioningStatus The provisioning state of a resource.
-	ProvisioningStatus *externalRef0.ResourceProvisioningStatus `json:"provisioningStatus,omitempty"`
+	ProvisioningStatus externalRef0.ResourceProvisioningStatus `json:"provisioningStatus"`
 }
 
 // StorageClassListV2Read A list of storage classes.
