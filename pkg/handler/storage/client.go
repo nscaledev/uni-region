@@ -158,7 +158,7 @@ func (c *Client) updateWithSizeList(ctx context.Context, in *openapi.StorageV2Li
 			if err != nil {
 				return err
 			}
-			driverMap[client.ObjectKey{Namespace: c.namespace, Name: v.Status.StorageClassId}] = fcdriver
+			fcdriver = driverMap[client.ObjectKey{Namespace: c.namespace, Name: v.Status.StorageClassId}]
 
 			driver = fcdriver
 		}
@@ -173,8 +173,6 @@ func (c *Client) updateWithSizeList(ctx context.Context, in *openapi.StorageV2Li
 
 // updateWithSize calls to the filestorage driver and gets the capacity
 // and used capacity from VAST.
-//
-//nolint:cyclop
 func (c *Client) updateWithSize(ctx context.Context, in *openapi.StorageV2Read, fcdriver Driver) error {
 	fsdetails, err := fcdriver.GetDetails(ctx, in.Metadata.ProjectId, in.Status.StorageClassId)
 	if err != nil {
@@ -454,6 +452,8 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.StorageV2Create)
 // to the storage ID.
 // it leverages the update saga system, which acts as a tape to enable rollbacks
 // in case of errors.
+//
+//nolint:cyclop
 func (c *Client) Update(ctx context.Context, storageID string, request *openapi.StorageV2Update) (*openapi.StorageV2Read, error) {
 	current, err := c.GetRaw(ctx, storageID)
 	if err != nil {
