@@ -2554,9 +2554,9 @@ components:
       description: Describes the network attachment for storage
       type: object
       required:
-      - networkIDs
+      - networkIds
       properties:
-        networkIDs:
+        networkIds:
           $ref: '#/components/schemas/networkIDList'
     networkIDList:
       description: A list of network IDs 
@@ -2574,6 +2574,7 @@ components:
       type: object
       required:
       - networkId
+      - provisioningStatus
       properties:
         networkId:
           description: The network ID
@@ -2604,7 +2605,6 @@ components:
       required:
         - storageClassId
         - regionId
-        - usage
       properties:
         storageClassId:
           description: identifier for the storage
@@ -2613,24 +2613,27 @@ components:
           description: The region an identity is provisioned in.
           type: string
         usage:
-          $ref: '#/components/schemas/storageUsageV2Spec'
+          $ref: '#/components/schemas/storageUsageV2Status'
         attachments:
          $ref: '#/components/schemas/storageAttachmentListV2Status'
-    storageUsageV2Spec:
+    storageUsageV2Status:
         description: Information about the usage of the storage
         type: object
         required:
-          - capacity
+          - capacityGiB
         properties:
-            capacity:
+            capacityGiB:
               description: total space allotted
-              type: string
-            used:
-              description: amount of storage space utilizied
-              type: string
-            free:
-              description: amount of storage space free to utilize
-              type: string
+              type: integer
+              format: int64
+            usedGiB:
+              description: amount of storage space used
+              type: integer
+              format: int64
+            freeGiB:
+              description: amount of storage space free to use
+              type: integer
+              format: int64
     storageV2Create:
       description: A storage create request.
       type: object
@@ -3009,7 +3012,7 @@ components:
                 nfs:
                   rootsquash: true
               attachments:
-                networkIDs:
+                networkIds:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
   responses:
     regionsResponse:
@@ -3580,15 +3583,15 @@ components:
                 nfs:
                   rootsquash: true
               attachments:
-                networkIDs:
+                networkIds:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
             status:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
               storageClassId: 99659b44-1700-400f-9c6c-cfdb4bb0445c
               usage:
-                  capacity: 100Ti
-                  used: 88Ti
-                  free: 12Ti
+                  capacityGiB: 100
+                  usedGiB: 88
+                  freeGiB: 12
               attachments:
                 - networkId: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
                   mountSource: 10.0.0.16:/mnt/nfs
@@ -3618,15 +3621,15 @@ components:
                 nfs:
                   rootsquash: true
               attachments:
-                networkIDs:
+                networkIds:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
             status:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
               storageClassId: 99659b44-1700-400f-9c6c-cfdb4bb0445c
               usage:
-                  capacity: 100Ti
-                  used: 88Ti
-                  free: 12Ti
+                  capacityGiB: 100
+                  usedGiB: 88
+                  freeGiB: 12
               attachments:
                 - networkId: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
                   mountSource: 10.0.0.16:/mnt/nfs
