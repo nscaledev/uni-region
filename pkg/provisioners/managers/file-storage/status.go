@@ -49,7 +49,7 @@ func setNetworkAttachmentStatus(fileStorage *unikornv1.FileStorage, networkID st
 	fileStorage.Status.Attachments[i].Message = message
 }
 
-// setVLanAttachmentStatus sets the corresponding attachment status returns true if the status are changed by this call.
+// setVLanAttachmentStatus sets the corresponding attachment status.
 func setVLanAttachmentStatus(fileStorage *unikornv1.FileStorage, segmentationID int, status unikornv1.AttachmentProvisioningStatus, message string) {
 	if fileStorage == nil {
 		return
@@ -68,7 +68,7 @@ func setVLanAttachmentStatus(fileStorage *unikornv1.FileStorage, segmentationID 
 	fileStorage.Status.Attachments[i].Message = message
 }
 
-// removeAttachmentStatus removes the attachment status for the given network ID.
+// removeAttachmentStatus removes the attachment status for the given VLAN ID.
 func removeAttachmentStatus(fileStorage *unikornv1.FileStorage, segmentationID int) {
 	if fileStorage == nil || len(fileStorage.Status.Attachments) == 0 {
 		return
