@@ -151,8 +151,9 @@ func (c *Client) updateWithSizeList(ctx context.Context, in *openapi.StorageV2Li
 	driverMap := make(map[client.ObjectKey]Driver)
 
 	for _, v := range *in {
-        key := client.ObjectKey{Namespace: c.namespace, Name: v.Status.StorageClassId}
+		key := client.ObjectKey{Namespace: c.namespace, Name: v.Status.StorageClassId}
 		driver, ok := driverMap[key]
+
 		if !ok {
 			fcdriver, err := c.getFileStorageDriver(ctx, v.Status.StorageClassId)
 			if err != nil {
@@ -299,7 +300,7 @@ func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2R
 
 	storage := convertV2(result)
 
-	fcdriver, err := c.getFileStorageDriver(ctx, storageID)
+	fcdriver, err := c.getFileStorageDriver(ctx, storage.Status.StorageClassId)
 	if err != nil {
 		return nil, err
 	}
@@ -499,7 +500,7 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 
 	storage := convertV2(updated)
 
-	fcdriver, err := c.getFileStorageDriver(ctx, storageID)
+	fcdriver, err := c.getFileStorageDriver(ctx, storage.Status.StorageClassId)
 	if err != nil {
 		return nil, err
 	}
@@ -509,8 +510,7 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 	}
 
 	if storage.Status.Usage == nil {
-		//todo: evaluate better return
-		return nil, errors.OAuth2ServerError("unable to get usage")
+		return nil, err
 	}
 
 	if request.Spec.SizeGiB < storage.Status.Usage.CapacityGiB {
@@ -519,7 +519,6 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 		}
 
 		if request.Spec.SizeGiB < *storage.Status.Usage.UsedGiB {
-			//todo: evaluate better return
 			return nil, errors.OAuth2ServerError("unable to shrink below used capacity")
 		}
 	}
