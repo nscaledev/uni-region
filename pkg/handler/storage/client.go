@@ -99,7 +99,6 @@ func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttac
 
 	out := make(openapi.StorageAttachmentListV2Status, len(in.Spec.Attachments))
 	for i, att := range in.Spec.Attachments {
-
 		var mountSource *string
 		// Only build MountSource if all required fields are non-nil.
 		if att.IPRange != nil && in.Status.MountPath != nil {
@@ -116,10 +115,10 @@ func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttac
 	return &out
 }
 
-// calculateAttProvisioningStatus
+// calculateAttProvisioningStatus compares the networkID from spec.Attachments and status.Attachments
+// then populates with the provisioning status
 func calculateAttProvisioningStatus(in *regionv1.FileStorage, i int, id string) *corev1.ResourceProvisioningStatus {
 	if len(in.Status.Attachments) >= i {
-		//todo: error
 		return nil
 	}
 
