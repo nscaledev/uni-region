@@ -1,6 +1,7 @@
 /*
 Copyright 2022-2024 EscherCloud.
 Copyright 2024-2025 the Unikorn Authors.
+Copyright 2026 Nscale.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,11 +29,10 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/tokens"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/users"
-	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/unikorn-cloud/core/pkg/util/cache"
-	"github.com/unikorn-cloud/region/pkg/constants"
 )
 
 // IdentityClient wraps up gophercloud identity management.
@@ -141,9 +141,7 @@ func (o *CreateTokenOptionsScopedToken) Options() *tokens.AuthOptions {
 
 // CreateToken issues a new token.
 func (c *IdentityClient) CreateToken(ctx context.Context, options CreateTokenOptions) (*tokens.Token, *tokens.User, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "POST /identity/v3/auth/tokens", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "POST /identity/v3/auth/tokens")
 	defer span.End()
 
 	result := tokens.Create(ctx, c.client, options.Options())
@@ -163,9 +161,7 @@ func (c *IdentityClient) CreateToken(ctx context.Context, options CreateTokenOpt
 
 // CreateProject creates the named project.
 func (c *IdentityClient) CreateProject(ctx context.Context, domainID, name string, tags []string) (*projects.Project, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "POST /identity/v3/auth/projects", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "POST /identity/v3/auth/projects")
 	defer span.End()
 
 	// TODO: pass ID in from configuration.
@@ -179,9 +175,11 @@ func (c *IdentityClient) CreateProject(ctx context.Context, domainID, name strin
 }
 
 func (c *IdentityClient) DeleteProject(ctx context.Context, projectID string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+	spanAttributes := trace.WithAttributes(
+		attribute.String("identity.project.id", projectID),
+	)
 
-	_, span := tracer.Start(ctx, "DELETE /identity/v3/auth/projects/"+projectID, trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "DELETE /identity/v3/auth/projects/{id}", spanAttributes)
 	defer span.End()
 
 	return projects.Delete(ctx, c.client, projectID).Err
@@ -190,9 +188,7 @@ func (c *IdentityClient) DeleteProject(ctx context.Context, projectID string) er
 // ListAvailableProjects lists projects that an authenticated (but unscoped) user can
 // scope to.
 func (c *IdentityClient) ListAvailableProjects(ctx context.Context) ([]projects.Project, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "GET /identity/v3/auth/projects", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "GET /identity/v3/auth/projects")
 	defer span.End()
 
 	page, err := projects.ListAvailable(c.client).AllPages(ctx)
@@ -214,9 +210,7 @@ func (c *IdentityClient) ListRoles(ctx context.Context) ([]roles.Role, error) {
 		return result, nil
 	}
 
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "GIT /identity/v3/auth/roles", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "GET /identity/v3/auth/roles")
 	defer span.End()
 
 	page, err := roles.List(c.client, &roles.ListOpts{}).AllPages(ctx)
@@ -236,9 +230,7 @@ func (c *IdentityClient) ListRoles(ctx context.Context) ([]roles.Role, error) {
 
 // CreateRoleAssignment creates a role between a user and a project.
 func (c *IdentityClient) CreateRoleAssignment(ctx context.Context, userID, projectID, roleID string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "POST /identity/v3/auth/role_assignments", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "POST /identity/v3/auth/role_assignments")
 	defer span.End()
 
 	opts := roles.AssignOpts{
@@ -256,9 +248,11 @@ func (c *IdentityClient) CreateRoleAssignment(ctx context.Context, userID, proje
 
 // ListApplicationCredentials lists application credentials for the scoped user.
 func (c *IdentityClient) ListApplicationCredentials(ctx context.Context, userID string) ([]applicationcredentials.ApplicationCredential, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+	spanAttributes := trace.WithAttributes(
+		attribute.String("identity.user.id", userID),
+	)
 
-	_, span := tracer.Start(ctx, "GET /identity/v3/users/"+userID+"/application_credentials", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "GET /identity/v3/users/{id}/application_credentials", spanAttributes)
 	defer span.End()
 
 	page, err := applicationcredentials.List(c.client, userID, nil).AllPages(ctx)
@@ -276,9 +270,11 @@ func (c *IdentityClient) ListApplicationCredentials(ctx context.Context, userID 
 
 // CreateApplicationCredential creates an application credential for the user.
 func (c *IdentityClient) CreateApplicationCredential(ctx context.Context, userID, name, description string, roles []string) (*applicationcredentials.ApplicationCredential, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+	spanAttributes := trace.WithAttributes(
+		attribute.String("identity.user.id", userID),
+	)
 
-	_, span := tracer.Start(ctx, "POST /identity/v3/users/"+userID+"/application_credentials", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "POST /identity/v3/users/{id}/application_credentials", spanAttributes)
 	defer span.End()
 
 	applicationRoles := make([]applicationcredentials.Role, len(roles))
@@ -303,9 +299,12 @@ func (c *IdentityClient) CreateApplicationCredential(ctx context.Context, userID
 
 // DeleteApplicationCredential deletes an application credential for the user.
 func (c *IdentityClient) DeleteApplicationCredential(ctx context.Context, userID, id string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+	spanAttributes := trace.WithAttributes(
+		attribute.String("identity.user.id", userID),
+		attribute.String("identity.application_credential.id", id),
+	)
 
-	_, span := tracer.Start(ctx, "DELETE /identity/v3/users/"+userID+"/application_credentials/"+id, trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "DELETE /identity/v3/users/{user_id}/application_credentials/{application_credential_id}", spanAttributes)
 	defer span.End()
 
 	return applicationcredentials.Delete(ctx, c.client, userID, id).ExtractErr()
@@ -313,9 +312,7 @@ func (c *IdentityClient) DeleteApplicationCredential(ctx context.Context, userID
 
 // CreateUser creates a new user.
 func (c *IdentityClient) CreateUser(ctx context.Context, domainID, name, password string) (*users.User, error) {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "POST /identity/v3/users", trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "POST /identity/v3/users")
 	defer span.End()
 
 	opts := &users.CreateOpts{
@@ -329,9 +326,11 @@ func (c *IdentityClient) CreateUser(ctx context.Context, domainID, name, passwor
 
 // DeleteUser removes an existing user.
 func (c *IdentityClient) DeleteUser(ctx context.Context, userID string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+	spanAttributes := trace.WithAttributes(
+		attribute.String("identity.user.id", userID),
+	)
 
-	_, span := tracer.Start(ctx, "DELETE /identity/v3/users/"+userID, trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "DELETE /identity/v3/users/{id}", spanAttributes)
 	defer span.End()
 
 	return users.Delete(ctx, c.client, userID).Err

@@ -1,6 +1,7 @@
 /*
 Copyright 2022-2024 EscherCloud.
 Copyright 2024-2025 the Unikorn Authors.
+Copyright 2026 Nscale.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,10 +25,6 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack"
 	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/availabilityzones"
 	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/quotasets"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
-
-	"github.com/unikorn-cloud/region/pkg/constants"
 
 	"k8s.io/utils/ptr"
 )
@@ -58,11 +55,7 @@ func NewBlockStorageClient(ctx context.Context, provider CredentialProvider) (*B
 
 // AvailabilityZones retrieves block storage availability zones.
 func (c *BlockStorageClient) AvailabilityZones(ctx context.Context) ([]availabilityzones.AvailabilityZone, error) {
-	url := c.client.ServiceURL("GET /block-storage/v3/os-availability-zone")
-
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, url, trace.WithSpanKind(trace.SpanKindClient))
+	_, span := traceStart(ctx, "GET /block-storage/v3/os-availability-zone")
 	defer span.End()
 
 	pages, err := availabilityzones.List(c.client).AllPages(ctx)
@@ -89,9 +82,7 @@ func (c *BlockStorageClient) AvailabilityZones(ctx context.Context) ([]availabil
 }
 
 func (c *BlockStorageClient) UpdateQuotas(ctx context.Context, projectID string) error {
-	tracer := otel.GetTracerProvider().Tracer(constants.Application)
-
-	_, span := tracer.Start(ctx, "PUT /block-storage/v3/os-quota-sets")
+	_, span := traceStart(ctx, "PUT /block-storage/v3/os-quota-sets")
 	defer span.End()
 
 	opts := &quotasets.UpdateOpts{

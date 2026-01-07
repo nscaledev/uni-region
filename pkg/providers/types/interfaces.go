@@ -1,5 +1,6 @@
 /*
 Copyright 2024-2025 the Unikorn Authors.
+Copyright 2026 Nscale.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -33,7 +34,7 @@ type ImageRead interface {
 type ImageWrite interface {
 	// CreateImageForUpload creates a new image resource for upload.
 	CreateImageForUpload(ctx context.Context, image *Image) (*Image, error)
-	// UploadImage uploads data to an image.
+	// UploadImageData uploads data to an image.
 	UploadImageData(ctx context.Context, imageID string, reader io.Reader) error
 	// DeleteImage deletes an image.
 	DeleteImage(ctx context.Context, imageID string) error
@@ -51,7 +52,7 @@ type Network interface {
 	CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error
 	// DeleteNetwork deletes a physical network.
 	DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error
-	// GetNewtworkDetail exposes provider specific network information.
+	// GetNetworkDetail exposes provider specific network information.
 	// NOTE: do not use this ever.
 	// TODO: used to propagate network and subnet details to CAPO, this needs fixing.
 

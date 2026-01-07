@@ -1,6 +1,7 @@
 /*
 Copyright 2022-2024 EscherCloud.
 Copyright 2024-2025 the Unikorn Authors.
+Copyright 2026 Nscale.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,10 +23,6 @@ import (
 )
 
 var (
-	// ErrResourceDependency is returned when a resource is in unexpected
-	// state or condition.
-	ErrResourceDependency = errors.New("resource dependency error")
-
 	// ErrImageNotReadyForUpload is returned when the image record at the provider is not in a state
 	// for receiving image file data.
 	ErrImageNotReadyForUpload = errors.New("image is not in a desired state for upload")

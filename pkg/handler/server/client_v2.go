@@ -1,5 +1,6 @@
 /*
 Copyright 2025 the Unikorn Authors.
+Copyright 2026 Nscale.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -463,7 +464,7 @@ type serverProvider interface {
 	types.Identity
 }
 
-func (c *Client) getServerIdentityAndProvider(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, serverProvider, error) {
+func (c *Client) getServerIdentityAndProviderV2(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, serverProvider, error) {
 	server, err := c.GetV2Raw(ctx, serverID)
 	if err != nil {
 		return nil, nil, nil, err
@@ -483,7 +484,7 @@ func (c *Client) getServerIdentityAndProvider(ctx context.Context, serverID stri
 }
 
 func (c *Client) SSHKey(ctx context.Context, serverID string) (*openapi.SshKey, error) {
-	_, identity, _, err := c.getServerIdentityAndProvider(ctx, serverID)
+	_, identity, _, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -506,76 +507,46 @@ func (c *Client) SSHKey(ctx context.Context, serverID string) (*openapi.SshKey, 
 }
 
 func (c *Client) StartV2(ctx context.Context, serverID string) error {
-	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return err
 	}
 
-	if err := provider.StartServer(ctx, identity, server); err != nil {
-		return err
-	}
-
-	return nil
+	return c.start(ctx, identity, server, provider)
 }
 
 func (c *Client) StopV2(ctx context.Context, serverID string) error {
-	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return err
 	}
 
-	if err := provider.StopServer(ctx, identity, server); err != nil {
-		return err
-	}
-
-	return nil
+	return c.stop(ctx, identity, server, provider)
 }
 
 func (c *Client) RebootV2(ctx context.Context, serverID string, hard bool) error {
-	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return err
 	}
 
-	if err := provider.RebootServer(ctx, identity, server, hard); err != nil {
-		return err
-	}
-
-	return nil
+	return c.reboot(ctx, identity, server, hard, provider)
 }
 
 func (c *Client) ConsoleOutputV2(ctx context.Context, serverID string, params openapi.GetApiV2ServersServerIDConsoleoutputParams) (*openapi.ConsoleOutputResponse, error) {
-	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return nil, err
 	}
 
-	contents, err := provider.GetConsoleOutput(ctx, identity, server, params.Length)
-	if err != nil {
-		return nil, err
-	}
-
-	result := &openapi.ConsoleOutputResponse{
-		Contents: contents,
-	}
-
-	return result, nil
+	return c.getConsoleOutput(ctx, identity, server, params.Length, provider)
 }
 
 func (c *Client) ConsoleSessionV2(ctx context.Context, serverID string) (*openapi.ConsoleSessionResponse, error) {
-	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return nil, err
 	}
 
-	url, err := provider.CreateConsoleSession(ctx, identity, server)
-	if err != nil {
-		return nil, err
-	}
-
-	result := &openapi.ConsoleSessionResponse{
-		Url: url,
-	}
-
-	return result, nil
+	return c.createConsoleSession(ctx, identity, server, provider)
 }
