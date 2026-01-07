@@ -1,0 +1,7 @@
+# Pact verification artifacts
+*.log
+pact.log
+
+# Test artifacts
+*.out
+*.test
