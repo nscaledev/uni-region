@@ -158,7 +158,8 @@ func (c *Client) updateWithSizeList(ctx context.Context, in *openapi.StorageV2Li
 			if err != nil {
 				return err
 			}
-			fcdriver = driverMap[client.ObjectKey{Namespace: c.namespace, Name: v.Status.StorageClassId}]
+
+			driverMap[client.ObjectKey{Namespace: c.namespace, Name: v.Status.StorageClassId}] = fcdriver
 
 			driver = fcdriver
 		}
@@ -531,7 +532,7 @@ func (c *Client) getFileStorageDriver(ctx context.Context, storageClassID string
 		return c.GetFileStorageDriverFunc(ctx, storageClassID)
 	}
 
-	provisioner, err := c.GetStorageProvisioner(ctx, c.namespace, storageClassID)
+	provisioner, err := c.getStorageProvisioner(ctx, c.namespace, storageClassID)
 
 	if err != nil {
 		return nil, err
@@ -617,9 +618,9 @@ func (c *Client) GetStorageClass(ctx context.Context, storageClassID string) (*o
 	return convertClass(result), nil
 }
 
-// GetStorageProvisioner takes the kubernetes namespace and storageClassId to
+// getStorageProvisioner takes the kubernetes namespace and storageClassId to
 // get the file storage class object which allows us to access the file storage provisioner.
-func (c *Client) GetStorageProvisioner(ctx context.Context, namespace string, storageClassID string) (regionv1.FileStorageProvisioner, error) {
+func (c *Client) getStorageProvisioner(ctx context.Context, namespace string, storageClassID string) (regionv1.FileStorageProvisioner, error) {
 	var provisioner regionv1.FileStorageProvisioner
 
 	// look up storage class object

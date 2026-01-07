@@ -845,7 +845,7 @@ func newClientwithObjectandContext(t *testing.T, ctx context.Context, initObjs .
 	return c, ctx
 }
 
-// Creates a FileStorageProvisioner and FileStorageClass
+// defaultFSK8sObjects creates a FileStorageProvisioner and FileStorageClass
 // k8s client objects.
 func defaultFSK8sObjects() []client.Object {
 	return []client.Object{
