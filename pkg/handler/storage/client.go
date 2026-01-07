@@ -152,7 +152,8 @@ func (c *Client) updateWithSizeList(ctx context.Context, in *openapi.StorageV2Li
 	driverMap := make(map[client.ObjectKey]Driver)
 
 	for _, v := range *in {
-		driver, ok := driverMap[client.ObjectKey{Namespace: c.namespace, Name: v.Status.StorageClassId}]
+        key := client.ObjectKey{Namespace: c.namespace, Name: v.Status.StorageClassId}
+		driver, ok := driverMap[key]
 		if !ok {
 			fcdriver, err := c.getFileStorageDriver(ctx, v.Status.StorageClassId)
 			if err != nil {
