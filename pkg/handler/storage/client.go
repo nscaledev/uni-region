@@ -159,6 +159,7 @@ func (c *Client) updateWithSizeList(ctx context.Context, in *openapi.StorageV2Li
 				return err
 			}
 			driverMap[client.ObjectKey{Namespace: c.namespace, Name: v.Status.StorageClassId}] = fcdriver
+
 			driver = fcdriver
 		}
 
@@ -170,11 +171,11 @@ func (c *Client) updateWithSizeList(ctx context.Context, in *openapi.StorageV2Li
 	return nil
 }
 
-// nolint:cyclop
 // updateWithSize calls to the filestorage driver and gets the capacity
 // and used capacity from VAST.
+//
+//nolint:cyclop
 func (c *Client) updateWithSize(ctx context.Context, in *openapi.StorageV2Read, fcdriver Driver) error {
-
 	fsdetails, err := fcdriver.GetDetails(ctx, in.Metadata.ProjectId, in.Status.StorageClassId)
 	if err != nil {
 		return err
@@ -191,6 +192,7 @@ func (c *Client) updateWithSize(ctx context.Context, in *openapi.StorageV2Read, 
 
 		if fsdetails.UsedCapacity != nil {
 			var free resource.Quantity
+
 			free.Add(*fsdetails.Size)
 			free.Sub(*fsdetails.UsedCapacity)
 
@@ -528,7 +530,9 @@ func (c *Client) getFileStorageDriver(ctx context.Context, storageClassID string
 	if c.GetFileStorageDriverFunc != nil {
 		return c.GetFileStorageDriverFunc(ctx, storageClassID)
 	}
+
 	provisioner, err := c.GetStorageProvisioner(ctx, c.namespace, storageClassID)
+
 	if err != nil {
 		return nil, err
 	}
