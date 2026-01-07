@@ -807,6 +807,7 @@ func newClientAndContext(t *testing.T, c client.Client, auth *identityauth.Info,
 	return client, ctx
 }
 
+//nolint:revive
 func newClientwithObjectandContext(t *testing.T, ctx context.Context, initObjs ...client.Object) (*Client, context.Context) {
 	t.Helper()
 
