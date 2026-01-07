@@ -28,6 +28,7 @@ import (
 
 	unikorncorev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	corev1 "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
@@ -97,22 +98,40 @@ func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttac
 	}
 
 	out := make(openapi.StorageAttachmentListV2Status, len(in.Spec.Attachments))
-
 	for i, att := range in.Spec.Attachments {
-		var mountSource *string
 
+		var mountSource *string
 		// Only build MountSource if all required fields are non-nil.
 		if att.IPRange != nil && in.Status.MountPath != nil {
 			mountSource = ptr.To(fmt.Sprintf("%s:%s", att.IPRange.Start, *in.Status.MountPath))
 		}
 
 		out[i] = openapi.StorageAttachmentV2Status{
-			NetworkId:   att.NetworkID,
-			MountSource: mountSource,
+			NetworkId:          att.NetworkID,
+			MountSource:        mountSource,
+			ProvisioningStatus: calculateAttProvisioningStatus(in, i, att.NetworkID),
 		}
 	}
 
 	return &out
+}
+
+// calculateAttProvisioningStatus
+func calculateAttProvisioningStatus(in *regionv1.FileStorage, i int, id string) *corev1.ResourceProvisioningStatus {
+	if len(in.Status.Attachments) >= i {
+		//todo: error
+		return nil
+	}
+
+	attStatus := in.Status.Attachments[i]
+
+	if attStatus.NetworkID == id {
+		status := corev1.ResourceProvisioningStatus(attStatus.ProvisioningStatus)
+
+		return &status
+	}
+
+	return nil
 }
 
 func checkRegionNFS(in *regionv1.NFS) *openapi.NFSV2Spec {
