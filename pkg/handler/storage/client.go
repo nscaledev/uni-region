@@ -52,8 +52,7 @@ import (
 )
 
 type Driver interface {
-	GetDetails(ctx context.Context, projectID string,
-		fileStorageID string) (*types.FileStorageDetails, error)
+	GetDetails(ctx context.Context, projectID string, fileStorageID string) (*types.FileStorageDetails, error)
 }
 
 // Client provides a restful API for storage.
