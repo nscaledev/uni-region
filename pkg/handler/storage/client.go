@@ -182,7 +182,7 @@ func (c *Client) updateWithSize(ctx context.Context, in *openapi.StorageV2Read, 
 	}
 
 	if fsdetails == nil {
-		return err
+		return nil
 	}
 
 	if fsdetails.Size != nil {
