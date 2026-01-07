@@ -160,7 +160,7 @@ func (c *Client) updateWithSizeList(ctx context.Context, in *openapi.StorageV2Li
 				return err
 			}
 
-			driverMap[client.ObjectKey{Namespace: c.namespace, Name: v.Status.StorageClassId}] = fcdriver
+			driverMap[key] = fcdriver
 
 			driver = fcdriver
 		}
