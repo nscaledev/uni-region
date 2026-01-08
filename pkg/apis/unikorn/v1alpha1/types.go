@@ -27,7 +27,11 @@ import (
 )
 
 // Provider is used to communicate the cloud type.
+// NOTE: the maximum length is limited to 63 characters, as it's used to generate
+// region specific resource names by appending the region ID to the provider type
+// e.g. openstack.e1354668-5617-44ea-9073-372aa8e5c5ca.
 // +kubebuilder:validation:Enum=openstack;kubernetes
+// +kubebuilder:validation:MaxLength=63
 type Provider string
 
 const (
@@ -67,12 +71,28 @@ type Region struct {
 type RegionSpec struct {
 	// Tags are aribrary user data.
 	Tags unikornv1core.TagList `json:"tags,omitempty"`
+	// Security controls region visibility.
+	Security *RegionSecuritySpec `json:"security,omitempty"`
 	// Type defines the provider type.
 	Provider Provider `json:"provider"`
 	// Kubernetes is provider specific configuration for the region.
 	Kubernetes *RegionKubernetesSpec `json:"kubernetes,omitempty"`
 	// Openstack is provider specific configuration for the region.
 	Openstack *RegionOpenstackSpec `json:"openstack,omitempty"`
+}
+
+// NOTE: Organizations deliberately doesn't define just a slice of IDs, even though
+// slices.Contains is easy, so we can potentially extend this in future to allow
+// projects to have private regions.
+type RegionSecuritySpec struct {
+	// Organizations if not empty limits access to the region based on the
+	// rules defined within.
+	Organizations []RegionSecurityOrganizationSpec `json:"organizations,omitempty"`
+}
+
+type RegionSecurityOrganizationSpec struct {
+	// ID identifies the organization ID that may access the region.
+	ID string `json:"id"`
 }
 
 type RegionKubernetesSpec struct {
