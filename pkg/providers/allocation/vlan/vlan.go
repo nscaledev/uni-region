@@ -41,20 +41,36 @@ type Allocator struct {
 	spec      *unikornv1.VLANSpec
 }
 
-func New(client client.Client, namespace, name string, spec *unikornv1.VLANSpec) *Allocator {
+func New(client client.Client, region *unikornv1.Region) *Allocator {
 	return &Allocator{
 		client:    client,
-		namespace: namespace,
-		name:      name,
-		spec:      spec,
+		namespace: region.Namespace,
+		name:      region.StaticName(),
+		spec:      region.VLANSpec(),
 	}
 }
 
+const (
+	vlanNum = 1 << 12 // 4096
+
+	vlanIDMin = 1
+	vlanIDMax = vlanNum - 2
+)
+
+// vlanIDValid checks a VLAN ID is valid.  Any user input should have already
+// been sanitized well before this, it's just an additional guard rail in case
+// of fail.
+func vlanIDValid(id int) bool {
+	return id >= vlanIDMin && id <= vlanIDMax
+}
+
+// allocatable returns an array of allocatable VLAN IDs based on the region
+// specification.
 func (a *Allocator) allocatable() [4096]bool {
-	var table [4096]bool
+	var table [vlanNum]bool
 
 	if a.spec == nil {
-		for i := 1; i < 4095; i++ {
+		for i := vlanIDMin; i <= vlanIDMax; i++ {
 			table[i] = true
 		}
 
@@ -62,7 +78,21 @@ func (a *Allocator) allocatable() [4096]bool {
 	}
 
 	for _, segment := range a.spec.Segments {
-		for i := segment.StartID; i <= segment.EndID; i++ {
+		start := vlanIDMin
+		end := vlanIDMax
+
+		// Out of an abundance of caution, prevent array out of bounds exceptions.
+		if segment.StartID <= segment.EndID {
+			if vlanIDValid(segment.StartID) {
+				start = segment.StartID
+			}
+
+			if vlanIDValid(segment.EndID) {
+				end = segment.EndID
+			}
+		}
+
+		for i := start; i <= end; i++ {
 			table[i] = true
 		}
 	}
@@ -112,7 +142,7 @@ func (a *Allocator) Allocate(ctx context.Context, networkID string) (int, error)
 
 	// Do an exhaustive search through all allocatable VLAN IDs...
 	// TODO: this is a O(n^2) problem, admittedly bounded.
-	for id := 1; id < 4095; id++ {
+	for id := vlanIDMin; id <= vlanIDMax; id++ {
 		if !allocatable[id] {
 			continue
 		}
@@ -151,6 +181,10 @@ func (a *Allocator) Allocate(ctx context.Context, networkID string) (int, error)
 }
 
 func (a *Allocator) Free(ctx context.Context, id int) error {
+	if !vlanIDValid(id) {
+		return fmt.Errorf("%w: vlan id %d is invalid", ErrAllocation, id)
+	}
+
 	allocation, err := a.getVLANAllocation(ctx)
 	if err != nil {
 		return err
@@ -164,6 +198,9 @@ func (a *Allocator) Free(ctx context.Context, id int) error {
 
 	allocation.Spec.Allocations = slices.DeleteFunc(allocation.Spec.Allocations, callback)
 
+	// Question... would this make more sense to be idempotent?
+	// Logic would dictate that some source of truth has this marked as allocated
+	// but we think it isn't so it's probably a bug somewhere.
 	if len(allocation.Spec.Allocations) != allocationsLength-1 {
 		return fmt.Errorf("%w: vlan id %d not allocated exactly once", ErrAllocation, id)
 	}

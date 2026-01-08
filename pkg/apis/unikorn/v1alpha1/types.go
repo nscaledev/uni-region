@@ -26,7 +26,11 @@ import (
 )
 
 // Provider is used to communicate the cloud type.
+// NOTE: the maximum length is limited to 63 characters, as it's used to generate
+// region specific resource names by appending the region ID to the provider type
+// e.g. openstack.e1354668-5617-44ea-9073-372aa8e5c5ca.
 // +kubebuilder:validation:Enum=openstack;kubernetes
+// +kubebuilder:validation:MaxLength=63
 type Provider string
 
 const (

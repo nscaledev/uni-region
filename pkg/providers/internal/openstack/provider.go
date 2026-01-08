@@ -139,16 +139,10 @@ type Provider struct {
 var _ types.Provider = &Provider{}
 
 func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Provider, error) {
-	var vlanSpec *unikornv1.VLANSpec
-
-	if region.Spec.Openstack != nil && region.Spec.Openstack.Network != nil && region.Spec.Openstack.Network.ProviderNetworks != nil {
-		vlanSpec = region.Spec.Openstack.Network.ProviderNetworks.VLAN
-	}
-
 	p := &Provider{
 		client:        cli,
 		region:        region,
-		vlanAllocator: vlan.New(cli, region.Namespace, "openstack-region-provider", vlanSpec),
+		vlanAllocator: vlan.New(cli, region),
 		imageCache:    cache.New[[]images.Image](imageCacheTTL),
 	}
 

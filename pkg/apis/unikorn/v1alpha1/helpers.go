@@ -151,3 +151,24 @@ func (s *FileStorage) ResourceLabels() (labels.Set, error) {
 	//nolint:nilnil
 	return nil, nil
 }
+
+// StaticName generates a fixed and unique name for a region, used for naming
+// resources that are dynamically defined for a region.
+func (r *Region) StaticName() string {
+	return string(r.Spec.Provider) + "." + r.Name
+}
+
+// VLANSpec returns allocatable VLANs for a region, if any are defined.
+func (r *Region) VLANSpec() *VLANSpec {
+	switch r.Spec.Provider {
+	// These do nothing.  You should get a compile time failure if something
+	// is not defined ala Rust.
+	case ProviderKubernetes:
+	case ProviderOpenstack:
+		if r.Spec.Openstack != nil && r.Spec.Openstack.Network != nil && r.Spec.Openstack.Network.ProviderNetworks != nil {
+			return r.Spec.Openstack.Network.ProviderNetworks.VLAN
+		}
+	}
+
+	return nil
+}
