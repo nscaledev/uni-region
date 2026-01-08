@@ -340,6 +340,13 @@ func TestConvertV2(t *testing.T) {
 					},
 					Attachments: []regionv1.Attachment{},
 				},
+				Status: regionv1.FileStorageStatus{
+					Attachments: []regionv1.FileStorageAttachmentStatus{
+						{
+							ProvisioningStatus: regionv1.AttachmentProvisioned,
+						},
+					},
+				},
 			},
 			want: &openapi.StorageV2Read{
 				Metadata: corev1.ProjectScopedResourceReadMetadata{
