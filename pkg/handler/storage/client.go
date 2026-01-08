@@ -624,12 +624,17 @@ func (c *Client) getStorageProvisioner(ctx context.Context, namespace string, st
 
 	// look up storage class object
 	class := &regionv1.FileStorageClass{}
+
 	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: storageClassID}, class); err != nil {
 		if kerrors.IsNotFound(err) {
 			return provisioner, errors.HTTPNotFound().WithError(err)
 		}
 
 		return provisioner, errors.OAuth2ServerError("unable to lookup storage class").WithError(err)
+	}
+
+	if err := authorizeFileStorageClassRead(ctx, class); err != nil {
+		return provisioner, err
 	}
 
 	if err := rbac.AllowOrganizationScope(ctx, "region:filestorageclass:v2", identityapi.Read, class.Labels[coreconstants.OrganizationLabel]); err != nil {
