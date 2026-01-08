@@ -89,6 +89,12 @@ type Image struct {
 	Name string
 	// OrganizationID is the organization the image belongs to, or nil if the image is globally visible.
 	OrganizationID *string
+	// AllocationID is the ID of the allocation associated with the image.
+	AllocationID *string
+	// GeneratedID is the ID generated to identify the image before the provider ID is available.
+	// The provider ID is required by the allocation and quota systems, but the API does not allow
+	// an ID to be supplied when the image is created from an existing server.
+	GeneratedID *string
 	// Created is when the image was created.
 	Created time.Time
 	// Modified is when the image was modified.

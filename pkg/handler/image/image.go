@@ -30,33 +30,47 @@ import (
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
+	identityclient "github.com/unikorn-cloud/identity/pkg/client"
+	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+var ErrImageNoGeneratedID = goerrors.New("image has no generated ID")
+
+var _ AllocationClient = &identityclient.Allocations{}
+
+type AllocationClient interface {
+	OrganizationScopedCreateRaw(ctx context.Context, organizationID, reference string, allocations identityapi.ResourceAllocationList) (string, error)
+	OrganizationScopedDeleteRaw(ctx context.Context, organizationID, id string) error
+}
+
 type GetProviderFunc func(context.Context, client.Client, string, string) (Provider, error)
 
 type Client struct {
-	client      client.Client
-	namespace   string
-	getProvider GetProviderFunc
+	client           client.Client
+	namespace        string
+	allocationClient AllocationClient
+	getProvider      GetProviderFunc
 }
 
 func DefaultGetProvider(ctx context.Context, c client.Client, namespace, regionID string) (Provider, error) {
 	return providers.New(ctx, c, namespace, regionID)
 }
 
-func NewClient(client client.Client, namespace string, getProvider GetProviderFunc) *Client {
+func NewClient(client client.Client, namespace string, allocationClient AllocationClient, getProvider GetProviderFunc) *Client {
 	return &Client{
-		client:      client,
-		namespace:   namespace,
-		getProvider: getProvider,
+		client:           client,
+		namespace:        namespace,
+		allocationClient: allocationClient,
+		getProvider:      getProvider,
 	}
 }
 
@@ -128,6 +142,7 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 	image := &types.Image{
 		Name:           request.Metadata.Name,
 		OrganizationID: ptr.To(organizationID),
+		GeneratedID:    ptr.To(string(uuid.NewUUID())),
 		Virtualization: generateImageVirtualization(request.Spec.Virtualization),
 		GPU:            gpu,
 		OS:             *generateImageOS(&request.Spec.Os),
@@ -156,6 +171,7 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 	return convertImage(result), nil
 }
 
+//nolint:cyclop
 func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imageID string) error {
 	provider, err := c.provider(ctx, regionID)
 	if err != nil {
@@ -173,6 +189,12 @@ func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imag
 
 	if image.OrganizationID == nil || *image.OrganizationID != organizationID {
 		return errors.HTTPNotFound()
+	}
+
+	if image.AllocationID != nil {
+		if err := c.allocationClient.OrganizationScopedDeleteRaw(ctx, organizationID, *image.AllocationID); err != nil {
+			return errors.OAuth2ServerError("failed to delete image allocation").WithError(err)
+		}
 	}
 
 	if err = provider.DeleteImage(ctx, imageID); err != nil {
@@ -276,6 +298,38 @@ func (s *createImageForUploadSaga) deleteImage(ctx context.Context) error {
 	return nil
 }
 
+func (s *createImageForUploadSaga) createAllocation(ctx context.Context) error {
+	if s.image.GeneratedID == nil {
+		return ErrImageNoGeneratedID
+	}
+
+	reference := fmt.Sprintf("images.region.unikorn-cloud.org/%s", *s.image.GeneratedID)
+
+	resourceAllocations := identityapi.ResourceAllocationList{
+		{
+			Kind:      "images",
+			Committed: 1,
+		},
+	}
+
+	allocationID, err := s.client.allocationClient.OrganizationScopedCreateRaw(ctx, s.organizationID, reference, resourceAllocations)
+	if err != nil {
+		return err
+	}
+
+	s.image.AllocationID = ptr.To(allocationID)
+
+	return nil
+}
+
+func (s *createImageForUploadSaga) deleteAllocation(ctx context.Context) error {
+	if s.image.AllocationID == nil {
+		return nil
+	}
+
+	return s.client.allocationClient.OrganizationScopedDeleteRaw(ctx, s.organizationID, *s.image.AllocationID)
+}
+
 func (s *createImageForUploadSaga) uploadFromURL(ctx context.Context, source string) error {
 	r, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 	if err != nil {
@@ -331,6 +385,7 @@ func (s *createImageForUploadSaga) Actions() []saga.Action {
 	return []saga.Action{
 		saga.NewAction("validate source url", s.validateSourceURL, nil),
 		saga.NewAction("convert disk format", s.convertImageDiskFormat, nil),
+		saga.NewAction("create quota allocation", s.createAllocation, s.deleteAllocation),
 		saga.NewAction("create image", s.createImage, s.deleteImage),
 		saga.NewAction("create image upload task", s.createImageUploadTask, nil),
 	}

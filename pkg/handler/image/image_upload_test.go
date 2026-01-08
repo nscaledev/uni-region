@@ -20,6 +20,7 @@ package image
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -30,29 +31,59 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/unikorn-cloud/core/pkg/server/saga"
+	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/handler/image/mock"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
+
+	"k8s.io/utils/ptr"
 )
 
 const (
-	testOrganizationID = "test-org-id"
-	testRegionID       = "test-region-id"
+	testOrganizationID   = "test-org-id"
+	testRegionID         = "test-region-id"
+	testImageGeneratedID = "595191b7-0cdc-49f9-b201-e5abee1b892d"
+	testAllocationID     = "01d6c2e9-912d-40ab-9b9a-e0aee1df48f1"
 )
 
-func newTestUploadSaga(provider Provider, sourceURL string) *createImageForUploadSaga {
+func newTestUploadSaga(allocationClient AllocationClient, provider Provider, sourceURL string) *createImageForUploadSaga {
 	diskFormat := openapi.ImageDiskFormatRaw
 
 	return &createImageForUploadSaga{
+		client: &Client{
+			allocationClient: allocationClient,
+		},
 		organizationID: testOrganizationID,
 		regionID:       testRegionID,
 		sourceFormat:   &diskFormat,
 		sourceURL:      sourceURL,
 		image: &types.Image{
-			Name: "test-image",
+			Name:        "test-image",
+			GeneratedID: ptr.To(testImageGeneratedID),
 		},
 		provider: provider,
 	}
+}
+
+func setupMockAllocationClient(t *testing.T) AllocationClient {
+	t.Helper()
+
+	mockAllocationClient := mock.NewTestMockAllocationClient(t)
+
+	reference := fmt.Sprintf("images.region.unikorn-cloud.org/%s", testImageGeneratedID)
+
+	resourceAllocations := identityapi.ResourceAllocationList{
+		{
+			Kind:      "images",
+			Committed: 1,
+		},
+	}
+
+	mockAllocationClient.EXPECT().
+		OrganizationScopedCreateRaw(gomock.Any(), testOrganizationID, reference, resourceAllocations).
+		Return(testAllocationID, nil)
+
+	return mockAllocationClient
 }
 
 func TestUploadFromURL_Success(t *testing.T) {
@@ -79,6 +110,8 @@ func TestUploadFromURL_Success(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
+	mockAllocationClient := setupMockAllocationClient(t)
+
 	mockProvider := mock.NewTestMockProvider(t)
 
 	// Expect CreateImageForUpload to be called during saga execution
@@ -97,7 +130,7 @@ func TestUploadFromURL_Success(t *testing.T) {
 	ctx := t.Context()
 
 	// Create saga with the test URL
-	s := newTestUploadSaga(mockProvider, server.URL)
+	s := newTestUploadSaga(mockAllocationClient, mockProvider, server.URL)
 
 	// Run the saga
 	err = saga.Run(ctx, s)
@@ -162,6 +195,8 @@ func TestUploadFromURL_FetchFailures(t *testing.T) {
 
 			server := createServer(uploadAttempted)
 
+			mockIdentity := setupMockAllocationClient(t)
+
 			mockProvider := mock.NewTestMockProvider(t)
 
 			// Expect CreateImageForUpload to be called during saga execution
@@ -175,7 +210,7 @@ func TestUploadFromURL_FetchFailures(t *testing.T) {
 			ctx := t.Context()
 
 			// Create saga with the test URL
-			s := newTestUploadSaga(mockProvider, server.URL)
+			s := newTestUploadSaga(mockIdentity, mockProvider, server.URL)
 
 			// Run the saga - it should complete successfully even though upload will fail
 			err := saga.Run(ctx, s)
