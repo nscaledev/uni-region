@@ -11,6 +11,12 @@ const (
 	Oauth2AuthenticationScopes = "oauth2Authentication.Scopes"
 )
 
+// Defines values for Architecture.
+const (
+	ArchitectureAarch64 Architecture = "aarch64"
+	ArchitectureX8664   Architecture = "x86_64"
+)
+
 // Defines values for GpuVendor.
 const (
 	GpuVendorAMD    GpuVendor = "AMD"
@@ -94,6 +100,9 @@ type NFSV2Spec struct {
 // to act as a router without SNAT rules.
 type AllowedSourceAddresses = []string
 
+// Architecture CPU architecture.
+type Architecture string
+
 // ConsoleOutput Console output
 type ConsoleOutput struct {
 	// Contents Console output.
@@ -131,6 +140,9 @@ type Flavor struct {
 
 // FlavorSpec A flavor.
 type FlavorSpec struct {
+	// Architecture CPU architecture.
+	Architecture Architecture `json:"architecture"`
+
 	// Baremetal Whether the flavor is for a dedicated machine.
 	Baremetal *bool `json:"baremetal,omitempty"`
 
@@ -265,6 +277,9 @@ type ImageCreate struct {
 
 // ImageCreateSpec A compute image specification.
 type ImageCreateSpec struct {
+	// Architecture CPU architecture.
+	Architecture Architecture `json:"architecture"`
+
 	// Gpu The GPU driver if installed.
 	Gpu *ImageGpu `json:"gpu,omitempty"`
 
@@ -322,6 +337,9 @@ type ImageOS struct {
 
 // ImageSpec An image.
 type ImageSpec struct {
+	// Architecture CPU architecture.
+	Architecture Architecture `json:"architecture"`
+
 	// Gpu The GPU driver if installed.
 	Gpu *ImageGpu `json:"gpu,omitempty"`
 

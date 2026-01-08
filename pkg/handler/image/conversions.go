@@ -29,6 +29,17 @@ import (
 
 var ErrUnknownDiskFormat = errors.New("unknown image format")
 
+func convertArchitecture(in types.Architecture) openapi.Architecture {
+	switch in {
+	case types.X86_64:
+		return openapi.ArchitectureX8664
+	case types.Aarch64:
+		return openapi.ArchitectureAarch64
+	}
+
+	return ""
+}
+
 func convertImageVirtualization(in types.ImageVirtualization) openapi.ImageVirtualization {
 	switch in {
 	case types.Virtualized:
@@ -96,6 +107,7 @@ func convertImage(in *types.Image) *openapi.Image {
 			CreationTime: in.Created,
 		},
 		Spec: openapi.ImageSpec{
+			Architecture:   convertArchitecture(in.Architecture),
 			SizeGiB:        in.SizeGiB,
 			Virtualization: convertImageVirtualization(in.Virtualization),
 			Os: openapi.ImageOS{
@@ -134,6 +146,17 @@ func convertImages(in []types.Image) openapi.Images {
 	}
 
 	return out
+}
+
+func generateArchitecture(in openapi.Architecture) types.Architecture {
+	switch in {
+	case openapi.ArchitectureX8664:
+		return types.X86_64
+	case openapi.ArchitectureAarch64:
+		return types.Aarch64
+	default:
+		return ""
+	}
 }
 
 func generateImageVirtualization(source openapi.ImageVirtualization) types.ImageVirtualization {

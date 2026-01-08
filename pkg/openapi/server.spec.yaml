@@ -1610,6 +1610,12 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/gpuModel'
+    architecture:
+      type: string
+      description: CPU architecture.
+      enum:
+      - x86_64
+      - aarch64
     imageGpu:
       description: The GPU driver if installed.
       type: object
@@ -1672,7 +1678,10 @@ components:
       - sizeGiB
       - virtualization
       - os
+      - architecture
       properties:
+        architecture:
+          $ref: '#/components/schemas/architecture'
         sizeGiB:
           description: Minimum disk size required to use the image in GiB.
           type: integer
@@ -1707,6 +1716,7 @@ components:
       - sourceURL
       - virtualization
       - os
+      - architecture
       properties:
         sourceFormat:
           description: The disk format of the image. If not provided, the value defaults to `raw`.
@@ -1719,6 +1729,8 @@ components:
           description: |
             A URL to upload the image from.
           type: string
+        architecture:
+          $ref: '#/components/schemas/architecture'
         virtualization:
           $ref: '#/components/schemas/imageVirtualization'
         os:
@@ -1769,6 +1781,7 @@ components:
       - cpus
       - memory
       - disk
+      - architecture
       properties:
         baremetal:
           description: Whether the flavor is for a dedicated machine.
@@ -1785,6 +1798,8 @@ components:
         disk:
           description: The amount of ephemeral disk in GB.
           type: integer
+        architecture:
+          $ref: '#/components/schemas/architecture'
         gpu:
           $ref: '#/components/schemas/gpuSpec'
     flavor:
@@ -2796,6 +2811,7 @@ components:
               name: ubu2204-v1.25.6-gpu-525.85.05-7ced4154
             spec:
               sourceURL: https://example.com/buckets/myimages/ubu2204-v1.25.6-gpu-525.85.05-7ced4154.raw
+              architecture: x86_64
               virtualization: virtualized
               os:
                 kernel: linux
@@ -3101,6 +3117,7 @@ components:
               name: ubu2204-v1.25.6-gpu-525.85.05-7ced4154
               creationTime: 2023-02-22T12:04:13Z
             spec:
+              architecture: x86_64
               sizeGiB: 10
               virtualization: virtualized
               os:
@@ -3131,6 +3148,7 @@ components:
               name: ubu2204-v1.25.6-gpu-525.85.05-7ced4154
               creationTime: 2023-02-22T12:04:13Z
             spec:
+              architecture: x86_64
               sizeGiB: 10
               virtualization: virtualized
               os:
@@ -3161,6 +3179,7 @@ components:
               name: g.4.highmem.a100.1g.10gb
               creationTime: 1970-01-01T00:00:00Z
             spec:
+              architecture: x86_64
               cpus: 4
               cpuFamily: Intel Xeon Platinum 8160T (Skylake)
               disk: 20

@@ -191,6 +191,15 @@ type FlavorSelector struct {
 	IDs []string `json:"ids,omitempty"`
 }
 
+// +kubebuilder:validation:Enum=x86_64;aarch64
+type Architecture string
+
+const (
+	//nolint:revive
+	X86_64  Architecture = "x86_64"
+	Aarch64 Architecture = "aarch64"
+)
+
 type FlavorMetadata struct {
 	// ID is the immutable Openstack identifier for the flavor.
 	ID string `json:"id"`
@@ -208,6 +217,8 @@ type FlavorMetadata struct {
 }
 
 type CPUSpec struct {
+	// Architecture is the CPU architecture.
+	Architecture *Architecture `json:"architecture,omitempty"`
 	// Count allows you to override the number of CPUs.  Usually this wouldn't
 	// be necessary, but alas some operators may not set this correctly for baremetal
 	// flavors to make horizon display overcommit correctly...
