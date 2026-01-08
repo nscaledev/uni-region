@@ -155,3 +155,7 @@ func (h *Handler) GetApiV2ServersServerIDConsolesessions(w http.ResponseWriter, 
 
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
+
+func (h *Handler) PostApiV2ServersServerIDSnapshot(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
+	errors.HandleError(w, r, errors.HTTPUnprocessableContent("not implemented"))
+}
