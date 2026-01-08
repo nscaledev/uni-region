@@ -24,9 +24,24 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (h *Handler) GetApiV2Servers(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2ServersParams) {
+type ServerV2Handler struct {
+	clientArgs
+}
+
+func NewServerV2Handler(client client.Client, namespace string) *ServerV2Handler {
+	return &ServerV2Handler{
+		clientArgs: clientArgs{
+			client:    client,
+			namespace: namespace,
+		},
+	}
+}
+
+func (h *ServerV2Handler) GetApiV2Servers(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2ServersParams) {
 	result, err := h.serverClient().ListV2(r.Context(), params)
 	if err != nil {
 		errors.HandleError(w, r, err)
@@ -36,7 +51,7 @@ func (h *Handler) GetApiV2Servers(w http.ResponseWriter, r *http.Request, params
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
-func (h *Handler) PostApiV2Servers(w http.ResponseWriter, r *http.Request) {
+func (h *ServerV2Handler) PostApiV2Servers(w http.ResponseWriter, r *http.Request) {
 	request := &openapi.ServerV2Create{}
 
 	if err := util.ReadJSONBody(r, request); err != nil {
@@ -53,7 +68,7 @@ func (h *Handler) PostApiV2Servers(w http.ResponseWriter, r *http.Request) {
 	util.WriteJSONResponse(w, r, http.StatusCreated, result)
 }
 
-func (h *Handler) GetApiV2ServersServerID(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
+func (h *ServerV2Handler) GetApiV2ServersServerID(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	result, err := h.serverClient().GetV2(r.Context(), serverID)
 	if err != nil {
 		errors.HandleError(w, r, err)
@@ -63,7 +78,7 @@ func (h *Handler) GetApiV2ServersServerID(w http.ResponseWriter, r *http.Request
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
-func (h *Handler) PutApiV2ServersServerID(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
+func (h *ServerV2Handler) PutApiV2ServersServerID(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	request := &openapi.ServerV2Update{}
 
 	if err := util.ReadJSONBody(r, request); err != nil {
@@ -80,7 +95,7 @@ func (h *Handler) PutApiV2ServersServerID(w http.ResponseWriter, r *http.Request
 	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
 }
 
-func (h *Handler) DeleteApiV2ServersServerID(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
+func (h *ServerV2Handler) DeleteApiV2ServersServerID(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	err := h.serverClient().DeleteV2(r.Context(), serverID)
 	if err != nil {
 		errors.HandleError(w, r, err)
@@ -90,7 +105,7 @@ func (h *Handler) DeleteApiV2ServersServerID(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (h *Handler) GetApiV2ServersServerIDSshkey(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
+func (h *ServerV2Handler) GetApiV2ServersServerIDSshkey(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	result, err := h.serverClient().SSHKey(r.Context(), serverID)
 	if err != nil {
 		errors.HandleError(w, r, err)
@@ -100,7 +115,7 @@ func (h *Handler) GetApiV2ServersServerIDSshkey(w http.ResponseWriter, r *http.R
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
-func (h *Handler) PostApiV2ServersServerIDStart(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
+func (h *ServerV2Handler) PostApiV2ServersServerIDStart(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	if err := h.serverClient().StartV2(r.Context(), serverID); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -109,7 +124,7 @@ func (h *Handler) PostApiV2ServersServerIDStart(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (h *Handler) PostApiV2ServersServerIDStop(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
+func (h *ServerV2Handler) PostApiV2ServersServerIDStop(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	if err := h.serverClient().StopV2(r.Context(), serverID); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -118,7 +133,7 @@ func (h *Handler) PostApiV2ServersServerIDStop(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (h *Handler) PostApiV2ServersServerIDSoftreboot(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
+func (h *ServerV2Handler) PostApiV2ServersServerIDSoftreboot(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	if err := h.serverClient().RebootV2(r.Context(), serverID, false); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -127,7 +142,7 @@ func (h *Handler) PostApiV2ServersServerIDSoftreboot(w http.ResponseWriter, r *h
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (h *Handler) PostApiV2ServersServerIDHardreboot(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
+func (h *ServerV2Handler) PostApiV2ServersServerIDHardreboot(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	if err := h.serverClient().RebootV2(r.Context(), serverID, true); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -136,7 +151,7 @@ func (h *Handler) PostApiV2ServersServerIDHardreboot(w http.ResponseWriter, r *h
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (h *Handler) GetApiV2ServersServerIDConsoleoutput(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter, params openapi.GetApiV2ServersServerIDConsoleoutputParams) {
+func (h *ServerV2Handler) GetApiV2ServersServerIDConsoleoutput(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter, params openapi.GetApiV2ServersServerIDConsoleoutputParams) {
 	result, err := h.serverClient().ConsoleOutputV2(r.Context(), serverID, params)
 	if err != nil {
 		errors.HandleError(w, r, err)
@@ -146,7 +161,7 @@ func (h *Handler) GetApiV2ServersServerIDConsoleoutput(w http.ResponseWriter, r 
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
-func (h *Handler) GetApiV2ServersServerIDConsolesessions(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
+func (h *ServerV2Handler) GetApiV2ServersServerIDConsolesessions(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	result, err := h.serverClient().ConsoleSessionV2(r.Context(), serverID)
 	if err != nil {
 		errors.HandleError(w, r, err)
@@ -156,6 +171,6 @@ func (h *Handler) GetApiV2ServersServerIDConsolesessions(w http.ResponseWriter, 
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
-func (h *Handler) PostApiV2ServersServerIDSnapshot(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
+func (h *ServerV2Handler) PostApiV2ServersServerIDSnapshot(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	errors.HandleError(w, r, errors.HTTPUnprocessableContent("not implemented"))
 }
