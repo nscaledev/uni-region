@@ -172,5 +172,13 @@ func (h *ServerV2Handler) GetApiV2ServersServerIDConsolesessions(w http.Response
 }
 
 func (h *ServerV2Handler) PostApiV2ServersServerIDSnapshot(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
-	errors.HandleError(w, r, errors.HTTPUnprocessableContent("not implemented"))
+	c := h.serverClient()
+
+	img, err := c.CreateV2Snapshot(r.Context(), serverID, nil)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusCreated, img)
 }
