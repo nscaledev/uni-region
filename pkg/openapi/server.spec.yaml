@@ -1693,17 +1693,36 @@ components:
           $ref: '#/components/schemas/softwareVersions'
         gpu:
           $ref: '#/components/schemas/imageGpu'
+    imageState:
+      description: The images's lifecycle state.
+      type: string
+      enum:
+      - pending
+      - creating
+      - ready
+      - failed
+    imageStatus:
+      description: The image's status.
+      type: object
+      required:
+      - state
+      properties:
+        state:
+          $ref: '#/components/schemas/imageState'
     image:
       description: An image.
       type: object
       required:
       - metadata
       - spec
+      - status
       properties:
         metadata:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/staticResourceMetadata'
         spec:
           $ref: '#/components/schemas/imageSpec'
+        status:
+          $ref: '#/components/schemas/imageStatus'
     images:
       description: A list of images that are compatible with this platform.
       type: array
@@ -3136,6 +3155,8 @@ components:
                 - A100
                 - H100
                 - H200
+            status:
+              state: ready
     imageResponse:
       description: An image that can be used on this platform.
       content:
@@ -3167,6 +3188,8 @@ components:
                 - A100
                 - H100
                 - H200
+            status:
+              state: ready
     flavorsResponse:
       description: A list of flavors.
       content:

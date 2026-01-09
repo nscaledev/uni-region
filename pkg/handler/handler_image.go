@@ -57,7 +57,7 @@ func (h *ImageHandler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(
 		return
 	}
 
-	result, err := h.imageClient().ListActiveImages(r.Context(), organizationID, regionID)
+	result, err := h.imageClient().ListImages(r.Context(), organizationID, regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
