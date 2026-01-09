@@ -2399,3 +2399,10 @@ func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Ide
 
 	return result, nil
 }
+
+var errNotImplementedYet = errors.New("not yet implemented")
+
+// CreateImageFromServer creates a new image from an existing server.
+func (p *Provider) CreateImageFromServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *types.Image) (string, error) {
+	return "", errNotImplementedYet
+}
