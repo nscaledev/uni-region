@@ -28,6 +28,8 @@ import (
 
 var ErrUnknownDiskFormat = errors.New("unknown image format")
 
+var ConvertImage = convertImage
+
 func convertArchitecture(in types.Architecture) openapi.Architecture {
 	switch in {
 	case types.X86_64:

@@ -296,3 +296,8 @@ func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1
 func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, length *int) (string, error) {
 	return "", ErrUnimplmented
 }
+
+// CreateImageFromServer creates a new image from an existing server.
+func (p *Provider) CreateImageFromServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *types.Image) (string, error) {
+	return "", ErrUnimplmented
+}

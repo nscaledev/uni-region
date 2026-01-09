@@ -54,7 +54,10 @@ import (
 type serverProvider interface {
 	types.Server
 	types.ServerConsole
+	types.ServerSnapshot
 	types.Identity
+	types.ImageRead  // for GetImage
+	types.ImageWrite // for DeleteImage
 }
 
 // GetProviderFunc is the type of funcs supplied to the client, so it can obtain a provider (e.g., OpenStack client).
