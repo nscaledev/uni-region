@@ -816,6 +816,18 @@ func (p *Provider) createImageMetadata(image *types.Image) (map[string]string, e
 	setIfNotNil(metadata, organizationIDLabel, image.OrganizationID)
 	metadata[dataSourceLabel] = string(image.DataSource)
 
+	metadata["hw_disk_bus"] = "scsi"
+	metadata["hw_firmware_type"] = "uefi"
+	metadata["hw_scsi_model"] = "virtio-scsi"
+
+	// See: https://docs.openstack.org/nova/latest/admin/hw-machine-type.html
+	switch image.Architecture {
+	case types.X86_64:
+		metadata["hw_machine_type"] = "q35"
+	case types.Aarch64:
+		metadata["hw_machine_type"] = "virt"
+	}
+
 	return metadata, nil
 }
 
