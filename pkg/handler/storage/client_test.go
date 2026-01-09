@@ -291,7 +291,7 @@ func TestConvertV2List(t *testing.T) {
 					},
 
 					Status: openapi.StorageV2Status{
-						Attachments:    &openapi.StorageAttachmentListV2Status{{NetworkId: "net-1", MountSource: ptr.To("192.168.0.1:/export")}},
+						Attachments:    &openapi.StorageAttachmentListV2Status{{NetworkId: "net-1", MountSource: ptr.To("192.168.0.1:/export"), ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown}},
 						RegionId:       "",
 						StorageClassId: "",
 					},
