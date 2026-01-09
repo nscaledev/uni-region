@@ -23,6 +23,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
+type Architecture string
+
+const (
+	//nolint:revive
+	X86_64  Architecture = "x86_64"
+	Aarch64 Architecture = "aarch64"
+)
+
 // GPUVendor defines the GPU vendor.
 type GPUVendor string
 
@@ -39,6 +47,8 @@ type Flavor struct {
 	ID string
 	// Name of the flavor.
 	Name string
+	// Architecture is the CPU architecture.
+	Architecture Architecture
 	// CPU count.
 	CPUs int
 	// CPUFamily tells you the CPU type.
@@ -93,6 +103,8 @@ type Image struct {
 	Created time.Time
 	// Modified is when the image was modified.
 	Modified time.Time
+	// Architecture is the CPU architecture.
+	Architecture Architecture
 	// SizeGiB is the minimum disk size for the image in GiB.
 	SizeGiB int
 	// ImageVirtualization defines how the image can be used.

@@ -87,6 +87,12 @@ spec:
                         cpu:
                           description: CPU defines additional CPU metadata.
                           properties:
+                            architecture:
+                              description: Architecture is the CPU architecture.
+                              enum:
+                              - x86_64
+                              - aarch64
+                              type: string
                             count:
                               description: |-
                                 Count allows you to override the number of CPUs.  Usually this wouldn't
@@ -209,6 +215,12 @@ spec:
                                 cpu:
                                   description: CPU defines additional CPU metadata.
                                   properties:
+                                    architecture:
+                                      description: Architecture is the CPU architecture.
+                                      enum:
+                                      - x86_64
+                                      - aarch64
+                                      type: string
                                     count:
                                       description: |-
                                         Count allows you to override the number of CPUs.  Usually this wouldn't

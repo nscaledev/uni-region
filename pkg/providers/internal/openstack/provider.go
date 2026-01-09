@@ -86,6 +86,9 @@ const (
 	dataSourceLabel     = "unikorn:data_source"
 
 	containerFormatBare = "bare" // there's no const in gophercloud for this, so we have our own.
+
+	// These ones are well defined openstack image properties.
+	imageArchitectureProperty = "architecture"
 )
 
 const (
@@ -445,11 +448,12 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 
 		// API memory is in MiB, disk is in GB
 		f := types.Flavor{
-			ID:     flavor.ID,
-			Name:   flavor.Name,
-			CPUs:   flavor.VCPUs,
-			Memory: resource.NewQuantity(int64(flavor.RAM)<<20, resource.BinarySI),
-			Disk:   resource.NewScaledQuantity(int64(flavor.Disk), resource.Giga),
+			ID:           flavor.ID,
+			Name:         flavor.Name,
+			Architecture: types.X86_64,
+			CPUs:         flavor.VCPUs,
+			Memory:       resource.NewQuantity(int64(flavor.RAM)<<20, resource.BinarySI),
+			Disk:         resource.NewScaledQuantity(int64(flavor.Disk), resource.Giga),
 		}
 
 		// Apply any extra metadata to the flavor.
@@ -466,6 +470,10 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 				f.Baremetal = metadata.Baremetal
 
 				if metadata.CPU != nil {
+					if metadata.CPU.Architecture != nil {
+						f.Architecture = types.Architecture(*metadata.CPU.Architecture)
+					}
+
 					f.CPUFamily = metadata.CPU.Family
 				}
 
@@ -599,6 +607,14 @@ func (p *Provider) imageStatus(image *images.Image, dataSource types.ImageDataSo
 	return status
 }
 
+func imageArchitecture(image *images.Image) types.Architecture {
+	if v, ok := image.Properties[imageArchitectureProperty].(string); ok && v != "" {
+		return types.Architecture(v)
+	}
+
+	return types.X86_64
+}
+
 func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 	var organizationID *string
 	if temp, _ := image.Properties[organizationIDLabel].(string); temp != "" {
@@ -622,6 +638,7 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 		OrganizationID: organizationID,
 		Created:        image.CreatedAt,
 		Modified:       image.UpdatedAt,
+		Architecture:   imageArchitecture(image),
 		SizeGiB:        size,
 		Virtualization: types.ImageVirtualization(virtualization),
 		OS:             p.imageOS(image),
@@ -794,6 +811,7 @@ func (p *Provider) createImageMetadata(image *types.Image) (map[string]string, e
 		metadata[gpuDriverVersionLabel] = image.GPU.Driver
 	}
 
+	metadata[imageArchitectureProperty] = string(image.Architecture)
 	metadata[virtualizationLabel] = string(image.Virtualization)
 	setIfNotNil(metadata, organizationIDLabel, image.OrganizationID)
 	metadata[dataSourceLabel] = string(image.DataSource)
