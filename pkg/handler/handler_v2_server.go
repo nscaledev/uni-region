@@ -23,6 +23,7 @@ import (
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/region/pkg/handler/server"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,6 +31,7 @@ import (
 
 type ServerV2Handler struct {
 	clientArgs
+	getProvider server.GetProviderFunc
 }
 
 func NewServerV2Handler(client client.Client, namespace string) *ServerV2Handler {
@@ -38,11 +40,16 @@ func NewServerV2Handler(client client.Client, namespace string) *ServerV2Handler
 			client:    client,
 			namespace: namespace,
 		},
+		getProvider: server.DefaultGetProvider,
 	}
 }
 
+func (h *ServerV2Handler) serverV2Client() *server.ClientV2 {
+	return server.NewClientV2(h.client, h.namespace, h.getProvider)
+}
+
 func (h *ServerV2Handler) GetApiV2Servers(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2ServersParams) {
-	result, err := h.serverClient().ListV2(r.Context(), params)
+	result, err := h.serverV2Client().ListV2(r.Context(), params)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -59,7 +66,7 @@ func (h *ServerV2Handler) PostApiV2Servers(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	result, err := h.serverClient().CreateV2(r.Context(), request)
+	result, err := h.serverV2Client().CreateV2(r.Context(), request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -69,7 +76,7 @@ func (h *ServerV2Handler) PostApiV2Servers(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *ServerV2Handler) GetApiV2ServersServerID(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
-	result, err := h.serverClient().GetV2(r.Context(), serverID)
+	result, err := h.serverV2Client().GetV2(r.Context(), serverID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -86,7 +93,7 @@ func (h *ServerV2Handler) PutApiV2ServersServerID(w http.ResponseWriter, r *http
 		return
 	}
 
-	result, err := h.serverClient().UpdateV2(r.Context(), serverID, request)
+	result, err := h.serverV2Client().UpdateV2(r.Context(), serverID, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -96,7 +103,7 @@ func (h *ServerV2Handler) PutApiV2ServersServerID(w http.ResponseWriter, r *http
 }
 
 func (h *ServerV2Handler) DeleteApiV2ServersServerID(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
-	err := h.serverClient().DeleteV2(r.Context(), serverID)
+	err := h.serverV2Client().DeleteV2(r.Context(), serverID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -106,7 +113,7 @@ func (h *ServerV2Handler) DeleteApiV2ServersServerID(w http.ResponseWriter, r *h
 }
 
 func (h *ServerV2Handler) GetApiV2ServersServerIDSshkey(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
-	result, err := h.serverClient().SSHKey(r.Context(), serverID)
+	result, err := h.serverV2Client().SSHKey(r.Context(), serverID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -116,7 +123,7 @@ func (h *ServerV2Handler) GetApiV2ServersServerIDSshkey(w http.ResponseWriter, r
 }
 
 func (h *ServerV2Handler) PostApiV2ServersServerIDStart(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
-	if err := h.serverClient().StartV2(r.Context(), serverID); err != nil {
+	if err := h.serverV2Client().StartV2(r.Context(), serverID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -125,7 +132,7 @@ func (h *ServerV2Handler) PostApiV2ServersServerIDStart(w http.ResponseWriter, r
 }
 
 func (h *ServerV2Handler) PostApiV2ServersServerIDStop(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
-	if err := h.serverClient().StopV2(r.Context(), serverID); err != nil {
+	if err := h.serverV2Client().StopV2(r.Context(), serverID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -134,7 +141,7 @@ func (h *ServerV2Handler) PostApiV2ServersServerIDStop(w http.ResponseWriter, r 
 }
 
 func (h *ServerV2Handler) PostApiV2ServersServerIDSoftreboot(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
-	if err := h.serverClient().RebootV2(r.Context(), serverID, false); err != nil {
+	if err := h.serverV2Client().RebootV2(r.Context(), serverID, false); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -143,7 +150,7 @@ func (h *ServerV2Handler) PostApiV2ServersServerIDSoftreboot(w http.ResponseWrit
 }
 
 func (h *ServerV2Handler) PostApiV2ServersServerIDHardreboot(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
-	if err := h.serverClient().RebootV2(r.Context(), serverID, true); err != nil {
+	if err := h.serverV2Client().RebootV2(r.Context(), serverID, true); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -152,7 +159,7 @@ func (h *ServerV2Handler) PostApiV2ServersServerIDHardreboot(w http.ResponseWrit
 }
 
 func (h *ServerV2Handler) GetApiV2ServersServerIDConsoleoutput(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter, params openapi.GetApiV2ServersServerIDConsoleoutputParams) {
-	result, err := h.serverClient().ConsoleOutputV2(r.Context(), serverID, params)
+	result, err := h.serverV2Client().ConsoleOutputV2(r.Context(), serverID, params)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -162,7 +169,7 @@ func (h *ServerV2Handler) GetApiV2ServersServerIDConsoleoutput(w http.ResponseWr
 }
 
 func (h *ServerV2Handler) GetApiV2ServersServerIDConsolesessions(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
-	result, err := h.serverClient().ConsoleSessionV2(r.Context(), serverID)
+	result, err := h.serverV2Client().ConsoleSessionV2(r.Context(), serverID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -172,7 +179,7 @@ func (h *ServerV2Handler) GetApiV2ServersServerIDConsolesessions(w http.Response
 }
 
 func (h *ServerV2Handler) PostApiV2ServersServerIDSnapshot(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
-	c := h.serverClient()
+	c := h.serverV2Client()
 
 	img, err := c.CreateV2Snapshot(r.Context(), serverID, nil)
 	if err != nil {
