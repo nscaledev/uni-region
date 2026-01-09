@@ -99,6 +99,21 @@ func convertPackages(in *types.ImagePackages) *openapi.SoftwareVersions {
 	return &out
 }
 
+func convertState(in types.ImageStatus) openapi.ImageState {
+	switch in {
+	case types.ImageStatusPending:
+		return openapi.ImageStatePending
+	case types.ImageStatusCreating:
+		return openapi.ImageStateCreating
+	case types.ImageStatusReady:
+		return openapi.ImageStateReady
+	case types.ImageStatusFailed:
+		return openapi.ImageStateFailed
+	}
+
+	return ""
+}
+
 func convertImage(in *types.Image) *openapi.Image {
 	out := &openapi.Image{
 		Metadata: coreapi.StaticResourceMetadata{
@@ -119,6 +134,9 @@ func convertImage(in *types.Image) *openapi.Image {
 				Version:  in.OS.Version,
 			},
 			SoftwareVersions: convertPackages(in.Packages),
+		},
+		Status: openapi.ImageStatus{
+			State: convertState(in.Status),
 		},
 	}
 

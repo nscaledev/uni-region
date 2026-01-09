@@ -29,6 +29,14 @@ const (
 	ImageDiskFormatRaw   ImageDiskFormat = "raw"
 )
 
+// Defines values for ImageState.
+const (
+	ImageStateCreating ImageState = "creating"
+	ImageStateFailed   ImageState = "failed"
+	ImageStatePending  ImageState = "pending"
+	ImageStateReady    ImageState = "ready"
+)
+
 // Defines values for ImageVirtualization.
 const (
 	ImageVirtualizationAny         ImageVirtualization = "any"
@@ -264,6 +272,9 @@ type Image struct {
 
 	// Spec An image.
 	Spec ImageSpec `json:"spec"`
+
+	// Status The image's status.
+	Status ImageStatus `json:"status"`
 }
 
 // ImageCreate A compute image create request.
@@ -354,6 +365,15 @@ type ImageSpec struct {
 
 	// Virtualization What type of machine the image is for.
 	Virtualization ImageVirtualization `json:"virtualization"`
+}
+
+// ImageState The images's lifecycle state.
+type ImageState string
+
+// ImageStatus The image's status.
+type ImageStatus struct {
+	// State The images's lifecycle state.
+	State ImageState `json:"state"`
 }
 
 // ImageVirtualization What type of machine the image is for.
