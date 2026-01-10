@@ -181,7 +181,13 @@ func (h *ServerV2Handler) GetApiV2ServersServerIDConsolesessions(w http.Response
 func (h *ServerV2Handler) PostApiV2ServersServerIDSnapshot(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	c := h.serverV2Client()
 
-	img, err := c.CreateV2Snapshot(r.Context(), serverID, nil)
+	var req openapi.SnapshotCreate
+	if err := util.ReadJSONBody(r, &req); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	img, err := c.CreateV2Snapshot(r.Context(), serverID, &req)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return

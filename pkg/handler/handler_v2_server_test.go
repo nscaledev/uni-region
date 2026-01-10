@@ -19,15 +19,18 @@ limitations under the License.
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/unikorn-cloud/core/pkg/constants"
 	identityv1 "github.com/unikorn-cloud/identity/pkg/apis/unikorn/v1alpha1"
@@ -35,9 +38,11 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	regionconstants "github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler/server"
+	"github.com/unikorn-cloud/region/pkg/handler/server/mock"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -93,19 +98,48 @@ func (b *aclBuilder) buildContext(ctx context.Context) context.Context {
 	})
 }
 
-func newServer(t *testing.T, name, namespace, orgID, projectID string) *regionv1.Server {
+type labels map[string]string
+
+func withMeta[T client.Object](obj T, name, homeNamespace string, labels map[string]string) T {
+	obj.SetName(name)
+	obj.SetNamespace(homeNamespace)
+	obj.SetLabels(labels)
+
+	return obj
+}
+
+func newServer(t *testing.T, name, namespace string, metalabels labels) *regionv1.Server {
 	t.Helper()
 
-	return &regionv1.Server{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			Labels: map[string]string{
-				constants.OrganizationLabel:             orgID,
-				constants.ProjectLabel:                  projectID,
-				regionconstants.ResourceAPIVersionLabel: "2", // necessary for GetRawV2 to "find" this object
+	return withMeta(&regionv1.Server{
+		Spec: regionv1.ServerSpec{
+			Image: &regionv1.ServerImage{
+				ID: "image1",
 			},
 		},
+	}, name, namespace, metalabels)
+}
+
+func projectScopedLabels(orgID, projectID string, extra labels) labels {
+	initial := labels{
+		constants.OrganizationLabel: orgID,
+		constants.ProjectLabel:      projectID,
+	}
+
+	maps.Copy(initial, extra)
+
+	return initial
+}
+
+func knownGoodFixture(t *testing.T, serverName, homeNamespace, orgID string) []client.Object {
+	t.Helper()
+
+	return []client.Object{
+		withMeta(&regionv1.Identity{}, "id1", homeNamespace, projectScopedLabels(orgID, "project1", labels{})),
+		newServer(t, serverName, homeNamespace, projectScopedLabels(orgID, "project1", labels{
+			regionconstants.IdentityLabel:           "id1",
+			regionconstants.ResourceAPIVersionLabel: "2",
+		})),
 	}
 }
 
@@ -153,7 +187,7 @@ func TestServerV2_NotAllowedList(t *testing.T) {
 
 	namespace := "region-test-home"
 
-	c := fakeClientWithSchema(t, newServer(t, "server1", namespace, "org-not-allowed-test", ""))
+	c := fakeClientWithSchema(t, knownGoodFixture(t, "server1", namespace, "org-not-allowed-test")...)
 	handler := NewServerV2Handler(c, namespace)
 
 	ctx := newOrganisationACLBuilder("org1").
@@ -169,14 +203,38 @@ func TestServerV2_NotAllowedList(t *testing.T) {
 	assertBodyIsEmptyServerList(t, response.Result().Body)
 }
 
+func newSnapshotRequest(ctx context.Context) *http.Request {
+	requestBody := bytes.NewBufferString(`
+	{
+	  "metadata": {"name": "foobar"}
+	}`)
+
+	return httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/servers", requestBody)
+}
+
+func providerGetter(provider *mock.MockProvider) server.GetProviderFunc {
+	return func(_ context.Context, _ client.Client, _, _ string) (server.Provider, error) {
+		return provider, nil
+	}
+}
+
 func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 	t.Parallel()
 
-	namespace := "region-test-home"
-	orgID := "org1"
+	const (
+		namespace  = "region-test-home"
+		orgID      = "org-not-allowed-permissions"
+		serverName = "server1"
+	)
 
-	c := fakeClientWithSchema(t, newServer(t, "server1", namespace, "org1", ""))
+	c := fakeClientWithSchema(t, knownGoodFixture(t, serverName, namespace, orgID)...)
 	handler := NewServerV2Handler(c, namespace)
+
+	// We can't guarantee the order things are done in the handler, and in particular, the region provider
+	// may be requested before permissions are checked. So, make sure there is a provider, though we don't
+	// expect it to be called.
+	provider := mock.NewTestMockProvider(t)
+	handler.getProvider = providerGetter(provider)
 
 	testcases := []struct {
 		name    string
@@ -207,9 +265,9 @@ func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 			ctx := tc.makeCtx(t.Context())
 
 			response := httptest.NewRecorder()
-			request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/servers", nil)
+			request := newSnapshotRequest(ctx)
 
-			handler.PostApiV2ServersServerIDSnapshot(response, request, "server1")
+			handler.PostApiV2ServersServerIDSnapshot(response, request, serverName)
 
 			require.Equal(t, http.StatusForbidden, response.Result().StatusCode)
 		})
@@ -219,12 +277,39 @@ func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 	t.Parallel()
 
-	namespace := "region-test-home"
-	orgID := "org1"
-	projectID := "project1"
+	const (
+		namespace  = "region-test-home"
+		orgID      = "org-happy-path"
+		serverName = "server1"
+	)
 
-	c := fakeClientWithSchema(t, newServer(t, "server1", namespace, orgID, projectID))
+	original := &types.Image{
+		ID: "image1", // to match the server's image ID
+	}
+	snapshot := &types.Image{
+		Name: "foobar",
+		ID:   "snapshot1", // to match the server's image ID
+	}
+
+	c := fakeClientWithSchema(t, knownGoodFixture(t, serverName, namespace, orgID)...)
+
+	provider := mock.NewTestMockProvider(t)
+	// on the first ask, expect to be asked for the "original" image (that the server is using)
+	provider.EXPECT().GetImage(gomock.Any(), orgID, "image1").
+		Return(original, nil)
+	// on the second call, we expect to be asked for the snapshot image
+	provider.EXPECT().GetImage(gomock.Any(), orgID, "snapshot1").
+		Return(snapshot, nil)
+
+	provider.EXPECT().CreateImageFromServer(
+		gomock.Any(),
+		gomock.AssignableToTypeOf(&regionv1.Identity{}),
+		gomock.AssignableToTypeOf(&regionv1.Server{}),
+		gomock.AssignableToTypeOf(&types.Image{})).
+		Return("snapshot1", nil)
+
 	handler := NewServerV2Handler(c, namespace)
+	handler.getProvider = providerGetter(provider)
 
 	ctx := newOrganisationACLBuilder(orgID).
 		addEndpoint("region:images", identityapi.Create).
@@ -232,10 +317,16 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 		buildContext(t.Context())
 
 	response := httptest.NewRecorder()
-	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/servers", nil)
+	request := newSnapshotRequest(ctx)
 
-	handler.PostApiV2ServersServerIDSnapshot(response, request, "server1")
+	handler.PostApiV2ServersServerIDSnapshot(response, request, serverName)
 
-	// fixme: this is just testing that it hits the stub, for the minute
-	require.Equal(t, http.StatusUnprocessableEntity, response.Result().StatusCode)
+	require.Equal(t, http.StatusCreated, response.Result().StatusCode)
+
+	// check that it got the name we asked and the ID we were told
+	var read openapi.Image
+
+	requireDeserialiseBody(t, response.Result().Body, &read)
+	require.Equal(t, "foobar", read.Metadata.Name)
+	require.Equal(t, "snapshot1", read.Metadata.Id)
 }

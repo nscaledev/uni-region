@@ -51,7 +51,7 @@ import (
 )
 
 // serverProvider gloms together the operations needed to provision servers.
-type serverProvider interface {
+type Provider interface {
 	types.Server
 	types.ServerConsole
 	types.ServerSnapshot
@@ -61,10 +61,10 @@ type serverProvider interface {
 }
 
 // GetProviderFunc is the type of funcs supplied to the client, so it can obtain a provider (e.g., OpenStack client).
-type GetProviderFunc func(context.Context, client.Client, string, string) (serverProvider, error)
+type GetProviderFunc func(context.Context, client.Client, string, string) (Provider, error)
 
 // DefaultGetProvider is the "business as usual" GetProviderFunc, which constructs a real provider (rather than, e.g., a mock object).
-func DefaultGetProvider(ctx context.Context, c client.Client, namespace, regionID string) (serverProvider, error) {
+func DefaultGetProvider(ctx context.Context, c client.Client, namespace, regionID string) (Provider, error) {
 	return providers.New(ctx, c, namespace, regionID)
 }
 
@@ -80,7 +80,7 @@ func NewClientV2(client client.Client, namespace string, getProvider GetProvider
 	}
 }
 
-func (c *ClientV2) getProvider(ctx context.Context, regionID string) (serverProvider, error) {
+func (c *ClientV2) getProvider(ctx context.Context, regionID string) (Provider, error) {
 	return c.getProviderFunc(ctx, c.client, c.namespace, regionID)
 }
 
@@ -491,7 +491,7 @@ func (c *ClientV2) DeleteV2(ctx context.Context, serverID string) error {
 	return nil
 }
 
-func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, serverProvider, error) {
+func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, Provider, error) {
 	server, err := c.GetV2Raw(ctx, serverID)
 	if err != nil {
 		return nil, nil, nil, err

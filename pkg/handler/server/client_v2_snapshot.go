@@ -18,11 +18,12 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
+	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/image"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -35,9 +36,18 @@ func (c *ClientV2) CreateV2Snapshot(ctx context.Context, serverID string, reques
 		return nil, err
 	}
 
+	organizationID := server.Labels[constants.OrganizationLabel]
+
+	// You need region:servers/read to get the server in the first place, then
+	// region:images/create to make the image. The first of those is implicitly
+	// checked when the server is fetched.
+	if err := rbac.AllowOrganizationScope(ctx, "region:images", identityapi.Create, organizationID); err != nil {
+		return nil, err
+	}
+
 	snapshot := snapshotState{
 		request:        request,
-		organizationID: server.Labels[constants.OrganizationLabel],
+		organizationID: organizationID,
 		client:         c,
 		server:         server,
 		identity:       id,
@@ -62,7 +72,7 @@ type snapshotState struct {
 	client *ClientV2
 
 	// state: the provider for the region in which the server lives
-	provider serverProvider
+	provider Provider
 	// state: identity for provider operations
 	identity *regionv1.Identity
 	// state: the image used by the server
@@ -96,33 +106,23 @@ func (s *snapshotState) fetchServerImage(ctx context.Context) error {
 	}
 
 	s.originalImage = image
+
 	return nil
 }
 
-func (s *snapshotState) generateSnapshotImage() (*types.Image, error) {
-	// I don't want to mutate a record that's cached and used elsewhere.
-	// TODO this is pretty quick and dirty; the provider only really cares about the name and metadata anyway.
-	bytes, err := json.Marshal(s.originalImage)
-	if err != nil {
-		return nil, err
-	}
-
-	var generated types.Image
-	if err := json.Unmarshal(bytes, &generated); err != nil {
-		return nil, err
-	}
+func (s *snapshotState) generateSnapshotImage() *types.Image {
+	// I don't want to mutate a record that's cached and used elsewhere. So: copy the
+	// struct, and don't assign into any sub-fields.
+	generated := *s.originalImage
 
 	generated.Name = s.request.Metadata.Name
 	generated.OrganizationID = &s.organizationID
 
-	return &generated, nil
+	return &generated
 }
 
 func (s *snapshotState) requestSnapshot(ctx context.Context) error {
-	snapshotImage, err := s.generateSnapshotImage()
-	if err != nil {
-		return err
-	}
+	snapshotImage := s.generateSnapshotImage()
 
 	snapshotID, err := s.provider.CreateImageFromServer(ctx, s.identity, s.server, snapshotImage)
 	if err != nil {
@@ -138,6 +138,7 @@ func (s *snapshotState) deleteSnapshot(ctx context.Context) error {
 	if s.snapshotID != "" {
 		return s.provider.DeleteImage(ctx, s.snapshotID)
 	}
+
 	return nil
 }
 
