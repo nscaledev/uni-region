@@ -172,11 +172,12 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 		}
 
 		flavor := types.Flavor{
-			ID:     node.ID,
-			Name:   node.Name,
-			CPUs:   *node.CPU.Count,
-			Memory: node.Memory,
-			Disk:   node.Disk,
+			ID:           node.ID,
+			Name:         node.Name,
+			CPUs:         *node.CPU.Count,
+			Memory:       node.Memory,
+			Disk:         node.Disk,
+			Architecture: types.X86_64,
 		}
 
 		if node.GPU != nil {
