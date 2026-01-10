@@ -1732,19 +1732,12 @@ components:
       description: A compute image specification.
       type: object
       required:
-      - sourceURL
+      - uri
       - virtualization
       - os
       - architecture
       properties:
-        sourceFormat:
-          description: The disk format of the image. If not provided, the value defaults to `raw`.
-          type: string
-          enum:
-          - raw
-          - qcow2
-          x-go-type-name: ImageDiskFormat
-        sourceURL:
+        uri:
           description: |
             A URL to upload the image from.
           type: string
@@ -2829,7 +2822,7 @@ components:
             metadata:
               name: ubu2204-v1.25.6-gpu-525.85.05-7ced4154
             spec:
-              sourceURL: https://example.com/buckets/myimages/ubu2204-v1.25.6-gpu-525.85.05-7ced4154.raw
+              uri: https://example.com/buckets/myimages/ubu2204-v1.25.6-gpu-525.85.05-7ced4154.raw
               architecture: x86_64
               virtualization: virtualized
               os:
