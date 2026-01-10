@@ -43,3 +43,11 @@ jobs:
       with:
         name: api-test-junit
         path: test/api/junit.xml
+
+    - name: Send Slack Notification
+      if: always()
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      run: |
+        WORKFLOW_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        go run test/api/scripts/slack-notify.go test/api/suites/test-results.json "$WORKFLOW_URL"
