@@ -23,12 +23,6 @@ const (
 	GpuVendorNVIDIA GpuVendor = "NVIDIA"
 )
 
-// Defines values for ImageDiskFormat.
-const (
-	ImageDiskFormatQcow2 ImageDiskFormat = "qcow2"
-	ImageDiskFormatRaw   ImageDiskFormat = "raw"
-)
-
 // Defines values for ImageState.
 const (
 	ImageStateCreating ImageState = "creating"
@@ -300,18 +294,12 @@ type ImageCreateSpec struct {
 	// SoftwareVersions Image preinstalled version version metadata.
 	SoftwareVersions *SoftwareVersions `json:"softwareVersions,omitempty"`
 
-	// SourceFormat The disk format of the image. If not provided, the value defaults to `raw`.
-	SourceFormat *ImageDiskFormat `json:"sourceFormat,omitempty"`
-
-	// SourceURL A URL to upload the image from.
-	SourceURL string `json:"sourceURL"`
+	// Uri A URL to upload the image from.
+	Uri string `json:"uri"`
 
 	// Virtualization What type of machine the image is for.
 	Virtualization ImageVirtualization `json:"virtualization"`
 }
-
-// ImageDiskFormat The disk format of the image. If not provided, the value defaults to `raw`.
-type ImageDiskFormat string
 
 // ImageGpu The GPU driver if installed.
 type ImageGpu struct {
