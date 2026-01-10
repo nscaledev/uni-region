@@ -21,7 +21,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -565,34 +564,12 @@ func getPublicOrOrganizationOwnedImages(resources []images.Image, organizationID
 	return result
 }
 
-func (p *Provider) imageDiskFormat(image *images.Image) types.ImageDiskFormat {
-	return types.ImageDiskFormat(image.DiskFormat)
-}
-
-func (p *Provider) imageDataSource(image *images.Image) types.ImageDataSource {
-	if ds, ok := image.Properties[dataSourceLabel].(string); ok {
-		dataSource := types.ImageDataSource(ds)
-
-		if dataSource == types.ImageDataSourceFile || dataSource == types.ImageDataSourceURL {
-			return dataSource
-		}
-	}
-
-	// Images from before we started labeling won't have this label, so give them a reasonable default (`"file"` means uploaded).
-	// FIXME: less reasonably, this will also apply to values we didn't recognise, or which couldn't be cast to `string`.
-	return types.ImageDataSourceFile
-}
-
-func (p *Provider) imageStatus(image *images.Image, dataSource types.ImageDataSource) types.ImageStatus {
+func (p *Provider) imageStatus(image *images.Image) types.ImageStatus {
 	var status types.ImageStatus
 
 	switch image.Status {
 	case images.ImageStatusQueued:
-		if dataSource == types.ImageDataSourceFile {
-			status = types.ImageStatusPending
-		} else {
-			status = types.ImageStatusCreating
-		}
+		status = types.ImageStatusPending
 	case images.ImageStatusSaving:
 		status = types.ImageStatusCreating
 	case images.ImageStatusActive:
@@ -630,8 +607,6 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 
 	virtualization, _ := image.Properties[virtualizationLabel].(string)
 
-	dataSource := p.imageDataSource(image)
-
 	providerImage := types.Image{
 		ID:             image.ID,
 		Name:           image.Name,
@@ -643,9 +618,7 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 		Virtualization: types.ImageVirtualization(virtualization),
 		OS:             p.imageOS(image),
 		Packages:       p.imagePackages(image),
-		DiskFormat:     p.imageDiskFormat(image),
-		DataSource:     dataSource,
-		Status:         p.imageStatus(image, dataSource),
+		Status:         p.imageStatus(image),
 	}
 
 	if gpuVendor, ok := image.Properties[gpuVendorLabel].(string); ok {
@@ -814,7 +787,6 @@ func (p *Provider) createImageMetadata(image *types.Image) (map[string]string, e
 	metadata[imageArchitectureProperty] = string(image.Architecture)
 	metadata[virtualizationLabel] = string(image.Virtualization)
 	setIfNotNil(metadata, organizationIDLabel, image.OrganizationID)
-	metadata[dataSourceLabel] = string(image.DataSource)
 
 	metadata["hw_disk_bus"] = "scsi"
 	metadata["hw_firmware_type"] = "uefi"
@@ -831,8 +803,8 @@ func (p *Provider) createImageMetadata(image *types.Image) (map[string]string, e
 	return metadata, nil
 }
 
-// CreateImageForUpload creates a new image resource for upload.
-func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
+// CreateImage creates a new image.
+func (p *Provider) CreateImage(ctx context.Context, image *types.Image, uri string) (*types.Image, error) {
 	imageService, err := p.image(ctx)
 	if err != nil {
 		return nil, err
@@ -847,7 +819,7 @@ func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image)
 		Name:            image.Name,
 		Visibility:      ptr.To(images.ImageVisibilityPublic),
 		ContainerFormat: containerFormatBare,
-		DiskFormat:      string(image.DiskFormat),
+		DiskFormat:      "raw",
 		Properties:      properties,
 	}
 
@@ -856,31 +828,13 @@ func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image)
 		return nil, err
 	}
 
+	if err := imageService.Import(ctx, resource.ID, uri); err != nil {
+		return nil, err
+	}
+
 	p.imageCache.Invalidate()
 
 	return p.convertImage(resource)
-}
-
-// UploadImageData uploads file data for an image.
-func (p *Provider) UploadImageData(ctx context.Context, imageID string, reader io.Reader) error {
-	imageService, err := p.image(ctx)
-	if err != nil {
-		return err
-	}
-
-	if err = imageService.UploadImageData(ctx, imageID, reader); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return fmt.Errorf("image %w", coreerrors.ErrResourceNotFound)
-		}
-
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			return types.ErrImageNotReadyForUpload
-		}
-
-		return err
-	}
-
-	return nil
 }
 
 func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {

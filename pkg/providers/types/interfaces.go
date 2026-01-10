@@ -19,7 +19,6 @@ package types
 
 import (
 	"context"
-	"io"
 
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 )
@@ -33,9 +32,7 @@ type ImageRead interface {
 
 type ImageWrite interface {
 	// CreateImageForUpload creates a new image resource for upload.
-	CreateImageForUpload(ctx context.Context, image *Image) (*Image, error)
-	// UploadImageData uploads data to an image.
-	UploadImageData(ctx context.Context, imageID string, reader io.Reader) error
+	CreateImage(ctx context.Context, image *Image, uri string) (*Image, error)
 	// DeleteImage deletes an image.
 	DeleteImage(ctx context.Context, imageID string) error
 }
