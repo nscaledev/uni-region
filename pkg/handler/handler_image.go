@@ -32,16 +32,17 @@ import (
 )
 
 type ImageHandler struct {
-	client      client.Client
-	namespace   string
+	clientArgs
 	options     *Options
 	getProvider image.GetProviderFunc
 }
 
 func NewImageHandler(client client.Client, namespace string, options *Options) *ImageHandler {
 	return &ImageHandler{
-		client:      client,
-		namespace:   namespace,
+		clientArgs: clientArgs{
+			client:    client,
+			namespace: namespace,
+		},
 		options:     options,
 		getProvider: image.DefaultGetProvider,
 	}

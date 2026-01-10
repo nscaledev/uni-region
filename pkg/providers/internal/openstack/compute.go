@@ -20,6 +20,7 @@ package openstack
 
 import (
 	"context"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -368,4 +369,40 @@ func (c *ComputeClient) ShowConsoleOutput(ctx context.Context, id string, length
 	}
 
 	return servers.ShowConsoleOutput(ctx, c.client, id, opts).Extract()
+}
+
+func (c *ComputeClient) CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error) {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", id),
+	)
+
+	ctx, span := traceStart(ctx, "POST /compute/v2/servers/{server_id}/action (create image)", spanAttributes)
+	defer span.End()
+
+	return c.createImageFromServer(ctx, id, opts)
+}
+
+func (c *ComputeClient) createImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error) {
+	url := c.client.ServiceURL("servers", id, "action")
+
+	body, err := opts.ToServerCreateImageMap()
+	if err != nil {
+		return "", err
+	}
+
+	//nolint:tagliatelle
+	var data struct {
+		ImageID string `json:"image_id"`
+	}
+
+	requestOpts := &gophercloud.RequestOpts{
+		OkCodes: []int{http.StatusAccepted},
+	}
+
+	//nolint:bodyclose
+	if _, err := c.client.Post(ctx, url, body, &data, requestOpts); err != nil {
+		return "", err
+	}
+
+	return data.ImageID, nil
 }
