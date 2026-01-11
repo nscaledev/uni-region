@@ -692,7 +692,6 @@ func TestGet(t *testing.T) {
 
 			// There is 512MiB used, but since it rounds to GiB, we get 0
 			require.Equal(t, int64(0), *result.Status.Usage.UsedGiB, "UsedGiB")
-			require.Equal(t, int64(0), *result.Status.Usage.FreeGiB, "FreeGiB")
 		})
 	}
 }

@@ -1018,9 +1018,6 @@ type StorageUsageV2Status struct {
 	// CapacityGiB total space allotted
 	CapacityGiB int64 `json:"capacityGiB"`
 
-	// FreeGiB amount of storage space free to use
-	FreeGiB *int64 `json:"freeGiB,omitempty"`
-
 	// UsedGiB amount of storage space used
 	UsedGiB *int64 `json:"usedGiB,omitempty"`
 }

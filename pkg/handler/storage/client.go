@@ -193,13 +193,7 @@ func (c *Client) updateWithSize(ctx context.Context, in *openapi.StorageV2Read, 
 		}
 
 		if fsdetails.UsedCapacity != nil {
-			var free resource.Quantity
-
-			free.Add(*fsdetails.Size)
-			free.Sub(*fsdetails.UsedCapacity)
-
 			in.Status.Usage.UsedGiB = ptr.To(quantityToSizeGiB(*fsdetails.UsedCapacity))
-			in.Status.Usage.FreeGiB = ptr.To(quantityToSizeGiB(free))
 		}
 	}
 

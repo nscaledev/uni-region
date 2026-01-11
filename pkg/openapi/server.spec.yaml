@@ -2693,10 +2693,6 @@ components:
               description: amount of storage space used
               type: integer
               format: int64
-            freeGiB:
-              description: amount of storage space free to use
-              type: integer
-              format: int64
     storageV2Create:
       description: A storage create request.
       type: object
@@ -3662,7 +3658,6 @@ components:
               usage:
                   capacityGiB: 100
                   usedGiB: 88
-                  freeGiB: 12
               attachments:
                 - networkId: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
                   mountSource: 10.0.0.16:/mnt/nfs
@@ -3700,7 +3695,6 @@ components:
               usage:
                   capacityGiB: 100
                   usedGiB: 88
-                  freeGiB: 12
               attachments:
                 - networkId: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
                   mountSource: 10.0.0.16:/mnt/nfs
