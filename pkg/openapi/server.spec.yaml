@@ -1256,6 +1256,32 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/servers/{serverID}/snapshot:
+    description: |-
+      Snapshot a server to create a compute image.
+    parameters:
+    - $ref: '#/components/parameters/serverIDParameter'
+    post:
+      x-hidden: true
+      description: Snapshot a server to create an image.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/snapshotServerRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/imageResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+
   /api/v2/filestorage:
     description: |-
       Manages project scoped storage. Returns a list of all storage, regardless of type. 
@@ -1762,6 +1788,25 @@ components:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/imageCreateSpec'
+
+    snapshotCreateSpec:
+      description: A compute image snapshot specification.
+      type: object
+       # NB in general, we take the spec from the original image; but we may want to include overrides
+       # for the snapshot image, later, so that people can e.g., install a GPU driver and mention it here.
+      properties: {}
+    snapshotCreate:
+      description: A compute image create request.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/snapshotCreateSpec'
+
     gpuSpec:
       description: GPU specification.
       type: object
@@ -3031,6 +3076,17 @@ components:
                 allowedSourceAddresses:
                 - 192.168.192.0/24
               userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
+
+    snapshotServerRequest:
+      description: A request to create an image by snapshoting a server.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/snapshotCreate'
+          example:
+            metadata:
+              name: ubu2204-v1.25.6-gpu-525.85.05-7ced4154
+            spec: {}
     storageV2CreateRequest:
       description: A request for storage.
       content:
