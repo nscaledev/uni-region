@@ -28,12 +28,11 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
 	"slices"
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack"
-	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/imagedata"
+	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/imageimport"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/kaptinlin/jsonschema"
 	"go.opentelemetry.io/otel/attribute"
@@ -186,17 +185,6 @@ func (c *ImageClient) CreateImage(ctx context.Context, opts *images.CreateOpts) 
 	return images.Create(ctx, c.client, opts).Extract()
 }
 
-func (c *ImageClient) UploadImageData(ctx context.Context, id string, reader io.Reader) error {
-	spanAttributes := trace.WithAttributes(
-		attribute.String("image.image.id", id),
-	)
-
-	_, span := traceStart(ctx, "PUT /image/v2/images/{id}/file", spanAttributes)
-	defer span.End()
-
-	return imagedata.Upload(ctx, c.client, id, reader).ExtractErr()
-}
-
 func (c *ImageClient) UpdateImage(ctx context.Context, id string, opts images.UpdateOpts) (*images.Image, error) {
 	spanAttributes := trace.WithAttributes(
 		attribute.String("image.image.id", id),
@@ -270,6 +258,23 @@ func (c *ImageClient) GetImage(ctx context.Context, id string) (*images.Image, e
 	}
 
 	return result, nil
+}
+
+func (c *ImageClient) Import(ctx context.Context, id, uri string) error {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("image.image.id", id),
+		attribute.String("image.image.uri", uri),
+	)
+
+	_, span := traceStart(ctx, "POST /image/v2/images/{id}/import", spanAttributes)
+	defer span.End()
+
+	opts := &imageimport.CreateOpts{
+		Name: imageimport.WebDownloadMethod,
+		URI:  uri,
+	}
+
+	return imageimport.Create(ctx, c.client, id, opts).ExtractErr()
 }
 
 func (c *ImageClient) DeleteImage(ctx context.Context, id string) error {

@@ -36,6 +36,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
 
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -112,6 +113,10 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
+	// updates this field with the current value of .metadata.generation once it has successfully observed and
+	// reconciled the corresponding changes to the resource.
+	p.fileStorage.Status.ObservedGeneration = ptr.To(p.fileStorage.GetGeneration())
+
 	return nil
 }
 
@@ -165,9 +170,7 @@ func (p *Provisioner) identityClient(ctx context.Context) (identityapi.ClientWit
 		return nil, err
 	}
 
-	issuer := identityclient.NewTokenIssuer(client, p.options.identityOptions, &p.options.clientOptions, constants.ServiceDescriptor())
-
-	return identityclient.New(client, p.options.identityOptions, &p.options.clientOptions).ControllerClient(ctx, issuer, p.fileStorage)
+	return identityclient.New(client, p.options.identityOptions, &p.options.clientOptions).ControllerClient(ctx, p.fileStorage)
 }
 
 func (p *Provisioner) getFileStorageDriver(ctx context.Context, cli client.Client) (types.Driver, error) {

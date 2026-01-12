@@ -35,9 +35,11 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
 	networkclient "github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
+	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -63,6 +65,11 @@ var (
 		Start: v1alpha1.IPv4Address{IP: net.IP{192, 168, 0, 1}},
 		End:   v1alpha1.IPv4Address{IP: net.IP{192, 168, 0, 4}},
 	}
+)
+
+const (
+	giB = int64(1024 * 1024 * 1024)
+	miB = int64(1024 * 1024)
 )
 
 func newTestNetwork(name string) *regionv1.Network {
@@ -131,7 +138,7 @@ func TestGenerateAttachmentList(t *testing.T) {
 		{
 			name: "test with limited values",
 			input: &openapi.StorageAttachmentV2Spec{
-				NetworkIDs: openapi.NetworkIDList{"net-1"},
+				NetworkIds: openapi.NetworkIDList{"net-1"},
 			},
 			want: []regionv1.Attachment{
 				{
@@ -144,6 +151,11 @@ func TestGenerateAttachmentList(t *testing.T) {
 		{
 			name:  "empty",
 			input: &openapi.StorageAttachmentV2Spec{},
+			want:  []regionv1.Attachment{},
+		},
+		{
+			name:  "nil",
+			input: nil,
 			want:  []regionv1.Attachment{},
 		},
 	}
@@ -208,7 +220,7 @@ func TestConvertV2List(t *testing.T) {
 					Spec: openapi.StorageV2Spec{
 						SizeGiB: 0,
 						Attachments: &openapi.StorageAttachmentV2Spec{
-							NetworkIDs: []string{},
+							NetworkIds: []string{},
 						},
 						StorageType: openapi.StorageTypeV2Spec{
 							NFS: &openapi.NFSV2Spec{
@@ -221,11 +233,6 @@ func TestConvertV2List(t *testing.T) {
 						Attachments:    nil,
 						RegionId:       "",
 						StorageClassId: "",
-						Usage: openapi.StorageUsageV2Spec{
-							Capacity: "",
-							Free:     nil,
-							Used:     nil,
-						},
 					},
 				},
 			},
@@ -284,7 +291,7 @@ func TestConvertV2List(t *testing.T) {
 					Spec: openapi.StorageV2Spec{
 						SizeGiB: 100,
 						Attachments: &openapi.StorageAttachmentV2Spec{
-							NetworkIDs: []string{"net-1"},
+							NetworkIds: []string{"net-1"},
 						},
 						StorageType: openapi.StorageTypeV2Spec{
 							NFS: &openapi.NFSV2Spec{
@@ -294,14 +301,9 @@ func TestConvertV2List(t *testing.T) {
 					},
 
 					Status: openapi.StorageV2Status{
-						Attachments:    &openapi.StorageAttachmentListV2Status{{NetworkId: "net-1", MountSource: ptr.To("192.168.0.1:/export")}},
+						Attachments:    &openapi.StorageAttachmentListV2Status{{NetworkId: "net-1", MountSource: ptr.To("192.168.0.1:/export"), ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown}},
 						RegionId:       "",
 						StorageClassId: "",
-						Usage: openapi.StorageUsageV2Spec{
-							Capacity: "",
-							Free:     nil,
-							Used:     nil,
-						},
 					},
 				},
 			},
@@ -357,7 +359,7 @@ func TestConvertV2(t *testing.T) {
 				Spec: openapi.StorageV2Spec{
 					SizeGiB: 2,
 					Attachments: &openapi.StorageAttachmentV2Spec{
-						NetworkIDs: []string{},
+						NetworkIds: []string{},
 					},
 					StorageType: openapi.StorageTypeV2Spec{
 						NFS: &openapi.NFSV2Spec{
@@ -365,9 +367,7 @@ func TestConvertV2(t *testing.T) {
 						},
 					},
 				},
-				Status: openapi.StorageV2Status{
-					Usage: openapi.StorageUsageV2Spec{},
-				},
+				Status: openapi.StorageV2Status{},
 			},
 		},
 	}
@@ -421,7 +421,7 @@ func TestConvertV2SizeConversion(t *testing.T) {
 				Spec: openapi.StorageV2Spec{
 					SizeGiB: 2,
 					Attachments: &openapi.StorageAttachmentV2Spec{
-						NetworkIDs: []string{},
+						NetworkIds: []string{},
 					},
 					StorageType: openapi.StorageTypeV2Spec{
 						NFS: &openapi.NFSV2Spec{
@@ -429,9 +429,7 @@ func TestConvertV2SizeConversion(t *testing.T) {
 						},
 					},
 				},
-				Status: openapi.StorageV2Status{
-					Usage: openapi.StorageUsageV2Spec{},
-				},
+				Status: openapi.StorageV2Status{},
 			},
 		},
 	}
@@ -591,7 +589,7 @@ func TestGenerateV2(t *testing.T) {
 					},
 				},
 				Spec: regionv1.FileStorageSpec{
-					Size:           *resource.NewQuantity(int64(10737418240), resource.BinarySI),
+					Size:           *resource.NewQuantity(10*giB, resource.BinarySI),
 					StorageClassID: "sc-1",
 					Attachments: []regionv1.Attachment{
 						{
@@ -623,6 +621,85 @@ func TestGenerateV2(t *testing.T) {
 			got.Name = ""
 
 			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestGet(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    regionv1.FileStorage
+		expected *openapi.StorageV2Read
+	}{
+		{
+			name: "passing conditions",
+			input: regionv1.FileStorage{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+					Name:      "fs-1",
+					Labels: map[string]string{
+						constants.RegionLabel:                    "reg-1",
+						coreconstants.NameLabel:                  "test-filestorage",
+						coreconstants.OrganizationLabel:          "org-1",
+						coreconstants.ProjectLabel:               "proj-1",
+						coreconstants.OrganizationPrincipalLabel: "org-1",
+						coreconstants.ProjectPrincipalLabel:      "proj-1",
+					},
+					Annotations: map[string]string{
+						coreconstants.CreatorAnnotation:          "user-1",
+						coreconstants.CreatorPrincipalAnnotation: "actor@example.com",
+					},
+				},
+				Spec: regionv1.FileStorageSpec{
+					Size:           *resource.NewQuantity(1*giB, resource.BinarySI),
+					StorageClassID: "sc-1",
+					Attachments: []regionv1.Attachment{
+						{NetworkID: "net-1"},
+					},
+					NFS: &regionv1.NFS{
+						RootSquash: true,
+					},
+				},
+			},
+			expected: &openapi.StorageV2Read{
+				Metadata: corev1.ProjectScopedResourceReadMetadata{
+					ProjectId: "proj-1",
+				},
+				Status: openapi.StorageV2Status{
+					StorageClassId: "sc-1",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+
+			obj := defaultFSK8sObjects()
+
+			obj = append(obj, &tt.input)
+
+			c, ctx := newClientwithObjectandContext(t, ctx, obj...)
+			fc := &fileClient{
+				Client: c.client,
+			}
+
+			c.GetFileStorageDriverFunc = func(ctx context.Context, storageClassID string) (Driver, error) {
+				return fc, nil
+			}
+			result, err := c.Get(ctx, tt.input.Name)
+			require.NoError(t, err)
+			require.NotNil(t, result, "result should not be empty")
+
+			// Check that usage matches with what is returned below in
+			// GetDetails()
+			require.Equal(t, 1*giB, result.Status.Usage.CapacityBytes, "Capacity")
+			require.Equal(t, 512*miB, *result.Status.Usage.UsedBytes, "Used")
 		})
 	}
 }
@@ -691,7 +768,7 @@ func newDefaultGenerateV2Input() *generateV2Input {
 			},
 			Spec: openapi.StorageV2Spec{
 				SizeGiB:     10,
-				Attachments: &openapi.StorageAttachmentV2Spec{NetworkIDs: openapi.NetworkIDList{"net-1"}},
+				Attachments: &openapi.StorageAttachmentV2Spec{NetworkIds: openapi.NetworkIDList{"net-1"}},
 			},
 		},
 	}
@@ -734,4 +811,86 @@ func newClientAndContext(t *testing.T, c client.Client, auth *identityauth.Info,
 	ctx = newContextWithPermissions(ctx)
 
 	return client, ctx
+}
+
+//nolint:revive
+func newClientwithObjectandContext(t *testing.T, ctx context.Context, initObjs ...client.Object) (*Client, context.Context) {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+
+	require.NoError(t, regionv1.AddToScheme(scheme))
+
+	// Add configmaps and secrets to the mock
+	require.NoError(t, metav1.AddMetaToScheme(scheme))
+	require.NoError(t, k8sv1.AddToScheme(scheme))
+
+	k8sClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(initObjs...).
+		Build()
+
+	c := &Client{
+		client:    k8sClient,
+		namespace: testNamespace,
+	}
+
+	oapiacl := &identityopenapi.Acl{Global: &identityopenapi.AclEndpoints{
+		identityopenapi.AclEndpoint{
+			Name: "region:filestorage:v2",
+			Operations: identityopenapi.AclOperations{
+				identityopenapi.Read, identityopenapi.Create,
+			},
+		},
+	},
+	}
+
+	ctx = identityauth.NewContext(ctx, &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}})
+	ctx = rbac.NewContext(ctx, oapiacl)
+	ctx = principal.NewContext(ctx, &principal.Principal{Actor: "actor@example.com"})
+
+	return c, ctx
+}
+
+// defaultFSK8sObjects creates a FileStorageProvisioner and FileStorageClass
+// k8s client objects.
+func defaultFSK8sObjects() []client.Object {
+	return []client.Object{
+		&regionv1.FileStorageProvisioner{
+			Spec: regionv1.FileStorageProvisionerSpec{
+				ConfigRef: &regionv1.NamespacedObject{
+					Name:      "sc-1",
+					Namespace: testNamespace,
+				},
+			},
+		},
+		&regionv1.FileStorageClass{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "FileStorageClass",
+				APIVersion: "v1alpha1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "sc-1",
+				Namespace: testNamespace,
+			},
+			Spec: regionv1.FileStorageClassSpec{},
+		},
+	}
+}
+
+// Mock file storage driver functionality.
+var _ Driver = &fileClient{}
+
+type fileClient struct {
+	Client client.Client
+}
+
+func (c *fileClient) GetDetails(ctx context.Context, projectID string,
+	fileStorageID string) (*types.FileStorageDetails, error) {
+	return &types.FileStorageDetails{
+		Size:              resource.NewQuantity(1*giB, resource.BinarySI),
+		Path:              "/filesystem",
+		RootSquashEnabled: true,
+		UsedCapacity:      resource.NewQuantity(512*miB, resource.BinarySI),
+	}, nil
 }

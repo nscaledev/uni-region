@@ -19,7 +19,6 @@ package image
 
 import (
 	"errors"
-	"fmt"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/handler/conversion"
@@ -28,6 +27,17 @@ import (
 )
 
 var ErrUnknownDiskFormat = errors.New("unknown image format")
+
+func convertArchitecture(in types.Architecture) openapi.Architecture {
+	switch in {
+	case types.X86_64:
+		return openapi.ArchitectureX8664
+	case types.Aarch64:
+		return openapi.ArchitectureAarch64
+	}
+
+	return ""
+}
 
 func convertImageVirtualization(in types.ImageVirtualization) openapi.ImageVirtualization {
 	switch in {
@@ -88,6 +98,21 @@ func convertPackages(in *types.ImagePackages) *openapi.SoftwareVersions {
 	return &out
 }
 
+func convertState(in types.ImageStatus) openapi.ImageState {
+	switch in {
+	case types.ImageStatusPending:
+		return openapi.ImageStatePending
+	case types.ImageStatusCreating:
+		return openapi.ImageStateCreating
+	case types.ImageStatusReady:
+		return openapi.ImageStateReady
+	case types.ImageStatusFailed:
+		return openapi.ImageStateFailed
+	}
+
+	return ""
+}
+
 func convertImage(in *types.Image) *openapi.Image {
 	out := &openapi.Image{
 		Metadata: coreapi.StaticResourceMetadata{
@@ -96,6 +121,7 @@ func convertImage(in *types.Image) *openapi.Image {
 			CreationTime: in.Created,
 		},
 		Spec: openapi.ImageSpec{
+			Architecture:   convertArchitecture(in.Architecture),
 			SizeGiB:        in.SizeGiB,
 			Virtualization: convertImageVirtualization(in.Virtualization),
 			Os: openapi.ImageOS{
@@ -107,6 +133,9 @@ func convertImage(in *types.Image) *openapi.Image {
 				Version:  in.OS.Version,
 			},
 			SoftwareVersions: convertPackages(in.Packages),
+		},
+		Status: openapi.ImageStatus{
+			State: convertState(in.Status),
 		},
 	}
 
@@ -134,6 +163,17 @@ func convertImages(in []types.Image) openapi.Images {
 	}
 
 	return out
+}
+
+func generateArchitecture(in openapi.Architecture) types.Architecture {
+	switch in {
+	case openapi.ArchitectureX8664:
+		return types.X86_64
+	case openapi.ArchitectureAarch64:
+		return types.Aarch64
+	default:
+		return ""
+	}
 }
 
 func generateImageVirtualization(source openapi.ImageVirtualization) types.ImageVirtualization {
@@ -222,16 +262,5 @@ func generateImageOS(source *openapi.ImageOS) *types.ImageOS {
 		Variant:  source.Variant,
 		Codename: source.Codename,
 		Version:  source.Version,
-	}
-}
-
-func generateDiskFormat(source openapi.ImageDiskFormat) (types.ImageDiskFormat, error) {
-	switch source {
-	case openapi.ImageDiskFormatRaw:
-		return types.ImageDiskFormatRaw, nil
-	case openapi.ImageDiskFormatQcow2:
-		return types.ImageDiskFormatQCOW2, nil
-	default:
-		return "", fmt.Errorf("%w: %s", ErrUnknownDiskFormat, source)
 	}
 }

@@ -65,6 +65,7 @@ spec:
                 enum:
                 - openstack
                 - kubernetes
+                maxLength: 63
                 type: string
               tags:
                 description: |-
