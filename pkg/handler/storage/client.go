@@ -584,7 +584,7 @@ func (c *Client) GetStorageClass(ctx context.Context, storageClassID string) (*o
 
 	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: storageClassID}, result); err != nil {
 		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
+			return nil, errors.OAuth2InvalidRequest("storage class not found").WithError(err)
 		}
 
 		return nil, errors.OAuth2ServerError("unable to lookup storage class").WithError(err)
