@@ -570,13 +570,13 @@ func (p *Provider) imageStatus(image *images.Image) types.ImageStatus {
 	switch image.Status {
 	case images.ImageStatusQueued:
 		status = types.ImageStatusPending
-	case images.ImageStatusSaving:
+	case images.ImageStatusSaving, images.ImageStatusImporting:
 		status = types.ImageStatusCreating
 	case images.ImageStatusActive:
 		status = types.ImageStatusReady
 	case images.ImageStatusKilled:
 		status = types.ImageStatusFailed
-	case images.ImageStatusDeleted, images.ImageStatusPendingDelete, images.ImageStatusDeactivated, images.ImageStatusImporting:
+	case images.ImageStatusDeleted, images.ImageStatusPendingDelete, images.ImageStatusDeactivated:
 		// These statuses are not directly mappable, mark them as failed.
 		status = types.ImageStatusFailed
 	}

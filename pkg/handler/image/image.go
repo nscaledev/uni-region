@@ -21,7 +21,8 @@ import (
 	"cmp"
 	"context"
 	goerrors "errors"
-	"net/url"
+	"io"
+	"net/http"
 	"slices"
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
@@ -86,14 +87,77 @@ func (c *Client) ListImages(ctx context.Context, organizationID, regionID string
 	return convertImages(result), nil
 }
 
+// readMBR reads the MBR from the image response.  If we got a 206 then we should
+// have exactly 512 bytes, if not then we read exactly 512 bytes.
+func readMBR(r *http.Response) ([]byte, error) {
+	if r.StatusCode == http.StatusPartialContent {
+		buf, err := io.ReadAll(r.Body)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(buf) != 512 {
+			return nil, errors.OAuth2InvalidRequest("Unable to peek image header, incorrect response size for range")
+		}
+
+		return buf, nil
+	}
+
+	buf := make([]byte, 512)
+
+	if _, err := io.ReadFull(r.Body, buf); err != nil {
+		return nil, errors.HTTPUnprocessableContent("Unable to peek image header, response too small")
+	}
+
+	return buf, nil
+}
+
+// validateImage peeks at the image file header, and ensures it's a master boot record
+// as this is all we support currently.  We must be careful here to shut down the client
+// connection quickly if the server does not support the HTTP Range header as this can
+// consume memory very quickly and OOM kill the service.
+func validateImage(ctx context.Context, uri string) error {
+	client := &http.Client{}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
+	if err != nil {
+		return err
+	}
+
+	// NOTE: this may or may not be listened to by the server...
+	request.Header.Set("Range", "bytes=0-511")
+
+	response, err := client.Do(request)
+	if err != nil {
+		return errors.HTTPUnprocessableContent("Image read failed, please ensure the URL is correct")
+	}
+
+	defer response.Body.Close()
+
+	if response.StatusCode/100 != 2 {
+		return errors.HTTPUnprocessableContent("Image read failed with an incorrect status code, please ensure the URL is correct")
+	}
+
+	mbr, err := readMBR(response)
+	if err != nil {
+		return err
+	}
+
+	if mbr[510] != 0x55 || mbr[511] != 0xaa {
+		return errors.HTTPUnprocessableContent("Image does not contain a valid master boot record, ensure the image is in raw format")
+	}
+
+	return nil
+}
+
 func (c *Client) CreateImage(ctx context.Context, organizationID, regionID string, request *openapi.ImageCreateRequest) (*openapi.ImageResponse, error) {
 	provider, err := c.provider(ctx, regionID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
 
-	if _, err := url.Parse(request.Spec.Uri); err != nil {
-		return nil, errors.OAuth2InvalidRequest("The provided URL is not valid").WithError(err)
+	if err := validateImage(ctx, request.Spec.Uri); err != nil {
+		return nil, err
 	}
 
 	var gpu *types.ImageGPU

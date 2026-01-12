@@ -294,7 +294,7 @@ type ImageCreateSpec struct {
 	// SoftwareVersions Image preinstalled version version metadata.
 	SoftwareVersions *SoftwareVersions `json:"softwareVersions,omitempty"`
 
-	// Uri A URL to upload the image from.
+	// Uri A URI to upload the image from.
 	Uri string `json:"uri"`
 
 	// Virtualization What type of machine the image is for.
