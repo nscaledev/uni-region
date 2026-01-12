@@ -5188,6 +5188,7 @@ type GetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesResponse struct {
 	JSON400      *externalRef0.BadRequestResponse
 	JSON401      *externalRef0.UnauthorizedResponse
 	JSON403      *externalRef0.ForbiddenResponse
+	JSON422      *externalRef0.UnprocessableContentResponse
 	JSON500      *externalRef0.InternalServerErrorResponse
 }
 
@@ -8238,6 +8239,13 @@ func ParseGetApiV1OrganizationsOrganizationIDRegionsRegionIDImagesResponse(rsp *
 			return nil, err
 		}
 		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest externalRef0.UnprocessableContentResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest externalRef0.InternalServerErrorResponse

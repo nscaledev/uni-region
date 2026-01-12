@@ -100,6 +100,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     post:
@@ -107,7 +109,8 @@ paths:
       tags:
       - Images
       description: |-
-        Create a compute image. You must give a URL to fetch the image file from.
+        Create a compute image from a public URL.  Only raw images are supported, other container
+        formats such as qcow2 must be first converted to a raw image.
       security:
       - oauth2Authentication: []
       requestBody:
@@ -1764,9 +1767,9 @@ components:
       - architecture
       properties:
         uri:
-          description: |
-            A URL to upload the image from.
+          description: A URI to upload the image from.
           type: string
+          format: uri
         architecture:
           $ref: '#/components/schemas/architecture'
         virtualization:
