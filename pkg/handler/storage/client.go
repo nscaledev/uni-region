@@ -189,11 +189,11 @@ func (c *Client) updateWithSize(ctx context.Context, in *openapi.StorageV2Read, 
 
 	if fsdetails.Size != nil {
 		in.Status.Usage = &openapi.StorageUsageV2Status{
-			CapacityGiB: quantityToSizeGiB(*fsdetails.Size),
+			CapacityBytes: fsdetails.Size.Value(),
 		}
 
 		if fsdetails.UsedCapacity != nil {
-			in.Status.Usage.UsedGiB = ptr.To(quantityToSizeGiB(*fsdetails.UsedCapacity))
+			in.Status.Usage.UsedBytes = ptr.To(fsdetails.UsedCapacity.Value())
 		}
 	}
 

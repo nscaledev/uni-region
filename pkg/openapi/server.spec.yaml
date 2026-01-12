@@ -2680,17 +2680,17 @@ components:
         attachments:
          $ref: '#/components/schemas/storageAttachmentListV2Status'
     storageUsageV2Status:
-        description: Information about the usage of the storage
+        description: Information about the usage of the storage in bytes
         type: object
         required:
-          - capacityGiB
+          - capacityBytes
         properties:
-            capacityGiB:
-              description: total space allotted
+            capacityBytes:
+              description: total space allotted in bytes
               type: integer
               format: int64
-            usedGiB:
-              description: amount of storage space used
+            usedBytes:
+              description: amount of storage space used in bytes
               type: integer
               format: int64
     storageV2Create:
@@ -3656,8 +3656,8 @@ components:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
               storageClassId: 99659b44-1700-400f-9c6c-cfdb4bb0445c
               usage:
-                  capacityGiB: 100
-                  usedGiB: 88
+                  capacityBytes: 107374182400
+                  usedBytes: 94489280512
               attachments:
                 - networkId: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
                   mountSource: 10.0.0.16:/mnt/nfs
@@ -3693,8 +3693,8 @@ components:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
               storageClassId: 99659b44-1700-400f-9c6c-cfdb4bb0445c
               usage:
-                  capacityGiB: 100
-                  usedGiB: 88
+                  capacityBytes: 107374182400
+                  usedBytes: 94489280512
               attachments:
                 - networkId: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
                   mountSource: 10.0.0.16:/mnt/nfs
