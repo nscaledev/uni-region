@@ -363,6 +363,10 @@ func checkRootSquash(nfs *openapi.NFSV2Spec) bool {
 }
 
 func generateAttachmentList(ctx context.Context, networkClient *network.Client, in *openapi.StorageAttachmentV2Spec) ([]regionv1.Attachment, error) {
+	if in == nil {
+		return []regionv1.Attachment{}, nil
+	}
+
 	networkIDs := in.NetworkIds
 	out := make([]regionv1.Attachment, len(networkIDs))
 
