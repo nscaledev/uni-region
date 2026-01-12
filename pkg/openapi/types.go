@@ -1013,16 +1013,13 @@ type StorageTypeV2Spec struct {
 	NFS *NFSV2Spec `json:"NFS,omitempty"`
 }
 
-// StorageUsageV2Status Information about the usage of the storage
+// StorageUsageV2Status Information about the usage of the storage in bytes
 type StorageUsageV2Status struct {
-	// CapacityGiB total space allotted
-	CapacityGiB int64 `json:"capacityGiB"`
+	// CapacityBytes total space allotted in bytes
+	CapacityBytes int64 `json:"capacityBytes"`
 
-	// FreeGiB amount of storage space free to use
-	FreeGiB *int64 `json:"freeGiB,omitempty"`
-
-	// UsedGiB amount of storage space used
-	UsedGiB *int64 `json:"usedGiB,omitempty"`
+	// UsedBytes amount of storage space used in bytes
+	UsedBytes *int64 `json:"usedBytes,omitempty"`
 }
 
 // StorageV2Create A storage create request.
@@ -1091,7 +1088,7 @@ type StorageV2Status struct {
 	// StorageClassId identifier for the storage
 	StorageClassId string `json:"storageClassId"`
 
-	// Usage Information about the usage of the storage
+	// Usage Information about the usage of the storage in bytes
 	Usage *StorageUsageV2Status `json:"usage,omitempty"`
 }
 

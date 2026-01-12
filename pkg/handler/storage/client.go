@@ -189,17 +189,11 @@ func (c *Client) updateWithSize(ctx context.Context, in *openapi.StorageV2Read, 
 
 	if fsdetails.Size != nil {
 		in.Status.Usage = &openapi.StorageUsageV2Status{
-			CapacityGiB: quantityToSizeGiB(*fsdetails.Size),
+			CapacityBytes: fsdetails.Size.Value(),
 		}
 
 		if fsdetails.UsedCapacity != nil {
-			var free resource.Quantity
-
-			free.Add(*fsdetails.Size)
-			free.Sub(*fsdetails.UsedCapacity)
-
-			in.Status.Usage.UsedGiB = ptr.To(quantityToSizeGiB(*fsdetails.UsedCapacity))
-			in.Status.Usage.FreeGiB = ptr.To(quantityToSizeGiB(free))
+			in.Status.Usage.UsedBytes = ptr.To(fsdetails.UsedCapacity.Value())
 		}
 	}
 
@@ -594,7 +588,7 @@ func (c *Client) GetStorageClass(ctx context.Context, storageClassID string) (*o
 
 	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: storageClassID}, result); err != nil {
 		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
+			return nil, errors.OAuth2InvalidRequest("storage class not found").WithError(err)
 		}
 
 		return nil, errors.OAuth2ServerError("unable to lookup storage class").WithError(err)

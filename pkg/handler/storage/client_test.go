@@ -67,6 +67,11 @@ var (
 	}
 )
 
+const (
+	giB = int64(1024 * 1024 * 1024)
+	miB = int64(1024 * 1024)
+)
+
 func newTestNetwork(name string) *regionv1.Network {
 	return &regionv1.Network{
 		ObjectMeta: metav1.ObjectMeta{
@@ -584,7 +589,7 @@ func TestGenerateV2(t *testing.T) {
 					},
 				},
 				Spec: regionv1.FileStorageSpec{
-					Size:           *resource.NewQuantity(int64(10737418240), resource.BinarySI),
+					Size:           *resource.NewQuantity(10*giB, resource.BinarySI),
 					StorageClassID: "sc-1",
 					Attachments: []regionv1.Attachment{
 						{
@@ -648,7 +653,7 @@ func TestGet(t *testing.T) {
 					},
 				},
 				Spec: regionv1.FileStorageSpec{
-					Size:           *resource.NewQuantity(10737418240, resource.BinarySI),
+					Size:           *resource.NewQuantity(1*giB, resource.BinarySI),
 					StorageClassID: "sc-1",
 					Attachments: []regionv1.Attachment{
 						{NetworkID: "net-1"},
@@ -693,11 +698,8 @@ func TestGet(t *testing.T) {
 
 			// Check that usage matches with what is returned below in
 			// GetDetails()
-			require.Equal(t, int64(1), result.Status.Usage.CapacityGiB, "CapacityGiB")
-
-			// There is 512MiB used, but since it rounds to GiB, we get 0
-			require.Equal(t, int64(0), *result.Status.Usage.UsedGiB, "UsedGiB")
-			require.Equal(t, int64(0), *result.Status.Usage.FreeGiB, "FreeGiB")
+			require.Equal(t, 1*giB, result.Status.Usage.CapacityBytes, "Capacity")
+			require.Equal(t, 512*miB, *result.Status.Usage.UsedBytes, "Used")
 		})
 	}
 }
@@ -886,9 +888,9 @@ type fileClient struct {
 func (c *fileClient) GetDetails(ctx context.Context, projectID string,
 	fileStorageID string) (*types.FileStorageDetails, error) {
 	return &types.FileStorageDetails{
-		Size:              resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+		Size:              resource.NewQuantity(1*giB, resource.BinarySI),
 		Path:              "/filesystem",
 		RootSquashEnabled: true,
-		UsedCapacity:      resource.NewQuantity(512*1024*1024, resource.BinarySI),
+		UsedCapacity:      resource.NewQuantity(512*miB, resource.BinarySI),
 	}, nil
 }
