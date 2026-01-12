@@ -153,6 +153,11 @@ func TestGenerateAttachmentList(t *testing.T) {
 			input: &openapi.StorageAttachmentV2Spec{},
 			want:  []regionv1.Attachment{},
 		},
+		{
+			name:  "nil",
+			input: nil,
+			want:  []regionv1.Attachment{},
+		},
 	}
 
 	for _, tt := range tests {
