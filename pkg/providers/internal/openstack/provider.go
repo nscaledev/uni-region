@@ -82,7 +82,7 @@ const (
 	kubernetesVersionLabel = "unikorn:kubernetes_version"
 
 	organizationIDLabel = "unikorn:organization:id"
-	dataSourceLabel     = "unikorn:data_source"
+	identityIDLabel     = "unikorn:identity_id"
 
 	containerFormatBare = "bare" // there's no const in gophercloud for this, so we have our own.
 
@@ -385,6 +385,22 @@ func (p *Provider) computeFromServicePrincipal(ctx context.Context, identity *un
 }
 
 // imageFromServicePrincipal gets a compute client scoped to the service principal data.
+func (p *Provider) imageFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (*ImageClient, error) {
+	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := NewImageClient(ctx, provider, p.region.Spec.Openstack.Image)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
+// privilegedImageFromServicePrincipal gets a compute client scoped to the service principal data
+// but with "manager" credentials.
 func (p *Provider) privilegedImageFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (*ImageClient, error) {
 	provider, err := p.getPrivilegedProviderFromServicePrincipal(ctx, identity)
 	if err != nil {
@@ -853,12 +869,40 @@ func (p *Provider) CreateImage(ctx context.Context, image *types.Image, uri stri
 }
 
 func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
+	image, err := p.getImage(ctx, imageID)
+	if err != nil {
+		return err
+	}
+
+	// If we've set the identity ID, then that means it's a snapshot and
+	// currently lives in the service principal's project, so rescope to
+	// that.
+	if identityID, ok := image.Properties[identityIDLabel].(string); ok {
+		identity := &unikornv1.Identity{}
+
+		if err := p.client.Get(ctx, client.ObjectKey{Namespace: p.region.Namespace, Name: identityID}, identity); err != nil {
+			return err
+		}
+
+		imageService, err := p.imageFromServicePrincipal(ctx, identity)
+		if err != nil {
+			return err
+		}
+
+		return p.deleteImage(ctx, imageService, imageID)
+	}
+
+	// Otherwise it exists in our project...
 	imageService, err := p.image(ctx)
 	if err != nil {
 		return err
 	}
 
-	if err = imageService.DeleteImage(ctx, imageID); err != nil {
+	return p.deleteImage(ctx, imageService, imageID)
+}
+
+func (p *Provider) deleteImage(ctx context.Context, imageService *ImageClient, imageID string) error {
+	if err := imageService.DeleteImage(ctx, imageID); err != nil {
 		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			return fmt.Errorf("image %w", coreerrors.ErrResourceNotFound)
 		}
@@ -2441,6 +2485,10 @@ func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Ident
 	if err != nil {
 		return nil, err
 	}
+
+	// Save the identity this snapshot belongs to, and implicitly the project,
+	// which will be required for deletion.
+	metadata[identityIDLabel] = identity.Name
 
 	opts := &servers.CreateImageOpts{
 		Name:     image.Name,
