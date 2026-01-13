@@ -276,7 +276,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 
 	attachments, err := generateAttachmentList(ctx, networkClient, request.Spec.Attachments)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to generate attachment list").WithError(err)
+		return nil, errors.OAuth2InvalidRequest("unable to generate attachment list").WithError(err)
 	}
 
 	out := &regionv1.FileStorage{
