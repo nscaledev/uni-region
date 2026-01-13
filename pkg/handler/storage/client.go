@@ -93,7 +93,9 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 // Because attachments may be reconciled asynchronously by the controller, this does not accurately reflect the actual state.
 // As a result, provisioning status is omitted (nil). This will be addressed in a future update.
 func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttachmentListV2Status {
-
+	if len(in.Spec.Attachments) == 0 {
+		return nil
+	}
 	out := make(openapi.StorageAttachmentListV2Status, len(in.Spec.Attachments))
 
 	for i, att := range in.Spec.Attachments {
@@ -118,7 +120,9 @@ func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttac
 // calculateAttProvisioningStatus compares the networkID from spec.Attachments and status.Attachments
 // then populates with the provisioning status.
 func calculateAttProvisioningStatus(in *regionv1.FileStorage, i int, id string) *corev1.ResourceProvisioningStatus {
-
+	if len(in.Status.Attachments) <= i {
+		return nil
+	}
 	attStatus := in.Status.Attachments[i]
 
 	if attStatus.NetworkID == id {
