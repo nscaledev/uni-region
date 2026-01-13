@@ -384,6 +384,21 @@ func (p *Provider) computeFromServicePrincipal(ctx context.Context, identity *un
 	return client, nil
 }
 
+// imageFromServicePrincipal gets a compute client scoped to the service principal data.
+func (p *Provider) privilegedImageFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (*ImageClient, error) {
+	provider, err := p.getPrivilegedProviderFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := NewImageClient(ctx, provider, p.region.Spec.Openstack.Image)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
 // networkFromServicePrincipal gets a network client scoped to the service principal.
 func (p *Provider) networkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
 	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
@@ -570,7 +585,7 @@ func (p *Provider) imageStatus(image *images.Image) types.ImageStatus {
 	switch image.Status {
 	case images.ImageStatusQueued:
 		status = types.ImageStatusPending
-	case images.ImageStatusSaving, images.ImageStatusImporting:
+	case images.ImageStatusSaving, images.ImageStatusImporting, images.ImageStatusUploading:
 		status = types.ImageStatusCreating
 	case images.ImageStatusActive:
 		status = types.ImageStatusReady
@@ -2398,4 +2413,87 @@ func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Ide
 	}
 
 	return result, nil
+}
+
+// CreateSnapshot creates a new image from an existing server.
+//
+//nolint:cyclop
+func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *types.Image) (*types.Image, error) {
+	log := log.FromContext(ctx)
+
+	compute, err := p.computeFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	// make sure that the input image is scoped to an organization, because we're going to
+	// make this image public in a minute.
+	if image.OrganizationID == nil {
+		return nil, fmt.Errorf("%w: image not scoped to an organization", coreerrors.ErrConsistency)
+	}
+
+	openstackServer, err := compute.GetServer(ctx, server)
+	if err != nil {
+		return nil, err
+	}
+
+	metadata, err := p.createImageMetadata(image)
+	if err != nil {
+		return nil, err
+	}
+
+	opts := &servers.CreateImageOpts{
+		Name:     image.Name,
+		Metadata: metadata,
+	}
+
+	imageID, err := compute.CreateImageFromServer(ctx, openstackServer.ID, opts)
+	if err != nil {
+		return nil, interpretGophercloudError(err)
+	}
+
+	// The snapshot is created in the project, and with the OpenStack identity, of the server.
+	// To make it public, I need a client using that identity.
+	imageService, err := p.privilegedImageFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	publishOpts := images.UpdateOpts{
+		images.UpdateVisibility{
+			Visibility: images.ImageVisibilityPublic,
+		},
+	}
+
+	if _, err = imageService.UpdateImage(ctx, imageID, publishOpts); err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return nil, fmt.Errorf("image %w", coreerrors.ErrResourceNotFound)
+		}
+
+		// Make a best effort to delete the image to free up resources.
+		if err := imageService.DeleteImage(ctx, imageID); err != nil {
+			log.Error(err, "failed to delete failed image, please manually remove me", "imageID", imageID)
+		}
+
+		return nil, err
+	}
+
+	newImage, err := p.getImage(ctx, imageID)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.convertImage(newImage)
+}
+
+func interpretGophercloudError(err error) error {
+	if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+		return fmt.Errorf("server %w", coreerrors.ErrResourceNotFound)
+	}
+
+	if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+		return fmt.Errorf("server %w", coreerrors.ErrConflict) // FIXME: or unprocessable?
+	}
+
+	return err
 }

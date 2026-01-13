@@ -87,6 +87,11 @@ type ServerConsole interface {
 	GetConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, length *int) (string, error)
 }
 
+type ServerSnapshot interface {
+	// CreateSnapshot creates a new image from an existing server.
+	CreateSnapshot(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *Image) (*Image, error)
+}
+
 // Providers are expected to provide a provider agnostic manner.
 // They are also expected to provide any caching or memoization required
 // to provide high performance and a decent UX.
@@ -103,4 +108,5 @@ type Provider interface {
 	SecurityGroup
 	Server
 	ServerConsole
+	ServerSnapshot
 }
