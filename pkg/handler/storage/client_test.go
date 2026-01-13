@@ -323,9 +323,10 @@ func TestConvertV2(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name  string
-		input *regionv1.FileStorage
-		want  *openapi.StorageV2Read
+		name    string
+		input   *regionv1.FileStorage
+		want    *openapi.StorageV2Read
+		wantErr bool
 	}{
 		{
 			name: "test with limited values",
@@ -346,11 +347,16 @@ func TestConvertV2(t *testing.T) {
 					NFS: &regionv1.NFS{
 						RootSquash: true,
 					},
-					Attachments: []regionv1.Attachment{},
+					Attachments: []regionv1.Attachment{
+						{
+							NetworkID: "net-1",
+						},
+					},
 				},
 				Status: regionv1.FileStorageStatus{
 					Attachments: []regionv1.FileStorageAttachmentStatus{
 						{
+							NetworkID:          "net-1",
 							ProvisioningStatus: regionv1.AttachmentProvisioned,
 						},
 					},
@@ -364,7 +370,7 @@ func TestConvertV2(t *testing.T) {
 				Spec: openapi.StorageV2Spec{
 					SizeGiB: 2,
 					Attachments: &openapi.StorageAttachmentV2Spec{
-						NetworkIDs: []string{},
+						NetworkIDs: []string{"net-1"},
 					},
 					StorageType: openapi.StorageTypeV2Spec{
 						NFS: &openapi.NFSV2Spec{
@@ -373,9 +379,76 @@ func TestConvertV2(t *testing.T) {
 					},
 				},
 				Status: openapi.StorageV2Status{
+					Attachments: &openapi.StorageAttachmentListV2Status{
+						{
+							NetworkId:          "net-1",
+							ProvisioningStatus: ptr.To(corev1.ResourceProvisioningStatusProvisioned),
+						},
+					},
 					Usage: openapi.StorageUsageV2Spec{},
 				},
 			},
+		}, {
+			name: "error on mismatched attachment status",
+			input: &regionv1.FileStorage{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "FileStorage",
+					APIVersion: "v1alpha1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "",
+					Namespace: "default",
+					Labels: map[string]string{
+						"app": "mock",
+					},
+				},
+				Spec: regionv1.FileStorageSpec{
+					Size: *gibToQuantity(int64(2)),
+					NFS: &regionv1.NFS{
+						RootSquash: true,
+					},
+					Attachments: []regionv1.Attachment{
+						{
+							NetworkID: "net-1",
+						},
+					},
+				},
+				Status: regionv1.FileStorageStatus{
+					Attachments: []regionv1.FileStorageAttachmentStatus{
+						{
+							NetworkID:          "net-1",
+							ProvisioningStatus: regionv1.AttachmentProvisioned,
+						},
+					},
+				},
+			},
+			want: &openapi.StorageV2Read{
+				Metadata: corev1.ProjectScopedResourceReadMetadata{
+					HealthStatus:       corev1.ResourceHealthStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+				},
+				Spec: openapi.StorageV2Spec{
+					SizeGiB: 2,
+					Attachments: &openapi.StorageAttachmentV2Spec{
+						NetworkIDs: []string{"net-1"},
+					},
+					StorageType: openapi.StorageTypeV2Spec{
+						NFS: &openapi.NFSV2Spec{
+							RootSquash: true,
+						},
+					},
+				},
+				Status: openapi.StorageV2Status{
+					Attachments: &openapi.StorageAttachmentListV2Status{
+						{
+							NetworkId:          "net-1",
+							ProvisioningStatus: ptr.To(corev1.ResourceProvisioningStatusError),
+						},
+					},
+					Usage: openapi.StorageUsageV2Spec{},
+				},
+			},
+			wantErr: true,
 		},
 	}
 
@@ -384,7 +457,11 @@ func TestConvertV2(t *testing.T) {
 			t.Parallel()
 
 			got := convertV2(tt.input)
-			require.Equal(t, tt.want, got)
+			if tt.wantErr {
+				require.NotEqual(t, tt.want, got)
+			} else {
+				require.Equal(t, tt.want, got)
+			}
 		})
 	}
 }
