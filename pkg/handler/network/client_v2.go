@@ -43,7 +43,6 @@ import (
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -228,7 +227,7 @@ func generateRoutes(in *openapi.Routes) ([]regionv1.Route, error) {
 	return out, nil
 }
 
-func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.NetworkV2Update, prefix *net.IPNet) (*regionv1.Network, error) {
+func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID, identityID string, request *openapi.NetworkV2Update, prefix *net.IPNet) (*regionv1.Network, error) {
 	dnsNameservers, err := parseIPV4AddressList(request.Spec.DnsNameservers)
 	if err != nil {
 		return nil, err
@@ -244,6 +243,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 			WithOrganization(organizationID).
 			WithProject(projectID).
 			WithLabel(constants.RegionLabel, regionID).
+			WithLabel(constants.IdentityLabel, identityID).
 			WithLabel(constants.ResourceAPIVersionLabel, constants.MarshalAPIVersion(2)).
 			Get(),
 		Spec: regionv1.NetworkSpec{
@@ -269,6 +269,7 @@ type createSaga struct {
 	client  *Client
 	request *openapi.NetworkV2Create
 
+	prefix   *net.IPNet
 	identity *regionv1.Identity
 	network  *regionv1.Network
 }
@@ -288,23 +289,13 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 		return err
 	}
 
+	s.prefix = prefix
+
 	ones, _ := prefix.Mask.Size()
 
 	if ones > 24 {
 		return errors.OAuth2InvalidRequest("minimum network prefix size is /24")
 	}
-
-	updateRequest, err := convertCreateToUpdateRequest(s.request)
-	if err != nil {
-		return err
-	}
-
-	network, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId, updateRequest, prefix)
-	if err != nil {
-		return err
-	}
-
-	s.network = network
 
 	return nil
 }
@@ -315,8 +306,7 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 func (s *createSaga) createServicePricipal(ctx context.Context) error {
 	request := &openapi.IdentityWrite{
 		Metadata: coreapi.ResourceWriteMetadata{
-			Name:        "network-" + s.network.Name,
-			Description: ptr.To("Service principal for V2 network " + s.network.Name),
+			Name: "networkv2-service-principal",
 		},
 		Spec: openapi.IdentityWriteSpec{
 			RegionId: s.request.Spec.RegionId,
@@ -330,12 +320,6 @@ func (s *createSaga) createServicePricipal(ctx context.Context) error {
 
 	s.identity = identity
 
-	s.network.Labels[constants.IdentityLabel] = identity.Name
-
-	if err := controllerutil.SetOwnerReference(identity, s.network, s.client.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
-		return errors.OAuth2ServerError("unable to set resource owner").WithError(err)
-	}
-
 	return nil
 }
 
@@ -344,6 +328,26 @@ func (s *createSaga) createServicePricipal(ctx context.Context) error {
 // deletion semantics.
 func (s *createSaga) deleteServicePricipal(ctx context.Context) error {
 	return identity.New(s.client.client, s.client.namespace).Delete(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.identity.Name)
+}
+
+func (s *createSaga) generateNetwork(ctx context.Context) error {
+	updateRequest, err := convertCreateToUpdateRequest(s.request)
+	if err != nil {
+		return err
+	}
+
+	network, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId, s.identity.Name, updateRequest, s.prefix)
+	if err != nil {
+		return err
+	}
+
+	if err := controllerutil.SetOwnerReference(s.identity, network, s.client.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
+		return errors.OAuth2ServerError("unable to set resource owner").WithError(err)
+	}
+
+	s.network = network
+
+	return nil
 }
 
 // createAllocation creates an allocation for the network ID and then attaches
@@ -383,6 +387,7 @@ func (s *createSaga) Actions() []saga.Action {
 	return []saga.Action{
 		saga.NewAction("validate request", s.validateRequest, nil),
 		saga.NewAction("create service principal", s.createServicePricipal, s.deleteServicePricipal),
+		saga.NewAction("generate network", s.generateNetwork, nil),
 		saga.NewAction("create quota allocation", s.createAllocation, s.deleteAllocation),
 		saga.NewAction("create network", s.createNetwork, nil),
 	}
@@ -419,8 +424,9 @@ func (c *Client) Update(ctx context.Context, networkID string, request *openapi.
 	organizationID := current.Labels[coreconstants.OrganizationLabel]
 	projectID := current.Labels[coreconstants.ProjectLabel]
 	regionID := current.Labels[constants.RegionLabel]
+	identityID := current.Labels[constants.IdentityLabel]
 
-	required, err := c.generateV2(ctx, organizationID, projectID, regionID, request, &current.Spec.Prefix.IPNet)
+	required, err := c.generateV2(ctx, organizationID, projectID, regionID, identityID, request, &current.Spec.Prefix.IPNet)
 	if err != nil {
 		return nil, err
 	}
