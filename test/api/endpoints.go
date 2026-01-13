@@ -60,3 +60,9 @@ func (e *Endpoints) ListExternalNetworks(orgID, regionID string) string {
 	return fmt.Sprintf("/api/v1/organizations/%s/regions/%s/externalnetworks",
 		url.PathEscape(orgID), url.PathEscape(regionID))
 }
+
+// ListFileStorage returns the endpoint for listing file storage in a project.
+func (e *Endpoints) ListFileStorage(orgID, projectID, regionID string) string {
+	return fmt.Sprintf("/api/v2/filestorage?organizationId=%s&projectId=%s&regionId=%s",
+		url.QueryEscape(orgID), url.QueryEscape(projectID), url.QueryEscape(regionID))
+}

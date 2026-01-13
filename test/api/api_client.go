@@ -51,6 +51,11 @@ func (c *APIClient) GetListRegionsPath(orgID string) string {
 	return c.endpoints.ListRegions(orgID)
 }
 
+// GetEndpoints returns the endpoints instance for direct path access in tests.
+func (c *APIClient) GetEndpoints() *Endpoints {
+	return c.endpoints
+}
+
 // NewAPIClient creates a new Region API client.
 func NewAPIClient(baseURL string) (*APIClient, error) {
 	config, err := LoadTestConfig()
@@ -161,6 +166,22 @@ func (c *APIClient) ListExternalNetworks(ctx context.Context, orgID, regionID st
 			ResourceType:   "externalNetworks",
 			ResourceID:     regionID,
 			ResourceIDType: "region",
+		},
+	)
+}
+
+// ListFileStorage lists all file storage resources for a project in a region.
+func (c *APIClient) ListFileStorage(ctx context.Context, orgID, projectID, regionID string) (regionopenapi.StorageV2List, error) {
+	path := c.endpoints.ListFileStorage(orgID, projectID, regionID)
+
+	return coreclient.ListResource[regionopenapi.StorageV2Read](
+		ctx,
+		c.APIClient,
+		path,
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "filestorage",
+			ResourceID:     projectID,
+			ResourceIDType: "project",
 		},
 	)
 }
