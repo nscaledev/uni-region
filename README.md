@@ -96,7 +96,29 @@ Regions define cloud instances to expose to clients.
 Trigger the workflow manually from the Actions tab:
 1. Go to **Actions** → **API Tests**
 2. Click **Run workflow**
-3. View results in the workflow run and download test artifacts
+3. Check which environments to test:
+   - **Run Dev tests** (checked by default)
+   - **Run UAT tests** (unchecked by default)
+   - Can run one, both, or neither
+4. View results in the workflow run and download test artifacts
+
+#### Required GitHub Secrets
+
+The workflow requires the following secrets to be configured in repository settings:
+
+**Dev Environment:**
+- `DEV_API_BASE_URL` - Dev Region API server URL
+- `DEV_API_AUTH_TOKEN` - Dev service authentication token
+- `DEV_TEST_ORG_ID` - Dev organization ID
+- `DEV_TEST_PROJECT_ID` - Dev project ID
+- `DEV_TEST_REGION_ID` - Dev region ID (optional)
+
+**UAT Environment:**
+- `UAT_API_BASE_URL` - UAT Region API server URL
+- `UAT_API_AUTH_TOKEN` - UAT service authentication token
+- `UAT_TEST_ORG_ID` - UAT organization ID
+- `UAT_TEST_PROJECT_ID` - UAT project ID
+- `UAT_TEST_REGION_ID` - UAT region ID (optional)
 
 ## What Next?
 

@@ -294,7 +294,7 @@ type ImageCreateSpec struct {
 	// SoftwareVersions Image preinstalled version version metadata.
 	SoftwareVersions *SoftwareVersions `json:"softwareVersions,omitempty"`
 
-	// Uri A URL to upload the image from.
+	// Uri A URI to upload the image from.
 	Uri string `json:"uri"`
 
 	// Virtualization What type of machine the image is for.
@@ -954,6 +954,18 @@ type ServersRead = []ServerRead
 // ServersV2Read A list of servers.
 type ServersV2Read = []ServerV2Read
 
+// SnapshotCreate A compute image create request.
+type SnapshotCreate struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A compute image snapshot specification.
+	Spec SnapshotCreateSpec `json:"spec"`
+}
+
+// SnapshotCreateSpec A compute image snapshot specification.
+type SnapshotCreateSpec = map[string]interface{}
+
 // SoftwareVersions Image preinstalled version version metadata.
 type SoftwareVersions map[string]externalRef0.Semver
 
@@ -1254,6 +1266,9 @@ type ServerV2CreateRequest = ServerV2Create
 // ServerV2UpdateRequest A server update request.
 type ServerV2UpdateRequest = ServerV2Update
 
+// SnapshotServerRequest A compute image create request.
+type SnapshotServerRequest = SnapshotCreate
+
 // StorageV2CreateRequest A storage create request.
 type StorageV2CreateRequest = StorageV2Create
 
@@ -1406,3 +1421,6 @@ type PostApiV2ServersJSONRequestBody = ServerV2Create
 
 // PutApiV2ServersServerIDJSONRequestBody defines body for PutApiV2ServersServerID for application/json ContentType.
 type PutApiV2ServersServerIDJSONRequestBody = ServerV2Update
+
+// PostApiV2ServersServerIDSnapshotJSONRequestBody defines body for PostApiV2ServersServerIDSnapshot for application/json ContentType.
+type PostApiV2ServersServerIDSnapshotJSONRequestBody = SnapshotCreate

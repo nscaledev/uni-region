@@ -82,7 +82,7 @@ const (
 	kubernetesVersionLabel = "unikorn:kubernetes_version"
 
 	organizationIDLabel = "unikorn:organization:id"
-	dataSourceLabel     = "unikorn:data_source"
+	identityIDLabel     = "unikorn:identity_id"
 
 	containerFormatBare = "bare" // there's no const in gophercloud for this, so we have our own.
 
@@ -384,6 +384,37 @@ func (p *Provider) computeFromServicePrincipal(ctx context.Context, identity *un
 	return client, nil
 }
 
+// imageFromServicePrincipal gets a compute client scoped to the service principal data.
+func (p *Provider) imageFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (*ImageClient, error) {
+	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := NewImageClient(ctx, provider, p.region.Spec.Openstack.Image)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
+// privilegedImageFromServicePrincipal gets a compute client scoped to the service principal data
+// but with "manager" credentials.
+func (p *Provider) privilegedImageFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (*ImageClient, error) {
+	provider, err := p.getPrivilegedProviderFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := NewImageClient(ctx, provider, p.region.Spec.Openstack.Image)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
 // networkFromServicePrincipal gets a network client scoped to the service principal.
 func (p *Provider) networkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
 	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
@@ -570,13 +601,13 @@ func (p *Provider) imageStatus(image *images.Image) types.ImageStatus {
 	switch image.Status {
 	case images.ImageStatusQueued:
 		status = types.ImageStatusPending
-	case images.ImageStatusSaving:
+	case images.ImageStatusSaving, images.ImageStatusImporting, images.ImageStatusUploading:
 		status = types.ImageStatusCreating
 	case images.ImageStatusActive:
 		status = types.ImageStatusReady
 	case images.ImageStatusKilled:
 		status = types.ImageStatusFailed
-	case images.ImageStatusDeleted, images.ImageStatusPendingDelete, images.ImageStatusDeactivated, images.ImageStatusImporting:
+	case images.ImageStatusDeleted, images.ImageStatusPendingDelete, images.ImageStatusDeactivated:
 		// These statuses are not directly mappable, mark them as failed.
 		status = types.ImageStatusFailed
 	}
@@ -838,12 +869,40 @@ func (p *Provider) CreateImage(ctx context.Context, image *types.Image, uri stri
 }
 
 func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
+	image, err := p.getImage(ctx, imageID)
+	if err != nil {
+		return err
+	}
+
+	// If we've set the identity ID, then that means it's a snapshot and
+	// currently lives in the service principal's project, so rescope to
+	// that.
+	if identityID, ok := image.Properties[identityIDLabel].(string); ok {
+		identity := &unikornv1.Identity{}
+
+		if err := p.client.Get(ctx, client.ObjectKey{Namespace: p.region.Namespace, Name: identityID}, identity); err != nil {
+			return err
+		}
+
+		imageService, err := p.imageFromServicePrincipal(ctx, identity)
+		if err != nil {
+			return err
+		}
+
+		return p.deleteImage(ctx, imageService, imageID)
+	}
+
+	// Otherwise it exists in our project...
 	imageService, err := p.image(ctx)
 	if err != nil {
 		return err
 	}
 
-	if err = imageService.DeleteImage(ctx, imageID); err != nil {
+	return p.deleteImage(ctx, imageService, imageID)
+}
+
+func (p *Provider) deleteImage(ctx context.Context, imageService *ImageClient, imageID string) error {
+	if err := imageService.DeleteImage(ctx, imageID); err != nil {
 		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			return fmt.Errorf("image %w", coreerrors.ErrResourceNotFound)
 		}
@@ -2398,4 +2457,91 @@ func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Ide
 	}
 
 	return result, nil
+}
+
+// CreateSnapshot creates a new image from an existing server.
+//
+//nolint:cyclop
+func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *types.Image) (*types.Image, error) {
+	log := log.FromContext(ctx)
+
+	compute, err := p.computeFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	// make sure that the input image is scoped to an organization, because we're going to
+	// make this image public in a minute.
+	if image.OrganizationID == nil {
+		return nil, fmt.Errorf("%w: image not scoped to an organization", coreerrors.ErrConsistency)
+	}
+
+	openstackServer, err := compute.GetServer(ctx, server)
+	if err != nil {
+		return nil, err
+	}
+
+	metadata, err := p.createImageMetadata(image)
+	if err != nil {
+		return nil, err
+	}
+
+	// Save the identity this snapshot belongs to, and implicitly the project,
+	// which will be required for deletion.
+	metadata[identityIDLabel] = identity.Name
+
+	opts := &servers.CreateImageOpts{
+		Name:     image.Name,
+		Metadata: metadata,
+	}
+
+	imageID, err := compute.CreateImageFromServer(ctx, openstackServer.ID, opts)
+	if err != nil {
+		return nil, interpretGophercloudError(err)
+	}
+
+	// The snapshot is created in the project, and with the OpenStack identity, of the server.
+	// To make it public, I need a client using that identity.
+	imageService, err := p.privilegedImageFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	publishOpts := images.UpdateOpts{
+		images.UpdateVisibility{
+			Visibility: images.ImageVisibilityPublic,
+		},
+	}
+
+	if _, err = imageService.UpdateImage(ctx, imageID, publishOpts); err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return nil, fmt.Errorf("image %w", coreerrors.ErrResourceNotFound)
+		}
+
+		// Make a best effort to delete the image to free up resources.
+		if err := imageService.DeleteImage(ctx, imageID); err != nil {
+			log.Error(err, "failed to delete failed image, please manually remove me", "imageID", imageID)
+		}
+
+		return nil, err
+	}
+
+	newImage, err := p.getImage(ctx, imageID)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.convertImage(newImage)
+}
+
+func interpretGophercloudError(err error) error {
+	if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+		return fmt.Errorf("server %w", coreerrors.ErrResourceNotFound)
+	}
+
+	if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+		return fmt.Errorf("server %w", coreerrors.ErrConflict) // FIXME: or unprocessable?
+	}
+
+	return err
 }
