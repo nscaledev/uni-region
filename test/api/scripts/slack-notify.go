@@ -177,6 +177,12 @@ func buildSlackMessage(report GinkgoReport, workflowURL string) SlackMessage {
 		statusEmoji = ":x:"
 	}
 
+	// Get environment from environment variable
+	environment := os.Getenv("ENVIRONMENT")
+	if environment == "" {
+		environment = "unknown"
+	}
+
 	// Build header block
 	headerText := fmt.Sprintf("%s *%s*", statusEmoji, report.SuiteDescription)
 	if !report.SuiteSucceeded {
@@ -185,12 +191,15 @@ func buildSlackMessage(report GinkgoReport, workflowURL string) SlackMessage {
 		headerText += " - PASSED"
 	}
 
+	// Create header with environment
+	headerTitle := fmt.Sprintf("API Test Results (%s)", strings.ToUpper(environment))
+
 	blocks := []SlackBlock{
 		{
 			Type: "header",
 			Text: &SlackText{
 				Type: "plain_text",
-				Text: "API Test Results",
+				Text: headerTitle,
 			},
 		},
 		{
