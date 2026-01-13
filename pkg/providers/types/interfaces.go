@@ -88,8 +88,8 @@ type ServerConsole interface {
 }
 
 type ServerSnapshot interface {
-	// CreateImageFromServer creates a new image from an existing server.
-	CreateImageFromServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *Image) (string, error)
+	// CreateSnapshot creates a new image from an existing server.
+	CreateSnapshot(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *Image) (*Image, error)
 }
 
 // Providers are expected to provide a provider agnostic manner.

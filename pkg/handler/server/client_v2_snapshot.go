@@ -20,18 +20,14 @@ import (
 	"context"
 
 	"github.com/unikorn-cloud/core/pkg/constants"
-	"github.com/unikorn-cloud/core/pkg/errors"
-	"github.com/unikorn-cloud/core/pkg/server/saga"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
-	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/image"
 	"github.com/unikorn-cloud/region/pkg/openapi"
-	"github.com/unikorn-cloud/region/pkg/providers/types"
 )
 
 func (c *ClientV2) CreateV2Snapshot(ctx context.Context, serverID string, request *openapi.SnapshotCreate) (*openapi.ImageResponse, error) {
-	server, id, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -45,110 +41,21 @@ func (c *ClientV2) CreateV2Snapshot(ctx context.Context, serverID string, reques
 		return nil, err
 	}
 
-	snapshot := snapshotState{
-		request:        request,
-		organizationID: organizationID,
-		client:         c,
-		server:         server,
-		identity:       id,
-		provider:       provider,
-	}
-
-	if err := saga.Run(ctx, &snapshot); err != nil {
+	// Get the existing image so we can preserve the metadata.
+	requested, err := provider.GetImage(ctx, organizationID, server.Spec.Image.ID)
+	if err != nil {
 		return nil, err
 	}
 
-	return snapshot.result, nil
-}
+	// Give it a new name and ensure it belongs to the server's organization.
+	// TODO: patch in any new metadata e.g. software packages.
+	requested.Name = request.Metadata.Name
+	requested.OrganizationID = &organizationID
 
-type snapshotState struct {
-	// input: the request
-	request *openapi.SnapshotCreate
-	// input: organization where this is created (used to scope the image)
-	organizationID string
-	// input: the server
-	server *regionv1.Server
-	// input: the client to use to get things
-	client *ClientV2
-
-	// state: the provider for the region in which the server lives
-	provider Provider
-	// state: identity for provider operations
-	identity *regionv1.Identity
-	// state: the image used by the server
-	originalImage *types.Image
-	// state: the ID of the snapshot image
-	snapshotID string
-	// state: the image result
-	result *openapi.Image
-}
-
-func (s *snapshotState) Actions() []saga.Action {
-	return []saga.Action{
-		saga.NewAction("get server image", s.fetchServerImage, nil),
-		saga.NewAction("request snapshot", s.requestSnapshot, s.deleteSnapshot),
-		saga.NewAction("get snapshot image", s.fetchSnapshotImage, nil),
-	}
-}
-
-func (s *snapshotState) fetchServerImage(ctx context.Context) error {
-	serverImage := s.server.Spec.Image
-	if serverImage == nil {
-		// TODO decide what to do here. Is this normal?
-		return errors.ErrConsistency
-	}
-
-	imageID := serverImage.ID
-
-	image, err := s.provider.GetImage(ctx, s.organizationID, imageID)
+	result, err := provider.CreateSnapshot(ctx, identity, server, requested)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	s.originalImage = image
-
-	return nil
-}
-
-func (s *snapshotState) generateSnapshotImage() *types.Image {
-	// I don't want to mutate a record that's cached and used elsewhere. So: copy the
-	// struct, and don't assign into any sub-fields.
-	generated := *s.originalImage
-
-	generated.Name = s.request.Metadata.Name
-	generated.OrganizationID = &s.organizationID
-
-	return &generated
-}
-
-func (s *snapshotState) requestSnapshot(ctx context.Context) error {
-	snapshotImage := s.generateSnapshotImage()
-
-	snapshotID, err := s.provider.CreateImageFromServer(ctx, s.identity, s.server, snapshotImage)
-	if err != nil {
-		return err
-	}
-
-	s.snapshotID = snapshotID
-
-	return nil
-}
-
-func (s *snapshotState) deleteSnapshot(ctx context.Context) error {
-	if s.snapshotID != "" {
-		return s.provider.DeleteImage(ctx, s.snapshotID)
-	}
-
-	return nil
-}
-
-func (s *snapshotState) fetchSnapshotImage(ctx context.Context) error {
-	result, err := s.provider.GetImage(ctx, s.organizationID, s.snapshotID)
-	if err != nil {
-		return err
-	}
-
-	s.result = image.ConvertImage(result)
-
-	return nil
+	return image.ConvertImage(result), nil
 }

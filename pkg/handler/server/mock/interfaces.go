@@ -84,21 +84,6 @@ func (mr *MockProviderMockRecorder) CreateImage(ctx, image, uri any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateImage", reflect.TypeOf((*MockProvider)(nil).CreateImage), ctx, image, uri)
 }
 
-// CreateImageFromServer mocks base method.
-func (m *MockProvider) CreateImageFromServer(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server, image *types.Image) (string, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateImageFromServer", ctx, identity, server, image)
-	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateImageFromServer indicates an expected call of CreateImageFromServer.
-func (mr *MockProviderMockRecorder) CreateImageFromServer(ctx, identity, server, image any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateImageFromServer", reflect.TypeOf((*MockProvider)(nil).CreateImageFromServer), ctx, identity, server, image)
-}
-
 // CreateServer mocks base method.
 func (m *MockProvider) CreateServer(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server) error {
 	m.ctrl.T.Helper()
@@ -111,6 +96,21 @@ func (m *MockProvider) CreateServer(ctx context.Context, identity *v1alpha1.Iden
 func (mr *MockProviderMockRecorder) CreateServer(ctx, identity, server any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateServer", reflect.TypeOf((*MockProvider)(nil).CreateServer), ctx, identity, server)
+}
+
+// CreateSnapshot mocks base method.
+func (m *MockProvider) CreateSnapshot(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server, image *types.Image) (*types.Image, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateSnapshot", ctx, identity, server, image)
+	ret0, _ := ret[0].(*types.Image)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateSnapshot indicates an expected call of CreateSnapshot.
+func (mr *MockProviderMockRecorder) CreateSnapshot(ctx, identity, server, image any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSnapshot", reflect.TypeOf((*MockProvider)(nil).CreateSnapshot), ctx, identity, server, image)
 }
 
 // DeleteIdentity mocks base method.

@@ -297,16 +297,13 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 	// on the first ask, expect to be asked for the "original" image (that the server is using)
 	provider.EXPECT().GetImage(gomock.Any(), orgID, "image1").
 		Return(original, nil)
-	// on the second call, we expect to be asked for the snapshot image
-	provider.EXPECT().GetImage(gomock.Any(), orgID, "snapshot1").
-		Return(snapshot, nil)
 
-	provider.EXPECT().CreateImageFromServer(
+	provider.EXPECT().CreateSnapshot(
 		gomock.Any(),
 		gomock.AssignableToTypeOf(&regionv1.Identity{}),
 		gomock.AssignableToTypeOf(&regionv1.Server{}),
 		gomock.AssignableToTypeOf(&types.Image{})).
-		Return("snapshot1", nil)
+		Return(snapshot, nil)
 
 	handler := NewServerV2Handler(c, namespace)
 	handler.getProvider = providerGetter(provider)
