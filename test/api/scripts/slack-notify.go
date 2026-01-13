@@ -147,41 +147,56 @@ func main() {
 	fmt.Println("Slack notification sent successfully")
 }
 
-func buildSlackMessage(report GinkgoReport, workflowURL string) SlackMessage {
-	// Calculate statistics
-	var passed, failed, skipped int
+type testStats struct {
+	passed   int
+	failed   int
+	skipped  int
+	total    int
+	failures []SpecReport
+}
 
-	var failures []SpecReport
+func calculateTestStats(specs []SpecReport) testStats {
+	var stats testStats
 
-	for _, spec := range report.SpecReports {
+	for _, spec := range specs {
 		switch spec.State {
 		case "passed":
-			passed++
+			stats.passed++
 		case "failed":
-			failed++
-
-			failures = append(failures, spec)
+			stats.failed++
+			stats.failures = append(stats.failures, spec)
 		case "skipped":
-			skipped++
+			stats.skipped++
 		}
 	}
 
-	total := passed + failed + skipped
-	duration := time.Duration(report.RunTime)
+	stats.total = stats.passed + stats.failed + stats.skipped
 
-	// Determine status emoji
-	var statusEmoji string
-	if report.SuiteSucceeded {
-		statusEmoji = ":white_check_mark:"
-	} else {
-		statusEmoji = ":x:"
-	}
+	return stats
+}
 
-	// Get environment from environment variable
+func getEnvironment() string {
 	environment := os.Getenv("ENVIRONMENT")
 	if environment == "" {
 		environment = "unknown"
 	}
+
+	return environment
+}
+
+func buildSlackMessage(report GinkgoReport, workflowURL string) SlackMessage {
+	// Calculate statistics
+	stats := calculateTestStats(report.SpecReports)
+	duration := time.Duration(report.RunTime)
+
+	// Determine status emoji
+	statusEmoji := ":white_check_mark:"
+	if !report.SuiteSucceeded {
+		statusEmoji = ":x:"
+	}
+
+	// Get environment
+	environment := getEnvironment()
 
 	// Build header block
 	headerText := fmt.Sprintf("%s *%s*", statusEmoji, report.SuiteDescription)
@@ -212,18 +227,18 @@ func buildSlackMessage(report GinkgoReport, workflowURL string) SlackMessage {
 		{
 			Type: "section",
 			Fields: []SlackText{
-				{Type: "mrkdwn", Text: fmt.Sprintf("*Total Tests:*\n%d", total)},
+				{Type: "mrkdwn", Text: fmt.Sprintf("*Total Tests:*\n%d", stats.total)},
 				{Type: "mrkdwn", Text: fmt.Sprintf("*Duration:*\n%s", formatDuration(duration))},
-				{Type: "mrkdwn", Text: fmt.Sprintf("*Passed:*\n%d", passed)},
-				{Type: "mrkdwn", Text: fmt.Sprintf("*Failed:*\n%d", failed)},
-				{Type: "mrkdwn", Text: fmt.Sprintf("*Skipped:*\n%d", skipped)},
+				{Type: "mrkdwn", Text: fmt.Sprintf("*Passed:*\n%d", stats.passed)},
+				{Type: "mrkdwn", Text: fmt.Sprintf("*Failed:*\n%d", stats.failed)},
+				{Type: "mrkdwn", Text: fmt.Sprintf("*Skipped:*\n%d", stats.skipped)},
 				{Type: "mrkdwn", Text: fmt.Sprintf("*Time:*\n%s", report.StartTime.Format("2006-01-02 15:04:05"))},
 			},
 		},
 	}
 
 	// Add failure details if any
-	if len(failures) > 0 {
+	if len(stats.failures) > 0 {
 		blocks = append(blocks, SlackBlock{
 			Type: "divider",
 		})
@@ -236,9 +251,9 @@ func buildSlackMessage(report GinkgoReport, workflowURL string) SlackMessage {
 			},
 		})
 
-		for i, failure := range failures {
+		for i, failure := range stats.failures {
 			if i >= 5 { // Limit to first 5 failures to avoid message size limits
-				remaining := len(failures) - 5
+				remaining := len(stats.failures) - 5
 				blocks = append(blocks, SlackBlock{
 					Type: "section",
 					Text: &SlackText{
