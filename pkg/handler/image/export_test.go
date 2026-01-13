@@ -1,5 +1,4 @@
 /*
-Copyright 2025 the Unikorn Authors.
 Copyright 2026 Nscale.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,28 +17,9 @@ limitations under the License.
 package image
 
 import (
-	"bufio"
-	"errors"
-	"io"
+	"context"
 )
 
-var ErrInvalidQCOW2 = errors.New("invalid QCOW2 image")
-
-func NewQCOW2Reader(r io.Reader) (io.Reader, error) {
-	inner := bufio.NewReader(r)
-
-	bs, err := inner.Peek(4)
-	if err != nil {
-		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-			return nil, ErrInvalidQCOW2
-		}
-
-		return nil, err
-	}
-
-	if bs[0] != 'Q' || bs[1] != 'F' || bs[2] != 'I' || bs[3] != 0xfb {
-		return nil, ErrInvalidQCOW2
-	}
-
-	return inner, nil
+func ValidateImage(ctx context.Context, uri string) error {
+	return validateImage(ctx, uri)
 }

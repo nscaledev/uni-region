@@ -85,9 +85,7 @@ func (p *Provisioner) identityClient(ctx context.Context) (identityapi.ClientWit
 		return nil, err
 	}
 
-	issuer := identityclient.NewTokenIssuer(client, p.options.identityOptions, &p.options.clientOptions, constants.ServiceDescriptor())
-
-	return identityclient.New(client, p.options.identityOptions, &p.options.clientOptions).ControllerClient(ctx, issuer, p.network)
+	return identityclient.New(client, p.options.identityOptions, &p.options.clientOptions).ControllerClient(ctx, p.network)
 }
 
 // Provision implements the Provision interface.

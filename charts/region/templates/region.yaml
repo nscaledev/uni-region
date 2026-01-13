@@ -8,6 +8,15 @@ metadata:
     unikorn-cloud.org/name: {{ $region.name }}
     {{- include "unikorn.labels" $ | nindent 4 }}
 spec:
+  {{- with $security := $region.security }}
+  security:
+    {{- with $organizationIDs := $security.organizationIDs }}
+    organizations:
+      {{- range $organizationIDs }}
+      - id: {{ . }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
   provider: {{ $region.provider }}
   {{- with $kubernetes := $region.kubernetes }}
   kubernetes:

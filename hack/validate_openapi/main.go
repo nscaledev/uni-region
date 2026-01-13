@@ -24,6 +24,8 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/getkin/kin-openapi/openapi3"
+
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
 
@@ -67,6 +69,23 @@ func main() {
 			if operation.Security == nil && !noSecurityAllowed {
 				report("no security requirements set for ", method, pathName)
 			}
+
+			if operation.Security != nil {
+				mustIncludeStatusCode(operation.Responses, http.StatusUnauthorized, method, pathName)
+				mustIncludeStatusCode(operation.Responses, http.StatusForbidden, method, pathName)
+			}
+
+			//  var parameters openapi3.Parameters
+			//  parameters = append(parameters, path.Parameters...)
+			//  parameters = append(parameters, operation.Parameters...)
+			//
+			//  parameters = slices.DeleteFunc(parameters, func(parameter *openapi3.ParameterRef) bool {
+			//  	return parameter.Value.In == openapi3.ParameterInPath && (parameter.Value.Name == "organizationID" || parameter.Value.Name == "projectID")
+			//  })
+			//
+			//  if len(parameters) > 0 {
+			//  	mustIncludeStatusCode(operation.Responses, http.StatusNotFound, method, pathName)
+			//  }
 
 			// If you have multiple, then the errors become ambiguous to handle.
 			if operation.Security != nil && len(*operation.Security) != 1 {
@@ -136,5 +155,11 @@ func main() {
 
 	if failed {
 		os.Exit(1)
+	}
+}
+
+func mustIncludeStatusCode(responses *openapi3.Responses, code int, method, path string) {
+	if responses.Status(code) == nil {
+		report("status code", code, "should be defined for", method, path)
 	}
 }

@@ -172,11 +172,12 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 		}
 
 		flavor := types.Flavor{
-			ID:     node.ID,
-			Name:   node.Name,
-			CPUs:   *node.CPU.Count,
-			Memory: node.Memory,
-			Disk:   node.Disk,
+			ID:           node.ID,
+			Name:         node.Name,
+			CPUs:         *node.CPU.Count,
+			Memory:       node.Memory,
+			Disk:         node.Disk,
+			Architecture: types.X86_64,
 		}
 
 		if node.GPU != nil {
@@ -205,8 +206,8 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 	return nil, ErrUnimplmented
 }
 
-// CreateImageForUpload creates a new image resource for upload.
-func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
+// CreateImage creates a new image.
+func (p *Provider) CreateImage(ctx context.Context, image *types.Image, url string) (*types.Image, error) {
 	return nil, ErrUnimplmented
 }
 

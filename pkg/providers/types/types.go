@@ -23,6 +23,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
+type Architecture string
+
+const (
+	//nolint:revive
+	X86_64  Architecture = "x86_64"
+	Aarch64 Architecture = "aarch64"
+)
+
 // GPUVendor defines the GPU vendor.
 type GPUVendor string
 
@@ -39,6 +47,8 @@ type Flavor struct {
 	ID string
 	// Name of the flavor.
 	Name string
+	// Architecture is the CPU architecture.
+	Architecture Architecture
 	// CPU count.
 	CPUs int
 	// CPUFamily tells you the CPU type.
@@ -93,6 +103,8 @@ type Image struct {
 	Created time.Time
 	// Modified is when the image was modified.
 	Modified time.Time
+	// Architecture is the CPU architecture.
+	Architecture Architecture
 	// SizeGiB is the minimum disk size for the image in GiB.
 	SizeGiB int
 	// ImageVirtualization defines how the image can be used.
@@ -103,10 +115,6 @@ type Image struct {
 	OS ImageOS
 	// Packages is a list of pre-installed packages and its versions. Versions must be a semver (starts with a vN.N.N)
 	Packages *ImagePackages
-	// DiskFormat is the disk format of the image.
-	DiskFormat ImageDiskFormat
-	// DataSource is the source type for the image.
-	DataSource ImageDataSource
 	// Status gives the readiness of the image -- is it active, or still pending upload, and so on.
 	Status ImageStatus
 }
@@ -159,20 +167,6 @@ type ImageOS struct {
 	// Version is the version of the OS.
 	Version string
 }
-
-type ImageDiskFormat string
-
-const (
-	ImageDiskFormatRaw   ImageDiskFormat = "raw"
-	ImageDiskFormatQCOW2 ImageDiskFormat = "qcow2"
-)
-
-type ImageDataSource string
-
-const (
-	ImageDataSourceFile ImageDataSource = "file"
-	ImageDataSourceURL  ImageDataSource = "url"
-)
 
 type ImageStatus string
 
