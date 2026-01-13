@@ -318,7 +318,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 
 	attachments, err := generateAttachmentList(ctx, networkClient, request.Spec.Attachments)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to generate attachment list").WithError(err)
+		return nil, err
 	}
 
 	out := &regionv1.FileStorage{
@@ -468,35 +468,12 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 		return nil, errors.OAuth2InvalidRequest("filestorage is being deleted")
 	}
 
-	organizationID := current.Labels[coreconstants.OrganizationLabel]
-	projectID := current.Labels[coreconstants.ProjectLabel]
-	regionID := current.Labels[constants.RegionLabel]
-
-	required, err := c.generateV2(ctx, organizationID, projectID, regionID, request, current.Spec.StorageClassID)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := conversion.UpdateObjectMetadata(required, current, common.IdentityMetadataMutator); err != nil {
-		return nil, errors.OAuth2ServerError("failed to merge metadata").WithError(err)
-	}
-
-	// Preserve the allocation.
-	if v, ok := current.Annotations[coreconstants.AllocationAnnotation]; ok {
-		required.Annotations[coreconstants.AllocationAnnotation] = v
-	}
-
-	updated := current.DeepCopy()
-	updated.Labels = required.Labels
-	updated.Annotations = required.Annotations
-	updated.Spec = required.Spec
-
-	s := newUpdateSaga(c, organizationID, regionID, current, updated)
+	s := newUpdateSaga(c, current, request)
 	if err := saga.Run(ctx, s); err != nil {
 		return nil, err
 	}
 
-	storage := convertV2(updated)
+	storage := convertV2(s.updated)
 
 	fcdriver, err := c.getFileStorageDriver(ctx, storage.Status.StorageClassId)
 	if err != nil {
