@@ -33,6 +33,7 @@ jobs:
     env:
       ENVIRONMENT: dev
       API_BASE_URL: ${{ secrets.DEV_API_BASE_URL }}
+      REGION_BASE_URL: ${{ secrets.DEV_REGION_BASE_URL }}
       API_AUTH_TOKEN: ${{ secrets.DEV_API_AUTH_TOKEN }}
       TEST_ORG_ID: ${{ secrets.DEV_TEST_ORG_ID }}
       TEST_PROJECT_ID: ${{ secrets.DEV_TEST_PROJECT_ID }}
@@ -79,6 +80,7 @@ jobs:
     env:
       ENVIRONMENT: uat
       API_BASE_URL: ${{ secrets.UAT_API_BASE_URL }}
+      REGION_BASE_URL: ${{ secrets.UAT_REGION_BASE_URL }}
       API_AUTH_TOKEN: ${{ secrets.UAT_API_AUTH_TOKEN }}
       TEST_ORG_ID: ${{ secrets.UAT_TEST_ORG_ID }}
       TEST_PROJECT_ID: ${{ secrets.UAT_TEST_PROJECT_ID }}
