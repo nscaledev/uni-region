@@ -10,7 +10,18 @@ on:
         description: 'Run UAT tests'
         type: boolean
         default: false
-
+      focus:
+        description: 'Test suite to run'
+        required: false
+        default: 'All'
+        type: choice
+        options:
+          - 'All'
+          - 'Region Discovery'
+          - 'Flavor Discovery'
+          - 'Image Discovery'
+          - 'External Network Discovery'
+          - 'File Storage Management'
 permissions:
   contents: read
 
@@ -22,6 +33,7 @@ jobs:
     env:
       ENVIRONMENT: dev
       API_BASE_URL: ${{ secrets.DEV_API_BASE_URL }}
+      REGION_BASE_URL: ${{ secrets.DEV_REGION_BASE_URL }}
       API_AUTH_TOKEN: ${{ secrets.DEV_API_AUTH_TOKEN }}
       TEST_ORG_ID: ${{ secrets.DEV_TEST_ORG_ID }}
       TEST_PROJECT_ID: ${{ secrets.DEV_TEST_PROJECT_ID }}
@@ -40,8 +52,17 @@ jobs:
     - name: Touch
       run: make touch
 
-    - name: Run API Tests
-      run: make test-api
+    - name: Run API Tests (Skip Storage)
+      if: github.event.inputs.focus == 'All'
+      run: cd test/api/suites && ginkgo run -v --show-node-events --tags=integration --skip="File Storage Management"
+
+    - name: Run API Tests with Focus
+      if: github.event.inputs.focus != 'All' && github.event.inputs.focus != 'File Storage Management'
+      run: make test-api-focus FOCUS="${{ github.event.inputs.focus }}"
+
+    - name: Skip File Storage Tests on Dev
+      if: github.event.inputs.focus == 'File Storage Management'
+      run: echo "Vast is not available on Dev environment, skipping File Storage Management tests"
 
     - name: Archive API Test Results
       uses: actions/upload-artifact@v4
@@ -70,6 +91,7 @@ jobs:
     env:
       ENVIRONMENT: uat
       API_BASE_URL: ${{ secrets.UAT_API_BASE_URL }}
+      REGION_BASE_URL: ${{ secrets.UAT_REGION_BASE_URL }}
       API_AUTH_TOKEN: ${{ secrets.UAT_API_AUTH_TOKEN }}
       TEST_ORG_ID: ${{ secrets.UAT_TEST_ORG_ID }}
       TEST_PROJECT_ID: ${{ secrets.UAT_TEST_PROJECT_ID }}
@@ -89,7 +111,14 @@ jobs:
       run: make touch
 
     - name: Run API Tests
+      if: github.event.inputs.focus == 'All'
       run: make test-api
+
+
+    - name: Run API Tests with Focus
+      if: github.event.inputs.focus != 'All'
+      run: make test-api-focus FOCUS="${{ github.event.inputs.focus }}"
+
 
     - name: Archive API Test Results
       uses: actions/upload-artifact@v4
