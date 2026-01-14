@@ -313,7 +313,7 @@ func (s *createSaga) createServicePricipal(ctx context.Context) error {
 		},
 	}
 
-	identity, err := identity.New(s.client.client, s.client.namespace).CreateRaw(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, request)
+	identity, err := identity.New(s.client.client, s.client.namespace, s.client.providers).CreateRaw(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, request)
 	if err != nil {
 		return err
 	}
@@ -327,7 +327,7 @@ func (s *createSaga) createServicePricipal(ctx context.Context) error {
 // NOTE: you must use the shared delete library call to preserve cascading
 // deletion semantics.
 func (s *createSaga) deleteServicePricipal(ctx context.Context) error {
-	return identity.New(s.client.client, s.client.namespace).Delete(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.identity.Name)
+	return identity.New(s.client.client, s.client.namespace, s.client.providers).Delete(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.identity.Name)
 }
 
 func (s *createSaga) generateNetwork(ctx context.Context) error {
@@ -473,5 +473,5 @@ func (c *Client) DeleteV2(ctx context.Context, networkID string) error {
 	// The V2 API doesn't expose service principals, but they are mapped 1:1 to networks, so as the
 	// real root of the tree we actually delete that and allow cascading deletion to do the
 	// rest.
-	return identity.New(c.client, c.namespace).Delete(ctx, organizationID, projectID, resource.Labels[constants.IdentityLabel])
+	return identity.New(c.client, c.namespace, c.providers).Delete(ctx, organizationID, projectID, resource.Labels[constants.IdentityLabel])
 }

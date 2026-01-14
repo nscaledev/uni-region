@@ -30,6 +30,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 
 	"k8s.io/utils/ptr"
 
@@ -165,6 +166,7 @@ type generator struct {
 	client client.Client
 	// namespace the resource is provisioned in.
 	namespace string
+	providers providers.Providers
 	// organizationID is the unique organization identifier.
 	organizationID string
 	// projectID is the unique project identifier.
@@ -173,10 +175,11 @@ type generator struct {
 	identityID string
 }
 
-func newGenerator(client client.Client, namespace, organizationID, projectID, identityID string) *generator {
+func newGenerator(client client.Client, namespace string, providers providers.Providers, organizationID, projectID, identityID string) *generator {
 	return &generator{
 		client:         client,
 		namespace:      namespace,
+		providers:      providers,
 		organizationID: organizationID,
 		projectID:      projectID,
 		identityID:     identityID,
@@ -184,13 +187,13 @@ func newGenerator(client client.Client, namespace, organizationID, projectID, id
 }
 
 func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*unikornv1.Server, error) {
-	identity, err := identity.New(g.client, g.namespace).GetRaw(ctx, g.organizationID, g.projectID, g.identityID)
+	identity, err := identity.New(g.client, g.namespace, g.providers).GetRaw(ctx, g.organizationID, g.projectID, g.identityID)
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO: The API enforces a single network.
-	network, err := network.New(g.client, g.namespace, nil).GetRaw(ctx, g.organizationID, g.projectID, in.Spec.Networks[0].Id)
+	network, err := network.New(g.client, g.namespace, g.providers, nil).GetRaw(ctx, g.organizationID, g.projectID, in.Spec.Networks[0].Id)
 	if err != nil {
 		return nil, err
 	}

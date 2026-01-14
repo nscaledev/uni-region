@@ -22,6 +22,7 @@ import (
 	"errors"
 	"slices"
 
+	servererrors "github.com/unikorn-cloud/core/pkg/server/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/kubernetes"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
@@ -31,6 +32,10 @@ import (
 )
 
 var (
+	// ErrRegionWrongKind is raised when you need one type but someone has
+	// asked for a different type.
+	ErrRegionWrongKind = errors.New("region is of the wrong kind")
+
 	// ErrRegionNotFound is raised when a region doesn't exist.
 	ErrRegionNotFound = errors.New("region doesn't exist")
 
@@ -39,8 +44,31 @@ var (
 	ErrRegionProviderUnimplemented = errors.New("region provider unimplemented")
 )
 
-//nolint:gochecknoglobals
-var cache = map[string]types.Provider{}
+func ProviderToServerError(err error) error {
+	switch {
+	case errors.Is(err, ErrRegionWrongKind):
+		return servererrors.OAuth2InvalidRequest("region is not valid for this endpoint")
+	case errors.Is(err, ErrRegionNotFound):
+		return servererrors.HTTPNotFound()
+	default:
+	}
+
+	return err
+}
+
+type providersImpl struct {
+	client    client.Client
+	namespace string
+	cache     map[string]types.Provider
+}
+
+func New(client client.Client, namespace string) Providers {
+	return &providersImpl{
+		client:    client,
+		namespace: namespace,
+		cache:     map[string]types.Provider{},
+	}
+}
 
 // newProvider a new Provider.
 func newProvider(ctx context.Context, client client.Client, region *unikornv1.Region) (types.Provider, error) {
@@ -54,15 +82,39 @@ func newProvider(ctx context.Context, client client.Client, region *unikornv1.Re
 	return nil, ErrRegionProviderUnimplemented
 }
 
-// New returns a new provider for the given region.
-func New(ctx context.Context, c client.Client, namespace, regionID string) (types.Provider, error) {
-	if provider, ok := cache[regionID]; ok {
+// LookupAny returns a provider as identified by the region ID of any type.
+func (p *providersImpl) LookupAny(ctx context.Context, regionID string) (types.Provider, error) {
+	kinds := []unikornv1.Provider{
+		unikornv1.ProviderOpenstack,
+		unikornv1.ProviderKubernetes,
+	}
+
+	return p.lookup(ctx, regionID, kinds)
+}
+
+// LookupCloud returns a provider as identified by the region ID and must be
+// a cloud type.
+func (p *providersImpl) LookupCloud(ctx context.Context, regionID string) (types.Provider, error) {
+	kinds := []unikornv1.Provider{
+		unikornv1.ProviderOpenstack,
+	}
+
+	return p.lookup(ctx, regionID, kinds)
+}
+
+// Lookup returns a provider for the given region.
+func (p *providersImpl) lookup(ctx context.Context, regionID string, kinds []unikornv1.Provider) (types.Provider, error) {
+	if provider, ok := p.cache[regionID]; ok {
+		if !slices.Contains(kinds, provider.Kind()) {
+			return nil, ErrRegionWrongKind
+		}
+
 		return provider, nil
 	}
 
 	var regions unikornv1.RegionList
 
-	if err := c.List(ctx, &regions, &client.ListOptions{Namespace: namespace}); err != nil {
+	if err := p.client.List(ctx, &regions, &client.ListOptions{Namespace: p.namespace}); err != nil {
 		return nil, err
 	}
 
@@ -75,12 +127,18 @@ func New(ctx context.Context, c client.Client, namespace, regionID string) (type
 		return nil, ErrRegionNotFound
 	}
 
-	provider, err := newProvider(ctx, c, &regions.Items[index])
+	region := &regions.Items[index]
+
+	if !slices.Contains(kinds, region.Spec.Provider) {
+		return nil, ErrRegionWrongKind
+	}
+
+	provider, err := newProvider(ctx, p.client, region)
 	if err != nil {
 		return nil, err
 	}
 
-	cache[regionID] = provider
+	p.cache[regionID] = provider
 
 	return provider, nil
 }

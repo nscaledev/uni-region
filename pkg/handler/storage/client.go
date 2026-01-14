@@ -43,6 +43,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -62,6 +63,7 @@ type Client struct {
 	client client.Client
 	// namespace we are running in.
 	namespace string
+	providers providers.Providers
 	// identity allows quota allocation.
 	identity identityapi.ClientWithResponsesInterface
 
@@ -71,10 +73,11 @@ type Client struct {
 }
 
 // New creates a new client.
-func New(client client.Client, namespace string, identity identityapi.ClientWithResponsesInterface) *Client {
+func New(client client.Client, namespace string, providers providers.Providers, identity identityapi.ClientWithResponsesInterface) *Client {
 	return &Client{
 		client:    client,
 		namespace: namespace,
+		providers: providers,
 		identity:  identity,
 	}
 }
@@ -309,7 +312,7 @@ func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2R
 }
 
 func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.StorageV2Update, storageClassID string) (*regionv1.FileStorage, error) {
-	networkClient := network.New(c.client, c.namespace, c.identity)
+	networkClient := network.New(c.client, c.namespace, c.providers, c.identity)
 
 	err := util.InjectUserPrincipal(ctx, organizationID, projectID)
 	if err != nil {

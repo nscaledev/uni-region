@@ -126,7 +126,7 @@ func TestGenerateAttachmentList(t *testing.T) {
 
 	network := newTestNetwork("net-1")
 	client := newFakeClient(t, network)
-	netclient := networkclient.New(client, testNamespace, nil)
+	netclient := networkclient.New(client, testNamespace, nil, nil)
 
 	ctx := newContextWithPermissions(t.Context())
 
@@ -797,7 +797,7 @@ func (b *generateV2InputBuilder) Run() *generateV2Input {
 func newClientAndContext(t *testing.T, c client.Client, auth *identityauth.Info, principalInfo *principal.Principal) (*Client, context.Context) {
 	t.Helper()
 
-	client := New(c, testNamespace, nil)
+	client := New(c, testNamespace, nil, nil)
 	ctx := t.Context()
 
 	if auth != nil {
