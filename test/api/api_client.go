@@ -19,6 +19,7 @@ limitations under the License.
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -72,6 +73,15 @@ func NewAPIClient(baseURL string) (*APIClient, error) {
 
 // NewAPIClientWithConfig creates a new Region API client with the given config.
 func NewAPIClientWithConfig(config *TestConfig) *APIClient {
+	return newAPIClientWithConfig(config, config.BaseURL)
+}
+
+// NewRegionAPIClient creates a new API client pointing to the Region service.
+func NewRegionAPIClient(config *TestConfig) *APIClient {
+	if config.RegionBaseURL != "" {
+		return newAPIClientWithConfig(config, config.RegionBaseURL)
+	}
+	// Fallback to BaseURL if RegionBaseURL not configured
 	return newAPIClientWithConfig(config, config.BaseURL)
 }
 
@@ -182,6 +192,99 @@ func (c *APIClient) ListFileStorage(ctx context.Context, orgID, projectID, regio
 			ResourceType:   "filestorage",
 			ResourceID:     projectID,
 			ResourceIDType: "project",
+		},
+	)
+}
+
+// CreateFileStorage creates a new file storage resource.
+func (c *APIClient) CreateFileStorage(ctx context.Context, request regionopenapi.StorageV2CreateRequest) (*regionopenapi.StorageV2Read, error) {
+	path := c.endpoints.CreateFileStorage()
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling filestorage request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.DoRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusCreated)
+	if err != nil {
+		return nil, fmt.Errorf("creating filestorage: %w", err)
+	}
+
+	var storage regionopenapi.StorageV2Read
+	if err := json.Unmarshal(respBody, &storage); err != nil {
+		return nil, fmt.Errorf("unmarshaling filestorage: %w", err)
+	}
+
+	return &storage, nil
+}
+
+// GetFileStorage gets a specific file storage resource by ID.
+func (c *APIClient) GetFileStorage(ctx context.Context, filestorageID string) (*regionopenapi.StorageV2Read, error) {
+	path := c.endpoints.GetFileStorage(filestorageID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	if err != nil {
+		return nil, fmt.Errorf("getting filestorage: %w", err)
+	}
+
+	var storage regionopenapi.StorageV2Read
+	if err := json.Unmarshal(respBody, &storage); err != nil {
+		return nil, fmt.Errorf("unmarshaling filestorage: %w", err)
+	}
+
+	return &storage, nil
+}
+
+// UpdateFileStorage updates a file storage resource.
+func (c *APIClient) UpdateFileStorage(ctx context.Context, filestorageID string, request regionopenapi.StorageV2UpdateRequest) (*regionopenapi.StorageV2Read, error) {
+	path := c.endpoints.UpdateFileStorage(filestorageID)
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling filestorage update request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.DoRequest(ctx, http.MethodPut, path, bytes.NewReader(reqBody), http.StatusAccepted)
+	if err != nil {
+		return nil, fmt.Errorf("updating filestorage: %w", err)
+	}
+
+	var storage regionopenapi.StorageV2Read
+	if err := json.Unmarshal(respBody, &storage); err != nil {
+		return nil, fmt.Errorf("unmarshaling filestorage: %w", err)
+	}
+
+	return &storage, nil
+}
+
+// DeleteFileStorage deletes a file storage resource.
+func (c *APIClient) DeleteFileStorage(ctx context.Context, filestorageID string) error {
+	path := c.endpoints.DeleteFileStorage(filestorageID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, _, err := c.DoRequest(ctx, http.MethodDelete, path, nil, http.StatusAccepted)
+	if err != nil {
+		return fmt.Errorf("deleting filestorage: %w", err)
+	}
+
+	return nil
+}
+
+// ListFileStorageClasses lists all available file storage classes for a region.
+func (c *APIClient) ListFileStorageClasses(ctx context.Context, regionID string) (regionopenapi.StorageClassListV2Read, error) {
+	path := c.endpoints.ListFileStorageClasses(regionID)
+
+	return coreclient.ListResource[regionopenapi.StorageClassV2Read](
+		ctx,
+		c.APIClient,
+		path,
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "filestorageclasses",
+			ResourceID:     regionID,
+			ResourceIDType: "region",
 		},
 	)
 }

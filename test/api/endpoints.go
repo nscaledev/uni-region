@@ -66,3 +66,32 @@ func (e *Endpoints) ListFileStorage(orgID, projectID, regionID string) string {
 	return fmt.Sprintf("/api/v2/filestorage?organizationId=%s&projectId=%s&regionId=%s",
 		url.QueryEscape(orgID), url.QueryEscape(projectID), url.QueryEscape(regionID))
 }
+
+// CreateFileStorage returns the endpoint for creating file storage.
+func (e *Endpoints) CreateFileStorage() string {
+	return "/api/v2/filestorage"
+}
+
+// GetFileStorage returns the endpoint for getting a specific file storage resource.
+func (e *Endpoints) GetFileStorage(filestorageID string) string {
+	return fmt.Sprintf("/api/v2/filestorage/%s",
+		url.PathEscape(filestorageID))
+}
+
+// UpdateFileStorage returns the endpoint for updating a specific file storage resource.
+func (e *Endpoints) UpdateFileStorage(filestorageID string) string {
+	return fmt.Sprintf("/api/v2/filestorage/%s",
+		url.PathEscape(filestorageID))
+}
+
+// DeleteFileStorage returns the endpoint for deleting a specific file storage resource.
+func (e *Endpoints) DeleteFileStorage(filestorageID string) string {
+	return fmt.Sprintf("/api/v2/filestorage/%s",
+		url.PathEscape(filestorageID))
+}
+
+// ListFileStorageClasses returns the endpoint for listing available file storage classes.
+func (e *Endpoints) ListFileStorageClasses(regionID string) string {
+	return fmt.Sprintf("/api/v2/filestorageclasses?regionId=%s",
+		url.QueryEscape(regionID))
+}

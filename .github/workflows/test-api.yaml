@@ -10,7 +10,18 @@ on:
         description: 'Run UAT tests'
         type: boolean
         default: false
-
+      focus:
+        description: 'Test suite to run'
+        required: false
+        default: 'All'
+        type: choice
+        options:
+          - 'All'
+          - 'Region Discovery'
+          - 'Flavor Discovery'
+          - 'Image Discovery'
+          - 'External Network Discovery'
+          - 'File Storage Management'
 permissions:
   contents: read
 
@@ -41,7 +52,13 @@ jobs:
       run: make touch
 
     - name: Run API Tests
+      if: github.event.inputs.focus == 'All'
       run: make test-api
+
+
+    - name: Run API Tests with Focus
+      if: github.event.inputs.focus != 'All'
+      run: make test-api-focus FOCUS="${{ github.event.inputs.focus }}"
 
     - name: Archive API Test Results
       uses: actions/upload-artifact@v4
@@ -81,7 +98,14 @@ jobs:
       run: make touch
 
     - name: Run API Tests
+      if: github.event.inputs.focus == 'All'
       run: make test-api
+
+
+    - name: Run API Tests with Focus
+      if: github.event.inputs.focus != 'All'
+      run: make test-api-focus FOCUS="${{ github.event.inputs.focus }}"
+
 
     - name: Archive API Test Results
       uses: actions/upload-artifact@v4
