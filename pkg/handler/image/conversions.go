@@ -28,6 +28,11 @@ import (
 
 var ErrUnknownDiskFormat = errors.New("unknown image format")
 
+// Export this so it can be used for server snapshot.
+//
+//nolint:gochecknoglobals
+var ConvertImage = convertImage
+
 func convertArchitecture(in types.Architecture) openapi.Architecture {
 	switch in {
 	case types.X86_64:

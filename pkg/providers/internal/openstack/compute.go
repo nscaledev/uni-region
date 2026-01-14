@@ -369,3 +369,14 @@ func (c *ComputeClient) ShowConsoleOutput(ctx context.Context, id string, length
 
 	return servers.ShowConsoleOutput(ctx, c.client, id, opts).Extract()
 }
+
+func (c *ComputeClient) CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error) {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", id),
+	)
+
+	ctx, span := traceStart(ctx, "POST /compute/v2/servers/{server_id}/action (create image)", spanAttributes)
+	defer span.End()
+
+	return servers.CreateImage(ctx, c.client, id, opts).ExtractImageID()
+}

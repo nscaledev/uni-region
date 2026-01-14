@@ -36,14 +36,28 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type Handler struct {
-	*ImageHandler
-
+// clientArgs has the values needed to create the various pkg/handler/*/ clients.
+// By putting convenience methods on this type, it can be used in sub-handler
+// structs, which makes isolating those for testing possible.
+type clientArgs struct {
 	// client gives cached access to Kubernetes.
 	client client.Client
 
 	// namespace is the namespace we are running in.
 	namespace string
+}
+
+func (args *clientArgs) serverClient() *server.Client {
+	return server.NewClient(args.client, args.namespace)
+}
+
+type Handler struct {
+	// There are embedded so they can be their own
+	*ImageHandler
+	*ServerV2Handler
+
+	// clientArgs has the values needed to create the various handler clients.
+	clientArgs
 
 	// options allows behaviour to be defined on the CLI.
 	options *Options
@@ -54,11 +68,14 @@ type Handler struct {
 
 func New(client client.Client, namespace string, options *Options, identity *identityapi.ClientWithResponses) (*Handler, error) {
 	h := &Handler{
-		client:       client,
-		namespace:    namespace,
-		options:      options,
-		identity:     identity,
-		ImageHandler: NewImageHandler(client, namespace, options),
+		clientArgs: clientArgs{
+			client:    client,
+			namespace: namespace,
+		},
+		options:         options,
+		identity:        identity,
+		ImageHandler:    NewImageHandler(client, namespace, options),
+		ServerV2Handler: NewServerV2Handler(client, namespace),
 	}
 
 	return h, nil
@@ -358,10 +375,6 @@ func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 	}
 
 	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
-}
-
-func (h *Handler) serverClient() *server.Client {
-	return server.NewClient(h.client, h.namespace)
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDServers(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, params openapi.GetApiV1OrganizationsOrganizationIDServersParams) {
