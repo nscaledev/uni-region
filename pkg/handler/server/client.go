@@ -33,8 +33,9 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
-	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -112,9 +113,9 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 		return nil, err
 	}
 
-	provider, err := region.NewClient(c.ClientArgs).Provider(ctx, identity.Labels[constants.RegionLabel])
+	provider, err := c.Providers.LookupCloud(ctx, identity.Labels[constants.RegionLabel])
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, providers.ProviderToServerError(err)
 	}
 
 	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
@@ -156,9 +157,9 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 		return nil, err
 	}
 
-	provider, err := region.NewClient(c.ClientArgs).Provider(ctx, identity.Labels[constants.RegionLabel])
+	provider, err := c.Providers.LookupCloud(ctx, identity.Labels[constants.RegionLabel])
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, providers.ProviderToServerError(err)
 	}
 
 	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
@@ -195,7 +196,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	return convert(updated), nil
 }
 
-func (c *Client) getServerIdentityAndProvider(ctx context.Context, organizationID, projectID, identityID, serverID string) (*unikornv1.Server, *unikornv1.Identity, Provider, error) {
+func (c *Client) getServerIdentityAndProvider(ctx context.Context, organizationID, projectID, identityID, serverID string) (*unikornv1.Server, *unikornv1.Identity, types.Provider, error) {
 	current, err := c.get(ctx, organizationID, projectID, serverID)
 	if err != nil {
 		return nil, nil, nil, err
@@ -206,9 +207,9 @@ func (c *Client) getServerIdentityAndProvider(ctx context.Context, organizationI
 		return nil, nil, nil, err
 	}
 
-	provider, err := region.NewClient(c.ClientArgs).Provider(ctx, current.Labels[constants.RegionLabel])
+	provider, err := c.Providers.LookupCloud(ctx, current.Labels[constants.RegionLabel])
 	if err != nil {
-		return nil, nil, nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, nil, nil, providers.ProviderToServerError(err)
 	}
 
 	return current, identity, provider, nil
@@ -223,7 +224,7 @@ func (c *Client) Reboot(ctx context.Context, organizationID, projectID, identity
 	return c.reboot(ctx, identity, server, hard, provider)
 }
 
-func (c *Client) reboot(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool, provider Provider) error {
+func (c *Client) reboot(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool, provider types.Provider) error {
 	if err := provider.RebootServer(ctx, identity, server, hard); err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return errors.HTTPNotFound().WithError(err)
@@ -252,7 +253,7 @@ func (c *Client) Start(ctx context.Context, organizationID, projectID, identityI
 	return c.start(ctx, identity, server, provider)
 }
 
-func (c *Client) start(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, provider Provider) error {
+func (c *Client) start(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, provider types.Provider) error {
 	if err := provider.StartServer(ctx, identity, server); err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return errors.HTTPNotFound().WithError(err)
@@ -284,7 +285,7 @@ func (c *Client) Stop(ctx context.Context, organizationID, projectID, identityID
 	return c.stop(ctx, identity, server, provider)
 }
 
-func (c *Client) stop(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, provider Provider) error {
+func (c *Client) stop(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, provider types.Provider) error {
 	if err := provider.StopServer(ctx, identity, server); err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return errors.HTTPNotFound().WithError(err)
@@ -334,7 +335,7 @@ func (c *Client) CreateConsoleSession(ctx context.Context, organizationID, proje
 	return c.createConsoleSession(ctx, identity, server, provider)
 }
 
-func (c *Client) createConsoleSession(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, provider Provider) (*openapi.ConsoleSessionResponse, error) {
+func (c *Client) createConsoleSession(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, provider types.Provider) (*openapi.ConsoleSessionResponse, error) {
 	url, err := provider.CreateConsoleSession(ctx, identity, server)
 	if err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
@@ -364,7 +365,7 @@ func (c *Client) GetConsoleOutput(ctx context.Context, organizationID, projectID
 	return c.getConsoleOutput(ctx, identity, server, params.Length, provider)
 }
 
-func (c *Client) getConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, length *int, provider Provider) (*openapi.ConsoleOutputResponse, error) {
+func (c *Client) getConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, length *int, provider types.Provider) (*openapi.ConsoleOutputResponse, error) {
 	contents, err := provider.GetConsoleOutput(ctx, identity, server, length)
 	if err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
