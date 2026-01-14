@@ -1235,6 +1235,21 @@ func (m *MockServerInterface) EXPECT() *MockServerInterfaceMockRecorder {
 	return m.recorder
 }
 
+// CreateImageFromServer mocks base method.
+func (m *MockServerInterface) CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateImageFromServer", ctx, id, opts)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateImageFromServer indicates an expected call of CreateImageFromServer.
+func (mr *MockServerInterfaceMockRecorder) CreateImageFromServer(ctx, id, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateImageFromServer", reflect.TypeOf((*MockServerInterface)(nil).CreateImageFromServer), ctx, id, opts)
+}
+
 // CreateRemoteConsole mocks base method.
 func (m *MockServerInterface) CreateRemoteConsole(ctx context.Context, id string) (*remoteconsoles.RemoteConsole, error) {
 	m.ctrl.T.Helper()
@@ -1372,6 +1387,21 @@ func NewMockComputeInterface(ctrl *gomock.Controller) *MockComputeInterface {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockComputeInterface) EXPECT() *MockComputeInterfaceMockRecorder {
 	return m.recorder
+}
+
+// CreateImageFromServer mocks base method.
+func (m *MockComputeInterface) CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateImageFromServer", ctx, id, opts)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateImageFromServer indicates an expected call of CreateImageFromServer.
+func (mr *MockComputeInterfaceMockRecorder) CreateImageFromServer(ctx, id, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateImageFromServer", reflect.TypeOf((*MockComputeInterface)(nil).CreateImageFromServer), ctx, id, opts)
 }
 
 // CreateKeypair mocks base method.
