@@ -52,14 +52,17 @@ jobs:
     - name: Touch
       run: make touch
 
-    - name: Run API Tests
+    - name: Run API Tests (Skip Storage)
       if: github.event.inputs.focus == 'All'
-      run: make test-api
-
+      run: cd test/api/suites && ginkgo run -v --show-node-events --tags=integration --skip="File Storage Management"
 
     - name: Run API Tests with Focus
-      if: github.event.inputs.focus != 'All'
+      if: github.event.inputs.focus != 'All' && github.event.inputs.focus != 'File Storage Management'
       run: make test-api-focus FOCUS="${{ github.event.inputs.focus }}"
+
+    - name: Skip File Storage Tests on Dev
+      if: github.event.inputs.focus == 'File Storage Management'
+      run: echo "Vast is not available on Dev environment, skipping File Storage Management tests"
 
     - name: Archive API Test Results
       uses: actions/upload-artifact@v4
