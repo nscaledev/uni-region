@@ -45,16 +45,12 @@ type Handler struct {
 
 	// options allows behaviour to be defined on the CLI.
 	options *Options
-
-	// identity is an identity client for RBAC access.
-	identity *identityapi.ClientWithResponses
 }
 
-func New(clientArgs common.ClientArgs, options *Options, identity *identityapi.ClientWithResponses) (*Handler, error) {
+func New(clientArgs common.ClientArgs, options *Options) (*Handler, error) {
 	h := &Handler{
 		ClientArgs:      clientArgs,
 		options:         options,
-		identity:        identity,
 		ImageHandler:    NewImageHandler(clientArgs, options),
 		ServerV2Handler: NewServerV2Handler(clientArgs),
 	}
@@ -197,7 +193,7 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 }
 
 func (h *Handler) networkClient() *network.Client {
-	return network.New(h.ClientArgs, h.identity)
+	return network.New(h.ClientArgs)
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {

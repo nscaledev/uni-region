@@ -360,7 +360,7 @@ func (s *createSaga) createAllocation(ctx context.Context) error {
 		},
 	}
 
-	if err := identityclient.NewAllocations(s.client.Client, s.client.identity).Create(ctx, s.network, required); err != nil {
+	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Create(ctx, s.network, required); err != nil {
 		return err
 	}
 
@@ -368,7 +368,7 @@ func (s *createSaga) createAllocation(ctx context.Context) error {
 }
 
 func (s *createSaga) deleteAllocation(ctx context.Context) error {
-	if err := identityclient.NewAllocations(s.client.Client, s.client.identity).Delete(ctx, s.network); err != nil {
+	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Delete(ctx, s.network); err != nil {
 		return err
 	}
 

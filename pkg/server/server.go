@@ -153,9 +153,10 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 	clientArgs := common.ClientArgs{
 		Client:    client,
 		Namespace: s.CoreOptions.Namespace,
+		Identity:  identity,
 	}
 
-	handlerInterface, err := handler.New(clientArgs, &s.HandlerOptions, identity)
+	handlerInterface, err := handler.New(clientArgs, &s.HandlerOptions)
 	if err != nil {
 		return nil, err
 	}
