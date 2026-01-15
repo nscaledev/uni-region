@@ -27,6 +27,7 @@ import (
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -39,8 +40,7 @@ import (
 type GetProviderFunc func(context.Context, client.Client, string, string) (Provider, error)
 
 type Client struct {
-	client      client.Client
-	namespace   string
+	common.ClientArgs
 	getProvider GetProviderFunc
 }
 
@@ -48,10 +48,9 @@ func DefaultGetProvider(ctx context.Context, c client.Client, namespace, regionI
 	return providers.New(ctx, c, namespace, regionID)
 }
 
-func NewClient(client client.Client, namespace string, getProvider GetProviderFunc) *Client {
+func NewClient(clientArgs common.ClientArgs, getProvider GetProviderFunc) *Client {
 	return &Client{
-		client:      client,
-		namespace:   namespace,
+		ClientArgs:  clientArgs,
 		getProvider: getProvider,
 	}
 }
@@ -65,7 +64,7 @@ type Provider interface {
 }
 
 func (c *Client) provider(ctx context.Context, regionID string) (Provider, error) {
-	return c.getProvider(ctx, c.client, c.namespace, regionID)
+	return c.getProvider(ctx, c.Client, c.Namespace, regionID)
 }
 
 func (c *Client) ListImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {

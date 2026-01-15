@@ -28,9 +28,10 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
-	"github.com/unikorn-cloud/identity/pkg/handler/common"
+	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -43,17 +44,13 @@ import (
 
 // Client provides a restful API for identities.
 type Client struct {
-	// client ia a Kubernetes client.
-	client client.Client
-	// namespace we are running in.
-	namespace string
+	common.ClientArgs
 }
 
 // New creates a new client.
-func NewClient(client client.Client, namespace string) *Client {
+func NewClient(clientArgs common.ClientArgs) *Client {
 	return &Client{
-		client:    client,
-		namespace: namespace,
+		ClientArgs: clientArgs,
 	}
 }
 
@@ -61,7 +58,7 @@ func NewClient(client client.Client, namespace string) *Client {
 func (c *Client) get(ctx context.Context, organizationID, projectID, serverID string) (*unikornv1.Server, error) {
 	resource := &unikornv1.Server{}
 
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: serverID}, resource); err != nil {
+	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: serverID}, resource); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
@@ -81,13 +78,13 @@ func (c *Client) List(ctx context.Context, organizationID string, params openapi
 	result := &unikornv1.ServerList{}
 
 	options := &client.ListOptions{
-		Namespace: c.namespace,
+		Namespace: c.Namespace,
 		LabelSelector: labels.SelectorFromSet(map[string]string{
 			coreconstants.OrganizationLabel: organizationID,
 		}),
 	}
 
-	if err := c.client.List(ctx, result, options); err != nil {
+	if err := c.Client.List(ctx, result, options); err != nil {
 		return nil, errors.OAuth2ServerError("unable to list servers").WithError(err)
 	}
 
@@ -110,12 +107,12 @@ func (c *Client) List(ctx context.Context, organizationID string, params openapi
 
 // Create instantiates a new resource.
 func (c *Client) Create(ctx context.Context, organizationID, projectID, identityID string, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	identity, err := identity.New(c.ClientArgs).GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
 		return nil, err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, identity.Labels[constants.RegionLabel])
+	provider, err := region.NewClient(c.ClientArgs).Provider(ctx, identity.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
@@ -128,14 +125,14 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 		return nil, errors.OAuth2ServerError("failed to retrieve image from provider").WithError(err)
 	}
 
-	resource, err := newGenerator(c.client, c.namespace, organizationID, projectID, identityID).generate(ctx, request)
+	resource, err := newGenerator(c.ClientArgs, organizationID, projectID, identityID).generate(ctx, request)
 	if err != nil {
 		return nil, err
 	}
 
 	resource.Status.Phase = unikornv1.InstanceLifecyclePhasePending
 
-	if err := c.client.Create(ctx, resource); err != nil {
+	if err := c.Client.Create(ctx, resource); err != nil {
 		return nil, errors.OAuth2ServerError("unable to create server").WithError(err)
 	}
 
@@ -154,12 +151,12 @@ func (c *Client) Get(ctx context.Context, organizationID, projectID, serverID st
 
 // Update a resource.
 func (c *Client) Update(ctx context.Context, organizationID, projectID, identityID, serverID string, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	identity, err := identity.New(c.ClientArgs).GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
 		return nil, err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, identity.Labels[constants.RegionLabel])
+	provider, err := region.NewClient(c.ClientArgs).Provider(ctx, identity.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
@@ -177,12 +174,12 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 		return nil, err
 	}
 
-	required, err := newGenerator(c.client, c.namespace, organizationID, projectID, identityID).generate(ctx, request)
+	required, err := newGenerator(c.ClientArgs, organizationID, projectID, identityID).generate(ctx, request)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := conversion.UpdateObjectMetadata(required, current, common.IdentityMetadataMutator); err != nil {
+	if err := conversion.UpdateObjectMetadata(required, current, identitycommon.IdentityMetadataMutator); err != nil {
 		return nil, errors.OAuth2ServerError("failed to merge metadata").WithError(err)
 	}
 
@@ -191,7 +188,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	updated.Annotations = required.Annotations
 	updated.Spec = required.Spec
 
-	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+	if err := c.Client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
 		return nil, errors.OAuth2ServerError("failed to patch server").WithError(err)
 	}
 
@@ -204,12 +201,12 @@ func (c *Client) getServerIdentityAndProvider(ctx context.Context, organizationI
 		return nil, nil, nil, err
 	}
 
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	identity, err := identity.New(c.ClientArgs).GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
+	provider, err := region.NewClient(c.ClientArgs).Provider(ctx, current.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, nil, nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
@@ -271,7 +268,7 @@ func (c *Client) start(ctx context.Context, identity *unikornv1.Identity, server
 	updated := server.DeepCopy()
 	updated.Status.Phase = unikornv1.InstanceLifecyclePhasePending
 
-	if err := c.client.Status().Patch(ctx, updated, client.MergeFrom(server)); err != nil {
+	if err := c.Client.Status().Patch(ctx, updated, client.MergeFrom(server)); err != nil {
 		return errors.OAuth2ServerError("failed to patch server").WithError(err)
 	}
 
@@ -303,7 +300,7 @@ func (c *Client) stop(ctx context.Context, identity *unikornv1.Identity, server 
 	updated := server.DeepCopy()
 	updated.Status.Phase = unikornv1.InstanceLifecyclePhaseStopping
 
-	if err := c.client.Status().Patch(ctx, updated, client.MergeFrom(server)); err != nil {
+	if err := c.Client.Status().Patch(ctx, updated, client.MergeFrom(server)); err != nil {
 		return errors.OAuth2ServerError("failed to patch server").WithError(err)
 	}
 
@@ -317,7 +314,7 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, serverID
 		return err
 	}
 
-	if err := c.client.Delete(ctx, resource); err != nil {
+	if err := c.Client.Delete(ctx, resource); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
 		}
