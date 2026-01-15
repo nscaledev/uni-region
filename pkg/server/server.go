@@ -40,6 +40,7 @@ import (
 	openapimiddlewareremote "github.com/unikorn-cloud/identity/pkg/middleware/openapi/remote"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -149,7 +150,12 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 		return nil, err
 	}
 
-	handlerInterface, err := handler.New(client, s.CoreOptions.Namespace, &s.HandlerOptions, identity)
+	clientArgs := common.ClientArgs{
+		Client:    client,
+		Namespace: s.CoreOptions.Namespace,
+	}
+
+	handlerInterface, err := handler.New(clientArgs, &s.HandlerOptions, identity)
 	if err != nil {
 		return nil, err
 	}

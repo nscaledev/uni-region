@@ -38,6 +38,7 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	regionconstants "github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
 	"github.com/unikorn-cloud/region/pkg/handler/server/mock"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -168,7 +169,13 @@ func TestServerV2_EmptyList(t *testing.T) {
 	namespace := "region-test-home"
 
 	c := fakeClientWithSchema(t) // NB no objects
-	handler := NewServerV2Handler(c, namespace)
+
+	clientArgs := common.ClientArgs{
+		Client:    c,
+		Namespace: namespace,
+	}
+
+	handler := NewServerV2Handler(clientArgs)
 
 	ctx := newOrganisationACLBuilder("org-empty-list").
 		addEndpoint("region:servers").
@@ -188,7 +195,13 @@ func TestServerV2_NotAllowedList(t *testing.T) {
 	namespace := "region-test-home"
 
 	c := fakeClientWithSchema(t, knownGoodFixture(t, "server1", namespace, "org-not-allowed-test")...)
-	handler := NewServerV2Handler(c, namespace)
+
+	clientArgs := common.ClientArgs{
+		Client:    c,
+		Namespace: namespace,
+	}
+
+	handler := NewServerV2Handler(clientArgs)
 
 	ctx := newOrganisationACLBuilder("org1").
 		addEndpoint("region:servers").
@@ -228,7 +241,13 @@ func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 	)
 
 	c := fakeClientWithSchema(t, knownGoodFixture(t, serverName, namespace, orgID)...)
-	handler := NewServerV2Handler(c, namespace)
+
+	clientArgs := common.ClientArgs{
+		Client:    c,
+		Namespace: namespace,
+	}
+
+	handler := NewServerV2Handler(clientArgs)
 
 	// We can't guarantee the order things are done in the handler, and in particular, the region provider
 	// may be requested before permissions are checked. So, make sure there is a provider, though we don't
@@ -305,7 +324,12 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 		gomock.AssignableToTypeOf(&types.Image{})).
 		Return(snapshot, nil)
 
-	handler := NewServerV2Handler(c, namespace)
+	clientArgs := common.ClientArgs{
+		Client:    c,
+		Namespace: namespace,
+	}
+
+	handler := NewServerV2Handler(clientArgs)
 	handler.getProvider = providerGetter(provider)
 
 	ctx := newOrganisationACLBuilder(orgID).
