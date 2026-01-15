@@ -18,6 +18,11 @@ organization: nscaledev
 # regions:
 # - # The name of the region, must be a unique DNS label.
 #   name: uk-manchester
+#   # Security constraints.
+#   security:
+#     # Organizations to allow access to, default is allow all.
+#     organizationIDs:
+#     - 5fb90278-7365-4c0a-a00c-fba299d99c52
 #   # Provider type, must be one of "openstack".
 #   provider: openstack
 #   # Openstack specific configuration.

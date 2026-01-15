@@ -28,6 +28,7 @@ import (
 
 	unikorncorev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
@@ -117,8 +118,9 @@ func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttac
 		}
 
 		out[i] = openapi.StorageAttachmentV2Status{
-			NetworkId:   att.NetworkID,
-			MountSource: mountSource,
+			NetworkId:          att.NetworkID,
+			MountSource:        mountSource,
+			ProvisioningStatus: coreopenapi.ResourceProvisioningStatusUnknown,
 		}
 	}
 
@@ -176,8 +178,8 @@ func (c *Client) updateWithSizeList(ctx context.Context, in *openapi.StorageV2Li
 // updateWithSize calls to the filestorage driver and gets the capacity
 // and used capacity from VAST.
 func (c *Client) updateWithSize(ctx context.Context, in *openapi.StorageV2Read, fcdriver Driver) error {
-	fsdetails, err := fcdriver.GetDetails(ctx, in.Metadata.ProjectId, in.Status.StorageClassId)
-	if err != nil {
+	fsdetails, err := fcdriver.GetDetails(ctx, in.Metadata.ProjectId, in.Metadata.Id)
+	if types.IgnoreNotFound(err) != nil {
 		return err
 	}
 
@@ -187,17 +189,11 @@ func (c *Client) updateWithSize(ctx context.Context, in *openapi.StorageV2Read, 
 
 	if fsdetails.Size != nil {
 		in.Status.Usage = &openapi.StorageUsageV2Status{
-			CapacityGiB: quantityToSizeGiB(*fsdetails.Size),
+			CapacityBytes: fsdetails.Size.Value(),
 		}
 
 		if fsdetails.UsedCapacity != nil {
-			var free resource.Quantity
-
-			free.Add(*fsdetails.Size)
-			free.Sub(*fsdetails.UsedCapacity)
-
-			in.Status.Usage.UsedGiB = ptr.To(quantityToSizeGiB(*fsdetails.UsedCapacity))
-			in.Status.Usage.FreeGiB = ptr.To(quantityToSizeGiB(free))
+			in.Status.Usage.UsedBytes = ptr.To(fsdetails.UsedCapacity.Value())
 		}
 	}
 
@@ -361,6 +357,10 @@ func checkRootSquash(nfs *openapi.NFSV2Spec) bool {
 }
 
 func generateAttachmentList(ctx context.Context, networkClient *network.Client, in *openapi.StorageAttachmentV2Spec) ([]regionv1.Attachment, error) {
+	if in == nil {
+		return []regionv1.Attachment{}, nil
+	}
+
 	networkIDs := in.NetworkIds
 	out := make([]regionv1.Attachment, len(networkIDs))
 
@@ -454,8 +454,6 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.StorageV2Create)
 // to the storage ID.
 // it leverages the update saga system, which acts as a tape to enable rollbacks
 // in case of errors.
-//
-//nolint:cyclop
 func (c *Client) Update(ctx context.Context, storageID string, request *openapi.StorageV2Update) (*openapi.StorageV2Read, error) {
 	current, err := c.GetRaw(ctx, storageID)
 	if err != nil {
@@ -507,20 +505,6 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 
 	if err := c.updateWithSize(ctx, storage, fcdriver); err != nil {
 		return nil, err
-	}
-
-	if storage.Status.Usage == nil {
-		return nil, err
-	}
-
-	if request.Spec.SizeGiB < storage.Status.Usage.CapacityGiB {
-		if storage.Status.Usage.UsedGiB == nil {
-			return nil, errors.OAuth2ServerError("unable to get used capacity")
-		}
-
-		if request.Spec.SizeGiB < *storage.Status.Usage.UsedGiB {
-			return nil, errors.OAuth2ServerError("unable to shrink below used capacity")
-		}
 	}
 
 	return storage, nil
@@ -604,7 +588,7 @@ func (c *Client) GetStorageClass(ctx context.Context, storageClassID string) (*o
 
 	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: storageClassID}, result); err != nil {
 		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
+			return nil, errors.OAuth2InvalidRequest("storage class not found").WithError(err)
 		}
 
 		return nil, errors.OAuth2ServerError("unable to lookup storage class").WithError(err)
@@ -632,7 +616,7 @@ func (c *Client) getStorageProvisioner(ctx context.Context, namespace string, st
 		return provisioner, errors.OAuth2ServerError("unable to lookup storage class").WithError(err)
 	}
 
-	if err := rbac.AllowOrganizationScope(ctx, "region:filestorageclass:v2", identityapi.Read, class.Labels[coreconstants.OrganizationLabel]); err != nil {
+	if err := authorizeFileStorageClassRead(ctx, class); err != nil {
 		return provisioner, err
 	}
 
