@@ -154,7 +154,7 @@ func (h *Handler) DeleteApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter
 }
 
 func (h *Handler) storageClient() *storage.Client {
-	return storage.New(h.client, h.namespace, h.identity)
+	return storage.New(h.ClientArgs, h.identity)
 }
 
 func (h *Handler) GetApiV2Filestorage(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2FilestorageParams) {

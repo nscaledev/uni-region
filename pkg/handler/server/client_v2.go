@@ -30,11 +30,12 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
-	"github.com/unikorn-cloud/identity/pkg/handler/common"
+	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
@@ -73,15 +74,16 @@ type ClientV2 struct {
 	getProviderFunc GetProviderFunc
 }
 
-func NewClientV2(client client.Client, namespace string, getProvider GetProviderFunc) *ClientV2 {
+func NewClientV2(clientArgs common.ClientArgs, getProvider GetProviderFunc) *ClientV2 {
 	return &ClientV2{
-		Client:          NewClient(client, namespace),
+		Client:          NewClient(clientArgs),
 		getProviderFunc: getProvider,
 	}
 }
 
 func (c *ClientV2) getProvider(ctx context.Context, regionID string) (Provider, error) {
-	return c.getProviderFunc(ctx, c.client, c.namespace, regionID)
+	//nolint:staticcheck
+	return c.getProviderFunc(ctx, c.Client.Client, c.Client.Namespace, regionID)
 }
 
 func convertSecurityGroupsV2(in []regionv1.ServerSecurityGroupSpec) *openapi.ServerV2SecurityGroupIDList {
@@ -269,7 +271,7 @@ func generateUserData(in *[]byte) []byte {
 
 func (c *ClientV2) generateV2(ctx context.Context, organizationID, projectID string, in *openapi.ServerV2Update, network *regionv1.Network) (*regionv1.Server, error) {
 	out := &regionv1.Server{
-		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, c.namespace).
+		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, c.Namespace).
 			WithOrganization(organizationID).
 			WithProject(projectID).
 			WithLabel(constants.RegionLabel, network.Labels[constants.RegionLabel]).
@@ -294,13 +296,13 @@ func (c *ClientV2) generateV2(ctx context.Context, organizationID, projectID str
 		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
 	}
 
-	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
+	if err := identitycommon.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
 		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
 	}
 
 	// Ensure the server is owned by the network so it is automatically cleaned
 	// up on cascading deletion.
-	if err := controllerutil.SetOwnerReference(network, out, c.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
+	if err := controllerutil.SetOwnerReference(network, out, c.Client.Client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
 		return nil, err
 	}
 
@@ -334,13 +336,13 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 	}
 
 	options := &client.ListOptions{
-		Namespace:     c.namespace,
+		Namespace:     c.Namespace,
 		LabelSelector: selector,
 	}
 
 	result := &regionv1.ServerList{}
 
-	if err := c.client.List(ctx, result, options); err != nil {
+	if err := c.Client.Client.List(ctx, result, options); err != nil {
 		return nil, errors.OAuth2ServerError("unable to list servers").WithError(err)
 	}
 
@@ -362,7 +364,7 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 }
 
 func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create) (*openapi.ServerV2Read, error) {
-	network, err := network.New(c.client, c.namespace, nil).GetV2Raw(ctx, request.Spec.NetworkId)
+	network, err := network.New(c.Client.ClientArgs, nil).GetV2Raw(ctx, request.Spec.NetworkId)
 	if err != nil {
 		return nil, err
 	}
@@ -384,7 +386,7 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 		return nil, err
 	}
 
-	if err := c.client.Create(ctx, resource); err != nil {
+	if err := c.Client.Client.Create(ctx, resource); err != nil {
 		return nil, errors.OAuth2ServerError("unable to create server").WithError(err)
 	}
 
@@ -394,7 +396,7 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 func (c *ClientV2) GetV2Raw(ctx context.Context, serverID string) (*regionv1.Server, error) {
 	result := &regionv1.Server{}
 
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: serverID}, result); err != nil {
+	if err := c.Client.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: serverID}, result); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
@@ -448,7 +450,7 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *opena
 	}
 
 	// Get the network, required for generation.
-	network, err := network.New(c.client, c.namespace, nil).GetV2Raw(ctx, current.Spec.Networks[0].ID)
+	network, err := network.New(c.Client.ClientArgs, nil).GetV2Raw(ctx, current.Spec.Networks[0].ID)
 	if err != nil {
 		return nil, err
 	}
@@ -463,7 +465,7 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *opena
 	updated.Annotations = required.Annotations
 	updated.Spec = required.Spec
 
-	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+	if err := c.Client.Client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
 		return nil, errors.OAuth2ServerError("unable to update server").WithError(err)
 	}
 
@@ -480,7 +482,7 @@ func (c *ClientV2) DeleteV2(ctx context.Context, serverID string) error {
 		return err
 	}
 
-	if err := c.client.Delete(ctx, resource); err != nil {
+	if err := c.Client.Client.Delete(ctx, resource); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
 		}
@@ -497,7 +499,7 @@ func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID 
 		return nil, nil, nil, err
 	}
 
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, server.Labels[coreconstants.OrganizationLabel], server.Labels[coreconstants.ProjectLabel], server.Labels[constants.IdentityLabel])
+	identity, err := identity.New(c.Client.ClientArgs).GetRaw(ctx, server.Labels[coreconstants.OrganizationLabel], server.Labels[coreconstants.ProjectLabel], server.Labels[constants.IdentityLabel])
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -518,7 +520,7 @@ func (c *ClientV2) SSHKey(ctx context.Context, serverID string) (*openapi.SshKey
 
 	var openstackIdentity regionv1.OpenstackIdentity
 
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: identity.Namespace, Name: identity.Name}, &openstackIdentity); err != nil {
+	if err := c.Client.Client.Get(ctx, client.ObjectKey{Namespace: identity.Namespace, Name: identity.Name}, &openstackIdentity); err != nil {
 		return nil, errors.OAuth2ServerError("failed to load server identity information").WithError(err)
 	}
 
