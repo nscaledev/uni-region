@@ -50,38 +50,23 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-// serverProvider gloms together the operations needed to provision servers.
-type Provider interface {
-	types.Server
-	types.ServerConsole
-	types.ServerSnapshot
-	types.Identity
-	types.ImageRead  // for GetImage
-	types.ImageWrite // for DeleteImage
-}
-
-// GetProviderFunc is the type of funcs supplied to the client, so it can obtain a provider (e.g., OpenStack client).
-type GetProviderFunc func(context.Context, client.Client, string, string) (Provider, error)
-
-// DefaultGetProvider is the "business as usual" GetProviderFunc, which constructs a real provider (rather than, e.g., a mock object).
-func DefaultGetProvider(ctx context.Context, c client.Client, namespace, regionID string) (Provider, error) {
-	return providers.New(ctx, c, namespace, regionID)
-}
-
 type ClientV2 struct {
 	*Client
-	getProviderFunc GetProviderFunc
 }
 
-func NewClientV2(client client.Client, namespace string, getProvider GetProviderFunc) *ClientV2 {
+func NewClientV2(client client.Client, namespace string, providers providers.Providers) *ClientV2 {
 	return &ClientV2{
-		Client:          NewClient(client, namespace),
-		getProviderFunc: getProvider,
+		Client: NewClient(client, namespace, providers),
 	}
 }
 
-func (c *ClientV2) getProvider(ctx context.Context, regionID string) (Provider, error) {
-	return c.getProviderFunc(ctx, c.client, c.namespace, regionID)
+func (c *ClientV2) getProvider(ctx context.Context, regionID string) (types.Provider, error) {
+	provider, err := c.providers.LookupCloud(ctx, regionID)
+	if err != nil {
+		return nil, providers.ProviderToServerError(err)
+	}
+
+	return provider, nil
 }
 
 func convertSecurityGroupsV2(in []regionv1.ServerSecurityGroupSpec) *openapi.ServerV2SecurityGroupIDList {
@@ -362,7 +347,7 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 }
 
 func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create) (*openapi.ServerV2Read, error) {
-	network, err := network.New(c.client, c.namespace, nil).GetV2Raw(ctx, request.Spec.NetworkId)
+	network, err := network.New(c.client, c.namespace, c.providers, nil).GetV2Raw(ctx, request.Spec.NetworkId)
 	if err != nil {
 		return nil, err
 	}
@@ -448,7 +433,7 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *opena
 	}
 
 	// Get the network, required for generation.
-	network, err := network.New(c.client, c.namespace, nil).GetV2Raw(ctx, current.Spec.Networks[0].ID)
+	network, err := network.New(c.client, c.namespace, c.providers, nil).GetV2Raw(ctx, current.Spec.Networks[0].ID)
 	if err != nil {
 		return nil, err
 	}
@@ -491,13 +476,13 @@ func (c *ClientV2) DeleteV2(ctx context.Context, serverID string) error {
 	return nil
 }
 
-func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, Provider, error) {
+func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, types.Provider, error) {
 	server, err := c.GetV2Raw(ctx, serverID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, server.Labels[coreconstants.OrganizationLabel], server.Labels[coreconstants.ProjectLabel], server.Labels[constants.IdentityLabel])
+	identity, err := identity.New(c.client, c.namespace, c.providers).GetRaw(ctx, server.Labels[coreconstants.OrganizationLabel], server.Labels[coreconstants.ProjectLabel], server.Labels[constants.IdentityLabel])
 	if err != nil {
 		return nil, nil, nil, err
 	}

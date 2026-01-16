@@ -27,29 +27,29 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/handler/image"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type ImageHandler struct {
 	clientArgs
-	options     *Options
-	getProvider image.GetProviderFunc
+	options *Options
 }
 
-func NewImageHandler(client client.Client, namespace string, options *Options) *ImageHandler {
+func NewImageHandler(client client.Client, namespace string, providers providers.Providers, options *Options) *ImageHandler {
 	return &ImageHandler{
 		clientArgs: clientArgs{
 			client:    client,
 			namespace: namespace,
+			providers: providers,
 		},
-		options:     options,
-		getProvider: image.DefaultGetProvider,
+		options: options,
 	}
 }
 
 func (h *ImageHandler) imageClient() *image.Client {
-	return image.NewClient(h.client, h.namespace, h.getProvider)
+	return image.NewClient(h.client, h.namespace, h.providers)
 }
 
 func (h *ImageHandler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {

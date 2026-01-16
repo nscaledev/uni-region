@@ -15,6 +15,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+//go:generate mockgen -source=interfaces.go -destination=mock/interfaces.go -package=mock
 package types
 
 import (
@@ -95,7 +96,11 @@ type ServerSnapshot interface {
 // Providers are expected to provide a provider agnostic manner.
 // They are also expected to provide any caching or memoization required
 // to provide high performance and a decent UX.
+//
+//nolint:interfacebloat
 type Provider interface {
+	// Kind returns the provider kind.
+	Kind() unikornv1.Provider
 	// Region returns the provider's region.
 	Region(ctx context.Context) (*unikornv1.Region, error)
 	// Flavors list all available flavors.

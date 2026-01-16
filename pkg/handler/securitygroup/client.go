@@ -34,6 +34,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -49,13 +50,15 @@ type Client struct {
 	client client.Client
 	// namespace we are running in.
 	namespace string
+	providers providers.Providers
 }
 
 // New creates a new client.
-func New(client client.Client, namespace string) *Client {
+func New(client client.Client, namespace string, providers providers.Providers) *Client {
 	return &Client{
 		client:    client,
 		namespace: namespace,
+		providers: providers,
 	}
 }
 
@@ -268,7 +271,7 @@ func generateRuleList(in openapi.SecurityGroupRuleList) ([]unikornv1.SecurityGro
 
 // generate a new resource from a request.
 func (c *Client) generate(ctx context.Context, organizationID, projectID, identityID string, in *openapi.SecurityGroupWrite) (*unikornv1.SecurityGroup, error) {
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	identity, err := identity.New(c.client, c.namespace, c.providers).GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
 		return nil, err
 	}

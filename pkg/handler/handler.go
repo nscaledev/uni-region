@@ -32,6 +32,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/securitygroup"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -45,10 +46,12 @@ type clientArgs struct {
 
 	// namespace is the namespace we are running in.
 	namespace string
+
+	providers providers.Providers
 }
 
 func (args *clientArgs) serverClient() *server.Client {
-	return server.NewClient(args.client, args.namespace)
+	return server.NewClient(args.client, args.namespace, args.providers)
 }
 
 type Handler struct {
@@ -66,16 +69,17 @@ type Handler struct {
 	identity *identityapi.ClientWithResponses
 }
 
-func New(client client.Client, namespace string, options *Options, identity *identityapi.ClientWithResponses) (*Handler, error) {
+func New(client client.Client, namespace string, providers providers.Providers, options *Options, identity *identityapi.ClientWithResponses) (*Handler, error) {
 	h := &Handler{
 		clientArgs: clientArgs{
 			client:    client,
 			namespace: namespace,
+			providers: providers,
 		},
 		options:         options,
 		identity:        identity,
-		ImageHandler:    NewImageHandler(client, namespace, options),
-		ServerV2Handler: NewServerV2Handler(client, namespace),
+		ImageHandler:    NewImageHandler(client, namespace, providers, options),
+		ServerV2Handler: NewServerV2Handler(client, namespace, providers),
 	}
 
 	return h, nil
@@ -91,7 +95,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWrit
 		return
 	}
 
-	result, err := region.NewClient(h.client, h.namespace).List(r.Context())
+	result, err := region.NewClient(h.client, h.namespace, h.providers).List(r.Context())
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -107,7 +111,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetail(w htt
 		return
 	}
 
-	result, err := region.NewClient(h.client, h.namespace).GetDetail(r.Context(), regionID)
+	result, err := region.NewClient(h.client, h.namespace, h.providers).GetDetail(r.Context(), regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -123,7 +127,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetw
 		return
 	}
 
-	result, err := region.NewClient(h.client, h.namespace).ListExternalNetworks(r.Context(), regionID)
+	result, err := region.NewClient(h.client, h.namespace, h.providers).ListExternalNetworks(r.Context(), regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -139,7 +143,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(w ht
 		return
 	}
 
-	result, err := region.NewClient(h.client, h.namespace).ListFlavors(r.Context(), organizationID, regionID)
+	result, err := region.NewClient(h.client, h.namespace, h.providers).ListFlavors(r.Context(), organizationID, regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -155,7 +159,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseW
 		return
 	}
 
-	result, err := identity.New(h.client, h.namespace).List(r.Context(), organizationID)
+	result, err := identity.New(h.client, h.namespace, h.providers).List(r.Context(), organizationID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -177,7 +181,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	result, err := identity.New(h.client, h.namespace).Create(r.Context(), organizationID, projectID, request)
+	result, err := identity.New(h.client, h.namespace, h.providers).Create(r.Context(), organizationID, projectID, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -192,7 +196,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 		return
 	}
 
-	result, err := identity.New(h.client, h.namespace).Get(r.Context(), organizationID, projectID, identityID)
+	result, err := identity.New(h.client, h.namespace, h.providers).Get(r.Context(), organizationID, projectID, identityID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -207,7 +211,7 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		return
 	}
 
-	if err := identity.New(h.client, h.namespace).Delete(r.Context(), organizationID, projectID, identityID); err != nil {
+	if err := identity.New(h.client, h.namespace, h.providers).Delete(r.Context(), organizationID, projectID, identityID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -216,7 +220,7 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 }
 
 func (h *Handler) networkClient() *network.Client {
-	return network.New(h.client, h.namespace, h.identity)
+	return network.New(h.client, h.namespace, h.providers, h.identity)
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
@@ -286,7 +290,7 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 }
 
 func (h *Handler) securityGroupClient() *securitygroup.Client {
-	return securitygroup.New(h.client, h.namespace)
+	return securitygroup.New(h.client, h.namespace, h.providers)
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, params openapi.GetApiV1OrganizationsOrganizationIDSecuritygroupsParams) {

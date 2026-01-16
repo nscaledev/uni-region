@@ -121,7 +121,7 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 }
 
 func (s *createSaga) validateRegion(ctx context.Context, regionID string) error {
-	regionClient := region.NewClient(s.client.client, s.client.namespace)
+	regionClient := region.NewClient(s.client.client, s.client.namespace, s.client.providers)
 
 	if _, err := regionClient.GetDetail(ctx, regionID); err != nil {
 		return errors.OAuth2ServerError("region does not exist").WithError(err)
@@ -148,7 +148,7 @@ func (s *createSaga) validateAttachments(ctx context.Context, attachments *opena
 		return nil
 	}
 
-	networkClient := network.New(s.client.client, s.client.namespace, s.client.identity)
+	networkClient := network.New(s.client.client, s.client.namespace, s.client.providers, s.client.identity)
 
 	for _, id := range attachments.NetworkIds {
 		network, err := networkClient.GetV2(ctx, id)
@@ -186,7 +186,7 @@ func newUpdateSaga(client *Client, organizationID, regionID string, current, upd
 }
 
 func (s *updateSaga) validateRequest(ctx context.Context) error {
-	networkClient := network.New(s.client.client, s.client.namespace, s.client.identity)
+	networkClient := network.New(s.client.client, s.client.namespace, s.client.providers, s.client.identity)
 
 	for _, attachment := range s.updated.Spec.Attachments {
 		network, err := networkClient.GetV2(ctx, attachment.NetworkID)

@@ -25,27 +25,27 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/util"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type ServerV2Handler struct {
 	clientArgs
-	getProvider server.GetProviderFunc
 }
 
-func NewServerV2Handler(client client.Client, namespace string) *ServerV2Handler {
+func NewServerV2Handler(client client.Client, namespace string, providers providers.Providers) *ServerV2Handler {
 	return &ServerV2Handler{
 		clientArgs: clientArgs{
 			client:    client,
 			namespace: namespace,
+			providers: providers,
 		},
-		getProvider: server.DefaultGetProvider,
 	}
 }
 
 func (h *ServerV2Handler) serverV2Client() *server.ClientV2 {
-	return server.NewClientV2(h.client, h.namespace, h.getProvider)
+	return server.NewClientV2(h.client, h.namespace, h.providers)
 }
 
 func (h *ServerV2Handler) GetApiV2Servers(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2ServersParams) {

@@ -36,42 +36,27 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type GetProviderFunc func(context.Context, client.Client, string, string) (Provider, error)
-
 type Client struct {
-	client      client.Client
-	namespace   string
-	getProvider GetProviderFunc
+	client    client.Client
+	namespace string
+	providers providers.Providers
 }
 
-func DefaultGetProvider(ctx context.Context, c client.Client, namespace, regionID string) (Provider, error) {
-	return providers.New(ctx, c, namespace, regionID)
-}
-
-func NewClient(client client.Client, namespace string, getProvider GetProviderFunc) *Client {
+func NewClient(client client.Client, namespace string, providers providers.Providers) *Client {
 	return &Client{
-		client:      client,
-		namespace:   namespace,
-		getProvider: getProvider,
+		client:    client,
+		namespace: namespace,
+		providers: providers,
 	}
 }
 
 var ErrFailedImageFetch = goerrors.New("image fetch failed")
 var ErrProviderResource = goerrors.New("conflict with resource at provider")
 
-type Provider interface {
-	types.ImageRead
-	types.ImageWrite
-}
-
-func (c *Client) provider(ctx context.Context, regionID string) (Provider, error) {
-	return c.getProvider(ctx, c.client, c.namespace, regionID)
-}
-
 func (c *Client) ListImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {
-	provider, err := c.provider(ctx, regionID)
+	provider, err := c.providers.LookupCloud(ctx, regionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, providers.ProviderToServerError(err)
 	}
 
 	result, err := provider.ListImages(ctx, organizationID)
@@ -151,9 +136,9 @@ func validateImage(ctx context.Context, uri string) error {
 }
 
 func (c *Client) CreateImage(ctx context.Context, organizationID, regionID string, request *openapi.ImageCreateRequest) (*openapi.ImageResponse, error) {
-	provider, err := c.provider(ctx, regionID)
+	provider, err := c.providers.LookupCloud(ctx, regionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, providers.ProviderToServerError(err)
 	}
 
 	if err := validateImage(ctx, request.Spec.Uri); err != nil {
@@ -192,9 +177,9 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 }
 
 func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imageID string) error {
-	provider, err := c.provider(ctx, regionID)
+	provider, err := c.providers.LookupCloud(ctx, regionID)
 	if err != nil {
-		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return providers.ProviderToServerError(err)
 	}
 
 	image, err := provider.GetImage(ctx, organizationID, imageID)

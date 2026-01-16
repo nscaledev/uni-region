@@ -41,6 +41,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -149,7 +150,9 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 		return nil, err
 	}
 
-	handlerInterface, err := handler.New(client, s.CoreOptions.Namespace, &s.HandlerOptions, identity)
+	providers := providers.New(client, s.CoreOptions.Namespace)
+
+	handlerInterface, err := handler.New(client, s.CoreOptions.Namespace, providers, &s.HandlerOptions, identity)
 	if err != nil {
 		return nil, err
 	}

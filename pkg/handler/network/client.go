@@ -35,6 +35,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -49,15 +50,17 @@ type Client struct {
 	client client.Client
 	// namespace we are running in.
 	namespace string
+	providers providers.Providers
 	// identity allows quota allocation.
 	identity identityapi.ClientWithResponsesInterface
 }
 
 // New creates a new client.
-func New(client client.Client, namespace string, identity identityapi.ClientWithResponsesInterface) *Client {
+func New(client client.Client, namespace string, providers providers.Providers, identity identityapi.ClientWithResponsesInterface) *Client {
 	return &Client{
 		client:    client,
 		namespace: namespace,
+		providers: providers,
 		identity:  identity,
 	}
 }
@@ -160,7 +163,7 @@ func generateIPV4AddressList(in []net.IP) []unikornv1core.IPv4Address {
 
 // generate a new resource from a request.
 func (c *Client) generate(ctx context.Context, organizationID, projectID, identityID string, request *openapi.NetworkWrite) (*unikornv1.Network, error) {
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	identity, err := identity.New(c.client, c.namespace, c.providers).GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("unable to get identity").WithError(err)
 	}

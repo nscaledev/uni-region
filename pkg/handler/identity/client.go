@@ -30,9 +30,9 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -47,13 +47,15 @@ type Client struct {
 	client client.Client
 	// namespace we are running in.
 	namespace string
+	providers providers.Providers
 }
 
 // New creates a new client.
-func New(client client.Client, namespace string) *Client {
+func New(client client.Client, namespace string, providers providers.Providers) *Client {
 	return &Client{
 		client:    client,
 		namespace: namespace,
+		providers: providers,
 	}
 }
 
@@ -112,9 +114,9 @@ func (c *Client) convertList(ctx context.Context, in unikornv1.IdentityList) ope
 
 // generate a new resource from a request.
 func (c *Client) generate(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*unikornv1.Identity, error) {
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, request.Spec.RegionId)
+	provider, err := c.providers.LookupCloud(ctx, request.Spec.RegionId)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to get region provider").WithError(err)
+		return nil, providers.ProviderToServerError(err)
 	}
 
 	region, err := provider.Region(ctx)

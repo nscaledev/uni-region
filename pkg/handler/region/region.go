@@ -21,7 +21,6 @@ import (
 	"cmp"
 	"context"
 	goerrors "errors"
-	"fmt"
 	"slices"
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
@@ -49,17 +48,15 @@ var (
 type Client struct {
 	client    client.Client
 	namespace string
+	providers providers.Providers
 }
 
-func NewClient(client client.Client, namespace string) *Client {
+func NewClient(client client.Client, namespace string, providers providers.Providers) *Client {
 	return &Client{
 		client:    client,
 		namespace: namespace,
+		providers: providers,
 	}
-}
-
-func (c *Client) Provider(ctx context.Context, regionID string) (types.Provider, error) {
-	return providers.New(ctx, c.client, c.namespace, regionID)
 }
 
 func FilterRegions(ctx context.Context, regions *unikornv1.RegionList) {
@@ -104,8 +101,6 @@ func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
 func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.RegionDetailRead, error) {
 	result := &unikornv1.Region{}
 
-	fmt.Println("getting region", c.namespace, regionID)
-
 	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: regionID}, result); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
@@ -118,9 +113,9 @@ func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.Regio
 }
 
 func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID string) (openapi.Flavors, error) {
-	provider, err := c.Provider(ctx, regionID)
+	provider, err := c.providers.LookupAny(ctx, regionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, providers.ProviderToServerError(err)
 	}
 
 	result, err := provider.Flavors(ctx)
@@ -165,9 +160,9 @@ func convertExternalNetworks(in types.ExternalNetworks) openapi.ExternalNetworks
 }
 
 func (c *Client) ListExternalNetworks(ctx context.Context, regionID string) (openapi.ExternalNetworks, error) {
-	provider, err := c.Provider(ctx, regionID)
+	provider, err := c.providers.LookupCloud(ctx, regionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, providers.ProviderToServerError(err)
 	}
 
 	result, err := provider.ListExternalNetworks(ctx)
