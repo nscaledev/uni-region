@@ -74,6 +74,12 @@ func (p *Provisioner) reconcileFileStorage(ctx context.Context, driver types.Dri
 		return driver.Resize(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, desiredSize)
 	}
 
+	// If it exists but the root squash differs, update it
+	if fs.RootSquashEnabled != desiredRootSquash {
+		log.V(1).Info("updating file storage root squash", "id", p.fileStorage.Name)
+		return driver.UpdateRootSquash(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, desiredRootSquash)
+	}
+
 	// Already in desired state
 	return nil
 }
