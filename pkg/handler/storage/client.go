@@ -106,6 +106,7 @@ func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttac
 	if len(in.Status.Attachments) == 0 {
 		return nil
 	}
+
 	out := make(openapi.StorageAttachmentListV2Status, len(in.Spec.Attachments))
 
 	for i, att := range in.Spec.Attachments {
@@ -132,15 +133,12 @@ func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttac
 // then populates with the provisioning status.
 // We default to nil-ing if there are any issues here.
 func calculateAttProvisioningStatus(in *regionv1.FileStorage, id string) *corev1.ResourceProvisioningStatus {
-	if len(in.Status.Attachments) <= i {
-		return nil
-	}
-
 	for _, v := range in.Status.Attachments {
 		if v.NetworkID == id {
 			if v.ProvisioningStatus == "" {
 				return nil
 			}
+
 			status := provisioningStatusConvert(v.ProvisioningStatus)
 
 			return &status
@@ -161,6 +159,9 @@ func provisioningStatusConvert(status regionv1.AttachmentProvisioningStatus) cor
 
 	case regionv1.AttachmentDeprovisioning:
 		return corev1.ResourceProvisioningStatusDeprovisioning
+
+	case regionv1.AttachmentErrored:
+		return corev1.ResourceProvisioningStatusError
 
 	default:
 		return corev1.ResourceProvisioningStatusError

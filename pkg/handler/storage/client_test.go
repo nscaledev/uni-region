@@ -320,7 +320,6 @@ func TestConvertV2List(t *testing.T) {
 	}
 }
 
-//nolint:dupl
 func TestConvertV2(t *testing.T) {
 	t.Parallel()
 
@@ -469,7 +468,6 @@ func TestConvertV2(t *testing.T) {
 	}
 }
 
-//nolint:dupl
 func TestConvertV2SizeConversion(t *testing.T) {
 	t.Parallel()
 
