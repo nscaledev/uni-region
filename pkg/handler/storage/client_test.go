@@ -203,6 +203,7 @@ func TestConvertV2List(t *testing.T) {
 							NFS: &regionv1.NFS{
 								RootSquash: true,
 							},
+							Attachments: []regionv1.Attachment{},
 						},
 						Status: regionv1.FileStorageStatus{},
 					},
@@ -386,7 +387,6 @@ func TestConvertV2(t *testing.T) {
 							ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned,
 						},
 					},
-					Usage: &openapi.StorageUsageV2Status{},
 				},
 			},
 		}, {

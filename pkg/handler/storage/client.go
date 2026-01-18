@@ -103,7 +103,7 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 // Because attachments may be reconciled asynchronously by the controller, this does not accurately reflect the actual state.
 // As a result, provisioning status is omitted (nil). This will be addressed in a future update.
 func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttachmentListV2Status {
-	if len(in.Status.Attachments) == 0 {
+	if len(in.Spec.Attachments) == 0 {
 		return nil
 	}
 
@@ -135,7 +135,7 @@ func calculateAttProvisioningStatus(in *regionv1.FileStorage, id string) corev1.
 	for _, v := range in.Status.Attachments {
 		if v.NetworkID == id {
 			if v.ProvisioningStatus == "" {
-				return corev1.ResourceProvisioningStatusError
+				return corev1.ResourceProvisioningStatusUnknown
 			}
 
 			status := provisioningStatusConvert(v.ProvisioningStatus)
@@ -144,7 +144,7 @@ func calculateAttProvisioningStatus(in *regionv1.FileStorage, id string) corev1.
 		}
 	}
 
-	return corev1.ResourceProvisioningStatusError
+	return corev1.ResourceProvisioningStatusUnknown
 }
 
 // provisioningStatusConvert is an explicit way of changing the status type.
@@ -163,7 +163,7 @@ func provisioningStatusConvert(status regionv1.AttachmentProvisioningStatus) cor
 		return corev1.ResourceProvisioningStatusError
 
 	default:
-		return corev1.ResourceProvisioningStatusError
+		return corev1.ResourceProvisioningStatusUnknown
 	}
 }
 
