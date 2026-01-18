@@ -371,7 +371,7 @@ func TestConvertV2(t *testing.T) {
 				Spec: openapi.StorageV2Spec{
 					SizeGiB: 2,
 					Attachments: &openapi.StorageAttachmentV2Spec{
-						NetworkIDs: []string{"net-1"},
+						NetworkIds: []string{"net-1"},
 					},
 					StorageType: openapi.StorageTypeV2Spec{
 						NFS: &openapi.NFSV2Spec{
@@ -383,10 +383,10 @@ func TestConvertV2(t *testing.T) {
 					Attachments: &openapi.StorageAttachmentListV2Status{
 						{
 							NetworkId:          "net-1",
-							ProvisioningStatus: ptr.To(corev1.ResourceProvisioningStatusProvisioned),
+							ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned,
 						},
 					},
-					Usage: openapi.StorageUsageV2Spec{},
+					Usage: &openapi.StorageUsageV2Status{},
 				},
 			},
 		}, {
@@ -431,8 +431,7 @@ func TestConvertV2(t *testing.T) {
 				Spec: openapi.StorageV2Spec{
 					SizeGiB: 2,
 					Attachments: &openapi.StorageAttachmentV2Spec{
-						NetworkIDs: []string{"net-1"},
-						NetworkIds: []string{},
+						NetworkIds: []string{"net-1"},
 					},
 					StorageType: openapi.StorageTypeV2Spec{
 						NFS: &openapi.NFSV2Spec{
@@ -444,10 +443,10 @@ func TestConvertV2(t *testing.T) {
 					Attachments: &openapi.StorageAttachmentListV2Status{
 						{
 							NetworkId:          "net-1",
-							ProvisioningStatus: ptr.To(corev1.ResourceProvisioningStatusError),
+							ProvisioningStatus: corev1.ResourceProvisioningStatusError,
 						},
 					},
-					Usage: openapi.StorageUsageV2Spec{},
+					Usage: &openapi.StorageUsageV2Status{},
 				},
 			},
 			wantErr: true,

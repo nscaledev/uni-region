@@ -122,7 +122,6 @@ func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttac
 			NetworkId:          att.NetworkID,
 			MountSource:        mountSource,
 			ProvisioningStatus: status,
-
 		}
 	}
 
@@ -131,21 +130,21 @@ func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttac
 
 // calculateAttProvisioningStatus compares the networkID from spec.Attachments and status.Attachments
 // then populates with the provisioning status.
-// We default to nil-ing if there are any issues here.
-func calculateAttProvisioningStatus(in *regionv1.FileStorage, id string) *corev1.ResourceProvisioningStatus {
+// We default setting error status here.
+func calculateAttProvisioningStatus(in *regionv1.FileStorage, id string) corev1.ResourceProvisioningStatus {
 	for _, v := range in.Status.Attachments {
 		if v.NetworkID == id {
 			if v.ProvisioningStatus == "" {
-				return nil
+				return corev1.ResourceProvisioningStatusError
 			}
 
 			status := provisioningStatusConvert(v.ProvisioningStatus)
 
-			return &status
+			return status
 		}
 	}
 
-	return nil
+	return corev1.ResourceProvisioningStatusError
 }
 
 // provisioningStatusConvert is an explicit way of changing the status type.
