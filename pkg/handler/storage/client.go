@@ -28,7 +28,7 @@ import (
 
 	unikorncorev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
-	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
+	corev1 "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
@@ -111,20 +111,60 @@ func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttac
 
 	for i, att := range in.Spec.Attachments {
 		var mountSource *string
-
 		// Only build MountSource if all required fields are non-nil.
 		if att.IPRange != nil && in.Status.MountPath != nil {
 			mountSource = ptr.To(fmt.Sprintf("%s:%s", att.IPRange.Start, *in.Status.MountPath))
 		}
 
+		status := calculateAttProvisioningStatus(in, att.NetworkID)
+
 		out[i] = openapi.StorageAttachmentV2Status{
 			NetworkId:          att.NetworkID,
 			MountSource:        mountSource,
-			ProvisioningStatus: coreopenapi.ResourceProvisioningStatusUnknown,
+			ProvisioningStatus: status,
 		}
 	}
 
 	return &out
+}
+
+// calculateAttProvisioningStatus compares the networkID from spec.Attachments and status.Attachments
+// then populates with the provisioning status.
+// We default setting error status here.
+func calculateAttProvisioningStatus(in *regionv1.FileStorage, id string) corev1.ResourceProvisioningStatus {
+	for _, v := range in.Status.Attachments {
+		if v.NetworkID == id {
+			if v.ProvisioningStatus == "" {
+				return corev1.ResourceProvisioningStatusUnknown
+			}
+
+			status := provisioningStatusConvert(v.ProvisioningStatus)
+
+			return status
+		}
+	}
+
+	return corev1.ResourceProvisioningStatusUnknown
+}
+
+// provisioningStatusConvert is an explicit way of changing the status type.
+func provisioningStatusConvert(status regionv1.AttachmentProvisioningStatus) corev1.ResourceProvisioningStatus {
+	switch status {
+	case regionv1.AttachmentProvisioned:
+		return corev1.ResourceProvisioningStatusProvisioned
+
+	case regionv1.AttachmentProvisioning:
+		return corev1.ResourceProvisioningStatusProvisioning
+
+	case regionv1.AttachmentDeprovisioning:
+		return corev1.ResourceProvisioningStatusDeprovisioning
+
+	case regionv1.AttachmentErrored:
+		return corev1.ResourceProvisioningStatusError
+
+	default:
+		return corev1.ResourceProvisioningStatusUnknown
+	}
 }
 
 func checkRegionNFS(in *regionv1.NFS) *openapi.NFSV2Spec {
@@ -318,7 +358,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 
 	attachments, err := generateAttachmentList(ctx, networkClient, request.Spec.Attachments)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to generate attachment list").WithError(err)
+		return nil, errors.OAuth2InvalidRequest("unable to generate attachment list").WithError(err)
 	}
 
 	out := &regionv1.FileStorage{

@@ -154,7 +154,7 @@ func (s *createSaga) validateAttachments(ctx context.Context, attachments *opena
 		network, err := networkClient.GetV2(ctx, id)
 		if err != nil {
 			return errors.
-				OAuth2ServerError("network attachment not found").
+				OAuth2InvalidRequest("network attachment not found").
 				WithError(err).
 				WithValues("networkID", id)
 		}
