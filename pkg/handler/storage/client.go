@@ -105,7 +105,7 @@ func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttac
 			mountSource = ptr.To(fmt.Sprintf("%s:%s", att.IPRange.Start, *in.Status.MountPath))
 		}
 
-		status := calculateAttProvisioningStatus(in, i, att.NetworkID)
+		status := calculateAttProvisioningStatus(in, att.NetworkID)
 
 		out[i] = openapi.StorageAttachmentV2Status{
 			NetworkId:          att.NetworkID,
@@ -120,19 +120,20 @@ func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttac
 // calculateAttProvisioningStatus compares the networkID from spec.Attachments and status.Attachments
 // then populates with the provisioning status.
 // We default to nil-ing if there are any issues here.
-func calculateAttProvisioningStatus(in *regionv1.FileStorage, i int, id string) *corev1.ResourceProvisioningStatus {
+func calculateAttProvisioningStatus(in *regionv1.FileStorage, id string) *corev1.ResourceProvisioningStatus {
 	if len(in.Status.Attachments) <= i {
 		return nil
 	}
-	attStatus := in.Status.Attachments[i]
 
-	if attStatus.NetworkID == id {
-		if attStatus.ProvisioningStatus == "" {
-			return nil
+	for _, v := range in.Status.Attachments {
+		if v.NetworkID == id {
+			if v.ProvisioningStatus == "" {
+				return nil
+			}
+			status := provisioningStatusConvert(v.ProvisioningStatus)
+
+			return &status
 		}
-		status := provisioningStatusConvert(attStatus.ProvisioningStatus)
-
-		return &status
 	}
 
 	return nil
