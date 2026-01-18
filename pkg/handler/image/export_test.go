@@ -1,5 +1,4 @@
 /*
-Copyright 2025 the Unikorn Authors.
 Copyright 2026 Nscale.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,29 +17,9 @@ limitations under the License.
 package image
 
 import (
-	"bufio"
-	"errors"
-	"io"
+	"context"
 )
 
-var ErrInvalidMasterBootRecord = errors.New("invalid master boot record")
-
-func NewMasterBootRecordReader(r io.Reader) (io.Reader, error) {
-	inner := bufio.NewReader(r)
-
-	// Master Boot Record must be at least 512 bytes.
-	bs, err := inner.Peek(512)
-	if err != nil {
-		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-			return nil, ErrInvalidMasterBootRecord
-		}
-
-		return nil, err
-	}
-
-	if bs[510] != 0x55 || bs[511] != 0xAA {
-		return nil, ErrInvalidMasterBootRecord
-	}
-
-	return inner, nil
+func ValidateImage(ctx context.Context, uri string) error {
+	return validateImage(ctx, uri)
 }

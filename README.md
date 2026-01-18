@@ -74,29 +74,52 @@ Regions define cloud instances to expose to clients.
 
 ### Local Testing
 
-1. Copy the example config:
+1. **Set up your environment configuration:**
+
+   Copy the example config and update with your values:
    ```bash
    cp test/.env.example test/.env
    ```
 
-2. Update `test/.env` with your values:
+   Or create environment-specific files (not tracked in git):
+   ```bash
+   # Create .env.dev with your dev credentials
+   cp test/.env.example test/.env.dev
+   # Edit test/.env.dev with dev values
+
+   # Create .env.uat with your UAT credentials
+   cp test/.env.example test/.env.uat
+   # Edit test/.env.uat with UAT values
+
+   # Use the appropriate environment
+   cp test/.env.dev test/.env    # For dev environment
+   cp test/.env.uat test/.env    # For UAT environment
+   ```
+
+2. **Configure the required values in `test/.env`:**
    - `API_BASE_URL` - Region API server URL
    - `API_AUTH_TOKEN` - Service token from console
    - `TEST_ORG_ID`, `TEST_PROJECT_ID`, `TEST_REGION_ID` - Test data IDs
 
-3. Run tests:
+3. **Run tests:**
    ```bash
    make test-api                                              # Run all tests
    make test-api-verbose                                      # Verbose output
    make test-api-focus FOCUS="should return all available"   # Run focused tests
    ```
 
+**Note:** The `.env`, `.env.dev`, and `.env.uat` files are gitignored and contain sensitive credentials. They should never be committed to the repository.
+
 ### GitHub Actions
 
 Trigger the workflow manually from the Actions tab:
 1. Go to **Actions** → **API Tests**
 2. Click **Run workflow**
-3. View results in the workflow run and download test artifacts
+3. Check which environments to test:
+   - **Run Dev tests** (checked by default)
+   - **Run UAT tests** (unchecked by default)
+   - Can run one, both, or neither
+4. View results in the workflow run and download test artifacts
 
 ## What Next?
 

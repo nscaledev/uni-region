@@ -11,16 +11,24 @@ const (
 	Oauth2AuthenticationScopes = "oauth2Authentication.Scopes"
 )
 
+// Defines values for Architecture.
+const (
+	ArchitectureAarch64 Architecture = "aarch64"
+	ArchitectureX8664   Architecture = "x86_64"
+)
+
 // Defines values for GpuVendor.
 const (
 	GpuVendorAMD    GpuVendor = "AMD"
 	GpuVendorNVIDIA GpuVendor = "NVIDIA"
 )
 
-// Defines values for ImageDiskFormat.
+// Defines values for ImageState.
 const (
-	ImageDiskFormatQcow2 ImageDiskFormat = "qcow2"
-	ImageDiskFormatRaw   ImageDiskFormat = "raw"
+	ImageStateCreating ImageState = "creating"
+	ImageStateFailed   ImageState = "failed"
+	ImageStatePending  ImageState = "pending"
+	ImageStateReady    ImageState = "ready"
 )
 
 // Defines values for ImageVirtualization.
@@ -94,6 +102,9 @@ type NFSV2Spec struct {
 // to act as a router without SNAT rules.
 type AllowedSourceAddresses = []string
 
+// Architecture CPU architecture.
+type Architecture string
+
 // ConsoleOutput Console output
 type ConsoleOutput struct {
 	// Contents Console output.
@@ -131,6 +142,9 @@ type Flavor struct {
 
 // FlavorSpec A flavor.
 type FlavorSpec struct {
+	// Architecture CPU architecture.
+	Architecture Architecture `json:"architecture"`
+
 	// Baremetal Whether the flavor is for a dedicated machine.
 	Baremetal *bool `json:"baremetal,omitempty"`
 
@@ -252,6 +266,9 @@ type Image struct {
 
 	// Spec An image.
 	Spec ImageSpec `json:"spec"`
+
+	// Status The image's status.
+	Status ImageStatus `json:"status"`
 }
 
 // ImageCreate A compute image create request.
@@ -265,6 +282,9 @@ type ImageCreate struct {
 
 // ImageCreateSpec A compute image specification.
 type ImageCreateSpec struct {
+	// Architecture CPU architecture.
+	Architecture Architecture `json:"architecture"`
+
 	// Gpu The GPU driver if installed.
 	Gpu *ImageGpu `json:"gpu,omitempty"`
 
@@ -274,18 +294,12 @@ type ImageCreateSpec struct {
 	// SoftwareVersions Image preinstalled version version metadata.
 	SoftwareVersions *SoftwareVersions `json:"softwareVersions,omitempty"`
 
-	// SourceFormat The disk format of the image. If not provided, the value defaults to `raw`.
-	SourceFormat *ImageDiskFormat `json:"sourceFormat,omitempty"`
-
-	// SourceURL A URL to upload the image from.
-	SourceURL string `json:"sourceURL"`
+	// Uri A URI to upload the image from.
+	Uri string `json:"uri"`
 
 	// Virtualization What type of machine the image is for.
 	Virtualization ImageVirtualization `json:"virtualization"`
 }
-
-// ImageDiskFormat The disk format of the image. If not provided, the value defaults to `raw`.
-type ImageDiskFormat string
 
 // ImageGpu The GPU driver if installed.
 type ImageGpu struct {
@@ -322,6 +336,9 @@ type ImageOS struct {
 
 // ImageSpec An image.
 type ImageSpec struct {
+	// Architecture CPU architecture.
+	Architecture Architecture `json:"architecture"`
+
 	// Gpu The GPU driver if installed.
 	Gpu *ImageGpu `json:"gpu,omitempty"`
 
@@ -336,6 +353,15 @@ type ImageSpec struct {
 
 	// Virtualization What type of machine the image is for.
 	Virtualization ImageVirtualization `json:"virtualization"`
+}
+
+// ImageState The images's lifecycle state.
+type ImageState string
+
+// ImageStatus The image's status.
+type ImageStatus struct {
+	// State The images's lifecycle state.
+	State ImageState `json:"state"`
 }
 
 // ImageVirtualization What type of machine the image is for.
@@ -928,6 +954,18 @@ type ServersRead = []ServerRead
 // ServersV2Read A list of servers.
 type ServersV2Read = []ServerV2Read
 
+// SnapshotCreate A compute image create request.
+type SnapshotCreate struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A compute image snapshot specification.
+	Spec SnapshotCreateSpec `json:"spec"`
+}
+
+// SnapshotCreateSpec A compute image snapshot specification.
+type SnapshotCreateSpec = map[string]interface{}
+
 // SoftwareVersions Image preinstalled version version metadata.
 type SoftwareVersions map[string]externalRef0.Semver
 
@@ -942,8 +980,8 @@ type StorageAttachmentListV2Status = []StorageAttachmentV2Status
 
 // StorageAttachmentV2Spec Describes the network attachment for storage
 type StorageAttachmentV2Spec struct {
-	// NetworkIDs A list of network IDs
-	NetworkIDs NetworkIDList `json:"networkIDs"`
+	// NetworkIds A list of network IDs
+	NetworkIds NetworkIDList `json:"networkIds"`
 }
 
 // StorageAttachmentV2Status Describes the network attachment for storage
@@ -955,7 +993,7 @@ type StorageAttachmentV2Status struct {
 	NetworkId string `json:"networkId"`
 
 	// ProvisioningStatus The provisioning state of a resource.
-	ProvisioningStatus *externalRef0.ResourceProvisioningStatus `json:"provisioningStatus,omitempty"`
+	ProvisioningStatus externalRef0.ResourceProvisioningStatus `json:"provisioningStatus"`
 }
 
 // StorageClassListV2Read A list of storage classes.
@@ -987,16 +1025,13 @@ type StorageTypeV2Spec struct {
 	NFS *NFSV2Spec `json:"NFS,omitempty"`
 }
 
-// StorageUsageV2Spec Information about the usage of the storage
-type StorageUsageV2Spec struct {
-	// Capacity total space allotted
-	Capacity string `json:"capacity"`
+// StorageUsageV2Status Information about the usage of the storage in bytes
+type StorageUsageV2Status struct {
+	// CapacityBytes total space allotted in bytes
+	CapacityBytes int64 `json:"capacityBytes"`
 
-	// Free amount of storage space free to utilize
-	Free *string `json:"free,omitempty"`
-
-	// Used amount of storage space utilizied
-	Used *string `json:"used,omitempty"`
+	// UsedBytes amount of storage space used in bytes
+	UsedBytes *int64 `json:"usedBytes,omitempty"`
 }
 
 // StorageV2Create A storage create request.
@@ -1065,8 +1100,8 @@ type StorageV2Status struct {
 	// StorageClassId identifier for the storage
 	StorageClassId string `json:"storageClassId"`
 
-	// Usage Information about the usage of the storage
-	Usage StorageUsageV2Spec `json:"usage"`
+	// Usage Information about the usage of the storage in bytes
+	Usage *StorageUsageV2Status `json:"usage,omitempty"`
 }
 
 // StorageV2Update A storage create request.
@@ -1231,6 +1266,9 @@ type ServerV2CreateRequest = ServerV2Create
 // ServerV2UpdateRequest A server update request.
 type ServerV2UpdateRequest = ServerV2Update
 
+// SnapshotServerRequest A compute image create request.
+type SnapshotServerRequest = SnapshotCreate
+
 // StorageV2CreateRequest A storage create request.
 type StorageV2CreateRequest = StorageV2Create
 
@@ -1383,3 +1421,6 @@ type PostApiV2ServersJSONRequestBody = ServerV2Create
 
 // PutApiV2ServersServerIDJSONRequestBody defines body for PutApiV2ServersServerID for application/json ContentType.
 type PutApiV2ServersServerIDJSONRequestBody = ServerV2Update
+
+// PostApiV2ServersServerIDSnapshotJSONRequestBody defines body for PostApiV2ServersServerIDSnapshot for application/json ContentType.
+type PostApiV2ServersServerIDSnapshotJSONRequestBody = SnapshotCreate

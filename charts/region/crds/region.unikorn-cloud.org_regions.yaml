@@ -87,6 +87,12 @@ spec:
                         cpu:
                           description: CPU defines additional CPU metadata.
                           properties:
+                            architecture:
+                              description: Architecture is the CPU architecture.
+                              enum:
+                              - x86_64
+                              - aarch64
+                              type: string
                             count:
                               description: |-
                                 Count allows you to override the number of CPUs.  Usually this wouldn't
@@ -209,6 +215,12 @@ spec:
                                 cpu:
                                   description: CPU defines additional CPU metadata.
                                   properties:
+                                    architecture:
+                                      description: Architecture is the CPU architecture.
+                                      enum:
+                                      - x86_64
+                                      - aarch64
+                                      type: string
                                     count:
                                       description: |-
                                         Count allows you to override the number of CPUs.  Usually this wouldn't
@@ -428,7 +440,26 @@ spec:
                 enum:
                 - openstack
                 - kubernetes
+                maxLength: 63
                 type: string
+              security:
+                description: Security controls region visibility.
+                properties:
+                  organizations:
+                    description: |-
+                      Organizations if not empty limits access to the region based on the
+                      rules defined within.
+                    items:
+                      properties:
+                        id:
+                          description: ID identifies the organization ID that may
+                            access the region.
+                          type: string
+                      required:
+                      - id
+                      type: object
+                    type: array
+                type: object
               tags:
                 description: Tags are aribrary user data.
                 items:

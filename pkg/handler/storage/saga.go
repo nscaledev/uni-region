@@ -150,7 +150,7 @@ func (s *createSaga) validateAttachments(ctx context.Context, attachments *opena
 
 	networkClient := network.New(s.client.client, s.client.namespace, s.client.identity)
 
-	for _, id := range attachments.NetworkIDs {
+	for _, id := range attachments.NetworkIds {
 		network, err := networkClient.GetV2(ctx, id)
 		if err != nil {
 			return errors.

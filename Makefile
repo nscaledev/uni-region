@@ -137,7 +137,7 @@ images-kind-load: images
 
 .PHONY: test-unit
 test-unit:
-	go test -coverpkg ./... -coverprofile cover.out $(shell go list ./... | grep -v /test/api)
+	go test -coverpkg ./... -coverprofile cover.out ./...
 	go tool cover -html cover.out -o cover.html
 
 # Build a binary and install it.
@@ -191,7 +191,7 @@ lint: $(GENDIR)
 # Validate the server OpenAPI schema is legit.
 .PHONY: validate
 validate: $(OPENAPI_FILES)
-	go run ./hack/validate_openapi
+	go run github.com/unikorn-cloud/core/hack/validate_openapi
 
 # Validate the docs can be generated without fail.
 .PHONY: validate-docs

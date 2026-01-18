@@ -103,6 +103,7 @@ spec:
                 enum:
                 - openstack
                 - kubernetes
+                maxLength: 63
                 type: string
               publicIPAllocation:
                 description: PublicIPAllocation is the server public IP allocation

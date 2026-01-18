@@ -1,45 +1,112 @@
 name: API Tests
 on:
   workflow_dispatch:
+    inputs:
+      run_dev:
+        description: 'Run Dev tests'
+        type: boolean
+        default: true
+      run_uat:
+        description: 'Run UAT tests'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
-  API-Tests:
+  API-Tests-Dev:
+    name: API Tests (dev)
     runs-on: ubuntu-latest
+    if: github.event.inputs.run_dev == 'true'
     env:
-      API_BASE_URL: ${{ secrets.API_BASE_URL }}
-      API_AUTH_TOKEN: ${{ secrets.API_AUTH_TOKEN }}
-      TEST_ORG_ID: ${{ secrets.TEST_ORG_ID }}
-      TEST_PROJECT_ID: ${{ secrets.TEST_PROJECT_ID }}
-      TEST_REGION_ID: ${{ secrets.TEST_REGION_ID }}
+      ENVIRONMENT: dev
+      API_BASE_URL: ${{ vars.DEV_API_BASE_URL }}
+      API_AUTH_TOKEN: ${{ secrets.DEV_API_AUTH_TOKEN }}
+      TEST_ORG_ID: ${{ vars.DEV_TEST_ORG_ID }}
+      TEST_PROJECT_ID: ${{ vars.DEV_TEST_PROJECT_ID }}
+      TEST_REGION_ID: ${{ vars.DEV_TEST_REGION_ID }}
 
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-    
+
     - name: Setup Go
       uses: actions/setup-go@v3
       with:
         go-version-file: go.mod
         cache: true
-    
+
     - name: Touch
       run: make touch
-    
+
     - name: Run API Tests
-      if: github.event_name == 'workflow_dispatch'
       run: make test-api
-    
+
     - name: Archive API Test Results
       uses: actions/upload-artifact@v4
       with:
-        name: api-test-results
-        path: test/api/test-results.json
-    
+        name: api-test-results-dev
+        path: test/api/suites/test-results.json
+
     - name: Archive API Test JUnit Report
       uses: actions/upload-artifact@v4
       with:
-        name: api-test-junit
-        path: test/api/junit.xml
+        name: api-test-junit-dev
+        path: test/api/suites/junit.xml
+
+    - name: Send Slack Notification
+      if: always()
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      run: |
+        WORKFLOW_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        go run test/api/scripts/slack-notify.go test/api/suites/test-results.json "$WORKFLOW_URL"
+
+  API-Tests-UAT:
+    name: API Tests (uat)
+    runs-on: ubuntu-latest
+    if: github.event.inputs.run_uat == 'true'
+    env:
+      ENVIRONMENT: uat
+      API_BASE_URL: ${{ vars.UAT_API_BASE_URL }}
+      API_AUTH_TOKEN: ${{ secrets.UAT_API_AUTH_TOKEN }}
+      TEST_ORG_ID: ${{ vars.UAT_TEST_ORG_ID }}
+      TEST_PROJECT_ID: ${{ vars.UAT_TEST_PROJECT_ID }}
+      TEST_REGION_ID: ${{ vars.UAT_TEST_REGION_ID }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v3
+      with:
+        go-version-file: go.mod
+        cache: true
+
+    - name: Touch
+      run: make touch
+
+    - name: Run API Tests
+      run: make test-api
+
+    - name: Archive API Test Results
+      uses: actions/upload-artifact@v4
+      with:
+        name: api-test-results-uat
+        path: test/api/suites/test-results.json
+
+    - name: Archive API Test JUnit Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: api-test-junit-uat
+        path: test/api/suites/junit.xml
+
+    - name: Send Slack Notification
+      if: always()
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      run: |
+        WORKFLOW_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        go run test/api/scripts/slack-notify.go test/api/suites/test-results.json "$WORKFLOW_URL"

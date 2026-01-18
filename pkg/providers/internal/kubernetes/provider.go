@@ -172,11 +172,12 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 		}
 
 		flavor := types.Flavor{
-			ID:     node.ID,
-			Name:   node.Name,
-			CPUs:   *node.CPU.Count,
-			Memory: node.Memory,
-			Disk:   node.Disk,
+			ID:           node.ID,
+			Name:         node.Name,
+			CPUs:         *node.CPU.Count,
+			Memory:       node.Memory,
+			Disk:         node.Disk,
+			Architecture: types.X86_64,
 		}
 
 		if node.GPU != nil {
@@ -205,8 +206,8 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 	return nil, ErrUnimplmented
 }
 
-// CreateImageForUpload creates a new image resource for upload.
-func (p *Provider) CreateImageForUpload(ctx context.Context, image *types.Image) (*types.Image, error) {
+// CreateImage creates a new image.
+func (p *Provider) CreateImage(ctx context.Context, image *types.Image, url string) (*types.Image, error) {
 	return nil, ErrUnimplmented
 }
 
@@ -294,4 +295,9 @@ func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1
 // GetConsoleOutput retrieves the console output for a server.
 func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, length *int) (string, error) {
 	return "", ErrUnimplmented
+}
+
+// CreateSnapshot creates a new image from an existing server.
+func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *types.Image) (*types.Image, error) {
+	return nil, ErrUnimplmented
 }
