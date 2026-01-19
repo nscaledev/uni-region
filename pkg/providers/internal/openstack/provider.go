@@ -584,18 +584,6 @@ func isPublicOrOrganizationOwnedImage(image *images.Image, organizationID string
 	return value == nil || value == organizationID
 }
 
-func getPublicOrOrganizationOwnedImages(resources []images.Image, organizationID string) []images.Image {
-	result := make([]images.Image, 0, len(resources))
-
-	for _, image := range resources {
-		if isPublicOrOrganizationOwnedImage(&image, organizationID) {
-			result = append(result, image)
-		}
-	}
-
-	return result
-}
-
 func imageStatus(image *images.Image) types.ImageStatus {
 	var status types.ImageStatus
 
@@ -697,24 +685,52 @@ func convertImage(image *images.Image) (*types.Image, error) {
 	return &providerImage, nil
 }
 
-// ListImages lists all available images.
-func (p *Provider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
-	resources, err := p.listImages(ctx)
+type imagePredicate func(*images.Image) bool
+
+type imageQuery struct {
+	listFunc   func(context.Context) ([]images.Image, error)
+	predicates []imagePredicate
+}
+
+func (q *imageQuery) AvailableToOrganization(organizationID string) types.ImageQuery {
+	q.predicates = append(q.predicates, func(im *images.Image) bool {
+		return isPublicOrOrganizationOwnedImage(im, organizationID)
+	})
+
+	return q
+}
+
+func (q *imageQuery) StatusIn(statuses ...types.ImageStatus) types.ImageQuery {
+	q.predicates = append(q.predicates, func(im *images.Image) bool {
+		st := imageStatus(im)
+		return slices.Contains(statuses, st)
+	})
+
+	return q
+}
+
+func (q *imageQuery) List(ctx context.Context) (types.ImageList, error) {
+	images, err := q.listFunc(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	resources = getPublicOrOrganizationOwnedImages(resources, organizationID)
+	var result []types.Image
 
-	result := make(types.ImageList, len(resources))
+images:
+	for i := range images {
+		for _, f := range q.predicates {
+			if !f(&images[i]) {
+				continue images
+			}
+		}
 
-	for i := range resources {
-		providerImage, err := convertImage(&resources[i])
+		im, err := convertImage(&images[i])
 		if err != nil {
 			return nil, err
 		}
 
-		result[i] = *providerImage
+		result = append(result, *im)
 	}
 
 	return result, nil
@@ -738,6 +754,10 @@ func (p *Provider) listImages(ctx context.Context) ([]images.Image, error) {
 	p.imageCache.Set(resources)
 
 	return resources, nil
+}
+
+func (p *Provider) QueryImages() (types.ImageQuery, error) {
+	return &imageQuery{listFunc: p.listImages}, nil
 }
 
 // GetImage retrieves a specific image by its ID.
