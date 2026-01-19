@@ -528,7 +528,7 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 }
 
 // imageOS extracts the image OS from the image properties.
-func (p *Provider) imageOS(image *images.Image) types.ImageOS {
+func imageOS(image *images.Image) types.ImageOS {
 	kernel, _ := image.Properties[osKernelLabel].(string)
 	family, _ := image.Properties[osFamilyLabel].(string)
 	distro, _ := image.Properties[osDistroLabel].(string)
@@ -553,7 +553,7 @@ func (p *Provider) imageOS(image *images.Image) types.ImageOS {
 }
 
 // imagePackages extracts the image packages from the image properties.
-func (p *Provider) imagePackages(image *images.Image) *types.ImagePackages {
+func imagePackages(image *images.Image) *types.ImagePackages {
 	result := make(types.ImagePackages)
 
 	for key, value := range image.Properties {
@@ -595,7 +595,7 @@ func getPublicOrOrganizationOwnedImages(resources []images.Image, organizationID
 	return result
 }
 
-func (p *Provider) imageStatus(image *images.Image) types.ImageStatus {
+func imageStatus(image *images.Image) types.ImageStatus {
 	var status types.ImageStatus
 
 	switch image.Status {
@@ -623,7 +623,7 @@ func imageArchitecture(image *images.Image) types.Architecture {
 	return types.X86_64
 }
 
-func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
+func convertImage(image *images.Image) (*types.Image, error) {
 	var organizationID *string
 	if temp, _ := image.Properties[organizationIDLabel].(string); temp != "" {
 		organizationID = &temp
@@ -647,9 +647,9 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 		Architecture:   imageArchitecture(image),
 		SizeGiB:        size,
 		Virtualization: types.ImageVirtualization(virtualization),
-		OS:             p.imageOS(image),
-		Packages:       p.imagePackages(image),
-		Status:         p.imageStatus(image),
+		OS:             imageOS(image),
+		Packages:       imagePackages(image),
+		Status:         imageStatus(image),
 	}
 
 	if gpuVendor, ok := image.Properties[gpuVendorLabel].(string); ok {
@@ -686,7 +686,7 @@ func (p *Provider) ListImages(ctx context.Context, organizationID string) (types
 	result := make(types.ImageList, len(resources))
 
 	for i := range resources {
-		providerImage, err := p.convertImage(&resources[i])
+		providerImage, err := convertImage(&resources[i])
 		if err != nil {
 			return nil, err
 		}
@@ -733,7 +733,7 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 		)
 	}
 
-	return p.convertImage(resource)
+	return convertImage(resource)
 }
 
 // getImage finds a particular image, given the ID. It checks the cache first, and if not
@@ -865,7 +865,7 @@ func (p *Provider) CreateImage(ctx context.Context, image *types.Image, uri stri
 
 	p.imageCache.Invalidate()
 
-	return p.convertImage(resource)
+	return convertImage(resource)
 }
 
 func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
@@ -2531,7 +2531,7 @@ func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Ident
 		return nil, err
 	}
 
-	return p.convertImage(newImage)
+	return convertImage(newImage)
 }
 
 func interpretGophercloudError(err error) error {
