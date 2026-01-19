@@ -185,19 +185,19 @@ func (mr *MockProviderMockRecorder) GetImage(ctx, organizationID, imageID any) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetImage", reflect.TypeOf((*MockProvider)(nil).GetImage), ctx, organizationID, imageID)
 }
 
-// ListImages mocks base method.
-func (m *MockProvider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
+// QueryImages mocks base method.
+func (m *MockProvider) QueryImages() (types.ImageQuery, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListImages", ctx, organizationID)
-	ret0, _ := ret[0].(types.ImageList)
+	ret := m.ctrl.Call(m, "QueryImages")
+	ret0, _ := ret[0].(types.ImageQuery)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// ListImages indicates an expected call of ListImages.
-func (mr *MockProviderMockRecorder) ListImages(ctx, organizationID any) *gomock.Call {
+// QueryImages indicates an expected call of QueryImages.
+func (mr *MockProviderMockRecorder) QueryImages() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListImages", reflect.TypeOf((*MockProvider)(nil).ListImages), ctx, organizationID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QueryImages", reflect.TypeOf((*MockProvider)(nil).QueryImages))
 }
 
 // RebootServer mocks base method.

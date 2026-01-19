@@ -23,9 +23,22 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 )
 
+type ImageQuery interface {
+	// List runs the query and returns the result
+	List(ctx context.Context) (ImageList, error)
+
+	// AvailableToOrganization adds a predicate to the query, which will
+	// include only those images that can be used by the identified organization.
+	AvailableToOrganization(organizationID string) ImageQuery
+	// StatusIn adds a predicate to the query such that only images with one of
+	// the given statuses will be included.
+	StatusIn(statuses ...ImageStatus) ImageQuery
+}
+
 type ImageRead interface {
-	// ListImages lists all available images.
-	ListImages(ctx context.Context, organizationID string) (ImageList, error)
+	// QueryImages gives you a handle to a query builder, so you can ask for a list of images.
+	// It might return an error if this provider doesn't support querying images.
+	QueryImages() (ImageQuery, error)
 	// GetImage retrieves a specific image by its ID.
 	GetImage(ctx context.Context, organizationID, imageID string) (*Image, error)
 }
