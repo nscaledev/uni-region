@@ -2,6 +2,8 @@
 
 Centralized region discovery and routing service.
 
+<!-- Test PR for Claude code review workflow -->
+
 ## Architecture
 
 We provide a composable suite of different micro-services that provide different functionality.

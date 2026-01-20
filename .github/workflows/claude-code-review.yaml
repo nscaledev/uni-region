@@ -11,13 +11,22 @@ on:
     #   - "src/**/*.jsx"
 
 jobs:
+  debug-author-association:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show PR author_association value
+        run: |
+          echo "author_association='${{ github.event.pull_request.author_association }}'"
+          echo "Raw JSON:"
+          echo '${{ toJSON(github.event.pull_request.author_association) }}'
+
   claude-review:
     # Security: Only run on PRs from collaborators to prevent malicious code execution
-    # Remove this condition if you want to review all PRs (less secure)
     if: |
       github.event.pull_request.author_association == 'OWNER' ||
       github.event.pull_request.author_association == 'MEMBER' ||
-      github.event.pull_request.author_association == 'COLLABORATOR'
+      github.event.pull_request.author_association == 'COLLABORATOR' ||
+      github.event.pull_request.author_association == 'CONTRIBUTOR'
 
     # Optional: Filter by PR author
     # if: |
@@ -30,6 +39,7 @@ jobs:
       contents: read
       pull-requests: read
       issues: read
+      id-token: write
 
     steps:
       - name: Checkout repository
@@ -39,10 +49,9 @@ jobs:
 
       - name: Run Claude Code Review
         id: claude-review
-        uses: anthropics/claude-code-action@7145c3e0510bcdbdd29f67cc4a8c1958f1acfa2f # v1.0.27
+        uses: anthropics/claude-code-action@v1
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          track_progress: true
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # Direct prompt for automated review (no @claude mention needed)
           prompt: |
             REPO: ${{ github.repository }}
@@ -87,9 +96,6 @@ jobs:
             Be constructive, specific, and cite line numbers where relevant.
             Prioritize findings (P0=blocking, P1=important, P2=nice-to-have, P3-P4=optional).
 
-          # Optional: Use sticky comments to make Claude reuse the same comment on subsequent pushes to the same PR
-          use_sticky_comment: true
-
-          # Configuration via CLI arguments
+          # Additional configuration via CLI arguments
           claude_args: |
-            --allowedTools Bash(make test-unit),Bash(make lint),Bash(make validate)
+            --system-prompt "Follow our coding standards"
