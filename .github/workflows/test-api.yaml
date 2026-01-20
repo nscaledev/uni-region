@@ -1,5 +1,7 @@
 name: API Tests
 on:
+  schedule:
+    - cron: '0 2 * * *'  # Run nightly at 2am UTC
   workflow_dispatch:
     inputs:
       run_dev:
@@ -18,7 +20,7 @@ jobs:
   API-Tests-Dev:
     name: API Tests (dev)
     runs-on: ubuntu-latest
-    if: github.event.inputs.run_dev == 'true'
+    if: github.event_name == 'schedule' || github.event.inputs.run_dev == 'true'
     env:
       ENVIRONMENT: dev
       API_BASE_URL: ${{ vars.DEV_API_BASE_URL }}
@@ -66,7 +68,7 @@ jobs:
   API-Tests-UAT:
     name: API Tests (uat)
     runs-on: ubuntu-latest
-    if: github.event.inputs.run_uat == 'true'
+    if: github.event_name == 'schedule' || github.event.inputs.run_uat == 'true'
     env:
       ENVIRONMENT: uat
       API_BASE_URL: ${{ vars.UAT_API_BASE_URL }}
