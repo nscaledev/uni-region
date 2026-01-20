@@ -21,6 +21,7 @@ import (
 	"context"
 
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 )
 
 func (c *Client) QueryImages(ctx context.Context, regionID string, params openapi.GetApiV2RegionsRegionIDImagesParams) (openapi.Images, error) {
@@ -32,6 +33,29 @@ func (c *Client) QueryImages(ctx context.Context, regionID string, params openap
 	query, err := prov.QueryImages()
 	if err != nil {
 		return nil, err
+	}
+
+	if orgIDs := params.OrganizationID; orgIDs != nil {
+		// default scope to available, if not provided.
+		if params.Scope != nil && *params.Scope == openapi.GetApiV2RegionsRegionIDImagesParamsScopeOwned {
+			query = query.OwnedByOrganization(*orgIDs...)
+		} else {
+			query = query.AvailableToOrganization(*orgIDs...)
+		}
+	}
+
+	if s := params.Status; s != nil {
+		statuses := *s
+
+		queryStatuses := make([]types.ImageStatus, 0, len(statuses))
+
+		for i := range statuses {
+			if s := generateStatus(statuses[i]); s != "" {
+				queryStatuses = append(queryStatuses, s)
+			}
+		}
+
+		query = query.StatusIn(queryStatuses...)
 	}
 
 	result, err := query.List(ctx)

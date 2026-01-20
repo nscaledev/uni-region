@@ -269,3 +269,18 @@ func generateImageOS(source *openapi.ImageOS) *types.ImageOS {
 		Version:  source.Version,
 	}
 }
+
+func generateStatus(in openapi.ImageState) types.ImageStatus {
+	switch in {
+	case openapi.ImageStatePending:
+		return types.ImageStatusPending
+	case openapi.ImageStateCreating:
+		return types.ImageStatusCreating
+	case openapi.ImageStateReady:
+		return types.ImageStatusReady
+	case openapi.ImageStateFailed:
+		return types.ImageStatusFailed
+	}
+
+	return ""
+}
