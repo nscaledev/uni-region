@@ -37,7 +37,6 @@ type TestConfig struct {
 func LoadTestConfig() (*TestConfig, error) {
 	// Set up viper with config paths and defaults
 	defaults := map[string]interface{}{
-		"ENVIRONMENT":      "dev",
 		"REQUEST_TIMEOUT":  "30s",
 		"TEST_TIMEOUT":     "20m",
 		"SKIP_INTEGRATION": false,
@@ -58,24 +57,10 @@ func LoadTestConfig() (*TestConfig, error) {
 		return nil, err
 	}
 
-	// Get environment (dev or uat)
-	environment := v.GetString("ENVIRONMENT")
-
-	// Helper function to get environment-aware config value
-	// Tries {ENVIRONMENT}_KEY first, falls back to KEY for backward compatibility
-	getEnvString := func(key string) string {
-		prefixedKey := environment + "_" + key
-		if v.IsSet(prefixedKey) {
-			return v.GetString(prefixedKey)
-		}
-
-		return v.GetString(key)
-	}
-
 	config := &TestConfig{
 		BaseConfig: coreconfig.BaseConfig{
-			BaseURL:         getEnvString("API_BASE_URL"),
-			AuthToken:       getEnvString("API_AUTH_TOKEN"),
+			BaseURL:         v.GetString("API_BASE_URL"),
+			AuthToken:       v.GetString("API_AUTH_TOKEN"),
 			RequestTimeout:  coreconfig.GetDurationFromViper(v, "REQUEST_TIMEOUT", 30*time.Second),
 			TestTimeout:     coreconfig.GetDurationFromViper(v, "TEST_TIMEOUT", 20*time.Minute),
 			SkipIntegration: v.GetBool("SKIP_INTEGRATION"),
@@ -83,10 +68,9 @@ func LoadTestConfig() (*TestConfig, error) {
 			LogRequests:     v.GetBool("LOG_REQUESTS"),
 			LogResponses:    v.GetBool("LOG_RESPONSES"),
 		},
-		RegionBaseURL: getEnvString("REGION_BASE_URL"),
-		OrgID:         getEnvString("TEST_ORG_ID"),
-		ProjectID:     getEnvString("TEST_PROJECT_ID"),
-		RegionID:      getEnvString("TEST_REGION_ID"),
+		OrgID:     v.GetString("TEST_ORG_ID"),
+		ProjectID: v.GetString("TEST_PROJECT_ID"),
+		RegionID:  v.GetString("TEST_REGION_ID"),
 	}
 
 	// Validate required fields
