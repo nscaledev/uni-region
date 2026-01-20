@@ -77,35 +77,15 @@ var _ = Describe("File Storage Management", func() {
 		})
 
 		Describe("Given invalid parameters", func() {
-			It("should ignore invalid organization ID in query params", func() {
-				// API currently doesn't validate org ID in query params
-				// It returns resources based on project/region filtering only
+			It("should reject requests with invalid organization ID format", func() {
 				invalidOrgID := "not-a-valid-uuid"
 				path := regionClient.GetEndpoints().ListFileStorage(invalidOrgID, config.ProjectID, config.RegionID)
 				_, respBody, err := regionClient.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
 
-				Expect(err).NotTo(HaveOccurred(), "API accepts invalid org ID without validation")
-
-				// Parse the response to verify it's a valid list structure
-				var storageList regionopenapi.StorageV2List
-				err = json.Unmarshal(respBody, &storageList)
-				Expect(err).NotTo(HaveOccurred(), "Response should be valid JSON array")
-
-				// If resources are returned, verify they have DIFFERENT org IDs
-				// (proving the invalid org ID parameter was ignored)
-				if len(storageList) > 0 {
-					GinkgoWriter.Printf("API returned %d resources despite invalid org ID '%s'\n",
-						len(storageList), invalidOrgID)
-					for _, storage := range storageList {
-						// Resources should have the ACTUAL org ID, not the invalid one we sent
-						Expect(storage.Metadata.OrganizationId).NotTo(Equal(invalidOrgID),
-							"Resource org ID should not match the invalid org ID we sent")
-						GinkgoWriter.Printf("  Resource %s has org ID: %s\n",
-							storage.Metadata.Name, storage.Metadata.OrganizationId)
-					}
-				} else {
-					GinkgoWriter.Printf("API returned empty list (no resources in this project/region)\n")
-				}
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, coreclient.ErrUnexpectedStatusCode)).To(BeTrue())
+				Expect(string(respBody)).To(Or(ContainSubstring("forbidden"), ContainSubstring("not found")))
+				GinkgoWriter.Printf("Expected error for invalid organization ID: %v\n", err)
 			})
 		})
 	})

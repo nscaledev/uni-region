@@ -76,15 +76,6 @@ func NewAPIClientWithConfig(config *TestConfig) *APIClient {
 	return newAPIClientWithConfig(config, config.BaseURL)
 }
 
-// NewRegionAPIClient creates a new API client pointing to the Region service.
-func NewRegionAPIClient(config *TestConfig) *APIClient {
-	if config.RegionBaseURL != "" {
-		return newAPIClientWithConfig(config, config.RegionBaseURL)
-	}
-	// Fallback to BaseURL if RegionBaseURL not configured
-	return newAPIClientWithConfig(config, config.BaseURL)
-}
-
 // common constructor logic.
 func newAPIClientWithConfig(config *TestConfig, baseURL string) *APIClient {
 	coreClient := coreclient.NewAPIClient(baseURL, config.AuthToken, config.RequestTimeout, &GinkgoLogger{})
