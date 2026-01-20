@@ -21,16 +21,38 @@ package handler
 import (
 	"net/http"
 
+	"github.com/unikorn-cloud/core/pkg/server/errors"
+	"github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
+	"github.com/unikorn-cloud/region/pkg/handler/image"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
 
 type ImageV2Handler struct {
+	common.ClientArgs
+	options         *Options
+	getProviderFunc image.GetProviderFunc
 }
 
-func NewImageV2Handler() *ImageV2Handler {
-	return &ImageV2Handler{}
+func NewImageV2Handler(clientArgs common.ClientArgs, options *Options) *ImageV2Handler {
+	return &ImageV2Handler{
+		ClientArgs:      clientArgs,
+		options:         options,
+		getProviderFunc: image.DefaultGetProvider,
+	}
 }
 
-func (*ImageV2Handler) GetApiV2RegionsRegionIDImages(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter, params openapi.GetApiV2RegionsRegionIDImagesParams) {
-	w.WriteHeader(http.StatusInternalServerError)
+func (h *ImageV2Handler) imageClient() *image.Client {
+	return image.NewClient(h.ClientArgs, h.getProviderFunc)
+}
+
+func (h *ImageV2Handler) GetApiV2RegionsRegionIDImages(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter, params openapi.GetApiV2RegionsRegionIDImagesParams) {
+	result, err := h.imageClient().QueryImages(r.Context(), regionID, params)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	h.options.setCacheable(w)
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
