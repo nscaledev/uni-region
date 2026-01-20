@@ -68,14 +68,16 @@ func LoadTestConfig() (*TestConfig, error) {
 			LogRequests:     v.GetBool("LOG_REQUESTS"),
 			LogResponses:    v.GetBool("LOG_RESPONSES"),
 		},
-		OrgID:     v.GetString("TEST_ORG_ID"),
-		ProjectID: v.GetString("TEST_PROJECT_ID"),
-		RegionID:  v.GetString("TEST_REGION_ID"),
+		RegionBaseURL: v.GetString("REGION_BASE_URL"),
+		OrgID:         v.GetString("TEST_ORG_ID"),
+		ProjectID:     v.GetString("TEST_PROJECT_ID"),
+		RegionID:      v.GetString("TEST_REGION_ID"),
 	}
 
 	// Validate required fields
 	required := map[string]string{
 		"API_BASE_URL":    config.BaseURL,
+		"REGION_BASE_URL": config.RegionBaseURL,
 		"TEST_ORG_ID":     config.OrgID,
 		"TEST_PROJECT_ID": config.ProjectID,
 	}

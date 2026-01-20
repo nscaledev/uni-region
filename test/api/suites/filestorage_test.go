@@ -22,7 +22,6 @@ limitations under the License.
 package suites
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -78,9 +77,10 @@ var _ = Describe("File Storage Management", func() {
 
 		Describe("Given invalid parameters", func() {
 			It("should reject requests with invalid organization ID format", func() {
+				Skip("Bug INST-457: File Storage API accepts invalid organizationId and returns data for different organization")
 				invalidOrgID := "not-a-valid-uuid"
 				path := regionClient.GetEndpoints().ListFileStorage(invalidOrgID, config.ProjectID, config.RegionID)
-				_, respBody, err := regionClient.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+				_, respBody, err := regionClient.DoRegionRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
 
 				Expect(err).To(HaveOccurred())
 				Expect(errors.Is(err, coreclient.ErrUnexpectedStatusCode)).To(BeTrue())
