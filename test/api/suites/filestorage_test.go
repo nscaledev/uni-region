@@ -91,6 +91,11 @@ var _ = Describe("File Storage Management", func() {
 	})
 
 	Context("When managing file storage lifecycle", Ordered, func() {
+		const (
+			initialStorageSizeGiB = int64(10)
+			updatedStorageSizeGiB = int64(20)
+		)
+
 		var filestorageID string
 		var filestorageName string
 		var storageClassID string
@@ -131,7 +136,7 @@ var _ = Describe("File Storage Management", func() {
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
 						RegionId:       config.RegionID,
-						SizeGiB:        10,
+						SizeGiB:        initialStorageSizeGiB,
 						StorageClassId: storageClassID,
 						StorageType: regionopenapi.StorageTypeV2Spec{
 							NFS: &regionopenapi.NFSV2Spec{},
@@ -166,7 +171,7 @@ var _ = Describe("File Storage Management", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(retrieved).NotTo(BeNil())
 				Expect(retrieved.Metadata.Id).To(Equal(filestorageID))
-				Expect(retrieved.Spec.SizeGiB).To(BeNumerically(">", 0))
+				Expect(retrieved.Spec.SizeGiB).To(Equal(initialStorageSizeGiB))
 
 				GinkgoWriter.Printf("Retrieved file storage: %s (%s) - %dGiB\n",
 					retrieved.Metadata.Name,
@@ -186,7 +191,7 @@ var _ = Describe("File Storage Management", func() {
 						Description: ptr.To("Updated test file storage"),
 					},
 					Spec: regionopenapi.StorageV2Spec{
-						SizeGiB: 20, // Increase size
+						SizeGiB: updatedStorageSizeGiB, // Increase size
 						StorageType: regionopenapi.StorageTypeV2Spec{
 							NFS: &regionopenapi.NFSV2Spec{},
 						},
@@ -201,7 +206,7 @@ var _ = Describe("File Storage Management", func() {
 				if updated.Metadata.Description != nil {
 					Expect(*updated.Metadata.Description).To(Equal("Updated test file storage"))
 				}
-				Expect(updated.Spec.SizeGiB).To(Equal(int64(20)))
+				Expect(updated.Spec.SizeGiB).To(Equal(updatedStorageSizeGiB))
 
 				GinkgoWriter.Printf("Updated file storage: %s (%s) - now %dGiB\n",
 					updated.Metadata.Name,
