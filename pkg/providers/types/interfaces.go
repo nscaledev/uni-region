@@ -29,7 +29,10 @@ type ImageQuery interface {
 
 	// AvailableToOrganization adds a predicate to the query, which will
 	// include only those images that can be used by the identified organization.
-	AvailableToOrganization(organizationID string) ImageQuery
+	AvailableToOrganization(organizationID ...string) ImageQuery
+	// OwnedByOrganization adds a predicate to the query, to include only images that
+	// are owned specifically by the organizations identified.
+	OwnedByOrganization(organizationID ...string) ImageQuery
 	// StatusIn adds a predicate to the query such that only images with one of
 	// the given statuses will be included.
 	StatusIn(statuses ...ImageStatus) ImageQuery

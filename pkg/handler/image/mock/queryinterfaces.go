@@ -40,17 +40,21 @@ func (m *MockImageQuery) EXPECT() *MockImageQueryMockRecorder {
 }
 
 // AvailableToOrganization mocks base method.
-func (m *MockImageQuery) AvailableToOrganization(arg0 string) types.ImageQuery {
+func (m *MockImageQuery) AvailableToOrganization(arg0 ...string) types.ImageQuery {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AvailableToOrganization", arg0)
+	varargs := []any{}
+	for _, a := range arg0 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "AvailableToOrganization", varargs...)
 	ret0, _ := ret[0].(types.ImageQuery)
 	return ret0
 }
 
 // AvailableToOrganization indicates an expected call of AvailableToOrganization.
-func (mr *MockImageQueryMockRecorder) AvailableToOrganization(arg0 any) *gomock.Call {
+func (mr *MockImageQueryMockRecorder) AvailableToOrganization(arg0 ...any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AvailableToOrganization", reflect.TypeOf((*MockImageQuery)(nil).AvailableToOrganization), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AvailableToOrganization", reflect.TypeOf((*MockImageQuery)(nil).AvailableToOrganization), arg0...)
 }
 
 // List mocks base method.
@@ -66,6 +70,24 @@ func (m *MockImageQuery) List(arg0 context.Context) (types.ImageList, error) {
 func (mr *MockImageQueryMockRecorder) List(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockImageQuery)(nil).List), arg0)
+}
+
+// OwnedByOrganization mocks base method.
+func (m *MockImageQuery) OwnedByOrganization(arg0 ...string) types.ImageQuery {
+	m.ctrl.T.Helper()
+	varargs := []any{}
+	for _, a := range arg0 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "OwnedByOrganization", varargs...)
+	ret0, _ := ret[0].(types.ImageQuery)
+	return ret0
+}
+
+// OwnedByOrganization indicates an expected call of OwnedByOrganization.
+func (mr *MockImageQueryMockRecorder) OwnedByOrganization(arg0 ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OwnedByOrganization", reflect.TypeOf((*MockImageQuery)(nil).OwnedByOrganization), arg0...)
 }
 
 // StatusIn mocks base method.

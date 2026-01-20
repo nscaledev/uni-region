@@ -579,9 +579,14 @@ func imagePackages(image *images.Image) *types.ImagePackages {
 	return &result
 }
 
-func isPublicOrOrganizationOwnedImage(image *images.Image, organizationID string) bool {
-	value := image.Properties[organizationIDLabel]
-	return value == nil || value == organizationID
+func isPublicOrOrganizationOwnedImage(image *images.Image, organizationIDs []string) bool {
+	value, _ := image.Properties[organizationIDLabel].(string)
+	return value == "" || slices.Contains(organizationIDs, value)
+}
+
+func isOrganizationOwnedImage(image *images.Image, organizationIDs []string) bool {
+	value, _ := image.Properties[organizationIDLabel].(string)
+	return value != "" && slices.Contains(organizationIDs, value)
 }
 
 func imageStatus(image *images.Image) types.ImageStatus {
@@ -692,9 +697,17 @@ type imageQuery struct {
 	predicates []imagePredicate
 }
 
-func (q *imageQuery) AvailableToOrganization(organizationID string) types.ImageQuery {
+func (q *imageQuery) AvailableToOrganization(organizationIDs ...string) types.ImageQuery {
 	q.predicates = append(q.predicates, func(im *images.Image) bool {
-		return isPublicOrOrganizationOwnedImage(im, organizationID)
+		return isPublicOrOrganizationOwnedImage(im, organizationIDs)
+	})
+
+	return q
+}
+
+func (q *imageQuery) OwnedByOrganization(organizationIDs ...string) types.ImageQuery {
+	q.predicates = append(q.predicates, func(im *images.Image) bool {
+		return isOrganizationOwnedImage(im, organizationIDs)
 	})
 
 	return q
@@ -767,7 +780,7 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 		return nil, err
 	}
 
-	if !isPublicOrOrganizationOwnedImage(resource, organizationID) {
+	if !isPublicOrOrganizationOwnedImage(resource, []string{organizationID}) {
 		return nil, fmt.Errorf(
 			"%w: image %s is not accessible to organization %s",
 			coreerrors.ErrResourceNotFound,
