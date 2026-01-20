@@ -54,7 +54,7 @@ func New(clientArgs common.ClientArgs, options *Options) (*Handler, error) {
 		options:         options,
 		ImageHandler:    NewImageHandler(clientArgs, options),
 		ServerV2Handler: NewServerV2Handler(clientArgs),
-		ImageV2Handler:  NewImageV2Handler(),
+		ImageV2Handler:  NewImageV2Handler(clientArgs, options),
 	}
 
 	return h, nil
