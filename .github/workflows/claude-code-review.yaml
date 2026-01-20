@@ -1,0 +1,95 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+    # Optional: Only run on specific file changes
+    # paths:
+    #   - "src/**/*.ts"
+    #   - "src/**/*.tsx"
+    #   - "src/**/*.js"
+    #   - "src/**/*.jsx"
+
+jobs:
+  claude-review:
+    # Security: Only run on PRs from collaborators to prevent malicious code execution
+    # Remove this condition if you want to review all PRs (less secure)
+    if: |
+      github.event.pull_request.author_association == 'OWNER' ||
+      github.event.pull_request.author_association == 'MEMBER' ||
+      github.event.pull_request.author_association == 'COLLABORATOR'
+
+    # Optional: Filter by PR author
+    # if: |
+    #   github.event.pull_request.user.login == 'external-contributor' ||
+    #   github.event.pull_request.user.login == 'new-developer' ||
+    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
+
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@ff7abcd0c3c05ccf6adc123a8cd1fd4fb30fb493
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code Review
+        id: claude-review
+        uses: anthropics/claude-code-action@7145c3e0510bcdbdd29f67cc4a8c1958f1acfa2f # v1.0.27
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          track_progress: true
+          # Direct prompt for automated review (no @claude mention needed)
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Please review this pull request with the following structure:
+
+            ## 1. Is the requirement justified?
+            Evaluate whether the PR author has adequately explained WHY this change is needed.
+            Often this is a reference to a decision that's already described in an issue, or a bug report.
+            Does the author demonstrate understanding of the requirement?
+
+            ## 2. Does the patch meet the requirement?
+            Evaluate whether the PR author has explained HOW the implementation addresses the requirement.
+            Does it solve the stated problem without breaking other things?
+            Has the author demonstrated understanding of their implementation?
+
+            ## 3. What Needs Human Review 🧑‍💻
+            Explicitly flag items that require human judgment:
+            - Design decisions and trade-offs that need team discussion
+            - Business logic that requires domain expertise
+            - Breaking changes or API modifications
+            - Security-sensitive code that needs expert review
+            - Performance implications that need profiling/testing
+            - Areas where you're uncertain or found ambiguity
+
+            ## 4. Automated Review Findings ✅
+            Technical items that can be verified programmatically:
+            - Code quality and best practices
+            - Potential bugs or issues (with severity: P0-P4)
+            - Test coverage gaps
+            - Type safety and validation
+            - Documentation completeness
+
+            ## 5. Security & Performance
+            - Security concerns (if any)
+            - Performance considerations (if any)
+
+            ## 6. Recommendation
+            Clear approve/request changes decision with rationale.
+
+            Be constructive, specific, and cite line numbers where relevant.
+            Prioritize findings (P0=blocking, P1=important, P2=nice-to-have, P3-P4=optional).
+
+          # Optional: Use sticky comments to make Claude reuse the same comment on subsequent pushes to the same PR
+          use_sticky_comment: true
+
+          # Configuration via CLI arguments
+          claude_args: |
+            --allowedTools Bash(make test-unit),Bash(make lint),Bash(make validate)
