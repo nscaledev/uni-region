@@ -23,6 +23,10 @@ import (
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/unikorn-cloud/region/pkg/constants"
 )
 
 // authenticatedClient returns a provider client used to initialize service clients.
@@ -123,7 +127,6 @@ type DomainScopedPasswordProvider struct {
 
 // Ensure the interface is implemented.
 var _ CredentialProvider = &DomainScopedPasswordProvider{}
-var _ CredentialProvider = &PasswordProvider{}
 
 // NewDomainScopedPasswordProvider creates a client that consumes passwords
 // for authentication.
@@ -193,7 +196,7 @@ type UnauthenticatedProvider struct {
 // Ensure the interface is implemented.
 var _ CredentialProvider = &UnauthenticatedProvider{}
 
-// NewTokenProvider returns a new initialized provider.
+// NewUnauthenticatedProvider returns a new initialized provider.
 func NewUnauthenticatedProvider(endpoint string) *UnauthenticatedProvider {
 	return &UnauthenticatedProvider{
 		endpoint: endpoint,
@@ -208,4 +211,10 @@ func (p *UnauthenticatedProvider) Client(ctx context.Context) (*gophercloud.Prov
 	}
 
 	return client, nil
+}
+
+//nolint:spancheck
+func traceStart(ctx context.Context, endpoint string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+	opts = append(opts, trace.WithSpanKind(trace.SpanKindClient))
+	return otel.Tracer(constants.Application).Start(ctx, endpoint, opts...)
 }

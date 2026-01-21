@@ -22,6 +22,7 @@ import (
 	"errors"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
 )
 
@@ -38,8 +39,12 @@ func (p *Provisioner) detachNetworks(ctx context.Context, driver types.Driver) e
 
 	for _, att := range attachments.Items {
 		if err := driver.DetachNetwork(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, att.VlanID); err != nil {
+			setVLanAttachmentStatus(p.fileStorage, att.VlanID, unikornv1.AttachmentErrored, err.Error())
+
 			return err
 		}
+
+		removeAttachmentStatus(p.fileStorage, att.VlanID)
 	}
 
 	return nil

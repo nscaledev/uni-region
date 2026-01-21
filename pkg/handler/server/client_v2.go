@@ -30,16 +30,17 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
-	"github.com/unikorn-cloud/identity/pkg/handler/common"
+	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
-	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -49,6 +50,41 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
+
+// serverProvider gloms together the operations needed to provision servers.
+type Provider interface {
+	types.Server
+	types.ServerConsole
+	types.ServerSnapshot
+	types.Identity
+	types.ImageRead  // for GetImage
+	types.ImageWrite // for DeleteImage
+}
+
+// GetProviderFunc is the type of funcs supplied to the client, so it can obtain a provider (e.g., OpenStack client).
+type GetProviderFunc func(context.Context, client.Client, string, string) (Provider, error)
+
+// DefaultGetProvider is the "business as usual" GetProviderFunc, which constructs a real provider (rather than, e.g., a mock object).
+func DefaultGetProvider(ctx context.Context, c client.Client, namespace, regionID string) (Provider, error) {
+	return providers.New(ctx, c, namespace, regionID)
+}
+
+type ClientV2 struct {
+	*Client
+	getProviderFunc GetProviderFunc
+}
+
+func NewClientV2(clientArgs common.ClientArgs, getProvider GetProviderFunc) *ClientV2 {
+	return &ClientV2{
+		Client:          NewClient(clientArgs),
+		getProviderFunc: getProvider,
+	}
+}
+
+func (c *ClientV2) getProvider(ctx context.Context, regionID string) (Provider, error) {
+	//nolint:staticcheck
+	return c.getProviderFunc(ctx, c.Client.Client, c.Client.Namespace, regionID)
+}
 
 func convertSecurityGroupsV2(in []regionv1.ServerSecurityGroupSpec) *openapi.ServerV2SecurityGroupIDList {
 	if len(in) == 0 {
@@ -233,9 +269,9 @@ func generateUserData(in *[]byte) []byte {
 	return *in
 }
 
-func (c *Client) generateV2(ctx context.Context, organizationID, projectID string, in *openapi.ServerV2Update, network *regionv1.Network) (*regionv1.Server, error) {
+func (c *ClientV2) generateV2(ctx context.Context, organizationID, projectID string, in *openapi.ServerV2Update, network *regionv1.Network) (*regionv1.Server, error) {
 	out := &regionv1.Server{
-		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, c.namespace).
+		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, c.Namespace).
 			WithOrganization(organizationID).
 			WithProject(projectID).
 			WithLabel(constants.RegionLabel, network.Labels[constants.RegionLabel]).
@@ -260,20 +296,20 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
 	}
 
-	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
+	if err := identitycommon.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
 		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
 	}
 
 	// Ensure the server is owned by the network so it is automatically cleaned
 	// up on cascading deletion.
-	if err := controllerutil.SetOwnerReference(network, out, c.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
+	if err := controllerutil.SetOwnerReference(network, out, c.Client.Client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
 		return nil, err
 	}
 
 	return out, nil
 }
 
-func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2ServersParams) (openapi.ServersV2Read, error) {
+func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersParams) (openapi.ServersV2Read, error) {
 	selector := labels.SelectorFromSet(map[string]string{
 		constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
 	})
@@ -300,13 +336,13 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2ServersParam
 	}
 
 	options := &client.ListOptions{
-		Namespace:     c.namespace,
+		Namespace:     c.Namespace,
 		LabelSelector: selector,
 	}
 
 	result := &regionv1.ServerList{}
 
-	if err := c.client.List(ctx, result, options); err != nil {
+	if err := c.Client.Client.List(ctx, result, options); err != nil {
 		return nil, errors.OAuth2ServerError("unable to list servers").WithError(err)
 	}
 
@@ -327,8 +363,8 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2ServersParam
 	return convertV2List(result), nil
 }
 
-func (c *Client) CreateV2(ctx context.Context, request *openapi.ServerV2Create) (*openapi.ServerV2Read, error) {
-	network, err := network.New(c.client, c.namespace, nil).GetV2Raw(ctx, request.Spec.NetworkId)
+func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create) (*openapi.ServerV2Read, error) {
+	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId)
 	if err != nil {
 		return nil, err
 	}
@@ -350,17 +386,17 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.ServerV2Create) 
 		return nil, err
 	}
 
-	if err := c.client.Create(ctx, resource); err != nil {
+	if err := c.Client.Client.Create(ctx, resource); err != nil {
 		return nil, errors.OAuth2ServerError("unable to create server").WithError(err)
 	}
 
 	return convertV2(resource), nil
 }
 
-func (c *Client) GetV2Raw(ctx context.Context, serverID string) (*regionv1.Server, error) {
+func (c *ClientV2) GetV2Raw(ctx context.Context, serverID string) (*regionv1.Server, error) {
 	result := &regionv1.Server{}
 
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: serverID}, result); err != nil {
+	if err := c.Client.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: serverID}, result); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
@@ -390,7 +426,7 @@ func (c *Client) GetV2Raw(ctx context.Context, serverID string) (*regionv1.Serve
 	return result, nil
 }
 
-func (c *Client) GetV2(ctx context.Context, serverID string) (*openapi.ServerV2Read, error) {
+func (c *ClientV2) GetV2(ctx context.Context, serverID string) (*openapi.ServerV2Read, error) {
 	result, err := c.GetV2Raw(ctx, serverID)
 	if err != nil {
 		return nil, err
@@ -399,7 +435,7 @@ func (c *Client) GetV2(ctx context.Context, serverID string) (*openapi.ServerV2R
 	return convertV2(result), nil
 }
 
-func (c *Client) UpdateV2(ctx context.Context, serverID string, request *openapi.ServerV2Update) (*openapi.ServerV2Read, error) {
+func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *openapi.ServerV2Update) (*openapi.ServerV2Read, error) {
 	current, err := c.GetV2Raw(ctx, serverID)
 	if err != nil {
 		return nil, err
@@ -414,7 +450,7 @@ func (c *Client) UpdateV2(ctx context.Context, serverID string, request *openapi
 	}
 
 	// Get the network, required for generation.
-	network, err := network.New(c.client, c.namespace, nil).GetV2Raw(ctx, current.Spec.Networks[0].ID)
+	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, current.Spec.Networks[0].ID)
 	if err != nil {
 		return nil, err
 	}
@@ -429,14 +465,14 @@ func (c *Client) UpdateV2(ctx context.Context, serverID string, request *openapi
 	updated.Annotations = required.Annotations
 	updated.Spec = required.Spec
 
-	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+	if err := c.Client.Client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
 		return nil, errors.OAuth2ServerError("unable to update server").WithError(err)
 	}
 
 	return convertV2(updated), nil
 }
 
-func (c *Client) DeleteV2(ctx context.Context, serverID string) error {
+func (c *ClientV2) DeleteV2(ctx context.Context, serverID string) error {
 	resource, err := c.GetV2Raw(ctx, serverID)
 	if err != nil {
 		return err
@@ -446,7 +482,7 @@ func (c *Client) DeleteV2(ctx context.Context, serverID string) error {
 		return err
 	}
 
-	if err := c.client.Delete(ctx, resource); err != nil {
+	if err := c.Client.Client.Delete(ctx, resource); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
 		}
@@ -457,25 +493,18 @@ func (c *Client) DeleteV2(ctx context.Context, serverID string) error {
 	return nil
 }
 
-// serverProvider gloms together the operations needed to provision servers.
-type serverProvider interface {
-	types.Server
-	types.ServerConsole
-	types.Identity
-}
-
-func (c *Client) getServerIdentityAndProvider(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, serverProvider, error) {
+func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, Provider, error) {
 	server, err := c.GetV2Raw(ctx, serverID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, server.Labels[coreconstants.OrganizationLabel], server.Labels[coreconstants.ProjectLabel], server.Labels[constants.IdentityLabel])
+	identity, err := identity.New(c.Client.ClientArgs).GetRaw(ctx, server.Labels[coreconstants.OrganizationLabel], server.Labels[coreconstants.ProjectLabel], server.Labels[constants.IdentityLabel])
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, server.Labels[constants.RegionLabel])
+	provider, err := c.getProvider(ctx, server.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, nil, nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
@@ -483,15 +512,15 @@ func (c *Client) getServerIdentityAndProvider(ctx context.Context, serverID stri
 	return server, identity, provider, nil
 }
 
-func (c *Client) SSHKey(ctx context.Context, serverID string) (*openapi.SshKey, error) {
-	_, identity, _, err := c.getServerIdentityAndProvider(ctx, serverID)
+func (c *ClientV2) SSHKey(ctx context.Context, serverID string) (*openapi.SshKey, error) {
+	_, identity, _, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return nil, err
 	}
 
 	var openstackIdentity regionv1.OpenstackIdentity
 
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: identity.Namespace, Name: identity.Name}, &openstackIdentity); err != nil {
+	if err := c.Client.Client.Get(ctx, client.ObjectKey{Namespace: identity.Namespace, Name: identity.Name}, &openstackIdentity); err != nil {
 		return nil, errors.OAuth2ServerError("failed to load server identity information").WithError(err)
 	}
 
@@ -506,77 +535,47 @@ func (c *Client) SSHKey(ctx context.Context, serverID string) (*openapi.SshKey, 
 	return out, nil
 }
 
-func (c *Client) StartV2(ctx context.Context, serverID string) error {
-	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, serverID)
+func (c *ClientV2) StartV2(ctx context.Context, serverID string) error {
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return err
 	}
 
-	if err := provider.StartServer(ctx, identity, server); err != nil {
-		return err
-	}
-
-	return nil
+	return c.start(ctx, identity, server, provider)
 }
 
-func (c *Client) StopV2(ctx context.Context, serverID string) error {
-	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, serverID)
+func (c *ClientV2) StopV2(ctx context.Context, serverID string) error {
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return err
 	}
 
-	if err := provider.StopServer(ctx, identity, server); err != nil {
-		return err
-	}
-
-	return nil
+	return c.stop(ctx, identity, server, provider)
 }
 
-func (c *Client) RebootV2(ctx context.Context, serverID string, hard bool) error {
-	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, serverID)
+func (c *ClientV2) RebootV2(ctx context.Context, serverID string, hard bool) error {
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return err
 	}
 
-	if err := provider.RebootServer(ctx, identity, server, hard); err != nil {
-		return err
-	}
-
-	return nil
+	return c.reboot(ctx, identity, server, hard, provider)
 }
 
-func (c *Client) ConsoleOutputV2(ctx context.Context, serverID string, params openapi.GetApiV2ServersServerIDConsoleoutputParams) (*openapi.ConsoleOutputResponse, error) {
-	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, serverID)
+func (c *ClientV2) ConsoleOutputV2(ctx context.Context, serverID string, params openapi.GetApiV2ServersServerIDConsoleoutputParams) (*openapi.ConsoleOutputResponse, error) {
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return nil, err
 	}
 
-	contents, err := provider.GetConsoleOutput(ctx, identity, server, params.Length)
-	if err != nil {
-		return nil, err
-	}
-
-	result := &openapi.ConsoleOutputResponse{
-		Contents: contents,
-	}
-
-	return result, nil
+	return c.getConsoleOutput(ctx, identity, server, params.Length, provider)
 }
 
-func (c *Client) ConsoleSessionV2(ctx context.Context, serverID string) (*openapi.ConsoleSessionResponse, error) {
-	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, serverID)
+func (c *ClientV2) ConsoleSessionV2(ctx context.Context, serverID string) (*openapi.ConsoleSessionResponse, error) {
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return nil, err
 	}
 
-	url, err := provider.CreateConsoleSession(ctx, identity, server)
-	if err != nil {
-		return nil, err
-	}
-
-	result := &openapi.ConsoleSessionResponse{
-		Url: url,
-	}
-
-	return result, nil
+	return c.createConsoleSession(ctx, identity, server, provider)
 }

@@ -37,7 +37,7 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 )
 
-type ExternalNetworkInterfsce interface {
+type ExternalNetworkInterface interface {
 	ExternalNetworks(ctx context.Context) ([]networks.Network, error)
 }
 
@@ -88,7 +88,7 @@ type PortInterface interface {
 }
 
 type NetworkingInterface interface {
-	ExternalNetworkInterfsce
+	ExternalNetworkInterface
 	NetworkInterface
 	SubnetInterface
 	RouterInterface
@@ -124,6 +124,7 @@ type ServerInterface interface {
 	StopServer(ctx context.Context, id string) error
 	CreateRemoteConsole(ctx context.Context, id string) (*remoteconsoles.RemoteConsole, error)
 	ShowConsoleOutput(ctx context.Context, id string, length *int) (string, error)
+	CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error)
 }
 
 type ComputeInterface interface {

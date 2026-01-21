@@ -27,3 +27,12 @@ var (
 	ErrInvalidRequest = fmt.Errorf("%w: invalid request", ErrRemoteError)
 	ErrNotFound       = fmt.Errorf("%w: not found", ErrRemoteError)
 )
+
+// IgnoreNotFound ignores ErrNotFound errors.
+func IgnoreNotFound(err error) error {
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+
+	return err
+}

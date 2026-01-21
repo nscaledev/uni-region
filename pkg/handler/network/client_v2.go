@@ -43,7 +43,6 @@ import (
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -116,13 +115,13 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2NetworksPara
 	}
 
 	options := &client.ListOptions{
-		Namespace:     c.namespace,
+		Namespace:     c.Namespace,
 		LabelSelector: selector,
 	}
 
 	result := &regionv1.NetworkList{}
 
-	if err := c.client.List(ctx, result, options); err != nil {
+	if err := c.Client.List(ctx, result, options); err != nil {
 		return nil, errors.OAuth2ServerError("unable to list networks").WithError(err)
 	}
 
@@ -146,7 +145,7 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2NetworksPara
 func (c *Client) GetV2Raw(ctx context.Context, networkID string) (*regionv1.Network, error) {
 	result := &regionv1.Network{}
 
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: networkID}, result); err != nil {
+	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: networkID}, result); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
@@ -228,7 +227,7 @@ func generateRoutes(in *openapi.Routes) ([]regionv1.Route, error) {
 	return out, nil
 }
 
-func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.NetworkV2Update, prefix *net.IPNet) (*regionv1.Network, error) {
+func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID, identityID string, request *openapi.NetworkV2Update, prefix *net.IPNet) (*regionv1.Network, error) {
 	dnsNameservers, err := parseIPV4AddressList(request.Spec.DnsNameservers)
 	if err != nil {
 		return nil, err
@@ -240,10 +239,11 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 	}
 
 	out := &regionv1.Network{
-		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.namespace).
+		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.Namespace).
 			WithOrganization(organizationID).
 			WithProject(projectID).
 			WithLabel(constants.RegionLabel, regionID).
+			WithLabel(constants.IdentityLabel, identityID).
 			WithLabel(constants.ResourceAPIVersionLabel, constants.MarshalAPIVersion(2)).
 			Get(),
 		Spec: regionv1.NetworkSpec{
@@ -269,6 +269,7 @@ type createSaga struct {
 	client  *Client
 	request *openapi.NetworkV2Create
 
+	prefix   *net.IPNet
 	identity *regionv1.Identity
 	network  *regionv1.Network
 }
@@ -288,23 +289,13 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 		return err
 	}
 
+	s.prefix = prefix
+
 	ones, _ := prefix.Mask.Size()
 
 	if ones > 24 {
 		return errors.OAuth2InvalidRequest("minimum network prefix size is /24")
 	}
-
-	updateRequest, err := convertCreateToUpdateRequest(s.request)
-	if err != nil {
-		return err
-	}
-
-	network, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId, updateRequest, prefix)
-	if err != nil {
-		return err
-	}
-
-	s.network = network
 
 	return nil
 }
@@ -315,26 +306,19 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 func (s *createSaga) createServicePricipal(ctx context.Context) error {
 	request := &openapi.IdentityWrite{
 		Metadata: coreapi.ResourceWriteMetadata{
-			Name:        "network-" + s.network.Name,
-			Description: ptr.To("Service principal for V2 network " + s.network.Name),
+			Name: "networkv2-service-principal",
 		},
 		Spec: openapi.IdentityWriteSpec{
 			RegionId: s.request.Spec.RegionId,
 		},
 	}
 
-	identity, err := identity.New(s.client.client, s.client.namespace).CreateRaw(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, request)
+	identity, err := identity.New(s.client.ClientArgs).CreateRaw(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, request)
 	if err != nil {
 		return err
 	}
 
 	s.identity = identity
-
-	s.network.Labels[constants.IdentityLabel] = identity.Name
-
-	if err := controllerutil.SetOwnerReference(identity, s.network, s.client.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
-		return errors.OAuth2ServerError("unable to set resource owner").WithError(err)
-	}
 
 	return nil
 }
@@ -343,7 +327,27 @@ func (s *createSaga) createServicePricipal(ctx context.Context) error {
 // NOTE: you must use the shared delete library call to preserve cascading
 // deletion semantics.
 func (s *createSaga) deleteServicePricipal(ctx context.Context) error {
-	return identity.New(s.client.client, s.client.namespace).Delete(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.identity.Name)
+	return identity.New(s.client.ClientArgs).Delete(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.identity.Name)
+}
+
+func (s *createSaga) generateNetwork(ctx context.Context) error {
+	updateRequest, err := convertCreateToUpdateRequest(s.request)
+	if err != nil {
+		return err
+	}
+
+	network, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId, s.identity.Name, updateRequest, s.prefix)
+	if err != nil {
+		return err
+	}
+
+	if err := controllerutil.SetOwnerReference(s.identity, network, s.client.Client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
+		return errors.OAuth2ServerError("unable to set resource owner").WithError(err)
+	}
+
+	s.network = network
+
+	return nil
 }
 
 // createAllocation creates an allocation for the network ID and then attaches
@@ -356,7 +360,7 @@ func (s *createSaga) createAllocation(ctx context.Context) error {
 		},
 	}
 
-	if err := identityclient.NewAllocations(s.client.client, s.client.identity).Create(ctx, s.network, required); err != nil {
+	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Create(ctx, s.network, required); err != nil {
 		return err
 	}
 
@@ -364,7 +368,7 @@ func (s *createSaga) createAllocation(ctx context.Context) error {
 }
 
 func (s *createSaga) deleteAllocation(ctx context.Context) error {
-	if err := identityclient.NewAllocations(s.client.client, s.client.identity).Delete(ctx, s.network); err != nil {
+	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Delete(ctx, s.network); err != nil {
 		return err
 	}
 
@@ -372,7 +376,7 @@ func (s *createSaga) deleteAllocation(ctx context.Context) error {
 }
 
 func (s *createSaga) createNetwork(ctx context.Context) error {
-	if err := s.client.client.Create(ctx, s.network); err != nil {
+	if err := s.client.Client.Create(ctx, s.network); err != nil {
 		return errors.OAuth2ServerError("unable to create network").WithError(err)
 	}
 
@@ -383,6 +387,7 @@ func (s *createSaga) Actions() []saga.Action {
 	return []saga.Action{
 		saga.NewAction("validate request", s.validateRequest, nil),
 		saga.NewAction("create service principal", s.createServicePricipal, s.deleteServicePricipal),
+		saga.NewAction("generate network", s.generateNetwork, nil),
 		saga.NewAction("create quota allocation", s.createAllocation, s.deleteAllocation),
 		saga.NewAction("create network", s.createNetwork, nil),
 	}
@@ -419,8 +424,9 @@ func (c *Client) Update(ctx context.Context, networkID string, request *openapi.
 	organizationID := current.Labels[coreconstants.OrganizationLabel]
 	projectID := current.Labels[coreconstants.ProjectLabel]
 	regionID := current.Labels[constants.RegionLabel]
+	identityID := current.Labels[constants.IdentityLabel]
 
-	required, err := c.generateV2(ctx, organizationID, projectID, regionID, request, &current.Spec.Prefix.IPNet)
+	required, err := c.generateV2(ctx, organizationID, projectID, regionID, identityID, request, &current.Spec.Prefix.IPNet)
 	if err != nil {
 		return nil, err
 	}
@@ -436,7 +442,7 @@ func (c *Client) Update(ctx context.Context, networkID string, request *openapi.
 	updated.Annotations = required.Annotations
 	updated.Spec = required.Spec
 
-	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+	if err := c.Client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
 		return nil, errors.OAuth2ServerError("unable to update network").WithError(err)
 	}
 
@@ -467,5 +473,5 @@ func (c *Client) DeleteV2(ctx context.Context, networkID string) error {
 	// The V2 API doesn't expose service principals, but they are mapped 1:1 to networks, so as the
 	// real root of the tree we actually delete that and allow cascading deletion to do the
 	// rest.
-	return identity.New(c.client, c.namespace).Delete(ctx, organizationID, projectID, resource.Labels[constants.IdentityLabel])
+	return identity.New(c.ClientArgs).Delete(ctx, organizationID, projectID, resource.Labels[constants.IdentityLabel])
 }

@@ -21,15 +21,13 @@ import (
 	"cmp"
 	"context"
 	goerrors "errors"
-	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"slices"
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
-	"github.com/unikorn-cloud/core/pkg/server/saga"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -37,14 +35,12 @@ import (
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type GetProviderFunc func(context.Context, client.Client, string, string) (Provider, error)
 
 type Client struct {
-	client      client.Client
-	namespace   string
+	common.ClientArgs
 	getProvider GetProviderFunc
 }
 
@@ -52,10 +48,9 @@ func DefaultGetProvider(ctx context.Context, c client.Client, namespace, regionI
 	return providers.New(ctx, c, namespace, regionID)
 }
 
-func NewClient(client client.Client, namespace string, getProvider GetProviderFunc) *Client {
+func NewClient(clientArgs common.ClientArgs, getProvider GetProviderFunc) *Client {
 	return &Client{
-		client:      client,
-		namespace:   namespace,
+		ClientArgs:  clientArgs,
 		getProvider: getProvider,
 	}
 }
@@ -69,10 +64,10 @@ type Provider interface {
 }
 
 func (c *Client) provider(ctx context.Context, regionID string) (Provider, error) {
-	return c.getProvider(ctx, c.client, c.namespace, regionID)
+	return c.getProvider(ctx, c.Client, c.Namespace, regionID)
 }
 
-func (c *Client) listImages(ctx context.Context, organizationID, regionID string, filterFn func(types.Image) bool) (openapi.Images, error) {
+func (c *Client) ListImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {
 	provider, err := c.provider(ctx, regionID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
@@ -83,11 +78,6 @@ func (c *Client) listImages(ctx context.Context, organizationID, regionID string
 		return nil, errors.OAuth2ServerError("failed to list images").WithError(err)
 	}
 
-	if filterFn != nil {
-		result = slices.Clone(result)
-		result = slices.DeleteFunc(result, filterFn)
-	}
-
 	// Apply ordering guarantees, ordered by name.
 	slices.SortStableFunc(result, func(a, b types.Image) int {
 		return cmp.Compare(a.Name, b.Name)
@@ -96,20 +86,77 @@ func (c *Client) listImages(ctx context.Context, organizationID, regionID string
 	return convertImages(result), nil
 }
 
-func (c *Client) ListActiveImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {
-	return c.listImages(ctx, organizationID, regionID, func(image types.Image) bool {
-		return image.Status != types.ImageStatusReady
-	})
+// readMBR reads the MBR from the image response.  If we got a 206 then we should
+// have exactly 512 bytes, if not then we read exactly 512 bytes.
+func readMBR(r *http.Response) ([]byte, error) {
+	if r.StatusCode == http.StatusPartialContent {
+		buf, err := io.ReadAll(r.Body)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(buf) != 512 {
+			return nil, errors.OAuth2InvalidRequest("Unable to peek image header, incorrect response size for range")
+		}
+
+		return buf, nil
+	}
+
+	buf := make([]byte, 512)
+
+	if _, err := io.ReadFull(r.Body, buf); err != nil {
+		return nil, errors.HTTPUnprocessableContent("Unable to peek image header, response too small")
+	}
+
+	return buf, nil
 }
 
-func (c *Client) ListAllImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {
-	return c.listImages(ctx, organizationID, regionID, nil) // no filter
+// validateImage peeks at the image file header, and ensures it's a master boot record
+// as this is all we support currently.  We must be careful here to shut down the client
+// connection quickly if the server does not support the HTTP Range header as this can
+// consume memory very quickly and OOM kill the service.
+func validateImage(ctx context.Context, uri string) error {
+	client := &http.Client{}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
+	if err != nil {
+		return err
+	}
+
+	// NOTE: this may or may not be listened to by the server...
+	request.Header.Set("Range", "bytes=0-511")
+
+	response, err := client.Do(request)
+	if err != nil {
+		return errors.HTTPUnprocessableContent("Image read failed, please ensure the URL is correct")
+	}
+
+	defer response.Body.Close()
+
+	if response.StatusCode/100 != 2 {
+		return errors.HTTPUnprocessableContent("Image read failed with an incorrect status code, please ensure the URL is correct")
+	}
+
+	mbr, err := readMBR(response)
+	if err != nil {
+		return err
+	}
+
+	if mbr[510] != 0x55 || mbr[511] != 0xaa {
+		return errors.HTTPUnprocessableContent("Image does not contain a valid master boot record, ensure the image is in raw format")
+	}
+
+	return nil
 }
 
 func (c *Client) CreateImage(ctx context.Context, organizationID, regionID string, request *openapi.ImageCreateRequest) (*openapi.ImageResponse, error) {
 	provider, err := c.provider(ctx, regionID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	if err := validateImage(ctx, request.Spec.Uri); err != nil {
+		return nil, err
 	}
 
 	var gpu *types.ImageGPU
@@ -128,29 +175,16 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 	image := &types.Image{
 		Name:           request.Metadata.Name,
 		OrganizationID: ptr.To(organizationID),
+		Architecture:   generateArchitecture(request.Spec.Architecture),
 		Virtualization: generateImageVirtualization(request.Spec.Virtualization),
 		GPU:            gpu,
 		OS:             *generateImageOS(&request.Spec.Os),
 		Packages:       packages,
 	}
 
-	tx := &createImageForUploadSaga{
-		client:         c,
-		organizationID: organizationID,
-		regionID:       regionID,
-		sourceFormat:   request.Spec.SourceFormat,
-		sourceURL:      request.Spec.SourceURL,
-		image:          image,
-		provider:       provider,
-	}
-
-	if err = saga.Run(ctx, tx); err != nil {
-		return nil, err
-	}
-
-	result, err := tx.Result()
+	result, err := provider.CreateImage(ctx, image, request.Spec.Uri)
 	if err != nil {
-		return nil, err
+		return nil, errors.OAuth2ServerError("failed to create image").WithError(err)
 	}
 
 	return convertImage(result), nil
@@ -190,156 +224,4 @@ func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imag
 	}
 
 	return nil
-}
-
-// --- Create + fetch saga ---
-//
-// This is a core/pkg/server/saga that creates the image record, then starts a background fetch
-// of the image from the source URL given in the request.
-
-// uploadToProvider returns a callback `uploadFileFunc` that will stream the callback's
-// io.Reader to the provider given.
-func uploadToProvider(imageID string, provider Provider) uploadFileFunc {
-	return func(ctx context.Context, reader io.Reader) error {
-		if err := provider.UploadImageData(ctx, imageID, reader); err != nil {
-			if goerrors.Is(err, types.ErrImageNotReadyForUpload) {
-				err = fmt.Errorf("%w: image data has already been uploaded", ErrProviderResource)
-				return errors.HTTPConflict().WithError(err)
-			}
-
-			return errors.OAuth2ServerError("The server encountered an unexpected error while uploading the image data").WithError(err)
-		}
-
-		return nil
-	}
-}
-
-type createImageForUploadSaga struct {
-	client         *Client
-	organizationID string
-	regionID       string
-	sourceFormat   *openapi.ImageDiskFormat
-	sourceURL      string
-	image          *types.Image
-	provider       Provider
-
-	result *types.Image
-}
-
-func (s *createImageForUploadSaga) validateSourceURL(ctx context.Context) error {
-	if _, err := url.Parse(s.sourceURL); err != nil {
-		return errors.OAuth2InvalidRequest("The provided URL is not valid").WithError(err)
-	}
-
-	return nil
-}
-
-func (s *createImageForUploadSaga) convertImageDiskFormat(ctx context.Context) error {
-	s.image.DiskFormat = types.ImageDiskFormatRaw
-
-	if s.sourceFormat == nil {
-		return nil
-	}
-
-	f, err := generateDiskFormat(*s.sourceFormat)
-	if err != nil {
-		return errors.OAuth2InvalidRequest("The provided disk format is not valid").WithError(err)
-	}
-
-	s.image.DiskFormat = f
-
-	return nil
-}
-
-func (s *createImageForUploadSaga) createImage(ctx context.Context) error {
-	s.image.DataSource = types.ImageDataSourceURL
-
-	result, err := s.provider.CreateImageForUpload(ctx, s.image)
-	if err != nil {
-		return errors.OAuth2ServerError("failed to create image").WithError(err)
-	}
-
-	s.result = result
-
-	return nil
-}
-
-func (s *createImageForUploadSaga) deleteImage(ctx context.Context) error {
-	if s.result == nil {
-		return errors.OAuth2ServerError("unexpected nil image")
-	}
-
-	if err := s.provider.DeleteImage(ctx, s.result.ID); err != nil {
-		return errors.OAuth2ServerError("failed to delete image")
-	}
-
-	return nil
-}
-
-func (s *createImageForUploadSaga) uploadFromURL(ctx context.Context, source string) error {
-	r, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
-	if err != nil {
-		return err
-	}
-
-	res, err := http.DefaultClient.Do(r)
-	if err != nil {
-		return err
-	}
-
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
-		// Reading and closing the response body lets us reuse connections; but, defensively, don't just read
-		// until the other side decides to stop sending!
-		body := io.LimitReader(res.Body, 10*1024)
-		_, _ = io.Copy(io.Discard, body)
-
-		return fmt.Errorf("%w: non-OK status code (%s) from fetching source", ErrFailedImageFetch, res.Status)
-	}
-
-	contentType := res.Header.Get("Content-Type")
-
-	if err := dispatchUpload(ctx, contentType, s.image.DiskFormat, res.Body, uploadToProvider(s.result.ID, s.provider)); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *createImageForUploadSaga) createImageUploadTask(ctx context.Context) error {
-	source := s.sourceURL
-
-	if s.result == nil {
-		return errors.OAuth2ServerError("unexpected nil image")
-	}
-
-	go func(ctx context.Context) {
-		if err := s.uploadFromURL(ctx, source); err != nil {
-			// NB the image will not be published if it's not successfully uploaded, so
-			// there's no further action to take here; in particular, no need to update
-			// the record at the provider.
-			log.FromContext(ctx).Error(err, "fetching from given source", "url", source)
-		}
-	}(context.WithoutCancel(ctx))
-
-	return nil
-}
-
-func (s *createImageForUploadSaga) Actions() []saga.Action {
-	// REVIEW_ME: This could be problematic if the error is caused by context cancellation, since we would still reuse the same context for all compensation actions.
-	return []saga.Action{
-		saga.NewAction("validate source url", s.validateSourceURL, nil),
-		saga.NewAction("convert disk format", s.convertImageDiskFormat, nil),
-		saga.NewAction("create image", s.createImage, s.deleteImage),
-		saga.NewAction("create image upload task", s.createImageUploadTask, nil),
-	}
-}
-
-func (s *createImageForUploadSaga) Result() (*types.Image, error) {
-	if s.result == nil {
-		return nil, errors.OAuth2ServerError("unexpected nil image result")
-	}
-
-	return s.result, nil
 }

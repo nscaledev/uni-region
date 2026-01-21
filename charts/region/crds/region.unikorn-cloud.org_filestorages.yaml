@@ -96,7 +96,7 @@ spec:
                 anyOf:
                 - type: integer
                 - type: string
-                description: Size is the total size of the storage class.
+                description: Size is the total size of the file storage.
                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                 x-kubernetes-int-or-string: true
               storageClassID:
@@ -127,6 +127,39 @@ spec:
             type: object
           status:
             properties:
+              attachments:
+                description: Attachments reflects the observed attachment state per
+                  network.
+                items:
+                  properties:
+                    message:
+                      description: Human-readable message indicating details about
+                        the attachment.
+                      type: string
+                    networkID:
+                      description: NetworkID is the network ID for the attachment.
+                      type: string
+                    provisioningStatus:
+                      description: ProvisioningStatus indicates if this attachment
+                        is ready/failed/etc.
+                      enum:
+                      - Provisioning
+                      - Provisioned
+                      - Errored
+                      - Deprovisioning
+                      type: string
+                    segmentationID:
+                      description: SegmentationID is the VLAN ID for the attachment.
+                      type: integer
+                  required:
+                  - message
+                  - networkID
+                  - provisioningStatus
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - networkID
+                x-kubernetes-list-type: map
               conditions:
                 description: Current service state of a file storage.
                 items:
@@ -180,6 +213,20 @@ spec:
               mountPath:
                 description: MountPath is the path where the file storage is mounted.
                 type: string
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by the controller.
+                format: int64
+                type: integer
+              size:
+                anyOf:
+                - type: integer
+                - type: string
+                description: |-
+                  Size is the currently provisioned/observed size of the file storage.
+                  (May differ from spec.size while provisioning/resizing.)
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
             type: object
         required:
         - spec

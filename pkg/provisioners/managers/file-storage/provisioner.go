@@ -26,6 +26,7 @@ import (
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
+	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
@@ -36,6 +37,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
 
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -112,6 +114,10 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
+	// updates this field with the current value of .metadata.generation once it has successfully observed and
+	// reconciled the corresponding changes to the resource.
+	p.fileStorage.Status.ObservedGeneration = ptr.To(p.fileStorage.GetGeneration())
+
 	return nil
 }
 
@@ -142,7 +148,7 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
-	if err := manager.ClearResourceReferences(ctx, cli, &unikornv1.NetworkList{}, p.identityListOptions(), reference); err != nil {
+	if err := manager.ClearResourceReferences(ctx, cli, &unikornv1.NetworkList{}, p.filestorageListOptions(), reference); err != nil {
 		return fmt.Errorf("%w: failed to clear network references", err)
 	}
 
@@ -165,9 +171,7 @@ func (p *Provisioner) identityClient(ctx context.Context) (identityapi.ClientWit
 		return nil, err
 	}
 
-	issuer := identityclient.NewTokenIssuer(client, p.options.identityOptions, &p.options.clientOptions, constants.ServiceDescriptor())
-
-	return identityclient.New(client, p.options.identityOptions, &p.options.clientOptions).ControllerClient(ctx, issuer, p.fileStorage)
+	return identityclient.New(client, p.options.identityOptions, &p.options.clientOptions).ControllerClient(ctx, p.fileStorage)
 }
 
 func (p *Provisioner) getFileStorageDriver(ctx context.Context, cli client.Client) (types.Driver, error) {
@@ -184,10 +188,12 @@ func (p *Provisioner) getFileStorageDriver(ctx context.Context, cli client.Clien
 	return filestorageprovisioners.NewDriver(ctx, cli, p.fileStorage.GetNamespace(), storageClass)
 }
 
-// identityListOptions lists all resources associated with an identity.
-func (p *Provisioner) identityListOptions() *client.ListOptions {
+// filestorageListOptions lists all resources associated with a filestorage.
+func (p *Provisioner) filestorageListOptions() *client.ListOptions {
 	selector := map[string]string{
-		constants.IdentityLabel: p.fileStorage.Labels[constants.IdentityLabel],
+		coreconstants.OrganizationLabel: p.fileStorage.Labels[coreconstants.OrganizationLabel],
+		coreconstants.ProjectLabel:      p.fileStorage.Labels[coreconstants.ProjectLabel],
+		constants.RegionLabel:           p.fileStorage.Labels[constants.RegionLabel],
 	}
 
 	return &client.ListOptions{

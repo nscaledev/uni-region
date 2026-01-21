@@ -23,6 +23,7 @@ import (
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
@@ -50,7 +51,12 @@ func Provider(ctx context.Context, object client.Object) (types.Provider, error)
 		return nil, err
 	}
 
-	return region.NewClient(cli, object.GetNamespace()).Provider(ctx, object.GetLabels()[constants.RegionLabel])
+	clientArgs := common.ClientArgs{
+		Client:    cli,
+		Namespace: object.GetNamespace(),
+	}
+
+	return region.NewClient(clientArgs).Provider(ctx, object.GetLabels()[constants.RegionLabel])
 }
 
 func ProviderAndIdentity(ctx context.Context, object client.Object) (types.Provider, *unikornv1.Identity, error) {

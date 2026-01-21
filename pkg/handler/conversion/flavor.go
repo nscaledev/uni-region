@@ -25,6 +25,17 @@ import (
 	"k8s.io/utils/ptr"
 )
 
+func convertArchitecture(in types.Architecture) openapi.Architecture {
+	switch in {
+	case types.X86_64:
+		return openapi.ArchitectureX8664
+	case types.Aarch64:
+		return openapi.ArchitectureAarch64
+	}
+
+	return ""
+}
+
 func ConvertGpuVendor(in types.GPUVendor) openapi.GpuVendor {
 	switch in {
 	case types.Nvidia:
@@ -43,10 +54,11 @@ func ConvertFlavor(in *types.Flavor) *openapi.Flavor {
 			Name: in.Name,
 		},
 		Spec: openapi.FlavorSpec{
-			Cpus:      in.CPUs,
-			CpuFamily: in.CPUFamily,
-			Memory:    int(in.Memory.Value()) >> 30,
-			Disk:      int(in.Disk.Value()) / 1000000000,
+			Architecture: convertArchitecture(in.Architecture),
+			Cpus:         in.CPUs,
+			CpuFamily:    in.CPUFamily,
+			Memory:       int(in.Memory.Value()) >> 30,
+			Disk:         int(in.Disk.Value()) / 1000000000,
 		},
 	}
 

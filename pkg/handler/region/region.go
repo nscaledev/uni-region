@@ -21,11 +21,13 @@ import (
 	"cmp"
 	"context"
 	goerrors "errors"
-	"fmt"
 	"slices"
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
+	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	"github.com/unikorn-cloud/identity/pkg/rbac"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/conversion"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
@@ -45,27 +47,54 @@ var (
 )
 
 type Client struct {
-	client    client.Client
-	namespace string
+	common.ClientArgs
 }
 
-func NewClient(client client.Client, namespace string) *Client {
+func NewClient(clientArgs common.ClientArgs) *Client {
 	return &Client{
-		client:    client,
-		namespace: namespace,
+		ClientArgs: clientArgs,
 	}
 }
 
 func (c *Client) Provider(ctx context.Context, regionID string) (types.Provider, error) {
-	return providers.New(ctx, c.client, c.namespace, regionID)
+	return providers.New(ctx, c.Client, c.Namespace, regionID)
+}
+
+func FilterRegions(ctx context.Context, regions *unikornv1.RegionList) {
+	regions.Items = slices.DeleteFunc(regions.Items, func(region unikornv1.Region) bool {
+		// Regions without security constraints are free to use.
+		if region.Spec.Security == nil || region.Spec.Security.Organizations == nil {
+			return false
+		}
+
+		// Anyone with super cow powers can see everything (platform admin, services).
+		if rbac.AllowGlobalScope(ctx, "region:regions", identityapi.Read) == nil {
+			return false
+		}
+
+		// Thankfully, user roles cannot define globals so fall into this bucket.
+		// Presently if the ACL contains an allowed organization, the region can
+		// be seen.
+		organizationIDs := rbac.OrganizationIDs(ctx)
+
+		for _, organization := range region.Spec.Security.Organizations {
+			if slices.Contains(organizationIDs, organization.ID) {
+				return false
+			}
+		}
+
+		return true
+	})
 }
 
 func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
 	regions := &unikornv1.RegionList{}
 
-	if err := c.client.List(ctx, regions, &client.ListOptions{Namespace: c.namespace}); err != nil {
+	if err := c.Client.List(ctx, regions, &client.ListOptions{Namespace: c.Namespace}); err != nil {
 		return nil, err
 	}
+
+	FilterRegions(ctx, regions)
 
 	return convertList(regions), nil
 }
@@ -73,9 +102,7 @@ func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
 func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.RegionDetailRead, error) {
 	result := &unikornv1.Region{}
 
-	fmt.Println("getting region", c.namespace, regionID)
-
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: regionID}, result); err != nil {
+	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: regionID}, result); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}

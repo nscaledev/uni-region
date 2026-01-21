@@ -19,7 +19,6 @@ package types
 
 import (
 	"context"
-	"io"
 
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 )
@@ -33,9 +32,7 @@ type ImageRead interface {
 
 type ImageWrite interface {
 	// CreateImageForUpload creates a new image resource for upload.
-	CreateImageForUpload(ctx context.Context, image *Image) (*Image, error)
-	// UploadImage uploads data to an image.
-	UploadImageData(ctx context.Context, imageID string, reader io.Reader) error
+	CreateImage(ctx context.Context, image *Image, uri string) (*Image, error)
 	// DeleteImage deletes an image.
 	DeleteImage(ctx context.Context, imageID string) error
 }
@@ -52,7 +49,7 @@ type Network interface {
 	CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error
 	// DeleteNetwork deletes a physical network.
 	DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error
-	// GetNewtworkDetail exposes provider specific network information.
+	// GetNetworkDetail exposes provider specific network information.
 	// NOTE: do not use this ever.
 	// TODO: used to propagate network and subnet details to CAPO, this needs fixing.
 
@@ -90,6 +87,11 @@ type ServerConsole interface {
 	GetConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, length *int) (string, error)
 }
 
+type ServerSnapshot interface {
+	// CreateSnapshot creates a new image from an existing server.
+	CreateSnapshot(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *Image) (*Image, error)
+}
+
 // Providers are expected to provide a provider agnostic manner.
 // They are also expected to provide any caching or memoization required
 // to provide high performance and a decent UX.
@@ -106,4 +108,5 @@ type Provider interface {
 	SecurityGroup
 	Server
 	ServerConsole
+	ServerSnapshot
 }

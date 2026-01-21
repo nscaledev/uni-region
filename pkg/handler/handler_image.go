@@ -25,30 +25,27 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/util"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/image"
 	"github.com/unikorn-cloud/region/pkg/openapi"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type ImageHandler struct {
-	client      client.Client
-	namespace   string
+	common.ClientArgs
 	options     *Options
 	getProvider image.GetProviderFunc
 }
 
-func NewImageHandler(client client.Client, namespace string, options *Options) *ImageHandler {
+func NewImageHandler(clientArgs common.ClientArgs, options *Options) *ImageHandler {
 	return &ImageHandler{
-		client:      client,
-		namespace:   namespace,
+		ClientArgs:  clientArgs,
 		options:     options,
 		getProvider: image.DefaultGetProvider,
 	}
 }
 
 func (h *ImageHandler) imageClient() *image.Client {
-	return image.NewClient(h.client, h.namespace, h.getProvider)
+	return image.NewClient(h.ClientArgs, h.getProvider)
 }
 
 func (h *ImageHandler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
@@ -57,7 +54,7 @@ func (h *ImageHandler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(
 		return
 	}
 
-	result, err := h.imageClient().ListActiveImages(r.Context(), organizationID, regionID)
+	result, err := h.imageClient().ListImages(r.Context(), organizationID, regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return

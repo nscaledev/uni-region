@@ -21,23 +21,20 @@ import (
 	"cmp"
 	"context"
 	goerrors "errors"
-	"net/http"
 	"slices"
-
-	"github.com/gophercloud/gophercloud/v2"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
-	"github.com/unikorn-cloud/identity/pkg/handler/common"
+	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
-	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -47,17 +44,13 @@ import (
 
 // Client provides a restful API for identities.
 type Client struct {
-	// client ia a Kubernetes client.
-	client client.Client
-	// namespace we are running in.
-	namespace string
+	common.ClientArgs
 }
 
 // New creates a new client.
-func NewClient(client client.Client, namespace string) *Client {
+func NewClient(clientArgs common.ClientArgs) *Client {
 	return &Client{
-		client:    client,
-		namespace: namespace,
+		ClientArgs: clientArgs,
 	}
 }
 
@@ -65,7 +58,7 @@ func NewClient(client client.Client, namespace string) *Client {
 func (c *Client) get(ctx context.Context, organizationID, projectID, serverID string) (*unikornv1.Server, error) {
 	resource := &unikornv1.Server{}
 
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: serverID}, resource); err != nil {
+	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: serverID}, resource); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
@@ -85,13 +78,13 @@ func (c *Client) List(ctx context.Context, organizationID string, params openapi
 	result := &unikornv1.ServerList{}
 
 	options := &client.ListOptions{
-		Namespace: c.namespace,
+		Namespace: c.Namespace,
 		LabelSelector: labels.SelectorFromSet(map[string]string{
 			coreconstants.OrganizationLabel: organizationID,
 		}),
 	}
 
-	if err := c.client.List(ctx, result, options); err != nil {
+	if err := c.Client.List(ctx, result, options); err != nil {
 		return nil, errors.OAuth2ServerError("unable to list servers").WithError(err)
 	}
 
@@ -114,32 +107,32 @@ func (c *Client) List(ctx context.Context, organizationID string, params openapi
 
 // Create instantiates a new resource.
 func (c *Client) Create(ctx context.Context, organizationID, projectID, identityID string, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	identity, err := identity.New(c.ClientArgs).GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
 		return nil, err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, identity.Labels[constants.RegionLabel])
+	provider, err := region.NewClient(c.ClientArgs).Provider(ctx, identity.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
 
 	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
-			return nil, errors.HTTPNotFound()
+			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
 		return nil, errors.OAuth2ServerError("failed to retrieve image from provider").WithError(err)
 	}
 
-	resource, err := newGenerator(c.client, c.namespace, organizationID, projectID, identityID).generate(ctx, request)
+	resource, err := newGenerator(c.ClientArgs, organizationID, projectID, identityID).generate(ctx, request)
 	if err != nil {
 		return nil, err
 	}
 
 	resource.Status.Phase = unikornv1.InstanceLifecyclePhasePending
 
-	if err := c.client.Create(ctx, resource); err != nil {
+	if err := c.Client.Create(ctx, resource); err != nil {
 		return nil, errors.OAuth2ServerError("unable to create server").WithError(err)
 	}
 
@@ -158,19 +151,19 @@ func (c *Client) Get(ctx context.Context, organizationID, projectID, serverID st
 
 // Update a resource.
 func (c *Client) Update(ctx context.Context, organizationID, projectID, identityID, serverID string, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	identity, err := identity.New(c.ClientArgs).GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
 		return nil, err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, identity.Labels[constants.RegionLabel])
+	provider, err := region.NewClient(c.ClientArgs).Provider(ctx, identity.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
 
 	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
-			return nil, errors.HTTPNotFound()
+			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
 		return nil, errors.OAuth2ServerError("failed to retrieve image from provider").WithError(err)
@@ -181,12 +174,12 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 		return nil, err
 	}
 
-	required, err := newGenerator(c.client, c.namespace, organizationID, projectID, identityID).generate(ctx, request)
+	required, err := newGenerator(c.ClientArgs, organizationID, projectID, identityID).generate(ctx, request)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := conversion.UpdateObjectMetadata(required, current, common.IdentityMetadataMutator); err != nil {
+	if err := conversion.UpdateObjectMetadata(required, current, identitycommon.IdentityMetadataMutator); err != nil {
 		return nil, errors.OAuth2ServerError("failed to merge metadata").WithError(err)
 	}
 
@@ -195,35 +188,48 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	updated.Annotations = required.Annotations
 	updated.Spec = required.Spec
 
-	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+	if err := c.Client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
 		return nil, errors.OAuth2ServerError("failed to patch server").WithError(err)
 	}
 
 	return convert(updated), nil
 }
 
-func (c *Client) Reboot(ctx context.Context, organizationID, projectID, identityID, serverID string, hard bool) error {
+func (c *Client) getServerIdentityAndProvider(ctx context.Context, organizationID, projectID, identityID, serverID string) (*unikornv1.Server, *unikornv1.Identity, Provider, error) {
 	current, err := c.get(ctx, organizationID, projectID, serverID)
 	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	identity, err := identity.New(c.ClientArgs).GetRaw(ctx, organizationID, projectID, identityID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	provider, err := region.NewClient(c.ClientArgs).Provider(ctx, current.Labels[constants.RegionLabel])
+	if err != nil {
+		return nil, nil, nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+	}
+
+	return current, identity, provider, nil
+}
+
+func (c *Client) Reboot(ctx context.Context, organizationID, projectID, identityID, serverID string, hard bool) error {
+	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, identityID, serverID)
+	if err != nil {
 		return err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
-	if err != nil {
-		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
-	}
+	return c.reboot(ctx, identity, server, hard, provider)
+}
 
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
-	if err != nil {
-		return err
-	}
+func (c *Client) reboot(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool, provider Provider) error {
+	if err := provider.RebootServer(ctx, identity, server, hard); err != nil {
+		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
+			return errors.HTTPNotFound().WithError(err)
+		}
 
-	// REVIEW_ME: Do we want to track who rebooted the server, and when?
-	// REVIEW_ME: This action only reboots the server with the existing configuration, so updating the labels (creator/principal) seems a bit weird.
-
-	if err := provider.RebootServer(ctx, identity, current, hard); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			// REVIEW_ME: Should this return 409 instead? But we will probably need to add a new error type for that.
+		if goerrors.Is(err, coreerrors.ErrConflict) {
 			return errors.OAuth2InvalidRequest("server cannot be rebooted in its current state").WithError(err)
 		}
 
@@ -237,74 +243,64 @@ func (c *Client) Reboot(ctx context.Context, organizationID, projectID, identity
 	return nil
 }
 
-//nolint:dupl
 func (c *Client) Start(ctx context.Context, organizationID, projectID, identityID, serverID string) error {
-	current, err := c.get(ctx, organizationID, projectID, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, identityID, serverID)
 	if err != nil {
 		return err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
-	if err != nil {
-		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
-	}
+	return c.start(ctx, identity, server, provider)
+}
 
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
-	if err != nil {
-		return err
-	}
+func (c *Client) start(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, provider Provider) error {
+	if err := provider.StartServer(ctx, identity, server); err != nil {
+		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
+			return errors.HTTPNotFound().WithError(err)
+		}
 
-	if err := provider.StartServer(ctx, identity, current); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			// REVIEW_ME: Should this return 409 instead? But we will probably need to add a new error type for that.
+		if goerrors.Is(err, coreerrors.ErrConflict) {
 			return errors.OAuth2InvalidRequest("server cannot be started in its current state").WithError(err)
 		}
 
 		return errors.OAuth2ServerError("failed to start server").WithError(err)
 	}
 
-	// REVIEW_ME: Do we want to track who started the server, and when?
-	updated := current.DeepCopy()
+	updated := server.DeepCopy()
 	updated.Status.Phase = unikornv1.InstanceLifecyclePhasePending
 
-	if err := c.client.Status().Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+	if err := c.Client.Status().Patch(ctx, updated, client.MergeFrom(server)); err != nil {
 		return errors.OAuth2ServerError("failed to patch server").WithError(err)
 	}
 
 	return nil
 }
 
-//nolint:dupl
 func (c *Client) Stop(ctx context.Context, organizationID, projectID, identityID, serverID string) error {
-	current, err := c.get(ctx, organizationID, projectID, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, identityID, serverID)
 	if err != nil {
 		return err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
-	if err != nil {
-		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
-	}
+	return c.stop(ctx, identity, server, provider)
+}
 
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
-	if err != nil {
-		return err
-	}
+func (c *Client) stop(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, provider Provider) error {
+	if err := provider.StopServer(ctx, identity, server); err != nil {
+		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
+			return errors.HTTPNotFound().WithError(err)
+		}
 
-	if err := provider.StopServer(ctx, identity, current); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			// REVIEW_ME: Should this return 409 instead? But we will probably need to add a new error type for that.
+		if goerrors.Is(err, coreerrors.ErrConflict) {
 			return errors.OAuth2InvalidRequest("server cannot be stopped in its current state").WithError(err)
 		}
 
 		return errors.OAuth2ServerError("failed to stop server").WithError(err)
 	}
 
-	// REVIEW_ME: Do we want to track who stopped the server, and when?
-	updated := current.DeepCopy()
+	updated := server.DeepCopy()
 	updated.Status.Phase = unikornv1.InstanceLifecyclePhaseStopping
 
-	if err := c.client.Status().Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+	if err := c.Client.Status().Patch(ctx, updated, client.MergeFrom(server)); err != nil {
 		return errors.OAuth2ServerError("failed to patch server").WithError(err)
 	}
 
@@ -318,7 +314,7 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, serverID
 		return err
 	}
 
-	if err := c.client.Delete(ctx, resource); err != nil {
+	if err := c.Client.Delete(ctx, resource); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
 		}
@@ -330,26 +326,23 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, serverID
 }
 
 func (c *Client) CreateConsoleSession(ctx context.Context, organizationID, projectID, identityID, serverID string) (*openapi.ConsoleSessionResponse, error) {
-	current, err := c.get(ctx, organizationID, projectID, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, identityID, serverID)
 	if err != nil {
 		return nil, err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
-	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
-	}
+	return c.createConsoleSession(ctx, identity, server, provider)
+}
 
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+func (c *Client) createConsoleSession(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, provider Provider) (*openapi.ConsoleSessionResponse, error) {
+	url, err := provider.CreateConsoleSession(ctx, identity, server)
 	if err != nil {
-		return nil, err
-	}
-
-	url, err := provider.CreateConsoleSession(ctx, identity, current)
-	if err != nil {
-		// REVIEW_ME: This looks odd. Shouldn't the ErrResourceDependency error be moved to the provider package?
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) || goerrors.Is(err, types.ErrResourceDependency) {
+		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return nil, errors.HTTPNotFound().WithError(err)
+		}
+
+		if goerrors.Is(err, coreerrors.ErrConflict) {
+			return nil, errors.OAuth2InvalidRequest("server cannot be accessed in its current state").WithError(err)
 		}
 
 		return nil, errors.OAuth2ServerError("failed to create console session").WithError(err)
@@ -363,29 +356,26 @@ func (c *Client) CreateConsoleSession(ctx context.Context, organizationID, proje
 }
 
 func (c *Client) GetConsoleOutput(ctx context.Context, organizationID, projectID, identityID, serverID string, params openapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams) (*openapi.ConsoleOutputResponse, error) {
-	current, err := c.get(ctx, organizationID, projectID, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, identityID, serverID)
 	if err != nil {
 		return nil, err
 	}
 
-	provider, err := region.NewClient(c.client, c.namespace).Provider(ctx, current.Labels[constants.RegionLabel])
-	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
-	}
+	return c.getConsoleOutput(ctx, identity, server, params.Length, provider)
+}
 
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+func (c *Client) getConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, length *int, provider Provider) (*openapi.ConsoleOutputResponse, error) {
+	contents, err := provider.GetConsoleOutput(ctx, identity, server, length)
 	if err != nil {
-		return nil, err
-	}
-
-	contents, err := provider.GetConsoleOutput(ctx, identity, current, params.Length)
-	if err != nil {
-		// REVIEW_ME: This looks odd. Shouldn't the ErrResourceDependency error be moved to the provider package?
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) || goerrors.Is(err, types.ErrResourceDependency) {
+		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("failed to create console session").WithError(err)
+		if goerrors.Is(err, coreerrors.ErrConflict) {
+			return nil, errors.OAuth2InvalidRequest("server console output cannot be retrieved in its current state").WithError(err)
+		}
+
+		return nil, errors.OAuth2ServerError("failed to retrieve console output").WithError(err)
 	}
 
 	response := &openapi.ConsoleOutputResponse{

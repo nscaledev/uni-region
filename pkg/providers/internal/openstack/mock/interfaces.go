@@ -28,31 +28,31 @@ import (
 	gomock "go.uber.org/mock/gomock"
 )
 
-// MockExternalNetworkInterfsce is a mock of ExternalNetworkInterfsce interface.
-type MockExternalNetworkInterfsce struct {
+// MockExternalNetworkInterface is a mock of ExternalNetworkInterface interface.
+type MockExternalNetworkInterface struct {
 	ctrl     *gomock.Controller
-	recorder *MockExternalNetworkInterfsceMockRecorder
+	recorder *MockExternalNetworkInterfaceMockRecorder
 }
 
-// MockExternalNetworkInterfsceMockRecorder is the mock recorder for MockExternalNetworkInterfsce.
-type MockExternalNetworkInterfsceMockRecorder struct {
-	mock *MockExternalNetworkInterfsce
+// MockExternalNetworkInterfaceMockRecorder is the mock recorder for MockExternalNetworkInterface.
+type MockExternalNetworkInterfaceMockRecorder struct {
+	mock *MockExternalNetworkInterface
 }
 
-// NewMockExternalNetworkInterfsce creates a new mock instance.
-func NewMockExternalNetworkInterfsce(ctrl *gomock.Controller) *MockExternalNetworkInterfsce {
-	mock := &MockExternalNetworkInterfsce{ctrl: ctrl}
-	mock.recorder = &MockExternalNetworkInterfsceMockRecorder{mock}
+// NewMockExternalNetworkInterface creates a new mock instance.
+func NewMockExternalNetworkInterface(ctrl *gomock.Controller) *MockExternalNetworkInterface {
+	mock := &MockExternalNetworkInterface{ctrl: ctrl}
+	mock.recorder = &MockExternalNetworkInterfaceMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockExternalNetworkInterfsce) EXPECT() *MockExternalNetworkInterfsceMockRecorder {
+func (m *MockExternalNetworkInterface) EXPECT() *MockExternalNetworkInterfaceMockRecorder {
 	return m.recorder
 }
 
 // ExternalNetworks mocks base method.
-func (m *MockExternalNetworkInterfsce) ExternalNetworks(ctx context.Context) ([]networks.Network, error) {
+func (m *MockExternalNetworkInterface) ExternalNetworks(ctx context.Context) ([]networks.Network, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ExternalNetworks", ctx)
 	ret0, _ := ret[0].([]networks.Network)
@@ -61,9 +61,9 @@ func (m *MockExternalNetworkInterfsce) ExternalNetworks(ctx context.Context) ([]
 }
 
 // ExternalNetworks indicates an expected call of ExternalNetworks.
-func (mr *MockExternalNetworkInterfsceMockRecorder) ExternalNetworks(ctx any) *gomock.Call {
+func (mr *MockExternalNetworkInterfaceMockRecorder) ExternalNetworks(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExternalNetworks", reflect.TypeOf((*MockExternalNetworkInterfsce)(nil).ExternalNetworks), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExternalNetworks", reflect.TypeOf((*MockExternalNetworkInterface)(nil).ExternalNetworks), ctx)
 }
 
 // MockNetworkInterface is a mock of NetworkInterface interface.
@@ -1235,6 +1235,21 @@ func (m *MockServerInterface) EXPECT() *MockServerInterfaceMockRecorder {
 	return m.recorder
 }
 
+// CreateImageFromServer mocks base method.
+func (m *MockServerInterface) CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateImageFromServer", ctx, id, opts)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateImageFromServer indicates an expected call of CreateImageFromServer.
+func (mr *MockServerInterfaceMockRecorder) CreateImageFromServer(ctx, id, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateImageFromServer", reflect.TypeOf((*MockServerInterface)(nil).CreateImageFromServer), ctx, id, opts)
+}
+
 // CreateRemoteConsole mocks base method.
 func (m *MockServerInterface) CreateRemoteConsole(ctx context.Context, id string) (*remoteconsoles.RemoteConsole, error) {
 	m.ctrl.T.Helper()
@@ -1372,6 +1387,21 @@ func NewMockComputeInterface(ctrl *gomock.Controller) *MockComputeInterface {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockComputeInterface) EXPECT() *MockComputeInterfaceMockRecorder {
 	return m.recorder
+}
+
+// CreateImageFromServer mocks base method.
+func (m *MockComputeInterface) CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateImageFromServer", ctx, id, opts)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateImageFromServer indicates an expected call of CreateImageFromServer.
+func (mr *MockComputeInterfaceMockRecorder) CreateImageFromServer(ctx, id, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateImageFromServer", reflect.TypeOf((*MockComputeInterface)(nil).CreateImageFromServer), ctx, id, opts)
 }
 
 // CreateKeypair mocks base method.

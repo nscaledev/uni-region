@@ -1,5 +1,4 @@
 /*
-Copyright 2025 the Unikorn Authors.
 Copyright 2026 Nscale.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,31 +14,23 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package image
+package mock
 
 import (
-	"bufio"
-	"errors"
-	"io"
+	"testing"
+
+	gomock "go.uber.org/mock/gomock"
 )
 
-var ErrInvalidQCOW2 = errors.New("invalid QCOW2 image")
+//go:generate mockgen -source=../client_v2.go -destination=interfaces.go -package=mock
 
-func NewQCOW2Reader(r io.Reader) (io.Reader, error) {
-	inner := bufio.NewReader(r)
+// newTestMockProvider creates a new mock provider with a gomock controller.
+// The controller is automatically cleaned up when the test finishes.
+func NewTestMockProvider(t *testing.T) *MockProvider {
+	t.Helper()
 
-	bs, err := inner.Peek(4)
-	if err != nil {
-		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-			return nil, ErrInvalidQCOW2
-		}
+	mockController := gomock.NewController(t)
+	t.Cleanup(mockController.Finish)
 
-		return nil, err
-	}
-
-	if bs[0] != 'Q' || bs[1] != 'F' || bs[2] != 'I' || bs[3] != 0xfb {
-		return nil, ErrInvalidQCOW2
-	}
-
-	return inner, nil
+	return NewMockProvider(mockController)
 }
