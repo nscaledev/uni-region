@@ -186,7 +186,7 @@ func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*uni
 	}
 
 	// TODO: The API enforces a single network.
-	network, err := network.New(g.ClientArgs, nil).GetRaw(ctx, g.organizationID, g.projectID, in.Spec.Networks[0].Id)
+	network, err := network.New(g.ClientArgs).GetRaw(ctx, g.organizationID, g.projectID, in.Spec.Networks[0].Id)
 	if err != nil {
 		return nil, err
 	}

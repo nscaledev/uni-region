@@ -364,7 +364,7 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 }
 
 func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create) (*openapi.ServerV2Read, error) {
-	network, err := network.New(c.Client.ClientArgs, nil).GetV2Raw(ctx, request.Spec.NetworkId)
+	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId)
 	if err != nil {
 		return nil, err
 	}
@@ -450,7 +450,7 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *opena
 	}
 
 	// Get the network, required for generation.
-	network, err := network.New(c.Client.ClientArgs, nil).GetV2Raw(ctx, current.Spec.Networks[0].ID)
+	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, current.Spec.Networks[0].ID)
 	if err != nil {
 		return nil, err
 	}

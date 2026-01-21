@@ -69,11 +69,11 @@ func (s *createSaga) createAllocation(ctx context.Context) error {
 	quantity := gibToQuantity(s.request.Spec.SizeGiB)
 	required := s.client.generateAllocation(quantity.Value())
 
-	return identityclient.NewAllocations(s.client.Client, s.client.identity).Create(ctx, s.filestorage, required)
+	return identityclient.NewAllocations(s.client.Client, s.client.Identity).Create(ctx, s.filestorage, required)
 }
 
 func (s *createSaga) deleteAllocation(ctx context.Context) error {
-	if err := identityclient.NewAllocations(s.client.Client, s.client.identity).Delete(ctx, s.filestorage); err != nil {
+	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Delete(ctx, s.filestorage); err != nil {
 		return err
 	}
 
@@ -148,7 +148,7 @@ func (s *createSaga) validateAttachments(ctx context.Context, attachments *opena
 		return nil
 	}
 
-	networkClient := network.New(s.client.ClientArgs, s.client.identity)
+	networkClient := network.New(s.client.ClientArgs)
 
 	for _, id := range attachments.NetworkIds {
 		network, err := networkClient.GetV2(ctx, id)
@@ -186,7 +186,7 @@ func newUpdateSaga(client *Client, organizationID, regionID string, current, upd
 }
 
 func (s *updateSaga) validateRequest(ctx context.Context) error {
-	networkClient := network.New(s.client.ClientArgs, s.client.identity)
+	networkClient := network.New(s.client.ClientArgs)
 
 	for _, attachment := range s.updated.Spec.Attachments {
 		network, err := networkClient.GetV2(ctx, attachment.NetworkID)
@@ -209,13 +209,13 @@ func (s *updateSaga) validateRequest(ctx context.Context) error {
 func (s *updateSaga) updateAllocation(ctx context.Context) error {
 	required := s.client.generateAllocation(s.updated.Spec.Size.Value())
 
-	return identityclient.NewAllocations(s.client.Client, s.client.identity).Update(ctx, s.current, required)
+	return identityclient.NewAllocations(s.client.Client, s.client.Identity).Update(ctx, s.current, required)
 }
 
 func (s *updateSaga) revertAllocation(ctx context.Context) error {
 	required := s.client.generateAllocation(s.current.Spec.Size.Value())
 
-	return identityclient.NewAllocations(s.client.Client, s.client.identity).Update(ctx, s.current, required)
+	return identityclient.NewAllocations(s.client.Client, s.client.Identity).Update(ctx, s.current, required)
 }
 
 func (s *updateSaga) updateStorage(ctx context.Context) error {

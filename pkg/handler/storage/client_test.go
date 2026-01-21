@@ -133,7 +133,7 @@ func TestGenerateAttachmentList(t *testing.T) {
 		Namespace: testNamespace,
 	}
 
-	netclient := networkclient.New(clientArgs, nil)
+	netclient := networkclient.New(clientArgs)
 
 	ctx := newContextWithPermissions(t.Context())
 
@@ -809,7 +809,7 @@ func newClientAndContext(t *testing.T, c client.Client, auth *identityauth.Info,
 		Namespace: testNamespace,
 	}
 
-	client := New(clientArgs, nil)
+	client := New(clientArgs)
 	ctx := t.Context()
 
 	if auth != nil {
