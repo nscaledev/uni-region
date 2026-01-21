@@ -45,49 +45,74 @@ func Test_Imagev2_List(t *testing.T) {
 	const (
 		namespace = "test-org-images"
 		regionID  = "region-1"
+		orgID     = "cats"
 	)
+
+	// All the test cases assume the caller will have permissions for the org identified by `orgID`.
 
 	testcases := map[string]struct {
 		setupQuery func(*imagemock.MockImageQuery)
 		params     openapi.GetApiV2RegionsRegionIDImagesParams
 	}{
-		"no filters": {
-			setupQuery: func(*imagemock.MockImageQuery) {},
-		},
-		"filter by org": {
+		// All these should call the expected query methods and return 200
+
+		"available to org": {
 			setupQuery: func(query *imagemock.MockImageQuery) {
-				query.EXPECT().AvailableToOrganization("cats").Return(query)
+				query.EXPECT().AvailableToOrganization(orgID).Return(query)
+				query.EXPECT().List(gomock.Any()).Return(nil, nil)
 			},
 			params: openapi.GetApiV2RegionsRegionIDImagesParams{
-				OrganizationID: ptr.To([]string{"cats"}),
+				OrganizationID: ptr.To([]string{orgID}),
 			},
 		},
 		"filter by status": {
 			setupQuery: func(query *imagemock.MockImageQuery) {
+				query.EXPECT().AvailableToOrganization(orgID).Return(query)
 				query.EXPECT().StatusIn(types.ImageStatusReady).Return(query)
+				query.EXPECT().List(gomock.Any()).Return(nil, nil)
 			},
 			params: openapi.GetApiV2RegionsRegionIDImagesParams{
-				Status: ptr.To([]openapi.ImageState{"ready"}),
+				OrganizationID: ptr.To([]string{orgID}),
+				Status:         ptr.To([]openapi.ImageState{openapi.ImageStateReady}),
 			},
 		},
-		"filter to owned images": {
+		"owned by org": {
 			setupQuery: func(query *imagemock.MockImageQuery) {
-				query.EXPECT().OwnedByOrganization("cats").Return(query)
+				query.EXPECT().OwnedByOrganization(orgID).Return(query)
+				query.EXPECT().List(gomock.Any()).Return(nil, nil)
 			},
 			params: openapi.GetApiV2RegionsRegionIDImagesParams{
-				OrganizationID: ptr.To([]string{"cats"}),
+				OrganizationID: ptr.To([]string{orgID}),
 				Scope:          ptr.To(openapi.GetApiV2RegionsRegionIDImagesParamsScopeOwned),
 			},
 		},
-		"filter to available, ready images": {
+		"available, ready images": {
 			setupQuery: func(query *imagemock.MockImageQuery) {
-				query.EXPECT().AvailableToOrganization("cats").Return(query)
+				query.EXPECT().AvailableToOrganization(orgID).Return(query)
 				query.EXPECT().StatusIn(types.ImageStatusReady).Return(query)
+				query.EXPECT().List(gomock.Any()).Return(nil, nil)
 			},
 			params: openapi.GetApiV2RegionsRegionIDImagesParams{
-				OrganizationID: ptr.To([]string{"cats"}),
-				Status:         ptr.To([]openapi.ImageState{"ready"}),
+				OrganizationID: ptr.To([]string{orgID}),
+				Status:         ptr.To([]openapi.ImageState{openapi.ImageStateReady}),
 				Scope:          ptr.To(openapi.GetApiV2RegionsRegionIDImagesParamsScopeAvailable),
+			},
+		},
+		"orgs with no permission": {
+			setupQuery: func(query *imagemock.MockImageQuery) {
+				// This must be called even though the caller has no permission to the org,
+				// to get global images, since those are counted as available.
+				query.EXPECT().AvailableToOrganization().Return(query)
+				query.EXPECT().List(gomock.Any()).Return(nil, nil)
+			},
+			params: openapi.GetApiV2RegionsRegionIDImagesParams{
+				OrganizationID: ptr.To([]string{"NOT" + orgID}),
+			},
+		},
+		"no filters": { // when asking without giving an organization, you don't need org permissions.
+			setupQuery: func(query *imagemock.MockImageQuery) {
+				query.EXPECT().AvailableToOrganization().Return(query)
+				query.EXPECT().List(gomock.Any()).Return(nil, nil)
 			},
 		},
 	}
@@ -96,14 +121,19 @@ func Test_Imagev2_List(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
+			ctx := newOrganisationACLBuilder(orgID).
+				addEndpoint("region:images", "read").
+				buildContext(t.Context())
+
 			provider, ctrl := imagemock.NewTestMockProviderAndController(t)
 			querier := imagemock.NewMockImageQuery(ctrl)
 
 			// Expect to get asked for an image querier.
 			provider.EXPECT().QueryImages().Return(querier, nil)
 
-			tc.setupQuery(querier)
-			querier.EXPECT().List(gomock.Any()).Return(nil, nil)
+			if setupQuery := tc.setupQuery; setupQuery != nil {
+				setupQuery(querier)
+			}
 
 			c := fakeClientWithSchema(t)
 
@@ -118,7 +148,7 @@ func Test_Imagev2_List(t *testing.T) {
 			}
 
 			path := fmt.Sprintf("/api/v2/region/%s/images", regionID)
-			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
+			request := httptest.NewRequestWithContext(ctx, http.MethodGet, path, nil)
 			response := httptest.NewRecorder()
 
 			handler.GetApiV2RegionsRegionIDImages(response, request, regionID, tc.params)
