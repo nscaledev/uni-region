@@ -28,9 +28,10 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
-	"github.com/unikorn-cloud/identity/pkg/handler/common"
+	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -45,17 +46,13 @@ import (
 
 // Client provides a restful API for identities.
 type Client struct {
-	// client ia a Kubernetes client.
-	client client.Client
-	// namespace we are running in.
-	namespace string
+	common.ClientArgs
 }
 
 // New creates a new client.
-func New(client client.Client, namespace string) *Client {
+func New(clientArgs common.ClientArgs) *Client {
 	return &Client{
-		client:    client,
-		namespace: namespace,
+		ClientArgs: clientArgs,
 	}
 }
 
@@ -268,7 +265,7 @@ func generateRuleList(in openapi.SecurityGroupRuleList) ([]unikornv1.SecurityGro
 
 // generate a new resource from a request.
 func (c *Client) generate(ctx context.Context, organizationID, projectID, identityID string, in *openapi.SecurityGroupWrite) (*unikornv1.SecurityGroup, error) {
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	identity, err := identity.New(c.ClientArgs).GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
 		return nil, err
 	}
@@ -279,20 +276,20 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 	}
 
 	out := &unikornv1.SecurityGroup{
-		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, c.namespace).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identity.Name).Get(),
+		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, c.Namespace).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identity.Name).Get(),
 		Spec: unikornv1.SecurityGroupSpec{
 			Tags:  conversion.GenerateTagList(in.Metadata.Tags),
 			Rules: rules,
 		},
 	}
 
-	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
+	if err := identitycommon.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
 		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
 	}
 
 	// Ensure the security is owned by the identity so it is automatically cleaned
 	// up on identity deletion.
-	if err := controllerutil.SetOwnerReference(identity, out, c.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
+	if err := controllerutil.SetOwnerReference(identity, out, c.Client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
 		return nil, err
 	}
 
@@ -303,7 +300,7 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, securityGroupID string) (*unikornv1.SecurityGroup, error) {
 	resource := &unikornv1.SecurityGroup{}
 
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: securityGroupID}, resource); err != nil {
+	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: securityGroupID}, resource); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
@@ -323,13 +320,13 @@ func (c *Client) List(ctx context.Context, organizationID string, params openapi
 	result := &unikornv1.SecurityGroupList{}
 
 	options := &client.ListOptions{
-		Namespace: c.namespace,
+		Namespace: c.Namespace,
 		LabelSelector: labels.SelectorFromSet(map[string]string{
 			coreconstants.OrganizationLabel: organizationID,
 		}),
 	}
 
-	if err := c.client.List(ctx, result, options); err != nil {
+	if err := c.Client.List(ctx, result, options); err != nil {
 		return nil, errors.OAuth2ServerError("unable to list security groups").WithError(err)
 	}
 
@@ -356,7 +353,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 		return nil, err
 	}
 
-	if err := c.client.Create(ctx, securityGroup); err != nil {
+	if err := c.Client.Create(ctx, securityGroup); err != nil {
 		return nil, errors.OAuth2ServerError("unable to create security group").WithError(err)
 	}
 
@@ -390,7 +387,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	updated.Annotations = required.Annotations
 	updated.Spec = required.Spec
 
-	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+	if err := c.Client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
 		return nil, errors.OAuth2ServerError("unable to updated security group").WithError(err)
 	}
 
@@ -404,7 +401,7 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, security
 		return err
 	}
 
-	if err := c.client.Delete(ctx, resource, util.ForegroundDeleteOptions()); err != nil {
+	if err := c.Client.Delete(ctx, resource, util.ForegroundDeleteOptions()); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
 		}

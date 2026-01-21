@@ -135,13 +135,13 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2Securitygrou
 	}
 
 	options := &client.ListOptions{
-		Namespace:     c.namespace,
+		Namespace:     c.Namespace,
 		LabelSelector: selector,
 	}
 
 	result := &regionv1.SecurityGroupList{}
 
-	if err := c.client.List(ctx, result, options); err != nil {
+	if err := c.Client.List(ctx, result, options); err != nil {
 		return nil, errors.OAuth2ServerError("unable to list security groups").WithError(err)
 	}
 
@@ -165,7 +165,7 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2Securitygrou
 func (c *Client) GetV2Raw(ctx context.Context, securityGroupID string) (*regionv1.SecurityGroup, error) {
 	result := &regionv1.SecurityGroup{}
 
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: securityGroupID}, result); err != nil {
+	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: securityGroupID}, result); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
@@ -298,7 +298,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 	}
 
 	out := &regionv1.SecurityGroup{
-		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.namespace).
+		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.Namespace).
 			WithOrganization(organizationID).
 			WithProject(projectID).
 			WithLabel(constants.RegionLabel, network.Labels[constants.RegionLabel]).
@@ -320,7 +320,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
 	}
 
-	if err := controllerutil.SetOwnerReference(network, out, c.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
+	if err := controllerutil.SetOwnerReference(network, out, c.Client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
 		return nil, errors.OAuth2ServerError("unable to set resource owner").WithError(err)
 	}
 
@@ -329,7 +329,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 
 func (c *Client) CreateV2(ctx context.Context, request *openapi.SecurityGroupV2Create) (*openapi.SecurityGroupV2Read, error) {
 	// Check the network exists, and the user has permission to it.
-	network, err := network.New(c.client, c.namespace, nil).GetV2Raw(ctx, request.Spec.NetworkId)
+	network, err := network.New(c.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId)
 	if err != nil {
 		return nil, err
 	}
@@ -351,7 +351,7 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.SecurityGroupV2C
 		return nil, err
 	}
 
-	if err := c.client.Create(ctx, resource); err != nil {
+	if err := c.Client.Create(ctx, resource); err != nil {
 		return nil, errors.OAuth2ServerError("unable to create security group").WithError(err)
 	}
 
@@ -373,7 +373,7 @@ func (c *Client) UpdateV2(ctx context.Context, securityGroupID string, request *
 	}
 
 	// Get the network, required for generation.
-	network, err := network.New(c.client, c.namespace, nil).GetV2Raw(ctx, current.Labels[constants.NetworkLabel])
+	network, err := network.New(c.ClientArgs).GetV2Raw(ctx, current.Labels[constants.NetworkLabel])
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +388,7 @@ func (c *Client) UpdateV2(ctx context.Context, securityGroupID string, request *
 	updated.Annotations = required.Annotations
 	updated.Spec = required.Spec
 
-	if err := c.client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+	if err := c.Client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
 		return nil, errors.OAuth2ServerError("unable to update security group").WithError(err)
 	}
 
@@ -413,7 +413,7 @@ func (c *Client) DeleteV2(ctx context.Context, securityGroupID string) error {
 		return errors.HTTPForbidden("security group is in use and cannot be deleted")
 	}
 
-	if err := c.client.Delete(ctx, resource, util.ForegroundDeleteOptions()); err != nil {
+	if err := c.Client.Delete(ctx, resource, util.ForegroundDeleteOptions()); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
 		}
