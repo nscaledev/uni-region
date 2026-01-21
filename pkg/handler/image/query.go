@@ -22,11 +22,15 @@ import (
 	"context"
 	"slices"
 
+	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 )
 
+// QueryImages takes the parameters from an image list request and runs them as a query against the provider.
 func (c *Client) QueryImages(ctx context.Context, regionID string, params openapi.GetApiV2RegionsRegionIDImagesParams) (openapi.Images, error) {
+
 	prov, err := c.getProvider(ctx, c.Client, c.Namespace, regionID)
 	if err != nil {
 		return nil, err
@@ -37,13 +41,33 @@ func (c *Client) QueryImages(ctx context.Context, regionID string, params openap
 		return nil, err
 	}
 
+	// The semantics for the parameters:
+	//
+	// `organizationID={id},...`: restrict to these organisations. The caller must have region:images/read permission for each organisation identified,
+	// otherwise that organization is dropped from the query.
+	//
+	// `organizationID` not supplied: view only global images. The scope is ignored (none of the global images can be owned).
+	//
+	// `scope=available` (or missing): include images either owned by the organization or globally available.
+	// `scope=owned`: restrict results to images that belong to the organization.
+
 	if orgIDs := params.OrganizationID; orgIDs != nil {
+		var allowedOrgs []string
+		for _, orgID := range *orgIDs {
+			err := rbac.AllowOrganizationScope(ctx, "region:images", identityapi.Read, orgID)
+			if err == nil {
+				allowedOrgs = append(allowedOrgs, orgID)
+			}
+		}
+
 		// default scope to available, if not provided.
 		if params.Scope != nil && *params.Scope == openapi.GetApiV2RegionsRegionIDImagesParamsScopeOwned {
-			query = query.OwnedByOrganization(*orgIDs...)
+			query = query.OwnedByOrganization(allowedOrgs...)
 		} else {
-			query = query.AvailableToOrganization(*orgIDs...)
+			query = query.AvailableToOrganization(allowedOrgs...)
 		}
+	} else {
+		query = query.AvailableToOrganization() // not owned by any org; i.e., only global images. Anyone can see these.
 	}
 
 	if s := params.Status; s != nil {
