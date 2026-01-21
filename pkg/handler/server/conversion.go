@@ -24,16 +24,16 @@ import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
-	"github.com/unikorn-cloud/identity/pkg/handler/common"
+	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	"k8s.io/utils/ptr"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
@@ -161,10 +161,7 @@ func convertInstanceLifecyclePhase(in unikornv1.InstanceLifecyclePhase) *openapi
 }
 
 type generator struct {
-	// client allows Kubernetes API access.
-	client client.Client
-	// namespace the resource is provisioned in.
-	namespace string
+	common.ClientArgs
 	// organizationID is the unique organization identifier.
 	organizationID string
 	// projectID is the unique project identifier.
@@ -173,10 +170,9 @@ type generator struct {
 	identityID string
 }
 
-func newGenerator(client client.Client, namespace, organizationID, projectID, identityID string) *generator {
+func newGenerator(clientArgs common.ClientArgs, organizationID, projectID, identityID string) *generator {
 	return &generator{
-		client:         client,
-		namespace:      namespace,
+		ClientArgs:     clientArgs,
 		organizationID: organizationID,
 		projectID:      projectID,
 		identityID:     identityID,
@@ -184,19 +180,19 @@ func newGenerator(client client.Client, namespace, organizationID, projectID, id
 }
 
 func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*unikornv1.Server, error) {
-	identity, err := identity.New(g.client, g.namespace).GetRaw(ctx, g.organizationID, g.projectID, g.identityID)
+	identity, err := identity.New(g.ClientArgs).GetRaw(ctx, g.organizationID, g.projectID, g.identityID)
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO: The API enforces a single network.
-	network, err := network.New(g.client, g.namespace, nil).GetRaw(ctx, g.organizationID, g.projectID, in.Spec.Networks[0].Id)
+	network, err := network.New(g.ClientArgs, nil).GetRaw(ctx, g.organizationID, g.projectID, in.Spec.Networks[0].Id)
 	if err != nil {
 		return nil, err
 	}
 
 	out := &unikornv1.Server{
-		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, g.namespace).WithOrganization(g.organizationID).WithProject(g.projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
+		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, g.Namespace).WithOrganization(g.organizationID).WithProject(g.projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, identity.Name).Get(),
 		Spec: unikornv1.ServerSpec{
 			Tags:     conversion.GenerateTagList(in.Metadata.Tags),
@@ -212,13 +208,13 @@ func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*uni
 		},
 	}
 
-	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
+	if err := identitycommon.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
 		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
 	}
 
 	// Ensure the server is owned by the network so it is automatically cleaned
 	// up on cascading deletion.
-	if err := controllerutil.SetOwnerReference(network, out, g.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
+	if err := controllerutil.SetOwnerReference(network, out, g.Client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
 		return nil, err
 	}
 
