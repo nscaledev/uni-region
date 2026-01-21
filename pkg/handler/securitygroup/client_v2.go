@@ -329,7 +329,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 
 func (c *Client) CreateV2(ctx context.Context, request *openapi.SecurityGroupV2Create) (*openapi.SecurityGroupV2Read, error) {
 	// Check the network exists, and the user has permission to it.
-	network, err := network.New(c.ClientArgs, nil).GetV2Raw(ctx, request.Spec.NetworkId)
+	network, err := network.New(c.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId)
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +373,7 @@ func (c *Client) UpdateV2(ctx context.Context, securityGroupID string, request *
 	}
 
 	// Get the network, required for generation.
-	network, err := network.New(c.ClientArgs, nil).GetV2Raw(ctx, current.Labels[constants.NetworkLabel])
+	network, err := network.New(c.ClientArgs).GetV2Raw(ctx, current.Labels[constants.NetworkLabel])
 	if err != nil {
 		return nil, err
 	}

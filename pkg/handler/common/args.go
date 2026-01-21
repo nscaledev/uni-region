@@ -17,6 +17,8 @@ limitations under the License.
 package common
 
 import (
+	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -29,4 +31,7 @@ type ClientArgs struct {
 
 	// Namespace is the namespace we are running in.
 	Namespace string
+
+	// Identity is an identity client for RBAC access.
+	Identity identityapi.ClientWithResponsesInterface
 }

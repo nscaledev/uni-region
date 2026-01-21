@@ -29,7 +29,6 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
-	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
@@ -47,15 +46,12 @@ import (
 // Client provides a restful API for networks.
 type Client struct {
 	common.ClientArgs
-	// identity allows quota allocation.
-	identity identityapi.ClientWithResponsesInterface
 }
 
 // New creates a new client.
-func New(clientArgs common.ClientArgs, identity identityapi.ClientWithResponsesInterface) *Client {
+func New(clientArgs common.ClientArgs) *Client {
 	return &Client{
 		ClientArgs: clientArgs,
-		identity:   identity,
 	}
 }
 

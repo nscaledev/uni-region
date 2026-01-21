@@ -60,8 +60,6 @@ type Driver interface {
 // Client provides a restful API for storage.
 type Client struct {
 	common.ClientArgs
-	// identity allows quota allocation.
-	identity identityapi.ClientWithResponsesInterface
 
 	// GetFileStorageDriverFunc is used for test mocking to be able
 	// to abstract the Filestorage Driver
@@ -69,10 +67,9 @@ type Client struct {
 }
 
 // New creates a new client.
-func New(clientArgs common.ClientArgs, identity identityapi.ClientWithResponsesInterface) *Client {
+func New(clientArgs common.ClientArgs) *Client {
 	return &Client{
 		ClientArgs: clientArgs,
-		identity:   identity,
 	}
 }
 
@@ -306,7 +303,7 @@ func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2R
 }
 
 func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.StorageV2Update, storageClassID string) (*regionv1.FileStorage, error) {
-	networkClient := network.New(c.ClientArgs, c.identity)
+	networkClient := network.New(c.ClientArgs)
 
 	err := util.InjectUserPrincipal(ctx, organizationID, projectID)
 	if err != nil {
