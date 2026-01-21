@@ -28,10 +28,11 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
-	"github.com/unikorn-cloud/identity/pkg/handler/common"
+	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -45,20 +46,16 @@ import (
 
 // Client provides a restful API for networks.
 type Client struct {
-	// client ia a Kubernetes client.
-	client client.Client
-	// namespace we are running in.
-	namespace string
+	common.ClientArgs
 	// identity allows quota allocation.
 	identity identityapi.ClientWithResponsesInterface
 }
 
 // New creates a new client.
-func New(client client.Client, namespace string, identity identityapi.ClientWithResponsesInterface) *Client {
+func New(clientArgs common.ClientArgs, identity identityapi.ClientWithResponsesInterface) *Client {
 	return &Client{
-		client:    client,
-		namespace: namespace,
-		identity:  identity,
+		ClientArgs: clientArgs,
+		identity:   identity,
 	}
 }
 
@@ -160,7 +157,7 @@ func generateIPV4AddressList(in []net.IP) []unikornv1core.IPv4Address {
 
 // generate a new resource from a request.
 func (c *Client) generate(ctx context.Context, organizationID, projectID, identityID string, request *openapi.NetworkWrite) (*unikornv1.Network, error) {
-	identity, err := identity.New(c.client, c.namespace).GetRaw(ctx, organizationID, projectID, identityID)
+	identity, err := identity.New(c.ClientArgs).GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
 		return nil, errors.OAuth2ServerError("unable to get identity").WithError(err)
 	}
@@ -176,7 +173,7 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 	}
 
 	out := &unikornv1.Network{
-		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.namespace).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identityID).Get(),
+		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.Namespace).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identityID).Get(),
 		Spec: unikornv1.NetworkSpec{
 			Tags:           conversion.GenerateTagList(request.Metadata.Tags),
 			Provider:       identity.Spec.Provider,
@@ -185,12 +182,12 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 		},
 	}
 
-	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
+	if err := identitycommon.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
 		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
 	}
 
 	// The resource belongs to its identity, for cascading deletion.
-	if err := controllerutil.SetOwnerReference(identity, out, c.client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
+	if err := controllerutil.SetOwnerReference(identity, out, c.Client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
 		return nil, errors.OAuth2ServerError("unable to set resource owner").WithError(err)
 	}
 
@@ -201,7 +198,7 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, networkID string) (*unikornv1.Network, error) {
 	resource := &unikornv1.Network{}
 
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: networkID}, resource); err != nil {
+	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: networkID}, resource); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
@@ -226,7 +223,7 @@ func (c *Client) List(ctx context.Context, organizationID string) (openapi.Netwo
 		}),
 	}
 
-	if err := c.client.List(ctx, &result, options); err != nil {
+	if err := c.Client.List(ctx, &result, options); err != nil {
 		return nil, errors.OAuth2ServerError("unable to list networks").WithError(err)
 	}
 
@@ -244,7 +241,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 		return nil, err
 	}
 
-	if err := c.client.Create(ctx, resource); err != nil {
+	if err := c.Client.Create(ctx, resource); err != nil {
 		return nil, errors.OAuth2ServerError("unable to create network").WithError(err)
 	}
 
@@ -268,7 +265,7 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, networkI
 		return err
 	}
 
-	if err := c.client.Delete(ctx, result, util.ForegroundDeleteOptions()); err != nil {
+	if err := c.Client.Delete(ctx, result, util.ForegroundDeleteOptions()); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
 		}
