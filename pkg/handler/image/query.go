@@ -30,7 +30,6 @@ import (
 
 // QueryImages takes the parameters from an image list request and runs them as a query against the provider.
 func (c *Client) QueryImages(ctx context.Context, regionID string, params openapi.GetApiV2RegionsRegionIDImagesParams) (openapi.Images, error) {
-
 	prov, err := c.getProvider(ctx, c.Client, c.Namespace, regionID)
 	if err != nil {
 		return nil, err
@@ -41,34 +40,7 @@ func (c *Client) QueryImages(ctx context.Context, regionID string, params openap
 		return nil, err
 	}
 
-	// The semantics for the parameters:
-	//
-	// `organizationID={id},...`: restrict to these organisations. The caller must have region:images/read permission for each organisation identified,
-	// otherwise that organization is dropped from the query.
-	//
-	// `organizationID` not supplied: view only global images. The scope is ignored (none of the global images can be owned).
-	//
-	// `scope=available` (or missing): include images either owned by the organization or globally available.
-	// `scope=owned`: restrict results to images that belong to the organization.
-
-	if orgIDs := params.OrganizationID; orgIDs != nil {
-		var allowedOrgs []string
-		for _, orgID := range *orgIDs {
-			err := rbac.AllowOrganizationScope(ctx, "region:images", identityapi.Read, orgID)
-			if err == nil {
-				allowedOrgs = append(allowedOrgs, orgID)
-			}
-		}
-
-		// default scope to available, if not provided.
-		if params.Scope != nil && *params.Scope == openapi.GetApiV2RegionsRegionIDImagesParamsScopeOwned {
-			query = query.OwnedByOrganization(allowedOrgs...)
-		} else {
-			query = query.AvailableToOrganization(allowedOrgs...)
-		}
-	} else {
-		query = query.AvailableToOrganization() // not owned by any org; i.e., only global images. Anyone can see these.
-	}
+	query = filterByOrganizationAndScope(ctx, query, params)
 
 	if s := params.Status; s != nil {
 		statuses := *s
@@ -95,4 +67,40 @@ func (c *Client) QueryImages(ctx context.Context, regionID string, params openap
 	})
 
 	return convertImages(result), nil
+}
+
+// filterByOrganizationAndScope adds query predicates for the organizationID and scope parameters.
+//
+// The semantics for the parameters:
+//
+// `organizationID={id},...`: restrict to these organisations. The caller must have region:images/read permission for each organisation identified,
+// otherwise that organization is dropped from the query.
+//
+// `organizationID` not supplied: view only global images. The scope is ignored (none of the global images can be owned).
+//
+// `scope=available` (or missing): include images either owned by the organization(s) identified, or globally available.
+// `scope=owned`: restrict results to images that belong to the organization(s) identified.
+
+func filterByOrganizationAndScope(ctx context.Context, query types.ImageQuery, params openapi.GetApiV2RegionsRegionIDImagesParams) types.ImageQuery {
+	if orgIDs := params.OrganizationID; orgIDs != nil {
+		var allowedOrgs []string
+
+		for _, orgID := range *orgIDs {
+			err := rbac.AllowOrganizationScope(ctx, "region:images", identityapi.Read, orgID)
+			if err == nil {
+				allowedOrgs = append(allowedOrgs, orgID)
+			}
+		}
+
+		// default scope to available, if not provided.
+		if params.Scope != nil && *params.Scope == openapi.GetApiV2RegionsRegionIDImagesParamsScopeOwned {
+			query = query.OwnedByOrganization(allowedOrgs...)
+		} else {
+			query = query.AvailableToOrganization(allowedOrgs...)
+		}
+	} else {
+		query = query.AvailableToOrganization() // not owned by any org; i.e., only global images. Anyone can see these.
+	}
+
+	return query
 }
