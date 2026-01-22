@@ -99,7 +99,7 @@ func (s *createSaga) createFileStorage(ctx context.Context) error {
 
 func (s *createSaga) validateRequest(ctx context.Context) error {
 	if s.request.Spec.SizeGiB <= 0 {
-		return errors.OAuth2InvalidRequest("size must be greater or equal to 1GiB")
+		return errors.HTTPUnprocessableContent("size must be greater or equal to 1GiB")
 	}
 
 	if err := s.validateRegion(ctx, s.request.Spec.RegionId); err != nil {
@@ -134,7 +134,11 @@ func (s *createSaga) validateRegion(ctx context.Context, regionID string) error 
 	regionClient := region.NewClient(s.client.ClientArgs)
 
 	if _, err := regionClient.GetDetail(ctx, regionID); err != nil {
-		return errors.OAuth2ServerError("region does not exist").WithError(err)
+		if !errors.IsHTTPNotFound(err) {
+			return err
+		}
+
+		return errors.HTTPUnprocessableContent("region does not exist").WithError(err)
 	}
 
 	return nil
@@ -147,7 +151,7 @@ func (s *createSaga) validateStorageClass(ctx context.Context, storageClassID st
 	}
 
 	if sc.Spec.RegionId != s.request.Spec.RegionId {
-		return errors.OAuth2InvalidRequest("storage class not available in region").WithError(err)
+		return errors.HTTPUnprocessableContent("storage class not available in region").WithError(err)
 	}
 
 	return nil
@@ -244,25 +248,17 @@ func validateAttachments(ctx context.Context, networkClient NetworkGetter, attac
 	for _, id := range attachments.NetworkIds {
 		net, err := networkClient.GetV2(ctx, id)
 		if err != nil {
-			return invalidRequestIfNetworkMissing(err)
+			if !errors.IsHTTPNotFound(err) {
+				return err
+			}
+
+			return errors.HTTPUnprocessableContent("network not found").WithError(err)
 		}
 
 		if net.Metadata.ProjectId != projectID {
-			return errors.OAuth2InvalidRequest("network not available in project")
+			return errors.HTTPUnprocessableContent("network not available in project")
 		}
 	}
 
 	return nil
-}
-
-// invalidRequestIfNetworkMissing transforms a downstream 404 (network not found) error into a 400 InvalidRequest error.
-// Used in request validation to signal that a supplied networkID does not correspond to an existing network.
-func invalidRequestIfNetworkMissing(err error) error {
-	if !errors.IsHTTPNotFound(err) {
-		return err
-	}
-
-	return errors.
-		OAuth2InvalidRequest("network not found").
-		WithError(err)
 }
