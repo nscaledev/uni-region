@@ -97,6 +97,8 @@ type Image struct {
 	ID string
 	// Name of the image.
 	Name string
+	// Tags are arbitrary labels given to the image; e.g., an identifier to tie it to some other system.
+	Tags map[string]string
 	// OrganizationID is the organization the image belongs to, or nil if the image is globally visible.
 	OrganizationID *string
 	// Created is when the image was created.
