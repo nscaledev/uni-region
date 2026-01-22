@@ -1,5 +1,7 @@
 name: API Tests
 on:
+  schedule:
+    - cron: '0 7 * * *'  # Run nightly at 7am UTC
   workflow_dispatch:
     inputs:
       run_dev:
@@ -18,14 +20,14 @@ jobs:
   API-Tests-Dev:
     name: API Tests (dev)
     runs-on: ubuntu-latest
-    if: github.event.inputs.run_dev == 'true'
+    if: github.event_name == 'schedule' || github.event.inputs.run_dev == 'true'
     env:
       ENVIRONMENT: dev
-      API_BASE_URL: ${{ secrets.DEV_API_BASE_URL }}
+      API_BASE_URL: ${{ vars.DEV_API_BASE_URL }}
       API_AUTH_TOKEN: ${{ secrets.DEV_API_AUTH_TOKEN }}
-      TEST_ORG_ID: ${{ secrets.DEV_TEST_ORG_ID }}
-      TEST_PROJECT_ID: ${{ secrets.DEV_TEST_PROJECT_ID }}
-      TEST_REGION_ID: ${{ secrets.DEV_TEST_REGION_ID }}
+      TEST_ORG_ID: ${{ vars.DEV_TEST_ORG_ID }}
+      TEST_PROJECT_ID: ${{ vars.DEV_TEST_PROJECT_ID }}
+      TEST_REGION_ID: ${{ vars.DEV_TEST_REGION_ID }}
 
     steps:
     - name: Checkout
@@ -44,28 +46,38 @@ jobs:
       run: make test-api
 
     - name: Archive API Test Results
+      if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
       with:
         name: api-test-results-dev
         path: test/api/suites/test-results.json
 
     - name: Archive API Test JUnit Report
+      if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
       with:
         name: api-test-junit-dev
         path: test/api/suites/junit.xml
 
+    - name: Send Slack Notification
+      if: ${{ !cancelled() }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      run: |
+        WORKFLOW_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        go run test/api/scripts/slack-notify.go test/api/suites/test-results.json "$WORKFLOW_URL"
+
   API-Tests-UAT:
     name: API Tests (uat)
     runs-on: ubuntu-latest
-    if: github.event.inputs.run_uat == 'true'
+    if: github.event_name == 'schedule' || github.event.inputs.run_uat == 'true'
     env:
       ENVIRONMENT: uat
-      API_BASE_URL: ${{ secrets.UAT_API_BASE_URL }}
+      API_BASE_URL: ${{ vars.UAT_API_BASE_URL }}
       API_AUTH_TOKEN: ${{ secrets.UAT_API_AUTH_TOKEN }}
-      TEST_ORG_ID: ${{ secrets.UAT_TEST_ORG_ID }}
-      TEST_PROJECT_ID: ${{ secrets.UAT_TEST_PROJECT_ID }}
-      TEST_REGION_ID: ${{ secrets.UAT_TEST_REGION_ID }}
+      TEST_ORG_ID: ${{ vars.UAT_TEST_ORG_ID }}
+      TEST_PROJECT_ID: ${{ vars.UAT_TEST_PROJECT_ID }}
+      TEST_REGION_ID: ${{ vars.UAT_TEST_REGION_ID }}
 
     steps:
     - name: Checkout
@@ -84,13 +96,23 @@ jobs:
       run: make test-api
 
     - name: Archive API Test Results
+      if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
       with:
         name: api-test-results-uat
         path: test/api/suites/test-results.json
 
     - name: Archive API Test JUnit Report
+      if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
       with:
         name: api-test-junit-uat
         path: test/api/suites/junit.xml
+
+    - name: Send Slack Notification
+      if: ${{ !cancelled() }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      run: |
+        WORKFLOW_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        go run test/api/scripts/slack-notify.go test/api/suites/test-results.json "$WORKFLOW_URL"

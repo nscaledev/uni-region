@@ -73,7 +73,7 @@ func (c *Client) convertDetail(ctx context.Context, in *unikornv1.Region) (*open
 	case unikornv1.ProviderKubernetes:
 		secret := &corev1.Secret{}
 
-		if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: in.Spec.Kubernetes.KubeconfigSecret.Name}, secret); err != nil {
+		if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: in.Spec.Kubernetes.KubeconfigSecret.Name}, secret); err != nil {
 			return nil, err
 		}
 
