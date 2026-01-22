@@ -24,6 +24,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 )
 
@@ -50,7 +51,7 @@ func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
-	provider, identity, err := base.ProviderAndIdentity(ctx, p.securitygroup)
+	provider, identity, err := base.ProviderAndIdentity[types.SecurityGroup](ctx, p.securitygroup)
 	if err != nil {
 		return err
 	}
@@ -70,7 +71,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	provider, identity, err := base.ProviderAndIdentity(ctx, p.securitygroup)
+	provider, identity, err := base.ProviderAndIdentity[types.SecurityGroup](ctx, p.securitygroup)
 	if err != nil {
 		return err
 	}
