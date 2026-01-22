@@ -26,56 +26,33 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/util"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/securitygroup"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
 	"github.com/unikorn-cloud/region/pkg/openapi"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-// clientArgs has the values needed to create the various pkg/handler/*/ clients.
-// By putting convenience methods on this type, it can be used in sub-handler
-// structs, which makes isolating those for testing possible.
-type clientArgs struct {
-	// client gives cached access to Kubernetes.
-	client client.Client
-
-	// namespace is the namespace we are running in.
-	namespace string
-}
-
-func (args *clientArgs) serverClient() *server.Client {
-	return server.NewClient(args.client, args.namespace)
-}
 
 type Handler struct {
 	// There are embedded so they can be their own
 	*ImageHandler
 	*ServerV2Handler
 
-	// clientArgs has the values needed to create the various handler clients.
-	clientArgs
+	// ClientArgs has the values needed to create the various handler clients.
+	common.ClientArgs
 
 	// options allows behaviour to be defined on the CLI.
 	options *Options
-
-	// identity is an identity client for RBAC access.
-	identity *identityapi.ClientWithResponses
 }
 
-func New(client client.Client, namespace string, options *Options, identity *identityapi.ClientWithResponses) (*Handler, error) {
+func New(clientArgs common.ClientArgs, options *Options) (*Handler, error) {
 	h := &Handler{
-		clientArgs: clientArgs{
-			client:    client,
-			namespace: namespace,
-		},
+		ClientArgs:      clientArgs,
 		options:         options,
-		identity:        identity,
-		ImageHandler:    NewImageHandler(client, namespace, options),
-		ServerV2Handler: NewServerV2Handler(client, namespace),
+		ImageHandler:    NewImageHandler(clientArgs, options),
+		ServerV2Handler: NewServerV2Handler(clientArgs),
 	}
 
 	return h, nil
@@ -91,7 +68,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWrit
 		return
 	}
 
-	result, err := region.NewClient(h.client, h.namespace).List(r.Context())
+	result, err := region.NewClient(h.ClientArgs).List(r.Context())
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -107,7 +84,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetail(w htt
 		return
 	}
 
-	result, err := region.NewClient(h.client, h.namespace).GetDetail(r.Context(), regionID)
+	result, err := region.NewClient(h.ClientArgs).GetDetail(r.Context(), regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -123,7 +100,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetw
 		return
 	}
 
-	result, err := region.NewClient(h.client, h.namespace).ListExternalNetworks(r.Context(), regionID)
+	result, err := region.NewClient(h.ClientArgs).ListExternalNetworks(r.Context(), regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -139,7 +116,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(w ht
 		return
 	}
 
-	result, err := region.NewClient(h.client, h.namespace).ListFlavors(r.Context(), organizationID, regionID)
+	result, err := region.NewClient(h.ClientArgs).ListFlavors(r.Context(), organizationID, regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -155,7 +132,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseW
 		return
 	}
 
-	result, err := identity.New(h.client, h.namespace).List(r.Context(), organizationID)
+	result, err := identity.New(h.ClientArgs).List(r.Context(), organizationID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -177,7 +154,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 		return
 	}
 
-	result, err := identity.New(h.client, h.namespace).Create(r.Context(), organizationID, projectID, request)
+	result, err := identity.New(h.ClientArgs).Create(r.Context(), organizationID, projectID, request)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -192,7 +169,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 		return
 	}
 
-	result, err := identity.New(h.client, h.namespace).Get(r.Context(), organizationID, projectID, identityID)
+	result, err := identity.New(h.ClientArgs).Get(r.Context(), organizationID, projectID, identityID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -207,7 +184,7 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 		return
 	}
 
-	if err := identity.New(h.client, h.namespace).Delete(r.Context(), organizationID, projectID, identityID); err != nil {
+	if err := identity.New(h.ClientArgs).Delete(r.Context(), organizationID, projectID, identityID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -216,7 +193,7 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 }
 
 func (h *Handler) networkClient() *network.Client {
-	return network.New(h.client, h.namespace, h.identity)
+	return network.New(h.ClientArgs)
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
@@ -286,7 +263,7 @@ func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentit
 }
 
 func (h *Handler) securityGroupClient() *securitygroup.Client {
-	return securitygroup.New(h.client, h.namespace)
+	return securitygroup.New(h.ClientArgs)
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, params openapi.GetApiV1OrganizationsOrganizationIDSecuritygroupsParams) {
@@ -375,6 +352,10 @@ func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 	}
 
 	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
+}
+
+func (h *Handler) serverClient() *server.Client {
+	return server.NewClient(h.ClientArgs)
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDServers(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, params openapi.GetApiV1OrganizationsOrganizationIDServersParams) {

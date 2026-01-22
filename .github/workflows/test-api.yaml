@@ -1,5 +1,7 @@
 name: API Tests
 on:
+  schedule:
+    - cron: '0 7 * * *'  # Run nightly at 7am UTC
   workflow_dispatch:
     inputs:
       run_dev:
@@ -29,7 +31,7 @@ jobs:
   API-Tests-Dev:
     name: API Tests (dev)
     runs-on: ubuntu-latest
-    if: github.event.inputs.run_dev == 'true'
+    if: github.event_name == 'schedule' || github.event.inputs.run_dev == 'true'
     env:
       ENVIRONMENT: dev
       API_BASE_URL: ${{ vars.DEV_API_BASE_URL }}
@@ -64,19 +66,21 @@ jobs:
       run: echo "Vast is not available on Dev environment, skipping File Storage Management tests"
 
     - name: Archive API Test Results
+      if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
       with:
         name: api-test-results-dev
         path: test/api/suites/test-results.json
 
     - name: Archive API Test JUnit Report
+      if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
       with:
         name: api-test-junit-dev
         path: test/api/suites/junit.xml
 
     - name: Send Slack Notification
-      if: always()
+      if: ${{ !cancelled() }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       run: |
@@ -86,7 +90,7 @@ jobs:
   API-Tests-UAT:
     name: API Tests (uat)
     runs-on: ubuntu-latest
-    if: github.event.inputs.run_uat == 'true'
+    if: github.event_name == 'schedule' || github.event.inputs.run_uat == 'true'
     env:
       ENVIRONMENT: uat
       API_BASE_URL: ${{ vars.UAT_API_BASE_URL }}
@@ -119,19 +123,21 @@ jobs:
 
 
     - name: Archive API Test Results
+      if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
       with:
         name: api-test-results-uat
         path: test/api/suites/test-results.json
 
     - name: Archive API Test JUnit Report
+      if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
       with:
         name: api-test-junit-uat
         path: test/api/suites/junit.xml
 
     - name: Send Slack Notification
-      if: always()
+      if: ${{ !cancelled() }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       run: |
