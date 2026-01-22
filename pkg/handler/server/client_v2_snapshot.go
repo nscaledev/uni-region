@@ -50,6 +50,7 @@ func (c *ClientV2) CreateV2Snapshot(ctx context.Context, serverID string, reques
 	// Give it a new name and ensure it belongs to the server's organization.
 	// TODO: patch in any new metadata e.g. software packages.
 	requested.Name = request.Metadata.Name
+	requested.Tags = image.GenerateTags(request.Metadata.Tags)
 	requested.OrganizationID = &organizationID
 
 	result, err := provider.CreateSnapshot(ctx, identity, server, requested)
