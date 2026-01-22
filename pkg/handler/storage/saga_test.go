@@ -89,3 +89,29 @@ func TestValidateAttachments_ProjectMismatch(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "network not available in project")
 }
+
+// TestValidateAttachments_OK tests that when all referenced networks exist and belong to the requested project,
+// validation succeeds without error.
+func TestValidateAttachments_OK(t *testing.T) {
+	t.Parallel()
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	m := mock.NewMockNetworkGetter(c)
+	m.EXPECT().
+		GetV2(gomock.Any(), "net-1").
+		Return(&openapi.NetworkV2Read{
+			Metadata: corev1.ProjectScopedResourceReadMetadata{ProjectId: "proj-OK"},
+		}, nil)
+	m.EXPECT().
+		GetV2(gomock.Any(), "net-2").
+		Return(&openapi.NetworkV2Read{
+			Metadata: corev1.ProjectScopedResourceReadMetadata{ProjectId: "proj-OK"},
+		}, nil)
+
+	attachments := &openapi.StorageAttachmentV2Spec{NetworkIds: []string{"net-1", "net-2"}}
+	err := validateAttachments(t.Context(), m, attachments, "proj-OK")
+
+	require.NoError(t, err)
+}

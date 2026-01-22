@@ -151,7 +151,8 @@ func (s *createSaga) validateStorageClass(ctx context.Context, storageClassID st
 	}
 
 	if sc.Spec.RegionId != s.request.Spec.RegionId {
-		return errors.HTTPUnprocessableContent("storage class not available in region").WithError(err)
+		return errors.HTTPUnprocessableContent("storage class not available in region").
+			WithValues("storageClassID", sc.Metadata.Name, "storageClassRegionID", s.request.Spec.RegionId, "requestedRegionID", sc.Spec.RegionId)
 	}
 
 	return nil
@@ -256,7 +257,8 @@ func validateAttachments(ctx context.Context, networkClient NetworkGetter, attac
 		}
 
 		if net.Metadata.ProjectId != projectID {
-			return errors.HTTPUnprocessableContent("network not available in project")
+			return errors.HTTPUnprocessableContent("network not available in project").
+				WithValues("networkID", id, "expectedProjectID", projectID, "actualProjectID", net.Metadata.ProjectId)
 		}
 	}
 
