@@ -528,7 +528,7 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 }
 
 // imageOS extracts the image OS from the image properties.
-func (p *Provider) imageOS(image *images.Image) types.ImageOS {
+func imageOS(image *images.Image) types.ImageOS {
 	kernel, _ := image.Properties[osKernelLabel].(string)
 	family, _ := image.Properties[osFamilyLabel].(string)
 	distro, _ := image.Properties[osDistroLabel].(string)
@@ -553,7 +553,7 @@ func (p *Provider) imageOS(image *images.Image) types.ImageOS {
 }
 
 // imagePackages extracts the image packages from the image properties.
-func (p *Provider) imagePackages(image *images.Image) *types.ImagePackages {
+func imagePackages(image *images.Image) *types.ImagePackages {
 	result := make(types.ImagePackages)
 
 	for key, value := range image.Properties {
@@ -578,24 +578,17 @@ func (p *Provider) imagePackages(image *images.Image) *types.ImagePackages {
 	return &result
 }
 
-func isPublicOrOrganizationOwnedImage(image *images.Image, organizationID string) bool {
-	value := image.Properties[organizationIDLabel]
-	return value == nil || value == organizationID
+func isPublicOrOrganizationOwnedImage(image *images.Image, organizationIDs []string) bool {
+	value, _ := image.Properties[organizationIDLabel].(string)
+	return value == "" || slices.Contains(organizationIDs, value)
 }
 
-func getPublicOrOrganizationOwnedImages(resources []images.Image, organizationID string) []images.Image {
-	result := make([]images.Image, 0, len(resources))
-
-	for _, image := range resources {
-		if isPublicOrOrganizationOwnedImage(&image, organizationID) {
-			result = append(result, image)
-		}
-	}
-
-	return result
+func isOrganizationOwnedImage(image *images.Image, organizationIDs []string) bool {
+	value, _ := image.Properties[organizationIDLabel].(string)
+	return value != "" && slices.Contains(organizationIDs, value)
 }
 
-func (p *Provider) imageStatus(image *images.Image) types.ImageStatus {
+func imageStatus(image *images.Image) types.ImageStatus {
 	var status types.ImageStatus
 
 	switch image.Status {
@@ -623,7 +616,7 @@ func imageArchitecture(image *images.Image) types.Architecture {
 	return types.X86_64
 }
 
-func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
+func convertImage(image *images.Image) (*types.Image, error) {
 	var organizationID *string
 	if temp, _ := image.Properties[organizationIDLabel].(string); temp != "" {
 		organizationID = &temp
@@ -647,9 +640,9 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 		Architecture:   imageArchitecture(image),
 		SizeGiB:        size,
 		Virtualization: types.ImageVirtualization(virtualization),
-		OS:             p.imageOS(image),
-		Packages:       p.imagePackages(image),
-		Status:         p.imageStatus(image),
+		OS:             imageOS(image),
+		Packages:       imagePackages(image),
+		Status:         imageStatus(image),
 	}
 
 	if gpuVendor, ok := image.Properties[gpuVendorLabel].(string); ok {
@@ -674,24 +667,60 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 	return &providerImage, nil
 }
 
-// ListImages lists all available images.
-func (p *Provider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
-	resources, err := p.listImages(ctx)
+type imagePredicate func(*images.Image) bool
+
+type imageQuery struct {
+	listFunc   func(context.Context) ([]images.Image, error)
+	predicates []imagePredicate
+}
+
+func (q *imageQuery) AvailableToOrganization(organizationIDs ...string) types.ImageQuery {
+	q.predicates = append(q.predicates, func(im *images.Image) bool {
+		return isPublicOrOrganizationOwnedImage(im, organizationIDs)
+	})
+
+	return q
+}
+
+func (q *imageQuery) OwnedByOrganization(organizationIDs ...string) types.ImageQuery {
+	q.predicates = append(q.predicates, func(im *images.Image) bool {
+		return isOrganizationOwnedImage(im, organizationIDs)
+	})
+
+	return q
+}
+
+func (q *imageQuery) StatusIn(statuses ...types.ImageStatus) types.ImageQuery {
+	q.predicates = append(q.predicates, func(im *images.Image) bool {
+		st := imageStatus(im)
+		return slices.Contains(statuses, st)
+	})
+
+	return q
+}
+
+func (q *imageQuery) List(ctx context.Context) (types.ImageList, error) {
+	images, err := q.listFunc(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	resources = getPublicOrOrganizationOwnedImages(resources, organizationID)
+	var result []types.Image
 
-	result := make(types.ImageList, len(resources))
+images:
+	for i := range images {
+		for _, f := range q.predicates {
+			if !f(&images[i]) {
+				continue images
+			}
+		}
 
-	for i := range resources {
-		providerImage, err := p.convertImage(&resources[i])
+		im, err := convertImage(&images[i])
 		if err != nil {
 			return nil, err
 		}
 
-		result[i] = *providerImage
+		result = append(result, *im)
 	}
 
 	return result, nil
@@ -717,6 +746,10 @@ func (p *Provider) listImages(ctx context.Context) ([]images.Image, error) {
 	return resources, nil
 }
 
+func (p *Provider) QueryImages() (types.ImageQuery, error) {
+	return &imageQuery{listFunc: p.listImages}, nil
+}
+
 // GetImage retrieves a specific image by its ID.
 func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
 	resource, err := p.getImage(ctx, imageID)
@@ -724,7 +757,7 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 		return nil, err
 	}
 
-	if !isPublicOrOrganizationOwnedImage(resource, organizationID) {
+	if !isPublicOrOrganizationOwnedImage(resource, []string{organizationID}) {
 		return nil, fmt.Errorf(
 			"%w: image %s is not accessible to organization %s",
 			coreerrors.ErrResourceNotFound,
@@ -733,7 +766,7 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 		)
 	}
 
-	return p.convertImage(resource)
+	return convertImage(resource)
 }
 
 // getImage finds a particular image, given the ID. It checks the cache first, and if not
@@ -865,7 +898,7 @@ func (p *Provider) CreateImage(ctx context.Context, image *types.Image, uri stri
 
 	p.imageCache.Invalidate()
 
-	return p.convertImage(resource)
+	return convertImage(resource)
 }
 
 func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
@@ -2531,7 +2564,7 @@ func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Ident
 		return nil, err
 	}
 
-	return p.convertImage(newImage)
+	return convertImage(newImage)
 }
 
 func interpretGophercloudError(err error) error {

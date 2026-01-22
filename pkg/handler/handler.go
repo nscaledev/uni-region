@@ -39,6 +39,7 @@ type Handler struct {
 	// There are embedded so they can be their own
 	*ImageHandler
 	*ServerV2Handler
+	*ImageV2Handler
 
 	// ClientArgs has the values needed to create the various handler clients.
 	common.ClientArgs
@@ -53,6 +54,7 @@ func New(clientArgs common.ClientArgs, options *Options) (*Handler, error) {
 		options:         options,
 		ImageHandler:    NewImageHandler(clientArgs, options),
 		ServerV2Handler: NewServerV2Handler(clientArgs),
+		ImageV2Handler:  NewImageV2Handler(clientArgs, options),
 	}
 
 	return h, nil

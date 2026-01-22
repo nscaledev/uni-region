@@ -73,9 +73,18 @@ func (c *Client) ListImages(ctx context.Context, organizationID, regionID string
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
 
-	result, err := provider.ListImages(ctx, organizationID)
+	query, err := provider.QueryImages()
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to list images").WithError(err)
+	}
+
+	result, err := query.
+		AvailableToOrganization(organizationID).
+		StatusIn(types.ImageStatusReady).
+		List(ctx)
+
+	if err != nil {
+		return nil, err
 	}
 
 	// Apply ordering guarantees, ordered by name.

@@ -196,8 +196,8 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	return flavors, nil
 }
 
-// ListImages lists all available images.
-func (p *Provider) ListImages(ctx context.Context, organizationID string) (types.ImageList, error) {
+// ListImages lists all available images, filtered by the given predicates.
+func (p *Provider) QueryImages() (types.ImageQuery, error) {
 	return nil, ErrUnimplmented
 }
 
