@@ -36,6 +36,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	networkclient "github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
@@ -126,7 +127,13 @@ func TestGenerateAttachmentList(t *testing.T) {
 
 	network := newTestNetwork("net-1")
 	client := newFakeClient(t, network)
-	netclient := networkclient.New(client, testNamespace, nil)
+
+	clientArgs := common.ClientArgs{
+		Client:    client,
+		Namespace: testNamespace,
+	}
+
+	netclient := networkclient.New(clientArgs)
 
 	ctx := newContextWithPermissions(t.Context())
 
@@ -686,7 +693,7 @@ func TestGet(t *testing.T) {
 
 			c, ctx := newClientwithObjectandContext(t, ctx, obj...)
 			fc := &fileClient{
-				Client: c.client,
+				Client: c.Client,
 			}
 
 			c.GetFileStorageDriverFunc = func(ctx context.Context, storageClassID string) (Driver, error) {
@@ -797,7 +804,12 @@ func (b *generateV2InputBuilder) Run() *generateV2Input {
 func newClientAndContext(t *testing.T, c client.Client, auth *identityauth.Info, principalInfo *principal.Principal) (*Client, context.Context) {
 	t.Helper()
 
-	client := New(c, testNamespace, nil)
+	clientArgs := common.ClientArgs{
+		Client:    c,
+		Namespace: testNamespace,
+	}
+
+	client := New(clientArgs)
 	ctx := t.Context()
 
 	if auth != nil {
@@ -831,8 +843,10 @@ func newClientwithObjectandContext(t *testing.T, ctx context.Context, initObjs .
 		Build()
 
 	c := &Client{
-		client:    k8sClient,
-		namespace: testNamespace,
+		ClientArgs: common.ClientArgs{
+			Client:    k8sClient,
+			Namespace: testNamespace,
+		},
 	}
 
 	oapiacl := &identityopenapi.Acl{Global: &identityopenapi.AclEndpoints{
