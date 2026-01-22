@@ -45,6 +45,7 @@ type Identity interface {
 }
 
 type Network interface {
+	ExternalNetworker
 	// CreateNetwork creates a new physical network.
 	CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error
 	// DeleteNetwork deletes a physical network.
@@ -52,7 +53,9 @@ type Network interface {
 	// GetNetworkDetail exposes provider specific network information.
 	// NOTE: do not use this ever.
 	// TODO: used to propagate network and subnet details to CAPO, this needs fixing.
+}
 
+type ExternalNetworker interface {
 	// ListExternalNetworks returns a list of external networks if the platform
 	// supports such a concept.
 	ListExternalNetworks(ctx context.Context) (ExternalNetworks, error)
@@ -92,14 +95,18 @@ type ServerSnapshot interface {
 	CreateSnapshot(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *Image) (*Image, error)
 }
 
-// Providers are expected to provide a provider agnostic manner.
-// They are also expected to provide any caching or memoization required
-// to provide high performance and a decent UX.
-type Provider interface {
+type RegionProvider interface {
 	// Region returns the provider's region.
 	Region(ctx context.Context) (*unikornv1.Region, error)
 	// Flavors list all available flavors.
 	Flavors(ctx context.Context) (FlavorList, error)
+}
+
+// Providers are expected to provide a provider agnostic manner.
+// They are also expected to provide any caching or memoization required
+// to provide high performance and a decent UX.
+type Provider interface {
+	RegionProvider
 
 	ImageRead
 	ImageWrite
