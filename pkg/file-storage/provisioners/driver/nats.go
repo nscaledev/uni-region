@@ -107,6 +107,11 @@ type ResizeResponse struct {
 	UsedCapacity int64 `json:"usedCapacity"`
 }
 
+type UpdateRootSquash struct {
+	RemoteIdentifier  `json:",inline"`
+	RootSquashEnabled bool `json:"rootSquashEnabled"`
+}
+
 type NatsResponseEnvelope[T any] struct {
 	Error   *ResponseError `json:"error,omitempty"`
 	Success *T             `json:"success,omitempty"`

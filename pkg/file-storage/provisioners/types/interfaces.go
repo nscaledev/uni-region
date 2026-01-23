@@ -31,4 +31,5 @@ type Driver interface {
 	AttachNetwork(ctx context.Context, projectID string, fileStorageID string, attachment *unikornv1.Attachment) error
 	DetachNetwork(ctx context.Context, projectID string, fileStorageID string, segmentationID int) error
 	Resize(ctx context.Context, projectID string, fileStorageID string, size int64) error
+	UpdateRootSquash(ctx context.Context, projectID string, fileStorageID string, rootSquashEnabled bool) error
 }

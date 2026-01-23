@@ -338,6 +338,25 @@ func (p *Client) Resize(ctx context.Context, projectID string, fileStorageID str
 	return err
 }
 
+func (p *Client) UpdateRootSquash(ctx context.Context, projectID string, fileStorageID string, rootSquashEnabled bool) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("PUT /file-storage/%s/root-squash", fileStorageID), trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	req := &UpdateRootSquash{
+		RemoteIdentifier: RemoteIdentifier{
+			ProjectID: projectID,
+			VolumeID:  fileStorageID,
+		},
+		RootSquashEnabled: rootSquashEnabled,
+	}
+
+	_, err := doRequest[EmptyResponse](ctx, p.nc, p.subject("updaterootsquash"), req)
+
+	return err
+}
+
 // subject composes the base subject with the given suffix, ensuring a single dot separator.
 func (p *Client) subject(suffix string) string {
 	base := strings.TrimSuffix(p.options.Subject, ".")
