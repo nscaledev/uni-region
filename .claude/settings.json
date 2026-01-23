@@ -1,0 +1,14 @@
+{
+    "extraKnownMarketplaces": {
+      "nscale-plugins": {
+        "source": {
+          "source": "github",
+          "repo": "nscaledev/claude-plugins"
+        }
+      }
+    },
+    "enabledPlugins": {
+      "nscale-core@nscale-plugins": true,
+      "nscale-uni@nscale-plugins": true
+    }
+  }
