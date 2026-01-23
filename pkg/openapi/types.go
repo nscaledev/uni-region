@@ -1317,6 +1317,18 @@ type GetApiV2FilestorageclassesParams struct {
 	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
 }
 
+// GetApiV2ImagesParams defines parameters for GetApiV2Images.
+type GetApiV2ImagesParams struct {
+	// OrganizationID Allows resources to be filtered by organization.
+	OrganizationID *OrganizationIDQueryParameter `form:"organizationID,omitempty" json:"organizationID,omitempty"`
+
+	// ProjectID Allows resources to be filtered by project.
+	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+}
+
 // GetApiV2NetworksParams defines parameters for GetApiV2Networks.
 type GetApiV2NetworksParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",

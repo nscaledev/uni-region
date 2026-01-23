@@ -125,6 +125,9 @@ type ServerInterface interface {
 	// List file storage classes
 	// (GET /api/v2/filestorageclasses)
 	GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request, params GetApiV2FilestorageclassesParams)
+
+	// (GET /api/v2/images)
+	GetApiV2Images(w http.ResponseWriter, r *http.Request, params GetApiV2ImagesParams)
 	// List networks
 	// (GET /api/v2/networks)
 	GetApiV2Networks(w http.ResponseWriter, r *http.Request, params GetApiV2NetworksParams)
@@ -390,6 +393,11 @@ func (_ Unimplemented) PutApiV2FilestorageFilestorageID(w http.ResponseWriter, r
 // List file storage classes
 // (GET /api/v2/filestorageclasses)
 func (_ Unimplemented) GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request, params GetApiV2FilestorageclassesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /api/v2/images)
+func (_ Unimplemented) GetApiV2Images(w http.ResponseWriter, r *http.Request, params GetApiV2ImagesParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2264,6 +2272,55 @@ func (siw *ServerInterfaceWrapper) GetApiV2Filestorageclasses(w http.ResponseWri
 	handler.ServeHTTP(w, r)
 }
 
+// GetApiV2Images operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV2Images(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetApiV2ImagesParams
+
+	// ------------- Optional query parameter "organizationID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "organizationID", r.URL.Query(), &params.OrganizationID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "projectID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "projectID", r.URL.Query(), &params.ProjectID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "regionID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "regionID", r.URL.Query(), &params.RegionID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "regionID", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV2Images(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetApiV2Networks operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV2Networks(w http.ResponseWriter, r *http.Request) {
 
@@ -3272,6 +3329,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/filestorageclasses", wrapper.GetApiV2Filestorageclasses)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v2/images", wrapper.GetApiV2Images)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/networks", wrapper.GetApiV2Networks)

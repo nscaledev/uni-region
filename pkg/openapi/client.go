@@ -219,6 +219,9 @@ type ClientInterface interface {
 	// GetApiV2Filestorageclasses request
 	GetApiV2Filestorageclasses(ctx context.Context, params *GetApiV2FilestorageclassesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiV2Images request
+	GetApiV2Images(ctx context.Context, params *GetApiV2ImagesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApiV2Networks request
 	GetApiV2Networks(ctx context.Context, params *GetApiV2NetworksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -845,6 +848,18 @@ func (c *Client) PutApiV2FilestorageFilestorageID(ctx context.Context, filestora
 
 func (c *Client) GetApiV2Filestorageclasses(ctx context.Context, params *GetApiV2FilestorageclassesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiV2FilestorageclassesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiV2Images(ctx context.Context, params *GetApiV2ImagesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV2ImagesRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3147,6 +3162,87 @@ func NewGetApiV2FilestorageclassesRequest(server string, params *GetApiV2Filesto
 	return req, nil
 }
 
+// NewGetApiV2ImagesRequest generates requests for GetApiV2Images
+func NewGetApiV2ImagesRequest(server string, params *GetApiV2ImagesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/images")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.OrganizationID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "organizationID", runtime.ParamLocationQuery, *params.OrganizationID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.ProjectID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "projectID", runtime.ParamLocationQuery, *params.ProjectID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RegionID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "regionID", runtime.ParamLocationQuery, *params.RegionID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetApiV2NetworksRequest generates requests for GetApiV2Networks
 func NewGetApiV2NetworksRequest(server string, params *GetApiV2NetworksParams) (*http.Request, error) {
 	var err error
@@ -4414,6 +4510,9 @@ type ClientWithResponsesInterface interface {
 	// GetApiV2FilestorageclassesWithResponse request
 	GetApiV2FilestorageclassesWithResponse(ctx context.Context, params *GetApiV2FilestorageclassesParams, reqEditors ...RequestEditorFn) (*GetApiV2FilestorageclassesResponse, error)
 
+	// GetApiV2ImagesWithResponse request
+	GetApiV2ImagesWithResponse(ctx context.Context, params *GetApiV2ImagesParams, reqEditors ...RequestEditorFn) (*GetApiV2ImagesResponse, error)
+
 	// GetApiV2NetworksWithResponse request
 	GetApiV2NetworksWithResponse(ctx context.Context, params *GetApiV2NetworksParams, reqEditors ...RequestEditorFn) (*GetApiV2NetworksResponse, error)
 
@@ -5475,6 +5574,32 @@ func (r GetApiV2FilestorageclassesResponse) StatusCode() int {
 	return 0
 }
 
+type GetApiV2ImagesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImagesResponse
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV2ImagesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV2ImagesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetApiV2NetworksResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -6486,6 +6611,15 @@ func (c *ClientWithResponses) GetApiV2FilestorageclassesWithResponse(ctx context
 		return nil, err
 	}
 	return ParseGetApiV2FilestorageclassesResponse(rsp)
+}
+
+// GetApiV2ImagesWithResponse request returning *GetApiV2ImagesResponse
+func (c *ClientWithResponses) GetApiV2ImagesWithResponse(ctx context.Context, params *GetApiV2ImagesParams, reqEditors ...RequestEditorFn) (*GetApiV2ImagesResponse, error) {
+	rsp, err := c.GetApiV2Images(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV2ImagesResponse(rsp)
 }
 
 // GetApiV2NetworksWithResponse request returning *GetApiV2NetworksResponse
@@ -8816,6 +8950,60 @@ func ParseGetApiV2FilestorageclassesResponse(rsp *http.Response) (*GetApiV2Files
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest StorageClassListV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiV2ImagesResponse parses an HTTP response from a GetApiV2ImagesWithResponse call
+func ParseGetApiV2ImagesResponse(rsp *http.Response) (*GetApiV2ImagesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV2ImagesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImagesResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
