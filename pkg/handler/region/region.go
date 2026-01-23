@@ -57,6 +57,8 @@ func NewClient(clientArgs common.ClientArgs) *Client {
 }
 
 type provider interface {
+	types.RegionProvider
+	types.ExternalNetworker
 }
 
 func (c *Client) Provider(ctx context.Context, regionID string) (provider, error) {
