@@ -153,6 +153,10 @@ func (h *Handler) DeleteApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter
 	w.WriteHeader(http.StatusAccepted)
 }
 
+func (h *Handler) GetApiV2RegionsRegionIDImages(w http.ResponseWriter, r *http.Request, regionID openapi.RegionIDParameter, params openapi.GetApiV2RegionsRegionIDImagesParams) {
+	errors.HandleError(w, r, errors.OAuth2ServerError("not implemented"))
+}
+
 func (h *Handler) storageClient() *storage.Client {
 	return storage.New(h.ClientArgs)
 }

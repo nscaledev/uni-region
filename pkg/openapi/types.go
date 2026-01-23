@@ -1333,6 +1333,12 @@ type GetApiV2NetworksParams struct {
 	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
 }
 
+// GetApiV2RegionsRegionIDImagesParams defines parameters for GetApiV2RegionsRegionIDImages.
+type GetApiV2RegionsRegionIDImagesParams struct {
+	// OrganizationID Allows resources to be filtered by organization.
+	OrganizationID *OrganizationIDQueryParameter `form:"organizationID,omitempty" json:"organizationID,omitempty"`
+}
+
 // GetApiV2SecuritygroupsParams defines parameters for GetApiV2Securitygroups.
 type GetApiV2SecuritygroupsParams struct {
 	// Tag A set of tags to match against resources in the form "name=value",

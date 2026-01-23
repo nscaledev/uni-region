@@ -238,6 +238,9 @@ type ClientInterface interface {
 
 	PutApiV2NetworksNetworkID(ctx context.Context, networkID NetworkIDParameter, body PutApiV2NetworksNetworkIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiV2RegionsRegionIDImages request
+	GetApiV2RegionsRegionIDImages(ctx context.Context, regionID RegionIDParameter, params *GetApiV2RegionsRegionIDImagesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApiV2Securitygroups request
 	GetApiV2Securitygroups(ctx context.Context, params *GetApiV2SecuritygroupsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -929,6 +932,18 @@ func (c *Client) PutApiV2NetworksNetworkIDWithBody(ctx context.Context, networkI
 
 func (c *Client) PutApiV2NetworksNetworkID(ctx context.Context, networkID NetworkIDParameter, body PutApiV2NetworksNetworkIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPutApiV2NetworksNetworkIDRequest(c.Server, networkID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiV2RegionsRegionIDImages(ctx context.Context, regionID RegionIDParameter, params *GetApiV2RegionsRegionIDImagesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV2RegionsRegionIDImagesRequest(c.Server, regionID, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3399,6 +3414,62 @@ func NewPutApiV2NetworksNetworkIDRequestWithBody(server string, networkID Networ
 	return req, nil
 }
 
+// NewGetApiV2RegionsRegionIDImagesRequest generates requests for GetApiV2RegionsRegionIDImages
+func NewGetApiV2RegionsRegionIDImagesRequest(server string, regionID RegionIDParameter, params *GetApiV2RegionsRegionIDImagesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "regionID", runtime.ParamLocationPath, regionID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/regions/%s/images", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.OrganizationID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "organizationID", runtime.ParamLocationQuery, *params.OrganizationID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetApiV2SecuritygroupsRequest generates requests for GetApiV2Securitygroups
 func NewGetApiV2SecuritygroupsRequest(server string, params *GetApiV2SecuritygroupsParams) (*http.Request, error) {
 	var err error
@@ -4432,6 +4503,9 @@ type ClientWithResponsesInterface interface {
 	PutApiV2NetworksNetworkIDWithBodyWithResponse(ctx context.Context, networkID NetworkIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiV2NetworksNetworkIDResponse, error)
 
 	PutApiV2NetworksNetworkIDWithResponse(ctx context.Context, networkID NetworkIDParameter, body PutApiV2NetworksNetworkIDJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiV2NetworksNetworkIDResponse, error)
+
+	// GetApiV2RegionsRegionIDImagesWithResponse request
+	GetApiV2RegionsRegionIDImagesWithResponse(ctx context.Context, regionID RegionIDParameter, params *GetApiV2RegionsRegionIDImagesParams, reqEditors ...RequestEditorFn) (*GetApiV2RegionsRegionIDImagesResponse, error)
 
 	// GetApiV2SecuritygroupsWithResponse request
 	GetApiV2SecuritygroupsWithResponse(ctx context.Context, params *GetApiV2SecuritygroupsParams, reqEditors ...RequestEditorFn) (*GetApiV2SecuritygroupsResponse, error)
@@ -5607,6 +5681,32 @@ func (r PutApiV2NetworksNetworkIDResponse) StatusCode() int {
 	return 0
 }
 
+type GetApiV2RegionsRegionIDImagesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImagesResponse
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV2RegionsRegionIDImagesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV2RegionsRegionIDImagesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetApiV2SecuritygroupsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -6547,6 +6647,15 @@ func (c *ClientWithResponses) PutApiV2NetworksNetworkIDWithResponse(ctx context.
 		return nil, err
 	}
 	return ParsePutApiV2NetworksNetworkIDResponse(rsp)
+}
+
+// GetApiV2RegionsRegionIDImagesWithResponse request returning *GetApiV2RegionsRegionIDImagesResponse
+func (c *ClientWithResponses) GetApiV2RegionsRegionIDImagesWithResponse(ctx context.Context, regionID RegionIDParameter, params *GetApiV2RegionsRegionIDImagesParams, reqEditors ...RequestEditorFn) (*GetApiV2RegionsRegionIDImagesResponse, error) {
+	rsp, err := c.GetApiV2RegionsRegionIDImages(ctx, regionID, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV2RegionsRegionIDImagesResponse(rsp)
 }
 
 // GetApiV2SecuritygroupsWithResponse request returning *GetApiV2SecuritygroupsResponse
@@ -9125,6 +9234,60 @@ func ParsePutApiV2NetworksNetworkIDResponse(rsp *http.Response) (*PutApiV2Networ
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiV2RegionsRegionIDImagesResponse parses an HTTP response from a GetApiV2RegionsRegionIDImagesWithResponse call
+func ParseGetApiV2RegionsRegionIDImagesResponse(rsp *http.Response) (*GetApiV2RegionsRegionIDImagesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV2RegionsRegionIDImagesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImagesResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest externalRef0.InternalServerErrorResponse

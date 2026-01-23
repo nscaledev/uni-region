@@ -1410,6 +1410,29 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/regions/{regionID}/images:
+    description: |-
+      Manages compute images for a specific region.
+    parameters:
+    - $ref: '#/components/parameters/regionIDParameter'
+    get:
+      x-hidden: true
+      description: List compute images for a region.
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: '#/components/parameters/organizationIDQueryParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/imagesResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/filestorageclasses:
     description: |-
       Lists all available storage classes, detailing supported protocols, capacity limits, and service characteristics. Enables users to discover storage options suitable for their workloads.
