@@ -30,7 +30,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
 
-// TestValidateAttachments_NetworkNotFound tests that when a network ID is specified in the attachments but does not exist, an HTTPUnprocessableContent error is returned.
+// TestValidateAttachments_NetworkNotFound tests that when a network ID is specified in the attachments but does not exist, a 'network not found' error is returned.
 func TestValidateAttachments_NetworkNotFound(t *testing.T) {
 	t.Parallel()
 
@@ -69,7 +69,7 @@ func TestValidateAttachments_NonHTTPNotFoundError(t *testing.T) {
 	require.Contains(t, err.Error(), "unable to lookup network")
 }
 
-// TestValidateAttachments_ProjectMismatch tests that when a network exists but belongs to a different project, an HTTPUnprocessableContent error is returned.
+// TestValidateAttachments_ProjectMismatch tests that when a network exists but belongs to a different project, a 'network not available in project' error is returned.
 func TestValidateAttachments_ProjectMismatch(t *testing.T) {
 	t.Parallel()
 
