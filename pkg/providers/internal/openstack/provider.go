@@ -801,7 +801,7 @@ func setIfNotNil[T ~string](metadata map[string]string, key string, value *T) {
 	}
 }
 
-func (p *Provider) createImageMetadata(image *types.Image) (map[string]string, error) {
+func createImageMetadata(image *types.Image) (map[string]string, error) {
 	metadata := make(map[string]string)
 
 	metadata[osKernelLabel] = string(image.OS.Kernel)
@@ -868,7 +868,7 @@ func (p *Provider) CreateImage(ctx context.Context, image *types.Image, uri stri
 		return nil, err
 	}
 
-	properties, err := p.createImageMetadata(image)
+	properties, err := createImageMetadata(image)
 	if err != nil {
 		return nil, err
 	}
@@ -2508,7 +2508,7 @@ func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Ident
 		return nil, err
 	}
 
-	metadata, err := p.createImageMetadata(image)
+	metadata, err := createImageMetadata(image)
 	if err != nil {
 		return nil, err
 	}

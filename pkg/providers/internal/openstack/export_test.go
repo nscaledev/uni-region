@@ -52,6 +52,12 @@ var SecurityGroupName = securityGroupName
 //nolint:gochecknoglobals
 var ServerName = serverName
 
+//nolint:gochecknoglobals
+var ImageTags = imageTags
+
+//nolint:gochecknoglobals
+var CreateImageMetadata = createImageMetadata
+
 func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {
 	return &Provider{
 		client: client,
