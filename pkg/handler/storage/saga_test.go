@@ -80,7 +80,7 @@ func TestValidateAttachments_ProjectMismatch(t *testing.T) {
 	m.EXPECT().
 		GetV2(gomock.Any(), "net-1").
 		Return(&openapi.NetworkV2Read{
-			Metadata: corev1.ProjectScopedResourceReadMetadata{ProjectId: "proj-OK"},
+			Metadata: corev1.ProjectScopedResourceReadMetadata{ProjectId: "proj-OK", ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned},
 		}, nil)
 
 	attachments := &openapi.StorageAttachmentV2Spec{NetworkIds: []string{"net-1"}}
@@ -102,16 +102,38 @@ func TestValidateAttachments_OK(t *testing.T) {
 	m.EXPECT().
 		GetV2(gomock.Any(), "net-1").
 		Return(&openapi.NetworkV2Read{
-			Metadata: corev1.ProjectScopedResourceReadMetadata{ProjectId: "proj-OK"},
+			Metadata: corev1.ProjectScopedResourceReadMetadata{ProjectId: "proj-OK", ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned},
 		}, nil)
 	m.EXPECT().
 		GetV2(gomock.Any(), "net-2").
 		Return(&openapi.NetworkV2Read{
-			Metadata: corev1.ProjectScopedResourceReadMetadata{ProjectId: "proj-OK"},
+			Metadata: corev1.ProjectScopedResourceReadMetadata{ProjectId: "proj-OK", ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned},
 		}, nil)
 
 	attachments := &openapi.StorageAttachmentV2Spec{NetworkIds: []string{"net-1", "net-2"}}
 	err := validateAttachments(t.Context(), m, attachments, "proj-OK")
 
 	require.NoError(t, err)
+}
+
+// TestValidateAttachments_NetworkNotProvisioned tests that validation fails when a referenced
+// network exists in the project but is not yet provisioned.
+func TestValidateAttachments_NetworkNotProvisioned(t *testing.T) {
+	t.Parallel()
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	m := mock.NewMockNetworkGetter(c)
+	m.EXPECT().
+		GetV2(gomock.Any(), "net-1").
+		Return(&openapi.NetworkV2Read{
+			Metadata: corev1.ProjectScopedResourceReadMetadata{ProjectId: "proj-OK", ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown},
+		}, nil)
+
+	attachments := &openapi.StorageAttachmentV2Spec{NetworkIds: []string{"net-1"}}
+	err := validateAttachments(t.Context(), m, attachments, "proj-OK")
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "network not provisioned")
 }

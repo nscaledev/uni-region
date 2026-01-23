@@ -23,6 +23,7 @@ import (
 	"context"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
@@ -259,6 +260,11 @@ func validateAttachments(ctx context.Context, networkClient NetworkGetter, attac
 		if net.Metadata.ProjectId != projectID {
 			return errors.HTTPUnprocessableContent("network not available in project").
 				WithValues("networkID", id, "expectedProjectID", projectID, "actualProjectID", net.Metadata.ProjectId)
+		}
+
+		if net.Metadata.ProvisioningStatus != coreopenapi.ResourceProvisioningStatusProvisioned {
+			return errors.HTTPUnprocessableContent("network not provisioned").
+				WithValues("networkID", id, "provisioningStatus", net.Metadata.ProvisioningStatus)
 		}
 	}
 
