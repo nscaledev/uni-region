@@ -17,7 +17,7 @@ limitations under the License.
 
 package storage
 
-//go:generate mockgen -source=saga.go -destination=mock/saga.go -package=mock networkGetter
+//go:generate mockgen -source=saga.go -destination=mock/saga.go -package=mock
 
 import (
 	"context"
