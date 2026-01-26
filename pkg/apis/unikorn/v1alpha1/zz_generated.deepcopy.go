@@ -466,6 +466,15 @@ func (in *FileStorageStatus) DeepCopyInto(out *FileStorageStatus) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.Usage != nil {
+		in, out := &in.Usage, &out.Usage
+		x := (*in).DeepCopy()
+		*out = &x
+	}
+	if in.UsageTimestamp != nil {
+		in, out := &in.UsageTimestamp, &out.UsageTimestamp
+		*out = (*in).DeepCopy()
+	}
 	return
 }
 
