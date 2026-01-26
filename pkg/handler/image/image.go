@@ -27,7 +27,6 @@ import (
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
-	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -35,21 +34,34 @@ import (
 	"k8s.io/utils/ptr"
 )
 
+type GetProviderFunc func(context.Context, string) (Provider, error)
+
 type Client struct {
-	common.ClientArgs
+	getProvider GetProviderFunc
 }
 
-func NewClient(clientArgs common.ClientArgs) *Client {
+func DefaultGetProvider(providers providers.Providers) GetProviderFunc {
+	return func(ctx context.Context, regionID string) (Provider, error) {
+		return providers.LookupCloud(ctx, regionID)
+	}
+}
+
+func NewClient(getProvider GetProviderFunc) *Client {
 	return &Client{
-		ClientArgs: clientArgs,
+		getProvider: getProvider,
 	}
 }
 
 var ErrFailedImageFetch = goerrors.New("image fetch failed")
 var ErrProviderResource = goerrors.New("conflict with resource at provider")
 
+type Provider interface {
+	types.ImageRead
+	types.ImageWrite
+}
+
 func (c *Client) ListImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {
-	provider, err := c.Providers.LookupCloud(ctx, regionID)
+	provider, err := c.getProvider(ctx, regionID)
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
 	}
@@ -131,7 +143,7 @@ func validateImage(ctx context.Context, uri string) error {
 }
 
 func (c *Client) CreateImage(ctx context.Context, organizationID, regionID string, request *openapi.ImageCreateRequest) (*openapi.ImageResponse, error) {
-	provider, err := c.Providers.LookupCloud(ctx, regionID)
+	provider, err := c.getProvider(ctx, regionID)
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
 	}
@@ -173,7 +185,7 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 }
 
 func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imageID string) error {
-	provider, err := c.Providers.LookupCloud(ctx, regionID)
+	provider, err := c.getProvider(ctx, regionID)
 	if err != nil {
 		return providers.ProviderToServerError(err)
 	}
