@@ -19,6 +19,8 @@ package image
 
 import (
 	"errors"
+	"slices"
+	"strings"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/handler/conversion"
@@ -118,11 +120,33 @@ func convertState(in types.ImageStatus) openapi.ImageState {
 	return ""
 }
 
+func convertTags(in map[string]string) *coreapi.TagList {
+	if len(in) == 0 {
+		return nil
+	}
+
+	var out coreapi.TagList
+
+	for k, v := range in {
+		out = append(out, coreapi.Tag{
+			Name:  k,
+			Value: v,
+		})
+	}
+
+	slices.SortFunc(out, func(a, b coreapi.Tag) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	return &out
+}
+
 func convertImage(in *types.Image) *openapi.Image {
 	out := &openapi.Image{
 		Metadata: coreapi.StaticResourceMetadata{
 			Id:           in.ID,
 			Name:         in.Name,
+			Tags:         convertTags(in.Tags),
 			CreationTime: in.Created,
 		},
 		Spec: openapi.ImageSpec{
@@ -268,4 +292,17 @@ func generateImageOS(source *openapi.ImageOS) *types.ImageOS {
 		Codename: source.Codename,
 		Version:  source.Version,
 	}
+}
+
+func GenerateTags(requestTags *coreapi.TagList) map[string]string {
+	if requestTags != nil {
+		tags := make(map[string]string)
+		for _, item := range *requestTags {
+			tags[item.Name] = item.Value
+		}
+
+		return tags
+	}
+
+	return nil
 }
