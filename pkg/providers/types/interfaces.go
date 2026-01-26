@@ -105,7 +105,7 @@ type RegionProvider interface {
 // Providers are expected to provide a provider agnostic manner.
 // They are also expected to provide any caching or memoization required
 // to provide high performance and a decent UX.
-type Provider interface {
+type All interface {
 	RegionProvider
 
 	ImageRead

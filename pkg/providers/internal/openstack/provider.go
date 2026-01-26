@@ -134,7 +134,7 @@ type Provider struct {
 	imageCache *cache.TimeoutCache[[]images.Image]
 }
 
-var _ types.Provider = &Provider{}
+var _ types.All = &Provider{}
 
 func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Provider, error) {
 	p := &Provider{
