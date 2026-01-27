@@ -34,11 +34,12 @@ import (
 	"github.com/pact-foundation/pact-go/v2/provider"
 
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
-	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
+	"github.com/unikorn-cloud/core/pkg/openapi/helpers"
 	"github.com/unikorn-cloud/core/pkg/options"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/cors"
+	"github.com/unikorn-cloud/core/pkg/server/middleware/logging"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/opentelemetry"
-	"github.com/unikorn-cloud/core/pkg/server/middleware/timeout"
+	"github.com/unikorn-cloud/core/pkg/server/middleware/routeresolver"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/middleware/audit"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -286,11 +287,17 @@ func buildCORSOptions() cors.Options {
 }
 
 // buildRouter creates and configures the Chi router with middleware.
-func buildRouter(serverOpts options.ServerOptions, schema *coreapi.Schema, corsOpts *cors.Options) *chi.Mux {
+func buildRouter(schema *helpers.Schema, corsOpts *cors.Options) *chi.Mux {
+	opentelemetry := opentelemetry.New(constants.Application, constants.Version)
+	logging := logging.New()
+	routeresolver := routeresolver.New(schema)
+	cors := cors.New(corsOpts)
+
 	router := chi.NewRouter()
-	router.Use(timeout.Middleware(serverOpts.RequestTimeout))
-	router.Use(opentelemetry.Middleware(constants.Application, constants.Version))
-	router.Use(cors.Middleware(schema, corsOpts))
+	router.Use(opentelemetry.Middleware)
+	router.Use(logging.Middleware)
+	router.Use(routeresolver.Middleware)
+	router.Use(cors.Middleware)
 
 	// Mock ACL middleware allows all organizations for contract testing
 	router.Use(MockACLMiddleware(nil))    // Inject mock ACL for contract testing
@@ -303,13 +310,15 @@ func buildRouter(serverOpts options.ServerOptions, schema *coreapi.Schema, corsO
 
 // buildChiServerOptions creates Chi server options for contract testing.
 // Authorization middleware is skipped to allow Pact verification without real auth tokens.
-func buildChiServerOptions(router *chi.Mux, schema *coreapi.Schema) openapi.ChiServerOptions {
+func buildChiServerOptions(router *chi.Mux) openapi.ChiServerOptions {
+	audit := audit.New(constants.Application, constants.Version)
+
 	return openapi.ChiServerOptions{
 		BaseRouter:       router,
 		ErrorHandlerFunc: handler.HandleError,
 		Middlewares: []openapi.MiddlewareFunc{
 			// Audit middleware for logging (keeps the same middleware chain structure)
-			audit.Middleware(schema, constants.Application, constants.Version),
+			audit.Middleware,
 			// Authorization middleware is skipped for contract testing
 		},
 	}
@@ -353,15 +362,15 @@ func startServerAsync(httpServer *http.Server) {
 // Note: This is a simplified version that doesn't start pprof to avoid port conflicts in tests.
 func startTestServer(ctx context.Context, k8sClient client.Client, listenAddr string) *http.Server {
 	// Build the server manually without pprof (which causes port conflicts in tests)
-	schema, err := coreapi.NewSchema(openapi.GetSwagger)
+	schema, err := helpers.NewSchema(openapi.GetSwagger)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create schema: %v", err))
 	}
 
 	serverOpts := buildServerOptions(listenAddr)
 	corsOpts := buildCORSOptions()
-	router := buildRouter(serverOpts, schema, &corsOpts)
-	chiServerOptions := buildChiServerOptions(router, schema)
+	router := buildRouter(schema, &corsOpts)
+	chiServerOptions := buildChiServerOptions(router)
 
 	coreOpts := options.CoreOptions{
 		Namespace: "default",
