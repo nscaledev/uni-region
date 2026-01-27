@@ -44,6 +44,7 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -317,19 +318,21 @@ func buildChiServerOptions(router *chi.Mux, schema *coreapi.Schema) openapi.ChiS
 // createHandlerInterface creates the region handler with dependencies.
 func createHandlerInterface(ctx context.Context, k8sClient client.Client, namespace string) *handler.Handler {
 	// Create identity client options (minimal config for testing)
-	identityOpts := &identityclient.Options{}
+	identityOpts := identityclient.NewOptions()
 	clientOpts := coreclient.HTTPClientOptions{}
 
-	issuer := identityclient.NewTokenIssuer(k8sClient, identityOpts, &clientOpts, constants.ServiceDescriptor())
-
-	identity, err := identityclient.New(k8sClient, identityOpts, &clientOpts).APIClient(ctx, issuer)
+	identity, err := identityclient.New(k8sClient, identityOpts, &clientOpts).APIClient(ctx)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create identity client: %v", err))
 	}
 
 	handlerOpts := handler.Options{}
 
-	handlerInterface, err := handler.New(k8sClient, namespace, &handlerOpts, identity)
+	handlerInterface, err := handler.New(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: namespace,
+		Identity:  identity,
+	}, &handlerOpts)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create handler: %v", err))
 	}
