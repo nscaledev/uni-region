@@ -21,6 +21,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -163,4 +164,22 @@ func (c *APIClient) ListExternalNetworks(ctx context.Context, orgID, regionID st
 			ResourceIDType: "region",
 		},
 	)
+}
+
+// CheckRegionSupportsExternalNetworks attempts to list external networks
+// and returns true if the region supports them, false if it returns 404.
+// Returns an error only for unexpected failures.
+func (c *APIClient) CheckRegionSupportsExternalNetworks(ctx context.Context, orgID, regionID string) (bool, error) {
+	_, err := c.ListExternalNetworks(ctx, orgID, regionID)
+
+	if err == nil {
+		return true, nil
+	}
+
+	if errors.Is(err, coreclient.ErrResourceNotFound) {
+		return false, nil
+	}
+
+	// Unexpected error - return it
+	return false, err
 }

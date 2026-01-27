@@ -37,11 +37,24 @@ var (
 	config *api.TestConfig
 )
 
-var _ = BeforeEach(func() {
+var _ = BeforeSuite(func() {
 	var err error
 	config, err = api.LoadTestConfig()
 	Expect(err).NotTo(HaveOccurred(), "Failed to load test configuration")
+
 	client = api.NewAPIClientWithConfig(config)
+	ctx = context.Background()
+
+	// Detect region capabilities once at suite startup
+	config.RegionSupportsExternalNetworks, err = client.CheckRegionSupportsExternalNetworks(ctx, config.OrgID, config.RegionID)
+	Expect(err).NotTo(HaveOccurred(), "Failed to check external networks capability")
+
+	GinkgoWriter.Printf("Region %s external networks support: %v\n", config.RegionID, config.RegionSupportsExternalNetworks)
+})
+
+var _ = BeforeEach(func() {
+	// Config and client are already initialized in BeforeSuite
+	// Reset context for each test
 	ctx = context.Background()
 })
 

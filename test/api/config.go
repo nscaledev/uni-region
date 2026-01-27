@@ -26,9 +26,10 @@ import (
 // TestConfig extends the base config with Region-specific fields.
 type TestConfig struct {
 	coreconfig.BaseConfig
-	OrgID     string
-	ProjectID string
-	RegionID  string
+	OrgID                          string
+	ProjectID                      string
+	RegionID                       string
+	RegionSupportsExternalNetworks bool // Dynamically detected in test setup
 }
 
 // LoadTestConfig loads configuration from environment variables and .env files using viper.

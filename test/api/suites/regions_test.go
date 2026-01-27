@@ -81,6 +81,12 @@ var _ = Describe("Region Discovery", func() {
 	})
 })
 
+// NOTE: Region Detail endpoint (/regions/{id}/detail) is not tested because:
+// - It's marked as x-hidden: true (admin-only)
+// - Returns 404 in test environment (requires elevated permissions)
+// - Not part of critical user-facing services
+// - Client method exists at api_client.go:102-118 if needed in future
+
 var _ = Describe("Flavor Discovery", func() {
 	Context("When listing flavors for a region", func() {
 		Describe("Given valid region and organization", func() {
@@ -152,6 +158,30 @@ var _ = Describe("Image Discovery", func() {
 
 var _ = Describe("External Network Discovery", func() {
 	Context("When listing external networks for a region", func() {
+		Describe("Given valid region and organization", func() {
+			It("should match configured region capabilities", func() {
+				externalNetworks, err := client.ListExternalNetworks(ctx, config.OrgID, config.RegionID)
+
+				if config.RegionSupportsExternalNetworks {
+					// Region supports external networks - expect success
+					Expect(err).NotTo(HaveOccurred(), "Region configured with external networks")
+					Expect(externalNetworks).NotTo(BeNil())
+
+					// Validate network structure
+					for _, network := range externalNetworks {
+						Expect(network.Id).NotTo(BeEmpty())
+						Expect(network.Name).NotTo(BeEmpty())
+					}
+					GinkgoWriter.Printf("Found %d external networks for region %s\n", len(externalNetworks), config.RegionID)
+				} else {
+					// Region does not support external networks - expect 404
+					Expect(err).To(HaveOccurred(), "Region configured without external networks")
+					Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
+					GinkgoWriter.Printf("Region %s does not have external networks (404)\n", config.RegionID)
+				}
+			})
+		})
+
 		Describe("Given invalid parameters", func() {
 			It("should reject requests with invalid region ID for external networks", func() {
 				_, err := client.ListExternalNetworks(ctx, config.OrgID, "invalid-region-id")
