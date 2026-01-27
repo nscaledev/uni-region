@@ -75,7 +75,7 @@ func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server) err
 		return err
 	}
 
-	if err := c.client.Status().Patch(ctx, updated, client.MergeFrom(server)); err != nil {
+	if err := c.client.Status().Patch(ctx, updated, client.MergeFromWithOptions(server, client.MergeFromWithOptimisticLock{})); err != nil {
 		return err
 	}
 
