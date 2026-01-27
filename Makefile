@@ -137,7 +137,7 @@ images-kind-load: images
 
 .PHONY: test-unit
 test-unit:
-	go test -coverpkg ./... -coverprofile cover.out ./...
+	go test -coverpkg ./... -coverprofile cover.out $(shell go list ./... | grep -v /test/api | grep -v /test/contracts)
 	go tool cover -html cover.out -o cover.html
 
 # Build a binary and install it.
@@ -240,3 +240,106 @@ test-api-setup:
 .PHONY: test-api-clean
 test-api-clean:
 	@rm -f test/api/suites/test-results.json test/api/suites/junit.xml
+
+# Pact Broker Configuration
+PACT_BROKER_URL ?= http://localhost:9292
+PACT_BROKER_USERNAME ?= pact
+PACT_BROKER_PASSWORD ?= pact
+PROVIDER_VERSION ?= $(REVISION)
+
+# Run provider contract verification tests
+.PHONY: test-contracts-provider
+test-contracts-provider:
+	@echo "Running provider contract verification tests..."
+	CGO_LDFLAGS="-L$(HOME)/Library/pact -Wl,-rpath,$(HOME)/Library/pact" \
+	DYLD_LIBRARY_PATH="$(HOME)/Library/pact:$$DYLD_LIBRARY_PATH" \
+	KUBECONFIG="$(HOME)/.kube/config" \
+	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
+	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
+	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
+	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
+	go test ./test/contracts/provider/... -v -count=1
+
+# Run provider verification with verbose output
+.PHONY: test-contracts-provider-verbose
+test-contracts-provider-verbose:
+	@echo "Running provider contract verification with verbose output..."
+	CGO_LDFLAGS="-L$(HOME)/Library/pact -Wl,-rpath,$(HOME)/Library/pact" \
+	DYLD_LIBRARY_PATH="$(HOME)/Library/pact:$$DYLD_LIBRARY_PATH" \
+	KUBECONFIG="$(HOME)/.kube/config" \
+	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
+	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
+	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
+	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
+	VERBOSE=true \
+	go test ./test/contracts/provider/... -v -count=1
+
+# Run provider verification from local pact file
+.PHONY: test-contracts-provider-local
+test-contracts-provider-local:
+	@echo "Running provider verification from local pact file..."
+	@if [ -z "$(PACT_FILE)" ]; then \
+		echo "Error: PACT_FILE environment variable must be set"; \
+		echo "Usage: make test-contracts-provider-local PACT_FILE=/path/to/pact.json"; \
+		exit 1; \
+	fi
+	CGO_LDFLAGS="-L$(HOME)/Library/pact -Wl,-rpath,$(HOME)/Library/pact" \
+	DYLD_LIBRARY_PATH="$(HOME)/Library/pact:$$DYLD_LIBRARY_PATH" \
+	KUBECONFIG="$(HOME)/.kube/config" \
+	PACT_FILE="$(PACT_FILE)" \
+	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
+	go test ./test/contracts/provider/... -v -count=1
+
+# Publish verification results (for CI)
+.PHONY: test-contracts-provider-ci
+test-contracts-provider-ci:
+	@echo "Running provider verification and publishing results..."
+	CGO_LDFLAGS="-L$(HOME)/Library/pact -Wl,-rpath,$(HOME)/Library/pact" \
+	DYLD_LIBRARY_PATH="$(HOME)/Library/pact:$$DYLD_LIBRARY_PATH" \
+	KUBECONFIG="$(HOME)/.kube/config" \
+	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
+	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
+	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
+	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
+	PUBLISH_VERIFICATION=true \
+	go test ./test/contracts/provider/... -v -count=1
+
+# Publish provider verification results to Pact Broker
+.PHONY: publish-contracts-provider
+publish-contracts-provider:
+	@echo "Running provider verification and publishing results to Pact Broker..."
+	@echo "Provider Version: $(PROVIDER_VERSION)"
+	@echo "Pact Broker URL: $(PACT_BROKER_URL)"
+	CGO_LDFLAGS="-L$(HOME)/Library/pact -Wl,-rpath,$(HOME)/Library/pact" \
+	DYLD_LIBRARY_PATH="$(HOME)/Library/pact:$$DYLD_LIBRARY_PATH" \
+	KUBECONFIG="$(HOME)/.kube/config" \
+	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
+	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
+	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
+	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
+	PUBLISH_VERIFICATION=true \
+	go test ./test/contracts/provider/... -v -count=1
+
+# Run contract verification in CI (Linux) with automatic publishing
+# Sets CI=true which triggers auto-publishing to Pact Broker
+# Requires: PACT_BROKER_URL, PACT_BROKER_USERNAME, PACT_BROKER_PASSWORD, PROVIDER_VERSION env vars
+.PHONY: test-contracts-ci
+test-contracts-ci:
+	@echo "Running provider contract verification in CI mode..."
+	@echo "Provider Version: $(PROVIDER_VERSION)"
+	@echo "Pact Broker URL: $(PACT_BROKER_URL)"
+	CGO_LDFLAGS="-L/usr/local/lib" \
+	LD_LIBRARY_PATH="/usr/local/lib:$$LD_LIBRARY_PATH" \
+	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
+	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
+	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
+	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
+	CI=true \
+	go test ./test/contracts/provider/... -v -count=1
+
+# Clean contract test artifacts
+.PHONY: test-contracts-clean
+test-contracts-clean:
+	@rm -f test/contracts/provider/**/*.log
+	@rm -f test/contracts/provider/**/*.out
+	@rm -f test/contracts/provider/**/*.test
