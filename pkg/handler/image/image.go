@@ -174,6 +174,7 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 
 	image := &types.Image{
 		Name:           request.Metadata.Name,
+		Tags:           GenerateTags(request.Metadata.Tags),
 		OrganizationID: ptr.To(organizationID),
 		Architecture:   generateArchitecture(request.Spec.Architecture),
 		Virtualization: generateImageVirtualization(request.Spec.Virtualization),

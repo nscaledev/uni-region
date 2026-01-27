@@ -864,6 +864,10 @@ type FileStorageStatus struct {
 	// +patchMergeKey=networkID
 	// +optional
 	Attachments []FileStorageAttachmentStatus `json:"attachments,omitempty"`
+	// Usage is the amount of storage currently in use.
+	Usage *resource.Quantity `json:"usage,omitempty"`
+	// UsageTimestamp is the timestamp when the usage was last updated.
+	UsageTimestamp *metav1.Time `json:"usageTimestamp,omitempty"`
 }
 
 // AttachmentProvisioningStatus describes the state of a single attachment.
