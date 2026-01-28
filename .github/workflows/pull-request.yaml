@@ -62,7 +62,44 @@ jobs:
       uses: codecov/codecov-action@v5
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-  ContractVerification:
+  ConsumerContractTests:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Setup Go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: go.mod
+    - name: Install Pact FFI Library
+      run: |
+        ARCH=$(uname -m)
+        if [ "$ARCH" = "x86_64" ]; then
+          PACT_ARCH="x86_64"
+        elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+          PACT_ARCH="aarch64"
+        else
+          echo "Unsupported architecture: $ARCH"
+          exit 1
+        fi
+        wget https://github.com/pact-foundation/pact-reference/releases/download/libpact_ffi-v0.4.22/libpact_ffi-linux-${PACT_ARCH}.so.gz
+        gunzip libpact_ffi-linux-${PACT_ARCH}.so.gz
+        sudo mkdir -p /usr/local/lib
+        sudo mv libpact_ffi-linux-${PACT_ARCH}.so /usr/local/lib/libpact_ffi.so
+        sudo ldconfig
+    - name: Run Consumer Contract Tests
+      run: make test-contracts-consumer
+      env:
+        CGO_LDFLAGS: "-L/usr/local/lib"
+        LD_LIBRARY_PATH: "/usr/local/lib"
+    - name: Publish Pacts to Dev Broker
+      if: success()
+      run: make publish-pacts
+      env:
+        PACT_BROKER_URL: ${{ vars.PACT_BROKER_URL_DEV }}
+        PACT_BROKER_USERNAME: ${{ vars.PACT_BROKER_USERNAME }}
+        PACT_BROKER_PASSWORD: ${{ secrets.PACT_BROKER_PASSWORD }}
+  ProviderContractVerification:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
@@ -95,10 +132,10 @@ jobs:
       run: |
         make charts/region/crds
         kubectl apply -f charts/region/crds/
-    - name: Run Contract Verification
+    - name: Run Provider Contract Verification
       env:
-        PACT_BROKER_URL: ${{ secrets.PACT_BROKER_URL }}
-        PACT_BROKER_USERNAME: ${{ secrets.PACT_BROKER_USERNAME }}
+        PACT_BROKER_URL: ${{ vars.PACT_BROKER_URL_DEV }}
+        PACT_BROKER_USERNAME: ${{ vars.PACT_BROKER_USERNAME }}
         PACT_BROKER_PASSWORD: ${{ secrets.PACT_BROKER_PASSWORD }}
         PROVIDER_VERSION: ${{ github.sha }}
-      run: make test-contracts-ci
+      run: make test-contracts-provider-ci
