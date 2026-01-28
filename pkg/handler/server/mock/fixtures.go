@@ -22,7 +22,7 @@ import (
 	gomock "go.uber.org/mock/gomock"
 )
 
-//go:generate mockgen -source=../client_v2.go -destination=interfaces.go -package=mock
+//go:generate mockgen -source=../client.go -destination=interfaces.go -package=mock
 
 // newTestMockProvider creates a new mock provider with a gomock controller.
 // The controller is automatically cleaned up when the test finishes.
