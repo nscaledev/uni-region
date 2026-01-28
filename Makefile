@@ -241,6 +241,18 @@ test-api-setup:
 test-api-clean:
 	@rm -f test/api/suites/test-results.json test/api/suites/junit.xml
 
+# Pact library path configuration (OS-specific defaults)
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+    PACT_LIB_PATH ?= /usr/local/lib
+    PACT_LD_FLAGS = -L$(PACT_LIB_PATH)
+    PACT_LIB_ENV = LD_LIBRARY_PATH=$(PACT_LIB_PATH):$$LD_LIBRARY_PATH
+else ifeq ($(UNAME_S),Darwin)
+    PACT_LIB_PATH ?= $(HOME)/Library/pact
+    PACT_LD_FLAGS = -L$(PACT_LIB_PATH) -Wl,-rpath,$(PACT_LIB_PATH)
+    PACT_LIB_ENV = DYLD_LIBRARY_PATH=$(PACT_LIB_PATH):$$DYLD_LIBRARY_PATH
+endif
+
 # Pact Broker Configuration
 PACT_BROKER_URL ?= http://localhost:9292
 PACT_BROKER_USERNAME ?= pact
@@ -251,8 +263,8 @@ PROVIDER_VERSION ?= $(REVISION)
 .PHONY: test-contracts-provider
 test-contracts-provider:
 	@echo "Running provider contract verification tests..."
-	CGO_LDFLAGS="-L$(HOME)/Library/pact -Wl,-rpath,$(HOME)/Library/pact" \
-	DYLD_LIBRARY_PATH="$(HOME)/Library/pact:$$DYLD_LIBRARY_PATH" \
+	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
+	$(PACT_LIB_ENV) \
 	KUBECONFIG="$(HOME)/.kube/config" \
 	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
 	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
@@ -264,8 +276,8 @@ test-contracts-provider:
 .PHONY: test-contracts-provider-verbose
 test-contracts-provider-verbose:
 	@echo "Running provider contract verification with verbose output..."
-	CGO_LDFLAGS="-L$(HOME)/Library/pact -Wl,-rpath,$(HOME)/Library/pact" \
-	DYLD_LIBRARY_PATH="$(HOME)/Library/pact:$$DYLD_LIBRARY_PATH" \
+	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
+	$(PACT_LIB_ENV) \
 	KUBECONFIG="$(HOME)/.kube/config" \
 	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
 	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
@@ -283,53 +295,23 @@ test-contracts-provider-local:
 		echo "Usage: make test-contracts-provider-local PACT_FILE=/path/to/pact.json"; \
 		exit 1; \
 	fi
-	CGO_LDFLAGS="-L$(HOME)/Library/pact -Wl,-rpath,$(HOME)/Library/pact" \
-	DYLD_LIBRARY_PATH="$(HOME)/Library/pact:$$DYLD_LIBRARY_PATH" \
+	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
+	$(PACT_LIB_ENV) \
 	KUBECONFIG="$(HOME)/.kube/config" \
 	PACT_FILE="$(PACT_FILE)" \
 	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
 	go test ./test/contracts/provider/... -v -count=1
 
-# Publish verification results (for CI)
-.PHONY: test-contracts-provider-ci
-test-contracts-provider-ci:
-	@echo "Running provider verification and publishing results..."
-	CGO_LDFLAGS="-L$(HOME)/Library/pact -Wl,-rpath,$(HOME)/Library/pact" \
-	DYLD_LIBRARY_PATH="$(HOME)/Library/pact:$$DYLD_LIBRARY_PATH" \
-	KUBECONFIG="$(HOME)/.kube/config" \
-	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
-	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
-	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
-	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
-	PUBLISH_VERIFICATION=true \
-	go test ./test/contracts/provider/... -v -count=1
-
-# Publish provider verification results to Pact Broker
-.PHONY: publish-contracts-provider
-publish-contracts-provider:
-	@echo "Running provider verification and publishing results to Pact Broker..."
-	@echo "Provider Version: $(PROVIDER_VERSION)"
-	@echo "Pact Broker URL: $(PACT_BROKER_URL)"
-	CGO_LDFLAGS="-L$(HOME)/Library/pact -Wl,-rpath,$(HOME)/Library/pact" \
-	DYLD_LIBRARY_PATH="$(HOME)/Library/pact:$$DYLD_LIBRARY_PATH" \
-	KUBECONFIG="$(HOME)/.kube/config" \
-	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
-	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
-	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
-	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
-	PUBLISH_VERIFICATION=true \
-	go test ./test/contracts/provider/... -v -count=1
-
-# Run contract verification in CI (Linux) with automatic publishing
+# Run provider verification and publish results to Pact Broker (works on both macOS and Linux)
 # Sets CI=true which triggers auto-publishing to Pact Broker
 # Requires: PACT_BROKER_URL, PACT_BROKER_USERNAME, PACT_BROKER_PASSWORD, PROVIDER_VERSION env vars
-.PHONY: test-contracts-ci
-test-contracts-ci:
+.PHONY: test-contracts-provider-ci
+test-contracts-provider-ci:
 	@echo "Running provider contract verification in CI mode..."
 	@echo "Provider Version: $(PROVIDER_VERSION)"
 	@echo "Pact Broker URL: $(PACT_BROKER_URL)"
-	CGO_LDFLAGS="-L/usr/local/lib" \
-	LD_LIBRARY_PATH="/usr/local/lib:$$LD_LIBRARY_PATH" \
+	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
+	$(PACT_LIB_ENV) \
 	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
 	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
 	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
@@ -356,16 +338,16 @@ BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
 .PHONY: test-contracts-consumer
 test-contracts-consumer:
 	@echo "Running consumer contract tests..."
-	CGO_LDFLAGS="-L$(HOME)/Library/pact -Wl,-rpath,$(HOME)/Library/pact" \
-	DYLD_LIBRARY_PATH="$(HOME)/Library/pact:$$DYLD_LIBRARY_PATH" \
+	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
+	$(PACT_LIB_ENV) \
 	go test ./test/contracts/consumer/... -v -count=1
 
 # Run consumer tests with verbose output
 .PHONY: test-contracts-consumer-verbose
 test-contracts-consumer-verbose:
 	@echo "Running consumer contract tests with verbose output..."
-	CGO_LDFLAGS="-L$(HOME)/Library/pact -Wl,-rpath,$(HOME)/Library/pact" \
-	DYLD_LIBRARY_PATH="$(HOME)/Library/pact:$$DYLD_LIBRARY_PATH" \
+	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
+	$(PACT_LIB_ENV) \
 	VERBOSE=true \
 	go test ./test/contracts/consumer/... -v -count=1
 
@@ -392,6 +374,10 @@ publish-contracts-consumer:
 		--consumer-app-version="$(CONSUMER_VERSION)" \
 		--branch="$(BRANCH)" \
 		/pacts
+
+# Alias for publishing pacts (shorter name for CI workflows)
+.PHONY: publish-pacts
+publish-pacts: publish-contracts-consumer
 
 # Can-I-Deploy check
 .PHONY: can-i-deploy
