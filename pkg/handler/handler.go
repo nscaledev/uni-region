@@ -27,7 +27,6 @@ import (
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
-	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/securitygroup"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
@@ -38,6 +37,7 @@ type Handler struct {
 	// There are embedded so they can be their own structs
 	*IdentityHandler
 	*ImageHandler
+	*NetworkHandler
 	*ServerV2Handler
 	*ImageV2Handler
 
@@ -54,6 +54,7 @@ func New(clientArgs common.ClientArgs, options *Options) (*Handler, error) {
 		options:         options,
 		IdentityHandler: NewIdentityHandler(clientArgs),
 		ImageHandler:    NewImageHandler(clientArgs, options),
+		NetworkHandler:  NewNetworkHandler(clientArgs),
 		ServerV2Handler: NewServerV2Handler(clientArgs),
 		ImageV2Handler:  NewImageV2Handler(clientArgs, options),
 	}
@@ -127,76 +128,6 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(w ht
 
 	h.options.setCacheable(w)
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
-}
-
-func (h *Handler) networkClient() *network.Client {
-	return network.New(h.ClientArgs)
-}
-
-func (h *Handler) GetApiV1OrganizationsOrganizationIDNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
-	if err := rbac.AllowOrganizationScope(r.Context(), "region:networks", identityapi.Read, organizationID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := h.networkClient().List(r.Context(), organizationID)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
-}
-
-func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "region:networks", identityapi.Create, organizationID, projectID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	request := &openapi.NetworkWrite{}
-
-	if err := util.ReadJSONBody(r, request); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := h.networkClient().Create(r.Context(), organizationID, projectID, identityID, request)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusCreated, result)
-}
-
-func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, networkID openapi.NetworkIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "region:networks", identityapi.Read, organizationID, projectID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := h.networkClient().Get(r.Context(), organizationID, projectID, networkID)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
-}
-
-func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, networkID openapi.NetworkIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "region:networks", identityapi.Delete, organizationID, projectID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	if err := h.networkClient().Delete(r.Context(), organizationID, projectID, networkID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusAccepted)
 }
 
 func (h *Handler) securityGroupClient() *securitygroup.Client {
