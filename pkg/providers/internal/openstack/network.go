@@ -29,6 +29,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/floatingips"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/provider"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/quotas"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/rules"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/networks"
@@ -726,4 +727,22 @@ func (c *NetworkClient) DeletePort(ctx context.Context, portID string) error {
 	defer span.End()
 
 	return ports.Delete(ctx, c.client, portID).Err
+}
+
+// Update quotas overrides any OpenStack default quotas for the project's networking.
+// At present it's only security groups and security group rules that are affected.
+func (c *NetworkClient) UpdateQuotas(ctx context.Context, projectID string) error {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("network.project.id", projectID),
+	)
+
+	_, span := traceStart(ctx, "PUT /network/v2.0/quotas/{id}", spanAttributes)
+	defer span.End()
+
+	opts := &quotas.UpdateOpts{
+		SecurityGroup:     ptr.To(-1),
+		SecurityGroupRule: ptr.To(-1),
+	}
+
+	return quotas.Update(ctx, c.client, projectID, opts).Err
 }
