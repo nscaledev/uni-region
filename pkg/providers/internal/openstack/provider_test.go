@@ -210,7 +210,6 @@ func openstackRouterPortsFixture(openstackRouter *routers.Router, openstackSubne
 	}
 }
 
-//nolint:unparam
 func securityGroupRuleFixtureSingle(t *testing.T, dir regionv1.SecurityGroupRuleDirection, proto regionv1.SecurityGroupRuleProtocol, port int, prefix string) regionv1.SecurityGroupRule {
 	t.Helper()
 
@@ -641,6 +640,26 @@ func TestReconcileSecurityGroupRules(t *testing.T) {
 		networking := mock.NewMockSecurityGroupInterface(c)
 		networking.EXPECT().ListSecurityGroupRules(t.Context(), openstackSecurityGroup.ID).Return(openstackSecurityGroup.Rules, nil)
 		networking.EXPECT().DeleteSecurityGroupRule(t.Context(), openstackSecurityGroup.ID, openstackSecurityGroup.Rules[1].ID).Return(nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		require.NoError(t, openstack.ReconcileSecurityGroupRules(t.Context(), p, networking, securityGroup, openstackSecurityGroup))
+	})
+
+	t.Run("ItOverridesImplicitEgress", func(t *testing.T) {
+		t.Parallel()
+
+		securityGroup := securityGroupFixture(
+			securityGroupRuleFixtureSingle(t, regionv1.Egress, regionv1.Any, 0, ""),
+			securityGroupRuleFixtureSingle(t, regionv1.Egress, regionv1.Any, 0, "0.0.0.0/0"),
+		)
+
+		openstackSecurityGroup := openstackSecurityGroupFixture(securityGroup,
+			openstackSecurityGroupRuleFixtureDefault(),
+		)
+
+		networking := mock.NewMockSecurityGroupInterface(c)
+		networking.EXPECT().ListSecurityGroupRules(t.Context(), openstackSecurityGroup.ID).Return(openstackSecurityGroup.Rules, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
