@@ -92,11 +92,13 @@ jobs:
       env:
         CGO_LDFLAGS: "-L/usr/local/lib"
         LD_LIBRARY_PATH: "/usr/local/lib"
-    - name: Upload Pact Files
-      uses: actions/upload-artifact@v4
-      with:
-        name: pact-files
-        path: test/contracts/consumer/identity/pacts/*.json
+    - name: Publish Pacts to Dev Broker
+      if: success()
+      run: make publish-pacts
+      env:
+        PACT_BROKER_URL: ${{ vars.PACT_BROKER_URL_DEV }}
+        PACT_BROKER_USERNAME: ${{ vars.PACT_BROKER_USERNAME }}
+        PACT_BROKER_PASSWORD: ${{ secrets.PACT_BROKER_PASSWORD }}
   ProviderContractVerification:
     runs-on: ubuntu-latest
     steps:
@@ -132,8 +134,8 @@ jobs:
         kubectl apply -f charts/region/crds/
     - name: Run Provider Contract Verification
       env:
-        PACT_BROKER_URL: ${{ secrets.PACT_BROKER_URL }}
-        PACT_BROKER_USERNAME: ${{ secrets.PACT_BROKER_USERNAME }}
+        PACT_BROKER_URL: ${{ vars.PACT_BROKER_URL_DEV }}
+        PACT_BROKER_USERNAME: ${{ vars.PACT_BROKER_USERNAME }}
         PACT_BROKER_PASSWORD: ${{ secrets.PACT_BROKER_PASSWORD }}
         PROVIDER_VERSION: ${{ github.sha }}
-      run: make test-contracts-ci
+      run: make test-contracts-provider-ci
