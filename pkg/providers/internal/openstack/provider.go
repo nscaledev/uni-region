@@ -1816,7 +1816,7 @@ func securityGroupRuleID(direction unikornv1.SecurityGroupRuleDirection, protoco
 	// Prefix may be empty, but for debug purposes give it a name so it's not confusing
 	// when debugging this.
 	if prefix == "" {
-		prefix = "any"
+		prefix = "0.0.0.0/0"
 	}
 
 	return fmt.Sprintf("%s,%s,%d-%d,%s", direction, protocol, startPort, endPort, prefix)
