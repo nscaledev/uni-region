@@ -343,3 +343,87 @@ test-contracts-clean:
 	@rm -f test/contracts/provider/**/*.log
 	@rm -f test/contracts/provider/**/*.out
 	@rm -f test/contracts/provider/**/*.test
+	@rm -rf test/contracts/consumer/**/pacts
+
+# Consumer contract test configuration
+CONSUMER_VERSION ?= $(REVISION)
+PACT_BROKER_URL ?= http://localhost:9292
+PACT_BROKER_USERNAME ?= pact
+PACT_BROKER_PASSWORD ?= pact
+SERVICE_NAME ?= uni-region
+BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
+
+.PHONY: test-contracts-consumer
+test-contracts-consumer:
+	@echo "Running consumer contract tests..."
+	CGO_LDFLAGS="-L$(HOME)/Library/pact -Wl,-rpath,$(HOME)/Library/pact" \
+	DYLD_LIBRARY_PATH="$(HOME)/Library/pact:$$DYLD_LIBRARY_PATH" \
+	go test ./test/contracts/consumer/... -v -count=1
+
+# Run consumer tests with verbose output
+.PHONY: test-contracts-consumer-verbose
+test-contracts-consumer-verbose:
+	@echo "Running consumer contract tests with verbose output..."
+	CGO_LDFLAGS="-L$(HOME)/Library/pact -Wl,-rpath,$(HOME)/Library/pact" \
+	DYLD_LIBRARY_PATH="$(HOME)/Library/pact:$$DYLD_LIBRARY_PATH" \
+	VERBOSE=true \
+	go test ./test/contracts/consumer/... -v -count=1
+
+# Run consumer tests and publish to broker (for CI)
+.PHONY: test-contracts-consumer-ci
+test-contracts-consumer-ci: test-contracts-consumer publish-contracts-consumer
+	@echo "Consumer contract tests and publishing completed successfully"
+
+# Publish consumer pact files to Pact Broker
+.PHONY: publish-contracts-consumer
+publish-contracts-consumer:
+	@echo "Publishing consumer pacts to Pact Broker..."
+	@echo "Consumer Version: $(CONSUMER_VERSION)"
+	@echo "Pact Broker URL: $(PACT_BROKER_URL)"
+	docker run --rm \
+		--network host \
+		-v $(PWD)/test/contracts/consumer/identity/pacts:/pacts \
+		-w /pacts \
+		pactfoundation/pact-cli:latest \
+		publish \
+		--broker-base-url="$(PACT_BROKER_URL)" \
+		--broker-username="$(PACT_BROKER_USERNAME)" \
+		--broker-password="$(PACT_BROKER_PASSWORD)" \
+		--consumer-app-version="$(CONSUMER_VERSION)" \
+		--branch="$(BRANCH)" \
+		/pacts
+
+# Can-I-Deploy check
+.PHONY: can-i-deploy
+can-i-deploy:
+	@echo "Checking if $(SERVICE_NAME) version $(CONSUMER_VERSION) can be deployed to production..."
+	docker run --rm \
+		--network host \
+		pactfoundation/pact-cli:latest \
+		broker can-i-deploy \
+		--pacticipant="$(SERVICE_NAME)" \
+		--version="$(CONSUMER_VERSION)" \
+		--to-environment="production" \
+		--broker-base-url="$(PACT_BROKER_URL)" \
+		--broker-username="$(PACT_BROKER_USERNAME)" \
+		--broker-password="$(PACT_BROKER_PASSWORD)"
+
+# Record deployment
+.PHONY: record-deployment
+record-deployment:
+	@echo "Recording deployment of $(SERVICE_NAME) version $(CONSUMER_VERSION) to production..."
+	docker run --rm \
+		--network host \
+		pactfoundation/pact-cli:latest \
+		broker record-deployment \
+		--pacticipant="$(SERVICE_NAME)" \
+		--version="$(CONSUMER_VERSION)" \
+		--environment="production" \
+		--broker-base-url="$(PACT_BROKER_URL)" \
+		--broker-username="$(PACT_BROKER_USERNAME)" \
+		--broker-password="$(PACT_BROKER_PASSWORD)"
+
+# Run all contract tests (both consumer and provider)
+.PHONY: test-contracts
+test-contracts: test-contracts-consumer test-contracts-provider
+	@echo "All contract tests completed successfully"
