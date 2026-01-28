@@ -51,39 +51,23 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-// serverProvider gloms together the operations needed to provision servers.
-type Provider interface {
-	types.Server
-	types.ServerConsole
-	types.ServerSnapshot
-	types.Identity
-	types.ImageRead  // for GetImage
-	types.ImageWrite // for DeleteImage
-}
-
-// GetProviderFunc is the type of funcs supplied to the client, so it can obtain a provider (e.g., OpenStack client).
-type GetProviderFunc func(context.Context, client.Client, string, string) (Provider, error)
-
-// DefaultGetProvider is the "business as usual" GetProviderFunc, which constructs a real provider (rather than, e.g., a mock object).
-func DefaultGetProvider(ctx context.Context, c client.Client, namespace, regionID string) (Provider, error) {
-	return providers.New(ctx, c, namespace, regionID)
-}
-
 type ClientV2 struct {
 	*Client
-	getProviderFunc GetProviderFunc
 }
 
-func NewClientV2(clientArgs common.ClientArgs, getProvider GetProviderFunc) *ClientV2 {
+func NewClientV2(clientArgs common.ClientArgs) *ClientV2 {
 	return &ClientV2{
-		Client:          NewClient(clientArgs),
-		getProviderFunc: getProvider,
+		Client: NewClient(clientArgs),
 	}
 }
 
-func (c *ClientV2) getProvider(ctx context.Context, regionID string) (Provider, error) {
-	//nolint:staticcheck
-	return c.getProviderFunc(ctx, c.Client.Client, c.Client.Namespace, regionID)
+func (c *ClientV2) getProvider(ctx context.Context, regionID string) (types.Provider, error) {
+	provider, err := c.Providers.LookupCloud(ctx, regionID)
+	if err != nil {
+		return nil, providers.ProviderToServerError(err)
+	}
+
+	return provider, nil
 }
 
 func convertSecurityGroupsV2(in []regionv1.ServerSecurityGroupSpec) *openapi.ServerV2SecurityGroupIDList {
@@ -493,7 +477,7 @@ func (c *ClientV2) DeleteV2(ctx context.Context, serverID string) error {
 	return nil
 }
 
-func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, Provider, error) {
+func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, types.Provider, error) {
 	server, err := c.GetV2Raw(ctx, serverID)
 	if err != nil {
 		return nil, nil, nil, err
