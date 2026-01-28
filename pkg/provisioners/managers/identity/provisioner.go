@@ -30,6 +30,7 @@ import (
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 )
 
@@ -83,7 +84,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
-	provider, err := base.Provider(ctx, p.identity)
+	provider, err := base.Provider[types.Identity](ctx, p.identity)
 	if err != nil {
 		return err
 	}
@@ -97,7 +98,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	provider, err := base.Provider(ctx, p.identity)
+	provider, err := base.Provider[types.Identity](ctx, p.identity)
 	if err != nil {
 		return err
 	}

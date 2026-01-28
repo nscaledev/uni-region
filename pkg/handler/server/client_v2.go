@@ -66,7 +66,7 @@ type GetProviderFunc func(context.Context, client.Client, string, string) (Provi
 
 // DefaultGetProvider is the "business as usual" GetProviderFunc, which constructs a real provider (rather than, e.g., a mock object).
 func DefaultGetProvider(ctx context.Context, c client.Client, namespace, regionID string) (Provider, error) {
-	return providers.New(ctx, c, namespace, regionID)
+	return providers.New[Provider](ctx, c, namespace, regionID)
 }
 
 type ClientV2 struct {

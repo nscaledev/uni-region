@@ -26,6 +26,7 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -64,7 +65,7 @@ func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server) err
 		return fmt.Errorf("%w: server %s missing region label", errors.ErrConsistency, server.Name)
 	}
 
-	provider, err := providers.New(ctx, c.client, c.namespace, regionID)
+	provider, err := providers.New[types.Server](ctx, c.client, c.namespace, regionID)
 	if err != nil {
 		return err
 	}

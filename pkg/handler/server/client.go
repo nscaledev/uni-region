@@ -33,8 +33,8 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
-	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -52,6 +52,10 @@ func NewClient(clientArgs common.ClientArgs) *Client {
 	return &Client{
 		ClientArgs: clientArgs,
 	}
+}
+
+func (c *Client) provider(ctx context.Context, regionID string) (Provider, error) {
+	return providers.New[Provider](ctx, c.Client, c.Namespace, regionID)
 }
 
 // get gives access to the raw Kubernetes resource.
@@ -112,7 +116,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 		return nil, err
 	}
 
-	provider, err := region.NewClient(c.ClientArgs).Provider(ctx, identity.Labels[constants.RegionLabel])
+	provider, err := c.provider(ctx, identity.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
@@ -156,7 +160,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 		return nil, err
 	}
 
-	provider, err := region.NewClient(c.ClientArgs).Provider(ctx, identity.Labels[constants.RegionLabel])
+	provider, err := c.provider(ctx, identity.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
@@ -206,7 +210,7 @@ func (c *Client) getServerIdentityAndProvider(ctx context.Context, organizationI
 		return nil, nil, nil, err
 	}
 
-	provider, err := region.NewClient(c.ClientArgs).Provider(ctx, current.Labels[constants.RegionLabel])
+	provider, err := c.provider(ctx, current.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, nil, nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}

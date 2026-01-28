@@ -27,6 +27,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 
 	"k8s.io/apimachinery/pkg/labels"
@@ -110,7 +111,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return fmt.Errorf("%w: failed to add security group references", err)
 	}
 
-	provider, identity, err := base.ProviderAndIdentity(ctx, p.server)
+	provider, identity, err := base.ProviderAndIdentity[types.Server](ctx, p.server)
 	if err != nil {
 		return err
 	}
@@ -143,7 +144,7 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
-	provider, identity, err := base.ProviderAndIdentity(ctx, p.server)
+	provider, identity, err := base.ProviderAndIdentity[types.Server](ctx, p.server)
 	if err != nil {
 		return err
 	}

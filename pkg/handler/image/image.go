@@ -45,7 +45,7 @@ type Client struct {
 }
 
 func DefaultGetProvider(ctx context.Context, c client.Client, namespace, regionID string) (Provider, error) {
-	return providers.New(ctx, c, namespace, regionID)
+	return providers.New[Provider](ctx, c, namespace, regionID)
 }
 
 func NewClient(clientArgs common.ClientArgs, getProvider GetProviderFunc) *Client {

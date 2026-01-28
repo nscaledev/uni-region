@@ -56,8 +56,13 @@ func NewClient(clientArgs common.ClientArgs) *Client {
 	}
 }
 
-func (c *Client) Provider(ctx context.Context, regionID string) (types.Provider, error) {
-	return providers.New(ctx, c.Client, c.Namespace, regionID)
+type provider interface {
+	types.RegionProvider
+	types.ExternalNetworker
+}
+
+func (c *Client) Provider(ctx context.Context, regionID string) (provider, error) {
+	return providers.New[provider](ctx, c.Client, c.Namespace, regionID)
 }
 
 func FilterRegions(ctx context.Context, regions *unikornv1.RegionList) {

@@ -23,9 +23,7 @@ import (
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/handler/common"
-	"github.com/unikorn-cloud/region/pkg/handler/region"
-	"github.com/unikorn-cloud/region/pkg/providers/types"
+	"github.com/unikorn-cloud/region/pkg/providers"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -45,27 +43,26 @@ func GetIdentity(ctx context.Context, object client.Object) (*unikornv1.Identity
 	return identity, nil
 }
 
-func Provider(ctx context.Context, object client.Object) (types.Provider, error) {
+func Provider[T any](ctx context.Context, object client.Object) (T, error) {
+	var zero T
+
 	cli, err := coreclient.FromContext(ctx)
 	if err != nil {
-		return nil, err
+		return zero, err
 	}
 
-	clientArgs := common.ClientArgs{
-		Client:    cli,
-		Namespace: object.GetNamespace(),
-	}
-
-	return region.NewClient(clientArgs).Provider(ctx, object.GetLabels()[constants.RegionLabel])
+	return providers.New[T](ctx, cli, object.GetNamespace(), object.GetLabels()[constants.RegionLabel])
 }
 
-func ProviderAndIdentity(ctx context.Context, object client.Object) (types.Provider, *unikornv1.Identity, error) {
+func ProviderAndIdentity[T any](ctx context.Context, object client.Object) (T, *unikornv1.Identity, error) {
+	var zero T
+
 	id, err := GetIdentity(ctx, object)
 	if err != nil {
-		return nil, nil, err
+		return zero, nil, err
 	}
 
-	prov, err := Provider(ctx, object)
+	prov, err := Provider[T](ctx, object)
 
 	return prov, id, err
 }

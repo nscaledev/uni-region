@@ -25,7 +25,6 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/kubernetes"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
-	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -40,10 +39,10 @@ var (
 )
 
 //nolint:gochecknoglobals
-var cache = map[string]types.Provider{}
+var cache = map[string]any{}
 
 // newProvider a new Provider.
-func newProvider(ctx context.Context, client client.Client, region *unikornv1.Region) (types.Provider, error) {
+func newProvider(ctx context.Context, client client.Client, region *unikornv1.Region) (any, error) {
 	switch region.Spec.Provider {
 	case unikornv1.ProviderKubernetes:
 		return kubernetes.New(ctx, client, region)
@@ -55,32 +54,43 @@ func newProvider(ctx context.Context, client client.Client, region *unikornv1.Re
 }
 
 // New returns a new provider for the given region.
-func New(ctx context.Context, c client.Client, namespace, regionID string) (types.Provider, error) {
-	if provider, ok := cache[regionID]; ok {
-		return provider, nil
+func New[T any](ctx context.Context, c client.Client, namespace, regionID string) (T, error) {
+	var (
+		zero     T
+		provider any
+	)
+
+	if prov, ok := cache[regionID]; ok {
+		provider = prov
+	} else {
+		var regions unikornv1.RegionList
+
+		if err := c.List(ctx, &regions, &client.ListOptions{Namespace: namespace}); err != nil {
+			return zero, err
+		}
+
+		matchRegionID := func(region unikornv1.Region) bool {
+			return region.Name == regionID
+		}
+
+		index := slices.IndexFunc(regions.Items, matchRegionID)
+		if index < 0 {
+			return zero, ErrRegionNotFound
+		}
+
+		prov, err := newProvider(ctx, c, &regions.Items[index])
+		if err != nil {
+			return zero, err
+		}
+
+		cache[regionID] = prov
+		provider = prov
 	}
 
-	var regions unikornv1.RegionList
-
-	if err := c.List(ctx, &regions, &client.ListOptions{Namespace: namespace}); err != nil {
-		return nil, err
+	result, ok := provider.(T)
+	if !ok {
+		return zero, ErrRegionProviderUnimplemented
 	}
 
-	matchRegionID := func(region unikornv1.Region) bool {
-		return region.Name == regionID
-	}
-
-	index := slices.IndexFunc(regions.Items, matchRegionID)
-	if index < 0 {
-		return nil, ErrRegionNotFound
-	}
-
-	provider, err := newProvider(ctx, c, &regions.Items[index])
-	if err != nil {
-		return nil, err
-	}
-
-	cache[regionID] = provider
-
-	return provider, nil
+	return result, nil
 }
