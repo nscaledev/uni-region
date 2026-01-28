@@ -27,69 +27,6 @@ import (
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
 
-func (h *Handler) GetApiV2Securitygroups(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2SecuritygroupsParams) {
-	result, err := h.securityGroupClient().ListV2(r.Context(), params)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
-}
-
-func (h *Handler) PostApiV2Securitygroups(w http.ResponseWriter, r *http.Request) {
-	request := &openapi.SecurityGroupV2Create{}
-
-	if err := util.ReadJSONBody(r, request); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := h.securityGroupClient().CreateV2(r.Context(), request)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusCreated, result)
-}
-
-func (h *Handler) GetApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, securityGroupID openapi.SecurityGroupIDParameter) {
-	result, err := h.securityGroupClient().GetV2(r.Context(), securityGroupID)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
-}
-
-func (h *Handler) PutApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, securityGroupID openapi.SecurityGroupIDParameter) {
-	request := &openapi.SecurityGroupV2Update{}
-
-	if err := util.ReadJSONBody(r, request); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := h.securityGroupClient().UpdateV2(r.Context(), securityGroupID, request)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
-}
-
-func (h *Handler) DeleteApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, securityGroupID openapi.SecurityGroupIDParameter) {
-	if err := h.securityGroupClient().DeleteV2(r.Context(), securityGroupID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusAccepted)
-}
-
 func (h *Handler) storageClient() *storage.Client {
 	return storage.New(h.ClientArgs)
 }
