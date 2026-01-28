@@ -27,7 +27,6 @@ import (
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
-	"github.com/unikorn-cloud/region/pkg/handler/securitygroup"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
@@ -38,6 +37,7 @@ type Handler struct {
 	*ImageHandler
 	*NetworkHandler
 	*RegionHandler
+	*SecurityGroupHandler
 	*ServerV2Handler
 	*ImageV2Handler
 
@@ -50,109 +50,18 @@ type Handler struct {
 
 func New(clientArgs common.ClientArgs, options *Options) (*Handler, error) {
 	h := &Handler{
-		ClientArgs:      clientArgs,
-		options:         options,
-		IdentityHandler: NewIdentityHandler(clientArgs),
-		ImageHandler:    NewImageHandler(clientArgs, options),
-		NetworkHandler:  NewNetworkHandler(clientArgs),
-		RegionHandler:   NewRegionHandler(clientArgs, options),
-		ServerV2Handler: NewServerV2Handler(clientArgs),
-		ImageV2Handler:  NewImageV2Handler(clientArgs, options),
+		ClientArgs:           clientArgs,
+		options:              options,
+		IdentityHandler:      NewIdentityHandler(clientArgs),
+		ImageHandler:         NewImageHandler(clientArgs, options),
+		NetworkHandler:       NewNetworkHandler(clientArgs),
+		RegionHandler:        NewRegionHandler(clientArgs, options),
+		SecurityGroupHandler: NewSecurityGroupHandler(clientArgs),
+		ServerV2Handler:      NewServerV2Handler(clientArgs),
+		ImageV2Handler:       NewImageV2Handler(clientArgs, options),
 	}
 
 	return h, nil
-}
-
-func (h *Handler) securityGroupClient() *securitygroup.Client {
-	return securitygroup.New(h.ClientArgs)
-}
-
-func (h *Handler) GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, params openapi.GetApiV1OrganizationsOrganizationIDSecuritygroupsParams) {
-	if err := rbac.AllowOrganizationScope(r.Context(), "region:securitygroups", identityapi.Read, organizationID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := h.securityGroupClient().List(r.Context(), organizationID, params)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
-}
-
-func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups", identityapi.Create, organizationID, projectID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	request := &openapi.SecurityGroupWrite{}
-
-	if err := util.ReadJSONBody(r, request); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := h.securityGroupClient().Create(r.Context(), organizationID, projectID, identityID, request)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusCreated, result)
-}
-
-func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups", identityapi.Delete, organizationID, projectID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	if err := h.securityGroupClient().Delete(r.Context(), organizationID, projectID, securityGroupID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusAccepted)
-}
-
-func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups", identityapi.Read, organizationID, projectID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := h.securityGroupClient().Get(r.Context(), organizationID, projectID, securityGroupID)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
-}
-
-func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "region:securitygroups", identityapi.Update, organizationID, projectID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	request := &openapi.SecurityGroupWrite{}
-
-	if err := util.ReadJSONBody(r, request); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := h.securityGroupClient().Update(r.Context(), organizationID, projectID, identityID, securityGroupID, request)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
 }
 
 func (h *Handler) serverClient() *server.Client {
