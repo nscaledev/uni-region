@@ -27,7 +27,6 @@ import (
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
-	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/securitygroup"
@@ -36,7 +35,8 @@ import (
 )
 
 type Handler struct {
-	// There are embedded so they can be their own
+	// There are embedded so they can be their own structs
+	*IdentityHandler
 	*ImageHandler
 	*ServerV2Handler
 	*ImageV2Handler
@@ -52,6 +52,7 @@ func New(clientArgs common.ClientArgs, options *Options) (*Handler, error) {
 	h := &Handler{
 		ClientArgs:      clientArgs,
 		options:         options,
+		IdentityHandler: NewIdentityHandler(clientArgs),
 		ImageHandler:    NewImageHandler(clientArgs, options),
 		ServerV2Handler: NewServerV2Handler(clientArgs),
 		ImageV2Handler:  NewImageV2Handler(clientArgs, options),
@@ -126,72 +127,6 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(w ht
 
 	h.options.setCacheable(w)
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
-}
-
-func (h *Handler) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {
-	if err := rbac.AllowOrganizationScope(r.Context(), "region:identities", identityapi.Read, organizationID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := identity.New(h.ClientArgs).List(r.Context(), organizationID)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
-}
-
-func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "region:identities", identityapi.Create, organizationID, projectID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	request := &openapi.IdentityWrite{}
-
-	if err := util.ReadJSONBody(r, request); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := identity.New(h.ClientArgs).Create(r.Context(), organizationID, projectID, request)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusCreated, result)
-}
-
-func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "region:identities", identityapi.Read, organizationID, projectID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	result, err := identity.New(h.ClientArgs).Get(r.Context(), organizationID, projectID, identityID)
-	if err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	util.WriteJSONResponse(w, r, http.StatusOK, result)
-}
-
-func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
-	if err := rbac.AllowProjectScope(r.Context(), "region:identities", identityapi.Delete, organizationID, projectID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	if err := identity.New(h.ClientArgs).Delete(r.Context(), organizationID, projectID, identityID); err != nil {
-		errors.HandleError(w, r, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusAccepted)
 }
 
 func (h *Handler) networkClient() *network.Client {
