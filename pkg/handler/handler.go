@@ -31,18 +31,11 @@ type Handler struct {
 	*RegionHandler
 	*SecurityGroupHandler
 	*ServerHandler
-
-	// ClientArgs has the values needed to create the various handler clients.
-	common.ClientArgs
-
-	// options allows behaviour to be defined on the CLI.
-	options *Options
+	*StorageHandler
 }
 
 func New(clientArgs common.ClientArgs, options *Options) (*Handler, error) {
 	h := &Handler{
-		ClientArgs:           clientArgs,
-		options:              options,
 		IdentityHandler:      NewIdentityHandler(clientArgs),
 		ImageHandler:         NewImageHandler(clientArgs, options),
 		ImageV2Handler:       NewImageV2Handler(clientArgs, options),
@@ -50,6 +43,7 @@ func New(clientArgs common.ClientArgs, options *Options) (*Handler, error) {
 		RegionHandler:        NewRegionHandler(clientArgs, options),
 		SecurityGroupHandler: NewSecurityGroupHandler(clientArgs),
 		ServerHandler:        NewServerHandler(clientArgs),
+		StorageHandler:       NewStorageHandler(clientArgs),
 	}
 
 	return h, nil

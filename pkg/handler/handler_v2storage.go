@@ -23,15 +23,24 @@ import (
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/storage"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
 
-func (h *Handler) storageClient() *storage.Client {
+type StorageHandler common.Handler
+
+func NewStorageHandler(clientArgs common.ClientArgs) *StorageHandler {
+	return &StorageHandler{
+		ClientArgs: clientArgs,
+	}
+}
+
+func (h *StorageHandler) storageClient() *storage.Client {
 	return storage.New(h.ClientArgs)
 }
 
-func (h *Handler) GetApiV2Filestorage(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2FilestorageParams) {
+func (h *StorageHandler) GetApiV2Filestorage(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2FilestorageParams) {
 	result, err := h.storageClient().ListV2(r.Context(), params)
 	if err != nil {
 		errors.HandleError(w, r, err)
@@ -41,7 +50,7 @@ func (h *Handler) GetApiV2Filestorage(w http.ResponseWriter, r *http.Request, pa
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
-func (h *Handler) PostApiV2Filestorage(w http.ResponseWriter, r *http.Request) {
+func (h *StorageHandler) PostApiV2Filestorage(w http.ResponseWriter, r *http.Request) {
 	request := &openapi.StorageV2Create{}
 
 	if err := util.ReadJSONBody(r, request); err != nil {
@@ -58,7 +67,7 @@ func (h *Handler) PostApiV2Filestorage(w http.ResponseWriter, r *http.Request) {
 	util.WriteJSONResponse(w, r, http.StatusCreated, result)
 }
 
-func (h *Handler) DeleteApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter) {
+func (h *StorageHandler) DeleteApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter) {
 	if err := h.storageClient().Delete(r.Context(), filestorageID); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -67,7 +76,7 @@ func (h *Handler) DeleteApiV2FilestorageFilestorageID(w http.ResponseWriter, r *
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (h *Handler) GetApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter) {
+func (h *StorageHandler) GetApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter) {
 	result, err := h.storageClient().Get(r.Context(), filestorageID)
 	if err != nil {
 		errors.HandleError(w, r, err)
@@ -77,7 +86,7 @@ func (h *Handler) GetApiV2FilestorageFilestorageID(w http.ResponseWriter, r *htt
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
-func (h *Handler) PutApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, fileStorageID openapi.FilestorageIDParameter) {
+func (h *StorageHandler) PutApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, fileStorageID openapi.FilestorageIDParameter) {
 	request := &openapi.StorageV2Update{}
 
 	if err := util.ReadJSONBody(r, request); err != nil {
@@ -94,7 +103,7 @@ func (h *Handler) PutApiV2FilestorageFilestorageID(w http.ResponseWriter, r *htt
 	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
 }
 
-func (h *Handler) GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2FilestorageclassesParams) {
+func (h *StorageHandler) GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2FilestorageclassesParams) {
 	result, err := h.storageClient().ListClasses(r.Context(), params)
 	if err != nil {
 		errors.HandleError(w, r, err)
