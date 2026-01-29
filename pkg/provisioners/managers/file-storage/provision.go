@@ -151,6 +151,14 @@ func (p *Provisioner) attachMissingNetworks(ctx context.Context, cli client.Clie
 
 		log.V(1).Info("attaching network", "vlan", vlan)
 
+		// Fetch the Network to get its prefix for the attachment request.
+		network := &unikornv1.Network{}
+		if err := cli.Get(ctx, client.ObjectKey{Namespace: p.fileStorage.Namespace, Name: attachment.NetworkID}, network); err != nil {
+			setNetworkAttachmentStatus(p.fileStorage, attachment.NetworkID, attachment.SegmentationID, unikornv1.AttachmentErrored, err.Error())
+
+			return fmt.Errorf("failed to get network %s: %w", attachment.NetworkID, err)
+		}
+
 		// Add references to any resources we consume.
 		if err := manager.AddResourceReference(ctx, cli, &unikornv1.Network{}, client.ObjectKey{Namespace: p.fileStorage.Namespace, Name: attachment.NetworkID}, reference); err != nil {
 			setNetworkAttachmentStatus(p.fileStorage, attachment.NetworkID, attachment.SegmentationID, unikornv1.AttachmentErrored, err.Error())
@@ -158,7 +166,7 @@ func (p *Provisioner) attachMissingNetworks(ctx context.Context, cli client.Clie
 			return fmt.Errorf("%w: failed to add network references", err)
 		}
 
-		if err := driver.AttachNetwork(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, &attachment); err != nil {
+		if err := driver.AttachNetwork(ctx, p.fileStorage.Labels[coreconstants.ProjectLabel], p.fileStorage.Name, &attachment, network.Spec.Prefix); err != nil {
 			setNetworkAttachmentStatus(p.fileStorage, attachment.NetworkID, attachment.SegmentationID, unikornv1.AttachmentErrored, err.Error())
 
 			return err
