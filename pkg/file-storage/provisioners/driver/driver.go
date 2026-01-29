@@ -103,6 +103,12 @@ func New(ctx context.Context, cli client.Client, provisioner *unikornv1.FileStor
 	}, nil
 }
 
+// Close ends the session and disposes of resources, e.g., connection(s). The client is not
+// usable after calling this.
+func (p *Client) Close() {
+	p.nc.Close()
+}
+
 func connectToNATS(options *Options) (*nats.Conn, error) {
 	u, err := url.Parse(options.URL)
 	if err != nil {
