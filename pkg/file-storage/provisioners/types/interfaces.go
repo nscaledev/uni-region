@@ -24,6 +24,7 @@ import (
 )
 
 type Driver interface {
+	Close()
 	GetDetails(ctx context.Context, projectID string, fileStorageID string) (*FileStorageDetails, error)
 	ListAttachments(ctx context.Context, projectID string, fileStorageID string) (*FileStorageAttachments, error)
 	Create(ctx context.Context, projectID string, fileStorageID string, size int64, rootSquashEnabled bool) (*FileStorageDetails, error)
