@@ -12,6 +12,10 @@ on:
         description: 'Run UAT tests'
         type: boolean
         default: false
+      region_id:
+        description: 'Override TEST_REGION_ID (leave empty to use default)'
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -27,7 +31,7 @@ jobs:
       API_AUTH_TOKEN: ${{ secrets.DEV_API_AUTH_TOKEN }}
       TEST_ORG_ID: ${{ vars.DEV_TEST_ORG_ID }}
       TEST_PROJECT_ID: ${{ vars.DEV_TEST_PROJECT_ID }}
-      TEST_REGION_ID: ${{ vars.DEV_TEST_REGION_ID }}
+      TEST_REGION_ID: ${{ inputs.region_id || vars.DEV_TEST_REGION_ID }}
 
     steps:
     - name: Checkout
@@ -77,7 +81,7 @@ jobs:
       API_AUTH_TOKEN: ${{ secrets.UAT_API_AUTH_TOKEN }}
       TEST_ORG_ID: ${{ vars.UAT_TEST_ORG_ID }}
       TEST_PROJECT_ID: ${{ vars.UAT_TEST_PROJECT_ID }}
-      TEST_REGION_ID: ${{ vars.UAT_TEST_REGION_ID }}
+      TEST_REGION_ID: ${{ inputs.region_id || vars.UAT_TEST_REGION_ID }}
 
     steps:
     - name: Checkout
