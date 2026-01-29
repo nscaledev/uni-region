@@ -131,7 +131,7 @@ jobs:
         linear-api-key: ${{ secrets.LINEAR_API_KEY }}
         linear-team-id: ${{ vars.LINEAR_TEAM_ID }}
         linear-project-id: ${{ vars.LINEAR_PROJECT_ID }}
-        environment: dev
+        environment: uat
         linear-priority: '3'
         max-failures: '5'
 
