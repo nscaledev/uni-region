@@ -100,6 +100,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer driver.Close()
 
 	reference, err := manager.GenerateResourceReference(cli, p.fileStorage)
 	if err != nil {
@@ -132,6 +133,7 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer driver.Close()
 
 	// all networks must be detached before deletion
 	if err := p.detachNetworks(ctx, driver); err != nil {
