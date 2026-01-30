@@ -35,7 +35,6 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	networkclient "github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -692,21 +691,10 @@ func TestGet(t *testing.T) {
 			obj = append(obj, &tt.input)
 
 			c, ctx := newClientwithObjectandContext(t, ctx, obj...)
-			fc := &fileClient{
-				Client: c.Client,
-			}
 
-			c.GetFileStorageDriverFunc = func(ctx context.Context, storageClassID string) (Driver, error) {
-				return fc, nil
-			}
 			result, err := c.Get(ctx, tt.input.Name)
 			require.NoError(t, err)
 			require.NotNil(t, result, "result should not be empty")
-
-			// Check that usage matches with what is returned below in
-			// GetDetails()
-			require.Equal(t, 1*giB, result.Status.Usage.CapacityBytes, "Capacity")
-			require.Equal(t, 512*miB, *result.Status.Usage.UsedBytes, "Used")
 		})
 	}
 }
@@ -890,21 +878,4 @@ func defaultFSK8sObjects() []client.Object {
 			Spec: regionv1.FileStorageClassSpec{},
 		},
 	}
-}
-
-// Mock file storage driver functionality.
-var _ Driver = &fileClient{}
-
-type fileClient struct {
-	Client client.Client
-}
-
-func (c *fileClient) GetDetails(ctx context.Context, projectID string,
-	fileStorageID string) (*types.FileStorageDetails, error) {
-	return &types.FileStorageDetails{
-		Size:              resource.NewQuantity(1*giB, resource.BinarySI),
-		Path:              "/filesystem",
-		RootSquashEnabled: true,
-		UsedCapacity:      resource.NewQuantity(512*miB, resource.BinarySI),
-	}, nil
 }

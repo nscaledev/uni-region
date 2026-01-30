@@ -121,6 +121,172 @@ Trigger the workflow manually from the Actions tab:
    - Can run one, both, or neither
 4. View results in the workflow run and download test artifacts
 
+## Contract Testing
+
+Contract tests verify that the provider service meets consumer expectations defined in the Pact Broker.
+
+### Prerequisites
+
+1. Install Pact FFI library (macOS):
+   ```bash
+   brew tap pact-foundation/pact-ruby-standalone
+   brew install pact-ruby-standalone
+   mkdir -p $HOME/Library/pact
+   cp /usr/local/opt/pact-ruby-standalone/libexec/lib/*.dylib $HOME/Library/pact/
+   ```
+
+2. Start Pact Broker (optional, for local testing):
+
+Download the Uni-core repo and run the following command from its root dir:
+   ```bash
+make pact-broker-start
+   ```
+
+### Running Consumer Contract Tests
+
+Run consumer tests locally:
+```bash
+make test-contracts-consumer
+```
+
+Run with verbose output:
+```bash
+make test-contracts-consumer-verbose
+```
+
+Publish consumer pact files to Pact Broker (requires Docker):
+```bash
+make publish-contracts-consumer
+```
+
+Run consumer tests and publish in CI:
+```bash
+make test-contracts-consumer-ci
+```
+
+Check if a version can be safely deployed:
+```bash
+make can-i-deploy
+```
+
+Record a deployment to an environment:
+```bash
+make record-deployment
+```
+
+### Running Provider Contract Tests
+
+Run verification against pacts from the Pact Broker (this assumes you have already run and published the consumer tests to the broker):
+```bash
+make test-contracts-provider
+```
+
+Run verification against a local pact file (pact for the consumer when testing without a broker):
+```bash
+make test-contracts-provider-local PACT_FILE=/path/to/pact.json
+```
+
+Run with verbose output:
+```bash
+make test-contracts-provider-verbose
+```
+
+### Writing Consumer Tests
+
+Consumer tests define uni-region's expectations when calling external APIs (like uni-identity). Tests are located in `test/contracts/consumer/{provider}/`.
+
+**Structure:**
+- `suite_test.go` - Ginkgo test suite setup
+- `{feature}_test.go` - Consumer contract tests for specific features (e.g., `rbac_test.go`, `allocations_test.go`)
+
+**Basic Pattern:**
+
+1. **Test Setup:**
+   ```go
+   mockProvider, err := consumer.NewV2Pact(consumer.MockHTTPProviderConfig{
+       Consumer: "uni-region",
+       Provider: "uni-identity",
+       PactDir:  "./pacts",
+   })
+   ```
+
+2. **Define Interactions:**
+   ```go
+   err := mockProvider.
+       AddInteraction().
+       Given("organization exists with global read permission").
+       UponReceiving("a request to get organization ACL").
+       WithRequest(http.MethodGet, "/api/v1/organizations/test-org/acl").
+       WillRespondWith(http.StatusOK, func(b *consumer.V2ResponseBuilder) {
+           b.JSONBody(matchers.StructMatcher{
+               "scopes": matchers.EachLike(map[string]interface{}{
+                   "name": matchers.String("global"),
+                   // ... more fields
+               }, 1),
+           })
+       }).
+       ExecuteTest(nil, func(config consumer.MockServerConfig) error {
+           // Execute actual API call here
+           return nil
+       })
+   ```
+
+3. **Test Organization:**
+   - Group related tests by feature (RBAC, allocations, etc.)
+   - Use descriptive "Given", "UponReceiving" phrases
+   - Test both success and error scenarios
+   - Use Pact matchers for flexible matching
+
+**Example:** See `test/contracts/consumer/identity/` for complete examples of RBAC and allocation consumer tests.
+
+### Writing Provider Tests
+
+Provider tests are located in `test/contracts/provider/{consumer}/`. Each consumer has:
+- `verify_test.go` - Main test setup and verification
+- `states.go` - State handlers for setting up test data
+- `middleware.go` - Test-specific middleware (e.g., mock ACL)
+
+**Basic Pattern:**
+
+1. **Test Structure** (`verify_test.go`):
+   - Uses Ginkgo/Gomega for BDD-style tests
+   - Starts a test server in `BeforeEach`
+   - Creates state handlers mapping Pact states to setup functions
+   - Runs verification using `provider.NewVerifier()`
+
+2. **State Handlers** (`states.go`):
+   - Implement parameterized state handlers that accept organization ID and other parameters
+   - Use `StateManager` to create/cleanup Kubernetes resources
+   - Follow the builder pattern for creating test resources (see `RegionBuilder`)
+
+3. **Example State Handler:**
+   ```go
+   func (sm *StateManager) HandleOrganizationState(ctx context.Context, setup bool, params map[string]interface{}) error {
+       orgID := getStringParam(params, ParamOrganizationID, "test-org")
+       regionType := getStringParam(params, ParamRegionType, "")
+       
+       if setup {
+           return sm.setupRegions(ctx, orgID, regionType)
+       }
+       return sm.cleanupAllRegions(ctx)
+   }
+   ```
+
+4. **State Constants:**
+   - Define state names as constants (must match consumer contract states)
+   - Use parameter keys for passing data to state handlers
+
+See `test/contracts/provider/compute/` for a complete example following this pattern.
+
+### Running All Contract Tests
+
+Run both consumer and provider tests together:
+```bash
+make test-contracts
+```
+
+This is useful for ensuring both your consumer expectations and provider implementations are working correctly before publishing to the Pact Broker.
+
 ## What Next?
 
 The region controller is useless as it is, and requires a service provider to use it to yield a consumable resource.

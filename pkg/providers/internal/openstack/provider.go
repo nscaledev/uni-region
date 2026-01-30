@@ -82,6 +82,7 @@ const (
 	kubernetesVersionLabel = "unikorn:kubernetes_version"
 
 	organizationIDLabel = "unikorn:organization:id"
+	tagLabelPrefix      = "unikorn:tag:"
 	identityIDLabel     = "unikorn:identity_id"
 
 	containerFormatBare = "bare" // there's no const in gophercloud for this, so we have our own.
@@ -623,6 +624,25 @@ func imageArchitecture(image *images.Image) types.Architecture {
 	return types.X86_64
 }
 
+func imageTags(image *images.Image) map[string]string {
+	tags := make(map[string]string)
+
+	for k, v := range image.Properties {
+		if strings.HasPrefix(k, tagLabelPrefix) {
+			value, ok := v.(string) // empty string if this type assertion fails
+			if ok {
+				tags[k[len(tagLabelPrefix):]] = value
+			}
+		}
+	}
+
+	if len(tags) == 0 {
+		return nil
+	}
+
+	return tags
+}
+
 func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 	var organizationID *string
 	if temp, _ := image.Properties[organizationIDLabel].(string); temp != "" {
@@ -638,9 +658,12 @@ func (p *Provider) convertImage(image *images.Image) (*types.Image, error) {
 
 	virtualization, _ := image.Properties[virtualizationLabel].(string)
 
+	tags := imageTags(image)
+
 	providerImage := types.Image{
 		ID:             image.ID,
 		Name:           image.Name,
+		Tags:           tags,
 		OrganizationID: organizationID,
 		Created:        image.CreatedAt,
 		Modified:       image.UpdatedAt,
@@ -778,7 +801,7 @@ func setIfNotNil[T ~string](metadata map[string]string, key string, value *T) {
 	}
 }
 
-func (p *Provider) createImageMetadata(image *types.Image) (map[string]string, error) {
+func createImageMetadata(image *types.Image) (map[string]string, error) {
 	metadata := make(map[string]string)
 
 	metadata[osKernelLabel] = string(image.OS.Kernel)
@@ -787,6 +810,10 @@ func (p *Provider) createImageMetadata(image *types.Image) (map[string]string, e
 	metadata[osVersionLabel] = image.OS.Version
 	setIfNotNil(metadata, osVariantLabel, image.OS.Variant)
 	setIfNotNil(metadata, osCodenameLabel, image.OS.Codename)
+
+	for k, v := range image.Tags {
+		metadata[tagLabelPrefix+k] = v
+	}
 
 	if image.Packages != nil {
 		for name, version := range *image.Packages {
@@ -841,7 +868,7 @@ func (p *Provider) CreateImage(ctx context.Context, image *types.Image, uri stri
 		return nil, err
 	}
 
-	properties, err := p.createImageMetadata(image)
+	properties, err := createImageMetadata(image)
 	if err != nil {
 		return nil, err
 	}
@@ -1103,12 +1130,21 @@ func (p *Provider) provisionQuotas(ctx context.Context, identity *unikornv1.Open
 		return err
 	}
 
+	network, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	if err != nil {
+		return err
+	}
+
 	blockstorage, err := NewBlockStorageClient(ctx, providerClient)
 	if err != nil {
 		return err
 	}
 
 	if err := compute.UpdateQuotas(ctx, *identity.Spec.ProjectID); err != nil {
+		return err
+	}
+
+	if err := network.UpdateQuotas(ctx, *identity.Spec.ProjectID); err != nil {
 		return err
 	}
 
@@ -1780,7 +1816,7 @@ func securityGroupRuleID(direction unikornv1.SecurityGroupRuleDirection, protoco
 	// Prefix may be empty, but for debug purposes give it a name so it's not confusing
 	// when debugging this.
 	if prefix == "" {
-		prefix = "any"
+		prefix = "0.0.0.0/0"
 	}
 
 	return fmt.Sprintf("%s,%s,%d-%d,%s", direction, protocol, startPort, endPort, prefix)
@@ -2481,7 +2517,7 @@ func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Ident
 		return nil, err
 	}
 
-	metadata, err := p.createImageMetadata(image)
+	metadata, err := createImageMetadata(image)
 	if err != nil {
 		return nil, err
 	}

@@ -60,6 +60,7 @@ type CreateMountTarget struct {
 	VlanID           int64  `json:"vlanId"`
 	StartIP          string `json:"startIp"`
 	EndIP            string `json:"endIp"`
+	NetworkPrefix    string `json:"networkPrefix"`
 }
 
 type DeleteFileSystem struct {
@@ -105,6 +106,11 @@ type Resize struct {
 type ResizeResponse struct {
 	Size         int64 `json:"size"`
 	UsedCapacity int64 `json:"usedCapacity"`
+}
+
+type UpdateRootSquash struct {
+	RemoteIdentifier  `json:",inline"`
+	RootSquashEnabled bool `json:"rootSquashEnabled"`
 }
 
 type NatsResponseEnvelope[T any] struct {

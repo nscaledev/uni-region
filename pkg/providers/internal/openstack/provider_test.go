@@ -41,6 +41,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack/mock"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -210,7 +211,6 @@ func openstackRouterPortsFixture(openstackRouter *routers.Router, openstackSubne
 	}
 }
 
-//nolint:unparam
 func securityGroupRuleFixtureSingle(t *testing.T, dir regionv1.SecurityGroupRuleDirection, proto regionv1.SecurityGroupRuleProtocol, port int, prefix string) regionv1.SecurityGroupRule {
 	t.Helper()
 
@@ -646,6 +646,26 @@ func TestReconcileSecurityGroupRules(t *testing.T) {
 
 		require.NoError(t, openstack.ReconcileSecurityGroupRules(t.Context(), p, networking, securityGroup, openstackSecurityGroup))
 	})
+
+	t.Run("ItOverridesImplicitEgress", func(t *testing.T) {
+		t.Parallel()
+
+		securityGroup := securityGroupFixture(
+			securityGroupRuleFixtureSingle(t, regionv1.Egress, regionv1.Any, 0, ""),
+			securityGroupRuleFixtureSingle(t, regionv1.Egress, regionv1.Any, 0, "0.0.0.0/0"),
+		)
+
+		openstackSecurityGroup := openstackSecurityGroupFixture(securityGroup,
+			openstackSecurityGroupRuleFixtureDefault(),
+		)
+
+		networking := mock.NewMockSecurityGroupInterface(c)
+		networking.EXPECT().ListSecurityGroupRules(t.Context(), openstackSecurityGroup.ID).Return(openstackSecurityGroup.Rules, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		require.NoError(t, openstack.ReconcileSecurityGroupRules(t.Context(), p, networking, securityGroup, openstackSecurityGroup))
+	})
 }
 
 // TestReconcileServerPort tests a resource is created when one isn't present.
@@ -859,4 +879,102 @@ func TestReconcileServer(t *testing.T) {
 		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
 		require.NoError(t, err)
 	})
+}
+
+// TestImageTagRoundTrip tests the round-trip conversion of tags:
+// types.Image.Tags -> createImageMetadata -> Glance properties -> imageTags -> map[string]string.
+func TestImageTagRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		image *types.Image
+	}{
+		{
+			name: "image with multiple tags",
+			image: &types.Image{
+				Name: "my-snapshot",
+				Tags: map[string]string{
+					"name":         "server-xyz", // verify it doesn't collide with the field Name
+					"snapshotType": "manual",
+					"requestId":    "req-789",
+				},
+				OS: types.ImageOS{
+					Kernel:  types.Linux,
+					Family:  types.Debian,
+					Distro:  types.Ubuntu,
+					Version: "24.04",
+				},
+			},
+		},
+		{
+			name: "image with no tags",
+			image: &types.Image{
+				Name: "base-image",
+				Tags: nil,
+				OS: types.ImageOS{
+					Kernel:  types.Linux,
+					Family:  types.Redhat,
+					Distro:  types.Rocky,
+					Version: "9.3",
+				},
+			},
+		},
+		{
+			name: "image with special characters in tag keys",
+			image: &types.Image{
+				Name: "test-image",
+				Tags: map[string]string{
+					"backup-id":   "daily-2025-01-23",
+					"env.type":    "production",
+					"owner_email": "user@example.com",
+				},
+				OS: types.ImageOS{
+					Kernel:  types.Linux,
+					Family:  types.Debian,
+					Distro:  types.Ubuntu,
+					Version: "22.04",
+				},
+			},
+		},
+		{
+			name: "image with single tag",
+			image: &types.Image{
+				Name: "single-tag-image",
+				Tags: map[string]string{
+					"instanceId": "abc-123",
+				},
+				OS: types.ImageOS{
+					Kernel:  types.Linux,
+					Family:  types.Debian,
+					Distro:  types.Ubuntu,
+					Version: "24.04",
+				},
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			properties, err := openstack.CreateImageMetadata(c.image)
+			require.NoError(t, err)
+
+			// We send map[string]string to the Glance client, but it returns map[string]any,
+			// containing any properties it didn't recognise as its own.
+			glanceProperties := make(map[string]any)
+			for k, v := range properties {
+				glanceProperties[k] = v
+			}
+
+			glanceImage := &images.Image{
+				Properties: glanceProperties,
+			}
+
+			extractedTags := openstack.ImageTags(glanceImage)
+
+			require.Equal(t, c.image.Tags, extractedTags)
+		})
+	}
 }
