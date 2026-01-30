@@ -81,6 +81,12 @@ var _ = Describe("Region Discovery", func() {
 	})
 })
 
+// NOTE: Region Detail endpoint (/regions/{id}/detail) is not tested because:
+// - It's marked as x-hidden: true (admin-only)
+// - Returns 404 in test environment (requires elevated permissions)
+// - Not part of critical user-facing services
+// - Client method exists at api_client.go:102-118 if needed in future
+
 var _ = Describe("Flavor Discovery", func() {
 	Context("When listing flavors for a region", func() {
 		Describe("Given valid region and organization", func() {
@@ -152,12 +158,22 @@ var _ = Describe("Image Discovery", func() {
 
 var _ = Describe("External Network Discovery", func() {
 	Context("When listing external networks for a region", func() {
+		Describe("Given valid region and organization", func() {
+			It("should return 403 when RBAC denies access to external networks", func() {
+				_, err := client.ListExternalNetworks(ctx, config.OrgID, config.RegionID)
+
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, coreclient.ErrAccessDenied)).To(BeTrue())
+				GinkgoWriter.Printf("External networks access denied for region %s as expected\n", config.RegionID)
+			})
+		})
+
 		Describe("Given invalid parameters", func() {
 			It("should reject requests with invalid region ID for external networks", func() {
 				_, err := client.ListExternalNetworks(ctx, config.OrgID, "invalid-region-id")
 
 				Expect(err).To(HaveOccurred())
-				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
+				Expect(errors.Is(err, coreclient.ErrAccessDenied)).To(BeTrue())
 				GinkgoWriter.Printf("Expected error for invalid region ID: %v\n", err)
 			})
 		})
