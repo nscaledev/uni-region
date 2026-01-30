@@ -29,6 +29,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
@@ -281,7 +282,7 @@ func (p *Client) Delete(ctx context.Context, projectID string, fileStorageID str
 	return err
 }
 
-func (p *Client) AttachNetwork(ctx context.Context, projectID string, fileStorageID string, attachment *unikornv1.Attachment) error {
+func (p *Client) AttachNetwork(ctx context.Context, projectID string, fileStorageID string, attachment *unikornv1.Attachment, networkPrefix *unikornv1core.IPv4Prefix) error {
 	if attachment.SegmentationID == nil || attachment.IPRange == nil {
 		return fmt.Errorf("%w: missing segmentation ID or IP range", ErrInvalidAttachment)
 	}
@@ -296,9 +297,10 @@ func (p *Client) AttachNetwork(ctx context.Context, projectID string, fileStorag
 			ProjectID: projectID,
 			VolumeID:  fileStorageID,
 		},
-		VlanID:  int64(*attachment.SegmentationID),
-		StartIP: attachment.IPRange.Start.String(),
-		EndIP:   attachment.IPRange.End.String(),
+		VlanID:        int64(*attachment.SegmentationID),
+		StartIP:       attachment.IPRange.Start.String(),
+		EndIP:         attachment.IPRange.End.String(),
+		NetworkPrefix: networkPrefix.String(),
 	}
 
 	_, err := doRequest[EmptyResponse](ctx, p.nc, p.subject("createmounttarget"), req)

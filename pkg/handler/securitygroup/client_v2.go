@@ -413,7 +413,7 @@ func (c *Client) DeleteV2(ctx context.Context, securityGroupID string) error {
 		return errors.HTTPForbidden("security group is in use and cannot be deleted")
 	}
 
-	if err := c.Client.Delete(ctx, resource, util.ForegroundDeleteOptions()); err != nil {
+	if err := c.Client.Delete(ctx, resource); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
 		}
