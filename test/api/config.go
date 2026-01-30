@@ -26,8 +26,8 @@ import (
 // TestConfig extends the base config with Region-specific fields.
 type TestConfig struct {
 	coreconfig.BaseConfig
-	OrgID                          string
-	ProjectID                      string
+	OrgID         string
+	ProjectID     string
 	RegionID      string
 	RegionBaseURL string
 }
@@ -70,8 +70,8 @@ func LoadTestConfig() (*TestConfig, error) {
 		},
 		RegionBaseURL: v.GetString("REGION_BASE_URL"),
 		OrgID:         v.GetString("TEST_ORG_ID"),
-		ProjectID: v.GetString("TEST_PROJECT_ID"),
-		RegionID:  v.GetString("TEST_REGION_ID"),
+		ProjectID:     v.GetString("TEST_PROJECT_ID"),
+		RegionID:      v.GetString("TEST_REGION_ID"),
 	}
 
 	// Validate required fields

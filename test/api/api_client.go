@@ -159,7 +159,6 @@ func (c *APIClient) ListImages(ctx context.Context, orgID, regionID string) (reg
 }
 
 // ListExternalNetworks lists all external networks available in a region.
-// Uses the region service client when available, as external networks are not proxied through compute.
 func (c *APIClient) ListExternalNetworks(ctx context.Context, orgID, regionID string) (regionopenapi.ExternalNetworks, error) {
 	path := c.endpoints.ListExternalNetworks(orgID, regionID)
 
@@ -179,4 +178,3 @@ func (c *APIClient) ListExternalNetworks(ctx context.Context, orgID, regionID st
 		},
 	)
 }
-
