@@ -1,5 +1,4 @@
 /*
-Copyright 2024-2025 the Unikorn Authors.
 Copyright 2026 Nscale.
 
 Licensed under the Apache License, Version 2.0 (the "License");
