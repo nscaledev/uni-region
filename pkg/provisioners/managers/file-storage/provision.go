@@ -159,6 +159,12 @@ func (p *Provisioner) attachMissingNetworks(ctx context.Context, cli client.Clie
 			return fmt.Errorf("failed to get network %s: %w", attachment.NetworkID, err)
 		}
 
+		if network.Spec.Prefix == nil {
+			setNetworkAttachmentStatus(p.fileStorage, attachment.NetworkID, attachment.SegmentationID, unikornv1.AttachmentErrored, "network has no prefix defined")
+
+			return fmt.Errorf("network %s has no prefix defined: %w", attachment.NetworkID, ErrInvalidNetwork)
+		}
+
 		// Add references to any resources we consume.
 		if err := manager.AddResourceReference(ctx, cli, &unikornv1.Network{}, client.ObjectKey{Namespace: p.fileStorage.Namespace, Name: attachment.NetworkID}, reference); err != nil {
 			setNetworkAttachmentStatus(p.fileStorage, attachment.NetworkID, attachment.SegmentationID, unikornv1.AttachmentErrored, err.Error())
