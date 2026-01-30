@@ -60,6 +60,7 @@ type CreateMountTarget struct {
 	VlanID           int64  `json:"vlanId"`
 	StartIP          string `json:"startIp"`
 	EndIP            string `json:"endIp"`
+	NetworkPrefix    string `json:"networkPrefix"`
 }
 
 type DeleteFileSystem struct {
