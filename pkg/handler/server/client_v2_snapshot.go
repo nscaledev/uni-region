@@ -26,7 +26,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
 
-func (c *ClientV2) CreateV2Snapshot(ctx context.Context, serverID string, request *openapi.SnapshotCreate) (*openapi.ImageResponse, error) {
+func (c *Client) CreateV2Snapshot(ctx context.Context, serverID string, request *openapi.SnapshotCreate) (*openapi.ImageResponse, error) {
 	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return nil, err

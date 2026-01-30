@@ -35,3 +35,7 @@ type ClientArgs struct {
 	// Identity is an identity client for RBAC access.
 	Identity identityapi.ClientWithResponsesInterface
 }
+
+type Handler struct {
+	ClientArgs
+}
