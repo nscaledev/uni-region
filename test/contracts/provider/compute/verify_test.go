@@ -169,6 +169,7 @@ var _ = Describe("Region Provider Verification", func() {
 				// Publish verification results back to broker
 				PublishVerificationResults: os.Getenv("CI") == "true" || os.Getenv("PUBLISH_VERIFICATION") == "true",
 				ProviderVersion:            getProviderVersion(),
+				ProviderBranch:             os.Getenv("PROVIDER_BRANCH"),
 				StateHandlers:              stateHandlers,
 			})
 
