@@ -24,6 +24,8 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 )
 
+//go:generate mockgen -source=interfaces.go -destination=mock/interfaces.go -package=mock
+
 type Driver interface {
 	Close()
 	GetDetails(ctx context.Context, projectID string, fileStorageID string) (*FileStorageDetails, error)
