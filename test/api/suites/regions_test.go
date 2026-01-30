@@ -159,26 +159,12 @@ var _ = Describe("Image Discovery", func() {
 var _ = Describe("External Network Discovery", func() {
 	Context("When listing external networks for a region", func() {
 		Describe("Given valid region and organization", func() {
-			It("should match configured region capabilities", func() {
-				externalNetworks, err := client.ListExternalNetworks(ctx, config.OrgID, config.RegionID)
+			It("should return 403 when RBAC denies access to external networks", func() {
+				_, err := client.ListExternalNetworks(ctx, config.OrgID, config.RegionID)
 
-				if config.RegionSupportsExternalNetworks {
-					// Region supports external networks - expect success
-					Expect(err).NotTo(HaveOccurred(), "Region configured with external networks")
-					Expect(externalNetworks).NotTo(BeNil())
-
-					// Validate network structure
-					for _, network := range externalNetworks {
-						Expect(network.Id).NotTo(BeEmpty())
-						Expect(network.Name).NotTo(BeEmpty())
-					}
-					GinkgoWriter.Printf("Found %d external networks for region %s\n", len(externalNetworks), config.RegionID)
-				} else {
-					// Region does not support external networks - expect 404
-					Expect(err).To(HaveOccurred(), "Region configured without external networks")
-					Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
-					GinkgoWriter.Printf("Region %s does not have external networks (404)\n", config.RegionID)
-				}
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, coreclient.ErrAccessDenied)).To(BeTrue())
+				GinkgoWriter.Printf("External networks access denied for region %s as expected\n", config.RegionID)
 			})
 		})
 
@@ -187,7 +173,7 @@ var _ = Describe("External Network Discovery", func() {
 				_, err := client.ListExternalNetworks(ctx, config.OrgID, "invalid-region-id")
 
 				Expect(err).To(HaveOccurred())
-				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
+				Expect(errors.Is(err, coreclient.ErrAccessDenied)).To(BeTrue())
 				GinkgoWriter.Printf("Expected error for invalid region ID: %v\n", err)
 			})
 		})

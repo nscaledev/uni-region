@@ -44,12 +44,6 @@ var _ = BeforeSuite(func() {
 
 	client = api.NewAPIClientWithConfig(config)
 	ctx = context.Background()
-
-	// Detect region capabilities once at suite startup
-	config.RegionSupportsExternalNetworks, err = client.CheckRegionSupportsExternalNetworks(ctx, config.OrgID, config.RegionID)
-	Expect(err).NotTo(HaveOccurred(), "Failed to check external networks capability")
-
-	GinkgoWriter.Printf("Region %s external networks support: %v\n", config.RegionID, config.RegionSupportsExternalNetworks)
 })
 
 var _ = BeforeEach(func() {

@@ -21,7 +21,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -42,8 +41,9 @@ func (g *GinkgoLogger) Printf(format string, args ...interface{}) {
 // Add methods here as you write tests for specific endpoints.
 type APIClient struct {
 	*coreclient.APIClient
-	config    *TestConfig
-	endpoints *Endpoints
+	regionClient *coreclient.APIClient
+	config       *TestConfig
+	endpoints    *Endpoints
 }
 
 // GetListRegionsPath returns the path for listing regions.
@@ -77,10 +77,18 @@ func newAPIClientWithConfig(config *TestConfig, baseURL string) *APIClient {
 	coreClient.SetLogRequests(config.LogRequests)
 	coreClient.SetLogResponses(config.LogResponses)
 
+	var regionClient *coreclient.APIClient
+	if config.RegionBaseURL != "" {
+		regionClient = coreclient.NewAPIClient(config.RegionBaseURL, config.AuthToken, config.RequestTimeout, &GinkgoLogger{})
+		regionClient.SetLogRequests(config.LogRequests)
+		regionClient.SetLogResponses(config.LogResponses)
+	}
+
 	return &APIClient{
-		APIClient: coreClient,
-		config:    config,
-		endpoints: NewEndpoints(),
+		APIClient:    coreClient,
+		regionClient: regionClient,
+		config:       config,
+		endpoints:    NewEndpoints(),
 	}
 }
 
@@ -151,12 +159,18 @@ func (c *APIClient) ListImages(ctx context.Context, orgID, regionID string) (reg
 }
 
 // ListExternalNetworks lists all external networks available in a region.
+// Uses the region service client when available, as external networks are not proxied through compute.
 func (c *APIClient) ListExternalNetworks(ctx context.Context, orgID, regionID string) (regionopenapi.ExternalNetworks, error) {
 	path := c.endpoints.ListExternalNetworks(orgID, regionID)
 
+	client := c.APIClient
+	if c.regionClient != nil {
+		client = c.regionClient
+	}
+
 	return coreclient.ListResource[regionopenapi.ExternalNetwork](
 		ctx,
-		c.APIClient,
+		client,
 		path,
 		coreclient.ResponseHandlerConfig{
 			ResourceType:   "externalNetworks",
@@ -166,20 +180,3 @@ func (c *APIClient) ListExternalNetworks(ctx context.Context, orgID, regionID st
 	)
 }
 
-// CheckRegionSupportsExternalNetworks attempts to list external networks
-// and returns true if the region supports them, false if it returns 404.
-// Returns an error only for unexpected failures.
-func (c *APIClient) CheckRegionSupportsExternalNetworks(ctx context.Context, orgID, regionID string) (bool, error) {
-	_, err := c.ListExternalNetworks(ctx, orgID, regionID)
-
-	if err == nil {
-		return true, nil
-	}
-
-	if errors.Is(err, coreclient.ErrResourceNotFound) {
-		return false, nil
-	}
-
-	// Unexpected error - return it
-	return false, err
-}
