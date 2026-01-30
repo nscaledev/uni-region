@@ -39,10 +39,10 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	regionconstants "github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
-	"github.com/unikorn-cloud/region/pkg/handler/server"
-	"github.com/unikorn-cloud/region/pkg/handler/server/mock"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
+	mockprovider "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -168,11 +168,15 @@ func TestServerV2_EmptyList(t *testing.T) {
 
 	namespace := "region-test-home"
 
+	ctrl := gomock.NewController(t)
+	providers := mockproviders.NewMockProviders(ctrl)
+
 	c := fakeClientWithSchema(t) // NB no objects
 
 	clientArgs := common.ClientArgs{
 		Client:    c,
 		Namespace: namespace,
+		Providers: providers,
 	}
 
 	handler := NewServerV2Handler(clientArgs)
@@ -194,11 +198,15 @@ func TestServerV2_NotAllowedList(t *testing.T) {
 
 	namespace := "region-test-home"
 
+	ctrl := gomock.NewController(t)
+	providers := mockproviders.NewMockProviders(ctrl)
+
 	c := fakeClientWithSchema(t, knownGoodFixture(t, "server1", namespace, "org-not-allowed-test")...)
 
 	clientArgs := common.ClientArgs{
 		Client:    c,
 		Namespace: namespace,
+		Providers: providers,
 	}
 
 	handler := NewServerV2Handler(clientArgs)
@@ -225,12 +233,6 @@ func newSnapshotRequest(ctx context.Context) *http.Request {
 	return httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/servers", requestBody)
 }
 
-func providerGetter(provider *mock.MockProvider) server.GetProviderFunc {
-	return func(_ context.Context, _ client.Client, _, _ string) (server.Provider, error) {
-		return provider, nil
-	}
-}
-
 func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 	t.Parallel()
 
@@ -240,11 +242,19 @@ func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 		serverName = "server1"
 	)
 
+	ctrl := gomock.NewController(t)
+
+	provider := mockprovider.NewMockProvider(ctrl)
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(gomock.Any(), gomock.Any()).Return(provider, nil)
+
 	c := fakeClientWithSchema(t, knownGoodFixture(t, serverName, namespace, orgID)...)
 
 	clientArgs := common.ClientArgs{
 		Client:    c,
 		Namespace: namespace,
+		Providers: providers,
 	}
 
 	handler := NewServerV2Handler(clientArgs)
@@ -252,9 +262,6 @@ func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 	// We can't guarantee the order things are done in the handler, and in particular, the region provider
 	// may be requested before permissions are checked. So, make sure there is a provider, though we don't
 	// expect it to be called.
-	provider := mock.NewTestMockProvider(t)
-	handler.getProvider = providerGetter(provider)
-
 	testcases := []struct {
 		name    string
 		makeCtx func(context.Context) context.Context
@@ -312,11 +319,10 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 
 	c := fakeClientWithSchema(t, knownGoodFixture(t, serverName, namespace, orgID)...)
 
-	provider := mock.NewTestMockProvider(t)
-	// on the first ask, expect to be asked for the "original" image (that the server is using)
-	provider.EXPECT().GetImage(gomock.Any(), orgID, "image1").
-		Return(original, nil)
+	ctrl := gomock.NewController(t)
 
+	provider := mockprovider.NewMockProvider(ctrl)
+	provider.EXPECT().GetImage(gomock.Any(), orgID, "image1").Return(original, nil)
 	provider.EXPECT().CreateSnapshot(
 		gomock.Any(),
 		gomock.AssignableToTypeOf(&regionv1.Identity{}),
@@ -324,13 +330,16 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 		gomock.AssignableToTypeOf(&types.Image{})).
 		Return(snapshot, nil)
 
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(gomock.Any(), gomock.Any()).Return(provider, nil)
+
 	clientArgs := common.ClientArgs{
 		Client:    c,
 		Namespace: namespace,
+		Providers: providers,
 	}
 
 	handler := NewServerV2Handler(clientArgs)
-	handler.getProvider = providerGetter(provider)
 
 	ctx := newOrganisationACLBuilder(orgID).
 		addEndpoint("region:images", identityapi.Create).

@@ -1,4 +1,5 @@
 /*
+Copyright 2025 the Unikorn Authors.
 Copyright 2026 Nscale.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,23 +15,19 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package mock
+//go:generate mockgen -source=interfaces.go -destination=mock/interfaces.go -package=mock
+package providers
 
 import (
-	"testing"
+	"context"
 
-	gomock "go.uber.org/mock/gomock"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 )
 
-//go:generate mockgen -source=../client_v2.go -destination=interfaces.go -package=mock
-
-// newTestMockProvider creates a new mock provider with a gomock controller.
-// The controller is automatically cleaned up when the test finishes.
-func NewTestMockProvider(t *testing.T) *MockProvider {
-	t.Helper()
-
-	mockController := gomock.NewController(t)
-	t.Cleanup(mockController.Finish)
-
-	return NewMockProvider(mockController)
+type Providers interface {
+	// LookupCommon returns a provider as identified by the region ID of any type.
+	LookupCommon(ctx context.Context, regionID string) (types.CommonProvider, error)
+	// LookupCloud returns a provider as identified by the region ID and must be
+	// a cloud type.
+	LookupCloud(ctx context.Context, regionID string) (types.Provider, error)
 }
