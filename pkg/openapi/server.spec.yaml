@@ -2757,6 +2757,10 @@ components:
               description: amount of storage space used in bytes
               type: integer
               format: int64
+            updatedAt:
+              description: timestamp when the usage was last updated
+              type: string
+              format: date-time
     storageV2Create:
       description: A storage create request.
       type: object
@@ -3733,6 +3737,7 @@ components:
               usage:
                   capacityBytes: 107374182400
                   usedBytes: 94489280512
+                  updatedAt: 2026-01-31T12:00:00Z
               attachments:
                 - networkId: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
                   mountSource: 10.0.0.16:/mnt/nfs
@@ -3770,6 +3775,7 @@ components:
               usage:
                   capacityBytes: 107374182400
                   usedBytes: 94489280512
+                  updatedAt: 2026-01-31T12:00:00Z
               attachments:
                 - networkId: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
                   mountSource: 10.0.0.16:/mnt/nfs
