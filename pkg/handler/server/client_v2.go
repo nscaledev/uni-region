@@ -21,12 +21,14 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"reflect"
 	"slices"
 
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
@@ -192,13 +194,13 @@ func convertV2List(in *regionv1.ServerList) openapi.ServersV2Read {
 func convertCreateToUpdateRequest(in *openapi.ServerV2Create) (*openapi.ServerV2Update, error) {
 	t, err := json.Marshal(in)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to marshal request").WithError(err)
+		return nil, fmt.Errorf("%w: failed to marshal request", err)
 	}
 
 	out := &openapi.ServerV2Update{}
 
 	if err := json.Unmarshal(t, out); err != nil {
-		return nil, errors.OAuth2ServerError("failed to unmarshal request").WithError(err)
+		return nil, fmt.Errorf("%w: failed to unmarshal request", err)
 	}
 
 	return out, nil
@@ -293,11 +295,11 @@ func (c *ClientV2) generateV2(ctx context.Context, organizationID, projectID str
 	}
 
 	if err := util.InjectUserPrincipal(ctx, organizationID, projectID); err != nil {
-		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
+		return nil, fmt.Errorf("%w: unable to set principal information", err)
 	}
 
 	if err := identitycommon.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
-		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
+		return nil, fmt.Errorf("%w: failed to set identity metadata", err)
 	}
 
 	// Ensure the server is owned by the network so it is automatically cleaned
@@ -322,17 +324,17 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 			return nil, nil
 		}
 
-		return nil, errors.OAuth2ServerError("failed to add identity label selector").WithError(err)
+		return nil, fmt.Errorf("%w: failed to add identity label selector", err)
 	}
 
 	selector, err = util.AddRegionIDQuery(selector, params.RegionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to add region label selector").WithError(err)
+		return nil, fmt.Errorf("%w: failed to add region label selector", err)
 	}
 
 	selector, err = util.AddNetworkIDQuery(selector, params.NetworkID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to add network label selector").WithError(err)
+		return nil, fmt.Errorf("%w: failed to add network label selector", err)
 	}
 
 	options := &client.ListOptions{
@@ -343,7 +345,7 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 	result := &regionv1.ServerList{}
 
 	if err := c.Client.Client.List(ctx, result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list servers").WithError(err)
+		return nil, fmt.Errorf("%w: unable to list servers", err)
 	}
 
 	tagSelector, err := coreutil.DecodeTagSelectorParam(params.Tag)
@@ -387,7 +389,7 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 	}
 
 	if err := c.Client.Client.Create(ctx, resource); err != nil {
-		return nil, errors.OAuth2ServerError("unable to create server").WithError(err)
+		return nil, fmt.Errorf("%w: unable to create server", err)
 	}
 
 	return convertV2(resource), nil
@@ -401,7 +403,7 @@ func (c *ClientV2) GetV2Raw(ctx context.Context, serverID string) (*regionv1.Ser
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("unable to lookup server").WithError(err)
+		return nil, fmt.Errorf("%w: unable to lookup server", err)
 	}
 
 	if err := rbac.AllowProjectScope(ctx, "region:servers", identityapi.Read, result.Labels[coreconstants.OrganizationLabel], result.Labels[coreconstants.ProjectLabel]); err != nil {
@@ -416,7 +418,7 @@ func (c *ClientV2) GetV2Raw(ctx context.Context, serverID string) (*regionv1.Ser
 
 	version, err := constants.UnmarshalAPIVersion(v)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to parse API version")
+		return nil, fmt.Errorf("%w: unable to parse API version", coreerrors.ErrConsistency)
 	}
 
 	if version != 2 {
@@ -466,7 +468,7 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *opena
 	updated.Spec = required.Spec
 
 	if err := c.Client.Client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
-		return nil, errors.OAuth2ServerError("unable to update server").WithError(err)
+		return nil, fmt.Errorf("%w: unable to update server", err)
 	}
 
 	return convertV2(updated), nil
@@ -487,7 +489,7 @@ func (c *ClientV2) DeleteV2(ctx context.Context, serverID string) error {
 			return errors.HTTPNotFound().WithError(err)
 		}
 
-		return errors.OAuth2ServerError("unable to delete server").WithError(err)
+		return fmt.Errorf("%w: unable to delete server", err)
 	}
 
 	return nil
@@ -506,7 +508,7 @@ func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID 
 
 	provider, err := c.getProvider(ctx, server.Labels[constants.RegionLabel])
 	if err != nil {
-		return nil, nil, nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, nil, nil, fmt.Errorf("%w: failed to create region provider", err)
 	}
 
 	return server, identity, provider, nil
@@ -521,11 +523,11 @@ func (c *ClientV2) SSHKey(ctx context.Context, serverID string) (*openapi.SshKey
 	var openstackIdentity regionv1.OpenstackIdentity
 
 	if err := c.Client.Client.Get(ctx, client.ObjectKey{Namespace: identity.Namespace, Name: identity.Name}, &openstackIdentity); err != nil {
-		return nil, errors.OAuth2ServerError("failed to load server identity information").WithError(err)
+		return nil, fmt.Errorf("%w: failed to load server identity information", err)
 	}
 
 	if len(openstackIdentity.Spec.SSHPrivateKey) == 0 {
-		return nil, errors.OAuth2ServerError("server SSH key unavailable").WithError(err)
+		return nil, fmt.Errorf("%w: server SSH key unavailable", err)
 	}
 
 	out := &openapi.SshKey{

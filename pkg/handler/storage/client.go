@@ -171,12 +171,12 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageP
 			return nil, nil
 		}
 
-		return nil, errors.OAuth2ServerError("failed to add identity label selector").WithError(err)
+		return nil, fmt.Errorf("%w: failed to add identity label selector", err)
 	}
 
 	selector, err = util.AddRegionIDQuery(selector, params.RegionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to add region label selector").WithError(err)
+		return nil, fmt.Errorf("%w: failed to add region label selector", err)
 	}
 
 	options := &client.ListOptions{
@@ -188,7 +188,7 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageP
 
 	err = c.Client.List(ctx, result, options)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to list storage").WithError(err)
+		return nil, fmt.Errorf("%w: unable to list storage", err)
 	}
 
 	tagSelector, err := coreutil.DecodeTagSelectorParam(params.Tag)
@@ -229,7 +229,7 @@ func (c *Client) GetRaw(ctx context.Context, storageID string) (*regionv1.FileSt
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("unable to lookup storage").WithError(err)
+		return nil, fmt.Errorf("%w: unable to lookup storage", err)
 	}
 
 	err = rbac.AllowProjectScope(ctx, "region:filestorage:v2", identityapi.Read,
@@ -259,7 +259,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 
 	err := util.InjectUserPrincipal(ctx, organizationID, projectID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
+		return nil, fmt.Errorf("%w: unable to set principal information", err)
 	}
 
 	attachments, err := generateAttachmentList(ctx, networkClient, request.Spec.Attachments)
@@ -286,7 +286,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 
 	err = identitycommon.SetIdentityMetadata(ctx, &out.ObjectMeta)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
+		return nil, fmt.Errorf("%w: failed to set identity metadata", err)
 	}
 
 	return out, nil
@@ -313,7 +313,7 @@ func generateAttachmentList(ctx context.Context, networkClient *network.Client, 
 	for i, networkID := range networkIDs {
 		network, err := networkClient.GetV2Raw(ctx, networkID)
 		if err != nil {
-			return nil, errors.OAuth2ServerError("unable to get network").WithError(err)
+			return nil, fmt.Errorf("%w: unable to get network", err)
 		}
 
 		attachment, err := generateAttachment(network)
@@ -334,7 +334,7 @@ func generateAttachment(network *regionv1.Network) (*regionv1.Attachment, error)
 	// Because FileStorage needs details that are only available through the status at present,
 	// I have used it (conditionally) here until there is a reliable, generic way to get that info.
 	if network.Status.Openstack == nil {
-		return nil, errors.OAuth2ServerError("network requested is not a suitable network") // TODO: use 422, or supply better information here.
+		return nil, errors.HTTPUnprocessableContent("network requested is not a suitable network")
 	}
 
 	ipRange := narrowStorageRange(network.Status.Openstack.StorageRange)
@@ -366,13 +366,13 @@ func narrowStorageRange(in *regionv1.AttachmentIPRange) *regionv1.AttachmentIPRa
 func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.StorageV2Update, error) {
 	t, err := json.Marshal(in)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to marshal request").WithError(err)
+		return nil, fmt.Errorf("%w: failed to marshal request", err)
 	}
 
 	out := &openapi.StorageV2Update{}
 
 	if err := json.Unmarshal(t, out); err != nil {
-		return nil, errors.OAuth2ServerError("failed to unmarshal request").WithError(err)
+		return nil, fmt.Errorf("%w: failed to unmarshal request", err)
 	}
 
 	return out, nil
@@ -445,7 +445,7 @@ func (c *Client) Delete(ctx context.Context, storageID string) error {
 	}
 
 	if err := c.Client.Delete(ctx, resource); err != nil {
-		return errors.OAuth2ServerError("delete failed").WithError(err)
+		return fmt.Errorf("%w: delete failed", err)
 	}
 
 	return nil
@@ -454,7 +454,7 @@ func (c *Client) Delete(ctx context.Context, storageID string) error {
 func (c *Client) ListClasses(ctx context.Context, params openapi.GetApiV2FilestorageclassesParams) (openapi.StorageClassListV2Read, error) {
 	selector, err := util.AddRegionIDQuery(labels.Everything(), params.RegionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to add region label selector").WithError(err)
+		return nil, fmt.Errorf("%w: failed to add region label selector", err)
 	}
 
 	result := &regionv1.FileStorageClassList{}
@@ -464,7 +464,7 @@ func (c *Client) ListClasses(ctx context.Context, params openapi.GetApiV2Filesto
 	}
 
 	if err := c.Client.List(ctx, result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list storage classes").WithError(err)
+		return nil, fmt.Errorf("%w: unable to list storage classes", err)
 	}
 
 	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.FileStorageClass) bool {
@@ -486,7 +486,7 @@ func (c *Client) GetStorageClass(ctx context.Context, storageClassID string) (*o
 			return nil, errors.HTTPUnprocessableContent("storage class not found").WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("unable to lookup storage class").WithError(err)
+		return nil, fmt.Errorf("%w: unable to lookup storage class", err)
 	}
 
 	if err := authorizeFileStorageClassRead(ctx, result); err != nil {
