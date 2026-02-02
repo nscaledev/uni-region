@@ -84,8 +84,29 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 			RegionId:       in.Labels[constants.RegionLabel],
 			StorageClassId: in.Spec.StorageClassID,
 			Attachments:    convertStatusAttachmentList(in),
+			Usage:          convertUsageStatus(in),
 		},
 	}
+}
+
+func convertUsageStatus(in *regionv1.FileStorage) *openapi.StorageUsageV2Status {
+	if in.Status.Size == nil {
+		return nil
+	}
+
+	out := &openapi.StorageUsageV2Status{
+		CapacityBytes: in.Status.Size.Value(),
+	}
+
+	if in.Status.Usage != nil {
+		out.UsedBytes = ptr.To(in.Status.Usage.Value())
+	}
+
+	if in.Status.UsageTimestamp != nil {
+		out.UpdatedAt = &in.Status.UsageTimestamp.Time
+	}
+
+	return out
 }
 
 // NOTE: This returns attachment status based solely on FileStorage.Spec.Attachments (the desired state).

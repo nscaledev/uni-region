@@ -4,6 +4,8 @@
 package openapi
 
 import (
+	"time"
+
 	externalRef0 "github.com/unikorn-cloud/core/pkg/openapi"
 )
 
@@ -1029,6 +1031,9 @@ type StorageTypeV2Spec struct {
 type StorageUsageV2Status struct {
 	// CapacityBytes total space allotted in bytes
 	CapacityBytes int64 `json:"capacityBytes"`
+
+	// UpdatedAt timestamp when the usage was last updated
+	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
 
 	// UsedBytes amount of storage space used in bytes
 	UsedBytes *int64 `json:"usedBytes,omitempty"`
