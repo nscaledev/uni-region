@@ -33,6 +33,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/unikorn-cloud/core/pkg/constants"
+	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	identityv1 "github.com/unikorn-cloud/identity/pkg/apis/unikorn/v1alpha1"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
@@ -306,7 +307,7 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 		ID: "image1", // to match the server's image ID
 	}
 	snapshot := &types.Image{
-		Name: "foobar",
+		Name: "foobar",    // matches the request
 		ID:   "snapshot1", // to match the server's image ID
 	}
 
@@ -322,7 +323,12 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 		gomock.AssignableToTypeOf(&regionv1.Identity{}),
 		gomock.AssignableToTypeOf(&regionv1.Server{}),
 		gomock.AssignableToTypeOf(&types.Image{})).
-		Return(snapshot, nil)
+		DoAndReturn(func(_ context.Context, _ *regionv1.Identity, _ *regionv1.Server, image *types.Image) (*types.Image, error) {
+			s := *snapshot
+			s.Tags = image.Tags // copy these over, to simulate a round-trip through the provider.
+
+			return &s, nil
+		})
 
 	clientArgs := common.ClientArgs{
 		Client:    c,
@@ -350,4 +356,9 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 	requireDeserialiseBody(t, response.Result().Body, &read)
 	require.Equal(t, "foobar", read.Metadata.Name)
 	require.Equal(t, "snapshot1", read.Metadata.Id)
+	require.NotNil(t, read.Metadata.Tags)
+	require.Contains(t, *read.Metadata.Tags, coreapi.Tag{
+		Name:  regionconstants.ImageSourceTag,
+		Value: regionconstants.ImageSourceSnapshot,
+	})
 }

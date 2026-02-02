@@ -19,9 +19,10 @@ package server
 import (
 	"context"
 
-	"github.com/unikorn-cloud/core/pkg/constants"
+	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
+	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/image"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
@@ -32,7 +33,7 @@ func (c *ClientV2) CreateV2Snapshot(ctx context.Context, serverID string, reques
 		return nil, err
 	}
 
-	organizationID := server.Labels[constants.OrganizationLabel]
+	organizationID := server.Labels[coreconstants.OrganizationLabel]
 
 	// You need region:servers/read to get the server in the first place, then
 	// region:images/create to make the image. The first of those is implicitly
@@ -47,10 +48,15 @@ func (c *ClientV2) CreateV2Snapshot(ctx context.Context, serverID string, reques
 		return nil, err
 	}
 
+	// Get all the user-supplied tags, and set our own tag for the provenance.
+	tags := image.GenerateTags(request.Metadata.Tags, map[string]string{
+		constants.ImageSourceTag: constants.ImageSourceSnapshot,
+	})
+
 	// Give it a new name and ensure it belongs to the server's organization.
 	// TODO: patch in any new metadata e.g. software packages.
 	requested.Name = request.Metadata.Name
-	requested.Tags = image.GenerateTags(request.Metadata.Tags)
+	requested.Tags = tags
 	requested.OrganizationID = &organizationID
 
 	result, err := provider.CreateSnapshot(ctx, identity, server, requested)

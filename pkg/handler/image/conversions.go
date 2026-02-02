@@ -19,6 +19,7 @@ package image
 
 import (
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 
@@ -294,15 +295,22 @@ func generateImageOS(source *openapi.ImageOS) *types.ImageOS {
 	}
 }
 
-func GenerateTags(requestTags *coreapi.TagList) map[string]string {
+func GenerateTags(requestTags *coreapi.TagList, extra map[string]string) map[string]string {
+	if requestTags == nil && extra == nil {
+		return nil
+	}
+
+	tags := map[string]string{}
+
 	if requestTags != nil {
-		tags := make(map[string]string)
 		for _, item := range *requestTags {
 			tags[item.Name] = item.Value
 		}
-
-		return tags
 	}
 
-	return nil
+	if len(extra) > 0 {
+		maps.Copy(tags, extra)
+	}
+
+	return tags
 }
