@@ -20,7 +20,7 @@ jobs:
         echo "Provider branch: ${{ github.event.client_payload.provider_branch }}"
 
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         # Checkout the provider branch/version specified by the webhook
         ref: ${{ github.event.client_payload.provider_branch || github.ref }}
