@@ -175,7 +175,7 @@ func TestServerV2_EmptyList(t *testing.T) {
 		Namespace: namespace,
 	}
 
-	handler := NewServerV2Handler(clientArgs)
+	handler := NewServerHandler(clientArgs)
 
 	ctx := newOrganisationACLBuilder("org-empty-list").
 		addEndpoint("region:servers").
@@ -201,7 +201,7 @@ func TestServerV2_NotAllowedList(t *testing.T) {
 		Namespace: namespace,
 	}
 
-	handler := NewServerV2Handler(clientArgs)
+	handler := NewServerHandler(clientArgs)
 
 	ctx := newOrganisationACLBuilder("org1").
 		addEndpoint("region:servers").
@@ -247,7 +247,7 @@ func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 		Namespace: namespace,
 	}
 
-	handler := NewServerV2Handler(clientArgs)
+	handler := NewServerHandler(clientArgs)
 
 	// We can't guarantee the order things are done in the handler, and in particular, the region provider
 	// may be requested before permissions are checked. So, make sure there is a provider, though we don't
@@ -329,7 +329,7 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 		Namespace: namespace,
 	}
 
-	handler := NewServerV2Handler(clientArgs)
+	handler := NewServerHandler(clientArgs)
 	handler.getProvider = providerGetter(provider)
 
 	ctx := newOrganisationACLBuilder(orgID).

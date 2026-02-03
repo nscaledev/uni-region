@@ -35,6 +35,8 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -42,16 +44,40 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// Provider gloms together the operations needed to provision and control servers.
+type Provider interface {
+	types.Server
+	types.ServerConsole
+	types.ServerSnapshot
+	types.Identity
+	types.ImageRead  // for GetImage
+	types.ImageWrite // for DeleteImage
+}
+
+// GetProviderFunc is the type of funcs supplied to the client, so it can obtain a provider (e.g., OpenStack client).
+type GetProviderFunc func(context.Context, client.Client, string, string) (Provider, error)
+
+// DefaultGetProvider is the "business as usual" GetProviderFunc, which constructs a real provider (rather than, e.g., a mock object).
+func DefaultGetProvider(ctx context.Context, c client.Client, namespace, regionID string) (Provider, error) {
+	return providers.New(ctx, c, namespace, regionID)
+}
+
 // Client provides a restful API for identities.
 type Client struct {
 	common.ClientArgs
+	getProviderFunc GetProviderFunc
 }
 
 // New creates a new client.
-func NewClient(clientArgs common.ClientArgs) *Client {
+func NewClient(clientArgs common.ClientArgs, getProvider GetProviderFunc) *Client {
 	return &Client{
-		ClientArgs: clientArgs,
+		ClientArgs:      clientArgs,
+		getProviderFunc: getProvider,
 	}
+}
+
+func (c *Client) getProvider(ctx context.Context, regionID string) (Provider, error) {
+	return c.getProviderFunc(ctx, c.Client, c.Namespace, regionID)
 }
 
 // get gives access to the raw Kubernetes resource.
@@ -206,7 +232,7 @@ func (c *Client) getServerIdentityAndProvider(ctx context.Context, organizationI
 		return nil, nil, nil, err
 	}
 
-	provider, err := region.NewClient(c.ClientArgs).Provider(ctx, current.Labels[constants.RegionLabel])
+	provider, err := c.getProvider(ctx, current.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, nil, nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
 	}
