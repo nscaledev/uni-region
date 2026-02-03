@@ -294,6 +294,21 @@ func generateImageOS(source *openapi.ImageOS) *types.ImageOS {
 	}
 }
 
+func generateStatus(in openapi.ImageState) types.ImageStatus {
+	switch in {
+	case openapi.ImageStatePending:
+		return types.ImageStatusPending
+	case openapi.ImageStateCreating:
+		return types.ImageStatusCreating
+	case openapi.ImageStateReady:
+		return types.ImageStatusReady
+	case openapi.ImageStateFailed:
+		return types.ImageStatusFailed
+	}
+
+	return ""
+}
+
 func GenerateTags(requestTags *coreapi.TagList) map[string]string {
 	if requestTags != nil {
 		tags := make(map[string]string)

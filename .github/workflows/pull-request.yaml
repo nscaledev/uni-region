@@ -99,6 +99,7 @@ jobs:
         PACT_BROKER_URL: ${{ vars.PACT_BROKER_URL_DEV }}
         PACT_BROKER_USERNAME: ${{ vars.PACT_BROKER_USERNAME }}
         PACT_BROKER_PASSWORD: ${{ secrets.PACT_BROKER_PASSWORD }}
+        BRANCH: ${{ github.head_ref || github.ref_name }}
   ProviderContractVerification:
     runs-on: ubuntu-latest
     steps:
@@ -138,5 +139,5 @@ jobs:
         PACT_BROKER_USERNAME: ${{ vars.PACT_BROKER_USERNAME }}
         PACT_BROKER_PASSWORD: ${{ secrets.PACT_BROKER_PASSWORD }}
         PROVIDER_VERSION: ${{ github.sha }}
-        PROVIDER_BRANCH: ${{ github.head_ref || github.ref_name }}
+        GIT_BRANCH: ${{ github.head_ref || github.ref_name }}
       run: make test-contracts-provider-ci

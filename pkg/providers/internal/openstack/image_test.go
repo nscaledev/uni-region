@@ -79,6 +79,7 @@ func basicImageFixture() *images.Image {
 			osVersionProperty:      "24.10",
 			virtualizationProperty: virtualizationAny,
 		},
+		Status: images.ImageStatusActive,
 	}
 }
 
@@ -92,6 +93,11 @@ func imageFixtureWithID(id string) *images.Image {
 func withOrganizationID(image *images.Image, organizationID string) *images.Image {
 	image.Properties[organizationIDProperty] = organizationID
 
+	return image
+}
+
+func withStatus(image *images.Image, status images.ImageStatus) *images.Image {
+	image.Status = status
 	return image
 }
 

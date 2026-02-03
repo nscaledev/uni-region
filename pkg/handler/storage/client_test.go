@@ -326,9 +326,10 @@ func TestConvertV2List(t *testing.T) {
 	}
 }
 
-//nolint:dupl
 func TestConvertV2(t *testing.T) {
 	t.Parallel()
+
+	usageTimestamp := time.Date(2026, 1, 31, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {
 		name  string
@@ -376,6 +377,154 @@ func TestConvertV2(t *testing.T) {
 				Status: openapi.StorageV2Status{},
 			},
 		},
+		{
+			name: "usage status with all fields set",
+			input: &regionv1.FileStorage{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: regionv1.FileStorageSpec{
+					Size:        *gibToQuantity(100),
+					NFS:         &regionv1.NFS{RootSquash: true},
+					Attachments: []regionv1.Attachment{},
+				},
+				Status: regionv1.FileStorageStatus{
+					Size:           resource.NewQuantity(100*giB, resource.BinarySI),
+					Usage:          resource.NewQuantity(50*giB, resource.BinarySI),
+					UsageTimestamp: &metav1.Time{Time: usageTimestamp},
+				},
+			},
+			want: &openapi.StorageV2Read{
+				Metadata: corev1.ProjectScopedResourceReadMetadata{
+					HealthStatus:       corev1.ResourceHealthStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+				},
+				Spec: openapi.StorageV2Spec{
+					SizeGiB:     100,
+					Attachments: &openapi.StorageAttachmentV2Spec{NetworkIds: []string{}},
+					StorageType: openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
+				},
+				Status: openapi.StorageV2Status{
+					Usage: &openapi.StorageUsageV2Status{
+						CapacityBytes: 100 * giB,
+						UsedBytes:     ptr.To(50 * giB),
+						UpdatedAt:     &usageTimestamp,
+					},
+				},
+			},
+		},
+		{
+			name: "usage status with all nil fields",
+			input: &regionv1.FileStorage{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: regionv1.FileStorageSpec{
+					Size:        *gibToQuantity(100),
+					NFS:         &regionv1.NFS{RootSquash: true},
+					Attachments: []regionv1.Attachment{},
+				},
+				Status: regionv1.FileStorageStatus{
+					Size:           nil,
+					Usage:          nil,
+					UsageTimestamp: nil,
+				},
+			},
+			want: &openapi.StorageV2Read{
+				Metadata: corev1.ProjectScopedResourceReadMetadata{
+					HealthStatus:       corev1.ResourceHealthStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+				},
+				Spec: openapi.StorageV2Spec{
+					SizeGiB:     100,
+					Attachments: &openapi.StorageAttachmentV2Spec{NetworkIds: []string{}},
+					StorageType: openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
+				},
+				Status: openapi.StorageV2Status{
+					Usage: nil,
+				},
+			},
+		},
+		{
+			name: "usage status with only capacity set",
+			input: &regionv1.FileStorage{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: regionv1.FileStorageSpec{
+					Size:        *gibToQuantity(100),
+					NFS:         &regionv1.NFS{RootSquash: true},
+					Attachments: []regionv1.Attachment{},
+				},
+				Status: regionv1.FileStorageStatus{
+					Size:           resource.NewQuantity(100*giB, resource.BinarySI),
+					Usage:          nil,
+					UsageTimestamp: nil,
+				},
+			},
+			want: &openapi.StorageV2Read{
+				Metadata: corev1.ProjectScopedResourceReadMetadata{
+					HealthStatus:       corev1.ResourceHealthStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+				},
+				Spec: openapi.StorageV2Spec{
+					SizeGiB:     100,
+					Attachments: &openapi.StorageAttachmentV2Spec{NetworkIds: []string{}},
+					StorageType: openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
+				},
+				Status: openapi.StorageV2Status{
+					Usage: &openapi.StorageUsageV2Status{
+						CapacityBytes: 100 * giB,
+						UsedBytes:     nil,
+						UpdatedAt:     nil,
+					},
+				},
+			},
+		},
+		{
+			name: "attachment with mount path",
+			input: &regionv1.FileStorage{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: regionv1.FileStorageSpec{
+					Size: *gibToQuantity(100),
+					NFS:  &regionv1.NFS{RootSquash: true},
+					Attachments: []regionv1.Attachment{
+						{
+							NetworkID: "net-1",
+							IPRange: &regionv1.AttachmentIPRange{
+								Start: v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 100)},
+								End:   v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 110)},
+							},
+						},
+					},
+				},
+				Status: regionv1.FileStorageStatus{
+					MountPath: ptr.To("/export/data"),
+				},
+			},
+			want: &openapi.StorageV2Read{
+				Metadata: corev1.ProjectScopedResourceReadMetadata{
+					HealthStatus:       corev1.ResourceHealthStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+				},
+				Spec: openapi.StorageV2Spec{
+					SizeGiB:     100,
+					Attachments: &openapi.StorageAttachmentV2Spec{NetworkIds: []string{"net-1"}},
+					StorageType: openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
+				},
+				Status: openapi.StorageV2Status{
+					Attachments: &openapi.StorageAttachmentListV2Status{
+						{
+							NetworkId:          "net-1",
+							MountSource:        ptr.To("10.0.0.100:/export/data"),
+							ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -388,7 +537,6 @@ func TestConvertV2(t *testing.T) {
 	}
 }
 
-//nolint:dupl
 func TestConvertV2SizeConversion(t *testing.T) {
 	t.Parallel()
 

@@ -28,6 +28,7 @@ jobs:
     env:
       ENVIRONMENT: dev
       API_BASE_URL: ${{ vars.DEV_API_BASE_URL }}
+      REGION_BASE_URL: ${{ vars.DEV_REGION_BASE_URL }}
       API_AUTH_TOKEN: ${{ secrets.DEV_API_AUTH_TOKEN }}
       TEST_ORG_ID: ${{ vars.DEV_TEST_ORG_ID }}
       TEST_PROJECT_ID: ${{ vars.DEV_TEST_PROJECT_ID }}
@@ -63,6 +64,19 @@ jobs:
         name: api-test-junit-dev
         path: test/api/suites/junit.xml
 
+    - name: Create Linear Issues for Test Failures
+      uses: nscaledev/quality-tooling/.github/actions/linear-test-failures@main
+      if: ${{ !cancelled() }}
+      with:
+        test-results-path: test/api/suites/test-results.json
+        workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        linear-api-key: ${{ secrets.LINEAR_API_KEY }}
+        linear-team-id: ${{ vars.LINEAR_TEAM_ID }}
+        linear-project-id: ${{ vars.LINEAR_PROJECT_ID }}
+        environment: dev
+        linear-priority: '3'
+        max-failures: '5'
+
     - name: Send Slack Notification
       if: ${{ !cancelled() }}
       env:
@@ -78,6 +92,7 @@ jobs:
     env:
       ENVIRONMENT: uat
       API_BASE_URL: ${{ vars.UAT_API_BASE_URL }}
+      REGION_BASE_URL: ${{ vars.UAT_REGION_BASE_URL }}
       API_AUTH_TOKEN: ${{ secrets.UAT_API_AUTH_TOKEN }}
       TEST_ORG_ID: ${{ vars.UAT_TEST_ORG_ID }}
       TEST_PROJECT_ID: ${{ vars.UAT_TEST_PROJECT_ID }}
@@ -112,6 +127,19 @@ jobs:
       with:
         name: api-test-junit-uat
         path: test/api/suites/junit.xml
+
+    - name: Create Linear Issues for Test Failures
+      uses: nscaledev/quality-tooling/.github/actions/linear-test-failures@main
+      if: ${{ !cancelled() }}
+      with:
+        test-results-path: test/api/suites/test-results.json
+        workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        linear-api-key: ${{ secrets.LINEAR_API_KEY }}
+        linear-team-id: ${{ vars.LINEAR_TEAM_ID }}
+        linear-project-id: ${{ vars.LINEAR_PROJECT_ID }}
+        environment: uat
+        linear-priority: '3'
+        max-failures: '5'
 
     - name: Send Slack Notification
       if: ${{ !cancelled() }}
