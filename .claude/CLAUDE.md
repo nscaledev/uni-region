@@ -245,3 +245,19 @@ Requires kubeconfig secret and node flavor metadata. Nodes must have `kubernetes
 - `pkg/constants/constants.go`: Application constants and version info
 - `pkg/providers/providers.go`: Provider factory and caching
 - `pkg/handler/handler.go`: Main API handler orchestration
+
+## Pull request reviews
+
+A pull request summary should explain why the change within is needed. Often this is a reference
+to a decision that's already described in an issue, or a bug report. The summary should then
+describe how the implementation meets the requirement, and refer to evidence that it is correct:
+new or adapted tests, manual walkthroughs, or screenshots, for example.
+
+Ideally the summary should call out:
+
+- Design decisions and trade-offs
+- Breaking changes or API modifications
+- Security-sensitive code that needs expert review
+- Alternative designs that were considered
+- Security concerns
+- Performance considerations
