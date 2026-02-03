@@ -316,6 +316,7 @@ test-contracts-provider-ci:
 	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
 	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
 	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
+	GIT_BRANCH="$(GIT_BRANCH)" \
 	CI=true \
 	go test ./test/contracts/provider/... -v -count=1
 
@@ -334,6 +335,7 @@ PACT_BROKER_USERNAME ?= pact
 PACT_BROKER_PASSWORD ?= pact
 SERVICE_NAME ?= uni-region
 BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
+GIT_BRANCH ?= $(BRANCH)
 
 .PHONY: test-contracts-consumer
 test-contracts-consumer:
