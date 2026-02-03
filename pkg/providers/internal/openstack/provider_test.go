@@ -18,6 +18,7 @@ limitations under the License.
 package openstack_test
 
 import (
+	"context"
 	"net"
 	"testing"
 
@@ -51,29 +52,78 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+func mustConvertImage(t *testing.T, in *images.Image) types.Image {
+	t.Helper()
+
+	out, err := openstack.ConvertImage(in)
+	require.NoError(t, err)
+
+	return *out
+}
+
 // TestImageFiltering checks that when filtering images we only get those
 // that are public or scoped to the organization.
 func TestImageFiltering(t *testing.T) {
 	t.Parallel()
 
-	public1 := *imageFixtureWithID("foo")
-	public2 := *imageFixtureWithID("foo")
-	private1 := *withOrganizationID(imageFixtureWithID("felix"), "cats")
-	private2 := *withOrganizationID(imageFixtureWithID("rover"), "dogs")
+	public1 := imageFixtureWithID("foo")
+	public2 := withStatus(imageFixtureWithID("foo"), images.ImageStatusQueued)
+	private1 := withOrganizationID(imageFixtureWithID("felix"), "cats")
+	private2 := withOrganizationID(imageFixtureWithID("rover"), "dogs")
 
-	images := []images.Image{
-		public1,
-		public2,
-		private1,
-		private2,
+	//nolint:unparam // lint doesn't know this needs to be this func type
+	listimages := func(_ context.Context) ([]images.Image, error) {
+		return []images.Image{
+			*public1,
+			*public2,
+			*private1,
+			*private2,
+		}, nil
 	}
 
-	images = openstack.GetPublicOrOrganizationOwnedImages(images, "cats")
-	require.Len(t, images, 3)
-	require.Contains(t, images, public1)
-	require.Contains(t, images, public2)
-	require.Contains(t, images, private1)
-	require.NotContains(t, images, private2)
+	t.Run("filter by available to organization", func(t *testing.T) {
+		t.Parallel()
+
+		query := openstack.NewImageQuery(listimages)
+		images, err := query.AvailableToOrganization("cats").List(t.Context())
+		require.NoError(t, err)
+
+		require.ElementsMatch(t, images, types.ImageList{
+			mustConvertImage(t, public1),
+			mustConvertImage(t, public2),
+			mustConvertImage(t, private1),
+		})
+	})
+
+	t.Run("filter by status", func(t *testing.T) {
+		t.Parallel()
+
+		query := openstack.NewImageQuery(listimages)
+		images, err := query.StatusIn(types.ImageStatusReady).List(t.Context())
+		require.NoError(t, err)
+
+		require.ElementsMatch(t, images, types.ImageList{
+			mustConvertImage(t, public1),
+			mustConvertImage(t, private1),
+			mustConvertImage(t, private2),
+		})
+	})
+
+	t.Run("filter by available to org and ready", func(t *testing.T) {
+		t.Parallel()
+
+		query := openstack.NewImageQuery(listimages)
+		images, err := query.
+			StatusIn(types.ImageStatusReady).
+			AvailableToOrganization("cats").
+			List(t.Context())
+		require.NoError(t, err)
+
+		require.ElementsMatch(t, images, types.ImageList{
+			mustConvertImage(t, public1),
+			mustConvertImage(t, private1),
+		})
+	})
 }
 
 // TestGatewayIP tests we allocate .1 as the gateway so we can set the DHCP
