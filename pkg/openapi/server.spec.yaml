@@ -1001,6 +1001,32 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+
+  /api/v2/regions/{regionID}/images:
+    description: Manage compute disk images
+    get:
+      summary: List compute disk images
+      tags:
+      - Images
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: '#/components/parameters/regionIDParameter'
+      - $ref: '#/components/parameters/organizationIDQueryParameter'
+      - $ref: '#/components/parameters/imageScopeQueryParameter'
+      - $ref: '#/components/parameters/imageStatusQueryParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/imagesResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404': # region not found
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+
   /api/v2/servers:
     description: |-
       Manages servers.
@@ -1541,6 +1567,24 @@ components:
         type: array
         items:
           type: string
+    imageScopeQueryParameter:
+      name: scope
+      in: query
+      description: Filter for images owned by the organization specified, or available (either globally or to the organization given).
+      schema:
+        type: string
+        enum:
+        - owned
+        - available
+    imageStatusQueryParameter:
+      name: status
+      in: query
+      description: Filter for images by status
+      schema:
+        type: array
+        items:
+          $ref: '#/components/schemas/imageState'
+
   schemas:
     kubernetesNameParameter:
       description: A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
