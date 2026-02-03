@@ -169,7 +169,13 @@ var _ = Describe("Region Provider Verification", func() {
 				// Publish verification results back to broker
 				PublishVerificationResults: os.Getenv("CI") == "true" || os.Getenv("PUBLISH_VERIFICATION") == "true",
 				ProviderVersion:            getProviderVersion(),
-				StateHandlers:              stateHandlers,
+				ProviderBranch:             getProviderBranch(),
+				ConsumerVersionSelectors: []provider.Selector{
+					&provider.ConsumerVersionSelector{MainBranch: true},
+					&provider.ConsumerVersionSelector{MatchingBranch: true},
+				},
+				EnablePending: true,
+				StateHandlers: stateHandlers,
 			})
 
 			Expect(err).NotTo(HaveOccurred(), "Provider verification should succeed")
@@ -399,4 +405,8 @@ func getProviderVersion() string {
 	}
 
 	return version
+}
+
+func getProviderBranch() string {
+	return os.Getenv("GIT_BRANCH")
 }
