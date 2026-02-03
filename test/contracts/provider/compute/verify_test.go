@@ -174,8 +174,8 @@ var _ = Describe("Region Provider Verification", func() {
 					&provider.ConsumerVersionSelector{MainBranch: true},
 					&provider.ConsumerVersionSelector{MatchingBranch: true},
 				},
-				EnablePending:  true,
-				StateHandlers:  stateHandlers,
+				EnablePending: true,
+				StateHandlers: stateHandlers,
 			})
 
 			Expect(err).NotTo(HaveOccurred(), "Provider verification should succeed")
