@@ -21,6 +21,7 @@ import (
 	"cmp"
 	"context"
 	goerrors "errors"
+	"fmt"
 	"slices"
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
@@ -107,7 +108,7 @@ func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.Regio
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("unable to lookup region").WithError(err)
+		return nil, fmt.Errorf("%w: unable to lookup region", err)
 	}
 
 	return c.convertDetail(ctx, result)
@@ -116,12 +117,12 @@ func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.Regio
 func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID string) (openapi.Flavors, error) {
 	provider, err := c.Provider(ctx, regionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, fmt.Errorf("%w: failed to create region provider", err)
 	}
 
 	result, err := provider.Flavors(ctx)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to list flavors").WithError(err)
+		return nil, fmt.Errorf("%w: failed to list flavors", err)
 	}
 
 	// Apply ordering guarantees, ascending order with GPUs taking precedence over
@@ -163,12 +164,12 @@ func convertExternalNetworks(in types.ExternalNetworks) openapi.ExternalNetworks
 func (c *Client) ListExternalNetworks(ctx context.Context, regionID string) (openapi.ExternalNetworks, error) {
 	provider, err := c.Provider(ctx, regionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, fmt.Errorf("%w: failed to create region provider", err)
 	}
 
 	result, err := provider.ListExternalNetworks(ctx)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to list external networks").WithError(err)
+		return nil, fmt.Errorf("%w: failed to list external networks", err)
 	}
 
 	return convertExternalNetworks(result), nil

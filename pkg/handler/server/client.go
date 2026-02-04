@@ -21,6 +21,7 @@ import (
 	"cmp"
 	"context"
 	goerrors "errors"
+	"fmt"
 	"slices"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -63,7 +64,7 @@ func (c *Client) get(ctx context.Context, organizationID, projectID, serverID st
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("unable to get server").WithError(err)
+		return nil, fmt.Errorf("%w: unable to get server", err)
 	}
 
 	if err := util.AssertProjectOwnership(resource, organizationID, projectID); err != nil {
@@ -85,7 +86,7 @@ func (c *Client) List(ctx context.Context, organizationID string, params openapi
 	}
 
 	if err := c.Client.List(ctx, result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list servers").WithError(err)
+		return nil, fmt.Errorf("%w: unable to list servers", err)
 	}
 
 	tagSelector, err := util.DecodeTagSelectorParam(params.Tag)
@@ -114,7 +115,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 
 	provider, err := region.NewClient(c.ClientArgs).Provider(ctx, identity.Labels[constants.RegionLabel])
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, fmt.Errorf("%w: failed to create region provider", err)
 	}
 
 	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
@@ -122,7 +123,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("failed to retrieve image from provider").WithError(err)
+		return nil, fmt.Errorf("%w: failed to retrieve image from provider", err)
 	}
 
 	resource, err := newGenerator(c.ClientArgs, organizationID, projectID, identityID).generate(ctx, request)
@@ -133,7 +134,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 	resource.Status.Phase = unikornv1.InstanceLifecyclePhasePending
 
 	if err := c.Client.Create(ctx, resource); err != nil {
-		return nil, errors.OAuth2ServerError("unable to create server").WithError(err)
+		return nil, fmt.Errorf("%w: unable to create server", err)
 	}
 
 	return convert(resource), nil
@@ -158,7 +159,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 
 	provider, err := region.NewClient(c.ClientArgs).Provider(ctx, identity.Labels[constants.RegionLabel])
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, fmt.Errorf("%w: failed to create region provider", err)
 	}
 
 	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
@@ -166,7 +167,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("failed to retrieve image from provider").WithError(err)
+		return nil, fmt.Errorf("%w: failed to retrieve image from provider", err)
 	}
 
 	current, err := c.get(ctx, organizationID, projectID, serverID)
@@ -180,7 +181,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	}
 
 	if err := conversion.UpdateObjectMetadata(required, current, identitycommon.IdentityMetadataMutator); err != nil {
-		return nil, errors.OAuth2ServerError("failed to merge metadata").WithError(err)
+		return nil, fmt.Errorf("%w: failed to merge metadata", err)
 	}
 
 	updated := current.DeepCopy()
@@ -189,7 +190,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	updated.Spec = required.Spec
 
 	if err := c.Client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
-		return nil, errors.OAuth2ServerError("failed to patch server").WithError(err)
+		return nil, fmt.Errorf("%w: failed to patch server", err)
 	}
 
 	return convert(updated), nil
@@ -208,7 +209,7 @@ func (c *Client) getServerIdentityAndProvider(ctx context.Context, organizationI
 
 	provider, err := region.NewClient(c.ClientArgs).Provider(ctx, current.Labels[constants.RegionLabel])
 	if err != nil {
-		return nil, nil, nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, nil, nil, fmt.Errorf("%w: failed to create region provider", err)
 	}
 
 	return current, identity, provider, nil
@@ -234,10 +235,10 @@ func (c *Client) reboot(ctx context.Context, identity *unikornv1.Identity, serve
 		}
 
 		if hard {
-			return errors.OAuth2ServerError("failed to hard reboot server").WithError(err)
+			return fmt.Errorf("%w: failed to hard reboot server", err)
 		}
 
-		return errors.OAuth2ServerError("failed to soft reboot server").WithError(err)
+		return fmt.Errorf("%w: failed to soft reboot server", err)
 	}
 
 	return nil
@@ -262,14 +263,14 @@ func (c *Client) start(ctx context.Context, identity *unikornv1.Identity, server
 			return errors.OAuth2InvalidRequest("server cannot be started in its current state").WithError(err)
 		}
 
-		return errors.OAuth2ServerError("failed to start server").WithError(err)
+		return fmt.Errorf("%w: failed to start server", err)
 	}
 
 	updated := server.DeepCopy()
 	updated.Status.Phase = unikornv1.InstanceLifecyclePhasePending
 
 	if err := c.Client.Status().Patch(ctx, updated, client.MergeFrom(server)); err != nil {
-		return errors.OAuth2ServerError("failed to patch server").WithError(err)
+		return fmt.Errorf("%w: failed to patch server", err)
 	}
 
 	return nil
@@ -294,14 +295,14 @@ func (c *Client) stop(ctx context.Context, identity *unikornv1.Identity, server 
 			return errors.OAuth2InvalidRequest("server cannot be stopped in its current state").WithError(err)
 		}
 
-		return errors.OAuth2ServerError("failed to stop server").WithError(err)
+		return fmt.Errorf("%w: failed to stop server", err)
 	}
 
 	updated := server.DeepCopy()
 	updated.Status.Phase = unikornv1.InstanceLifecyclePhaseStopping
 
 	if err := c.Client.Status().Patch(ctx, updated, client.MergeFrom(server)); err != nil {
-		return errors.OAuth2ServerError("failed to patch server").WithError(err)
+		return fmt.Errorf("%w: failed to patch server", err)
 	}
 
 	return nil
@@ -319,7 +320,7 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, serverID
 			return errors.HTTPNotFound().WithError(err)
 		}
 
-		return errors.OAuth2ServerError("unable to delete server").WithError(err)
+		return fmt.Errorf("%w: unable to delete server", err)
 	}
 
 	return nil
@@ -345,7 +346,7 @@ func (c *Client) createConsoleSession(ctx context.Context, identity *unikornv1.I
 			return nil, errors.OAuth2InvalidRequest("server cannot be accessed in its current state").WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("failed to create console session").WithError(err)
+		return nil, fmt.Errorf("%w: failed to create console session", err)
 	}
 
 	response := &openapi.ConsoleSessionResponse{
@@ -375,7 +376,7 @@ func (c *Client) getConsoleOutput(ctx context.Context, identity *unikornv1.Ident
 			return nil, errors.OAuth2InvalidRequest("server console output cannot be retrieved in its current state").WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("failed to retrieve console output").WithError(err)
+		return nil, fmt.Errorf("%w: failed to retrieve console output", err)
 	}
 
 	response := &openapi.ConsoleOutputResponse{

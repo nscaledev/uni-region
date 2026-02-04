@@ -19,6 +19,7 @@ limitations under the License.
 package storage
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -46,8 +47,8 @@ func TestValidateAttachments_NetworkNotFound(t *testing.T) {
 	err := validateAttachments(t.Context(), m, attachments, "proj-1")
 
 	require.Error(t, err)
+	require.True(t, errors.IsUnprocessableContent(err))
 	require.ErrorContains(t, err, "network not found")
-	require.False(t, errors.IsHTTPNotFound(err))
 }
 
 // TestValidateAttachments_NonHTTPNotFoundError tests that when a network ID is specified in the attachments but the network client returns a non-HTTPNotFound error, the error is propagated as-is.
@@ -58,15 +59,16 @@ func TestValidateAttachments_NonHTTPNotFoundError(t *testing.T) {
 	t.Cleanup(c.Finish)
 
 	m := mock.NewMockNetworkGetter(c)
+	//nolint:err113
 	m.EXPECT().
 		GetV2(gomock.Any(), "any-net").
-		Return(nil, errors.OAuth2ServerError("unable to lookup network"))
+		Return(nil, fmt.Errorf("sentinel"))
 
 	attachments := &openapi.StorageAttachmentV2Spec{NetworkIds: []string{"any-net"}}
 	err := validateAttachments(t.Context(), m, attachments, "proj-1")
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "unable to lookup network")
+	require.Contains(t, err.Error(), "sentinel")
 }
 
 // TestValidateAttachments_ProjectMismatch tests that when a network exists but belongs to a different project, a 'network not available in project' error is returned.
@@ -87,6 +89,7 @@ func TestValidateAttachments_ProjectMismatch(t *testing.T) {
 	err := validateAttachments(t.Context(), m, attachments, "proj-NO")
 
 	require.Error(t, err)
+	require.True(t, errors.IsUnprocessableContent(err))
 	require.Contains(t, err.Error(), "network not available in project")
 }
 
@@ -135,5 +138,6 @@ func TestValidateAttachments_NetworkNotProvisioned(t *testing.T) {
 	err := validateAttachments(t.Context(), m, attachments, "proj-OK")
 
 	require.Error(t, err)
+	require.True(t, errors.IsUnprocessableContent(err))
 	require.Contains(t, err.Error(), "network not provisioned")
 }
