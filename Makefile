@@ -137,7 +137,7 @@ images-kind-load: images
 
 .PHONY: test-unit
 test-unit:
-	go test -coverpkg ./... -coverprofile cover.out $(shell go list ./... | grep -v /test/api | grep -v /test/contracts)
+	go test -coverpkg ./... -coverprofile cover.out ./...
 	go tool cover -html cover.out -o cover.html
 
 # Build a binary and install it.
@@ -258,6 +258,7 @@ PACT_BROKER_URL ?= http://localhost:9292
 PACT_BROKER_USERNAME ?= pact
 PACT_BROKER_PASSWORD ?= pact
 PROVIDER_VERSION ?= $(REVISION)
+PACT_GOFLAGS="-tags=integration"
 
 # Run provider contract verification tests
 .PHONY: test-contracts-provider
@@ -270,6 +271,7 @@ test-contracts-provider:
 	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
 	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
 	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
+	GOFLAGS="$(PACT_GOFLAGS)" \
 	go test ./test/contracts/provider/... -v -count=1
 
 # Run provider verification with verbose output
@@ -284,6 +286,7 @@ test-contracts-provider-verbose:
 	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
 	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
 	VERBOSE=true \
+	GOFLAGS="$(PACT_GOFLAGS)" \
 	go test ./test/contracts/provider/... -v -count=1
 
 # Run provider verification from local pact file
@@ -300,6 +303,7 @@ test-contracts-provider-local:
 	KUBECONFIG="$(HOME)/.kube/config" \
 	PACT_FILE="$(PACT_FILE)" \
 	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
+	GOFLAGS="$(PACT_GOFLAGS)" \
 	go test ./test/contracts/provider/... -v -count=1
 
 # Run provider verification and publish results to Pact Broker (works on both macOS and Linux)
@@ -316,7 +320,9 @@ test-contracts-provider-ci:
 	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
 	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
 	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
+	GIT_BRANCH="$(GIT_BRANCH)" \
 	CI=true \
+	GOFLAGS="$(PACT_GOFLAGS)" \
 	go test ./test/contracts/provider/... -v -count=1
 
 # Clean contract test artifacts
@@ -334,12 +340,14 @@ PACT_BROKER_USERNAME ?= pact
 PACT_BROKER_PASSWORD ?= pact
 SERVICE_NAME ?= uni-region
 BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
+GIT_BRANCH ?= $(BRANCH)
 
 .PHONY: test-contracts-consumer
 test-contracts-consumer:
 	@echo "Running consumer contract tests..."
 	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
 	$(PACT_LIB_ENV) \
+	GOFLAGS="$(PACT_GOFLAGS)" \
 	go test ./test/contracts/consumer/... -v -count=1
 
 # Run consumer tests with verbose output
@@ -349,6 +357,7 @@ test-contracts-consumer-verbose:
 	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
 	$(PACT_LIB_ENV) \
 	VERBOSE=true \
+	GOFLAGS="$(PACT_GOFLAGS)" \
 	go test ./test/contracts/consumer/... -v -count=1
 
 # Run consumer tests and publish to broker (for CI)

@@ -21,6 +21,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
@@ -92,7 +93,7 @@ func (s *createSaga) deleteAllocation(ctx context.Context) error {
 
 func (s *createSaga) createFileStorage(ctx context.Context) error {
 	if err := s.client.Client.Create(ctx, s.filestorage); err != nil {
-		return errors.OAuth2ServerError("unable to create filestorage").WithError(err)
+		return fmt.Errorf("%w: unable to create filestorage", err)
 	}
 
 	return nil
@@ -197,7 +198,7 @@ func (s *updateSaga) generate(ctx context.Context) error {
 	}
 
 	if err := conversion.UpdateObjectMetadata(required, s.current, common.IdentityMetadataMutator); err != nil {
-		return errors.OAuth2ServerError("failed to merge metadata").WithError(err)
+		return fmt.Errorf("%w: failed to merge metadata", err)
 	}
 
 	// Preserve the allocation.
@@ -227,7 +228,7 @@ func (s *updateSaga) revertAllocation(ctx context.Context) error {
 
 func (s *updateSaga) updateStorage(ctx context.Context) error {
 	if err := s.client.Client.Patch(ctx, s.updated, client.MergeFrom(s.current)); err != nil {
-		return errors.OAuth2ServerError("unable to update filestorage").WithError(err)
+		return fmt.Errorf("%w: unable to update filestorage", err)
 	}
 
 	return nil

@@ -15,6 +15,9 @@ import (
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 
+	// (GET /.well-known/openid-protected-resource)
+	GetWellKnownOpenidProtectedResource(w http.ResponseWriter, r *http.Request)
+
 	// (GET /api/v1/organizations/{organizationID}/identities)
 	GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter)
 
@@ -140,6 +143,9 @@ type ServerInterface interface {
 	// Update network
 	// (PUT /api/v2/networks/{networkID})
 	PutApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter)
+	// List compute disk images
+	// (GET /api/v2/regions/{regionID}/images)
+	GetApiV2RegionsRegionIDImages(w http.ResponseWriter, r *http.Request, regionID RegionIDParameter, params GetApiV2RegionsRegionIDImagesParams)
 	// List security groups
 	// (GET /api/v2/securitygroups)
 	GetApiV2Securitygroups(w http.ResponseWriter, r *http.Request, params GetApiV2SecuritygroupsParams)
@@ -199,6 +205,11 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// (GET /.well-known/openid-protected-resource)
+func (_ Unimplemented) GetWellKnownOpenidProtectedResource(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // (GET /api/v1/organizations/{organizationID}/identities)
 func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter) {
@@ -423,6 +434,12 @@ func (_ Unimplemented) PutApiV2NetworksNetworkID(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List compute disk images
+// (GET /api/v2/regions/{regionID}/images)
+func (_ Unimplemented) GetApiV2RegionsRegionIDImages(w http.ResponseWriter, r *http.Request, regionID RegionIDParameter, params GetApiV2RegionsRegionIDImagesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // List security groups
 // (GET /api/v2/securitygroups)
 func (_ Unimplemented) GetApiV2Securitygroups(w http.ResponseWriter, r *http.Request, params GetApiV2SecuritygroupsParams) {
@@ -526,6 +543,20 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// GetWellKnownOpenidProtectedResource operation middleware
+func (siw *ServerInterfaceWrapper) GetWellKnownOpenidProtectedResource(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetWellKnownOpenidProtectedResource(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // GetApiV1OrganizationsOrganizationIDIdentities operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseWriter, r *http.Request) {
@@ -2434,6 +2465,64 @@ func (siw *ServerInterfaceWrapper) PutApiV2NetworksNetworkID(w http.ResponseWrit
 	handler.ServeHTTP(w, r)
 }
 
+// GetApiV2RegionsRegionIDImages operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV2RegionsRegionIDImages(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "regionID" -------------
+	var regionID RegionIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "regionID", chi.URLParam(r, "regionID"), &regionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "regionID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetApiV2RegionsRegionIDImagesParams
+
+	// ------------- Optional query parameter "organizationID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "organizationID", r.URL.Query(), &params.OrganizationID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "scope" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "scope", r.URL.Query(), &params.Scope)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "scope", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "status", r.URL.Query(), &params.Status)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV2RegionsRegionIDImages(w, r, regionID, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetApiV2Securitygroups operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV2Securitygroups(w http.ResponseWriter, r *http.Request) {
 
@@ -3163,6 +3252,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/.well-known/openid-protected-resource", wrapper.GetWellKnownOpenidProtectedResource)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/organizations/{organizationID}/identities", wrapper.GetApiV1OrganizationsOrganizationIDIdentities)
 	})
 	r.Group(func(r chi.Router) {
@@ -3287,6 +3379,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v2/networks/{networkID}", wrapper.PutApiV2NetworksNetworkID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v2/regions/{regionID}/images", wrapper.GetApiV2RegionsRegionIDImages)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/securitygroups", wrapper.GetApiV2Securitygroups)

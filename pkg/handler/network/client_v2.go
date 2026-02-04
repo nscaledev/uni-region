@@ -21,6 +21,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"slices"
 
@@ -106,12 +107,12 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2NetworksPara
 			return nil, nil
 		}
 
-		return nil, errors.OAuth2ServerError("failed to add identity label selector").WithError(err)
+		return nil, fmt.Errorf("%w: failed to add identity label selector", err)
 	}
 
 	selector, err = util.AddRegionIDQuery(selector, params.RegionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to add region label selector").WithError(err)
+		return nil, fmt.Errorf("%w: failed to add region label selector", err)
 	}
 
 	options := &client.ListOptions{
@@ -122,7 +123,7 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2NetworksPara
 	result := &regionv1.NetworkList{}
 
 	if err := c.Client.List(ctx, result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list networks").WithError(err)
+		return nil, fmt.Errorf("%w: unable to list networks", err)
 	}
 
 	tagSelector, err := coreutil.DecodeTagSelectorParam(params.Tag)
@@ -150,7 +151,7 @@ func (c *Client) GetV2Raw(ctx context.Context, networkID string) (*regionv1.Netw
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("unable to lookup network").WithError(err)
+		return nil, fmt.Errorf("%w: unable to lookup network", err)
 	}
 
 	if err := rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Read, result.Labels[coreconstants.OrganizationLabel], result.Labels[coreconstants.ProjectLabel]); err != nil {
@@ -165,7 +166,7 @@ func (c *Client) GetV2Raw(ctx context.Context, networkID string) (*regionv1.Netw
 
 	version, err := constants.UnmarshalAPIVersion(v)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to parse API version")
+		return nil, fmt.Errorf("%w: unable to parse API version", err)
 	}
 
 	if version != 2 {
@@ -190,13 +191,13 @@ func (c *Client) GetV2(ctx context.Context, networkID string) (*openapi.NetworkV
 func convertCreateToUpdateRequest(in *openapi.NetworkV2Create) (*openapi.NetworkV2Update, error) {
 	t, err := json.Marshal(in)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to marshal request").WithError(err)
+		return nil, fmt.Errorf("%w: failed to marshal request", err)
 	}
 
 	out := &openapi.NetworkV2Update{}
 
 	if err := json.Unmarshal(t, out); err != nil {
-		return nil, errors.OAuth2ServerError("failed to unmarshal request").WithError(err)
+		return nil, fmt.Errorf("%w: failed to unmarshal request", err)
 	}
 
 	return out, nil
@@ -255,11 +256,11 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 	}
 
 	if err := util.InjectUserPrincipal(ctx, organizationID, projectID); err != nil {
-		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
+		return nil, fmt.Errorf("%w: unable to set principal information", err)
 	}
 
 	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
-		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
+		return nil, fmt.Errorf("%w: failed to set identity metadata", err)
 	}
 
 	return out, nil
@@ -342,7 +343,7 @@ func (s *createSaga) generateNetwork(ctx context.Context) error {
 	}
 
 	if err := controllerutil.SetOwnerReference(s.identity, network, s.client.Client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
-		return errors.OAuth2ServerError("unable to set resource owner").WithError(err)
+		return fmt.Errorf("%w: unable to set resource owner", err)
 	}
 
 	s.network = network
@@ -377,7 +378,7 @@ func (s *createSaga) deleteAllocation(ctx context.Context) error {
 
 func (s *createSaga) createNetwork(ctx context.Context) error {
 	if err := s.client.Client.Create(ctx, s.network); err != nil {
-		return errors.OAuth2ServerError("unable to create network").WithError(err)
+		return fmt.Errorf("%w: unable to create network", err)
 	}
 
 	return nil
@@ -443,7 +444,7 @@ func (c *Client) Update(ctx context.Context, networkID string, request *openapi.
 	updated.Spec = required.Spec
 
 	if err := c.Client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
-		return nil, errors.OAuth2ServerError("unable to update network").WithError(err)
+		return nil, fmt.Errorf("%w: unable to update network", err)
 	}
 
 	return convertV2(updated), nil
