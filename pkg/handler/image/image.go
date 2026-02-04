@@ -28,6 +28,7 @@ import (
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
+	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
@@ -182,9 +183,14 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 		packages = &temp
 	}
 
+	// Get all the user-supplied tags, and set our own tag for the provenance.
+	tags := GenerateTags(request.Metadata.Tags, map[string]string{
+		constants.ImageSourceTag: constants.ImageSourceImport,
+	})
+
 	image := &types.Image{
 		Name:           request.Metadata.Name,
-		Tags:           GenerateTags(request.Metadata.Tags),
+		Tags:           tags,
 		OrganizationID: ptr.To(organizationID),
 		Architecture:   generateArchitecture(request.Spec.Architecture),
 		Virtualization: generateImageVirtualization(request.Spec.Virtualization),
