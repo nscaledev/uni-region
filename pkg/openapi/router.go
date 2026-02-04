@@ -140,6 +140,12 @@ type ServerInterface interface {
 	// Update network
 	// (PUT /api/v2/networks/{networkID})
 	PutApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter)
+
+	// (DELETE /api/v2/networks/{networkID}/references/{reference})
+	DeleteApiV2NetworksNetworkIDReferencesReference(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter, reference ReferenceParameter)
+
+	// (PUT /api/v2/networks/{networkID}/references/{reference})
+	PutApiV2NetworksNetworkIDReferencesReference(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter, reference ReferenceParameter)
 	// List compute disk images
 	// (GET /api/v2/regions/{regionID}/images)
 	GetApiV2RegionsRegionIDImages(w http.ResponseWriter, r *http.Request, regionID RegionIDParameter, params GetApiV2RegionsRegionIDImagesParams)
@@ -423,6 +429,16 @@ func (_ Unimplemented) GetApiV2NetworksNetworkID(w http.ResponseWriter, r *http.
 // Update network
 // (PUT /api/v2/networks/{networkID})
 func (_ Unimplemented) PutApiV2NetworksNetworkID(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /api/v2/networks/{networkID}/references/{reference})
+func (_ Unimplemented) DeleteApiV2NetworksNetworkIDReferencesReference(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter, reference ReferenceParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PUT /api/v2/networks/{networkID}/references/{reference})
+func (_ Unimplemented) PutApiV2NetworksNetworkIDReferencesReference(w http.ResponseWriter, r *http.Request, networkID NetworkIDParameter, reference ReferenceParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2443,6 +2459,86 @@ func (siw *ServerInterfaceWrapper) PutApiV2NetworksNetworkID(w http.ResponseWrit
 	handler.ServeHTTP(w, r)
 }
 
+// DeleteApiV2NetworksNetworkIDReferencesReference operation middleware
+func (siw *ServerInterfaceWrapper) DeleteApiV2NetworksNetworkIDReferencesReference(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "networkID" -------------
+	var networkID NetworkIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "networkID", chi.URLParam(r, "networkID"), &networkID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "networkID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "reference" -------------
+	var reference ReferenceParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "reference", chi.URLParam(r, "reference"), &reference, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "reference", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteApiV2NetworksNetworkIDReferencesReference(w, r, networkID, reference)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutApiV2NetworksNetworkIDReferencesReference operation middleware
+func (siw *ServerInterfaceWrapper) PutApiV2NetworksNetworkIDReferencesReference(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "networkID" -------------
+	var networkID NetworkIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "networkID", chi.URLParam(r, "networkID"), &networkID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "networkID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "reference" -------------
+	var reference ReferenceParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "reference", chi.URLParam(r, "reference"), &reference, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "reference", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutApiV2NetworksNetworkIDReferencesReference(w, r, networkID, reference)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetApiV2RegionsRegionIDImages operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV2RegionsRegionIDImages(w http.ResponseWriter, r *http.Request) {
 
@@ -3354,6 +3450,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v2/networks/{networkID}", wrapper.PutApiV2NetworksNetworkID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v2/networks/{networkID}/references/{reference}", wrapper.DeleteApiV2NetworksNetworkIDReferencesReference)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v2/networks/{networkID}/references/{reference}", wrapper.PutApiV2NetworksNetworkIDReferencesReference)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/regions/{regionID}/images", wrapper.GetApiV2RegionsRegionIDImages)

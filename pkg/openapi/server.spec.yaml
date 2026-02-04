@@ -885,6 +885,51 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/networks/{networkID}/references/{reference}:
+    description: |-
+      Implements reference management on resources.  Resources from another service
+      can reference resources in this.  This will inhibit resource deletion until any
+      referencing resources release those references.
+    parameters:
+    - $ref: '#/components/parameters/networkIDParameter'
+    - $ref: '#/components/parameters/referenceParameter'
+    put:
+      x-hidden: true
+      x-no-body: true
+      description: |
+        Idempotent interface for adding external references to a resource.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '201':
+          description: Reference successfully added.
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    delete:
+      x-hidden: true
+      description: |
+        Idempotent interface for removing external references from a resource.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '204':
+          description: Reference successfully removed.
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/securitygroups:
     description: |-
       Manages network scoped security groups.  By default, security groups allow
@@ -1522,6 +1567,13 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
+    referenceParameter:
+      name: reference
+      in: path
+      description: A resource reference.
+      required: true
+      schema:
+        type: string
     lengthParameter:
       name: length
       in: query
