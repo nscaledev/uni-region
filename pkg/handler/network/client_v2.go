@@ -25,7 +25,6 @@ import (
 	"net"
 	"slices"
 
-	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/manager"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
@@ -71,26 +70,11 @@ func convertRoutes(in []regionv1.Route) *openapi.Routes {
 	return &out
 }
 
-// convertIPv4ListV2 converts a Kubernetes network list into an API one.
-func convertIPv4ListV2(in []corev1.IPv4Address) *openapi.Ipv4AddressList {
-	if len(in) == 0 {
-		return nil
-	}
-
-	out := make(openapi.Ipv4AddressList, len(in))
-
-	for i, ip := range in {
-		out[i] = ip.String()
-	}
-
-	return &out
-}
-
 func convertV2(in *regionv1.Network) *openapi.NetworkV2Read {
 	return &openapi.NetworkV2Read{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.NetworkV2Spec{
-			DnsNameservers: convertIPv4ListV2(in.Spec.DNSNameservers),
+			DnsNameservers: convertIPv4List(in.Spec.DNSNameservers),
 			Routes:         convertRoutes(in.Spec.Routes),
 		},
 		Status: openapi.NetworkV2Status{
@@ -244,45 +228,8 @@ func generateRoutes(in *openapi.Routes) ([]regionv1.Route, error) {
 	return out, nil
 }
 
-func parseIPV4AddressListV2(in *openapi.Ipv4AddressList) ([]net.IP, error) {
-	if in == nil {
-		return nil, nil
-	}
-
-	tin := *in
-
-	out := make([]net.IP, len(tin))
-
-	for i := range *in {
-		ip, err := parseIPV4Address(tin[i])
-		if err != nil {
-			return nil, err
-		}
-
-		out[i] = ip
-	}
-
-	return out, nil
-}
-
-func generateIPV4AddressListV2(in []net.IP) []corev1.IPv4Address {
-	if len(in) == 0 {
-		return nil
-	}
-
-	out := make([]corev1.IPv4Address, len(in))
-
-	for i := range in {
-		out[i] = corev1.IPv4Address{
-			IP: in[i],
-		}
-	}
-
-	return out
-}
-
 func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID, identityID string, request *openapi.NetworkV2Update, prefix *net.IPNet) (*regionv1.Network, error) {
-	dnsNameservers, err := parseIPV4AddressListV2(request.Spec.DnsNameservers)
+	dnsNameservers, err := parseIPV4AddressList(request.Spec.DnsNameservers)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +250,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 		Spec: regionv1.NetworkSpec{
 			Tags:           conversion.GenerateTagList(request.Metadata.Tags),
 			Prefix:         generateIPV4Prefix(prefix),
-			DNSNameservers: generateIPV4AddressListV2(dnsNameservers),
+			DNSNameservers: generateIPV4AddressList(dnsNameservers),
 			Routes:         routes,
 		},
 	}
