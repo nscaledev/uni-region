@@ -95,3 +95,20 @@ func (e *Endpoints) ListFileStorageClasses(regionID string) string {
 	return fmt.Sprintf("/api/v2/filestorageclasses?regionId=%s",
 		url.QueryEscape(regionID))
 }
+
+// ListNetworks returns the endpoint for listing networks in a project.
+func (e *Endpoints) ListNetworks(orgID, projectID, regionID string) string {
+	return fmt.Sprintf("/api/v2/networks?organizationId=%s&projectId=%s&regionId=%s",
+		url.QueryEscape(orgID), url.QueryEscape(projectID), url.QueryEscape(regionID))
+}
+
+// CreateNetwork returns the endpoint for creating a network.
+func (e *Endpoints) CreateNetwork() string {
+	return "/api/v2/networks"
+}
+
+// DeleteNetwork returns the endpoint for deleting a specific network resource.
+func (e *Endpoints) DeleteNetwork(networkID string) string {
+	return fmt.Sprintf("/api/v2/networks/%s",
+		url.PathEscape(networkID))
+}

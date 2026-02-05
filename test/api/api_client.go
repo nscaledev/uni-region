@@ -293,3 +293,55 @@ func (c *APIClient) ListFileStorageClasses(ctx context.Context, regionID string)
 		},
 	)
 }
+
+// ListNetworks lists all networks for a project in a region.
+func (c *APIClient) ListNetworks(ctx context.Context, orgID, projectID, regionID string) (regionopenapi.NetworksV2Read, error) {
+	path := c.endpoints.ListNetworks(orgID, projectID, regionID)
+
+	return coreclient.ListResource[regionopenapi.NetworkV2Read](
+		ctx,
+		c.regionClient,
+		path,
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "networks",
+			ResourceID:     projectID,
+			ResourceIDType: "project",
+		},
+	)
+}
+
+// CreateNetwork creates a new network resource.
+func (c *APIClient) CreateNetwork(ctx context.Context, request regionopenapi.NetworkV2CreateRequest) (*regionopenapi.NetworkV2Read, error) {
+	path := c.endpoints.CreateNetwork()
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling network request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusCreated)
+	if err != nil {
+		return nil, fmt.Errorf("creating network: %w", err)
+	}
+
+	var network regionopenapi.NetworkV2Read
+	if err := json.Unmarshal(respBody, &network); err != nil {
+		return nil, fmt.Errorf("unmarshaling network: %w", err)
+	}
+
+	return &network, nil
+}
+
+// DeleteNetwork deletes a network resource.
+func (c *APIClient) DeleteNetwork(ctx context.Context, networkID string) error {
+	path := c.endpoints.DeleteNetwork(networkID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, _, err := c.regionClient.DoRequest(ctx, http.MethodDelete, path, nil, http.StatusAccepted)
+	if err != nil {
+		return fmt.Errorf("deleting network: %w", err)
+	}
+
+	return nil
+}
