@@ -20,15 +20,20 @@ package types
 import (
 	"context"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 )
 
+//go:generate mockgen -source=interfaces.go -destination=mock/interfaces.go -package=mock
+
 type Driver interface {
+	Close()
 	GetDetails(ctx context.Context, projectID string, fileStorageID string) (*FileStorageDetails, error)
 	ListAttachments(ctx context.Context, projectID string, fileStorageID string) (*FileStorageAttachments, error)
 	Create(ctx context.Context, projectID string, fileStorageID string, size int64, rootSquashEnabled bool) (*FileStorageDetails, error)
 	Delete(ctx context.Context, projectID string, fileStorageID string, force bool) error
-	AttachNetwork(ctx context.Context, projectID string, fileStorageID string, attachment *unikornv1.Attachment) error
+	AttachNetwork(ctx context.Context, projectID string, fileStorageID string, attachment *unikornv1.Attachment, networkPrefix *unikornv1core.IPv4Prefix) error
 	DetachNetwork(ctx context.Context, projectID string, fileStorageID string, segmentationID int) error
 	Resize(ctx context.Context, projectID string, fileStorageID string, size int64) error
+	UpdateRootSquash(ctx context.Context, projectID string, fileStorageID string, rootSquashEnabled bool) error
 }

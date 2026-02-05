@@ -29,6 +29,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
@@ -101,6 +102,12 @@ func New(ctx context.Context, cli client.Client, provisioner *unikornv1.FileStor
 		nc:      nc,
 		options: options,
 	}, nil
+}
+
+// Close ends the session and disposes of resources, e.g., connection(s). The client is not
+// usable after calling this.
+func (p *Client) Close() {
+	p.nc.Close()
 }
 
 func connectToNATS(options *Options) (*nats.Conn, error) {
@@ -275,7 +282,7 @@ func (p *Client) Delete(ctx context.Context, projectID string, fileStorageID str
 	return err
 }
 
-func (p *Client) AttachNetwork(ctx context.Context, projectID string, fileStorageID string, attachment *unikornv1.Attachment) error {
+func (p *Client) AttachNetwork(ctx context.Context, projectID string, fileStorageID string, attachment *unikornv1.Attachment, networkPrefix *unikornv1core.IPv4Prefix) error {
 	if attachment.SegmentationID == nil || attachment.IPRange == nil {
 		return fmt.Errorf("%w: missing segmentation ID or IP range", ErrInvalidAttachment)
 	}
@@ -290,9 +297,10 @@ func (p *Client) AttachNetwork(ctx context.Context, projectID string, fileStorag
 			ProjectID: projectID,
 			VolumeID:  fileStorageID,
 		},
-		VlanID:  int64(*attachment.SegmentationID),
-		StartIP: attachment.IPRange.Start.String(),
-		EndIP:   attachment.IPRange.End.String(),
+		VlanID:        int64(*attachment.SegmentationID),
+		StartIP:       attachment.IPRange.Start.String(),
+		EndIP:         attachment.IPRange.End.String(),
+		NetworkPrefix: networkPrefix.String(),
 	}
 
 	_, err := doRequest[EmptyResponse](ctx, p.nc, p.subject("createmounttarget"), req)
@@ -334,6 +342,25 @@ func (p *Client) Resize(ctx context.Context, projectID string, fileStorageID str
 	}
 
 	_, err := doRequest[ResizeResponse](ctx, p.nc, p.subject("resizefilesystem"), req)
+
+	return err
+}
+
+func (p *Client) UpdateRootSquash(ctx context.Context, projectID string, fileStorageID string, rootSquashEnabled bool) error {
+	tracer := otel.GetTracerProvider().Tracer(constants.Application)
+
+	_, span := tracer.Start(ctx, fmt.Sprintf("PUT /file-storage/%s/root-squash", fileStorageID), trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	req := &UpdateRootSquash{
+		RemoteIdentifier: RemoteIdentifier{
+			ProjectID: projectID,
+			VolumeID:  fileStorageID,
+		},
+		RootSquashEnabled: rootSquashEnabled,
+	}
+
+	_, err := doRequest[EmptyResponse](ctx, p.nc, p.subject("updaterootsquash"), req)
 
 	return err
 }

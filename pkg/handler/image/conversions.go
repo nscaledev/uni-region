@@ -19,6 +19,9 @@ package image
 
 import (
 	"errors"
+	"maps"
+	"slices"
+	"strings"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/handler/conversion"
@@ -118,11 +121,33 @@ func convertState(in types.ImageStatus) openapi.ImageState {
 	return ""
 }
 
+func convertTags(in map[string]string) *coreapi.TagList {
+	if len(in) == 0 {
+		return nil
+	}
+
+	var out coreapi.TagList
+
+	for k, v := range in {
+		out = append(out, coreapi.Tag{
+			Name:  k,
+			Value: v,
+		})
+	}
+
+	slices.SortFunc(out, func(a, b coreapi.Tag) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	return &out
+}
+
 func convertImage(in *types.Image) *openapi.Image {
 	out := &openapi.Image{
 		Metadata: coreapi.StaticResourceMetadata{
 			Id:           in.ID,
 			Name:         in.Name,
+			Tags:         convertTags(in.Tags),
 			CreationTime: in.Created,
 		},
 		Spec: openapi.ImageSpec{
@@ -268,4 +293,39 @@ func generateImageOS(source *openapi.ImageOS) *types.ImageOS {
 		Codename: source.Codename,
 		Version:  source.Version,
 	}
+}
+
+func generateStatus(in openapi.ImageState) types.ImageStatus {
+	switch in {
+	case openapi.ImageStatePending:
+		return types.ImageStatusPending
+	case openapi.ImageStateCreating:
+		return types.ImageStatusCreating
+	case openapi.ImageStateReady:
+		return types.ImageStatusReady
+	case openapi.ImageStateFailed:
+		return types.ImageStatusFailed
+	}
+
+	return ""
+}
+
+func GenerateTags(requestTags *coreapi.TagList, extra map[string]string) map[string]string {
+	if requestTags == nil && extra == nil {
+		return nil
+	}
+
+	tags := map[string]string{}
+
+	if requestTags != nil {
+		for _, item := range *requestTags {
+			tags[item.Name] = item.Value
+		}
+	}
+
+	if len(extra) > 0 {
+		maps.Copy(tags, extra)
+	}
+
+	return tags
 }

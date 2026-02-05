@@ -26,9 +26,9 @@ import (
 // TestConfig extends the base config with Region-specific fields.
 type TestConfig struct {
 	coreconfig.BaseConfig
-	RegionBaseURL string
 	OrgID         string
 	ProjectID     string
+	RegionBaseURL string
 	RegionID      string
 }
 

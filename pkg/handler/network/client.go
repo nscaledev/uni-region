@@ -20,6 +20,7 @@ package network
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"net"
 	"slices"
 
@@ -155,7 +156,7 @@ func generateIPV4AddressList(in []net.IP) []unikornv1core.IPv4Address {
 func (c *Client) generate(ctx context.Context, organizationID, projectID, identityID string, request *openapi.NetworkWrite) (*unikornv1.Network, error) {
 	identity, err := identity.New(c.ClientArgs).GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to get identity").WithError(err)
+		return nil, fmt.Errorf("%w: unable to get identity", err)
 	}
 
 	prefix, err := parseIPV4Prefix(request.Spec.Prefix)
@@ -179,12 +180,12 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 	}
 
 	if err := identitycommon.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
-		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
+		return nil, fmt.Errorf("%w: failed to set identity metadata", err)
 	}
 
 	// The resource belongs to its identity, for cascading deletion.
 	if err := controllerutil.SetOwnerReference(identity, out, c.Client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
-		return nil, errors.OAuth2ServerError("unable to set resource owner").WithError(err)
+		return nil, fmt.Errorf("%w: unable to set resource owner", err)
 	}
 
 	return out, nil
@@ -199,7 +200,7 @@ func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, networkI
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("unable to lookup network").WithError(err)
+		return nil, fmt.Errorf("%w: unable to lookup network", err)
 	}
 
 	if err := coreutil.AssertProjectOwnership(resource, organizationID, projectID); err != nil {
@@ -220,7 +221,7 @@ func (c *Client) List(ctx context.Context, organizationID string) (openapi.Netwo
 	}
 
 	if err := c.Client.List(ctx, &result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list networks").WithError(err)
+		return nil, fmt.Errorf("%w: unable to list networks", err)
 	}
 
 	slices.SortStableFunc(result.Items, func(a, b unikornv1.Network) int {
@@ -238,7 +239,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 	}
 
 	if err := c.Client.Create(ctx, resource); err != nil {
-		return nil, errors.OAuth2ServerError("unable to create network").WithError(err)
+		return nil, fmt.Errorf("%w: unable to create network", err)
 	}
 
 	return c.convert(resource), nil
@@ -266,7 +267,7 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, networkI
 			return errors.HTTPNotFound().WithError(err)
 		}
 
-		return errors.OAuth2ServerError("unable to delete network").WithError(err)
+		return fmt.Errorf("%w: unable to delete network", err)
 	}
 
 	return nil

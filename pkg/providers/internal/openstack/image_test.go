@@ -79,6 +79,7 @@ func basicImageFixture() *images.Image {
 			osVersionProperty:      "24.10",
 			virtualizationProperty: virtualizationAny,
 		},
+		Status: images.ImageStatusActive,
 	}
 }
 
@@ -92,6 +93,11 @@ func imageFixtureWithID(id string) *images.Image {
 func withOrganizationID(image *images.Image, organizationID string) *images.Image {
 	image.Properties[organizationIDProperty] = organizationID
 
+	return image
+}
+
+func withStatus(image *images.Image, status images.ImageStatus) *images.Image {
+	image.Status = status
 	return image
 }
 
@@ -230,12 +236,12 @@ func TestImageSchema(t *testing.T) {
 		},
 	}
 
-	schema, err := openstack.ImageSchema()
-	require.NoError(t, err)
-
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
+
+			schema, err := openstack.ImageSchema()
+			require.NoError(t, err)
 
 			fixture := c.fixture()
 

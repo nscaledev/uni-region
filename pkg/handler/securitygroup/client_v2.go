@@ -21,6 +21,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
@@ -121,17 +122,17 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2Securitygrou
 			return nil, nil
 		}
 
-		return nil, errors.OAuth2ServerError("failed to add identity label selector").WithError(err)
+		return nil, fmt.Errorf("%w: failed to add identity label selector", err)
 	}
 
 	selector, err = util.AddRegionIDQuery(selector, params.RegionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to add region label selector").WithError(err)
+		return nil, fmt.Errorf("%w: failed to add region label selector", err)
 	}
 
 	selector, err = util.AddNetworkIDQuery(selector, params.NetworkID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to add network label selector").WithError(err)
+		return nil, fmt.Errorf("%w: failed to add network label selector", err)
 	}
 
 	options := &client.ListOptions{
@@ -142,7 +143,7 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2Securitygrou
 	result := &regionv1.SecurityGroupList{}
 
 	if err := c.Client.List(ctx, result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list security groups").WithError(err)
+		return nil, fmt.Errorf("%w: unable to list security groups", err)
 	}
 
 	tagSelector, err := coreutil.DecodeTagSelectorParam(params.Tag)
@@ -170,7 +171,7 @@ func (c *Client) GetV2Raw(ctx context.Context, securityGroupID string) (*regionv
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("unable to lookup security group").WithError(err)
+		return nil, fmt.Errorf("%w: unable to lookup security group", err)
 	}
 
 	if err := rbac.AllowProjectScope(ctx, "region:securitygroups:v2", identityapi.Read, result.Labels[coreconstants.OrganizationLabel], result.Labels[coreconstants.ProjectLabel]); err != nil {
@@ -185,7 +186,7 @@ func (c *Client) GetV2Raw(ctx context.Context, securityGroupID string) (*regionv
 
 	version, err := constants.UnmarshalAPIVersion(v)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to parse API version")
+		return nil, fmt.Errorf("%w: unable to parse API version", err)
 	}
 
 	if version != 2 {
@@ -210,13 +211,13 @@ func (c *Client) GetV2(ctx context.Context, securityGroupID string) (*openapi.Se
 func convertCreateToUpdateRequest(in *openapi.SecurityGroupV2Create) (*openapi.SecurityGroupV2Update, error) {
 	t, err := json.Marshal(in)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to marshal request").WithError(err)
+		return nil, fmt.Errorf("%w: failed to marshal request", err)
 	}
 
 	out := &openapi.SecurityGroupV2Update{}
 
 	if err := json.Unmarshal(t, out); err != nil {
-		return nil, errors.OAuth2ServerError("failed to unmarshal request").WithError(err)
+		return nil, fmt.Errorf("%w: failed to unmarshal request", err)
 	}
 
 	return out, nil
@@ -313,15 +314,15 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 	}
 
 	if err := util.InjectUserPrincipal(ctx, organizationID, projectID); err != nil {
-		return nil, errors.OAuth2ServerError("unable to set principal information").WithError(err)
+		return nil, fmt.Errorf("%w: unable to set principal information", err)
 	}
 
 	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
-		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
+		return nil, fmt.Errorf("%w: failed to set identity metadata", err)
 	}
 
 	if err := controllerutil.SetOwnerReference(network, out, c.Client.Scheme(), controllerutil.WithBlockOwnerDeletion(true)); err != nil {
-		return nil, errors.OAuth2ServerError("unable to set resource owner").WithError(err)
+		return nil, fmt.Errorf("%w: unable to set resource owner", err)
 	}
 
 	return out, nil
@@ -352,7 +353,7 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.SecurityGroupV2C
 	}
 
 	if err := c.Client.Create(ctx, resource); err != nil {
-		return nil, errors.OAuth2ServerError("unable to create security group").WithError(err)
+		return nil, fmt.Errorf("%w: unable to create security group", err)
 	}
 
 	return convertV2(resource), nil
@@ -389,7 +390,7 @@ func (c *Client) UpdateV2(ctx context.Context, securityGroupID string, request *
 	updated.Spec = required.Spec
 
 	if err := c.Client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
-		return nil, errors.OAuth2ServerError("unable to update security group").WithError(err)
+		return nil, fmt.Errorf("%w: unable to update security group", err)
 	}
 
 	return convertV2(updated), nil
@@ -413,12 +414,12 @@ func (c *Client) DeleteV2(ctx context.Context, securityGroupID string) error {
 		return errors.HTTPForbidden("security group is in use and cannot be deleted")
 	}
 
-	if err := c.Client.Delete(ctx, resource, util.ForegroundDeleteOptions()); err != nil {
+	if err := c.Client.Delete(ctx, resource); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
 		}
 
-		return errors.OAuth2ServerError("unable to delete security group").WithError(err)
+		return fmt.Errorf("%w: unable to delete security group", err)
 	}
 
 	return nil

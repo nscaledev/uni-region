@@ -21,12 +21,14 @@ import (
 	"cmp"
 	"context"
 	goerrors "errors"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
+	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
@@ -70,12 +72,21 @@ func (c *Client) provider(ctx context.Context, regionID string) (Provider, error
 func (c *Client) ListImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {
 	provider, err := c.provider(ctx, regionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, fmt.Errorf("%w: failed to create region provider", err)
 	}
 
-	result, err := provider.ListImages(ctx, organizationID)
+	query, err := provider.QueryImages()
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to list images").WithError(err)
+		return nil, fmt.Errorf("%w: failed to list images", err)
+	}
+
+	result, err := query.
+		AvailableToOrganization(organizationID).
+		StatusIn(types.ImageStatusReady).
+		List(ctx)
+
+	if err != nil {
+		return nil, err
 	}
 
 	// Apply ordering guarantees, ordered by name.
@@ -152,7 +163,7 @@ func validateImage(ctx context.Context, uri string) error {
 func (c *Client) CreateImage(ctx context.Context, organizationID, regionID string, request *openapi.ImageCreateRequest) (*openapi.ImageResponse, error) {
 	provider, err := c.provider(ctx, regionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, fmt.Errorf("%w: failed to create region provider", err)
 	}
 
 	if err := validateImage(ctx, request.Spec.Uri); err != nil {
@@ -172,8 +183,14 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 		packages = &temp
 	}
 
+	// Get all the user-supplied tags, and set our own tag for the provenance.
+	tags := GenerateTags(request.Metadata.Tags, map[string]string{
+		constants.ImageSourceTag: constants.ImageSourceImport,
+	})
+
 	image := &types.Image{
 		Name:           request.Metadata.Name,
+		Tags:           tags,
 		OrganizationID: ptr.To(organizationID),
 		Architecture:   generateArchitecture(request.Spec.Architecture),
 		Virtualization: generateImageVirtualization(request.Spec.Virtualization),
@@ -184,7 +201,7 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 
 	result, err := provider.CreateImage(ctx, image, request.Spec.Uri)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create image").WithError(err)
+		return nil, fmt.Errorf("%w: failed to create image", err)
 	}
 
 	return convertImage(result), nil
@@ -193,7 +210,7 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imageID string) error {
 	provider, err := c.provider(ctx, regionID)
 	if err != nil {
-		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return fmt.Errorf("%w: failed to create region provider", err)
 	}
 
 	image, err := provider.GetImage(ctx, organizationID, imageID)
@@ -202,7 +219,7 @@ func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imag
 			return errors.HTTPNotFound().WithError(err)
 		}
 
-		return errors.OAuth2ServerError("failed to get image").WithError(err)
+		return fmt.Errorf("%w: failed to get image", err)
 	}
 
 	if image.OrganizationID == nil || *image.OrganizationID != organizationID {
@@ -220,7 +237,7 @@ func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imag
 			return errors.HTTPConflict().WithError(err)
 		}
 
-		return errors.OAuth2ServerError("failed to delete image").WithError(err)
+		return fmt.Errorf("%w: failed to delete image", err)
 	}
 
 	return nil

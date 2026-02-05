@@ -35,7 +35,6 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	networkclient "github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -327,9 +326,10 @@ func TestConvertV2List(t *testing.T) {
 	}
 }
 
-//nolint:dupl
 func TestConvertV2(t *testing.T) {
 	t.Parallel()
+
+	usageTimestamp := time.Date(2026, 1, 31, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {
 		name  string
@@ -377,6 +377,154 @@ func TestConvertV2(t *testing.T) {
 				Status: openapi.StorageV2Status{},
 			},
 		},
+		{
+			name: "usage status with all fields set",
+			input: &regionv1.FileStorage{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: regionv1.FileStorageSpec{
+					Size:        *gibToQuantity(100),
+					NFS:         &regionv1.NFS{RootSquash: true},
+					Attachments: []regionv1.Attachment{},
+				},
+				Status: regionv1.FileStorageStatus{
+					Size:           resource.NewQuantity(100*giB, resource.BinarySI),
+					Usage:          resource.NewQuantity(50*giB, resource.BinarySI),
+					UsageTimestamp: &metav1.Time{Time: usageTimestamp},
+				},
+			},
+			want: &openapi.StorageV2Read{
+				Metadata: corev1.ProjectScopedResourceReadMetadata{
+					HealthStatus:       corev1.ResourceHealthStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+				},
+				Spec: openapi.StorageV2Spec{
+					SizeGiB:     100,
+					Attachments: &openapi.StorageAttachmentV2Spec{NetworkIds: []string{}},
+					StorageType: openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
+				},
+				Status: openapi.StorageV2Status{
+					Usage: &openapi.StorageUsageV2Status{
+						CapacityBytes: 100 * giB,
+						UsedBytes:     ptr.To(50 * giB),
+						UpdatedAt:     &usageTimestamp,
+					},
+				},
+			},
+		},
+		{
+			name: "usage status with all nil fields",
+			input: &regionv1.FileStorage{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: regionv1.FileStorageSpec{
+					Size:        *gibToQuantity(100),
+					NFS:         &regionv1.NFS{RootSquash: true},
+					Attachments: []regionv1.Attachment{},
+				},
+				Status: regionv1.FileStorageStatus{
+					Size:           nil,
+					Usage:          nil,
+					UsageTimestamp: nil,
+				},
+			},
+			want: &openapi.StorageV2Read{
+				Metadata: corev1.ProjectScopedResourceReadMetadata{
+					HealthStatus:       corev1.ResourceHealthStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+				},
+				Spec: openapi.StorageV2Spec{
+					SizeGiB:     100,
+					Attachments: &openapi.StorageAttachmentV2Spec{NetworkIds: []string{}},
+					StorageType: openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
+				},
+				Status: openapi.StorageV2Status{
+					Usage: nil,
+				},
+			},
+		},
+		{
+			name: "usage status with only capacity set",
+			input: &regionv1.FileStorage{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: regionv1.FileStorageSpec{
+					Size:        *gibToQuantity(100),
+					NFS:         &regionv1.NFS{RootSquash: true},
+					Attachments: []regionv1.Attachment{},
+				},
+				Status: regionv1.FileStorageStatus{
+					Size:           resource.NewQuantity(100*giB, resource.BinarySI),
+					Usage:          nil,
+					UsageTimestamp: nil,
+				},
+			},
+			want: &openapi.StorageV2Read{
+				Metadata: corev1.ProjectScopedResourceReadMetadata{
+					HealthStatus:       corev1.ResourceHealthStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+				},
+				Spec: openapi.StorageV2Spec{
+					SizeGiB:     100,
+					Attachments: &openapi.StorageAttachmentV2Spec{NetworkIds: []string{}},
+					StorageType: openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
+				},
+				Status: openapi.StorageV2Status{
+					Usage: &openapi.StorageUsageV2Status{
+						CapacityBytes: 100 * giB,
+						UsedBytes:     nil,
+						UpdatedAt:     nil,
+					},
+				},
+			},
+		},
+		{
+			name: "attachment with mount path",
+			input: &regionv1.FileStorage{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: regionv1.FileStorageSpec{
+					Size: *gibToQuantity(100),
+					NFS:  &regionv1.NFS{RootSquash: true},
+					Attachments: []regionv1.Attachment{
+						{
+							NetworkID: "net-1",
+							IPRange: &regionv1.AttachmentIPRange{
+								Start: v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 100)},
+								End:   v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 110)},
+							},
+						},
+					},
+				},
+				Status: regionv1.FileStorageStatus{
+					MountPath: ptr.To("/export/data"),
+				},
+			},
+			want: &openapi.StorageV2Read{
+				Metadata: corev1.ProjectScopedResourceReadMetadata{
+					HealthStatus:       corev1.ResourceHealthStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+				},
+				Spec: openapi.StorageV2Spec{
+					SizeGiB:     100,
+					Attachments: &openapi.StorageAttachmentV2Spec{NetworkIds: []string{"net-1"}},
+					StorageType: openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
+				},
+				Status: openapi.StorageV2Status{
+					Attachments: &openapi.StorageAttachmentListV2Status{
+						{
+							NetworkId:          "net-1",
+							MountSource:        ptr.To("10.0.0.100:/export/data"),
+							ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -389,7 +537,6 @@ func TestConvertV2(t *testing.T) {
 	}
 }
 
-//nolint:dupl
 func TestConvertV2SizeConversion(t *testing.T) {
 	t.Parallel()
 
@@ -692,21 +839,10 @@ func TestGet(t *testing.T) {
 			obj = append(obj, &tt.input)
 
 			c, ctx := newClientwithObjectandContext(t, ctx, obj...)
-			fc := &fileClient{
-				Client: c.Client,
-			}
 
-			c.GetFileStorageDriverFunc = func(ctx context.Context, storageClassID string) (Driver, error) {
-				return fc, nil
-			}
 			result, err := c.Get(ctx, tt.input.Name)
 			require.NoError(t, err)
 			require.NotNil(t, result, "result should not be empty")
-
-			// Check that usage matches with what is returned below in
-			// GetDetails()
-			require.Equal(t, 1*giB, result.Status.Usage.CapacityBytes, "Capacity")
-			require.Equal(t, 512*miB, *result.Status.Usage.UsedBytes, "Used")
 		})
 	}
 }
@@ -890,21 +1026,4 @@ func defaultFSK8sObjects() []client.Object {
 			Spec: regionv1.FileStorageClassSpec{},
 		},
 	}
-}
-
-// Mock file storage driver functionality.
-var _ Driver = &fileClient{}
-
-type fileClient struct {
-	Client client.Client
-}
-
-func (c *fileClient) GetDetails(ctx context.Context, projectID string,
-	fileStorageID string) (*types.FileStorageDetails, error) {
-	return &types.FileStorageDetails{
-		Size:              resource.NewQuantity(1*giB, resource.BinarySI),
-		Path:              "/filesystem",
-		RootSquashEnabled: true,
-		UsedCapacity:      resource.NewQuantity(512*miB, resource.BinarySI),
-	}, nil
 }

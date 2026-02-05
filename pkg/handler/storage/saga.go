@@ -17,21 +17,32 @@ limitations under the License.
 
 package storage
 
+//go:generate mockgen -source=saga.go -destination=mock/saga.go -package=mock
+
 import (
 	"context"
+	"fmt"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
+	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
+	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+type NetworkGetter interface {
+	GetV2(ctx context.Context, id string) (*openapi.NetworkV2Read, error)
+}
 
 type createSaga struct {
 	client  *Client
@@ -82,7 +93,7 @@ func (s *createSaga) deleteAllocation(ctx context.Context) error {
 
 func (s *createSaga) createFileStorage(ctx context.Context) error {
 	if err := s.client.Client.Create(ctx, s.filestorage); err != nil {
-		return errors.OAuth2ServerError("unable to create filestorage").WithError(err)
+		return fmt.Errorf("%w: unable to create filestorage", err)
 	}
 
 	return nil
@@ -90,7 +101,7 @@ func (s *createSaga) createFileStorage(ctx context.Context) error {
 
 func (s *createSaga) validateRequest(ctx context.Context) error {
 	if s.request.Spec.SizeGiB <= 0 {
-		return errors.OAuth2InvalidRequest("size must be greater or equal to 1GiB")
+		return errors.HTTPUnprocessableContent("size must be greater or equal to 1GiB")
 	}
 
 	if err := s.validateRegion(ctx, s.request.Spec.RegionId); err != nil {
@@ -101,7 +112,8 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 		return err
 	}
 
-	if err := s.validateAttachments(ctx, s.request.Spec.Attachments); err != nil {
+	networkClient := network.New(s.client.ClientArgs)
+	if err := validateAttachments(ctx, networkClient, s.request.Spec.Attachments, s.request.Spec.ProjectId); err != nil {
 		return err
 	}
 
@@ -124,7 +136,11 @@ func (s *createSaga) validateRegion(ctx context.Context, regionID string) error 
 	regionClient := region.NewClient(s.client.ClientArgs)
 
 	if _, err := regionClient.GetDetail(ctx, regionID); err != nil {
-		return errors.OAuth2ServerError("region does not exist").WithError(err)
+		if !errors.IsHTTPNotFound(err) {
+			return err
+		}
+
+		return errors.HTTPUnprocessableContent("region does not exist").WithError(err)
 	}
 
 	return nil
@@ -137,71 +153,63 @@ func (s *createSaga) validateStorageClass(ctx context.Context, storageClassID st
 	}
 
 	if sc.Spec.RegionId != s.request.Spec.RegionId {
-		return errors.OAuth2InvalidRequest("storage class not available in region").WithError(err)
-	}
-
-	return nil
-}
-
-func (s *createSaga) validateAttachments(ctx context.Context, attachments *openapi.StorageAttachmentV2Spec) error {
-	if attachments == nil {
-		return nil
-	}
-
-	networkClient := network.New(s.client.ClientArgs)
-
-	for _, id := range attachments.NetworkIds {
-		network, err := networkClient.GetV2(ctx, id)
-		if err != nil {
-			return errors.
-				OAuth2ServerError("network attachment not found").
-				WithError(err).
-				WithValues("networkID", id)
-		}
-
-		if network.Metadata.ProjectId != s.request.Spec.ProjectId {
-			return errors.OAuth2InvalidRequest("network not available in project").WithError(err)
-		}
+		return errors.HTTPUnprocessableContent("storage class not available in region").
+			WithValues("storageClassID", sc.Metadata.Name, "storageClassRegionID", s.request.Spec.RegionId, "requestedRegionID", sc.Spec.RegionId)
 	}
 
 	return nil
 }
 
 type updateSaga struct {
-	client         *Client
-	organizationID string
-	regionID       string
-	current        *regionv1.FileStorage
-	updated        *regionv1.FileStorage
+	client *Client
+
+	request *openapi.StorageV2Update
+	current *regionv1.FileStorage
+	updated *regionv1.FileStorage
 }
 
-func newUpdateSaga(client *Client, organizationID, regionID string, current, updated *regionv1.FileStorage) *updateSaga {
+func newUpdateSaga(client *Client, current *regionv1.FileStorage, request *openapi.StorageV2Update) *updateSaga {
 	return &updateSaga{
-		client:         client,
-		organizationID: organizationID,
-		regionID:       regionID,
-		current:        current,
-		updated:        updated,
+		client:  client,
+		request: request,
+		current: current,
 	}
 }
 
 func (s *updateSaga) validateRequest(ctx context.Context) error {
 	networkClient := network.New(s.client.ClientArgs)
+	projectID := s.current.Labels[coreconstants.ProjectLabel]
 
-	for _, attachment := range s.updated.Spec.Attachments {
-		network, err := networkClient.GetV2(ctx, attachment.NetworkID)
-		if err != nil {
-			return errors.
-				OAuth2InvalidRequest("network attachment not found").
-				WithError(err).
-				WithValues("networkID", attachment.NetworkID)
-		}
-
-		projectID := s.current.Labels[coreconstants.ProjectLabel]
-		if network.Metadata.ProjectId != projectID {
-			return errors.OAuth2InvalidRequest("network not available in project").WithError(err)
-		}
+	if err := validateAttachments(ctx, networkClient, s.request.Spec.Attachments, projectID); err != nil {
+		return err
 	}
+
+	return nil
+}
+
+func (s *updateSaga) generate(ctx context.Context) error {
+	organizationID := s.current.Labels[coreconstants.OrganizationLabel]
+	projectID := s.current.Labels[coreconstants.ProjectLabel]
+	regionID := s.current.Labels[constants.RegionLabel]
+
+	required, err := s.client.generateV2(ctx, organizationID, projectID, regionID, s.request, s.current.Spec.StorageClassID)
+	if err != nil {
+		return err
+	}
+
+	if err := conversion.UpdateObjectMetadata(required, s.current, common.IdentityMetadataMutator); err != nil {
+		return fmt.Errorf("%w: failed to merge metadata", err)
+	}
+
+	// Preserve the allocation.
+	if v, ok := s.current.Annotations[coreconstants.AllocationAnnotation]; ok {
+		required.Annotations[coreconstants.AllocationAnnotation] = v
+	}
+
+	s.updated = s.current.DeepCopy()
+	s.updated.Labels = required.Labels
+	s.updated.Annotations = required.Annotations
+	s.updated.Spec = required.Spec
 
 	return nil
 }
@@ -220,7 +228,7 @@ func (s *updateSaga) revertAllocation(ctx context.Context) error {
 
 func (s *updateSaga) updateStorage(ctx context.Context) error {
 	if err := s.client.Client.Patch(ctx, s.updated, client.MergeFrom(s.current)); err != nil {
-		return errors.OAuth2ServerError("unable to update filestorage").WithError(err)
+		return fmt.Errorf("%w: unable to update filestorage", err)
 	}
 
 	return nil
@@ -229,7 +237,37 @@ func (s *updateSaga) updateStorage(ctx context.Context) error {
 func (s *updateSaga) Actions() []saga.Action {
 	return []saga.Action{
 		saga.NewAction("validate request", s.validateRequest, nil),
+		saga.NewAction("generate", s.generate, nil),
 		saga.NewAction("update quota allocation", s.updateAllocation, s.revertAllocation),
 		saga.NewAction("update storage", s.updateStorage, nil),
 	}
+}
+
+func validateAttachments(ctx context.Context, networkClient NetworkGetter, attachments *openapi.StorageAttachmentV2Spec, projectID string) error {
+	if attachments == nil {
+		return nil
+	}
+
+	for _, id := range attachments.NetworkIds {
+		net, err := networkClient.GetV2(ctx, id)
+		if err != nil {
+			if !errors.IsHTTPNotFound(err) {
+				return err
+			}
+
+			return errors.HTTPUnprocessableContent("network not found").WithError(err)
+		}
+
+		if net.Metadata.ProjectId != projectID {
+			return errors.HTTPUnprocessableContent("network not available in project").
+				WithValues("networkID", id, "expectedProjectID", projectID, "actualProjectID", net.Metadata.ProjectId)
+		}
+
+		if net.Metadata.ProvisioningStatus != coreopenapi.ResourceProvisioningStatusProvisioned {
+			return errors.HTTPUnprocessableContent("network not provisioned").
+				WithValues("networkID", id, "provisioningStatus", net.Metadata.ProvisioningStatus)
+		}
+	}
+
+	return nil
 }

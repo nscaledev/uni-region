@@ -4,6 +4,8 @@
 package openapi
 
 import (
+	"time"
+
 	externalRef0 "github.com/unikorn-cloud/core/pkg/openapi"
 )
 
@@ -88,6 +90,18 @@ const (
 const (
 	StorageClassProtocolTypeNfsv3 StorageClassProtocolType = "nfsv3"
 	StorageClassProtocolTypeNfsv4 StorageClassProtocolType = "nfsv4"
+)
+
+// Defines values for ImageScopeQueryParameter.
+const (
+	ImageScopeQueryParameterAvailable ImageScopeQueryParameter = "available"
+	ImageScopeQueryParameterOwned     ImageScopeQueryParameter = "owned"
+)
+
+// Defines values for GetApiV2RegionsRegionIDImagesParamsScope.
+const (
+	GetApiV2RegionsRegionIDImagesParamsScopeAvailable GetApiV2RegionsRegionIDImagesParamsScope = "available"
+	GetApiV2RegionsRegionIDImagesParamsScopeOwned     GetApiV2RegionsRegionIDImagesParamsScope = "owned"
 )
 
 // NFSV2Spec NFS specific
@@ -1030,6 +1044,9 @@ type StorageUsageV2Status struct {
 	// CapacityBytes total space allotted in bytes
 	CapacityBytes int64 `json:"capacityBytes"`
 
+	// UpdatedAt timestamp when the usage was last updated
+	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
+
 	// UsedBytes amount of storage space used in bytes
 	UsedBytes *int64 `json:"usedBytes,omitempty"`
 }
@@ -1121,6 +1138,12 @@ type IdentityIDParameter = KubernetesNameParameter
 
 // ImageIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type ImageIDParameter = KubernetesNameParameter
+
+// ImageScopeQueryParameter defines model for imageScopeQueryParameter.
+type ImageScopeQueryParameter string
+
+// ImageStatusQueryParameter defines model for imageStatusQueryParameter.
+type ImageStatusQueryParameter = []ImageState
 
 // LengthParameter defines model for lengthParameter.
 type LengthParameter = int
@@ -1332,6 +1355,21 @@ type GetApiV2NetworksParams struct {
 	// RegionID Allows resources to be filtered by region.
 	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
 }
+
+// GetApiV2RegionsRegionIDImagesParams defines parameters for GetApiV2RegionsRegionIDImages.
+type GetApiV2RegionsRegionIDImagesParams struct {
+	// OrganizationID Allows resources to be filtered by organization.
+	OrganizationID *OrganizationIDQueryParameter `form:"organizationID,omitempty" json:"organizationID,omitempty"`
+
+	// Scope Filter for images owned by the organization specified, or available (either globally or to the organization given).
+	Scope *GetApiV2RegionsRegionIDImagesParamsScope `form:"scope,omitempty" json:"scope,omitempty"`
+
+	// Status Filter for images by status
+	Status *ImageStatusQueryParameter `form:"status,omitempty" json:"status,omitempty"`
+}
+
+// GetApiV2RegionsRegionIDImagesParamsScope defines parameters for GetApiV2RegionsRegionIDImages.
+type GetApiV2RegionsRegionIDImagesParamsScope string
 
 // GetApiV2SecuritygroupsParams defines parameters for GetApiV2Securitygroups.
 type GetApiV2SecuritygroupsParams struct {

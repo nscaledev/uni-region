@@ -8,6 +8,17 @@ info:
     that service.
   version: 1.13.0
 paths:
+  /.well-known/openid-protected-resource:
+    description: |-
+      Implements OIDC authorization service discovery.
+    get:
+      x-no-security-requirements: true
+      x-hidden: true
+      description: |-
+        Reads the OIDC discovery page identifying authorization servers.
+      responses:
+        '200':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/openidProtectedResourceResponse'
   /api/v1/organizations/{organizationID}/regions:
     description: |-
       Regions define a cloud.  This may be geographical or any logical partition.
@@ -1001,6 +1012,32 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+
+  /api/v2/regions/{regionID}/images:
+    description: Manage compute disk images
+    get:
+      summary: List compute disk images
+      tags:
+      - Images
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: '#/components/parameters/regionIDParameter'
+      - $ref: '#/components/parameters/organizationIDQueryParameter'
+      - $ref: '#/components/parameters/imageScopeQueryParameter'
+      - $ref: '#/components/parameters/imageStatusQueryParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/imagesResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404': # region not found
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+
   /api/v2/servers:
     description: |-
       Manages servers.
@@ -1341,6 +1378,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/filestorage/{filestorageID}:
@@ -1388,6 +1427,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
@@ -1537,6 +1578,24 @@ components:
         type: array
         items:
           type: string
+    imageScopeQueryParameter:
+      name: scope
+      in: query
+      description: Filter for images owned by the organization specified, or available (either globally or to the organization given).
+      schema:
+        type: string
+        enum:
+        - owned
+        - available
+    imageStatusQueryParameter:
+      name: status
+      in: query
+      description: Filter for images by status
+      schema:
+        type: array
+        items:
+          $ref: '#/components/schemas/imageState'
+
   schemas:
     kubernetesNameParameter:
       description: A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
@@ -2753,6 +2812,10 @@ components:
               description: amount of storage space used in bytes
               type: integer
               format: int64
+            updatedAt:
+              description: timestamp when the usage was last updated
+              type: string
+              format: date-time
     storageV2Create:
       description: A storage create request.
       type: object
@@ -3729,6 +3792,7 @@ components:
               usage:
                   capacityBytes: 107374182400
                   usedBytes: 94489280512
+                  updatedAt: 2026-01-31T12:00:00Z
               attachments:
                 - networkId: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
                   mountSource: 10.0.0.16:/mnt/nfs
@@ -3766,6 +3830,7 @@ components:
               usage:
                   capacityBytes: 107374182400
                   usedBytes: 94489280512
+                  updatedAt: 2026-01-31T12:00:00Z
               attachments:
                 - networkId: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
                   mountSource: 10.0.0.16:/mnt/nfs

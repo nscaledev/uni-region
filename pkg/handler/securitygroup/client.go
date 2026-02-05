@@ -20,6 +20,7 @@ package securitygroup
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"net"
 	"slices"
 
@@ -284,7 +285,7 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 	}
 
 	if err := identitycommon.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
-		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
+		return nil, fmt.Errorf("%w: failed to set identity metadata", err)
 	}
 
 	// Ensure the security is owned by the identity so it is automatically cleaned
@@ -305,7 +306,7 @@ func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, security
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("unable to get security group").WithError(err)
+		return nil, fmt.Errorf("%w: unable to get security group", err)
 	}
 
 	if err := coreutil.AssertProjectOwnership(resource, organizationID, projectID); err != nil {
@@ -327,7 +328,7 @@ func (c *Client) List(ctx context.Context, organizationID string, params openapi
 	}
 
 	if err := c.Client.List(ctx, result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list security groups").WithError(err)
+		return nil, fmt.Errorf("%w: unable to list security groups", err)
 	}
 
 	slices.SortStableFunc(result.Items, func(a, b unikornv1.SecurityGroup) int {
@@ -354,7 +355,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 	}
 
 	if err := c.Client.Create(ctx, securityGroup); err != nil {
-		return nil, errors.OAuth2ServerError("unable to create security group").WithError(err)
+		return nil, fmt.Errorf("%w: unable to create security group", err)
 	}
 
 	return convert(securityGroup), nil
@@ -388,7 +389,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	updated.Spec = required.Spec
 
 	if err := c.Client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
-		return nil, errors.OAuth2ServerError("unable to updated security group").WithError(err)
+		return nil, fmt.Errorf("%w: unable to updated security group", err)
 	}
 
 	return convert(updated), nil
@@ -406,7 +407,7 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, security
 			return errors.HTTPNotFound().WithError(err)
 		}
 
-		return errors.OAuth2ServerError("unable to delete security group").WithError(err)
+		return fmt.Errorf("%w: unable to delete security group", err)
 	}
 
 	return nil

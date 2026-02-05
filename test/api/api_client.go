@@ -91,9 +91,12 @@ func newAPIClientWithConfig(config *TestConfig, baseURL string) *APIClient {
 	coreClient.SetLogResponses(config.LogResponses)
 
 	// Create a separate client for region endpoints
-	regionClient := coreclient.NewAPIClient(config.RegionBaseURL, config.AuthToken, config.RequestTimeout, &GinkgoLogger{})
-	regionClient.SetLogRequests(config.LogRequests)
-	regionClient.SetLogResponses(config.LogResponses)
+	var regionClient *coreclient.APIClient
+	if config.RegionBaseURL != "" {
+		regionClient = coreclient.NewAPIClient(config.RegionBaseURL, config.AuthToken, config.RequestTimeout, &GinkgoLogger{})
+		regionClient.SetLogRequests(config.LogRequests)
+		regionClient.SetLogResponses(config.LogResponses)
+	}
 
 	return &APIClient{
 		APIClient:    coreClient,
@@ -173,9 +176,14 @@ func (c *APIClient) ListImages(ctx context.Context, orgID, regionID string) (reg
 func (c *APIClient) ListExternalNetworks(ctx context.Context, orgID, regionID string) (regionopenapi.ExternalNetworks, error) {
 	path := c.endpoints.ListExternalNetworks(orgID, regionID)
 
+	client := c.APIClient
+	if c.regionClient != nil {
+		client = c.regionClient
+	}
+
 	return coreclient.ListResource[regionopenapi.ExternalNetwork](
 		ctx,
-		c.APIClient,
+		client,
 		path,
 		coreclient.ResponseHandlerConfig{
 			ResourceType:   "externalNetworks",

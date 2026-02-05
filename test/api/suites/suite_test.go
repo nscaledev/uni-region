@@ -38,12 +38,19 @@ var (
 	config       *api.TestConfig
 )
 
-var _ = BeforeEach(func() {
+var _ = BeforeSuite(func() {
 	var err error
 	config, err = api.LoadTestConfig()
 	Expect(err).NotTo(HaveOccurred(), "Failed to load test configuration")
+
 	client = api.NewAPIClientWithConfig(config)
 	regionClient = api.NewAPIClientWithConfig(config)
+	ctx = context.Background()
+})
+
+var _ = BeforeEach(func() {
+	// Config and client are already initialized in BeforeSuite
+	// Reset context for each test
 	ctx = context.Background()
 })
 
