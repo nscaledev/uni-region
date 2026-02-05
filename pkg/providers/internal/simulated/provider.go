@@ -107,10 +107,6 @@ func New(_ context.Context, cli client.Client, region *unikornv1.Region) (*Provi
 	}, nil
 }
 
-func (p *Provider) Kind() unikornv1.Provider {
-	return unikornv1.ProviderSimulated
-}
-
 func (p *Provider) Region(_ context.Context) (*unikornv1.Region, error) {
 	return p.region, nil
 }
