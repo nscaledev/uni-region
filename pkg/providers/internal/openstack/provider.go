@@ -447,11 +447,6 @@ func (p *Provider) privilegedNetworkFromServicePrincipal(ctx context.Context, id
 	return client, nil
 }
 
-// Kind returns the provider kind.
-func (p *Provider) Kind() unikornv1.Provider {
-	return unikornv1.ProviderOpenstack
-}
-
 // Region returns the provider's region.
 func (p *Provider) Region(ctx context.Context) (*unikornv1.Region, error) {
 	// Get the newest version of the region.
