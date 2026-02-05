@@ -191,6 +191,29 @@ Run with verbose output:
 make test-contracts-provider-verbose
 ```
 
+### Automated Provider Verification (Webhook)
+
+The repository includes a webhook-triggered workflow (`.github/workflows/pact-verification.yaml`) that automatically verifies contracts when consumers publish new pacts.
+
+**How it works:**
+1. Consumer (e.g., uni-compute) publishes a new pact to Pact Broker
+2. Pact Broker webhook triggers this repository's GitHub Actions workflow
+3. Provider verification runs automatically against the new contract
+4. Results are published back to Pact Broker
+5. Consumer's `can-i-deploy` check can now validate compatibility
+
+**Setup:**
+The webhook is configured in the Pact Broker by the consumer service. See uni-compute's README for webhook setup instructions.
+
+**Workflow trigger:**
+```yaml
+on:
+  repository_dispatch:
+    types: [pact_verification]
+```
+
+This workflow receives metadata about which pact to verify and runs `make test-contracts-provider-ci` to verify and publish results.
+
 ### Writing Consumer Tests
 
 Consumer tests define uni-region's expectations when calling external APIs (like uni-identity). Tests are located in `test/contracts/consumer/{provider}/`.

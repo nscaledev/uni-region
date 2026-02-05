@@ -21,6 +21,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/base64"
+	"fmt"
 	"slices"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -31,9 +32,9 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
-	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -109,14 +110,14 @@ func (c *Client) convertList(ctx context.Context, in unikornv1.IdentityList) ope
 
 // generate a new resource from a request.
 func (c *Client) generate(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*unikornv1.Identity, error) {
-	provider, err := region.NewClient(c.ClientArgs).Provider(ctx, request.Spec.RegionId)
+	provider, err := c.Providers.LookupCloud(ctx, request.Spec.RegionId)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to get region provider").WithError(err)
+		return nil, providers.ProviderToServerError(err)
 	}
 
 	region, err := provider.Region(ctx)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("unable to get region").WithError(err)
+		return nil, fmt.Errorf("%w: unable to get region", err)
 	}
 
 	out := &unikornv1.Identity{
@@ -128,7 +129,7 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID string,
 	}
 
 	if err := identitycommon.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
-		return nil, errors.OAuth2ServerError("failed to set identity metadata").WithError(err)
+		return nil, fmt.Errorf("%w: failed to set identity metadata", err)
 	}
 
 	return out, nil
@@ -143,7 +144,7 @@ func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, identity
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("unable to lookup identity").WithError(err)
+		return nil, fmt.Errorf("%w: unable to lookup identity", err)
 	}
 
 	if err := coreutil.AssertProjectOwnership(resource, organizationID, projectID); err != nil {
@@ -164,7 +165,7 @@ func (c *Client) List(ctx context.Context, organizationID string) (openapi.Ident
 	}
 
 	if err := c.Client.List(ctx, &result, options); err != nil {
-		return nil, errors.OAuth2ServerError("unable to list identities").WithError(err)
+		return nil, fmt.Errorf("%w: unable to list identities", err)
 	}
 
 	slices.SortStableFunc(result.Items, func(a, b unikornv1.Identity) int {
@@ -181,7 +182,7 @@ func (c *Client) CreateRaw(ctx context.Context, organizationID, projectID string
 	}
 
 	if err := c.Client.Create(ctx, resource); err != nil {
-		return nil, errors.OAuth2ServerError("unable to create identity").WithError(err)
+		return nil, fmt.Errorf("%w: unable to create identity", err)
 	}
 
 	return resource, nil
@@ -219,7 +220,7 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, identity
 			return errors.HTTPNotFound().WithError(err)
 		}
 
-		return errors.OAuth2ServerError("unable to delete identity").WithError(err)
+		return fmt.Errorf("%w: unable to delete identity", err)
 	}
 
 	return nil

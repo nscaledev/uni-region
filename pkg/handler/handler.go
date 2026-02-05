@@ -22,6 +22,7 @@ package handler
 import (
 	"net/http"
 
+	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
@@ -62,6 +63,33 @@ func New(clientArgs common.ClientArgs, options *Options) (*Handler, error) {
 
 func (h *Handler) setUncacheable(w http.ResponseWriter) {
 	w.Header().Add("Cache-Control", "no-cache")
+}
+
+// GetWellKnownOpenidProtectedResource implements RFC 9728.
+func (h *Handler) GetWellKnownOpenidProtectedResource(w http.ResponseWriter, r *http.Request) {
+	authenticationServer, err := identityapi.Host(h.Identity)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result := &coreapi.OpenidProtectedResource{
+		Resource: "https://" + r.Host,
+		AuthorizationServers: coreapi.AuthorizationServerList{
+			authenticationServer,
+		},
+		ScopesSupported: coreapi.ScopeList{
+			"openid",
+			"email",
+			"profile",
+		},
+		BearerMethodsSupported: coreapi.BearerMethodList{
+			coreapi.Header,
+		},
+	}
+
+	h.options.setCacheable(w)
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter) {

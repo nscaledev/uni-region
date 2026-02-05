@@ -21,61 +21,44 @@ import (
 	"cmp"
 	"context"
 	goerrors "errors"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
+	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"k8s.io/utils/ptr"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-type GetProviderFunc func(context.Context, client.Client, string, string) (Provider, error)
 
 type Client struct {
 	common.ClientArgs
-	getProvider GetProviderFunc
 }
 
-func DefaultGetProvider(ctx context.Context, c client.Client, namespace, regionID string) (Provider, error) {
-	return providers.New(ctx, c, namespace, regionID)
-}
-
-func NewClient(clientArgs common.ClientArgs, getProvider GetProviderFunc) *Client {
+func NewClient(clientArgs common.ClientArgs) *Client {
 	return &Client{
-		ClientArgs:  clientArgs,
-		getProvider: getProvider,
+		ClientArgs: clientArgs,
 	}
 }
 
 var ErrFailedImageFetch = goerrors.New("image fetch failed")
 var ErrProviderResource = goerrors.New("conflict with resource at provider")
 
-type Provider interface {
-	types.ImageRead
-	types.ImageWrite
-}
-
-func (c *Client) provider(ctx context.Context, regionID string) (Provider, error) {
-	return c.getProvider(ctx, c.Client, c.Namespace, regionID)
-}
-
 func (c *Client) ListImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {
-	provider, err := c.provider(ctx, regionID)
+	provider, err := c.Providers.LookupCloud(ctx, regionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, providers.ProviderToServerError(err)
 	}
 
 	query, err := provider.QueryImages()
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to list images").WithError(err)
+		return nil, fmt.Errorf("%w: failed to list images", err)
 	}
 
 	result, err := query.
@@ -159,9 +142,9 @@ func validateImage(ctx context.Context, uri string) error {
 }
 
 func (c *Client) CreateImage(ctx context.Context, organizationID, regionID string, request *openapi.ImageCreateRequest) (*openapi.ImageResponse, error) {
-	provider, err := c.provider(ctx, regionID)
+	provider, err := c.Providers.LookupCloud(ctx, regionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, providers.ProviderToServerError(err)
 	}
 
 	if err := validateImage(ctx, request.Spec.Uri); err != nil {
@@ -181,9 +164,14 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 		packages = &temp
 	}
 
+	// Get all the user-supplied tags, and set our own tag for the provenance.
+	tags := GenerateTags(request.Metadata.Tags, map[string]string{
+		constants.ImageSourceTag: constants.ImageSourceImport,
+	})
+
 	image := &types.Image{
 		Name:           request.Metadata.Name,
-		Tags:           GenerateTags(request.Metadata.Tags),
+		Tags:           tags,
 		OrganizationID: ptr.To(organizationID),
 		Architecture:   generateArchitecture(request.Spec.Architecture),
 		Virtualization: generateImageVirtualization(request.Spec.Virtualization),
@@ -194,16 +182,16 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 
 	result, err := provider.CreateImage(ctx, image, request.Spec.Uri)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create image").WithError(err)
+		return nil, fmt.Errorf("%w: failed to create image", err)
 	}
 
 	return convertImage(result), nil
 }
 
 func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imageID string) error {
-	provider, err := c.provider(ctx, regionID)
+	provider, err := c.Providers.LookupCloud(ctx, regionID)
 	if err != nil {
-		return errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return providers.ProviderToServerError(err)
 	}
 
 	image, err := provider.GetImage(ctx, organizationID, imageID)
@@ -212,7 +200,7 @@ func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imag
 			return errors.HTTPNotFound().WithError(err)
 		}
 
-		return errors.OAuth2ServerError("failed to get image").WithError(err)
+		return fmt.Errorf("%w: failed to get image", err)
 	}
 
 	if image.OrganizationID == nil || *image.OrganizationID != organizationID {
@@ -230,7 +218,7 @@ func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imag
 			return errors.HTTPConflict().WithError(err)
 		}
 
-		return errors.OAuth2ServerError("failed to delete image").WithError(err)
+		return fmt.Errorf("%w: failed to delete image", err)
 	}
 
 	return nil

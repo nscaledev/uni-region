@@ -19,7 +19,6 @@ limitations under the License.
 package handler
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -29,14 +28,13 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/unikorn-cloud/region/pkg/handler/common"
-	"github.com/unikorn-cloud/region/pkg/handler/image"
 	imagemock "github.com/unikorn-cloud/region/pkg/handler/image/mock"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
+	mockprovider "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
 	"k8s.io/utils/ptr"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func Test_Imagev2_List(t *testing.T) {
@@ -125,11 +123,15 @@ func Test_Imagev2_List(t *testing.T) {
 				addEndpoint("region:images", "read").
 				buildContext(t.Context())
 
-			provider, ctrl := imagemock.NewTestMockProviderAndController(t)
+			ctrl := gomock.NewController(t)
+			provider := mockprovider.NewMockProvider(ctrl)
 			querier := imagemock.NewMockImageQuery(ctrl)
 
 			// Expect to get asked for an image querier.
 			provider.EXPECT().QueryImages().Return(querier, nil)
+
+			providers := mockproviders.NewMockProviders(ctrl)
+			providers.EXPECT().LookupCloud(gomock.Any(), gomock.Any()).Return(provider, nil)
 
 			if setupQuery := tc.setupQuery; setupQuery != nil {
 				setupQuery(querier)
@@ -140,12 +142,10 @@ func Test_Imagev2_List(t *testing.T) {
 			clientArgs := common.ClientArgs{
 				Namespace: namespace,
 				Client:    c,
+				Providers: providers,
 			}
 
 			handler := NewImageV2Handler(clientArgs, &Options{})
-			handler.getProviderFunc = func(_ context.Context, _ client.Client, _, _ string) (image.Provider, error) {
-				return provider, nil
-			}
 
 			path := fmt.Sprintf("/api/v2/region/%s/images", regionID)
 			request := httptest.NewRequestWithContext(ctx, http.MethodGet, path, nil)
