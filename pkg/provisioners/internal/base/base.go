@@ -23,8 +23,7 @@ import (
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/handler/common"
-	"github.com/unikorn-cloud/region/pkg/handler/region"
+	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -51,12 +50,7 @@ func Provider(ctx context.Context, object client.Object) (types.Provider, error)
 		return nil, err
 	}
 
-	clientArgs := common.ClientArgs{
-		Client:    cli,
-		Namespace: object.GetNamespace(),
-	}
-
-	return region.NewClient(clientArgs).Provider(ctx, object.GetLabels()[constants.RegionLabel])
+	return providers.New(cli, object.GetNamespace()).LookupCloud(ctx, object.GetLabels()[constants.RegionLabel])
 }
 
 func ProviderAndIdentity(ctx context.Context, object client.Object) (types.Provider, *unikornv1.Identity, error) {
