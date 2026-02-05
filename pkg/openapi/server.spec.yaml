@@ -2125,10 +2125,12 @@ components:
     networkV2Spec:
       description: A network's specification.
       type: object
-      required:
-      - dnsNameservers
       properties:
         dnsNameservers:
+          description: |-
+            DNS nameservers to use.  If not specified this will use the platform's
+            internal DNS server and allow hosts to resolve each other.  If it is
+            specified then no internal host resolution will be possible.
           $ref: '#/components/schemas/ipv4AddressList'
         routes:
           $ref: '#/components/schemas/routes'

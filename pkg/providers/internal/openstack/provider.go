@@ -1562,10 +1562,14 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, network *unikornv1.Network, openstackNetwork *NetworkExt) (*subnets.Subnet, error) {
 	log := log.FromContext(ctx)
 
-	dnsNameservers := make([]string, len(network.Spec.DNSNameservers))
+	var dnsNameservers []string
 
-	for i, ip := range network.Spec.DNSNameservers {
-		dnsNameservers[i] = ip.String()
+	if len(network.Spec.DNSNameservers) > 0 {
+		dnsNameservers = make([]string, len(network.Spec.DNSNameservers))
+
+		for i, ip := range network.Spec.DNSNameservers {
+			dnsNameservers[i] = ip.String()
+		}
 	}
 
 	routes := make([]subnets.HostRoute, len(network.Spec.Routes))

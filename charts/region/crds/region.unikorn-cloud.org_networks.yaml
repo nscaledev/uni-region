@@ -103,7 +103,6 @@ spec:
                   type: object
                 type: array
             required:
-            - dnsNameservers
             - prefix
             type: object
           status:
