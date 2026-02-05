@@ -15,7 +15,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package compute_test
+package kubernetes_test
 
 import (
 	"context"
@@ -172,11 +172,11 @@ var _ = Describe("Region Provider Verification", func() {
 				ProviderBranch:             getProviderBranch(),
 				ConsumerVersionSelectors: []provider.Selector{
 					&provider.ConsumerVersionSelector{
-						Consumer:   "uni-compute",
+						Consumer:   "uni-kubernetes",
 						MainBranch: true,
 					},
 					&provider.ConsumerVersionSelector{
-						Consumer:       "uni-compute",
+						Consumer:       "uni-kubernetes",
 						MatchingBranch: true,
 					},
 				},
@@ -214,66 +214,93 @@ var _ = Describe("Region Provider Verification", func() {
 })
 
 // createStateHandlers creates the state handlers map for pact verification.
-// Uses parameterized states to make the contract tests more flexible and maintainable.
+// Registers state handlers for uni-kubernetes consumer contract tests.
 func createStateHandlers(ctx context.Context, stateManager *StateManager) models.StateHandlers {
 	return models.StateHandlers{
-		// Parameterized state handler - consumer provides organizationID and regionType
+		// State handler for "region exists"
+		StateRegionExists: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleRegionExistsState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "project exists in region"
+		StateProjectExistsInRegion: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleProjectExistsInRegionState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "server exists in project"
+		StateServerExistsInProject: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleServerExistsInProjectState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "identity exists"
+		StateIdentityExists: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleIdentityExistsState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "identity exists with physical network support"
+		StateIdentityExistsWithPhysicalNet: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleIdentityExistsWithPhysicalNetState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "identity is provisioned"
+		StateIdentityIsProvisioned: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleIdentityIsProvisionedState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "network is provisioned"
+		StateNetworkIsProvisioned: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleNetworkIsProvisionedState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "region has external networks"
+		StateRegionHasExternalNetworks: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleRegionHasExternalNetworksState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "region has flavors"
+		StateRegionHasFlavors: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleRegionHasFlavorsState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "region has images"
+		StateRegionHasImages: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleRegionHasImagesState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "organization has regions"
 		StateOrganizationHasRegions: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
-			err := stateManager.HandleOrganizationState(ctx, setup, state.Parameters)
-
-			return nil, err
-		},
-
-		// State for organization with no regions
-		StateOrganizationHasNoRegions: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
-			// Pass empty regionType to indicate no regions should be created
-			params := make(map[string]interface{})
-			if state.Parameters != nil {
-				params = state.Parameters
-			}
-			err := stateManager.HandleOrganizationState(ctx, setup, params)
-
-			return nil, err
-		},
-
-		// State for non-existent organization (same as no regions)
-		StateOrganizationDoesNotExist: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
-			params := make(map[string]interface{})
-			if state.Parameters != nil {
-				params = state.Parameters
-			}
-			err := stateManager.HandleOrganizationState(ctx, setup, params)
-
-			return nil, err
-		},
-
-		// Generic organization exists state
-		StateOrganizationExists: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
-			params := make(map[string]interface{})
-			if state.Parameters != nil {
-				params = state.Parameters
-			}
-			err := stateManager.HandleOrganizationState(ctx, setup, params)
-
-			return nil, err
-		},
-
-		// State for mixed region types
-		StateOrganizationHasMixedRegions: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
-			params := make(map[string]interface{})
-			if state.Parameters != nil {
-				params = state.Parameters
-			}
-			// Set regionType to mixed if not already set
-			if _, ok := params[ParamRegionType]; !ok {
-				params[ParamRegionType] = RegionTypeMixed
-			}
-			err := stateManager.HandleOrganizationState(ctx, setup, params)
+			err := stateManager.HandleOrganizationHasRegionsState(ctx, setup, state.Parameters)
 
 			return nil, err
 		},
@@ -312,8 +339,11 @@ func buildRouter(schema *helpers.Schema, corsOpts *cors.Options) *chi.Mux {
 	router.Use(cors.Middleware)
 
 	// Mock ACL middleware allows all organizations for contract testing
-	router.Use(MockACLMiddleware(nil))    // Inject mock ACL for contract testing
-	router.Use(RegionSortingMiddleware()) // Sort regions for Pact contract testing
+	router.Use(MockACLMiddleware(nil))           // Inject mock ACL for contract testing
+	router.Use(IdentityCreationMockMiddleware()) // Mock identity creation for contract testing
+	router.Use(ExternalNetworksMockMiddleware()) // Mock external networks for OpenStack-specific tests
+	router.Use(ImagesMockMiddleware())           // Mock images for OpenStack-specific tests
+	router.Use(RegionSortingMiddleware())        // Sort regions for Pact contract testing
 	router.NotFound(http.HandlerFunc(handler.NotFound))
 	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
 
