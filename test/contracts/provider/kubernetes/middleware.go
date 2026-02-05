@@ -391,8 +391,7 @@ func shouldInterceptIdentityCreation(r *http.Request) bool {
 	return strings.HasSuffix(path, "/identities") && strings.Contains(path, "/projects/")
 }
 
-// ExternalNetworksMockMiddleware mocks external networks for OpenStack-style contract tests.
-// Returns minimal mock data to satisfy consumer contract requirements.
+// ExternalNetworksMockMiddleware mocks external networks for OpenStack cluster.
 func ExternalNetworksMockMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -427,7 +426,7 @@ func shouldInterceptExternalNetworks(r *http.Request) bool {
 	return strings.HasSuffix(path, "/externalnetworks")
 }
 
-// Returns mock data from OpenStack
+// ImagesMockMiddleware mocks images for OpenStack cluster.
 func ImagesMockMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

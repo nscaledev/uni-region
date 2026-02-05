@@ -47,6 +47,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -377,11 +378,15 @@ func createHandlerInterface(ctx context.Context, k8sClient client.Client, namesp
 		panic(fmt.Sprintf("failed to create identity client: %v", err))
 	}
 
+	// Create providers interface
+	providers := providers.New(k8sClient, namespace)
+
 	handlerOpts := handler.Options{}
 
 	handlerInterface, err := handler.New(common.ClientArgs{
 		Client:    k8sClient,
 		Namespace: namespace,
+		Providers: providers,
 		Identity:  identity,
 	}, &handlerOpts)
 	if err != nil {
