@@ -162,8 +162,12 @@ func (c *NetworkClient) GetNetwork(ctx context.Context, network *unikornv1.Netwo
 	_, span := traceStart(ctx, "GET /network/v2.0/networks")
 	defer span.End()
 
+	name := networkName(network)
+
 	opts := &networks.ListOpts{
-		Name: networkName(network),
+		// NOTE: this is a regular expression match so foo-4 will match
+		// foo-4, foo-48, foo-4444444444444.
+		Name: name,
 	}
 
 	page, err := networks.List(c.client, opts).AllPages(ctx)
@@ -181,11 +185,15 @@ func (c *NetworkClient) GetNetwork(ctx context.Context, network *unikornv1.Netwo
 		return nil, errors.ErrResourceNotFound
 	}
 
-	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+	index := slices.IndexFunc(result, func(x NetworkExt) bool {
+		return x.Name == name
+	})
+
+	if index < 0 {
+		return nil, errors.ErrResourceNotFound
 	}
 
-	return &result[0], nil
+	return &result[index], nil
 }
 
 // CreateNetwork creates a virtual or VLAN provider network for a project.
@@ -236,8 +244,12 @@ func (c *NetworkClient) GetSubnet(ctx context.Context, network *unikornv1.Networ
 	_, span := traceStart(ctx, "GET /network/v2.0/subnets")
 	defer span.End()
 
+	name := networkName(network)
+
 	opts := &subnets.ListOpts{
-		Name: networkName(network),
+		// NOTE: this is a regular expression match so foo-4 will match
+		// foo-4, foo-48, foo-4444444444444.
+		Name: name,
 	}
 
 	page, err := subnets.List(c.client, opts).AllPages(ctx)
@@ -254,11 +266,15 @@ func (c *NetworkClient) GetSubnet(ctx context.Context, network *unikornv1.Networ
 		return nil, errors.ErrResourceNotFound
 	}
 
-	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+	index := slices.IndexFunc(result, func(x subnets.Subnet) bool {
+		return x.Name == name
+	})
+
+	if index < 0 {
+		return nil, errors.ErrResourceNotFound
 	}
 
-	return &result[0], nil
+	return &result[index], nil
 }
 
 func (c *NetworkClient) CreateSubnet(ctx context.Context, network *unikornv1.Network, networkID, prefix, gatewayIP string, dnsNameservers []string, routes []subnets.HostRoute, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error) {
@@ -323,8 +339,12 @@ func (c *NetworkClient) GetRouter(ctx context.Context, network *unikornv1.Networ
 	_, span := traceStart(ctx, "GET /network/v2.0/routers")
 	defer span.End()
 
+	name := networkName(network)
+
 	opts := routers.ListOpts{
-		Name: networkName(network),
+		// NOTE: this is a regular expression match so foo-4 will match
+		// foo-4, foo-48, foo-4444444444444.
+		Name: name,
 	}
 
 	page, err := routers.List(c.client, opts).AllPages(ctx)
@@ -341,11 +361,15 @@ func (c *NetworkClient) GetRouter(ctx context.Context, network *unikornv1.Networ
 		return nil, errors.ErrResourceNotFound
 	}
 
-	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+	index := slices.IndexFunc(result, func(x routers.Router) bool {
+		return x.Name == name
+	})
+
+	if index < 0 {
+		return nil, errors.ErrResourceNotFound
 	}
 
-	return &result[0], nil
+	return &result[index], nil
 }
 
 func (c *NetworkClient) CreateRouter(ctx context.Context, network *unikornv1.Network) (*routers.Router, error) {
@@ -421,8 +445,12 @@ func (c *NetworkClient) GetSecurityGroup(ctx context.Context, securityGroup *uni
 	_, span := traceStart(ctx, "GET /network/v2.0/securitygroups")
 	defer span.End()
 
+	name := securityGroupName(securityGroup)
+
 	opts := groups.ListOpts{
-		Name: securityGroupName(securityGroup),
+		// NOTE: this is a regular expression match so foo-4 will match
+		// foo-4, foo-48, foo-4444444444444.
+		Name: name,
 	}
 
 	page, err := groups.List(c.client, opts).AllPages(ctx)
@@ -439,11 +467,15 @@ func (c *NetworkClient) GetSecurityGroup(ctx context.Context, securityGroup *uni
 		return nil, errors.ErrResourceNotFound
 	}
 
-	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+	index := slices.IndexFunc(result, func(x groups.SecGroup) bool {
+		return x.Name == name
+	})
+
+	if index < 0 {
+		return nil, errors.ErrResourceNotFound
 	}
 
-	return &result[0], nil
+	return &result[index], nil
 }
 
 // CreateSecurityGroup creates a new security group.
@@ -653,8 +685,12 @@ func (c *NetworkClient) GetServerPort(ctx context.Context, server *unikornv1.Ser
 	_, span := traceStart(ctx, "GET /network/v2.0/ports")
 	defer span.End()
 
+	name := serverName(server)
+
 	opts := ports.ListOpts{
-		Name: serverName(server),
+		// NOTE: this is a regular expression match so foo-4 will match
+		// foo-4, foo-48, foo-4444444444444.
+		Name: name,
 	}
 
 	page, err := ports.List(c.client, opts).AllPages(ctx)
@@ -671,11 +707,15 @@ func (c *NetworkClient) GetServerPort(ctx context.Context, server *unikornv1.Ser
 		return nil, errors.ErrResourceNotFound
 	}
 
-	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+	index := slices.IndexFunc(result, func(x ports.Port) bool {
+		return x.Name == name
+	})
+
+	if index < 0 {
+		return nil, errors.ErrResourceNotFound
 	}
 
-	return &result[0], nil
+	return &result[index], nil
 }
 
 func (c *NetworkClient) CreateServerPort(ctx context.Context, server *unikornv1.Server, networkID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error) {

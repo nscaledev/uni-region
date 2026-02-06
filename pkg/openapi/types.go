@@ -456,7 +456,7 @@ type NetworkV2Create struct {
 // NetworkV2CreateSpec defines model for networkV2CreateSpec.
 type NetworkV2CreateSpec struct {
 	// DnsNameservers A list of IPv4 addresses.
-	DnsNameservers *Ipv4AddressList `json:"dnsNameservers,omitempty"`
+	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
 
 	// OrganizationId The organization to provision the resource in.
 	OrganizationId string `json:"organizationId"`
@@ -489,7 +489,7 @@ type NetworkV2Read struct {
 // NetworkV2Spec A network's specification.
 type NetworkV2Spec struct {
 	// DnsNameservers A list of IPv4 addresses.
-	DnsNameservers *Ipv4AddressList `json:"dnsNameservers,omitempty"`
+	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
 
 	// Routes A list of network routes.
 	Routes *Routes `json:"routes,omitempty"`
