@@ -78,9 +78,13 @@ const (
 )
 
 const (
-	ImageSourceTag      = "images.unikorn-cloud.org:source" // for the kind of source, e.g., import
+	ImageTagPrefix = "images.unikorn-cloud.org:"
+
+	ImageSourceTag      = ImageTagPrefix + "source" // for the kind of source, e.g., import
 	ImageSourceImport   = "import"
 	ImageSourceSnapshot = "snapshot"
+
+	ImageOrganizationIDTag = ImageTagPrefix + "organization-id"
 )
 
 func MarshalAPIVersion(i int) string {

@@ -48,9 +48,10 @@ func (c *ClientV2) CreateV2Snapshot(ctx context.Context, serverID string, reques
 		return nil, err
 	}
 
-	// Get all the user-supplied tags, and set our own tag for the provenance.
+	// Get all the user-supplied tags, and set our own tags for the provenance and ownership.
 	tags := image.GenerateTags(request.Metadata.Tags, map[string]string{
-		constants.ImageSourceTag: constants.ImageSourceSnapshot,
+		constants.ImageSourceTag:         constants.ImageSourceSnapshot,
+		constants.ImageOrganizationIDTag: organizationID,
 	})
 
 	// Give it a new name and ensure it belongs to the server's organization.
