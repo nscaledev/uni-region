@@ -60,3 +60,55 @@ func (e *Endpoints) ListExternalNetworks(orgID, regionID string) string {
 	return fmt.Sprintf("/api/v1/organizations/%s/regions/%s/externalnetworks",
 		url.PathEscape(orgID), url.PathEscape(regionID))
 }
+
+// ListFileStorage returns the endpoint for listing file storage in a project.
+func (e *Endpoints) ListFileStorage(orgID, projectID, regionID string) string {
+	return fmt.Sprintf("/api/v2/filestorage?organizationId=%s&projectId=%s&regionId=%s",
+		url.QueryEscape(orgID), url.QueryEscape(projectID), url.QueryEscape(regionID))
+}
+
+// CreateFileStorage returns the endpoint for creating file storage.
+func (e *Endpoints) CreateFileStorage() string {
+	return "/api/v2/filestorage"
+}
+
+// GetFileStorage returns the endpoint for getting a specific file storage resource.
+func (e *Endpoints) GetFileStorage(filestorageID string) string {
+	return fmt.Sprintf("/api/v2/filestorage/%s",
+		url.PathEscape(filestorageID))
+}
+
+// UpdateFileStorage returns the endpoint for updating a specific file storage resource.
+func (e *Endpoints) UpdateFileStorage(filestorageID string) string {
+	return fmt.Sprintf("/api/v2/filestorage/%s",
+		url.PathEscape(filestorageID))
+}
+
+// DeleteFileStorage returns the endpoint for deleting a specific file storage resource.
+func (e *Endpoints) DeleteFileStorage(filestorageID string) string {
+	return fmt.Sprintf("/api/v2/filestorage/%s",
+		url.PathEscape(filestorageID))
+}
+
+// ListFileStorageClasses returns the endpoint for listing available file storage classes.
+func (e *Endpoints) ListFileStorageClasses(regionID string) string {
+	return fmt.Sprintf("/api/v2/filestorageclasses?regionId=%s",
+		url.QueryEscape(regionID))
+}
+
+// ListNetworks returns the endpoint for listing networks in a project.
+func (e *Endpoints) ListNetworks(orgID, projectID, regionID string) string {
+	return fmt.Sprintf("/api/v2/networks?organizationId=%s&projectId=%s&regionId=%s",
+		url.QueryEscape(orgID), url.QueryEscape(projectID), url.QueryEscape(regionID))
+}
+
+// CreateNetwork returns the endpoint for creating a network.
+func (e *Endpoints) CreateNetwork() string {
+	return "/api/v2/networks"
+}
+
+// DeleteNetwork returns the endpoint for deleting a specific network resource.
+func (e *Endpoints) DeleteNetwork(networkID string) string {
+	return fmt.Sprintf("/api/v2/networks/%s",
+		url.PathEscape(networkID))
+}

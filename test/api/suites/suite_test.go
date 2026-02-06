@@ -32,9 +32,10 @@ import (
 )
 
 var (
-	client *api.APIClient
-	ctx    context.Context
-	config *api.TestConfig
+	client       *api.APIClient
+	regionClient *api.APIClient
+	ctx          context.Context
+	config       *api.TestConfig
 )
 
 var _ = BeforeSuite(func() {
@@ -43,6 +44,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred(), "Failed to load test configuration")
 
 	client = api.NewAPIClientWithConfig(config)
+	regionClient = api.NewAPIClientWithConfig(config)
 	ctx = context.Background()
 })
 
