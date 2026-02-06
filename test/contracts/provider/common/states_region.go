@@ -16,7 +16,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package kubernetes_test
+package common
 
 import (
 	"context"
@@ -91,7 +91,7 @@ func (rm *RegionStateManager) setupRegion(ctx context.Context, regionName string
 			Kubernetes: &unikornv1.RegionKubernetesSpec{
 				KubeconfigSecret: &unikornv1.NamespacedObject{
 					Namespace: rm.namespace,
-					Name:      testKubeconfigSecret,
+					Name:      TestKubeconfigSecret,
 				},
 				// Add mock nodes for flavor testing
 				// Use UUIDs for node IDs to match consumer contract expectations

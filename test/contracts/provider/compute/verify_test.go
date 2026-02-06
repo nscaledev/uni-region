@@ -49,6 +49,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	commonstate "github.com/unikorn-cloud/region/test/contracts/provider/common"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -73,7 +74,7 @@ var _ = Describe("Region Provider Verification", func() {
 		ctx            context.Context
 		cancel         context.CancelFunc
 		k8sClient      client.Client
-		stateManager   *StateManager
+		stateManager   *commonstate.StateManager
 		pactBrokerURL  string
 		brokerUsername string
 		brokerPassword string
@@ -110,7 +111,7 @@ var _ = Describe("Region Provider Verification", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Initialize state manager
-		stateManager = NewStateManager(k8sClient)
+		stateManager = commonstate.NewStateManager(k8sClient)
 
 		// Find an available port
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -217,10 +218,10 @@ var _ = Describe("Region Provider Verification", func() {
 
 // createStateHandlers creates the state handlers map for pact verification.
 // Uses parameterized states to make the contract tests more flexible and maintainable.
-func createStateHandlers(ctx context.Context, stateManager *StateManager) models.StateHandlers {
+func createStateHandlers(ctx context.Context, stateManager *commonstate.StateManager) models.StateHandlers {
 	return models.StateHandlers{
 		// Parameterized state handler - consumer provides organizationID and regionType
-		StateOrganizationHasRegions: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+		commonstate.StateOrganizationHasRegions: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			err := stateManager.HandleOrganizationState(ctx, setup, state.Parameters)
 
@@ -228,7 +229,7 @@ func createStateHandlers(ctx context.Context, stateManager *StateManager) models
 		},
 
 		// State for organization with no regions
-		StateOrganizationHasNoRegions: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+		commonstate.StateOrganizationHasNoRegions: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			// Pass empty regionType to indicate no regions should be created
 			params := make(map[string]interface{})
@@ -241,7 +242,7 @@ func createStateHandlers(ctx context.Context, stateManager *StateManager) models
 		},
 
 		// State for non-existent organization (same as no regions)
-		StateOrganizationDoesNotExist: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+		commonstate.StateOrganizationDoesNotExist: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			params := make(map[string]interface{})
 			if state.Parameters != nil {
@@ -253,7 +254,7 @@ func createStateHandlers(ctx context.Context, stateManager *StateManager) models
 		},
 
 		// Generic organization exists state
-		StateOrganizationExists: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+		commonstate.StateOrganizationExists: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			params := make(map[string]interface{})
 			if state.Parameters != nil {
@@ -265,15 +266,15 @@ func createStateHandlers(ctx context.Context, stateManager *StateManager) models
 		},
 
 		// State for mixed region types
-		StateOrganizationHasMixedRegions: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+		commonstate.StateOrganizationHasMixedRegions: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			params := make(map[string]interface{})
 			if state.Parameters != nil {
 				params = state.Parameters
 			}
 			// Set regionType to mixed if not already set
-			if _, ok := params[ParamRegionType]; !ok {
-				params[ParamRegionType] = RegionTypeMixed
+			if _, ok := params[commonstate.ParamRegionType]; !ok {
+				params[commonstate.ParamRegionType] = commonstate.RegionTypeMixed
 			}
 			err := stateManager.HandleOrganizationState(ctx, setup, params)
 
@@ -314,8 +315,8 @@ func buildRouter(schema *helpers.Schema, corsOpts *cors.Options) *chi.Mux {
 	router.Use(cors.Middleware)
 
 	// Mock ACL middleware allows all organizations for contract testing
-	router.Use(MockACLMiddleware(nil))    // Inject mock ACL for contract testing
-	router.Use(RegionSortingMiddleware()) // Sort regions for Pact contract testing
+	router.Use(MockACLMiddleware(nil))              // Inject mock ACL for contract testing
+	router.Use(commonstate.RegionSortingMiddleware()) // Sort regions for Pact contract testing
 	router.NotFound(http.HandlerFunc(handler.NotFound))
 	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
 

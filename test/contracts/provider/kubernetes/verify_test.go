@@ -50,6 +50,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
+	commonstate "github.com/unikorn-cloud/region/test/contracts/provider/common"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -74,7 +75,7 @@ var _ = Describe("Region Provider Verification", func() {
 		ctx            context.Context
 		cancel         context.CancelFunc
 		k8sClient      client.Client
-		stateManager   *StateManager
+		stateManager   *commonstate.StateManager
 		pactBrokerURL  string
 		brokerUsername string
 		brokerPassword string
@@ -111,7 +112,7 @@ var _ = Describe("Region Provider Verification", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Initialize state manager
-		stateManager = NewStateManager(k8sClient)
+		stateManager = commonstate.NewStateManager(k8sClient)
 
 		// Find an available port
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -218,10 +219,10 @@ var _ = Describe("Region Provider Verification", func() {
 
 // createStateHandlers creates the state handlers map for pact verification.
 // Registers state handlers for uni-kubernetes consumer contract tests.
-func createStateHandlers(ctx context.Context, stateManager *StateManager) models.StateHandlers {
+func createStateHandlers(ctx context.Context, stateManager *commonstate.StateManager) models.StateHandlers {
 	return models.StateHandlers{
 		// State handler for "region exists"
-		StateRegionExists: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+		commonstate.StateRegionExists: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			err := stateManager.HandleRegionExistsState(ctx, setup, state.Parameters)
 
@@ -229,7 +230,7 @@ func createStateHandlers(ctx context.Context, stateManager *StateManager) models
 		},
 
 		// State handler for "project exists in region"
-		StateProjectExistsInRegion: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+		commonstate.StateProjectExistsInRegion: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			err := stateManager.HandleProjectExistsInRegionState(ctx, setup, state.Parameters)
 
@@ -237,7 +238,7 @@ func createStateHandlers(ctx context.Context, stateManager *StateManager) models
 		},
 
 		// State handler for "server exists in project"
-		StateServerExistsInProject: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+		commonstate.StateServerExistsInProject: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			err := stateManager.HandleServerExistsInProjectState(ctx, setup, state.Parameters)
 
@@ -245,7 +246,7 @@ func createStateHandlers(ctx context.Context, stateManager *StateManager) models
 		},
 
 		// State handler for "identity exists"
-		StateIdentityExists: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+		commonstate.StateIdentityExists: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			err := stateManager.HandleIdentityExistsState(ctx, setup, state.Parameters)
 
@@ -253,7 +254,7 @@ func createStateHandlers(ctx context.Context, stateManager *StateManager) models
 		},
 
 		// State handler for "identity exists with physical network support"
-		StateIdentityExistsWithPhysicalNet: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+		commonstate.StateIdentityExistsWithPhysicalNet: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			err := stateManager.HandleIdentityExistsWithPhysicalNetState(ctx, setup, state.Parameters)
 
@@ -261,7 +262,7 @@ func createStateHandlers(ctx context.Context, stateManager *StateManager) models
 		},
 
 		// State handler for "identity is provisioned"
-		StateIdentityIsProvisioned: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+		commonstate.StateIdentityIsProvisioned: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			err := stateManager.HandleIdentityIsProvisionedState(ctx, setup, state.Parameters)
 
@@ -269,7 +270,7 @@ func createStateHandlers(ctx context.Context, stateManager *StateManager) models
 		},
 
 		// State handler for "network is provisioned"
-		StateNetworkIsProvisioned: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+		commonstate.StateNetworkIsProvisioned: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			err := stateManager.HandleNetworkIsProvisionedState(ctx, setup, state.Parameters)
 
@@ -277,7 +278,7 @@ func createStateHandlers(ctx context.Context, stateManager *StateManager) models
 		},
 
 		// State handler for "region has external networks"
-		StateRegionHasExternalNetworks: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+		commonstate.StateRegionHasExternalNetworks: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			err := stateManager.HandleRegionHasExternalNetworksState(ctx, setup, state.Parameters)
 
@@ -285,7 +286,7 @@ func createStateHandlers(ctx context.Context, stateManager *StateManager) models
 		},
 
 		// State handler for "region has flavors"
-		StateRegionHasFlavors: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+		commonstate.StateRegionHasFlavors: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			err := stateManager.HandleRegionHasFlavorsState(ctx, setup, state.Parameters)
 
@@ -293,7 +294,7 @@ func createStateHandlers(ctx context.Context, stateManager *StateManager) models
 		},
 
 		// State handler for "region has images"
-		StateRegionHasImages: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+		commonstate.StateRegionHasImages: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			err := stateManager.HandleRegionHasImagesState(ctx, setup, state.Parameters)
 
@@ -301,7 +302,7 @@ func createStateHandlers(ctx context.Context, stateManager *StateManager) models
 		},
 
 		// State handler for "organization has regions"
-		StateOrganizationHasRegions: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+		commonstate.StateOrganizationHasRegions: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			err := stateManager.HandleOrganizationHasRegionsState(ctx, setup, state.Parameters)
 
@@ -342,11 +343,11 @@ func buildRouter(schema *helpers.Schema, corsOpts *cors.Options) *chi.Mux {
 	router.Use(cors.Middleware)
 
 	// Mock ACL middleware allows all organizations for contract testing
-	router.Use(MockACLMiddleware(nil))           // Inject mock ACL for contract testing
-	router.Use(IdentityCreationMockMiddleware()) // Mock identity creation for contract testing
-	router.Use(ExternalNetworksMockMiddleware()) // Mock external networks for OpenStack-specific tests
-	router.Use(ImagesMockMiddleware())           // Mock images for OpenStack-specific tests
-	router.Use(RegionSortingMiddleware())        // Sort regions for Pact contract testing
+	router.Use(MockACLMiddleware(nil))              // Inject mock ACL for contract testing
+	router.Use(IdentityCreationMockMiddleware())    // Mock identity creation for contract testing
+	router.Use(ExternalNetworksMockMiddleware())    // Mock external networks for OpenStack-specific tests
+	router.Use(ImagesMockMiddleware())              // Mock images for OpenStack-specific tests
+	router.Use(commonstate.RegionSortingMiddleware()) // Sort regions for Pact contract testing
 	router.NotFound(http.HandlerFunc(handler.NotFound))
 	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
 
