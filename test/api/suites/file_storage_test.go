@@ -27,11 +27,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/unikorn-cloud/core/pkg/openapi"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
+	coretestutil "github.com/unikorn-cloud/core/pkg/testing/util"
 	regionapi "github.com/unikorn-cloud/region/pkg/openapi"
 )
 
@@ -41,48 +41,53 @@ var _ = Describe("Network deprovisioning", func() {
 			var storageClassNFS *regionapi.StorageClassV2Read
 			By("retrieving NFS storage class", func() {
 				storageClassNFS = mustGetStorageClassNFS()
+				GinkgoWriter.Printf("Using storage class '%s' with ID '%s'\n", storageClassNFS.Metadata.Name, storageClassNFS.Metadata.Id)
 			})
 
 			var network *regionapi.NetworkV2Read
 			By("creating a network", func() {
 				network = mustCreateNetworkWithCleanup()
+				GinkgoWriter.Printf("Created network '%s' with ID '%s', which will be removed at the end of the test\n", network.Metadata.Name, network.Metadata.Id)
 			})
 
 			By("waiting for the network to be ready", func() {
 				network = mustWaitForNetworkReady(network.Metadata.Id)
+				GinkgoWriter.Printf("Network '%s' is now ready\n", network.Metadata.Id)
 			})
 
 			var fileStorage *regionapi.StorageV2Read
 			By("creating a file storage and attaching it to the network", func() {
 				fileStorage = mustCreateFileStorageWithCleanup(network.Metadata.Id, storageClassNFS.Metadata.Id)
+				GinkgoWriter.Printf("Created file storage '%s' with ID '%s', which will be removed at the end of the test\n", fileStorage.Metadata.Name, fileStorage.Metadata.Id)
 			})
 
 			By("waiting for the file storage to be ready", func() {
 				fileStorage = mustWaitForFileStorageReady(fileStorage.Metadata.Id)
+				GinkgoWriter.Printf("File storage '%s' is now ready\n", fileStorage.Metadata.Id)
 			})
 
 			By("deleting the file storage", func() {
 				mustDeleteFileStorage(fileStorage.Metadata.Id)
+				GinkgoWriter.Printf("Requested deletion of file storage '%s'\n", fileStorage.Metadata.Id)
 			})
 
 			By("waiting for the file storage to be deleted", func() {
 				mustWaitForFileStorageDeleted(fileStorage.Metadata.Id)
+				GinkgoWriter.Printf("File storage '%s' has now been deleted\n", fileStorage.Metadata.Id)
 			})
 
 			By("deleting the network", func() {
 				mustDeleteNetwork(network.Metadata.Id)
+				GinkgoWriter.Printf("Requested deletion of network '%s'\n", network.Metadata.Id)
 			})
 
 			By("waiting for the network to be deleted", func() {
 				mustWaitForNetworkDeleted(network.Metadata.Id)
+				GinkgoWriter.Printf("Network '%s' has now been deleted\n", network.Metadata.Id)
 			})
 		})
 	})
 })
-
-func uniqueName(name string) string {
-	return fmt.Sprintf("ginkgo-test-%s-%s", name, uuid.NewString()[:8])
-}
 
 func doRequest(request *http.Request) *http.Response {
 	request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.AuthToken))
@@ -142,7 +147,7 @@ func mustGetStorageClassNFS() *regionapi.StorageClassV2Read {
 func createNetwork() *http.Response {
 	params := regionapi.NetworkV2Create{
 		Metadata: openapi.ResourceWriteMetadata{
-			Name: uniqueName("fs-network"),
+			Name: coretestutil.GenerateTestID(),
 		},
 		Spec: regionapi.NetworkV2CreateSpec{
 			DnsNameservers: []string{
@@ -262,7 +267,7 @@ func mustWaitForNetworkDeleted(networkID string) {
 func createFileStorage(networkID, storageClassID string) *http.Response {
 	params := regionapi.StorageV2Create{
 		Metadata: openapi.ResourceWriteMetadata{
-			Name: uniqueName("fs-storage"),
+			Name: coretestutil.GenerateTestID(),
 		},
 		Spec: struct {
 			Attachments    *regionapi.StorageAttachmentV2Spec `json:"attachments,omitempty"`
