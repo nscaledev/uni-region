@@ -77,6 +77,12 @@ const (
 	ServerLabel = "regions.unikorn-cloud.org/server-id"
 )
 
+const (
+	ImageSourceTag      = "images.unikorn-cloud.org:source" // for the kind of source, e.g., import
+	ImageSourceImport   = "import"
+	ImageSourceSnapshot = "snapshot"
+)
+
 func MarshalAPIVersion(i int) string {
 	return strconv.Itoa(i)
 }

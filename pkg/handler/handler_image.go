@@ -32,20 +32,18 @@ import (
 
 type ImageHandler struct {
 	common.ClientArgs
-	options     *Options
-	getProvider image.GetProviderFunc
+	options *Options
 }
 
 func NewImageHandler(clientArgs common.ClientArgs, options *Options) *ImageHandler {
 	return &ImageHandler{
-		ClientArgs:  clientArgs,
-		options:     options,
-		getProvider: image.DefaultGetProvider,
+		ClientArgs: clientArgs,
+		options:    options,
 	}
 }
 
 func (h *ImageHandler) imageClient() *image.Client {
-	return image.NewClient(h.ClientArgs, h.getProvider)
+	return image.NewClient(h.ClientArgs)
 }
 
 func (h *ImageHandler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {

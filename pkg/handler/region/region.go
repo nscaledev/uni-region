@@ -21,6 +21,7 @@ import (
 	"cmp"
 	"context"
 	goerrors "errors"
+	"fmt"
 	"slices"
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
@@ -54,10 +55,6 @@ func NewClient(clientArgs common.ClientArgs) *Client {
 	return &Client{
 		ClientArgs: clientArgs,
 	}
-}
-
-func (c *Client) Provider(ctx context.Context, regionID string) (types.Provider, error) {
-	return providers.New(ctx, c.Client, c.Namespace, regionID)
 }
 
 func FilterRegions(ctx context.Context, regions *unikornv1.RegionList) {
@@ -107,21 +104,21 @@ func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.Regio
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
-		return nil, errors.OAuth2ServerError("unable to lookup region").WithError(err)
+		return nil, fmt.Errorf("%w: unable to lookup region", err)
 	}
 
 	return c.convertDetail(ctx, result)
 }
 
 func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID string) (openapi.Flavors, error) {
-	provider, err := c.Provider(ctx, regionID)
+	provider, err := c.Providers.LookupCommon(ctx, regionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, providers.ProviderToServerError(err)
 	}
 
 	result, err := provider.Flavors(ctx)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to list flavors").WithError(err)
+		return nil, fmt.Errorf("%w: failed to list flavors", err)
 	}
 
 	// Apply ordering guarantees, ascending order with GPUs taking precedence over
@@ -161,14 +158,14 @@ func convertExternalNetworks(in types.ExternalNetworks) openapi.ExternalNetworks
 }
 
 func (c *Client) ListExternalNetworks(ctx context.Context, regionID string) (openapi.ExternalNetworks, error) {
-	provider, err := c.Provider(ctx, regionID)
+	provider, err := c.Providers.LookupCloud(ctx, regionID)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to create region provider").WithError(err)
+		return nil, providers.ProviderToServerError(err)
 	}
 
 	result, err := provider.ListExternalNetworks(ctx)
 	if err != nil {
-		return nil, errors.OAuth2ServerError("failed to list external networks").WithError(err)
+		return nil, fmt.Errorf("%w: failed to list external networks", err)
 	}
 
 	return convertExternalNetworks(result), nil

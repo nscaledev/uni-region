@@ -21,7 +21,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 
 	"github.com/spjmurray/go-util/pkg/set"
 
@@ -57,7 +56,7 @@ type Provider struct {
 	region *unikornv1.Region
 }
 
-var _ types.Provider = &Provider{}
+var _ types.CommonProvider = &Provider{}
 
 func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Provider, error) {
 	p := &Provider{
@@ -143,6 +142,11 @@ func (p *Provider) regionClient(ctx context.Context) (client.Client, error) {
 	return client, nil
 }
 
+// Kind returns the provider kind.
+func (p *Provider) Kind() unikornv1.Provider {
+	return unikornv1.ProviderKubernetes
+}
+
 // Flavors list all available flavors.
 func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	client, err := p.regionClient(ctx)
@@ -194,110 +198,4 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	}
 
 	return flavors, nil
-}
-
-// ListImages lists all available images, filtered by the given predicates.
-func (p *Provider) QueryImages() (types.ImageQuery, error) {
-	return nil, ErrUnimplmented
-}
-
-// GetImage retrieves a specific image by its ID.
-func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
-	return nil, ErrUnimplmented
-}
-
-// CreateImage creates a new image.
-func (p *Provider) CreateImage(ctx context.Context, image *types.Image, url string) (*types.Image, error) {
-	return nil, ErrUnimplmented
-}
-
-// UploadImage uploads data to an image.
-func (p *Provider) UploadImageData(ctx context.Context, imageID string, reader io.Reader) error {
-	return ErrUnimplmented
-}
-
-// DeleteImage deletes an image.
-func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
-	return ErrUnimplmented
-}
-
-// CreateIdentity creates a new identity for cloud infrastructure.
-func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Identity) error {
-	return ErrUnimplmented
-}
-
-// DeleteIdentity cleans up an identity for cloud infrastructure.
-func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Identity) error {
-	return ErrUnimplmented
-}
-
-// CreateNetwork creates a new physical network.
-func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
-	return ErrUnimplmented
-}
-
-// DeleteNetwork deletes a physical network.
-func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
-	return ErrUnimplmented
-}
-
-// ListExternalNetworks returns a list of external networks if the platform
-// supports such a concept.
-func (p *Provider) ListExternalNetworks(ctx context.Context) (types.ExternalNetworks, error) {
-	return nil, ErrUnimplmented
-}
-
-// CreateSecurityGroup creates a new security group.
-func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
-	return ErrUnimplmented
-}
-
-// DeleteSecurityGroup deletes a security group.
-func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
-	return ErrUnimplmented
-}
-
-// CreateServer creates a new server.
-func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	return ErrUnimplmented
-}
-
-// RebootServer reboots a server.
-func (p *Provider) RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error {
-	return ErrUnimplmented
-}
-
-// StartServer starts a server.
-func (p *Provider) StartServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	return ErrUnimplmented
-}
-
-// StopServer stops a server.
-func (p *Provider) StopServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	return ErrUnimplmented
-}
-
-// DeleteServer deletes a server.
-func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	return ErrUnimplmented
-}
-
-// UpdateServerState checks a server's state and modifies the resource in place.
-func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	return ErrUnimplmented
-}
-
-// CreateConsoleSession creates a new console session for a server.
-func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) (string, error) {
-	return "", ErrUnimplmented
-}
-
-// GetConsoleOutput retrieves the console output for a server.
-func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, length *int) (string, error) {
-	return "", ErrUnimplmented
-}
-
-// CreateSnapshot creates a new image from an existing server.
-func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *types.Image) (*types.Image, error) {
-	return nil, ErrUnimplmented
 }

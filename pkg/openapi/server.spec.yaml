@@ -8,6 +8,17 @@ info:
     that service.
   version: 1.13.0
 paths:
+  /.well-known/openid-protected-resource:
+    description: |-
+      Implements OIDC authorization service discovery.
+    get:
+      x-no-security-requirements: true
+      x-hidden: true
+      description: |-
+        Reads the OIDC discovery page identifying authorization servers.
+      responses:
+        '200':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/openidProtectedResourceResponse'
   /api/v1/organizations/{organizationID}/regions:
     description: |-
       Regions define a cloud.  This may be geographical or any logical partition.
@@ -128,6 +139,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/regions/{regionID}/images/{imageID}:
@@ -2118,6 +2131,10 @@ components:
       - dnsNameservers
       properties:
         dnsNameservers:
+          description: |-
+            DNS nameservers to use.  If empty this will use the platform's
+            internal DNS server and allow hosts to resolve each other.  If it is
+            populated then no internal host resolution will be possible.
           $ref: '#/components/schemas/ipv4AddressList'
         routes:
           $ref: '#/components/schemas/routes'

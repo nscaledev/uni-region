@@ -90,6 +90,9 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// GetWellKnownOpenidProtectedResource request
+	GetWellKnownOpenidProtectedResource(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApiV1OrganizationsOrganizationIDIdentities request
 	GetApiV1OrganizationsOrganizationIDIdentities(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -304,6 +307,18 @@ type ClientInterface interface {
 
 	// PostApiV2ServersServerIDStop request
 	PostApiV2ServersServerIDStop(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) GetWellKnownOpenidProtectedResource(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWellKnownOpenidProtectedResourceRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) GetApiV1OrganizationsOrganizationIDIdentities(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -1228,6 +1243,33 @@ func (c *Client) PostApiV2ServersServerIDStop(ctx context.Context, serverID Serv
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewGetWellKnownOpenidProtectedResourceRequest generates requests for GetWellKnownOpenidProtectedResource
+func NewGetWellKnownOpenidProtectedResourceRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/.well-known/openid-protected-resource")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
 // NewGetApiV1OrganizationsOrganizationIDIdentitiesRequest generates requests for GetApiV1OrganizationsOrganizationIDIdentities
@@ -4388,6 +4430,9 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// GetWellKnownOpenidProtectedResourceWithResponse request
+	GetWellKnownOpenidProtectedResourceWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWellKnownOpenidProtectedResourceResponse, error)
+
 	// GetApiV1OrganizationsOrganizationIDIdentitiesWithResponse request
 	GetApiV1OrganizationsOrganizationIDIdentitiesWithResponse(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDIdentitiesResponse, error)
 
@@ -4602,6 +4647,28 @@ type ClientWithResponsesInterface interface {
 
 	// PostApiV2ServersServerIDStopWithResponse request
 	PostApiV2ServersServerIDStopWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDStopResponse, error)
+}
+
+type GetWellKnownOpenidProtectedResourceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *externalRef0.OpenidProtectedResourceResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWellKnownOpenidProtectedResourceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWellKnownOpenidProtectedResourceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
 }
 
 type GetApiV1OrganizationsOrganizationIDIdentitiesResponse struct {
@@ -5326,6 +5393,7 @@ type PostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesResponse struct {
 	JSON401      *externalRef0.UnauthorizedResponse
 	JSON403      *externalRef0.ForbiddenResponse
 	JSON404      *externalRef0.NotFoundResponse
+	JSON422      *externalRef0.UnprocessableContentResponse
 	JSON500      *externalRef0.InternalServerErrorResponse
 }
 
@@ -6217,6 +6285,15 @@ func (r PostApiV2ServersServerIDStopResponse) StatusCode() int {
 	return 0
 }
 
+// GetWellKnownOpenidProtectedResourceWithResponse request returning *GetWellKnownOpenidProtectedResourceResponse
+func (c *ClientWithResponses) GetWellKnownOpenidProtectedResourceWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWellKnownOpenidProtectedResourceResponse, error) {
+	rsp, err := c.GetWellKnownOpenidProtectedResource(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWellKnownOpenidProtectedResourceResponse(rsp)
+}
+
 // GetApiV1OrganizationsOrganizationIDIdentitiesWithResponse request returning *GetApiV1OrganizationsOrganizationIDIdentitiesResponse
 func (c *ClientWithResponses) GetApiV1OrganizationsOrganizationIDIdentitiesWithResponse(ctx context.Context, organizationID OrganizationIDParameter, reqEditors ...RequestEditorFn) (*GetApiV1OrganizationsOrganizationIDIdentitiesResponse, error) {
 	rsp, err := c.GetApiV1OrganizationsOrganizationIDIdentities(ctx, organizationID, reqEditors...)
@@ -6892,6 +6969,32 @@ func (c *ClientWithResponses) PostApiV2ServersServerIDStopWithResponse(ctx conte
 		return nil, err
 	}
 	return ParsePostApiV2ServersServerIDStopResponse(rsp)
+}
+
+// ParseGetWellKnownOpenidProtectedResourceResponse parses an HTTP response from a GetWellKnownOpenidProtectedResourceWithResponse call
+func ParseGetWellKnownOpenidProtectedResourceResponse(rsp *http.Response) (*GetWellKnownOpenidProtectedResourceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWellKnownOpenidProtectedResourceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest externalRef0.OpenidProtectedResourceResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseGetApiV1OrganizationsOrganizationIDIdentitiesResponse parses an HTTP response from a GetApiV1OrganizationsOrganizationIDIdentitiesWithResponse call
@@ -8484,6 +8587,13 @@ func ParsePostApiV1OrganizationsOrganizationIDRegionsRegionIDImagesResponse(rsp 
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest externalRef0.UnprocessableContentResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest externalRef0.InternalServerErrorResponse

@@ -236,6 +236,9 @@ func openstackSubnetFixture(network *regionv1.Network, openstackNetwork *opensta
 		ID:        string(uuid.NewUUID()),
 		Name:      openstack.NetworkName(network),
 		NetworkID: openstackNetwork.ID,
+		DNSNameservers: []string{
+			"8.8.4.4",
+		},
 	}
 }
 
@@ -506,6 +509,25 @@ func TestReconcileSubnet(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, network.Status.Openstack.SubnetID)
 		require.Equal(t, openstackSubnet.ID, *network.Status.Openstack.SubnetID)
+	})
+
+	t.Run("ItUpdatesSubnets", func(t *testing.T) {
+		t.Parallel()
+
+		updatedNetwork := network.DeepCopy()
+		updatedNetwork.Spec.DNSNameservers = nil
+
+		networking := mock.NewMockSubnetInterface(c)
+		networking.EXPECT().GetSubnet(t.Context(), updatedNetwork).Return(openstackSubnet, nil)
+		networking.EXPECT().UpdateSubnet(t.Context(), openstackSubnet.ID, nil, []subnets.HostRoute{}).Return(openstackSubnet, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileSubnet(t.Context(), p, networking, updatedNetwork, openstackNetwork)
+
+		require.NoError(t, err)
+		require.NotNil(t, updatedNetwork.Status.Openstack.SubnetID)
+		require.Equal(t, openstackSubnet.ID, *updatedNetwork.Status.Openstack.SubnetID)
 	})
 }
 

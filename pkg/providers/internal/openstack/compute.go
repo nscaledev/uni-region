@@ -227,6 +227,8 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 	name := server.Labels[coreconstants.NameLabel]
 
 	opts := servers.ListOpts{
+		// NOTE: this is a regular expression match so foo-4 will match
+		// foo-4, foo-48, foo-4444444444444.
 		Name: name,
 	}
 
@@ -244,11 +246,15 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 		return nil, errors.ErrResourceNotFound
 	}
 
-	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+	index := slices.IndexFunc(result, func(x servers.Server) bool {
+		return x.Name == name
+	})
+
+	if index < 0 {
+		return nil, errors.ErrResourceNotFound
 	}
 
-	return &result[0], nil
+	return &result[index], nil
 }
 
 func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Server, keyName string, networks []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
