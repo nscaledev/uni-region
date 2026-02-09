@@ -446,7 +446,7 @@ type NetworkSpec struct {
 	// Prefix is the IPv4 address prefix.
 	Prefix *unikornv1core.IPv4Prefix `json:"prefix"`
 	// DNSNameservers are a set of DNS nameservrs for the network.
-	DNSNameservers []unikornv1core.IPv4Address `json:"dnsNameservers"`
+	DNSNameservers []unikornv1core.IPv4Address `json:"dnsNameservers,omitempty"`
 	// Routes to be distributed via DHCP.
 	Routes []Route `json:"routes,omitempty"`
 }
