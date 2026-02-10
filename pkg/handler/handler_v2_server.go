@@ -26,6 +26,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 )
 
 type ServerV2Handler struct {
@@ -183,6 +184,7 @@ func (h *ServerV2Handler) PostApiV2ServersServerIDSnapshot(w http.ResponseWriter
 
 	img, err := c.CreateV2Snapshot(r.Context(), serverID, &req)
 	if err != nil {
+		err = providers.ProviderToServerError(err)
 		errors.HandleError(w, r, err)
 		return
 	}

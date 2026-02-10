@@ -20,9 +20,11 @@ package providers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 
+	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	servererrors "github.com/unikorn-cloud/core/pkg/server/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/kubernetes"
@@ -51,6 +53,8 @@ func ProviderToServerError(err error) error {
 		return servererrors.OAuth2InvalidRequest("region is not valid for this endpoint")
 	case errors.Is(err, ErrRegionNotFound):
 		return servererrors.HTTPNotFound()
+	case errors.Is(err, coreerrors.ErrConflict):
+		return fmt.Errorf("%w: %w", servererrors.HTTPConflict(), err)
 	default:
 	}
 
