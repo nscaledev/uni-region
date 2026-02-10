@@ -190,7 +190,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	updated.Annotations = required.Annotations
 	updated.Spec = required.Spec
 
-	if err := c.Client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+	if err := c.Client.Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
 		return nil, fmt.Errorf("%w: failed to patch server", err)
 	}
 
@@ -270,7 +270,7 @@ func (c *Client) start(ctx context.Context, identity *unikornv1.Identity, server
 	updated := server.DeepCopy()
 	updated.Status.Phase = unikornv1.InstanceLifecyclePhasePending
 
-	if err := c.Client.Status().Patch(ctx, updated, client.MergeFrom(server)); err != nil {
+	if err := c.Client.Status().Patch(ctx, updated, client.MergeFromWithOptions(server, &client.MergeFromWithOptimisticLock{})); err != nil {
 		return fmt.Errorf("%w: failed to patch server", err)
 	}
 
@@ -302,7 +302,7 @@ func (c *Client) stop(ctx context.Context, identity *unikornv1.Identity, server 
 	updated := server.DeepCopy()
 	updated.Status.Phase = unikornv1.InstanceLifecyclePhaseStopping
 
-	if err := c.Client.Status().Patch(ctx, updated, client.MergeFrom(server)); err != nil {
+	if err := c.Client.Status().Patch(ctx, updated, client.MergeFromWithOptions(server, &client.MergeFromWithOptimisticLock{})); err != nil {
 		return fmt.Errorf("%w: failed to patch server", err)
 	}
 

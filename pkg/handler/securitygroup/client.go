@@ -388,7 +388,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	updated.Annotations = required.Annotations
 	updated.Spec = required.Spec
 
-	if err := c.Client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+	if err := c.Client.Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
 		return nil, fmt.Errorf("%w: unable to updated security group", err)
 	}
 
