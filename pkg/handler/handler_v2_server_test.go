@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -33,6 +34,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/unikorn-cloud/core/pkg/constants"
+	"github.com/unikorn-cloud/core/pkg/errors"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	identityv1 "github.com/unikorn-cloud/identity/pkg/apis/unikorn/v1alpha1"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
@@ -301,6 +303,15 @@ func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 	}
 }
 
+func makeSnapshotContext(t *testing.T, orgID string) context.Context {
+	t.Helper()
+
+	ctx := newOrganisationACLBuilder(orgID).
+		addEndpoint("region:images", identityapi.Create).
+		addEndpoint("region:servers", identityapi.Read).
+		buildContext(t.Context())
+	return ctx
+}
 func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 	t.Parallel()
 
@@ -347,10 +358,7 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 
 	handler := NewServerV2Handler(clientArgs)
 
-	ctx := newOrganisationACLBuilder(orgID).
-		addEndpoint("region:images", identityapi.Create).
-		addEndpoint("region:servers", identityapi.Read).
-		buildContext(t.Context())
+	ctx := makeSnapshotContext(t, orgID)
 
 	response := httptest.NewRecorder()
 	request := newSnapshotRequest(ctx)
@@ -370,4 +378,74 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 		Name:  regionconstants.ImageSourceTag,
 		Value: regionconstants.ImageSourceSnapshot,
 	})
+}
+
+func TestServerV2_Snapshot_ProviderErrors(t *testing.T) {
+	t.Parallel()
+
+	const (
+		namespace  = "region-test-home"
+		orgID      = "org-provider-errors"
+		serverName = "server-provder-errors"
+	)
+
+	c := fakeClientWithSchema(t, knownGoodFixture(t, serverName, namespace, orgID)...)
+
+	// We can't guarantee the order things are done in the handler, and in particular, the region provider
+	// may be requested before permissions are checked. So, make sure there is a provider, though we don't
+	// expect it to be called.
+	testcases := []struct {
+		name       string
+		setup      func(*mockprovider.MockProvider)
+		statusCode int
+	}{
+		{
+			name: "conflict",
+			setup: func(p *mockprovider.MockProvider) {
+				original := &types.Image{
+					ID: "image1", // to match the server's image ID
+				}
+
+				p.EXPECT().GetImage(gomock.Any(), orgID, "image1").Return(original, nil)
+
+				p.EXPECT().CreateSnapshot(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					// this simulates what the OpenStack provider does when the client reports a conflict;
+					// it constructs a new error wrapping the HTTPConflict error.
+					Return(nil, fmt.Errorf("server %w", errors.ErrConflict))
+			},
+			statusCode: http.StatusConflict,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctrl := gomock.NewController(t)
+
+			provider := mockprovider.NewMockProvider(ctrl)
+
+			providers := mockproviders.NewMockProviders(ctrl)
+			providers.EXPECT().LookupCloud(gomock.Any(), gomock.Any()).Return(provider, nil)
+
+			tc.setup(provider)
+
+			clientArgs := common.ClientArgs{
+				Client:    c,
+				Namespace: namespace,
+				Providers: providers,
+			}
+
+			handler := NewServerV2Handler(clientArgs)
+
+			ctx := makeSnapshotContext(t, orgID)
+
+			response := httptest.NewRecorder()
+			request := newSnapshotRequest(ctx)
+
+			handler.PostApiV2ServersServerIDSnapshot(response, request, serverName)
+
+			require.Equal(t, tc.statusCode, response.Result().StatusCode)
+		})
+	}
 }
