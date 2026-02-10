@@ -1,3 +1,6 @@
+{{- if .Values.fileStorageController.enabled }}
+---
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -36,3 +39,4 @@ spec:
       serviceAccountName: {{ .Release.Name }}-file-storage-controller
       securityContext:
         runAsNonRoot: true
+{{- end }}
