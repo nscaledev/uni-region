@@ -451,7 +451,7 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *opena
 	updated.Annotations = required.Annotations
 	updated.Spec = required.Spec
 
-	if err := c.Client.Client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+	if err := c.Client.Client.Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
 		return nil, fmt.Errorf("%w: unable to update server", err)
 	}
 
