@@ -106,6 +106,13 @@ const (
 
 // NFSV2Spec NFS specific
 type NFSV2Spec struct {
+	// Parallelism Defines the number of IP addresses that are assigned to the storage.
+	// More IP addresses, better performance.  If the value specified overflows
+	// the available address range reserved on the network it will be capped
+	// at the maximum allowed value.  If not specified a platform defined
+	// default will be used.
+	Parallelism *int `json:"parallelism,omitempty"`
+
 	// RootSquash root squash
 	RootSquash bool `json:"rootSquash"`
 }
