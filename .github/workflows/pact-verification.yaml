@@ -63,6 +63,7 @@ jobs:
         PACT_BROKER_USERNAME: ${{ vars.PACT_BROKER_USERNAME }}
         PACT_BROKER_PASSWORD: ${{ secrets.PACT_BROKER_PASSWORD }}
         PROVIDER_VERSION: ${{ github.sha }}
+        CONSUMER_BRANCH: ${{ github.event.client_payload.consumer_branch }}
         CGO_LDFLAGS: "-L/usr/local/lib"
         LD_LIBRARY_PATH: "/usr/local/lib"
       run: make test-contracts-provider-ci
