@@ -262,7 +262,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 		return nil, fmt.Errorf("%w: unable to set principal information", err)
 	}
 
-	attachments, err := generateAttachmentList(ctx, networkClient, request.Spec.Attachments)
+	attachments, err := generateAttachmentList(ctx, networkClient, request)
 	if err != nil {
 		return nil, err
 	}
@@ -302,12 +302,20 @@ func checkRootSquash(nfs *openapi.NFSV2Spec) bool {
 	return true
 }
 
-func generateAttachmentList(ctx context.Context, networkClient *network.Client, in *openapi.StorageAttachmentV2Spec) ([]regionv1.Attachment, error) {
-	if in == nil {
+func generateAttachmentList(ctx context.Context, networkClient *network.Client, in *openapi.StorageV2Update) ([]regionv1.Attachment, error) {
+	if in == nil || in.Spec.Attachments == nil {
 		return []regionv1.Attachment{}, nil
 	}
 
-	networkIDs := in.NetworkIds
+	// This is the default parallelism e.g. 4 IP addresses. This maintains the
+	// legacy default behaviour.
+	parallelism := 4
+
+	if in.Spec.StorageType.NFS != nil && in.Spec.StorageType.NFS.Parallelism != nil {
+		parallelism = *in.Spec.StorageType.NFS.Parallelism
+	}
+
+	networkIDs := in.Spec.Attachments.NetworkIds
 	out := make([]regionv1.Attachment, len(networkIDs))
 
 	for i, networkID := range networkIDs {
@@ -316,7 +324,7 @@ func generateAttachmentList(ctx context.Context, networkClient *network.Client, 
 			return nil, fmt.Errorf("%w: unable to get network", err)
 		}
 
-		attachment, err := generateAttachment(network)
+		attachment, err := generateAttachment(network, parallelism)
 		if err != nil {
 			return nil, err
 		}
@@ -327,7 +335,7 @@ func generateAttachmentList(ctx context.Context, networkClient *network.Client, 
 	return out, nil
 }
 
-func generateAttachment(network *regionv1.Network) (*regionv1.Attachment, error) {
+func generateAttachment(network *regionv1.Network, parallelism int) (*regionv1.Attachment, error) {
 	networkID := network.Name
 
 	// FIXME: this part of the network status is destined for deprecation, since it is not generic.
@@ -337,7 +345,7 @@ func generateAttachment(network *regionv1.Network) (*regionv1.Attachment, error)
 		return nil, errors.HTTPUnprocessableContent("network requested is not a suitable network")
 	}
 
-	ipRange := narrowStorageRange(network.Status.Openstack.StorageRange)
+	ipRange := narrowStorageRange(network.Status.Openstack.StorageRange, parallelism)
 
 	return &regionv1.Attachment{
 		NetworkID:      networkID,
@@ -346,15 +354,25 @@ func generateAttachment(network *regionv1.Network) (*regionv1.Attachment, error)
 	}, nil
 }
 
-func narrowStorageRange(in *regionv1.AttachmentIPRange) *regionv1.AttachmentIPRange {
+func narrowStorageRange(in *regionv1.AttachmentIPRange, parallelism int) *regionv1.AttachmentIPRange {
 	if in == nil {
 		return nil
 	}
 
 	startIP := in.Start.To4() // NB assumes IPv4 address
+	maxEndIP := in.End.To4()
 
 	bs := big.NewInt(0).SetBytes(startIP)
-	be := big.NewInt(0).Add(bs, big.NewInt(3))
+	me := big.NewInt(0).SetBytes(maxEndIP)
+
+	// Calculate the address range the user asked for, capping it at the maximum
+	// possible value.
+	be := big.NewInt(0).Add(bs, big.NewInt(int64(parallelism)-1))
+
+	if be.Cmp(me) > 0 {
+		be = me
+	}
+
 	endIP := net.IP(be.Bytes())
 
 	return &regionv1.AttachmentIPRange{
