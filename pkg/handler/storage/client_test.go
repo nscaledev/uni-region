@@ -65,6 +65,11 @@ var (
 		Start: v1alpha1.IPv4Address{IP: net.IP{192, 168, 0, 1}},
 		End:   v1alpha1.IPv4Address{IP: net.IP{192, 168, 0, 4}},
 	}
+
+	narrowedRangeCapped = &regionv1.AttachmentIPRange{
+		Start: v1alpha1.IPv4Address{IP: net.IP{192, 168, 0, 1}},
+		End:   v1alpha1.IPv4Address{IP: net.IP{192, 168, 0, 127}},
+	}
 )
 
 const (
@@ -113,12 +118,19 @@ func newContextWithPermissions(ctx context.Context) context.Context {
 func TestNarrowRange(t *testing.T) {
 	t.Parallel()
 
-	nr := narrowStorageRange(storageRange)
+	nr := narrowStorageRange(storageRange, 4)
 	require.Equal(t, nr, narrowedRange)
 
 	// this can be nil, if it's not been set yet
-	nr = narrowStorageRange(nil)
+	nr = narrowStorageRange(nil, -1)
 	require.Nilf(t, nr, "Expected nil output when nil input (and not a NPE panic)")
+}
+
+func TestNarrowRangeWithCap(t *testing.T) {
+	t.Parallel()
+
+	nr := narrowStorageRange(storageRange, 256)
+	require.Equal(t, nr, narrowedRangeCapped)
 }
 
 func TestGenerateAttachmentList(t *testing.T) {
@@ -138,13 +150,22 @@ func TestGenerateAttachmentList(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		input *openapi.StorageAttachmentV2Spec
+		input *openapi.StorageV2Update
 		want  []regionv1.Attachment
 	}{
 		{
 			name: "test with limited values",
-			input: &openapi.StorageAttachmentV2Spec{
-				NetworkIds: openapi.NetworkIDList{"net-1"},
+			input: &openapi.StorageV2Update{
+				Spec: openapi.StorageV2Spec{
+					Attachments: &openapi.StorageAttachmentV2Spec{
+						NetworkIds: openapi.NetworkIDList{"net-1"},
+					},
+					StorageType: openapi.StorageTypeV2Spec{
+						NFS: &openapi.NFSV2Spec{
+							Parallelism: ptr.To(4),
+						},
+					},
+				},
 			},
 			want: []regionv1.Attachment{
 				{
@@ -156,7 +177,7 @@ func TestGenerateAttachmentList(t *testing.T) {
 		},
 		{
 			name:  "empty",
-			input: &openapi.StorageAttachmentV2Spec{},
+			input: &openapi.StorageV2Update{},
 			want:  []regionv1.Attachment{},
 		},
 		{

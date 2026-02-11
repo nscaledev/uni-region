@@ -2740,6 +2740,15 @@ components:
         rootSquash:
           description: root squash
           type: boolean
+        parallelism:
+          description: |-
+            Defines the number of IP addresses that are assigned to the storage.
+            More IP addresses, better performance.  If the value specified overflows
+            the available address range reserved on the network it will be capped
+            at the maximum allowed value.  If not specified a platform defined
+            default will be used.
+          type: integer
+          minimum: 1
     storageAttachmentV2Spec:
       description: Describes the network attachment for storage
       type: object
