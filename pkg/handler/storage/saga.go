@@ -48,7 +48,8 @@ type createSaga struct {
 	client  *Client
 	request *openapi.StorageV2Create
 
-	filestorage *regionv1.FileStorage
+	filestorage  *regionv1.FileStorage
+	storageClass *openapi.StorageClassV2Read
 }
 
 func (s *createSaga) Actions() []saga.Action {
@@ -122,7 +123,7 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 		return err
 	}
 
-	filestorage, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId, updateRequest, s.request.Spec.StorageClassId)
+	filestorage, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId, updateRequest, s.storageClass)
 	if err != nil {
 		return err
 	}
@@ -154,8 +155,10 @@ func (s *createSaga) validateStorageClass(ctx context.Context, storageClassID st
 
 	if sc.Spec.RegionId != s.request.Spec.RegionId {
 		return errors.HTTPUnprocessableContent("storage class not available in region").
-			WithValues("storageClassID", sc.Metadata.Name, "storageClassRegionID", s.request.Spec.RegionId, "requestedRegionID", sc.Spec.RegionId)
+			WithValues("storageClassID", sc.Metadata.Name, "storageClassRegionID", sc.Spec.RegionId, "requestedRegionID", s.request.Spec.RegionId)
 	}
+
+	s.storageClass = sc
 
 	return nil
 }
@@ -163,16 +166,18 @@ func (s *createSaga) validateStorageClass(ctx context.Context, storageClassID st
 type updateSaga struct {
 	client *Client
 
-	request *openapi.StorageV2Update
-	current *regionv1.FileStorage
-	updated *regionv1.FileStorage
+	request      *openapi.StorageV2Update
+	current      *regionv1.FileStorage
+	updated      *regionv1.FileStorage
+	storageClass *openapi.StorageClassV2Read
 }
 
-func newUpdateSaga(client *Client, current *regionv1.FileStorage, request *openapi.StorageV2Update) *updateSaga {
+func newUpdateSaga(client *Client, current *regionv1.FileStorage, request *openapi.StorageV2Update, storageClass *openapi.StorageClassV2Read) *updateSaga {
 	return &updateSaga{
-		client:  client,
-		request: request,
-		current: current,
+		client:       client,
+		request:      request,
+		current:      current,
+		storageClass: storageClass,
 	}
 }
 
@@ -192,7 +197,7 @@ func (s *updateSaga) generate(ctx context.Context) error {
 	projectID := s.current.Labels[coreconstants.ProjectLabel]
 	regionID := s.current.Labels[constants.RegionLabel]
 
-	required, err := s.client.generateV2(ctx, organizationID, projectID, regionID, s.request, s.current.Spec.StorageClassID)
+	required, err := s.client.generateV2(ctx, organizationID, projectID, regionID, s.request, s.storageClass)
 	if err != nil {
 		return err
 	}
