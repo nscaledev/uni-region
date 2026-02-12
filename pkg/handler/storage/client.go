@@ -52,6 +52,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	// DefaultParallelism is the default number of IP addresses assigned to storage.
+	// This maintains legacy default behaviour for storage classes that do not specify a value.
+	DefaultParallelism = 4
+)
+
 type Driver interface {
 	GetDetails(ctx context.Context, projectID string, fileStorageID string) (*types.FileStorageDetails, error)
 }
@@ -254,7 +260,7 @@ func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2R
 	return storage, nil
 }
 
-func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.StorageV2Update, storageClassID string) (*regionv1.FileStorage, error) {
+func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.StorageV2Update, storageClass *openapi.StorageClassV2Read) (*regionv1.FileStorage, error) {
 	networkClient := network.New(c.ClientArgs)
 
 	err := util.InjectUserPrincipal(ctx, organizationID, projectID)
@@ -262,7 +268,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 		return nil, fmt.Errorf("%w: unable to set principal information", err)
 	}
 
-	attachments, err := generateAttachmentList(ctx, networkClient, request)
+	attachments, err := generateAttachmentList(ctx, networkClient, request, storageClass.Spec.Parallelism)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +286,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 			NFS: &regionv1.NFS{
 				RootSquash: checkRootSquash(request.Spec.StorageType.NFS),
 			},
-			StorageClassID: storageClassID,
+			StorageClassID: storageClass.Metadata.Id,
 		},
 	}
 
@@ -302,17 +308,9 @@ func checkRootSquash(nfs *openapi.NFSV2Spec) bool {
 	return true
 }
 
-func generateAttachmentList(ctx context.Context, networkClient *network.Client, in *openapi.StorageV2Update) ([]regionv1.Attachment, error) {
+func generateAttachmentList(ctx context.Context, networkClient *network.Client, in *openapi.StorageV2Update, parallelism int) ([]regionv1.Attachment, error) {
 	if in == nil || in.Spec.Attachments == nil {
 		return []regionv1.Attachment{}, nil
-	}
-
-	// This is the default parallelism e.g. 4 IP addresses. This maintains the
-	// legacy default behaviour.
-	parallelism := 4
-
-	if in.Spec.StorageType.NFS != nil && in.Spec.StorageType.NFS.Parallelism != nil {
-		parallelism = *in.Spec.StorageType.NFS.Parallelism
 	}
 
 	networkIDs := in.Spec.Attachments.NetworkIds
@@ -432,7 +430,12 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 		return nil, errors.OAuth2InvalidRequest("filestorage is being deleted")
 	}
 
-	s := newUpdateSaga(c, current, request)
+	sc, err := c.GetStorageClass(ctx, current.Spec.StorageClassID)
+	if err != nil {
+		return nil, err
+	}
+
+	s := newUpdateSaga(c, current, request, sc)
 	if err := saga.Run(ctx, s); err != nil {
 		return nil, err
 	}
@@ -528,8 +531,9 @@ func convertClass(in *regionv1.FileStorageClass) *openapi.StorageClassV2Read {
 	return &openapi.StorageClassV2Read{
 		Metadata: conversion.ResourceReadMetadata(in, nil),
 		Spec: openapi.StorageClassV2Spec{
-			RegionId:  in.Labels[constants.RegionLabel],
-			Protocols: convertProtocols(in.Spec.Protocols),
+			RegionId:    in.Labels[constants.RegionLabel],
+			Protocols:   convertProtocols(in.Spec.Protocols),
+			Parallelism: ensureParallelism(in.Spec.Parallelism),
 		},
 	}
 }
@@ -542,6 +546,17 @@ func convertProtocols(in []regionv1.Protocol) []openapi.StorageClassProtocolType
 	}
 
 	return out
+}
+
+// ensureParallelism returns the given parallelism value if it is valid (non-nil and >= 1),
+// otherwise falls back to DefaultParallelism. This guarantees callers always receive a
+// usable, non-nil parallelism value.
+func ensureParallelism(in *int) int {
+	if in == nil || *in < 1 {
+		return DefaultParallelism
+	}
+
+	return *in
 }
 
 func quantityToSizeGiB(quantity resource.Quantity) int64 {

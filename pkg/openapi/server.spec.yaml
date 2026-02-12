@@ -2740,15 +2740,6 @@ components:
         rootSquash:
           description: root squash
           type: boolean
-        parallelism:
-          description: |-
-            Defines the number of IP addresses that are assigned to the storage.
-            More IP addresses, better performance.  If the value specified overflows
-            the available address range reserved on the network it will be capped
-            at the maximum allowed value.  If not specified a platform defined
-            default will be used.
-          type: integer
-          minimum: 1
     storageAttachmentV2Spec:
       description: Describes the network attachment for storage
       type: object
@@ -2917,6 +2908,7 @@ components:
       required:
       - regionId
       - protocols
+      - parallelism
       properties:
         regionId:
           description: The region an storage class is provisioned in.
@@ -2925,6 +2917,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/storageClassProtocolType'
+        parallelism:
+          description: |-
+            Defines the number of IP addresses that are assigned to the storage.
+            More IP addresses, better performance. If the value specified overflows
+            the available address range reserved on the network it will be capped
+            at the maximum allowed value.
+          type: integer
+          minimum: 1
     storageClassProtocolType:
       description: The protocol type of the storage class.
       type: string
@@ -3871,6 +3871,7 @@ components:
               protocols: 
                 - nfsv3
                 - nfsv4
+              parallelism: 8
   securitySchemes:
     oauth2Authentication:
       description: Operation requires OAuth 2.0 bearer token authentication.

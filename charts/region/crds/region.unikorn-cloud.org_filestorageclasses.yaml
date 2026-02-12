@@ -49,6 +49,14 @@ spec:
           spec:
             description: FileStorageClassSpec defines the FileStorageClass.
             properties:
+              parallelism:
+                default: 4
+                description: |-
+                  Parallelism defines the number of IP addresses that are assigned to the storage.
+                  More IP addresses, better performance.  If the value specified overflows
+                  the available address range reserved on the network it will be capped
+                  at the maximum allowed value.
+                type: integer
               protocols:
                 description: Protocols specifies the storage protocols (e.g., NFSv3,
                   NFSv4) supported by this class.
