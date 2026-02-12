@@ -81,12 +81,16 @@ func (s *createSaga) createAllocation(ctx context.Context) error {
 	quantity := gibToQuantity(s.request.Spec.SizeGiB)
 	required := s.client.generateAllocation(quantity.Value())
 
-	return identityclient.NewAllocations(s.client.Client, s.client.Identity).Create(ctx, s.filestorage, required)
+	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Create(ctx, s.filestorage, required); err != nil {
+		return fmt.Errorf("%w: failed to create allocation", err)
+	}
+
+	return nil
 }
 
 func (s *createSaga) deleteAllocation(ctx context.Context) error {
 	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Delete(ctx, s.filestorage); err != nil {
-		return err
+		return fmt.Errorf("%w: failed to delete allocation", err)
 	}
 
 	return nil
@@ -222,13 +226,21 @@ func (s *updateSaga) generate(ctx context.Context) error {
 func (s *updateSaga) updateAllocation(ctx context.Context) error {
 	required := s.client.generateAllocation(s.updated.Spec.Size.Value())
 
-	return identityclient.NewAllocations(s.client.Client, s.client.Identity).Update(ctx, s.current, required)
+	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Update(ctx, s.current, required); err != nil {
+		return fmt.Errorf("%w: failed to update allocation", err)
+	}
+
+	return nil
 }
 
 func (s *updateSaga) revertAllocation(ctx context.Context) error {
 	required := s.client.generateAllocation(s.current.Spec.Size.Value())
 
-	return identityclient.NewAllocations(s.client.Client, s.client.Identity).Update(ctx, s.current, required)
+	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Update(ctx, s.current, required); err != nil {
+		return fmt.Errorf("%w: failed to revert allocation", err)
+	}
+
+	return nil
 }
 
 func (s *updateSaga) updateStorage(ctx context.Context) error {
