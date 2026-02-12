@@ -286,7 +286,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 			NFS: &regionv1.NFS{
 				RootSquash: checkRootSquash(request.Spec.StorageType.NFS),
 			},
-			StorageClassID: storageClass.Metadata.Name,
+			StorageClassID: storageClass.Metadata.Id,
 		},
 	}
 
