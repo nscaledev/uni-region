@@ -44,6 +44,23 @@ type NetworkGetter interface {
 	GetV2(ctx context.Context, id string) (*openapi.NetworkV2Read, error)
 }
 
+var ErrAllocation = fmt.Errorf("allocation error")
+
+// wrapAllocationError returns access/permission errors as-is so they
+// surface the correct HTTP status to callers, and wraps everything else
+// with ErrAllocation so callers can distinguish allocation failures.
+func wrapAllocationError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	if errors.IsAccessDenied(err) || errors.IsForbidden(err) {
+		return err
+	}
+
+	return fmt.Errorf("%w: %s", ErrAllocation, err.Error())
+}
+
 type createSaga struct {
 	client  *Client
 	request *openapi.StorageV2Create
@@ -82,7 +99,7 @@ func (s *createSaga) createAllocation(ctx context.Context) error {
 	required := s.client.generateAllocation(quantity.Value())
 
 	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Create(ctx, s.filestorage, required); err != nil {
-		return fmt.Errorf("%w: failed to create allocation", err)
+		return wrapAllocationError(err)
 	}
 
 	return nil
@@ -90,7 +107,7 @@ func (s *createSaga) createAllocation(ctx context.Context) error {
 
 func (s *createSaga) deleteAllocation(ctx context.Context) error {
 	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Delete(ctx, s.filestorage); err != nil {
-		return fmt.Errorf("%w: failed to delete allocation", err)
+		return wrapAllocationError(err)
 	}
 
 	return nil
@@ -227,7 +244,7 @@ func (s *updateSaga) updateAllocation(ctx context.Context) error {
 	required := s.client.generateAllocation(s.updated.Spec.Size.Value())
 
 	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Update(ctx, s.current, required); err != nil {
-		return fmt.Errorf("%w: failed to update allocation", err)
+		return wrapAllocationError(err)
 	}
 
 	return nil
@@ -237,7 +254,7 @@ func (s *updateSaga) revertAllocation(ctx context.Context) error {
 	required := s.client.generateAllocation(s.current.Spec.Size.Value())
 
 	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Update(ctx, s.current, required); err != nil {
-		return fmt.Errorf("%w: failed to revert allocation", err)
+		return wrapAllocationError(err)
 	}
 
 	return nil
