@@ -29,6 +29,7 @@ import (
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
@@ -71,7 +72,7 @@ func (q *imageQuery) StatusIn(statuses ...types.ImageStatus) types.ImageQuery {
 }
 
 func (q *imageQuery) List(_ context.Context) (types.ImageList, error) {
-	var result types.ImageList
+	result := &cache.ListSnapshot[types.Image]{}
 
 images:
 	for _, image := range q.images() {
@@ -81,7 +82,7 @@ images:
 			}
 		}
 
-		result = append(result, image)
+		result.Items = append(result.Items, &image)
 	}
 
 	return result, nil
