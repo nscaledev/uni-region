@@ -111,7 +111,7 @@ func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.Regio
 }
 
 func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID string) (openapi.Flavors, error) {
-	provider, err := c.Providers.LookupCommon(ctx, regionID)
+	provider, err := c.Providers.LookupCommon(regionID)
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
 	}
@@ -158,7 +158,7 @@ func convertExternalNetworks(in types.ExternalNetworks) openapi.ExternalNetworks
 }
 
 func (c *Client) ListExternalNetworks(ctx context.Context, regionID string) (openapi.ExternalNetworks, error) {
-	provider, err := c.Providers.LookupCloud(ctx, regionID)
+	provider, err := c.Providers.LookupCloud(regionID)
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
 	}

@@ -95,7 +95,7 @@ func (s *Server) SetupOpenTelemetry(ctx context.Context) error {
 	return s.CoreOptions.SetupOpenTelemetry(ctx)
 }
 
-func (s *Server) GetServer(client client.Client) (*http.Server, error) {
+func (s *Server) GetServer(ctx context.Context, client client.Client) (*http.Server, error) {
 	pprofHandler := http.NewServeMux()
 	pprofHandler.HandleFunc("/debug/pprof/", pprof.Index)
 	pprofHandler.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
@@ -163,7 +163,12 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 		},
 	}
 
-	identity, err := identityclient.New(client, s.IdentityOptions, &s.ClientOptions).APIClient(context.TODO())
+	identity, err := identityclient.New(client, s.IdentityOptions, &s.ClientOptions).APIClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	providers, err := providers.New(ctx, client, s.CoreOptions.Namespace, true)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +176,7 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 	clientArgs := common.ClientArgs{
 		Client:    client,
 		Namespace: s.CoreOptions.Namespace,
-		Providers: providers.New(client, s.CoreOptions.Namespace),
+		Providers: providers,
 		Identity:  identity,
 	}
 

@@ -137,7 +137,7 @@ type Provider struct {
 
 var _ types.Provider = &Provider{}
 
-func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Provider, error) {
+func New(ctx context.Context, cli client.Client, region *unikornv1.Region, withCaches bool) (*Provider, error) {
 	p := &Provider{
 		client:        cli,
 		region:        region,

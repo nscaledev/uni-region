@@ -63,8 +63,8 @@ func NewClientV2(clientArgs common.ClientArgs) *ClientV2 {
 	}
 }
 
-func (c *ClientV2) getProvider(ctx context.Context, regionID string) (types.Provider, error) {
-	provider, err := c.Providers.LookupCloud(ctx, regionID)
+func (c *ClientV2) getProvider(regionID string) (types.Provider, error) {
+	provider, err := c.Providers.LookupCloud(regionID)
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
 	}
@@ -525,7 +525,7 @@ func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID 
 		return nil, nil, nil, err
 	}
 
-	provider, err := c.getProvider(ctx, server.Labels[constants.RegionLabel])
+	provider, err := c.getProvider(server.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("%w: failed to create region provider", err)
 	}
