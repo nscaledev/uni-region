@@ -185,11 +185,11 @@ func convertImage(in *types.Image) *openapi.Image {
 	return out
 }
 
-func convertImages(in []types.Image) openapi.Images {
-	out := make(openapi.Images, len(in))
+func convertImages(in types.ImageList) openapi.Images {
+	out := make(openapi.Images, len(in.Items))
 
-	for i := range in {
-		out[i] = *convertImage(&in[i])
+	for i := range in.Items {
+		out[i] = *convertImage(in.Items[i])
 	}
 
 	return out

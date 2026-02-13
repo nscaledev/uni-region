@@ -70,7 +70,7 @@ func TestImages(t *testing.T) {
 
 	images, err := query.AvailableToOrganization("org-1").StatusIn(types.ImageStatusReady).List(t.Context())
 	require.NoError(t, err)
-	require.Len(t, images, 2)
+	require.Len(t, images.Items, 2)
 
 	created, err := provider.CreateImage(t.Context(), &types.Image{
 		Name:           "custom-image",
@@ -92,8 +92,8 @@ func TestImages(t *testing.T) {
 
 	owned, err := query.OwnedByOrganization("org-1").List(t.Context())
 	require.NoError(t, err)
-	require.Len(t, owned, 1)
-	require.Equal(t, created.ID, owned[0].ID)
+	require.Len(t, owned.Items, 1)
+	require.Equal(t, created.ID, owned.Items[0].ID)
 
 	image, err := provider.GetImage(t.Context(), "org-1", created.ID)
 	require.NoError(t, err)

@@ -21,12 +21,12 @@ import (
 	"context"
 
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
-	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 
+	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
@@ -35,7 +35,7 @@ import (
 
 // NewImageQuery makes the internal implementation of ImageQuery available for testing
 // on its own.
-func NewImageQuery(listFunc func(context.Context) ([]images.Image, error)) types.ImageQuery {
+func NewImageQuery(listFunc func() (*cache.ListSnapshot[types.Image], error)) types.ImageQuery {
 	return &imageQuery{listFunc: listFunc}
 }
 

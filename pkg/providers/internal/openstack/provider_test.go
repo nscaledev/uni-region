@@ -18,7 +18,6 @@ limitations under the License.
 package openstack_test
 
 import (
-	"context"
 	"net"
 	"testing"
 
@@ -38,6 +37,7 @@ import (
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/util/cache"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
@@ -52,13 +52,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func mustConvertImage(t *testing.T, in *images.Image) types.Image {
+func mustConvertImage(t *testing.T, in *images.Image) *types.Image {
 	t.Helper()
 
 	out, err := openstack.ConvertImage(in)
 	require.NoError(t, err)
 
-	return *out
+	return out
 }
 
 // TestImageFiltering checks that when filtering images we only get those
@@ -66,18 +66,20 @@ func mustConvertImage(t *testing.T, in *images.Image) types.Image {
 func TestImageFiltering(t *testing.T) {
 	t.Parallel()
 
-	public1 := imageFixtureWithID("foo")
-	public2 := withStatus(imageFixtureWithID("foo"), images.ImageStatusQueued)
-	private1 := withOrganizationID(imageFixtureWithID("felix"), "cats")
-	private2 := withOrganizationID(imageFixtureWithID("rover"), "dogs")
+	public1 := mustConvertImage(t, imageFixtureWithID("foo"))
+	public2 := mustConvertImage(t, withStatus(imageFixtureWithID("foo"), images.ImageStatusQueued))
+	private1 := mustConvertImage(t, withOrganizationID(imageFixtureWithID("felix"), "cats"))
+	private2 := mustConvertImage(t, withOrganizationID(imageFixtureWithID("rover"), "dogs"))
 
 	//nolint:unparam // lint doesn't know this needs to be this func type
-	listimages := func(_ context.Context) ([]images.Image, error) {
-		return []images.Image{
-			*public1,
-			*public2,
-			*private1,
-			*private2,
+	listimages := func() (*cache.ListSnapshot[types.Image], error) {
+		return &cache.ListSnapshot[types.Image]{
+			Items: []*types.Image{
+				public1,
+				public2,
+				private1,
+				private2,
+			},
 		}, nil
 	}
 
@@ -88,10 +90,10 @@ func TestImageFiltering(t *testing.T) {
 		images, err := query.AvailableToOrganization("cats").List(t.Context())
 		require.NoError(t, err)
 
-		require.ElementsMatch(t, images, types.ImageList{
-			mustConvertImage(t, public1),
-			mustConvertImage(t, public2),
-			mustConvertImage(t, private1),
+		require.ElementsMatch(t, images.Items, []*types.Image{
+			public1,
+			public2,
+			private1,
 		})
 	})
 
@@ -102,10 +104,10 @@ func TestImageFiltering(t *testing.T) {
 		images, err := query.StatusIn(types.ImageStatusReady).List(t.Context())
 		require.NoError(t, err)
 
-		require.ElementsMatch(t, images, types.ImageList{
-			mustConvertImage(t, public1),
-			mustConvertImage(t, private1),
-			mustConvertImage(t, private2),
+		require.ElementsMatch(t, images.Items, []*types.Image{
+			public1,
+			private1,
+			private2,
 		})
 	})
 
@@ -119,9 +121,9 @@ func TestImageFiltering(t *testing.T) {
 			List(t.Context())
 		require.NoError(t, err)
 
-		require.ElementsMatch(t, images, types.ImageList{
-			mustConvertImage(t, public1),
-			mustConvertImage(t, private1),
+		require.ElementsMatch(t, images.Items, []*types.Image{
+			public1,
+			private1,
 		})
 	})
 }
