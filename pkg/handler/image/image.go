@@ -64,14 +64,14 @@ func (c *Client) ListImages(ctx context.Context, organizationID, regionID string
 	result, err := query.
 		AvailableToOrganization(organizationID).
 		StatusIn(types.ImageStatusReady).
-		List(ctx)
+		List()
 
 	if err != nil {
 		return nil, err
 	}
 
 	// Apply ordering guarantees, ordered by name.
-	slices.SortStableFunc(result, func(a, b types.Image) int {
+	slices.SortStableFunc(result.Items, func(a, b *types.Image) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 

@@ -59,18 +59,18 @@ func (mr *MockImageQueryMockRecorder) AvailableToOrganization(organizationID ...
 }
 
 // List mocks base method.
-func (m *MockImageQuery) List(ctx context.Context) (types.ImageList, error) {
+func (m *MockImageQuery) List() (types.ImageList, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "List", ctx)
+	ret := m.ctrl.Call(m, "List")
 	ret0, _ := ret[0].(types.ImageList)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // List indicates an expected call of List.
-func (mr *MockImageQueryMockRecorder) List(ctx any) *gomock.Call {
+func (mr *MockImageQueryMockRecorder) List() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockImageQuery)(nil).List), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockImageQuery)(nil).List))
 }
 
 // OwnedByOrganization mocks base method.

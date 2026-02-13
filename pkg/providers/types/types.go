@@ -18,7 +18,10 @@ limitations under the License.
 package types
 
 import (
+	"reflect"
 	"time"
+
+	"github.com/unikorn-cloud/core/pkg/util/cache"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -119,6 +122,16 @@ type Image struct {
 	Packages *ImagePackages
 	// Status gives the readiness of the image -- is it active, or still pending upload, and so on.
 	Status ImageStatus
+	// IdentityID that owns the image.
+	IdentityID string
+}
+
+func (i *Image) Index() string {
+	return i.ID
+}
+
+func (i *Image) Equal(o *Image) bool {
+	return reflect.DeepEqual(i, o)
 }
 
 // ImageGPU defines image specific GPU compatibility information.
@@ -183,7 +196,7 @@ const (
 type ImagePackages map[string]string
 
 // ImageList allows us to attach sort functions and the like.
-type ImageList []Image
+type ImageList *cache.ListSnapshot[Image]
 
 // ExternalNetwork represents an external network.
 type ExternalNetwork struct {
