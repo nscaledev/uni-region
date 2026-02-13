@@ -35,6 +35,10 @@ spec:
           containerPort: 6060
         resources:
           {{- .Values.server.resources | toYaml | nindent 10 }}
+        readinessProbe:
+          httpGet:
+            path: /.well-known/openid-protected-resource
+            port: 6080
         securityContext:
           readOnlyRootFilesystem: true
       serviceAccountName: {{ .Release.Name }}-server
