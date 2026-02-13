@@ -56,13 +56,13 @@ func (c *Client) QueryImages(ctx context.Context, regionID string, params openap
 		query = query.StatusIn(queryStatuses...)
 	}
 
-	result, err := query.List(ctx)
+	result, err := query.List()
 	if err != nil {
 		return nil, err
 	}
 
 	// Apply ordering guarantees, ordered by name.
-	slices.SortStableFunc(result, func(a, b types.Image) int {
+	slices.SortStableFunc(result.Items, func(a, b *types.Image) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 

@@ -26,7 +26,7 @@ import (
 
 type ImageQuery interface {
 	// List runs the query and returns the result
-	List(ctx context.Context) (ImageList, error)
+	List() (ImageList, error)
 
 	// AvailableToOrganization adds a predicate to the query, which will
 	// include only those images that can be used by the identified organization.

@@ -9,7 +9,6 @@
 package mock
 
 import (
-	context "context"
 	reflect "reflect"
 
 	types "github.com/unikorn-cloud/region/pkg/providers/types"
@@ -58,18 +57,18 @@ func (mr *MockImageQueryMockRecorder) AvailableToOrganization(arg0 ...any) *gomo
 }
 
 // List mocks base method.
-func (m *MockImageQuery) List(arg0 context.Context) (types.ImageList, error) {
+func (m *MockImageQuery) List() (types.ImageList, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "List", arg0)
+	ret := m.ctrl.Call(m, "List")
 	ret0, _ := ret[0].(types.ImageList)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // List indicates an expected call of List.
-func (mr *MockImageQueryMockRecorder) List(arg0 any) *gomock.Call {
+func (mr *MockImageQueryMockRecorder) List() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockImageQuery)(nil).List), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockImageQuery)(nil).List))
 }
 
 // OwnedByOrganization mocks base method.
