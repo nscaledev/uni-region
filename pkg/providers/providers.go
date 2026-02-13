@@ -20,6 +20,7 @@ package providers
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	servererrors "github.com/unikorn-cloud/core/pkg/server/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -59,11 +60,16 @@ type providersImpl struct {
 	cache map[string]types.CommonProvider
 }
 
+// New creates and synchronously initializes all region providers.  The chosen behaviour
+// is to fail on intialization failure, the reasoning is that during upgrade an old version
+// of the service should be running to handle traffic, and we'd rather not have something
+// put into production that is known to be broken.  On that note, regions aren't lazily
+// loaded any more, so you will need to manually rollout the deployment to pick them up.
 func New(ctx context.Context, c client.Client, namespace string, withCaches bool) (Providers, error) {
 	var regions unikornv1.RegionList
 
 	if err := c.List(ctx, &regions, &client.ListOptions{Namespace: namespace}); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: failed to list regions", err)
 	}
 
 	cache := map[string]types.CommonProvider{}

@@ -91,10 +91,6 @@ const (
 	imageArchitectureProperty = "architecture"
 )
 
-const (
-	imageCacheTTL = 5 * time.Minute
-)
-
 type providerCredentials struct {
 	endpoint  string
 	domainID  string
@@ -131,8 +127,8 @@ type Provider struct {
 	lock sync.Mutex
 
 	// imageCache is used to downsample the OpenStack image API, because responses can
-	// take seconds. This reduces the effect of that latency on most callers.
-	imageCache *cache.TimeoutCache[[]images.Image]
+	// take seconds. This reduces the effect of that latency on all callers.
+	imageCache *cache.RefreshAheadCache[types.Image, *types.Image]
 }
 
 var _ types.Provider = &Provider{}
@@ -142,11 +138,23 @@ func New(ctx context.Context, cli client.Client, region *unikornv1.Region, withC
 		client:        cli,
 		region:        region,
 		vlanAllocator: vlan.New(cli, region),
-		imageCache:    cache.New[[]images.Image](imageCacheTTL),
 	}
 
 	if err := p.serviceClientRefresh(ctx); err != nil {
 		return nil, err
+	}
+
+	if withCaches {
+		imageCacheOptions := &cache.RefreshAheadCacheOptions{
+			RefreshPeriod: time.Minute,
+		}
+
+		imageCache := cache.NewRefreshAheadCache[types.Image](p.imageRefresh, imageCacheOptions)
+		if err := imageCache.Run(ctx); err != nil {
+			return nil, err
+		}
+
+		p.imageCache = imageCache
 	}
 
 	return p, nil
@@ -584,14 +592,12 @@ func imagePackages(image *images.Image) *types.ImagePackages {
 	return &result
 }
 
-func isPublicOrOrganizationOwnedImage(image *images.Image, organizationIDs []string) bool {
-	value, _ := image.Properties[organizationIDLabel].(string)
-	return value == "" || slices.Contains(organizationIDs, value)
+func isPublicOrOrganizationOwnedImage(image *types.Image, organizationIDs []string) bool {
+	return image.OrganizationID == nil || slices.Contains(organizationIDs, *image.OrganizationID)
 }
 
-func isOrganizationOwnedImage(image *images.Image, organizationIDs []string) bool {
-	value, _ := image.Properties[organizationIDLabel].(string)
-	return value != "" && slices.Contains(organizationIDs, value)
+func isOrganizationOwnedImage(image *types.Image, organizationIDs []string) bool {
+	return image.OrganizationID != nil && slices.Contains(organizationIDs, *image.OrganizationID)
 }
 
 func imageStatus(image *images.Image) types.ImageStatus {
@@ -656,6 +662,8 @@ func convertImage(image *images.Image) (*types.Image, error) {
 
 	virtualization, _ := image.Properties[virtualizationLabel].(string)
 
+	identityID, _ := image.Properties[identityIDLabel].(string)
+
 	tags := imageTags(image)
 
 	providerImage := types.Image{
@@ -671,6 +679,7 @@ func convertImage(image *images.Image) (*types.Image, error) {
 		OS:             imageOS(image),
 		Packages:       imagePackages(image),
 		Status:         imageStatus(image),
+		IdentityID:     identityID,
 	}
 
 	if gpuVendor, ok := image.Properties[gpuVendorLabel].(string); ok {
@@ -695,70 +704,66 @@ func convertImage(image *images.Image) (*types.Image, error) {
 	return &providerImage, nil
 }
 
-type imagePredicate func(*images.Image) bool
+type imageFilter func(*types.Image) bool
 
+// TODO: this operates on generic types now, so shouldn't live here.
+// However it relies on some RBAC functions defined internally that
+// are still needed by part of this package.
 type imageQuery struct {
-	listFunc   func(context.Context) ([]images.Image, error)
-	predicates []imagePredicate
+	listFunc   func() (*cache.ListSnapshot[types.Image], error)
+	filters []imageFilter
 }
 
 func (q *imageQuery) AvailableToOrganization(organizationIDs ...string) types.ImageQuery {
-	q.predicates = append(q.predicates, func(im *images.Image) bool {
-		return isPublicOrOrganizationOwnedImage(im, organizationIDs)
+	q.filters= append(q.filters, func(im *types.Image) bool {
+		return !isPublicOrOrganizationOwnedImage(im, organizationIDs)
 	})
 
 	return q
 }
 
 func (q *imageQuery) OwnedByOrganization(organizationIDs ...string) types.ImageQuery {
-	q.predicates = append(q.predicates, func(im *images.Image) bool {
-		return isOrganizationOwnedImage(im, organizationIDs)
+	q.filters = append(q.filters, func(im *types.Image) bool {
+		return !isOrganizationOwnedImage(im, organizationIDs)
 	})
 
 	return q
 }
 
 func (q *imageQuery) StatusIn(statuses ...types.ImageStatus) types.ImageQuery {
-	q.predicates = append(q.predicates, func(im *images.Image) bool {
-		st := imageStatus(im)
-		return slices.Contains(statuses, st)
+	q.filters = append(q.filters, func(im *types.Image) bool {
+		return !slices.Contains(statuses, im.Status)
 	})
 
 	return q
 }
 
-func (q *imageQuery) List(ctx context.Context) (types.ImageList, error) {
-	images, err := q.listFunc(ctx)
+func (q *imageQuery) filter(im *types.Image) bool {
+	for _, f := range q.filters {
+		if f(im) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (q *imageQuery) List(_ context.Context) (types.ImageList, error) {
+	images, err := q.listFunc()
 	if err != nil {
 		return nil, err
 	}
 
-	var result []types.Image
+	images.Items = slices.DeleteFunc(images.Items, func(i *types.Image) bool {
+		return q.filter(i)
+	})
 
-images:
-	for i := range images {
-		for _, f := range q.predicates {
-			if !f(&images[i]) {
-				continue images
-			}
-		}
-
-		im, err := convertImage(&images[i])
-		if err != nil {
-			return nil, err
-		}
-
-		result = append(result, *im)
-	}
-
-	return result, nil
+	return images, nil
 }
 
-func (p *Provider) listImages(ctx context.Context) ([]images.Image, error) {
-	if cached, found := p.imageCache.Get(); found {
-		return cached, nil
-	}
-
+// imageRefresh happens in the background periodically and on invalidation.
+// Do as much work here as is possible to hide the cost from API calls.
+func (p *Provider) imageRefresh(ctx context.Context) ([]*types.Image, error) {
 	imageService, err := p.image(ctx)
 	if err != nil {
 		return nil, err
@@ -769,23 +774,40 @@ func (p *Provider) listImages(ctx context.Context) ([]images.Image, error) {
 		return nil, err
 	}
 
-	p.imageCache.Set(resources)
+	items := make([]*types.Image, len(resources))
 
-	return resources, nil
+	for i := range resources {
+		item, err := convertImage(&resources[i])
+		if err != nil {
+			return nil, err
+		}
+
+		items[i] = item
+	}
+
+	return items, nil
 }
 
 func (p *Provider) QueryImages() (types.ImageQuery, error) {
-	return &imageQuery{listFunc: p.listImages}, nil
+	if p.imageCache == nil {
+		return nil, fmt.Errorf("%w: image caching is disabled", coreerrors.ErrResourceNotFound)
+	}
+
+	return &imageQuery{listFunc: p.imageCache.List}, nil
 }
 
 // GetImage retrieves a specific image by its ID.
 func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
-	resource, err := p.getImage(ctx, imageID)
+	if p.imageCache == nil {
+		return nil, fmt.Errorf("%w: image caching is disabled", coreerrors.ErrResourceNotFound)
+	}
+
+	image, err := p.imageCache.Get(imageID)
 	if err != nil {
 		return nil, err
 	}
 
-	if !isPublicOrOrganizationOwnedImage(resource, []string{organizationID}) {
+	if !isPublicOrOrganizationOwnedImage(image.Item, []string{organizationID}) {
 		return nil, fmt.Errorf(
 			"%w: image %s is not accessible to organization %s",
 			coreerrors.ErrResourceNotFound,
@@ -794,43 +816,7 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 		)
 	}
 
-	return convertImage(resource)
-}
-
-// getImage finds a particular image, given the ID. It checks the cache first, and if not
-// present, assumes that the cache is out of date and fetches from the provider.
-func (p *Provider) getImage(ctx context.Context, imageID string) (*images.Image, error) {
-	if cached, found := p.imageCache.Get(); found {
-		imageIndexFunc := func(image images.Image) bool {
-			return image.ID == imageID
-		}
-
-		index := slices.IndexFunc(cached, imageIndexFunc)
-		if index != -1 {
-			return &cached[index], nil
-		}
-	}
-
-	imageService, err := p.image(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	resource, err := imageService.GetImage(ctx, imageID)
-	if err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return nil, fmt.Errorf("%w: no image found with ID %s", coreerrors.ErrResourceNotFound, imageID)
-		}
-
-		return nil, err
-	}
-
-	if resource.Visibility == images.ImageVisibilityPublic {
-		// Invalidate the cache as we had a cache miss.
-		p.imageCache.Invalidate()
-	}
-
-	return resource, nil
+	return image.Item, nil
 }
 
 func setIfNotNil[T ~string](metadata map[string]string, key string, value *T) {
@@ -928,13 +914,17 @@ func (p *Provider) CreateImage(ctx context.Context, image *types.Image, uri stri
 		return nil, err
 	}
 
-	p.imageCache.Invalidate()
+	// Invalidation is synchronous so any subsequent API requests after image
+	// completion has been reported to the client will feature the image.
+	if err := p.imageCache.Invalidate(); err != nil {
+		return nil, err
+	}
 
 	return convertImage(resource)
 }
 
 func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
-	image, err := p.getImage(ctx, imageID)
+	image, err := p.imageCache.Get(imageID)
 	if err != nil {
 		return err
 	}
@@ -942,7 +932,7 @@ func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
 	// If we've set the identity ID, then that means it's a snapshot and
 	// currently lives in the service principal's project, so rescope to
 	// that.
-	if identityID, ok := image.Properties[identityIDLabel].(string); ok {
+	if identityID := image.Item.IdentityID; identityID != "" {
 		identity := &unikornv1.Identity{}
 
 		if err := p.client.Get(ctx, client.ObjectKey{Namespace: p.region.Namespace, Name: identityID}, identity); err != nil {
@@ -979,7 +969,11 @@ func (p *Provider) deleteImage(ctx context.Context, imageService *ImageClient, i
 		return err
 	}
 
-	p.imageCache.Invalidate()
+	// Invalidation is synchronous so any subsequent API requests after image
+	// completion has been reported to the client will no longer feature the image.
+	if err := p.imageCache.Invalidate(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -2604,12 +2598,16 @@ func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Ident
 		return nil, err
 	}
 
-	newImage, err := p.getImage(ctx, imageID)
+	if err := p.imageCache.Invalidate(); err != nil {
+		return nil, err
+	}
+
+	imageSnapshot, err := p.imageCache.Get(imageID)
 	if err != nil {
 		return nil, err
 	}
 
-	return convertImage(newImage)
+	return imageSnapshot.Item, nil
 }
 
 func interpretGophercloudError(err error) error {
