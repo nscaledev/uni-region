@@ -131,7 +131,7 @@ func Test_Imagev2_List(t *testing.T) {
 			provider.EXPECT().QueryImages().Return(querier, nil)
 
 			providers := mockproviders.NewMockProviders(ctrl)
-			providers.EXPECT().LookupCloud(gomock.Any(), gomock.Any()).Return(provider, nil)
+			providers.EXPECT().LookupCloud(gomock.Any()).Return(provider, nil)
 
 			if setupQuery := tc.setupQuery; setupQuery != nil {
 				setupQuery(querier)

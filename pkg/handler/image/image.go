@@ -51,7 +51,7 @@ var ErrFailedImageFetch = goerrors.New("image fetch failed")
 var ErrProviderResource = goerrors.New("conflict with resource at provider")
 
 func (c *Client) ListImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {
-	provider, err := c.Providers.LookupCloud(ctx, regionID)
+	provider, err := c.Providers.LookupCloud(regionID)
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
 	}
@@ -142,7 +142,7 @@ func validateImage(ctx context.Context, uri string) error {
 }
 
 func (c *Client) CreateImage(ctx context.Context, organizationID, regionID string, request *openapi.ImageCreateRequest) (*openapi.ImageResponse, error) {
-	provider, err := c.Providers.LookupCloud(ctx, regionID)
+	provider, err := c.Providers.LookupCloud(regionID)
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
 	}
@@ -189,7 +189,7 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 }
 
 func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imageID string) error {
-	provider, err := c.Providers.LookupCloud(ctx, regionID)
+	provider, err := c.Providers.LookupCloud(regionID)
 	if err != nil {
 		return providers.ProviderToServerError(err)
 	}

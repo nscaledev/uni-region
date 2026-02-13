@@ -50,7 +50,14 @@ func Provider(ctx context.Context, object client.Object) (types.Provider, error)
 		return nil, err
 	}
 
-	return providers.New(cli, object.GetNamespace()).LookupCloud(ctx, object.GetLabels()[constants.RegionLabel])
+	// TODO: pre-allocate this and stash it in the context for persistence across
+	// reconciles.
+	providers, err := providers.New(ctx, cli, object.GetNamespace(), false)
+	if err != nil {
+		return nil, err
+	}
+
+	return providers.LookupCloud(object.GetLabels()[constants.RegionLabel])
 }
 
 func ProviderAndIdentity(ctx context.Context, object client.Object) (types.Provider, *unikornv1.Identity, error) {

@@ -248,7 +248,7 @@ func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 	provider := mockprovider.NewMockProvider(ctrl)
 
 	providers := mockproviders.NewMockProviders(ctrl)
-	providers.EXPECT().LookupCloud(gomock.Any(), gomock.Any()).Return(provider, nil)
+	providers.EXPECT().LookupCloud(gomock.Any()).Return(provider, nil)
 
 	c := fakeClientWithSchema(t, knownGoodFixture(t, serverName, namespace, orgID)...)
 
@@ -337,7 +337,7 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 		})
 
 	providers := mockproviders.NewMockProviders(ctrl)
-	providers.EXPECT().LookupCloud(gomock.Any(), gomock.Any()).Return(provider, nil)
+	providers.EXPECT().LookupCloud(gomock.Any()).Return(provider, nil)
 
 	clientArgs := common.ClientArgs{
 		Client:    c,
