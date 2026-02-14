@@ -171,8 +171,14 @@ jobs:
 
       - name: Generate image metadata
         run: |
-          cd image-builder/output
+          cd image-builder
 
+          if [ ! -d "output" ]; then
+            echo "No output directory found, skipping metadata generation"
+            exit 0
+          fi
+
+          cd output
           echo "Generating metadata..."
 
           for dir in */; do
@@ -181,7 +187,7 @@ jobs:
               raw_file="${dir}${image_name}.raw"
 
               if [ -f "$raw_file" ]; then
-                size_bytes=$(stat -f%z "$raw_file" 2>/dev/null || stat -c%s "$raw_file")
+                size_bytes=$(stat -c%s "$raw_file")
                 size_gb=$(echo "scale=2; $size_bytes / 1024 / 1024 / 1024" | bc)
                 sha256sum=$(sha256sum "$raw_file" | awk '{print $1}')
 
