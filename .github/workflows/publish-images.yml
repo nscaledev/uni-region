@@ -1,0 +1,232 @@
+name: Publish GPU Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_name:
+        description: 'Artifact name to publish (from build workflow)'
+        required: true
+        type: string
+      s3_bucket:
+        description: 'S3 bucket name'
+        required: false
+        type: string
+      s3_prefix:
+        description: 'S3 prefix/path'
+        required: false
+        default: 'gpu-images'
+        type: string
+      register_with_api:
+        description: 'Register with Nscale API after upload'
+        required: false
+        default: false
+        type: boolean
+      create_github_release:
+        description: 'Create GitHub release'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  publish:
+    name: Publish Images
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ./images
+
+      - name: Display downloaded images
+        run: |
+          echo "Downloaded images:"
+          ls -lh images/
+          echo ""
+          echo "Image details:"
+          cat images/metadata.json 2>/dev/null || echo "No metadata found"
+
+      - name: Configure AWS credentials
+        if: inputs.s3_bucket != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Upload to S3
+        if: inputs.s3_bucket != ''
+        run: |
+          echo "Uploading images to S3..."
+
+          BUCKET="${{ inputs.s3_bucket }}"
+          PREFIX="${{ inputs.s3_prefix }}"
+
+          for raw_file in images/*.raw; do
+            if [ -f "$raw_file" ]; then
+              filename=$(basename "$raw_file")
+              s3_path="s3://${BUCKET}/${PREFIX}/${filename}"
+
+              echo "Uploading: $filename → $s3_path"
+
+              aws s3 cp "$raw_file" "$s3_path" \
+                --storage-class STANDARD \
+                --metadata "content-type=application/octet-stream"
+
+              # Generate public URL
+              PUBLIC_URL="https://${BUCKET}.s3.amazonaws.com/${PREFIX}/${filename}"
+              echo "Public URL: $PUBLIC_URL"
+              echo "PUBLIC_URL_${filename}=${PUBLIC_URL}" >> $GITHUB_ENV
+            fi
+          done
+
+          echo "✓ Upload complete"
+
+      - name: Make S3 objects public (optional)
+        if: inputs.s3_bucket != '' && secrets.MAKE_S3_PUBLIC == 'true'
+        run: |
+          echo "Making S3 objects public..."
+
+          BUCKET="${{ inputs.s3_bucket }}"
+          PREFIX="${{ inputs.s3_prefix }}"
+
+          for raw_file in images/*.raw; do
+            if [ -f "$raw_file" ]; then
+              filename=$(basename "$raw_file")
+
+              aws s3api put-object-acl \
+                --bucket "${BUCKET}" \
+                --key "${PREFIX}/${filename}" \
+                --acl public-read
+
+              echo "✓ Made public: ${filename}"
+            fi
+          done
+
+      - name: Register with Nscale API
+        if: inputs.register_with_api
+        run: |
+          echo "Registering image with Nscale API..."
+
+          # Load environment variables
+          ORG_ID="${{ secrets.NSCALE_ORG_ID }}"
+          REGION_ID="${{ secrets.NSCALE_REGION_ID }}"
+          API_TOKEN="${{ secrets.NSCALE_API_TOKEN }}"
+          API_BASE_URL="${{ secrets.NSCALE_API_BASE_URL || 'https://region.nks-stg.europe-west2.nscale.com' }}"
+
+          if [ -z "$ORG_ID" ] || [ -z "$REGION_ID" ] || [ -z "$API_TOKEN" ]; then
+            echo "Error: Missing required secrets (NSCALE_ORG_ID, NSCALE_REGION_ID, NSCALE_API_TOKEN)"
+            exit 1
+          fi
+
+          # Find and update API payload
+          for payload in images/api-payload.json; do
+            if [ -f "$payload" ]; then
+              # Update URI with S3 URL
+              for raw_file in images/*.raw; do
+                filename=$(basename "$raw_file")
+                public_url_var="PUBLIC_URL_${filename}"
+                public_url="${!public_url_var}"
+
+                if [ -n "$public_url" ]; then
+                  jq --arg uri "$public_url" '.spec.uri = $uri' "$payload" > payload-updated.json
+
+                  echo "Registering image..."
+                  echo "Payload:"
+                  cat payload-updated.json | jq '.'
+
+                  response=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+                    -X POST \
+                    "${API_BASE_URL}/api/v1/organizations/${ORG_ID}/regions/${REGION_ID}/images" \
+                    -H "Authorization: Bearer ${API_TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    -d @payload-updated.json)
+
+                  http_status=$(echo "$response" | grep "HTTP_STATUS:" | cut -d':' -f2)
+                  body=$(echo "$response" | sed '/HTTP_STATUS:/d')
+
+                  if [ "$http_status" == "200" ] || [ "$http_status" == "201" ]; then
+                    echo "✓ Image registered successfully"
+                    echo "$body" | jq '.'
+                  else
+                    echo "✗ Failed to register image (HTTP $http_status)"
+                    echo "$body"
+                    exit 1
+                  fi
+                fi
+              done
+            fi
+          done
+
+      - name: Create GitHub Release
+        if: inputs.create_github_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: gpu-images-${{ github.run_number }}
+          name: GPU Images Build ${{ github.run_number }}
+          body: |
+            ## GPU Image Release
+
+            **Artifact**: ${{ inputs.artifact_name }}
+            **Build Run**: ${{ github.run_number }}
+            **Build Date**: ${{ github.event.head_commit.timestamp }}
+
+            ### Images Included
+
+            See attached artifacts for RAW disk images and metadata.
+
+            ### Installation
+
+            1. Download the `.raw` image file
+            2. Upload to your S3/storage with public URL
+            3. Register via Nscale API using the included `api-payload.json`
+
+            ### Verification
+
+            After deploying an instance with this image:
+            ```bash
+            # For NVIDIA images
+            nvidia-smi
+            cat /proc/driver/nvidia/params | grep EnableGpuFirmware
+            ```
+          files: |
+            images/*.raw
+            images/*.json
+          draft: false
+          prerelease: false
+
+      - name: Generate publish summary
+        if: always()
+        run: |
+          echo "## Publish Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Artifact**: ${{ inputs.artifact_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**S3 Bucket**: ${{ inputs.s3_bucket || 'Not uploaded' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**S3 Prefix**: ${{ inputs.s3_prefix }}" >> $GITHUB_STEP_SUMMARY
+          echo "**API Registration**: ${{ inputs.register_with_api }}" >> $GITHUB_STEP_SUMMARY
+          echo "**GitHub Release**: ${{ inputs.create_github_release }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -d "images" ]; then
+            echo "### Published Images" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            for raw_file in images/*.raw; do
+              if [ -f "$raw_file" ]; then
+                filename=$(basename "$raw_file")
+                public_url_var="PUBLIC_URL_${filename}"
+                public_url="${!public_url_var}"
+
+                echo "#### $filename" >> $GITHUB_STEP_SUMMARY
+                if [ -n "$public_url" ]; then
+                  echo "📦 **URL**: $public_url" >> $GITHUB_STEP_SUMMARY
+                fi
+                echo "" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+          fi

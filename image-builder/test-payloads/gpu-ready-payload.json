@@ -1,0 +1,22 @@
+{
+  "metadata": {
+    "name": "test-ubuntu-2204-gpu-ready-nodriver",
+    "description": "Test: Ubuntu 22.04 GPU-ready image without NVIDIA drivers - built with Packer"
+  },
+  "spec": {
+    "uri": "https://nscale-test-images.s3.amazonaws.com/test/ubuntu-2204-gpu-ready-nodriver.raw",
+    "architecture": "x86_64",
+    "virtualization": "virtualized",
+    "os": {
+      "kernel": "linux",
+      "family": "debian",
+      "distro": "ubuntu",
+      "variant": "server",
+      "codename": "jammy",
+      "version": "22.04"
+    },
+    "softwareVersions": {
+      "kubernetes": "v1.30.0"
+    }
+  }
+}

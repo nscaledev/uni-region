@@ -1,0 +1,48 @@
+# Build output
+output/
+*.qcow2
+*.raw
+*.img
+*.iso
+
+# Packer cache
+packer_cache/
+.packer.d/
+
+# Logs
+*.log
+packer.log
+
+# Temporary files
+*.tmp
+tmp/
+
+# Cloud-init generated files
+*.seed
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Credentials and secrets
+*.pem
+*.key
+id_rsa*
+.env
+.env.local
+credentials.json
+
+# Terraform state (if added later)
+*.tfstate
+*.tfstate.backup
+.terraform/
+
+# Build artifacts
+nvidia_driver_version.txt

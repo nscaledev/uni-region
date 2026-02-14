@@ -1,0 +1,31 @@
+{
+  "metadata": {
+    "name": "test-ubuntu-2204-nvidia-565-firmware1",
+    "description": "Test: Ubuntu 22.04 with NVIDIA 565.x driver, NVreg_EnableGpuFirmware=1 - built with Packer"
+  },
+  "spec": {
+    "uri": "https://nscale-test-images.s3.amazonaws.com/test/ubuntu-2204-nvidia-565-firmware1.raw",
+    "architecture": "x86_64",
+    "virtualization": "virtualized",
+    "os": {
+      "kernel": "linux",
+      "family": "debian",
+      "distro": "ubuntu",
+      "variant": "server",
+      "codename": "jammy",
+      "version": "22.04"
+    },
+    "softwareVersions": {
+      "kubernetes": "v1.30.0"
+    },
+    "gpu": {
+      "vendor": "NVIDIA",
+      "driver": "565.57.01",
+      "models": [
+        "A100",
+        "H100",
+        "H200"
+      ]
+    }
+  }
+}

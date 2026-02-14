@@ -1,0 +1,25 @@
+#cloud-config
+# Cloud-init configuration for Packer build
+
+users:
+  - name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: false
+    passwd: $6$rounds=4096$saltsaltsal$L8.wBqt.5yRGrLrRNxKZCb6rHDPe2R5w1xJPZvvL4c3Q1Y6T8ULW9XJ2KxZV0V6LqP6YqJ2LQ6X8Y9Z0L1Q2.
+
+# Enable password authentication for Packer SSH
+ssh_pwauth: true
+
+# Disable automatic updates during build
+package_update: false
+package_upgrade: false
+
+# Set timezone
+timezone: UTC
+
+# Grow root partition to fill disk
+growpart:
+  mode: auto
+  devices: ['/']
+
+resize_rootfs: true

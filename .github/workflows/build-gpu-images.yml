@@ -1,0 +1,274 @@
+name: Build GPU Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      ubuntu_version:
+        description: 'Ubuntu version'
+        required: false
+        default: '22.04'
+        type: choice
+        options:
+          - '22.04'
+          - '24.04'
+      ubuntu_codename:
+        description: 'Ubuntu codename'
+        required: false
+        default: 'jammy'
+        type: choice
+        options:
+          - 'jammy'
+          - 'noble'
+      nvidia_driver_version:
+        description: 'NVIDIA driver version'
+        required: false
+        default: '565'
+        type: string
+      kubernetes_version:
+        description: 'Kubernetes version'
+        required: false
+        default: 'v1.30.0'
+        type: string
+      build_type:
+        description: 'Which images to build'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - 'both'
+          - 'gpu-ready-only'
+          - 'nvidia-firmware1-only'
+  push:
+    branches:
+      - main
+      - feature/gpu-image-builder
+    paths:
+      - 'image-builder/**'
+      - '.github/workflows/build-gpu-images.yml'
+
+env:
+  PACKER_VERSION: '1.10.0'
+
+jobs:
+  build-images:
+    name: Build GPU Images
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          echo "Installing QEMU/KVM and dependencies..."
+          sudo apt-get update
+          sudo apt-get install -y \
+            qemu-kvm \
+            qemu-utils \
+            libvirt-daemon-system \
+            libvirt-clients \
+            bridge-utils \
+            jq
+
+          # Add runner to kvm group
+          sudo usermod -aG kvm $USER
+
+          # Verify KVM is available
+          ls -la /dev/kvm || echo "Warning: /dev/kvm not found"
+
+          echo "✓ System dependencies installed"
+
+      - name: Install Packer
+        run: |
+          echo "Installing Packer ${PACKER_VERSION}..."
+          wget -q https://releases.hashicorp.com/packer/${PACKER_VERSION}/packer_${PACKER_VERSION}_linux_amd64.zip
+          unzip packer_${PACKER_VERSION}_linux_amd64.zip
+          sudo mv packer /usr/local/bin/
+          rm packer_${PACKER_VERSION}_linux_amd64.zip
+
+          packer version
+          echo "✓ Packer installed"
+
+      - name: Initialize Packer
+        run: |
+          cd image-builder/templates
+          packer init base-gpu-ready.pkr.hcl
+          packer init nvidia-gpu-firmware1.pkr.hcl
+          echo "✓ Packer initialized"
+
+      - name: Validate Packer templates
+        run: |
+          cd image-builder
+
+          echo "Validating GPU-ready template..."
+          packer validate \
+            -var "ubuntu_version=${{ inputs.ubuntu_version || '22.04' }}" \
+            -var "ubuntu_codename=${{ inputs.ubuntu_codename || 'jammy' }}" \
+            -var "kubernetes_version=${{ inputs.kubernetes_version || 'v1.30.0' }}" \
+            templates/base-gpu-ready.pkr.hcl
+
+          echo "Validating NVIDIA firmware=1 template..."
+          packer validate \
+            -var "ubuntu_version=${{ inputs.ubuntu_version || '22.04' }}" \
+            -var "ubuntu_codename=${{ inputs.ubuntu_codename || 'jammy' }}" \
+            -var "nvidia_driver_version=${{ inputs.nvidia_driver_version || '565' }}" \
+            -var "kubernetes_version=${{ inputs.kubernetes_version || 'v1.30.0' }}" \
+            templates/nvidia-gpu-firmware1.pkr.hcl
+
+          echo "✓ All templates validated"
+
+      - name: Build GPU-ready image (no driver)
+        if: inputs.build_type == 'both' || inputs.build_type == 'gpu-ready-only'
+        run: |
+          cd image-builder
+
+          export UBUNTU_VERSION="${{ inputs.ubuntu_version || '22.04' }}"
+          export UBUNTU_CODENAME="${{ inputs.ubuntu_codename || 'jammy' }}"
+          export KUBERNETES_VERSION="${{ inputs.kubernetes_version || 'v1.30.0' }}"
+
+          echo "Building GPU-ready image..."
+          echo "  Ubuntu: ${UBUNTU_VERSION} (${UBUNTU_CODENAME})"
+          echo "  Kubernetes: ${KUBERNETES_VERSION}"
+
+          ./build-gpu-ready.sh
+
+          echo "✓ GPU-ready image built"
+
+      - name: Build NVIDIA firmware=1 image
+        if: inputs.build_type == 'both' || inputs.build_type == 'nvidia-firmware1-only'
+        run: |
+          cd image-builder
+
+          export UBUNTU_VERSION="${{ inputs.ubuntu_version || '22.04' }}"
+          export UBUNTU_CODENAME="${{ inputs.ubuntu_codename || 'jammy' }}"
+          export NVIDIA_DRIVER_VERSION="${{ inputs.nvidia_driver_version || '565' }}"
+          export KUBERNETES_VERSION="${{ inputs.kubernetes_version || 'v1.30.0' }}"
+
+          echo "Building NVIDIA firmware=1 image..."
+          echo "  Ubuntu: ${UBUNTU_VERSION} (${UBUNTU_CODENAME})"
+          echo "  NVIDIA Driver: ${NVIDIA_DRIVER_VERSION}"
+          echo "  Kubernetes: ${KUBERNETES_VERSION}"
+
+          ./build-nvidia-firmware1.sh
+
+          echo "✓ NVIDIA firmware=1 image built"
+
+      - name: Validate built images
+        run: |
+          cd image-builder
+
+          echo "Validating built images..."
+
+          for image in output/*/*.raw; do
+            if [ -f "$image" ]; then
+              echo "Validating: $image"
+              ./validate-image.sh "$image"
+            fi
+          done
+
+          echo "✓ All images validated"
+
+      - name: Generate image metadata
+        run: |
+          cd image-builder/output
+
+          echo "Generating metadata..."
+
+          for dir in */; do
+            if [ -d "$dir" ]; then
+              image_name="${dir%/}"
+              raw_file="${dir}${image_name}.raw"
+
+              if [ -f "$raw_file" ]; then
+                size_bytes=$(stat -f%z "$raw_file" 2>/dev/null || stat -c%s "$raw_file")
+                size_gb=$(echo "scale=2; $size_bytes / 1024 / 1024 / 1024" | bc)
+                sha256sum=$(sha256sum "$raw_file" | awk '{print $1}')
+
+                cat > "${dir}metadata.json" <<EOF
+          {
+            "image_name": "$image_name",
+            "build_date": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "size_bytes": $size_bytes,
+            "size_gb": $size_gb,
+            "sha256": "$sha256sum",
+            "ubuntu_version": "${{ inputs.ubuntu_version || '22.04' }}",
+            "kubernetes_version": "${{ inputs.kubernetes_version || 'v1.30.0' }}",
+            "nvidia_driver_version": "${{ inputs.nvidia_driver_version || 'N/A' }}"
+          }
+          EOF
+
+                echo "✓ Generated metadata for $image_name"
+              fi
+            fi
+          done
+
+      - name: Upload GPU-ready image artifact
+        if: inputs.build_type == 'both' || inputs.build_type == 'gpu-ready-only'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-${{ inputs.ubuntu_version || '22.04' }}-gpu-ready-nodriver
+          path: |
+            image-builder/output/ubuntu-*-gpu-ready-nodriver/*.raw
+            image-builder/output/ubuntu-*-gpu-ready-nodriver/*.json
+          retention-days: 7
+          compression-level: 0
+
+      - name: Upload NVIDIA firmware=1 image artifact
+        if: inputs.build_type == 'both' || inputs.build_type == 'nvidia-firmware1-only'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-${{ inputs.ubuntu_version || '22.04' }}-nvidia-${{ inputs.nvidia_driver_version || '565' }}-firmware1
+          path: |
+            image-builder/output/ubuntu-*-nvidia-*-firmware1/*.raw
+            image-builder/output/ubuntu-*-nvidia-*-firmware1/*.json
+          retention-days: 7
+          compression-level: 0
+
+      - name: Generate build summary
+        if: always()
+        run: |
+          cd image-builder
+
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Type**: ${{ inputs.build_type || 'both' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Ubuntu Version**: ${{ inputs.ubuntu_version || '22.04' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Kubernetes Version**: ${{ inputs.kubernetes_version || 'v1.30.0' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**NVIDIA Driver**: ${{ inputs.nvidia_driver_version || '565' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -d "output" ]; then
+            echo "### Built Images" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Image | Size | SHA256 |" >> $GITHUB_STEP_SUMMARY
+            echo "|-------|------|--------|" >> $GITHUB_STEP_SUMMARY
+
+            for dir in output/*/; do
+              if [ -d "$dir" ]; then
+                image_name="${dir%/}"
+                image_name="${image_name##*/}"
+                raw_file="${dir}${image_name}.raw"
+
+                if [ -f "$raw_file" ]; then
+                  size=$(du -h "$raw_file" | cut -f1)
+                  sha=$(sha256sum "$raw_file" | cut -d' ' -f1 | cut -c1-16)
+                  echo "| $image_name | $size | ${sha}... |" >> $GITHUB_STEP_SUMMARY
+                fi
+              fi
+            done
+
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Note**: Images are uploaded as artifacts and retained for 7 days." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "Cleaning up build artifacts..."
+          df -h
+
+          # Remove intermediate qcow2 files to save space
+          find image-builder/output -name "*.qcow2" -delete
+
+          echo "✓ Cleanup complete"
