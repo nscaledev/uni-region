@@ -26,8 +26,8 @@ echo "  Kubernetes Version: ${KUBERNETES_VERSION}"
 echo ""
 
 # Initialize Packer
-cd "${SCRIPT_DIR}/templates"
-packer init base-gpu-ready.pkr.hcl
+cd "${SCRIPT_DIR}"
+packer init templates/base-gpu-ready.pkr.hcl
 
 # Validate template
 echo "Validating Packer template..."
@@ -36,7 +36,7 @@ packer validate \
     -var "ubuntu_codename=${UBUNTU_CODENAME}" \
     -var "kubernetes_version=${KUBERNETES_VERSION}" \
     -var "output_directory=${OUTPUT_DIR}" \
-    base-gpu-ready.pkr.hcl
+    templates/base-gpu-ready.pkr.hcl
 
 # Build image
 echo "Building image..."
@@ -45,7 +45,7 @@ packer build \
     -var "ubuntu_codename=${UBUNTU_CODENAME}" \
     -var "kubernetes_version=${KUBERNETES_VERSION}" \
     -var "output_directory=${OUTPUT_DIR}" \
-    base-gpu-ready.pkr.hcl
+    templates/base-gpu-ready.pkr.hcl
 
 # Generate metadata
 VM_NAME="ubuntu-2204-gpu-ready-nodriver"

@@ -59,8 +59,8 @@ source "qemu" "ubuntu-gpu-ready" {
 
   # Cloud-init configuration
   cd_files = [
-    "../provisioners/cloud-init/user-data",
-    "../provisioners/cloud-init/meta-data"
+    "./provisioners/cloud-init/user-data",
+    "./provisioners/cloud-init/meta-data"
   ]
   cd_label = "cidata"
 
@@ -87,12 +87,12 @@ build {
 
   # Update system
   provisioner "shell" {
-    script = "../scripts/01-system-update.sh"
+    script = "./scripts/01-system-update.sh"
   }
 
   # Install GPU prerequisites (no driver)
   provisioner "shell" {
-    script = "../scripts/02-gpu-prerequisites.sh"
+    script = "./scripts/02-gpu-prerequisites.sh"
   }
 
   # Install Kubernetes tools
@@ -100,12 +100,12 @@ build {
     environment_vars = [
       "KUBERNETES_VERSION=${var.kubernetes_version}"
     ]
-    script = "../scripts/03-kubernetes-tools.sh"
+    script = "./scripts/03-kubernetes-tools.sh"
   }
 
   # Clean up
   provisioner "shell" {
-    script = "../scripts/99-cleanup.sh"
+    script = "./scripts/99-cleanup.sh"
   }
 
   # Convert to raw format

@@ -71,8 +71,8 @@ source "qemu" "ubuntu-nvidia-gpu" {
 
   # Cloud-init configuration
   cd_files = [
-    "../provisioners/cloud-init/user-data",
-    "../provisioners/cloud-init/meta-data"
+    "./provisioners/cloud-init/user-data",
+    "./provisioners/cloud-init/meta-data"
   ]
   cd_label = "cidata"
 
@@ -99,12 +99,12 @@ build {
 
   # Update system
   provisioner "shell" {
-    script = "../scripts/01-system-update.sh"
+    script = "./scripts/01-system-update.sh"
   }
 
   # Install GPU prerequisites
   provisioner "shell" {
-    script = "../scripts/02-gpu-prerequisites.sh"
+    script = "./scripts/02-gpu-prerequisites.sh"
   }
 
   # Install NVIDIA driver
@@ -112,12 +112,12 @@ build {
     environment_vars = [
       "NVIDIA_DRIVER_VERSION=${var.nvidia_driver_version}"
     ]
-    script = "../scripts/04-nvidia-driver.sh"
+    script = "./scripts/04-nvidia-driver.sh"
   }
 
   # Configure NVreg_EnableGpuFirmware=1
   provisioner "shell" {
-    script = "../scripts/05-nvidia-firmware-config.sh"
+    script = "./scripts/05-nvidia-firmware-config.sh"
   }
 
   # Install Kubernetes tools
@@ -125,17 +125,17 @@ build {
     environment_vars = [
       "KUBERNETES_VERSION=${var.kubernetes_version}"
     ]
-    script = "../scripts/03-kubernetes-tools.sh"
+    script = "./scripts/03-kubernetes-tools.sh"
   }
 
   # Verify NVIDIA configuration
   provisioner "shell" {
-    script = "../scripts/06-verify-nvidia.sh"
+    script = "./scripts/06-verify-nvidia.sh"
   }
 
   # Clean up
   provisioner "shell" {
-    script = "../scripts/99-cleanup.sh"
+    script = "./scripts/99-cleanup.sh"
   }
 
   # Convert to raw format and generate metadata
