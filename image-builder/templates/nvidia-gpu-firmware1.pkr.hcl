@@ -67,7 +67,7 @@ source "qemu" "ubuntu-nvidia-gpu" {
 
   ssh_username     = "ubuntu"
   ssh_password     = "ubuntu"
-  ssh_timeout      = "20m"
+  ssh_timeout      = "60m"
 
   # Cloud-init configuration
   cd_files = [
