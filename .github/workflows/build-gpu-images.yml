@@ -92,9 +92,9 @@ jobs:
 
       - name: Initialize Packer
         run: |
-          cd image-builder/templates
-          packer init base-gpu-ready.pkr.hcl
-          packer init nvidia-gpu-firmware1.pkr.hcl
+          cd image-builder
+          packer init templates/base-gpu-ready.pkr.hcl
+          packer init templates/nvidia-gpu-firmware1.pkr.hcl
           echo "✓ Packer initialized"
 
       - name: Validate Packer templates
