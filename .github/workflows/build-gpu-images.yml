@@ -38,13 +38,6 @@ on:
           - 'both'
           - 'gpu-ready-only'
           - 'nvidia-firmware1-only'
-  push:
-    branches:
-      - main
-      - feature/gpu-image-builder
-    paths:
-      - 'image-builder/**'
-      - '.github/workflows/build-gpu-images.yml'
 
 env:
   PACKER_VERSION: '1.10.0'
