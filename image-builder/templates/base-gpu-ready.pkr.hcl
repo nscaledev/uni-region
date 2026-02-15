@@ -47,7 +47,7 @@ source "qemu" "ubuntu-gpu-ready" {
   disk_compression = true
   format           = "qcow2"
 
-  accelerator      = "kvm"
+  accelerator      = "tcg"
   memory           = 4096
   cpus             = 2
 

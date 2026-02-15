@@ -59,7 +59,7 @@ source "qemu" "ubuntu-nvidia-gpu" {
   disk_compression = true
   format           = "qcow2"
 
-  accelerator      = "kvm"
+  accelerator      = "tcg"
   memory           = 4096
   cpus             = 2
 

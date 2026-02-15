@@ -1,12 +1,6 @@
 name: Build GPU Images
 
 on:
-  push:
-    branches:
-      - feature/gpu-image-builder
-    paths:
-      - 'image-builder/**'
-      - '.github/workflows/build-gpu-images.yml'
   workflow_dispatch:
     inputs:
       ubuntu_version:
