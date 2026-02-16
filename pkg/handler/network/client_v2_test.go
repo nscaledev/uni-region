@@ -17,17 +17,21 @@ limitations under the License.
 package network_test
 
 import (
+	"net"
 	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	corev1alpha1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	identityauth "github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
+	"github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -38,6 +42,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -50,6 +55,7 @@ const (
 	projectID      = "bar"
 	networkID      = "baz"
 	reference      = "cat"
+	testNamespace  = "test-namespace"
 )
 
 // aclWithOrgScopeCreate grants region:networks:v2/Create at organization scope,
@@ -105,11 +111,7 @@ func setupFixtures(t *testing.T) client.Client {
 		},
 	}
 
-	objects := []client.Object{
-		network,
-	}
-
-	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(network).Build()
 }
 
 func getNetwork(t *testing.T, cli client.Client) *regionv1.Network {
@@ -120,6 +122,31 @@ func getNetwork(t *testing.T, cli client.Client) *regionv1.Network {
 	require.NoError(t, cli.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: networkID}, network))
 
 	return network
+}
+
+func newNetworkFakeClient(t *testing.T, objects ...client.Object) client.Client {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, regionv1.AddToScheme(scheme))
+
+	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+}
+
+func networkUpdateContext() *identityapi.Acl {
+	return &identityapi.Acl{
+		Organizations: &identityapi.AclOrganizationList{
+			{
+				Id: organizationID,
+				Endpoints: &identityapi.AclEndpoints{
+					{
+						Name:       "region:networks:v2",
+						Operations: identityapi.AclOperations{identityapi.Read, identityapi.Update},
+					},
+				},
+			},
+		},
+	}
 }
 
 // TestCreateV2RBACOrgScopedProjectNotFound verifies that CreateV2 returns a
@@ -165,6 +192,184 @@ func TestCreateV2RBACNoPermissions(t *testing.T) {
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
+}
+
+func TestUpdateV2PreservesReservationsAndDefaultsAnnotation(t *testing.T) {
+	t.Parallel()
+
+	_, prefix, err := net.ParseCIDR("10.0.0.0/24")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name                         string
+		annotations                  map[string]string
+		reservations                 *regionv1.NetworkReservations
+		expectedStatusReservations   *openapi.NetworkReservations
+		expectedPersistedReservation *regionv1.NetworkReservations
+		expectedDefaultsAnnotation   string
+	}{
+		{
+			name: "ExplicitReservationsAndDefaultsAnnotation",
+			annotations: map[string]string{
+				coreconstants.AllocationAnnotation:             "allocation-1",
+				constants.NetworkReservationDefaultsAnnotation: constants.MarshalAPIVersion(constants.NetworkReservationDefaultsV2),
+			},
+			reservations: &regionv1.NetworkReservations{
+				PrefixLength:                 25,
+				ProviderReservedPrefixLength: ptr.To(28),
+			},
+			expectedStatusReservations: &openapi.NetworkReservations{
+				PrefixLength:                 25,
+				ProviderReservedPrefixLength: ptr.To(28),
+			},
+			expectedPersistedReservation: &regionv1.NetworkReservations{
+				PrefixLength:                 25,
+				ProviderReservedPrefixLength: ptr.To(28),
+			},
+			expectedDefaultsAnnotation: constants.MarshalAPIVersion(constants.NetworkReservationDefaultsV2),
+		},
+		{
+			name: "LegacyImplicitReservationsRemainImplicit",
+			annotations: map[string]string{
+				coreconstants.AllocationAnnotation: "allocation-1",
+			},
+			expectedStatusReservations: &openapi.NetworkReservations{
+				PrefixLength:                 constants.LegacyNetworkReservationPrefixLength,
+				ProviderReservedPrefixLength: ptr.To(constants.LegacyNetworkProviderReservedPrefixLength),
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			current := &regionv1.Network{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "test-network",
+					Namespace:       testNamespace,
+					ResourceVersion: "1",
+					Labels: map[string]string{
+						coreconstants.OrganizationLabel:   organizationID,
+						coreconstants.ProjectLabel:        projectID,
+						constants.RegionLabel:             "region-1",
+						constants.IdentityLabel:           "identity-1",
+						constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
+					},
+					Annotations: test.annotations,
+				},
+				Spec: regionv1.NetworkSpec{
+					Prefix: &corev1alpha1.IPv4Prefix{
+						IPNet: *prefix,
+					},
+					Reservations: test.reservations,
+					DNSNameservers: []corev1alpha1.IPv4Address{
+						{IP: net.ParseIP("8.8.8.8")},
+					},
+				},
+			}
+
+			k8sClient := newNetworkFakeClient(t, current)
+			c := network.New(common.ClientArgs{
+				Client:    k8sClient,
+				Namespace: testNamespace,
+			})
+
+			ctx := rbac.NewContext(t.Context(), networkUpdateContext())
+			ctx = identityauth.NewContext(ctx, &identityauth.Info{
+				Userinfo: &identityapi.Userinfo{Sub: "user-1"},
+			})
+			ctx = principal.NewContext(ctx, &principal.Principal{
+				Actor:          "actor@example.com",
+				OrganizationID: organizationID,
+				ProjectID:      projectID,
+			})
+
+			updated, err := c.Update(ctx, current.Name, &openapi.NetworkV2Update{
+				Metadata: coreapi.ResourceWriteMetadata{
+					Name: "test-network",
+				},
+				Spec: openapi.NetworkV2UpdateSpec{
+					DnsNameservers: []string{"1.1.1.1"},
+				},
+			})
+			require.NoError(t, err)
+			require.Equal(t, test.expectedStatusReservations, updated.Status.Reservations)
+
+			persisted := &regionv1.Network{}
+			require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Name: current.Name, Namespace: testNamespace}, persisted))
+			require.Equal(t, test.expectedDefaultsAnnotation, persisted.Annotations[constants.NetworkReservationDefaultsAnnotation])
+			require.Equal(t, test.expectedPersistedReservation, persisted.Spec.Reservations)
+			require.Len(t, persisted.Spec.DNSNameservers, 1)
+			require.Equal(t, "1.1.1.1", persisted.Spec.DNSNameservers[0].String())
+		})
+	}
+}
+
+func TestGetV2ReturnsEffectiveReservationsForImplicitNetworks(t *testing.T) {
+	t.Parallel()
+
+	_, prefix, err := net.ParseCIDR("10.0.0.0/24")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		expected    *openapi.NetworkReservations
+	}{
+		{
+			name: "LegacyImplicitReservations",
+			expected: &openapi.NetworkReservations{
+				PrefixLength:                 constants.LegacyNetworkReservationPrefixLength,
+				ProviderReservedPrefixLength: ptr.To(constants.LegacyNetworkProviderReservedPrefixLength),
+			},
+		},
+		{
+			name: "PostReservationsEpochWithoutReservations",
+			annotations: map[string]string{
+				constants.NetworkReservationDefaultsAnnotation: constants.MarshalAPIVersion(constants.NetworkReservationDefaultsV2),
+			},
+			expected: nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			current := &regionv1.Network{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-network",
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						coreconstants.OrganizationLabel:   organizationID,
+						coreconstants.ProjectLabel:        projectID,
+						constants.RegionLabel:             "region-1",
+						constants.IdentityLabel:           "identity-1",
+						constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
+					},
+					Annotations: test.annotations,
+				},
+				Spec: regionv1.NetworkSpec{
+					Prefix: &corev1alpha1.IPv4Prefix{
+						IPNet: *prefix,
+					},
+				},
+			}
+
+			k8sClient := newNetworkFakeClient(t, current)
+			c := network.New(common.ClientArgs{
+				Client:    k8sClient,
+				Namespace: testNamespace,
+			})
+
+			ctx := rbac.NewContext(t.Context(), networkUpdateContext())
+
+			read, err := c.GetV2(ctx, current.Name)
+			require.NoError(t, err)
+			require.Equal(t, test.expected, read.Status.Reservations)
+		})
+	}
 }
 
 // TestReferences tests reference creation and deletion works and is idempotent.

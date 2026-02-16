@@ -142,8 +142,8 @@ func TestGatewayIP(t *testing.T) {
 	require.Equal(t, "192.168.10.1", gateway)
 }
 
-// TestDHCPRange checks that the DHCP range function correctly removes a /25
-// from the start of the provided prefix.
+// TestDHCPRange checks that the DHCP range function correctly starts
+// at either .16 or where the explicit reservation dictates.
 func TestDHCPRange(t *testing.T) {
 	t.Parallel()
 
@@ -152,13 +152,23 @@ func TestDHCPRange(t *testing.T) {
 		Mask: net.IPMask{255, 255, 255, 0},
 	}
 
-	start, end := openstack.DHCPRange(prefix)
+	// No reservations, start at .2.
+	start, end := openstack.DHCPRange(prefix, nil)
+	require.Equal(t, "192.168.10.2", start)
+	require.Equal(t, "192.168.10.254", end)
+
+	// /25 provided, start at .128.
+	reservations := &regionv1.NetworkReservations{
+		PrefixLength: 25,
+	}
+
+	start, end = openstack.DHCPRange(prefix, reservations)
 	require.Equal(t, "192.168.10.128", start)
 	require.Equal(t, "192.168.10.254", end)
 }
 
-// TestStorageRange checks that the storage range is allocated from the first
-// /25, leaving a few addresses spare for various networking shenanigans.
+// TestStorageRange checks that the storage range is allocated from the
+// requested reservation if specified.
 func TestStorageRange(t *testing.T) {
 	t.Parallel()
 
@@ -167,10 +177,39 @@ func TestStorageRange(t *testing.T) {
 		Mask: net.IPMask{255, 255, 255, 0},
 	}
 
-	r := openstack.StorageRange(prefix)
+	// No reservations means no storage range.
+	r := openstack.StorageRange(prefix, nil)
+	require.Nil(t, r)
+
+	// /25 starts at .2 and ends at .127.
+	reservations := &regionv1.NetworkReservations{
+		PrefixLength: 25,
+	}
+
+	r = openstack.StorageRange(prefix, reservations)
 	require.NotNil(t, r)
-	require.Equal(t, "192.168.10.16", r.Start.String())
+	require.Equal(t, "192.168.10.2", r.Start.String())
 	require.Equal(t, "192.168.10.127", r.End.String())
+
+	// /25 with a /29 infrastructure pool starts storage at .16 and ends at .127.
+	reservations = &regionv1.NetworkReservations{
+		PrefixLength:                 25,
+		ProviderReservedPrefixLength: ptr.To(29),
+	}
+
+	r = openstack.StorageRange(prefix, reservations)
+	require.NotNil(t, r)
+	require.Equal(t, "192.168.10.8", r.Start.String())
+	require.Equal(t, "192.168.10.127", r.End.String())
+
+	// /29 with a /29 infrastructure pool opts out of storage entirely.
+	reservations = &regionv1.NetworkReservations{
+		PrefixLength:                 29,
+		ProviderReservedPrefixLength: ptr.To(29),
+	}
+
+	r = openstack.StorageRange(prefix, reservations)
+	require.Nil(t, r)
 }
 
 const (
@@ -555,6 +594,34 @@ func TestReconcileSubnet(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, updatedNetwork.Status.Openstack.SubnetID)
 		require.Equal(t, openstackSubnet.ID, *updatedNetwork.Status.Openstack.SubnetID)
+	})
+
+	t.Run("ItUsesNoReservationsForAnnotatedNetworks", func(t *testing.T) {
+		t.Parallel()
+
+		annotatedNetwork := network.DeepCopy()
+		annotatedNetwork.Annotations = map[string]string{
+			constants.NetworkReservationDefaultsAnnotation: constants.MarshalAPIVersion(constants.NetworkReservationDefaultsV2),
+		}
+
+		annotatedAllocationPools := []subnets.AllocationPool{
+			{
+				Start: "192.168.0.2",
+				End:   "192.168.0.254",
+			},
+		}
+
+		networking := mock.NewMockSubnetInterface(c)
+		networking.EXPECT().GetSubnet(t.Context(), annotatedNetwork).Return(nil, errors.ErrResourceNotFound)
+		networking.EXPECT().CreateSubnet(t.Context(), annotatedNetwork, openstackNetwork.ID, "192.168.0.0/24", gomock.Any(), []string{"8.8.4.4"}, []subnets.HostRoute{}, annotatedAllocationPools).Return(openstackSubnet, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileSubnet(t.Context(), p, networking, annotatedNetwork, openstackNetwork)
+		require.NoError(t, err)
+		require.NotNil(t, annotatedNetwork.Status.Openstack.SubnetID)
+		require.Equal(t, openstackSubnet.ID, *annotatedNetwork.Status.Openstack.SubnetID)
+		require.Nil(t, annotatedNetwork.Status.Openstack.StorageRange)
 	})
 }
 
