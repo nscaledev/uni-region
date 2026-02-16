@@ -1774,25 +1774,24 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 	if openstackNetwork != nil {
 		log.V(1).Info("deleting network")
 
-		if err := networking.DeleteNetwork(ctx, openstackNetwork.ID); err != nil {
-			return err
-		}
-
+		// VLAN deallocation is idempotent, but requires the network to
+		// exist so we can lookup the segmentation ID, so this has to
+		// occur first.
 		if p.region.Spec.Openstack.Network.UseProviderNetworks() {
 			log.V(1).Info("freeing vlan", "id", openstackNetwork.SegmentationID)
 
 			vlanID, err := strconv.Atoi(openstackNetwork.SegmentationID)
 			if err != nil {
-				log.Error(err, "failed to free vlan", "id", vlanID)
-
-				return nil
+				return fmt.Errorf("%w: segmentation ID not parsable", err)
 			}
 
 			if err := p.vlanAllocator.Free(ctx, vlanID); err != nil {
-				log.Error(err, "failed to free vlan", "id", vlanID)
-
-				return nil
+				return fmt.Errorf("%w: failed to free vlan", err)
 			}
+		}
+
+		if err := networking.DeleteNetwork(ctx, openstackNetwork.ID); err != nil {
+			return err
 		}
 	}
 
