@@ -22,8 +22,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
-	"github.com/unikorn-cloud/identity/pkg/rbac"
+	"github.com/unikorn-cloud/identity/pkg/principal"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 
@@ -103,44 +102,14 @@ func regionsFixture() *regionv1.RegionList {
 	}
 }
 
-func aclFixture(t *testing.T, global bool, organizationIDs ...string) context.Context {
+func principalFixture(t *testing.T, organizationID string) context.Context {
 	t.Helper()
 
-	var acl identityapi.Acl
-
-	if global {
-		acl.Global = &identityapi.AclEndpoints{
-			{
-				Name: "region:regions",
-				Operations: identityapi.AclOperations{
-					identityapi.Read,
-				},
-			},
-		}
+	p := &principal.Principal{
+		OrganizationID: organizationID,
 	}
 
-	if len(organizationIDs) > 0 {
-		organizations := make(identityapi.AclOrganizationList, len(organizationIDs))
-
-		acl.Organizations = &organizations
-
-		for i, id := range organizationIDs {
-			organizations[i].Id = id
-		}
-	}
-
-	return rbac.NewContext(t.Context(), &acl)
-}
-
-// TestRegionFilteringGlobal tests users with global region read can see everything.
-func TestRegionFilteringGlobal(t *testing.T) {
-	t.Parallel()
-
-	ctx := aclFixture(t, true)
-	regions := regionsFixture()
-
-	region.FilterRegions(ctx, regions)
-	require.Len(t, regions.Items, 4)
+	return principal.NewContext(t.Context(), p)
 }
 
 // TestRegionFilteringSinglePrivate tests users can see a single private region and
@@ -148,10 +117,10 @@ func TestRegionFilteringGlobal(t *testing.T) {
 func TestRegionFilteringSinglePrivate(t *testing.T) {
 	t.Parallel()
 
-	ctx := aclFixture(t, false, organizationID1)
+	ctx := principalFixture(t, organizationID1)
 	regions := regionsFixture()
 
-	region.FilterRegions(ctx, regions)
+	require.NoError(t, region.FilterRegions(ctx, regions))
 	require.Len(t, regions.Items, 2)
 	require.Equal(t, globalRegionName, regions.Items[0].Name)
 	require.Equal(t, privateRegionName1, regions.Items[1].Name)
@@ -162,30 +131,14 @@ func TestRegionFilteringSinglePrivate(t *testing.T) {
 func TestRegionFilteringMultiplePrivate(t *testing.T) {
 	t.Parallel()
 
-	ctx := aclFixture(t, false, organizationID2)
+	ctx := principalFixture(t, organizationID2)
 	regions := regionsFixture()
 
-	region.FilterRegions(ctx, regions)
+	require.NoError(t, region.FilterRegions(ctx, regions))
 	require.Len(t, regions.Items, 3)
 	require.Equal(t, globalRegionName, regions.Items[0].Name)
 	require.Equal(t, privateRegionName1, regions.Items[1].Name)
 	require.Equal(t, privateRegionName2, regions.Items[2].Name)
-}
-
-// TestRegionFilteringMultiplePrivateMultipleOrganizations can see multiple private
-// regions beloning to multiple organizations when they have access to those organizations
-// and all public ones.
-func TestRegionFilteringMultiplePrivateMultipleOrganizations(t *testing.T) {
-	t.Parallel()
-
-	ctx := aclFixture(t, false, organizationID1, organizationID3)
-	regions := regionsFixture()
-
-	region.FilterRegions(ctx, regions)
-	require.Len(t, regions.Items, 3)
-	require.Equal(t, globalRegionName, regions.Items[0].Name)
-	require.Equal(t, privateRegionName1, regions.Items[1].Name)
-	require.Equal(t, privateRegionName3, regions.Items[2].Name)
 }
 
 // TestRegionFilteringNoPrivate tests users with no private regions cannot see any
@@ -193,10 +146,10 @@ func TestRegionFilteringMultiplePrivateMultipleOrganizations(t *testing.T) {
 func TestRegionFilteringNoPrivate(t *testing.T) {
 	t.Parallel()
 
-	ctx := aclFixture(t, false, organizationID4)
+	ctx := principalFixture(t, organizationID4)
 	regions := regionsFixture()
 
-	region.FilterRegions(ctx, regions)
+	require.NoError(t, region.FilterRegions(ctx, regions))
 	require.Len(t, regions.Items, 1)
 	require.Equal(t, globalRegionName, regions.Items[0].Name)
 }
