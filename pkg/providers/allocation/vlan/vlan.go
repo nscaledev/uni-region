@@ -199,10 +199,16 @@ func (a *Allocator) Free(ctx context.Context, id int) error {
 
 	allocation.Spec.Allocations = slices.DeleteFunc(allocation.Spec.Allocations, callback)
 
-	// Question... would this make more sense to be idempotent?
-	// Logic would dictate that some source of truth has this marked as allocated
-	// but we think it isn't so it's probably a bug somewhere.
-	if len(allocation.Spec.Allocations) != allocationsLength-1 {
+	delta := allocationsLength - len(allocation.Spec.Allocations)
+
+	// Deallocation is idempotent.
+	if delta == 0 {
+		return nil
+	}
+
+	// If we have more than one allocation, a bug has crept in or someone has
+	// manually corrupted the allocations table.
+	if delta > 1 {
 		return fmt.Errorf("%w: vlan id %d not allocated exactly once", ErrAllocation, id)
 	}
 
