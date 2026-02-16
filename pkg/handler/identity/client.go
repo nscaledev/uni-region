@@ -110,7 +110,7 @@ func (c *Client) convertList(ctx context.Context, in unikornv1.IdentityList) ope
 
 // generate a new resource from a request.
 func (c *Client) generate(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*unikornv1.Identity, error) {
-	provider, err := c.Providers.LookupCloud(ctx, request.Spec.RegionId)
+	provider, err := c.Providers.LookupCloud(request.Spec.RegionId)
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
 	}

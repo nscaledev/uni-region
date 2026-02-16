@@ -398,7 +398,10 @@ func createHandlerInterface(ctx context.Context, k8sClient client.Client, namesp
 	}
 
 	// Create providers interface
-	providers := providers.New(k8sClient, namespace)
+	providers, err := providers.New(ctx, k8sClient, namespace, false)
+	if err != nil {
+		panic(fmt.Sprintf("failed to create providers: %v", err))
+	}
 
 	handlerOpts := handler.Options{}
 

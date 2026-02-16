@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/unikorn-cloud/core/pkg/util/cache"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	imagemock "github.com/unikorn-cloud/region/pkg/handler/image/mock"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -57,7 +58,7 @@ func Test_Imagev2_List(t *testing.T) {
 		"available to org": {
 			setupQuery: func(query *imagemock.MockImageQuery) {
 				query.EXPECT().AvailableToOrganization(orgID).Return(query)
-				query.EXPECT().List(gomock.Any()).Return(nil, nil)
+				query.EXPECT().List().Return(&cache.ListSnapshot[types.Image]{}, nil)
 			},
 			params: openapi.GetApiV2RegionsRegionIDImagesParams{
 				OrganizationID: ptr.To([]string{orgID}),
@@ -67,7 +68,7 @@ func Test_Imagev2_List(t *testing.T) {
 			setupQuery: func(query *imagemock.MockImageQuery) {
 				query.EXPECT().AvailableToOrganization(orgID).Return(query)
 				query.EXPECT().StatusIn(types.ImageStatusReady).Return(query)
-				query.EXPECT().List(gomock.Any()).Return(nil, nil)
+				query.EXPECT().List().Return(&cache.ListSnapshot[types.Image]{}, nil)
 			},
 			params: openapi.GetApiV2RegionsRegionIDImagesParams{
 				OrganizationID: ptr.To([]string{orgID}),
@@ -77,7 +78,7 @@ func Test_Imagev2_List(t *testing.T) {
 		"owned by org": {
 			setupQuery: func(query *imagemock.MockImageQuery) {
 				query.EXPECT().OwnedByOrganization(orgID).Return(query)
-				query.EXPECT().List(gomock.Any()).Return(nil, nil)
+				query.EXPECT().List().Return(&cache.ListSnapshot[types.Image]{}, nil)
 			},
 			params: openapi.GetApiV2RegionsRegionIDImagesParams{
 				OrganizationID: ptr.To([]string{orgID}),
@@ -88,7 +89,7 @@ func Test_Imagev2_List(t *testing.T) {
 			setupQuery: func(query *imagemock.MockImageQuery) {
 				query.EXPECT().AvailableToOrganization(orgID).Return(query)
 				query.EXPECT().StatusIn(types.ImageStatusReady).Return(query)
-				query.EXPECT().List(gomock.Any()).Return(nil, nil)
+				query.EXPECT().List().Return(&cache.ListSnapshot[types.Image]{}, nil)
 			},
 			params: openapi.GetApiV2RegionsRegionIDImagesParams{
 				OrganizationID: ptr.To([]string{orgID}),
@@ -101,7 +102,7 @@ func Test_Imagev2_List(t *testing.T) {
 				// This must be called even though the caller has no permission to the org,
 				// to get global images, since those are counted as available.
 				query.EXPECT().AvailableToOrganization().Return(query)
-				query.EXPECT().List(gomock.Any()).Return(nil, nil)
+				query.EXPECT().List().Return(&cache.ListSnapshot[types.Image]{}, nil)
 			},
 			params: openapi.GetApiV2RegionsRegionIDImagesParams{
 				OrganizationID: ptr.To([]string{"NOT" + orgID}),
@@ -110,7 +111,7 @@ func Test_Imagev2_List(t *testing.T) {
 		"no filters": { // when asking without giving an organization, you don't need org permissions.
 			setupQuery: func(query *imagemock.MockImageQuery) {
 				query.EXPECT().AvailableToOrganization().Return(query)
-				query.EXPECT().List(gomock.Any()).Return(nil, nil)
+				query.EXPECT().List().Return(&cache.ListSnapshot[types.Image]{}, nil)
 			},
 		},
 	}
@@ -131,7 +132,7 @@ func Test_Imagev2_List(t *testing.T) {
 			provider.EXPECT().QueryImages().Return(querier, nil)
 
 			providers := mockproviders.NewMockProviders(ctrl)
-			providers.EXPECT().LookupCloud(gomock.Any(), gomock.Any()).Return(provider, nil)
+			providers.EXPECT().LookupCloud(gomock.Any()).Return(provider, nil)
 
 			if setupQuery := tc.setupQuery; setupQuery != nil {
 				setupQuery(querier)

@@ -115,7 +115,7 @@ var _ = Describe("Flavor Discovery", func() {
 				_, err := client.ListFlavors(ctx, config.OrgID, "invalid-region-id")
 
 				Expect(err).To(HaveOccurred())
-				Expect(errors.Is(err, coreclient.ErrServerError)).To(BeTrue())
+				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
 				GinkgoWriter.Printf("Expected error for invalid region ID: %v\n", err)
 			})
 		})
@@ -149,7 +149,7 @@ var _ = Describe("Image Discovery", func() {
 				_, err := client.ListImages(ctx, config.OrgID, "invalid-region-id")
 
 				Expect(err).To(HaveOccurred())
-				Expect(errors.Is(err, coreclient.ErrServerError)).To(BeTrue())
+				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
 				GinkgoWriter.Printf("Expected error for invalid region ID: %v\n", err)
 			})
 		})
