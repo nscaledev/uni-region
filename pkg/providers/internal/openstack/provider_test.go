@@ -150,8 +150,7 @@ func TestGatewayIP(t *testing.T) {
 	require.Equal(t, "192.168.10.1", gateway)
 }
 
-// TestDHCPRange checks that the DHCP range function correctly removes a /25
-// from the start of the provided prefix.
+// TestDHCPRange checks that the DHCP range starts after the reservation.
 func TestDHCPRange(t *testing.T) {
 	t.Parallel()
 
@@ -160,13 +159,16 @@ func TestDHCPRange(t *testing.T) {
 		Mask: net.IPMask{255, 255, 255, 0},
 	}
 
-	start, end := openstack.DHCPRange(prefix)
+	reservations := &regionv1.NetworkReservations{
+		PrefixLength: 25,
+	}
+
+	start, end := openstack.DHCPRange(prefix, reservations)
 	require.Equal(t, "192.168.10.128", start)
 	require.Equal(t, "192.168.10.254", end)
 }
 
-// TestStorageRange checks that the storage range is allocated from the first
-// /25, leaving a few addresses spare for various networking shenanigans.
+// TestStorageRange checks that the storage range is allocated from the reservation.
 func TestStorageRange(t *testing.T) {
 	t.Parallel()
 
@@ -175,10 +177,35 @@ func TestStorageRange(t *testing.T) {
 		Mask: net.IPMask{255, 255, 255, 0},
 	}
 
-	r := openstack.StorageRange(prefix)
+	// /25 starts at .2 and ends at .127.
+	reservations := &regionv1.NetworkReservations{
+		PrefixLength: 25,
+	}
+
+	r := openstack.StorageRange(prefix, reservations)
 	require.NotNil(t, r)
-	require.Equal(t, "192.168.10.16", r.Start.String())
+	require.Equal(t, "192.168.10.2", r.Start.String())
 	require.Equal(t, "192.168.10.127", r.End.String())
+
+	// /25 with a /29 infrastructure pool starts storage at .16 and ends at .127.
+	reservations = &regionv1.NetworkReservations{
+		PrefixLength:                 25,
+		ProviderReservedPrefixLength: ptr.To(29),
+	}
+
+	r = openstack.StorageRange(prefix, reservations)
+	require.NotNil(t, r)
+	require.Equal(t, "192.168.10.8", r.Start.String())
+	require.Equal(t, "192.168.10.127", r.End.String())
+
+	// /29 with a /29 infrastructure pool opts out of storage entirely.
+	reservations = &regionv1.NetworkReservations{
+		PrefixLength:                 29,
+		ProviderReservedPrefixLength: ptr.To(29),
+	}
+
+	r = openstack.StorageRange(prefix, reservations)
+	require.Nil(t, r)
 }
 
 const (
