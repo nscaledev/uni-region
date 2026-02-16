@@ -30,18 +30,16 @@ import (
 
 type ServerV2Handler struct {
 	common.ClientArgs
-	getProvider server.GetProviderFunc
 }
 
 func NewServerV2Handler(clientArgs common.ClientArgs) *ServerV2Handler {
 	return &ServerV2Handler{
-		ClientArgs:  clientArgs,
-		getProvider: server.DefaultGetProvider,
+		ClientArgs: clientArgs,
 	}
 }
 
 func (h *ServerV2Handler) serverV2Client() *server.ClientV2 {
-	return server.NewClientV2(h.ClientArgs, h.getProvider)
+	return server.NewClientV2(h.ClientArgs)
 }
 
 func (h *ServerV2Handler) GetApiV2Servers(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2ServersParams) {

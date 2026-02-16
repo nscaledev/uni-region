@@ -28,8 +28,8 @@ type TestConfig struct {
 	coreconfig.BaseConfig
 	OrgID         string
 	ProjectID     string
-	RegionID      string
 	RegionBaseURL string
+	RegionID      string
 }
 
 // LoadTestConfig loads configuration from environment variables and .env files using viper.

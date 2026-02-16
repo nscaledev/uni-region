@@ -48,6 +48,10 @@ func New(client client.Client, namespace string) *Checker {
 
 // checkServer consults the provider for the server health status.
 func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server) error {
+	if server.DeletionTimestamp != nil {
+		return nil
+	}
+
 	identityID, ok := server.Labels[constants.IdentityLabel]
 	if !ok {
 		return fmt.Errorf("%w: server %s missing identity label", errors.ErrConsistency, server.Name)
@@ -64,7 +68,7 @@ func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server) err
 		return fmt.Errorf("%w: server %s missing region label", errors.ErrConsistency, server.Name)
 	}
 
-	provider, err := providers.New(ctx, c.client, c.namespace, regionID)
+	provider, err := providers.New(c.client, c.namespace).LookupCloud(ctx, regionID)
 	if err != nil {
 		return err
 	}

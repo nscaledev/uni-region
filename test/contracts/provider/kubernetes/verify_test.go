@@ -17,7 +17,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package compute_test
+package kubernetes_test
 
 import (
 	"context"
@@ -50,6 +50,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 	commonstate "github.com/unikorn-cloud/region/test/contracts/provider/common"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -166,11 +167,11 @@ var _ = Describe("Region Provider Verification", func() {
 			// Build base selectors for normal CI verification
 			selectors := []provider.Selector{
 				&provider.ConsumerVersionSelector{
-					Consumer:   "uni-compute",
+					Consumer:   "uni-kubernetes",
 					MainBranch: true,
 				},
 				&provider.ConsumerVersionSelector{
-					Consumer:       "uni-compute",
+					Consumer:       "uni-kubernetes",
 					MatchingBranch: true,
 				},
 			}
@@ -179,7 +180,7 @@ var _ = Describe("Region Provider Verification", func() {
 			consumerBranch := strings.TrimSpace(os.Getenv("CONSUMER_BRANCH"))
 			if consumerBranch != "" {
 				selectors = append(selectors, &provider.ConsumerVersionSelector{
-					Consumer: "uni-compute",
+					Consumer: "uni-kubernetes",
 					Branch:   consumerBranch,
 				})
 				fmt.Printf("Webhook mode: Including explicit branch selector for consumer branch '%s'\n", consumerBranch)
@@ -233,66 +234,93 @@ var _ = Describe("Region Provider Verification", func() {
 })
 
 // createStateHandlers creates the state handlers map for pact verification.
-// Uses parameterized states to make the contract tests more flexible and maintainable.
+// Registers state handlers for uni-kubernetes consumer contract tests.
 func createStateHandlers(ctx context.Context, stateManager *commonstate.StateManager) models.StateHandlers {
 	return models.StateHandlers{
-		// Parameterized state handler - consumer provides organizationID and regionType
+		// State handler for "region exists"
+		commonstate.StateRegionExists: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleRegionExistsState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "project exists in region"
+		commonstate.StateProjectExistsInRegion: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleProjectExistsInRegionState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "server exists in project"
+		commonstate.StateServerExistsInProject: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleServerExistsInProjectState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "identity exists"
+		commonstate.StateIdentityExists: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleIdentityExistsState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "identity exists with physical network support"
+		commonstate.StateIdentityExistsWithPhysicalNet: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleIdentityExistsWithPhysicalNetState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "identity is provisioned"
+		commonstate.StateIdentityIsProvisioned: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleIdentityIsProvisionedState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "network is provisioned"
+		commonstate.StateNetworkIsProvisioned: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleNetworkIsProvisionedState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "region has external networks"
+		commonstate.StateRegionHasExternalNetworks: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleRegionHasExternalNetworksState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "region has flavors"
+		commonstate.StateRegionHasFlavors: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleRegionHasFlavorsState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "region has images"
+		commonstate.StateRegionHasImages: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleRegionHasImagesState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handler for "organization has regions"
 		commonstate.StateOrganizationHasRegions: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
-			err := stateManager.HandleOrganizationState(ctx, setup, state.Parameters)
-
-			return nil, err
-		},
-
-		// State for organization with no regions
-		commonstate.StateOrganizationHasNoRegions: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
-			// Pass empty regionType to indicate no regions should be created
-			params := make(map[string]interface{})
-			if state.Parameters != nil {
-				params = state.Parameters
-			}
-			err := stateManager.HandleOrganizationState(ctx, setup, params)
-
-			return nil, err
-		},
-
-		// State for non-existent organization (same as no regions)
-		commonstate.StateOrganizationDoesNotExist: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
-			params := make(map[string]interface{})
-			if state.Parameters != nil {
-				params = state.Parameters
-			}
-			err := stateManager.HandleOrganizationState(ctx, setup, params)
-
-			return nil, err
-		},
-
-		// Generic organization exists state
-		commonstate.StateOrganizationExists: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
-			params := make(map[string]interface{})
-			if state.Parameters != nil {
-				params = state.Parameters
-			}
-			err := stateManager.HandleOrganizationState(ctx, setup, params)
-
-			return nil, err
-		},
-
-		// State for mixed region types
-		commonstate.StateOrganizationHasMixedRegions: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
-			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
-			params := make(map[string]interface{})
-			if state.Parameters != nil {
-				params = state.Parameters
-			}
-			// Set regionType to mixed if not already set
-			if _, ok := params[commonstate.ParamRegionType]; !ok {
-				params[commonstate.ParamRegionType] = commonstate.RegionTypeMixed
-			}
-			err := stateManager.HandleOrganizationState(ctx, setup, params)
+			err := stateManager.HandleOrganizationHasRegionsState(ctx, setup, state.Parameters)
 
 			return nil, err
 		},
@@ -332,6 +360,9 @@ func buildRouter(schema *helpers.Schema, corsOpts *cors.Options) *chi.Mux {
 
 	// Mock ACL middleware allows all organizations for contract testing
 	router.Use(MockACLMiddleware(nil))              // Inject mock ACL for contract testing
+	router.Use(IdentityCreationMockMiddleware())    // Mock identity creation for contract testing
+	router.Use(ExternalNetworksMockMiddleware())    // Mock external networks for OpenStack-specific tests
+	router.Use(ImagesMockMiddleware())              // Mock images for OpenStack-specific tests
 	router.Use(commonstate.RegionSortingMiddleware()) // Sort regions for Pact contract testing
 	router.NotFound(http.HandlerFunc(handler.NotFound))
 	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
@@ -366,11 +397,15 @@ func createHandlerInterface(ctx context.Context, k8sClient client.Client, namesp
 		panic(fmt.Sprintf("failed to create identity client: %v", err))
 	}
 
+	// Create providers interface
+	providers := providers.New(k8sClient, namespace)
+
 	handlerOpts := handler.Options{}
 
 	handlerInterface, err := handler.New(common.ClientArgs{
 		Client:    k8sClient,
 		Namespace: namespace,
+		Providers: providers,
 		Identity:  identity,
 	}, &handlerOpts)
 	if err != nil {

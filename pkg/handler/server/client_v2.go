@@ -53,39 +53,23 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-// serverProvider gloms together the operations needed to provision servers.
-type Provider interface {
-	types.Server
-	types.ServerConsole
-	types.ServerSnapshot
-	types.Identity
-	types.ImageRead  // for GetImage
-	types.ImageWrite // for DeleteImage
-}
-
-// GetProviderFunc is the type of funcs supplied to the client, so it can obtain a provider (e.g., OpenStack client).
-type GetProviderFunc func(context.Context, client.Client, string, string) (Provider, error)
-
-// DefaultGetProvider is the "business as usual" GetProviderFunc, which constructs a real provider (rather than, e.g., a mock object).
-func DefaultGetProvider(ctx context.Context, c client.Client, namespace, regionID string) (Provider, error) {
-	return providers.New(ctx, c, namespace, regionID)
-}
-
 type ClientV2 struct {
 	*Client
-	getProviderFunc GetProviderFunc
 }
 
-func NewClientV2(clientArgs common.ClientArgs, getProvider GetProviderFunc) *ClientV2 {
+func NewClientV2(clientArgs common.ClientArgs) *ClientV2 {
 	return &ClientV2{
-		Client:          NewClient(clientArgs),
-		getProviderFunc: getProvider,
+		Client: NewClient(clientArgs),
 	}
 }
 
-func (c *ClientV2) getProvider(ctx context.Context, regionID string) (Provider, error) {
-	//nolint:staticcheck
-	return c.getProviderFunc(ctx, c.Client.Client, c.Client.Namespace, regionID)
+func (c *ClientV2) getProvider(ctx context.Context, regionID string) (types.Provider, error) {
+	provider, err := c.Providers.LookupCloud(ctx, regionID)
+	if err != nil {
+		return nil, providers.ProviderToServerError(err)
+	}
+
+	return provider, nil
 }
 
 func convertSecurityGroupsV2(in []regionv1.ServerSecurityGroupSpec) *openapi.ServerV2SecurityGroupIDList {
@@ -365,6 +349,37 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 	return convertV2List(result), nil
 }
 
+// isServerNameInUse does a best effort attempt to ensure the server name
+// does not already exist on the same network as that would lead to aliasing issues
+// of cloud resources and servers having the same hostname.
+func (c *Client) isServerNameInUse(ctx context.Context, organizationID, projectID, networkID, name string) error {
+	selector := labels.Set{
+		coreconstants.OrganizationLabel: organizationID,
+		coreconstants.ProjectLabel:      projectID,
+		constants.NetworkLabel:          networkID,
+	}
+
+	options := &client.ListOptions{
+		Namespace:     c.Namespace,
+		LabelSelector: labels.SelectorFromSet(selector),
+	}
+
+	servers := &regionv1.ServerList{}
+
+	if err := c.Client.List(ctx, servers, options); err != nil {
+		return err
+	}
+
+	for i := range servers.Items {
+		if servers.Items[i].Labels[coreconstants.NameLabel] == name {
+			// TODO: we can be more verbose here, update the interface in core.
+			return errors.HTTPConflict()
+		}
+	}
+
+	return nil
+}
+
 func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create) (*openapi.ServerV2Read, error) {
 	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId)
 	if err != nil {
@@ -375,6 +390,10 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 	projectID := network.Labels[coreconstants.ProjectLabel]
 
 	if err := rbac.AllowProjectScope(ctx, "region:servers", identityapi.Create, organizationID, projectID); err != nil {
+		return nil, err
+	}
+
+	if err := c.isServerNameInUse(ctx, organizationID, projectID, request.Spec.NetworkId, request.Metadata.Name); err != nil {
 		return nil, err
 	}
 
@@ -467,7 +486,7 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *opena
 	updated.Annotations = required.Annotations
 	updated.Spec = required.Spec
 
-	if err := c.Client.Client.Patch(ctx, updated, client.MergeFrom(current)); err != nil {
+	if err := c.Client.Client.Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
 		return nil, fmt.Errorf("%w: unable to update server", err)
 	}
 
@@ -495,7 +514,7 @@ func (c *ClientV2) DeleteV2(ctx context.Context, serverID string) error {
 	return nil
 }
 
-func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, Provider, error) {
+func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, types.Provider, error) {
 	server, err := c.GetV2Raw(ctx, serverID)
 	if err != nil {
 		return nil, nil, nil, err

@@ -30,7 +30,7 @@ import (
 
 // QueryImages takes the parameters from an image list request and runs them as a query against the provider.
 func (c *Client) QueryImages(ctx context.Context, regionID string, params openapi.GetApiV2RegionsRegionIDImagesParams) (openapi.Images, error) {
-	prov, err := c.getProvider(ctx, c.Client, c.Namespace, regionID)
+	prov, err := c.Providers.LookupCloud(ctx, regionID)
 	if err != nil {
 		return nil, err
 	}

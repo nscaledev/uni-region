@@ -44,11 +44,29 @@ type NetworkGetter interface {
 	GetV2(ctx context.Context, id string) (*openapi.NetworkV2Read, error)
 }
 
+var ErrAllocation = fmt.Errorf("allocation error")
+
+// wrapAllocationError returns access/permission errors as-is so they
+// surface the correct HTTP status to callers, and wraps everything else
+// with ErrAllocation so callers can distinguish allocation failures.
+func wrapAllocationError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	if errors.IsAccessDenied(err) || errors.IsForbidden(err) {
+		return err
+	}
+
+	return fmt.Errorf("%w: %s", ErrAllocation, err.Error())
+}
+
 type createSaga struct {
 	client  *Client
 	request *openapi.StorageV2Create
 
-	filestorage *regionv1.FileStorage
+	filestorage  *regionv1.FileStorage
+	storageClass *openapi.StorageClassV2Read
 }
 
 func (s *createSaga) Actions() []saga.Action {
@@ -80,12 +98,16 @@ func (s *createSaga) createAllocation(ctx context.Context) error {
 	quantity := gibToQuantity(s.request.Spec.SizeGiB)
 	required := s.client.generateAllocation(quantity.Value())
 
-	return identityclient.NewAllocations(s.client.Client, s.client.Identity).Create(ctx, s.filestorage, required)
+	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Create(ctx, s.filestorage, required); err != nil {
+		return wrapAllocationError(err)
+	}
+
+	return nil
 }
 
 func (s *createSaga) deleteAllocation(ctx context.Context) error {
 	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Delete(ctx, s.filestorage); err != nil {
-		return err
+		return wrapAllocationError(err)
 	}
 
 	return nil
@@ -122,7 +144,7 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 		return err
 	}
 
-	filestorage, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId, updateRequest, s.request.Spec.StorageClassId)
+	filestorage, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId, updateRequest, s.storageClass)
 	if err != nil {
 		return err
 	}
@@ -154,8 +176,10 @@ func (s *createSaga) validateStorageClass(ctx context.Context, storageClassID st
 
 	if sc.Spec.RegionId != s.request.Spec.RegionId {
 		return errors.HTTPUnprocessableContent("storage class not available in region").
-			WithValues("storageClassID", sc.Metadata.Name, "storageClassRegionID", s.request.Spec.RegionId, "requestedRegionID", sc.Spec.RegionId)
+			WithValues("storageClassID", sc.Metadata.Name, "storageClassRegionID", sc.Spec.RegionId, "requestedRegionID", s.request.Spec.RegionId)
 	}
+
+	s.storageClass = sc
 
 	return nil
 }
@@ -163,16 +187,18 @@ func (s *createSaga) validateStorageClass(ctx context.Context, storageClassID st
 type updateSaga struct {
 	client *Client
 
-	request *openapi.StorageV2Update
-	current *regionv1.FileStorage
-	updated *regionv1.FileStorage
+	request      *openapi.StorageV2Update
+	current      *regionv1.FileStorage
+	updated      *regionv1.FileStorage
+	storageClass *openapi.StorageClassV2Read
 }
 
-func newUpdateSaga(client *Client, current *regionv1.FileStorage, request *openapi.StorageV2Update) *updateSaga {
+func newUpdateSaga(client *Client, current *regionv1.FileStorage, request *openapi.StorageV2Update, storageClass *openapi.StorageClassV2Read) *updateSaga {
 	return &updateSaga{
-		client:  client,
-		request: request,
-		current: current,
+		client:       client,
+		request:      request,
+		current:      current,
+		storageClass: storageClass,
 	}
 }
 
@@ -192,7 +218,7 @@ func (s *updateSaga) generate(ctx context.Context) error {
 	projectID := s.current.Labels[coreconstants.ProjectLabel]
 	regionID := s.current.Labels[constants.RegionLabel]
 
-	required, err := s.client.generateV2(ctx, organizationID, projectID, regionID, s.request, s.current.Spec.StorageClassID)
+	required, err := s.client.generateV2(ctx, organizationID, projectID, regionID, s.request, s.storageClass)
 	if err != nil {
 		return err
 	}
@@ -217,17 +243,25 @@ func (s *updateSaga) generate(ctx context.Context) error {
 func (s *updateSaga) updateAllocation(ctx context.Context) error {
 	required := s.client.generateAllocation(s.updated.Spec.Size.Value())
 
-	return identityclient.NewAllocations(s.client.Client, s.client.Identity).Update(ctx, s.current, required)
+	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Update(ctx, s.current, required); err != nil {
+		return wrapAllocationError(err)
+	}
+
+	return nil
 }
 
 func (s *updateSaga) revertAllocation(ctx context.Context) error {
 	required := s.client.generateAllocation(s.current.Spec.Size.Value())
 
-	return identityclient.NewAllocations(s.client.Client, s.client.Identity).Update(ctx, s.current, required)
+	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Update(ctx, s.current, required); err != nil {
+		return wrapAllocationError(err)
+	}
+
+	return nil
 }
 
 func (s *updateSaga) updateStorage(ctx context.Context) error {
-	if err := s.client.Client.Patch(ctx, s.updated, client.MergeFrom(s.current)); err != nil {
+	if err := s.client.Client.Patch(ctx, s.updated, client.MergeFromWithOptions(s.current, &client.MergeFromWithOptimisticLock{})); err != nil {
 		return fmt.Errorf("%w: unable to update filestorage", err)
 	}
 

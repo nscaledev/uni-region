@@ -264,6 +264,9 @@ PACT_GOFLAGS="-tags=integration"
 .PHONY: test-contracts-provider
 test-contracts-provider:
 	@echo "Running provider contract verification tests..."
+	@echo "Provider Version: $(PROVIDER_VERSION)"
+	@echo "Provider Branch: $(GIT_BRANCH)"
+	@echo "Publishing results to Pact Broker: $(PACT_BROKER_URL)"
 	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
 	$(PACT_LIB_ENV) \
 	KUBECONFIG="$(HOME)/.kube/config" \
@@ -271,6 +274,8 @@ test-contracts-provider:
 	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
 	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
 	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
+	GIT_BRANCH="$(GIT_BRANCH)" \
+	PUBLISH_VERIFICATION=true \
 	GOFLAGS="$(PACT_GOFLAGS)" \
 	go test ./test/contracts/provider/... -v -count=1
 
@@ -278,6 +283,9 @@ test-contracts-provider:
 .PHONY: test-contracts-provider-verbose
 test-contracts-provider-verbose:
 	@echo "Running provider contract verification with verbose output..."
+	@echo "Provider Version: $(PROVIDER_VERSION)"
+	@echo "Provider Branch: $(GIT_BRANCH)"
+	@echo "Publishing results to Pact Broker: $(PACT_BROKER_URL)"
 	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
 	$(PACT_LIB_ENV) \
 	KUBECONFIG="$(HOME)/.kube/config" \
@@ -285,6 +293,8 @@ test-contracts-provider-verbose:
 	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
 	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
 	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
+	GIT_BRANCH="$(GIT_BRANCH)" \
+	PUBLISH_VERIFICATION=true \
 	VERBOSE=true \
 	GOFLAGS="$(PACT_GOFLAGS)" \
 	go test ./test/contracts/provider/... -v -count=1
@@ -303,6 +313,7 @@ test-contracts-provider-local:
 	KUBECONFIG="$(HOME)/.kube/config" \
 	PACT_FILE="$(PACT_FILE)" \
 	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
+	GIT_BRANCH="$(GIT_BRANCH)" \
 	GOFLAGS="$(PACT_GOFLAGS)" \
 	go test ./test/contracts/provider/... -v -count=1
 
@@ -321,7 +332,34 @@ test-contracts-provider-ci:
 	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
 	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
 	GIT_BRANCH="$(GIT_BRANCH)" \
+	CONSUMER_BRANCH="$(CONSUMER_BRANCH)" \
 	CI=true \
+	GOFLAGS="$(PACT_GOFLAGS)" \
+	go test ./test/contracts/provider/... -v -count=1
+
+# Simulate webhook-triggered provider verification
+# Usage: make test-contracts-provider-webhook CONSUMER_BRANCH=feature/my-branch
+.PHONY: test-contracts-provider-webhook
+test-contracts-provider-webhook:
+	@if [ -z "$(CONSUMER_BRANCH)" ]; then \
+		echo "Error: CONSUMER_BRANCH must be set"; \
+		echo "Usage: make test-contracts-provider-webhook CONSUMER_BRANCH=feature/my-branch"; \
+		exit 1; \
+	fi
+	@echo "Simulating webhook-triggered provider verification..."
+	@echo "Consumer Branch: $(CONSUMER_BRANCH)"
+	@echo "Provider Version: $(PROVIDER_VERSION)"
+	@echo "Provider Branch: $(GIT_BRANCH)"
+	@echo "Publishing results to Pact Broker: $(PACT_BROKER_URL)"
+	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
+	$(PACT_LIB_ENV) \
+	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
+	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
+	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
+	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
+	GIT_BRANCH="$(GIT_BRANCH)" \
+	CONSUMER_BRANCH="$(CONSUMER_BRANCH)" \
+	PUBLISH_VERIFICATION=true \
 	GOFLAGS="$(PACT_GOFLAGS)" \
 	go test ./test/contracts/provider/... -v -count=1
 

@@ -65,6 +65,11 @@ var (
 		Start: v1alpha1.IPv4Address{IP: net.IP{192, 168, 0, 1}},
 		End:   v1alpha1.IPv4Address{IP: net.IP{192, 168, 0, 4}},
 	}
+
+	narrowedRangeCapped = &regionv1.AttachmentIPRange{
+		Start: v1alpha1.IPv4Address{IP: net.IP{192, 168, 0, 1}},
+		End:   v1alpha1.IPv4Address{IP: net.IP{192, 168, 0, 127}},
+	}
 )
 
 const (
@@ -113,12 +118,19 @@ func newContextWithPermissions(ctx context.Context) context.Context {
 func TestNarrowRange(t *testing.T) {
 	t.Parallel()
 
-	nr := narrowStorageRange(storageRange)
+	nr := narrowStorageRange(storageRange, 4)
 	require.Equal(t, nr, narrowedRange)
 
 	// this can be nil, if it's not been set yet
-	nr = narrowStorageRange(nil)
+	nr = narrowStorageRange(nil, -1)
 	require.Nilf(t, nr, "Expected nil output when nil input (and not a NPE panic)")
+}
+
+func TestNarrowRangeWithCap(t *testing.T) {
+	t.Parallel()
+
+	nr := narrowStorageRange(storageRange, 256)
+	require.Equal(t, nr, narrowedRangeCapped)
 }
 
 func TestGenerateAttachmentList(t *testing.T) {
@@ -138,13 +150,20 @@ func TestGenerateAttachmentList(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		input *openapi.StorageAttachmentV2Spec
+		input *openapi.StorageV2Update
 		want  []regionv1.Attachment
 	}{
 		{
 			name: "test with limited values",
-			input: &openapi.StorageAttachmentV2Spec{
-				NetworkIds: openapi.NetworkIDList{"net-1"},
+			input: &openapi.StorageV2Update{
+				Spec: openapi.StorageV2Spec{
+					Attachments: &openapi.StorageAttachmentV2Spec{
+						NetworkIds: openapi.NetworkIDList{"net-1"},
+					},
+					StorageType: openapi.StorageTypeV2Spec{
+						NFS: &openapi.NFSV2Spec{},
+					},
+				},
 			},
 			want: []regionv1.Attachment{
 				{
@@ -156,7 +175,7 @@ func TestGenerateAttachmentList(t *testing.T) {
 		},
 		{
 			name:  "empty",
-			input: &openapi.StorageAttachmentV2Spec{},
+			input: &openapi.StorageV2Update{},
 			want:  []regionv1.Attachment{},
 		},
 		{
@@ -170,7 +189,7 @@ func TestGenerateAttachmentList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := generateAttachmentList(ctx, netclient, tt.input)
+			got, err := generateAttachmentList(ctx, netclient, tt.input, DefaultParallelism)
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
 		})
@@ -627,7 +646,8 @@ func TestConvertClass(t *testing.T) {
 					ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned,
 				},
 				Spec: openapi.StorageClassV2Spec{
-					Protocols: []openapi.StorageClassProtocolType{},
+					Parallelism: DefaultParallelism,
+					Protocols:   []openapi.StorageClassProtocolType{},
 				},
 			},
 		},
@@ -662,8 +682,9 @@ func TestConvertClass(t *testing.T) {
 					Name:               "sc-name",
 				},
 				Spec: openapi.StorageClassV2Spec{
-					RegionId:  "region-1",
-					Protocols: []openapi.StorageClassProtocolType{openapi.StorageClassProtocolTypeNfsv3, openapi.StorageClassProtocolTypeNfsv4},
+					RegionId:    "region-1",
+					Parallelism: DefaultParallelism,
+					Protocols:   []openapi.StorageClassProtocolType{openapi.StorageClassProtocolTypeNfsv3, openapi.StorageClassProtocolTypeNfsv4},
 				},
 			},
 		},
@@ -675,6 +696,68 @@ func TestConvertClass(t *testing.T) {
 
 			got := convertClass(tt.input)
 			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestGetStorageClassParallelism(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		parallelism     *int
+		wantParallelism int
+	}{
+		{
+			name:            "explicit parallelism value",
+			parallelism:     ptr.To(8),
+			wantParallelism: 8,
+		},
+		{
+			name:            "nil parallelism defaults to DefaultParallelism",
+			parallelism:     nil,
+			wantParallelism: DefaultParallelism,
+		},
+		{
+			name:            "zero parallelism defaults to DefaultParallelism",
+			parallelism:     ptr.To(0),
+			wantParallelism: DefaultParallelism,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			storageClass := &regionv1.FileStorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "sc-1",
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						constants.RegionLabel: "region-1",
+					},
+				},
+				Spec: regionv1.FileStorageClassSpec{
+					Protocols:   []regionv1.Protocol{regionv1.NFSv3},
+					Parallelism: tt.parallelism,
+				},
+			}
+
+			k8sClient := newFakeClient(t, storageClass)
+
+			c := &Client{
+				ClientArgs: common.ClientArgs{
+					Client:    k8sClient,
+					Namespace: testNamespace,
+				},
+			}
+
+			ctx := newContextWithPermissions(t.Context())
+
+			result, err := c.GetStorageClass(ctx, "sc-1")
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Equal(t, tt.wantParallelism, result.Spec.Parallelism)
 		})
 	}
 }
@@ -765,7 +848,7 @@ func TestGenerateV2(t *testing.T) {
 
 			client, ctx := newClientAndContext(t, k8s, &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
 
-			got, err := client.generateV2(ctx, tt.input.organizationID, tt.input.projectID, tt.input.regionID, tt.input.request, tt.input.storageClassID)
+			got, err := client.generateV2(ctx, tt.input.organizationID, tt.input.projectID, tt.input.regionID, tt.input.request, tt.input.storageClass)
 
 			require.NoError(t, err)
 			require.NotNil(t, got)
@@ -879,7 +962,7 @@ func TestGenerateV2Validations(t *testing.T) {
 
 			c, ctx := newClientAndContext(t, client, tt.authorization, tt.principal)
 
-			got, err := c.generateV2(ctx, tt.input.organizationID, tt.input.projectID, tt.input.regionID, tt.input.request, tt.input.storageClassID)
+			got, err := c.generateV2(ctx, tt.input.organizationID, tt.input.projectID, tt.input.regionID, tt.input.request, tt.input.storageClass)
 
 			require.Nil(t, got)
 			require.Error(t, err)
@@ -891,7 +974,7 @@ type generateV2Input struct {
 	organizationID string
 	projectID      string
 	regionID       string
-	storageClassID string
+	storageClass   *openapi.StorageClassV2Read
 	request        *openapi.StorageV2Update
 }
 
@@ -904,7 +987,17 @@ func newDefaultGenerateV2Input() *generateV2Input {
 		organizationID: "org-1",
 		projectID:      "proj-1",
 		regionID:       "reg-1",
-		storageClassID: "sc-1",
+		storageClass: &openapi.StorageClassV2Read{
+			Metadata: corev1.ResourceReadMetadata{
+				Id:                 "sc-1",
+				Name:               "sc-1",
+				HealthStatus:       corev1.ResourceHealthStatusHealthy,
+				ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned,
+			},
+			Spec: openapi.StorageClassV2Spec{
+				Parallelism: DefaultParallelism,
+			},
+		},
 		request: &openapi.StorageV2Update{
 			Metadata: corev1.ResourceWriteMetadata{
 				Name: "test-filestorage",
