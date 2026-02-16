@@ -300,7 +300,7 @@ func (c *NetworkClient) CreateSubnet(ctx context.Context, network *unikornv1.Net
 	return subnet, nil
 }
 
-func (c *NetworkClient) UpdateSubnet(ctx context.Context, subnetID string, dnsNameservers []string, routes []subnets.HostRoute) (*subnets.Subnet, error) {
+func (c *NetworkClient) UpdateSubnet(ctx context.Context, subnetID string, dnsNameservers []string, routes []subnets.HostRoute, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error) {
 	spanAttributes := trace.WithAttributes(
 		attribute.String("network.subnet.id", subnetID),
 	)
@@ -309,7 +309,8 @@ func (c *NetworkClient) UpdateSubnet(ctx context.Context, subnetID string, dnsNa
 	defer span.End()
 
 	opts := &subnets.UpdateOpts{
-		DNSNameservers: &dnsNameservers,
+		DNSNameservers:  &dnsNameservers,
+		AllocationPools: allocationPools,
 	}
 
 	if len(routes) > 0 {

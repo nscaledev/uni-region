@@ -67,6 +67,32 @@ spec:
                 - kubernetes
                 maxLength: 63
                 type: string
+              reservations:
+                description: |-
+                  Reservations allow parts of the address space to be reserved
+                  mainly for file storage but also VIP pools.
+                properties:
+                  prefixLength:
+                    description: PrefixLength defines the prefix length to reserve.
+                    maximum: 30
+                    minimum: 0
+                    type: integer
+                  vipPoolPrefixLength:
+                    description: |-
+                      VIPPoolPrefixLength defines how much of the prefix to
+                      reserve for VIP pools, the remainder becomes the range
+                      available to the storage sub system.
+                    maximum: 30
+                    minimum: 0
+                    type: integer
+                required:
+                - prefixLength
+                type: object
+                x-kubernetes-validations:
+                - message: vip pool prefix length must be greater than or equal to
+                    the reservation prefix length
+                  rule: '!has(self.vipPoolPrefixLength) || (self.vipPoolPrefixLength
+                    >= self.prefixLength)'
               routes:
                 description: Routes to be distributed via DHCP.
                 items:
@@ -105,6 +131,11 @@ spec:
             required:
             - prefix
             type: object
+            x-kubernetes-validations:
+            - message: reservation prefix length must be greater than the network
+                prefix length
+              rule: '!has(self.reservations) || (self.reservations.prefixLength >
+                int(self.prefix.split("/")[1]))'
           status:
             properties:
               conditions:

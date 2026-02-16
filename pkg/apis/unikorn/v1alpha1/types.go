@@ -434,6 +434,7 @@ type Network struct {
 	Status            NetworkStatus `json:"status,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:message="reservation prefix length must be greater than the network prefix length",rule="!has(self.reservations) || (self.reservations.prefixLength > int(self.prefix.split(\"/\")[1]))"
 type NetworkSpec struct {
 	// Pause, if true, will inhibit reconciliation.
 	Pause bool `json:"pause,omitempty"`
@@ -445,10 +446,27 @@ type NetworkSpec struct {
 	Provider Provider `json:"provider,omitempty"`
 	// Prefix is the IPv4 address prefix.
 	Prefix *unikornv1core.IPv4Prefix `json:"prefix"`
+	// Reservations allow parts of the address space to be reserved
+	// mainly for file storage but also VIP pools.
+	Reservations *NetworkReservations `json:"reservations,omitempty"`
 	// DNSNameservers are a set of DNS nameservrs for the network.
 	DNSNameservers []unikornv1core.IPv4Address `json:"dnsNameservers,omitempty"`
 	// Routes to be distributed via DHCP.
 	Routes []Route `json:"routes,omitempty"`
+}
+
+// +kubebuilder:validation:XValidation:message="vip pool prefix length must be greater than or equal to the reservation prefix length",rule="!has(self.vipPoolPrefixLength) || (self.vipPoolPrefixLength >= self.prefixLength)"
+type NetworkReservations struct {
+	// PrefixLength defines the prefix length to reserve.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=30
+	PrefixLength int `json:"prefixLength"`
+	// VIPPoolPrefixLength defines how much of the prefix to
+	// reserve for VIP pools, the remainder becomes the range
+	// available to the storage sub system.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=30
+	VIPPoolPrefixLength *int `json:"vipPoolPrefixLength,omitempty"`
 }
 
 type Route struct {
