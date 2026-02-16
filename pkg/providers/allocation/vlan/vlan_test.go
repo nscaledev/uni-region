@@ -177,7 +177,7 @@ func TestVLANAllocationIllegalRangeHigh(t *testing.T) {
 	require.ErrorIs(t, err, vlan.ErrAllocation)
 }
 
-// TestVLANFree tests an allocated VLAN can be freed, and not freed multiple times.
+// TestVLANFree tests an allocated VLAN can be freed, and is idempotent.
 func TestVLANFree(t *testing.T) {
 	t.Parallel()
 
@@ -190,7 +190,7 @@ func TestVLANFree(t *testing.T) {
 	require.Equal(t, segmentStart, id)
 
 	require.NoError(t, allocator.Free(t.Context(), id))
-	require.ErrorIs(t, allocator.Free(t.Context(), id), vlan.ErrAllocation)
+	require.NoError(t, allocator.Free(t.Context(), id))
 }
 
 // TestVLANFreeIllegalID tests illegaly VLAN IDs are caught.
