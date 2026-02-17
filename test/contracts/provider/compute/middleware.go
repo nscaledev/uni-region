@@ -23,6 +23,7 @@ import (
 	"net/http"
 
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	"github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	commonmiddleware "github.com/unikorn-cloud/region/test/contracts/provider/common"
 )
@@ -65,6 +66,15 @@ func MockACLMiddleware(_ []string) func(http.Handler) http.Handler {
 
 			// Inject the mock ACL into the request context
 			ctx := rbac.NewContext(r.Context(), mockACL)
+
+			// Inject principal into the request context.
+			p := &principal.Principal{
+				Actor:          "test-user@example.com",
+				OrganizationID: orgID,
+			}
+
+			ctx = principal.NewContext(ctx, p)
+
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

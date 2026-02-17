@@ -26,6 +26,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -162,6 +163,30 @@ var _ = Describe("Region Provider Verification", func() {
 			// we create the state handlers map here so we can use it in the verifier tests.
 			stateHandlers := createStateHandlers(ctx, stateManager)
 
+			// Build base selectors for normal CI verification
+			selectors := []provider.Selector{
+				&provider.ConsumerVersionSelector{
+					Consumer:   "uni-compute",
+					MainBranch: true,
+				},
+				&provider.ConsumerVersionSelector{
+					Consumer:       "uni-compute",
+					MatchingBranch: true,
+				},
+			}
+
+			// Add explicit branch selector only for webhook-triggered verification
+			consumerBranch := strings.TrimSpace(os.Getenv("CONSUMER_BRANCH"))
+			if consumerBranch != "" {
+				selectors = append(selectors, &provider.ConsumerVersionSelector{
+					Consumer: "uni-compute",
+					Branch:   consumerBranch,
+				})
+				fmt.Printf("Webhook mode: Including explicit branch selector for consumer branch '%s'\n", consumerBranch)
+			} else {
+				fmt.Printf("Normal mode: Using MainBranch and MatchingBranch selectors only\n")
+			}
+
 			// Run verification
 			err := verifier.VerifyProvider(testingT, provider.VerifyRequest{
 				ProviderBaseURL: serverURL,
@@ -173,18 +198,9 @@ var _ = Describe("Region Provider Verification", func() {
 				PublishVerificationResults: os.Getenv("CI") == "true" || os.Getenv("PUBLISH_VERIFICATION") == "true",
 				ProviderVersion:            getProviderVersion(),
 				ProviderBranch:             getProviderBranch(),
-				ConsumerVersionSelectors: []provider.Selector{
-					&provider.ConsumerVersionSelector{
-						Consumer:   "uni-compute",
-						MainBranch: true,
-					},
-					&provider.ConsumerVersionSelector{
-						Consumer:       "uni-compute",
-						MatchingBranch: true,
-					},
-				},
-				EnablePending: true,
-				StateHandlers: stateHandlers,
+				ConsumerVersionSelectors:   selectors,
+				EnablePending:              true,
+				StateHandlers:              stateHandlers,
 			})
 
 			Expect(err).NotTo(HaveOccurred(), "Provider verification should succeed")

@@ -20,6 +20,7 @@ package openstack
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"time"
 
@@ -592,7 +593,7 @@ func (c *NetworkClient) GetFloatingIP(ctx context.Context, portID string) (*floa
 	}
 
 	if len(result) > 1 {
-		return nil, errors.ErrConsistency
+		return nil, fmt.Errorf("%w: found more than one floating IP for port ID %s", errors.ErrConsistency, portID)
 	}
 
 	return &result[0], nil

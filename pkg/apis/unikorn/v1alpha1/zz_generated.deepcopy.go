@@ -240,6 +240,11 @@ func (in *FileStorageClassSpec) DeepCopyInto(out *FileStorageClassSpec) {
 		*out = make([]Protocol, len(*in))
 		copy(*out, *in)
 	}
+	if in.Parallelism != nil {
+		in, out := &in.Parallelism, &out.Parallelism
+		*out = new(int)
+		**out = **in
+	}
 	return
 }
 

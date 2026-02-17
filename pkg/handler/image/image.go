@@ -164,9 +164,10 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 		packages = &temp
 	}
 
-	// Get all the user-supplied tags, and set our own tag for the provenance.
+	// Get all the user-supplied tags, and set our own tags for the provenance and ownership.
 	tags := GenerateTags(request.Metadata.Tags, map[string]string{
-		constants.ImageSourceTag: constants.ImageSourceImport,
+		constants.ImageSourceTag:         constants.ImageSourceImport,
+		constants.ImageOrganizationIDTag: organizationID,
 	})
 
 	image := &types.Image{
