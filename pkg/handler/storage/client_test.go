@@ -29,6 +29,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	corev1 "github.com/unikorn-cloud/core/pkg/openapi"
+	servererrors "github.com/unikorn-cloud/core/pkg/server/errors"
 	identityauth "github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityopenapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/principal"
@@ -131,6 +132,162 @@ func TestNarrowRangeWithCap(t *testing.T) {
 
 	nr := narrowStorageRange(storageRange, 256)
 	require.Equal(t, nr, narrowedRangeCapped)
+}
+
+func TestValidateStorageRange(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		network      *regionv1.Network
+		parallelism  int
+		wantRange    *regionv1.AttachmentIPRange
+		wantError    bool
+		wantErrorMsg string
+	}{
+		{
+			name: "valid range has enough addresses",
+			network: &regionv1.Network{
+				Status: regionv1.NetworkStatus{
+					Openstack: &regionv1.NetworkStatusOpenstack{
+						StorageRange: &regionv1.AttachmentIPRange{
+							Start: v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 1)},
+							End:   v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 127)},
+						},
+					},
+				},
+			},
+			parallelism: 4,
+			wantRange: &regionv1.AttachmentIPRange{
+				Start: v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 1)},
+				End:   v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 127)},
+			},
+		},
+		{
+			name: "exact match of available addresses and parallelism",
+			network: &regionv1.Network{
+				Status: regionv1.NetworkStatus{
+					Openstack: &regionv1.NetworkStatusOpenstack{
+						StorageRange: &regionv1.AttachmentIPRange{
+							Start: v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 1)},
+							End:   v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 4)},
+						},
+					},
+				},
+			},
+			parallelism: 4,
+			wantRange: &regionv1.AttachmentIPRange{
+				Start: v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 1)},
+				End:   v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 4)},
+			},
+		},
+		{
+			name: "openstack status missing",
+			network: &regionv1.Network{
+				Status: regionv1.NetworkStatus{},
+			},
+			parallelism:  4,
+			wantError:    true,
+			wantErrorMsg: "network requested is not a suitable network",
+		},
+		{
+			name: "storage range missing",
+			network: &regionv1.Network{
+				Status: regionv1.NetworkStatus{
+					Openstack: &regionv1.NetworkStatusOpenstack{},
+				},
+			},
+			parallelism:  4,
+			wantError:    true,
+			wantErrorMsg: "network requested does not have a storage range configured",
+		},
+		{
+			name: "range is not valid ipv4",
+			network: &regionv1.Network{
+				Status: regionv1.NetworkStatus{
+					Openstack: &regionv1.NetworkStatusOpenstack{
+						StorageRange: &regionv1.AttachmentIPRange{
+							Start: v1alpha1.IPv4Address{IP: net.ParseIP("2001:db8::1")},
+							End:   v1alpha1.IPv4Address{IP: net.ParseIP("2001:db8::10")},
+						},
+					},
+				},
+			},
+			parallelism:  4,
+			wantError:    true,
+			wantErrorMsg: "network storage range is not a valid IPv4 range",
+		},
+		{
+			name: "single address range with parallelism 1",
+			network: &regionv1.Network{
+				Status: regionv1.NetworkStatus{
+					Openstack: &regionv1.NetworkStatusOpenstack{
+						StorageRange: &regionv1.AttachmentIPRange{
+							Start: v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 5)},
+							End:   v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 5)},
+						},
+					},
+				},
+			},
+			parallelism: 1,
+			wantRange: &regionv1.AttachmentIPRange{
+				Start: v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 5)},
+				End:   v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 5)},
+			},
+		},
+		{
+			name: "single address range with parallelism 2",
+			network: &regionv1.Network{
+				Status: regionv1.NetworkStatus{
+					Openstack: &regionv1.NetworkStatusOpenstack{
+						StorageRange: &regionv1.AttachmentIPRange{
+							Start: v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 5)},
+							End:   v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 5)},
+						},
+					},
+				},
+			},
+			parallelism:  2,
+			wantError:    true,
+			wantErrorMsg: "network storage range does not have enough available addresses for the requested parallelism",
+		},
+		{
+			name: "not enough addresses for parallelism",
+			network: &regionv1.Network{
+				Status: regionv1.NetworkStatus{
+					Openstack: &regionv1.NetworkStatusOpenstack{
+						StorageRange: &regionv1.AttachmentIPRange{
+							Start: v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 1)},
+							End:   v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 4)},
+						},
+					},
+				},
+			},
+			parallelism:  5,
+			wantError:    true,
+			wantErrorMsg: "network storage range does not have enough available addresses for the requested parallelism",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := validateStorageRange(tt.network, tt.parallelism)
+
+			if tt.wantError {
+				require.Error(t, err)
+				require.True(t, servererrors.IsUnprocessableContent(err))
+				require.EqualError(t, err, tt.wantErrorMsg)
+				require.Nil(t, got)
+
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tt.wantRange, got)
+		})
+	}
 }
 
 func TestGenerateAttachmentList(t *testing.T) {

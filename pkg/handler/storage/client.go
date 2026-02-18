@@ -334,7 +334,25 @@ func generateAttachmentList(ctx context.Context, networkClient *network.Client, 
 }
 
 func generateAttachment(network *regionv1.Network, parallelism int) (*regionv1.Attachment, error) {
-	networkID := network.Name
+	storageRange, err := validateStorageRange(network, parallelism)
+	if err != nil {
+		return nil, err
+	}
+
+	return &regionv1.Attachment{
+		NetworkID:      network.Name,
+		IPRange:        narrowStorageRange(storageRange, parallelism),
+		SegmentationID: network.Status.Openstack.VlanID,
+	}, nil
+}
+
+// validateStorageRange checks that the network has a valid IPv4 storage range
+// with enough addresses for the requested parallelism. The range is inclusive
+// on both ends: [Start, End], so Start=10.0.0.1, End=10.0.0.4 yields 4 addresses.
+func validateStorageRange(network *regionv1.Network, parallelism int) (*regionv1.AttachmentIPRange, error) {
+	if parallelism < 1 {
+		return nil, errors.HTTPUnprocessableContent("requested parallelism must be at least 1")
+	}
 
 	// FIXME: this part of the network status is destined for deprecation, since it is not generic.
 	// Because FileStorage needs details that are only available through the status at present,
@@ -343,13 +361,29 @@ func generateAttachment(network *regionv1.Network, parallelism int) (*regionv1.A
 		return nil, errors.HTTPUnprocessableContent("network requested is not a suitable network")
 	}
 
-	ipRange := narrowStorageRange(network.Status.Openstack.StorageRange, parallelism)
+	sr := network.Status.Openstack.StorageRange
+	if sr == nil {
+		return nil, errors.HTTPUnprocessableContent("network requested does not have a storage range configured")
+	}
 
-	return &regionv1.Attachment{
-		NetworkID:      networkID,
-		IPRange:        ipRange,
-		SegmentationID: network.Status.Openstack.VlanID,
-	}, nil
+	startIP := sr.Start.To4()
+	endIP := sr.End.To4()
+
+	if startIP == nil || endIP == nil {
+		return nil, errors.HTTPUnprocessableContent("network storage range is not a valid IPv4 range")
+	}
+
+	available := big.NewInt(0).Sub(
+		big.NewInt(0).SetBytes(endIP),
+		big.NewInt(0).SetBytes(startIP),
+	)
+	required := big.NewInt(int64(parallelism - 1))
+
+	if available.Cmp(required) < 0 {
+		return nil, errors.HTTPUnprocessableContent("network storage range does not have enough available addresses for the requested parallelism")
+	}
+
+	return sr, nil
 }
 
 func narrowStorageRange(in *regionv1.AttachmentIPRange, parallelism int) *regionv1.AttachmentIPRange {
