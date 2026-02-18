@@ -21,6 +21,7 @@ package common
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -30,6 +31,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -63,6 +65,11 @@ func (rm *RegionStateManager) setupRegionWithType(ctx context.Context, regionNam
 func (rm *RegionStateManager) setupRegion(ctx context.Context, regionName string) error {
 	// Clean up any existing regions first
 	if err := rm.cleanupAllRegions(ctx); err != nil {
+		return err
+	}
+
+	// Create kubeconfig secret so the Kubernetes provider can connect to the cluster
+	if err := rm.createKubeconfigSecret(ctx); err != nil {
 		return err
 	}
 
@@ -336,6 +343,45 @@ func (rm *RegionStateManager) createOpenstackServiceAccountSecret(ctx context.Co
 		// Check if error is "already exists"
 		if !kerrors.IsAlreadyExists(err) {
 			return fmt.Errorf("failed to create openstack service account secret: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// createKubeconfigSecret creates a secret containing the current kubeconfig.
+// This allows the Kubernetes provider to connect back to the kind cluster for flavor discovery.
+func (rm *RegionStateManager) createKubeconfigSecret(ctx context.Context) error {
+	// Get the kubeconfig path
+	kubeconfigPath := os.Getenv("KUBECONFIG")
+	if kubeconfigPath == "" {
+		kubeconfigPath = clientcmd.RecommendedHomeFile
+	}
+
+	// Load and serialize the kubeconfig
+	config, err := clientcmd.LoadFromFile(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to load kubeconfig from %s: %w", kubeconfigPath, err)
+	}
+
+	kubeconfigBytes, err := clientcmd.Write(*config)
+	if err != nil {
+		return fmt.Errorf("failed to serialize kubeconfig: %w", err)
+	}
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      TestKubeconfigSecret,
+			Namespace: rm.namespace,
+		},
+		Data: map[string][]byte{
+			"kubeconfig": kubeconfigBytes,
+		},
+	}
+
+	if err := rm.client.Create(ctx, secret); err != nil {
+		if !kerrors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create kubeconfig secret: %w", err)
 		}
 	}
 
