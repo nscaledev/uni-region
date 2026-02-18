@@ -1,3 +1,6 @@
+{{- if .Values.fileStorageController.enabled }}
+---
+
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -12,3 +15,4 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: {{ .Release.Name }}-file-storage-controller
+{{- end }}
