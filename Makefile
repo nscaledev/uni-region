@@ -277,7 +277,7 @@ test-contracts-provider:
 	GIT_BRANCH="$(GIT_BRANCH)" \
 	PUBLISH_VERIFICATION=true \
 	GOFLAGS="$(PACT_GOFLAGS)" \
-	go test ./test/contracts/provider/... -v -count=1
+	go test ./test/contracts/provider/... -v -count=1 -p 1
 
 # Run provider verification with verbose output
 .PHONY: test-contracts-provider-verbose
@@ -297,7 +297,7 @@ test-contracts-provider-verbose:
 	PUBLISH_VERIFICATION=true \
 	VERBOSE=true \
 	GOFLAGS="$(PACT_GOFLAGS)" \
-	go test ./test/contracts/provider/... -v -count=1
+	go test ./test/contracts/provider/... -v -count=1 -p 1
 
 # Run provider verification from local pact file
 .PHONY: test-contracts-provider-local
@@ -315,7 +315,7 @@ test-contracts-provider-local:
 	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
 	GIT_BRANCH="$(GIT_BRANCH)" \
 	GOFLAGS="$(PACT_GOFLAGS)" \
-	go test ./test/contracts/provider/... -v -count=1
+	go test ./test/contracts/provider/... -v -count=1 -p 1
 
 # Run provider verification and publish results to Pact Broker (works on both macOS and Linux)
 # Sets CI=true which triggers auto-publishing to Pact Broker
@@ -335,7 +335,7 @@ test-contracts-provider-ci:
 	CONSUMER_BRANCH="$(CONSUMER_BRANCH)" \
 	CI=true \
 	GOFLAGS="$(PACT_GOFLAGS)" \
-	go test ./test/contracts/provider/... -v -count=1
+	go test ./test/contracts/provider/... -v -count=1 -p 1
 
 # Simulate webhook-triggered provider verification
 # Usage: make test-contracts-provider-webhook CONSUMER_BRANCH=feature/my-branch
@@ -361,7 +361,7 @@ test-contracts-provider-webhook:
 	CONSUMER_BRANCH="$(CONSUMER_BRANCH)" \
 	PUBLISH_VERIFICATION=true \
 	GOFLAGS="$(PACT_GOFLAGS)" \
-	go test ./test/contracts/provider/... -v -count=1
+	go test ./test/contracts/provider/... -v -count=1 -p 1
 
 # Clean contract test artifacts
 .PHONY: test-contracts-clean
