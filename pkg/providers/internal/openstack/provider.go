@@ -704,48 +704,46 @@ func convertImage(image *images.Image) (*types.Image, error) {
 	return &providerImage, nil
 }
 
-type imagePredicate func(*types.Image) bool
+// imageFilter is a func that returns `true` if an image should be _removed_ from
+// results. It's around this way so we don't have to negate results for `DeleteFunc`.
+type imageFilter func(*types.Image) bool
 
 // TODO: this operates on generic types now, so shouldn't live here.
 // However it relies on some RBAC functions defined internally that
 // are still needed by part of this package.
 type imageQuery struct {
-	listFunc   func() (*cache.ListSnapshot[types.Image], error)
-	predicates []imagePredicate
+	listFunc func() (*cache.ListSnapshot[types.Image], error)
+	filters  []imageFilter
 }
 
 func (q *imageQuery) AvailableToOrganization(organizationIDs ...string) types.ImageQuery {
-	q.predicates = append(q.predicates, func(im *types.Image) bool {
-		return isPublicOrOrganizationOwnedImage(im, organizationIDs)
+	q.filters = append(q.filters, func(im *types.Image) bool {
+		return !isPublicOrOrganizationOwnedImage(im, organizationIDs)
 	})
 
 	return q
 }
 
 func (q *imageQuery) OwnedByOrganization(organizationIDs ...string) types.ImageQuery {
-	q.predicates = append(q.predicates, func(im *types.Image) bool {
-		return isOrganizationOwnedImage(im, organizationIDs)
+	q.filters = append(q.filters, func(im *types.Image) bool {
+		return !isOrganizationOwnedImage(im, organizationIDs)
 	})
 
 	return q
 }
 
 func (q *imageQuery) StatusIn(statuses ...types.ImageStatus) types.ImageQuery {
-	q.predicates = append(q.predicates, func(im *types.Image) bool {
-		return slices.Contains(statuses, im.Status)
+	q.filters = append(q.filters, func(im *types.Image) bool {
+		return !slices.Contains(statuses, im.Status)
 	})
 
 	return q
 }
 
-func (q *imageQuery) matchAllPredicates(im *types.Image) bool {
-	for _, f := range q.predicates {
-		if !f(im) {
-			return false
-		}
-	}
-
-	return true
+func (q *imageQuery) filter(im *types.Image) bool {
+	return slices.ContainsFunc(q.filters, func(f imageFilter) bool {
+		return f(im)
+	})
 }
 
 func (q *imageQuery) List() (types.ImageList, error) {
@@ -754,9 +752,7 @@ func (q *imageQuery) List() (types.ImageList, error) {
 		return nil, err
 	}
 
-	images.Items = slices.DeleteFunc(images.Items, func(i *types.Image) bool {
-		return !q.matchAllPredicates(i)
-	})
+	images.Items = slices.DeleteFunc(images.Items, q.filter)
 
 	return images, nil
 }
