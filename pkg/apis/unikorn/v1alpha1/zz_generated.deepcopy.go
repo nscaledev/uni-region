@@ -158,6 +158,11 @@ func (in *FileStorageAttachmentStatus) DeepCopyInto(out *FileStorageAttachmentSt
 		*out = new(int)
 		**out = **in
 	}
+	if in.IPRange != nil {
+		in, out := &in.IPRange, &out.IPRange
+		*out = new(AttachmentIPRange)
+		(*in).DeepCopyInto(*out)
+	}
 	return
 }
 
