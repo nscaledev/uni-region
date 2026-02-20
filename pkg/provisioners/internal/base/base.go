@@ -29,7 +29,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func GetIdentity(ctx context.Context, object client.Object) (*unikornv1.Identity, error) {
+type Base struct {
+	Providers providers.Providers
+}
+
+func getIdentity(ctx context.Context, object client.Object) (*unikornv1.Identity, error) {
 	cli, err := coreclient.FromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -44,22 +48,17 @@ func GetIdentity(ctx context.Context, object client.Object) (*unikornv1.Identity
 	return identity, nil
 }
 
-func Provider(ctx context.Context, object client.Object) (types.Provider, error) {
-	cli, err := coreclient.FromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return providers.New(cli, object.GetNamespace()).LookupCloud(ctx, object.GetLabels()[constants.RegionLabel])
+func (b *Base) Provider(ctx context.Context, object client.Object) (types.Provider, error) {
+	return b.Providers.LookupCloud(ctx, object.GetLabels()[constants.RegionLabel])
 }
 
-func ProviderAndIdentity(ctx context.Context, object client.Object) (types.Provider, *unikornv1.Identity, error) {
-	id, err := GetIdentity(ctx, object)
+func (b *Base) ProviderAndIdentity(ctx context.Context, object client.Object) (types.Provider, *unikornv1.Identity, error) {
+	id, err := getIdentity(ctx, object)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	prov, err := Provider(ctx, object)
+	prov, err := b.Provider(ctx, object)
 
 	return prov, id, err
 }
