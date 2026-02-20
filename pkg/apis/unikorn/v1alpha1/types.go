@@ -888,6 +888,9 @@ type FileStorageAttachmentStatus struct {
 	ProvisioningStatus AttachmentProvisioningStatus `json:"provisioningStatus"`
 	// SegmentationID is the VLAN ID for the attachment.
 	SegmentationID *int `json:"segmentationID,omitempty"`
+	// IPRange is the currently provisioned/observed IP range for the attachment.
+	// (May differ from attachments[].ipRange while provisioning/resizing.)
+	IPRange *AttachmentIPRange `json:"ipRange,omitempty"`
 	// Human-readable message indicating details about the attachment.
 	Message string `json:"message"`
 }
