@@ -201,18 +201,18 @@ func (mr *MockSubnetInterfaceMockRecorder) GetSubnet(ctx, network any) *gomock.C
 }
 
 // UpdateSubnet mocks base method.
-func (m *MockSubnetInterface) UpdateSubnet(ctx context.Context, subnetID string, dnsNameservers []string, routes []subnets.HostRoute) (*subnets.Subnet, error) {
+func (m *MockSubnetInterface) UpdateSubnet(ctx context.Context, subnetID string, dnsNameservers []string, routes []subnets.HostRoute, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateSubnet", ctx, subnetID, dnsNameservers, routes)
+	ret := m.ctrl.Call(m, "UpdateSubnet", ctx, subnetID, dnsNameservers, routes, allocationPools)
 	ret0, _ := ret[0].(*subnets.Subnet)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // UpdateSubnet indicates an expected call of UpdateSubnet.
-func (mr *MockSubnetInterfaceMockRecorder) UpdateSubnet(ctx, subnetID, dnsNameservers, routes any) *gomock.Call {
+func (mr *MockSubnetInterfaceMockRecorder) UpdateSubnet(ctx, subnetID, dnsNameservers, routes, allocationPools any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSubnet", reflect.TypeOf((*MockSubnetInterface)(nil).UpdateSubnet), ctx, subnetID, dnsNameservers, routes)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSubnet", reflect.TypeOf((*MockSubnetInterface)(nil).UpdateSubnet), ctx, subnetID, dnsNameservers, routes, allocationPools)
 }
 
 // MockRouterInterface is a mock of RouterInterface interface.
@@ -1020,18 +1020,18 @@ func (mr *MockNetworkingInterfaceMockRecorder) UpdatePort(ctx, portID, securityG
 }
 
 // UpdateSubnet mocks base method.
-func (m *MockNetworkingInterface) UpdateSubnet(ctx context.Context, subnetID string, dnsNameservers []string, routes []subnets.HostRoute) (*subnets.Subnet, error) {
+func (m *MockNetworkingInterface) UpdateSubnet(ctx context.Context, subnetID string, dnsNameservers []string, routes []subnets.HostRoute, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateSubnet", ctx, subnetID, dnsNameservers, routes)
+	ret := m.ctrl.Call(m, "UpdateSubnet", ctx, subnetID, dnsNameservers, routes, allocationPools)
 	ret0, _ := ret[0].(*subnets.Subnet)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // UpdateSubnet indicates an expected call of UpdateSubnet.
-func (mr *MockNetworkingInterfaceMockRecorder) UpdateSubnet(ctx, subnetID, dnsNameservers, routes any) *gomock.Call {
+func (mr *MockNetworkingInterfaceMockRecorder) UpdateSubnet(ctx, subnetID, dnsNameservers, routes, allocationPools any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSubnet", reflect.TypeOf((*MockNetworkingInterface)(nil).UpdateSubnet), ctx, subnetID, dnsNameservers, routes)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSubnet", reflect.TypeOf((*MockNetworkingInterface)(nil).UpdateSubnet), ctx, subnetID, dnsNameservers, routes, allocationPools)
 }
 
 // MockKeypairInterface is a mock of KeypairInterface interface.

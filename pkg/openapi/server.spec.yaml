@@ -827,6 +827,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/networks/{networkID}:
@@ -2126,6 +2128,43 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/route'
+    networkReservations:
+      description: |-
+        Network reservations allow part of the network prefix to be reserved
+        and not available to DHCP for server provisioning.  Reserved space is
+        required for fast file storage integration.  By default a /28 will be
+        allocated automatically.
+      type: object
+      required:
+      - prefixLength
+      properties:
+        prefixLength:
+          description: |-
+            Specifies the length of the IPv4 network prefix to reserve.
+            A value of 24 (/24) equates to 256 network addresses.
+            This will be reserved from the start of the main network
+            prefix.  The network address (.0) and the router address (.1)
+            are not available for end user use yielding N-2 usable
+            addresses.  The reservation prefix length must be a positive
+            integer with a maximum of 30 and must be greater than the network
+            prefix length.
+          type: integer
+          minimum: 0
+          maximum: 30
+        nonStoragePrefixLength:
+          description: |-
+            If specified this allows a portion of the reservation to be made
+            available as virtual IPs that can be used as you require e.g. to
+            implement high availability via VRRP.  A value of 28 (/28) equates
+            to 16 network addresses.  This pool is allocated at the start of
+            the reservation with usable VIP addresses beginning at .2.  The
+            remaining addresses in the reservation are available for use with
+            fast file storage etc. The VIP prefix length must be a positive integer
+            with a maximum of 30 and must be greater than or equal to the
+            reservation prefix length.
+          type: integer
+          minimum: 0
+          maximum: 30
     networkV2Spec:
       description: A network's specification.
       type: object
@@ -2140,6 +2179,8 @@ components:
           $ref: '#/components/schemas/ipv4AddressList'
         routes:
           $ref: '#/components/schemas/routes'
+        reservations:
+          $ref: '#/components/schemas/networkReservations'
     networkV2CreateSpec:
       description: A network's specification.
       type: object
@@ -2162,7 +2203,12 @@ components:
             description: The region a network is to be provisioned in.
             type: string 
           prefix:
-            description: An IPv4 prefix for the network.
+            description: |-
+              An IPv4 prefix for the network.  Dynamic modification of the
+              network prefix is not supported at this time, and doing so
+              would involve adding a route between discrete broadcast domains
+              so ensure this is large enough for your potential requirements
+              during the life time of your infrastructure.
             type: string
     networkV2Status:
       description: Read only status about a network.
@@ -3013,6 +3059,9 @@ components:
               projectId: f113be96-4dd2-4c14-9c0e-e96c500f21e0
               regionId: c7568e2d-f9ab-453d-9a3a-51375f78426b
               prefix: 192.168.0.0/24
+              reservations:
+                prefixLength: 25
+                vipPoolPrefixLength: 28
               dnsNameservers:
               - 8.8.8.8
               routes:
@@ -3475,6 +3524,9 @@ components:
             status:
               regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
               prefix: 192.168.0.0/24
+              reservations:
+                prefixLength: 25
+                vipPoolPrefixLength: 28
     networksV2Response:
       description: A list of layer 3 networks.
       content:
@@ -3497,6 +3549,9 @@ components:
             status:
               regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
               prefix: 192.168.0.0/24
+              reservations:
+                prefixLength: 25
+                vipPoolPrefixLength: 28
     externalNetworksResponse:
       description: A list of valid external networks.
       content:

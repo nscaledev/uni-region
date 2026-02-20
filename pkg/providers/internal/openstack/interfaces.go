@@ -50,7 +50,7 @@ type NetworkInterface interface {
 type SubnetInterface interface {
 	GetSubnet(ctx context.Context, network *unikornv1.Network) (*subnets.Subnet, error)
 	CreateSubnet(ctx context.Context, network *unikornv1.Network, networkID string, prefix, gatewayID string, dnsNameservers []string, routes []subnets.HostRoute, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error)
-	UpdateSubnet(ctx context.Context, subnetID string, dnsNameservers []string, routes []subnets.HostRoute) (*subnets.Subnet, error)
+	UpdateSubnet(ctx context.Context, subnetID string, dnsNameservers []string, routes []subnets.HostRoute, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error)
 	DeleteSubnet(ctx context.Context, id string) error
 }
 
