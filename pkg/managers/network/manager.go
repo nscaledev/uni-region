@@ -24,6 +24,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/util"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/managers"
 	"github.com/unikorn-cloud/region/pkg/provisioners/managers/network"
 
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -35,9 +36,14 @@ import (
 )
 
 // Factory provides methods that can build a type specific controller.
-type Factory struct{}
+type Factory struct {
+	managers.ProvidersInit
+}
 
-var _ coremanager.ControllerFactory = &Factory{}
+var _ interface {
+	coremanager.ControllerFactory
+	coremanager.ControllerInitializer
+} = &Factory{}
 
 // Metadata returns the application, version and revision.
 func (*Factory) Metadata() util.ServiceDescriptor {
@@ -50,8 +56,8 @@ func (*Factory) Options() coremanager.ControllerOptions {
 }
 
 // Reconciler returns a new reconciler instance.
-func (*Factory) Reconciler(options *options.Options, controllerOptions coremanager.ControllerOptions, manager manager.Manager) reconcile.Reconciler {
-	return coremanager.NewReconciler(options, controllerOptions, manager, network.New)
+func (f *Factory) Reconciler(options *options.Options, controllerOptions coremanager.ControllerOptions, manager manager.Manager) reconcile.Reconciler {
+	return coremanager.NewReconciler(options, controllerOptions, manager, f.ProvisionerCreate(network.New))
 }
 
 // RegisterWatches adds any watches that would trigger a reconcile.
