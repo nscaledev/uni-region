@@ -205,6 +205,8 @@ github.com/ugorji/go/codec v1.2.12 h1:9LC83zGrHhuUA9l16C9AHXAqEV/2wBQ4nkvumAE65E
 github.com/ugorji/go/codec v1.2.12/go.mod h1:UNopzCgEMSXjBc6AOMqYvWC1ktqTAfzJZUZgYf6w6lg=
 github.com/unikorn-cloud/core v1.14.0-rc1 h1:5kq5v3hjXnDNPBy1BsDLSwY233u8XLYwyleywJeTFUo=
 github.com/unikorn-cloud/core v1.14.0-rc1/go.mod h1:NBcUrdV7RKIPFBdootNeN74otIoNLQp14+KpVE5m1X0=
+github.com/unikorn-cloud/core v1.14.0-rc1.0.20260223163658-7f1ade8ae38e h1:RDav2SqhZzQSzTGM1DvjieeFnRNBJlvNWxJLoAfJT9I=
+github.com/unikorn-cloud/core v1.14.0-rc1.0.20260223163658-7f1ade8ae38e/go.mod h1:NBcUrdV7RKIPFBdootNeN74otIoNLQp14+KpVE5m1X0=
 github.com/unikorn-cloud/identity v1.14.0-rc1 h1:B/G9Lp27qPQHnKPNrfOJlY7YnahMSlv38cwtHC/mzkY=
 github.com/unikorn-cloud/identity v1.14.0-rc1/go.mod h1:6mJqFyX8QZHvNFV0aYZJrE/1eozR5xiZYORNxe1Xlxc=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=

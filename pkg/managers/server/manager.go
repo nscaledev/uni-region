@@ -36,9 +36,14 @@ import (
 )
 
 // Factory provides methods that can build a type specific controller.
-type Factory struct{}
+type Factory struct {
+	managers.ProvidersInit
+}
 
-var _ coremanager.ControllerFactory = &Factory{}
+var _ interface {
+	coremanager.ControllerFactory
+	coremanager.ControllerInitializer
+} = &Factory{}
 
 // Metadata returns the application, version and revision.
 func (*Factory) Metadata() util.ServiceDescriptor {
@@ -52,7 +57,7 @@ func (*Factory) Options() coremanager.ControllerOptions {
 
 // Reconciler returns a new reconciler instance.
 func (f *Factory) Reconciler(options *options.Options, controllerOptions coremanager.ControllerOptions, manager manager.Manager) reconcile.Reconciler {
-	return coremanager.NewReconciler(options, controllerOptions, manager, managers.ProvisionerFunc(manager, options, server.New))
+	return coremanager.NewReconciler(options, controllerOptions, manager, f.ProvisionerCreate(server.New))
 }
 
 // RegisterWatches adds any watches that would trigger a reconcile.
