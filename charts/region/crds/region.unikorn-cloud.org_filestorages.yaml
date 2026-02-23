@@ -132,6 +132,23 @@ spec:
                   network.
                 items:
                   properties:
+                    ipRange:
+                      description: |-
+                        IPRange is the currently provisioned/observed IP range for the attachment.
+                        (May differ from attachments[].ipRange while provisioning/resizing.)
+                      properties:
+                        endIP:
+                          description: End is the end IP address for the attachment.
+                          pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])$
+                          type: string
+                        startIP:
+                          description: Start is the start IP address for the attachment.
+                          pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])$
+                          type: string
+                      required:
+                      - endIP
+                      - startIP
+                      type: object
                     message:
                       description: Human-readable message indicating details about
                         the attachment.
