@@ -103,7 +103,7 @@ var _ = Describe("Flavor Discovery", func() {
 					Expect(flavor.Metadata.Name).NotTo(BeEmpty())
 					Expect(flavor.Spec.Cpus).To(BeNumerically(">", 0))
 					Expect(flavor.Spec.Memory).To(BeNumerically(">=", 0)) // Memory can be 0 for some flavor types
-					Expect(flavor.Spec.Disk).To(BeNumerically(">=", 0)) // Disk can be 0 for some flavor types
+					Expect(flavor.Spec.Disk).To(BeNumerically(">", 0))
 				}
 
 				GinkgoWriter.Printf("Found %d flavors for region %s\n", len(flavors), config.RegionID)
