@@ -92,7 +92,7 @@ const (
 )
 
 const (
-	imageCacheTTL = 5 * time.Minute
+	imageCacheTTL = 1 * time.Minute
 )
 
 type providerCredentials struct {
