@@ -24,6 +24,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 )
 
@@ -32,12 +33,18 @@ type Provisioner struct {
 	provisioners.Metadata
 	// securitygroup is the security group we're provisioning.
 	securitygroup *unikornv1.SecurityGroup
+
+	// Base gives this type methods for getting identities and providers.
+	base.Base
 }
 
 // New returns a new initialized provisioner object.
-func New(_ manager.ControllerOptions) provisioners.ManagerProvisioner {
+func New(_ manager.ControllerOptions, providers providers.Providers) provisioners.ManagerProvisioner {
 	return &Provisioner{
 		securitygroup: &unikornv1.SecurityGroup{},
+		Base: base.Base{
+			Providers: providers,
+		},
 	}
 }
 
@@ -50,7 +57,7 @@ func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
-	provider, identity, err := base.ProviderAndIdentity(ctx, p.securitygroup)
+	provider, identity, err := p.ProviderAndIdentity(ctx, p.securitygroup)
 	if err != nil {
 		return err
 	}
@@ -70,7 +77,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	provider, identity, err := base.ProviderAndIdentity(ctx, p.securitygroup)
+	provider, identity, err := p.ProviderAndIdentity(ctx, p.securitygroup)
 	if err != nil {
 		return err
 	}

@@ -30,6 +30,7 @@ import (
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 )
 
@@ -54,6 +55,10 @@ func (o *Options) AddFlags(f *pflag.FlagSet) {
 // Provisioner encapsulates control plane provisioning.
 type Provisioner struct {
 	provisioners.Metadata
+
+	// Base gives this methods for getting identities and providers.
+	base.Base
+
 	// identity is the identity we're provisioning.
 	identity *unikornv1.Identity
 
@@ -62,11 +67,14 @@ type Provisioner struct {
 }
 
 // New returns a new initialized provisioner object.
-func New(options coremanager.ControllerOptions) provisioners.ManagerProvisioner {
+func New(options coremanager.ControllerOptions, providers providers.Providers) provisioners.ManagerProvisioner {
 	return &Provisioner{
 		identity: &unikornv1.Identity{},
 		//nolint:forcetypeassert
 		options: options.(*Options),
+		Base: base.Base{
+			Providers: providers,
+		},
 	}
 }
 
@@ -83,7 +91,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
-	provider, err := base.Provider(ctx, p.identity)
+	provider, err := p.Provider(ctx, p.identity)
 	if err != nil {
 		return err
 	}
@@ -97,7 +105,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	provider, err := base.Provider(ctx, p.identity)
+	provider, err := p.Provider(ctx, p.identity)
 	if err != nil {
 		return err
 	}

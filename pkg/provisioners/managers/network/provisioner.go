@@ -30,6 +30,7 @@ import (
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 )
 
@@ -60,15 +61,21 @@ type Provisioner struct {
 	network *unikornv1.Network
 	// options are documented for the type.
 	options *Options
+
+	// Base gives us methods for getting identities and providers.
+	base.Base
 }
 
 // New returns a new initialized provisioner object.
-func New(options manager.ControllerOptions) provisioners.ManagerProvisioner {
+func New(options manager.ControllerOptions, providers providers.Providers) provisioners.ManagerProvisioner {
 	o, _ := options.(*Options)
 
 	return &Provisioner{
 		network: &unikornv1.Network{},
 		options: o,
+		Base: base.Base{
+			Providers: providers,
+		},
 	}
 }
 
@@ -90,7 +97,7 @@ func (p *Provisioner) identityClient(ctx context.Context) (identityapi.ClientWit
 
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
-	provider, identity, err := base.ProviderAndIdentity(ctx, p.network)
+	provider, identity, err := p.ProviderAndIdentity(ctx, p.network)
 	if err != nil {
 		return err
 	}
@@ -110,7 +117,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	provider, identity, err := base.ProviderAndIdentity(ctx, p.network)
+	provider, identity, err := p.ProviderAndIdentity(ctx, p.network)
 	if err != nil {
 		return err
 	}

@@ -27,6 +27,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 
 	"k8s.io/apimachinery/pkg/labels"
@@ -39,12 +40,18 @@ type Provisioner struct {
 	provisioners.Metadata
 	// server is the server we're provisioning.
 	server *unikornv1.Server
+
+	// Base gives this methods for getting identities and providers.
+	base.Base
 }
 
 // New returns a new initialized provisioner object.
-func New(_ manager.ControllerOptions) provisioners.ManagerProvisioner {
+func New(_ manager.ControllerOptions, providers providers.Providers) provisioners.ManagerProvisioner {
 	return &Provisioner{
 		server: &unikornv1.Server{},
+		Base: base.Base{
+			Providers: providers,
+		},
 	}
 }
 
@@ -110,7 +117,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return fmt.Errorf("%w: failed to add security group references", err)
 	}
 
-	provider, identity, err := base.ProviderAndIdentity(ctx, p.server)
+	provider, identity, err := p.ProviderAndIdentity(ctx, p.server)
 	if err != nil {
 		return err
 	}
@@ -143,7 +150,7 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
-	provider, identity, err := base.ProviderAndIdentity(ctx, p.server)
+	provider, identity, err := p.ProviderAndIdentity(ctx, p.server)
 	if err != nil {
 		return err
 	}
