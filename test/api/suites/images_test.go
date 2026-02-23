@@ -67,7 +67,7 @@ var _ = Describe("Image Management", Ordered, func() {
 		})
 	})
 
-	Context("When managing a custom image lifecycle", func() {
+	Context("When managing a custom image", func() {
 		var customImageID string
 
 		AfterAll(func() {
