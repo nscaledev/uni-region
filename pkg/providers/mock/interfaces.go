@@ -16,6 +16,44 @@ import (
 	gomock "go.uber.org/mock/gomock"
 )
 
+// MockProvisionerProviders is a mock of ProvisionerProviders interface.
+type MockProvisionerProviders struct {
+	ctrl     *gomock.Controller
+	recorder *MockProvisionerProvidersMockRecorder
+}
+
+// MockProvisionerProvidersMockRecorder is the mock recorder for MockProvisionerProviders.
+type MockProvisionerProvidersMockRecorder struct {
+	mock *MockProvisionerProviders
+}
+
+// NewMockProvisionerProviders creates a new mock instance.
+func NewMockProvisionerProviders(ctrl *gomock.Controller) *MockProvisionerProviders {
+	mock := &MockProvisionerProviders{ctrl: ctrl}
+	mock.recorder = &MockProvisionerProvidersMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockProvisionerProviders) EXPECT() *MockProvisionerProvidersMockRecorder {
+	return m.recorder
+}
+
+// LookupProvisioner mocks base method.
+func (m *MockProvisionerProviders) LookupProvisioner(ctx context.Context, regionID string) (types.ProvisionerProvider, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LookupProvisioner", ctx, regionID)
+	ret0, _ := ret[0].(types.ProvisionerProvider)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LookupProvisioner indicates an expected call of LookupProvisioner.
+func (mr *MockProvisionerProvidersMockRecorder) LookupProvisioner(ctx, regionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LookupProvisioner", reflect.TypeOf((*MockProvisionerProviders)(nil).LookupProvisioner), ctx, regionID)
+}
+
 // MockProviders is a mock of Providers interface.
 type MockProviders struct {
 	ctrl     *gomock.Controller

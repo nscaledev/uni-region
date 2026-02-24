@@ -24,6 +24,14 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 )
 
+// ProvisionerProviders is the factory interface for controller/provisioner use.
+// It only exposes operations relevant to provisioning.
+type ProvisionerProviders interface {
+	// LookupProvisioner returns a provisioner provider as identified by the region ID.
+	LookupProvisioner(ctx context.Context, regionID string) (types.ProvisionerProvider, error)
+}
+
+// Providers is the factory interface for API server use.
 type Providers interface {
 	// LookupCommon returns a provider as identified by the region ID of any type.
 	LookupCommon(ctx context.Context, regionID string) (types.CommonProvider, error)
