@@ -44,16 +44,16 @@ func GetIdentity(ctx context.Context, object client.Object) (*unikornv1.Identity
 	return identity, nil
 }
 
-func Provider(ctx context.Context, object client.Object) (types.Provider, error) {
+func Provider(ctx context.Context, object client.Object) (types.ProvisionerProvider, error) {
 	cli, err := coreclient.FromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return providers.New(cli, object.GetNamespace()).LookupCloud(ctx, object.GetLabels()[constants.RegionLabel])
+	return providers.NewForProvisioner(cli, object.GetNamespace()).LookupProvisioner(ctx, object.GetLabels()[constants.RegionLabel])
 }
 
-func ProviderAndIdentity(ctx context.Context, object client.Object) (types.Provider, *unikornv1.Identity, error) {
+func ProviderAndIdentity(ctx context.Context, object client.Object) (types.ProvisionerProvider, *unikornv1.Identity, error) {
 	id, err := GetIdentity(ctx, object)
 	if err != nil {
 		return nil, nil, err

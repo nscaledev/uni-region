@@ -34,7 +34,7 @@ type ClientArgs struct {
 	Namespace string
 
 	// Providers gives access to the provider interface.
-	Providers providers.Providers
+	Providers providers.ServerProviders
 
 	// Identity is an identity client for RBAC access.
 	Identity identityapi.ClientWithResponsesInterface

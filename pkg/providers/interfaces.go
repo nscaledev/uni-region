@@ -31,8 +31,8 @@ type ProvisionerProviders interface {
 	LookupProvisioner(ctx context.Context, regionID string) (types.ProvisionerProvider, error)
 }
 
-// Providers is the factory interface for API server use.
-type Providers interface {
+// ServerProviders is the factory interface for API server use.
+type ServerProviders interface {
 	// LookupCommon returns a provider as identified by the region ID of any type.
 	LookupCommon(ctx context.Context, regionID string) (types.CommonProvider, error)
 	// LookupCloud returns a provider as identified by the region ID and must be

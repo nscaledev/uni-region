@@ -54,31 +54,31 @@ func (mr *MockProvisionerProvidersMockRecorder) LookupProvisioner(ctx, regionID 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LookupProvisioner", reflect.TypeOf((*MockProvisionerProviders)(nil).LookupProvisioner), ctx, regionID)
 }
 
-// MockProviders is a mock of Providers interface.
-type MockProviders struct {
+// MockServerProviders is a mock of ServerProviders interface.
+type MockServerProviders struct {
 	ctrl     *gomock.Controller
-	recorder *MockProvidersMockRecorder
+	recorder *MockServerProvidersMockRecorder
 }
 
-// MockProvidersMockRecorder is the mock recorder for MockProviders.
-type MockProvidersMockRecorder struct {
-	mock *MockProviders
+// MockServerProvidersMockRecorder is the mock recorder for MockServerProviders.
+type MockServerProvidersMockRecorder struct {
+	mock *MockServerProviders
 }
 
-// NewMockProviders creates a new mock instance.
-func NewMockProviders(ctrl *gomock.Controller) *MockProviders {
-	mock := &MockProviders{ctrl: ctrl}
-	mock.recorder = &MockProvidersMockRecorder{mock}
+// NewMockServerProviders creates a new mock instance.
+func NewMockServerProviders(ctrl *gomock.Controller) *MockServerProviders {
+	mock := &MockServerProviders{ctrl: ctrl}
+	mock.recorder = &MockServerProvidersMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockProviders) EXPECT() *MockProvidersMockRecorder {
+func (m *MockServerProviders) EXPECT() *MockServerProvidersMockRecorder {
 	return m.recorder
 }
 
 // LookupCloud mocks base method.
-func (m *MockProviders) LookupCloud(ctx context.Context, regionID string) (types.Provider, error) {
+func (m *MockServerProviders) LookupCloud(ctx context.Context, regionID string) (types.Provider, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "LookupCloud", ctx, regionID)
 	ret0, _ := ret[0].(types.Provider)
@@ -87,13 +87,13 @@ func (m *MockProviders) LookupCloud(ctx context.Context, regionID string) (types
 }
 
 // LookupCloud indicates an expected call of LookupCloud.
-func (mr *MockProvidersMockRecorder) LookupCloud(ctx, regionID any) *gomock.Call {
+func (mr *MockServerProvidersMockRecorder) LookupCloud(ctx, regionID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LookupCloud", reflect.TypeOf((*MockProviders)(nil).LookupCloud), ctx, regionID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LookupCloud", reflect.TypeOf((*MockServerProviders)(nil).LookupCloud), ctx, regionID)
 }
 
 // LookupCommon mocks base method.
-func (m *MockProviders) LookupCommon(ctx context.Context, regionID string) (types.CommonProvider, error) {
+func (m *MockServerProviders) LookupCommon(ctx context.Context, regionID string) (types.CommonProvider, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "LookupCommon", ctx, regionID)
 	ret0, _ := ret[0].(types.CommonProvider)
@@ -102,7 +102,7 @@ func (m *MockProviders) LookupCommon(ctx context.Context, regionID string) (type
 }
 
 // LookupCommon indicates an expected call of LookupCommon.
-func (mr *MockProvidersMockRecorder) LookupCommon(ctx, regionID any) *gomock.Call {
+func (mr *MockServerProvidersMockRecorder) LookupCommon(ctx, regionID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LookupCommon", reflect.TypeOf((*MockProviders)(nil).LookupCommon), ctx, regionID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LookupCommon", reflect.TypeOf((*MockServerProviders)(nil).LookupCommon), ctx, regionID)
 }
