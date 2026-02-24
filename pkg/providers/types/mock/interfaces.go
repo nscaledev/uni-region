@@ -580,6 +580,212 @@ func (mr *MockServerSnapshotMockRecorder) CreateSnapshot(ctx, identity, server, 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSnapshot", reflect.TypeOf((*MockServerSnapshot)(nil).CreateSnapshot), ctx, identity, server, image)
 }
 
+// MockProvisionerProvider is a mock of ProvisionerProvider interface.
+type MockProvisionerProvider struct {
+	ctrl     *gomock.Controller
+	recorder *MockProvisionerProviderMockRecorder
+}
+
+// MockProvisionerProviderMockRecorder is the mock recorder for MockProvisionerProvider.
+type MockProvisionerProviderMockRecorder struct {
+	mock *MockProvisionerProvider
+}
+
+// NewMockProvisionerProvider creates a new mock instance.
+func NewMockProvisionerProvider(ctrl *gomock.Controller) *MockProvisionerProvider {
+	mock := &MockProvisionerProvider{ctrl: ctrl}
+	mock.recorder = &MockProvisionerProviderMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockProvisionerProvider) EXPECT() *MockProvisionerProviderMockRecorder {
+	return m.recorder
+}
+
+// CreateIdentity mocks base method.
+func (m *MockProvisionerProvider) CreateIdentity(ctx context.Context, identity *v1alpha1.Identity) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateIdentity", ctx, identity)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateIdentity indicates an expected call of CreateIdentity.
+func (mr *MockProvisionerProviderMockRecorder) CreateIdentity(ctx, identity any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateIdentity", reflect.TypeOf((*MockProvisionerProvider)(nil).CreateIdentity), ctx, identity)
+}
+
+// CreateNetwork mocks base method.
+func (m *MockProvisionerProvider) CreateNetwork(ctx context.Context, identity *v1alpha1.Identity, network *v1alpha1.Network) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateNetwork", ctx, identity, network)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateNetwork indicates an expected call of CreateNetwork.
+func (mr *MockProvisionerProviderMockRecorder) CreateNetwork(ctx, identity, network any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateNetwork", reflect.TypeOf((*MockProvisionerProvider)(nil).CreateNetwork), ctx, identity, network)
+}
+
+// CreateSecurityGroup mocks base method.
+func (m *MockProvisionerProvider) CreateSecurityGroup(ctx context.Context, identity *v1alpha1.Identity, securityGroup *v1alpha1.SecurityGroup) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateSecurityGroup", ctx, identity, securityGroup)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateSecurityGroup indicates an expected call of CreateSecurityGroup.
+func (mr *MockProvisionerProviderMockRecorder) CreateSecurityGroup(ctx, identity, securityGroup any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSecurityGroup", reflect.TypeOf((*MockProvisionerProvider)(nil).CreateSecurityGroup), ctx, identity, securityGroup)
+}
+
+// CreateServer mocks base method.
+func (m *MockProvisionerProvider) CreateServer(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateServer", ctx, identity, server)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateServer indicates an expected call of CreateServer.
+func (mr *MockProvisionerProviderMockRecorder) CreateServer(ctx, identity, server any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateServer", reflect.TypeOf((*MockProvisionerProvider)(nil).CreateServer), ctx, identity, server)
+}
+
+// DeleteIdentity mocks base method.
+func (m *MockProvisionerProvider) DeleteIdentity(ctx context.Context, identity *v1alpha1.Identity) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteIdentity", ctx, identity)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteIdentity indicates an expected call of DeleteIdentity.
+func (mr *MockProvisionerProviderMockRecorder) DeleteIdentity(ctx, identity any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteIdentity", reflect.TypeOf((*MockProvisionerProvider)(nil).DeleteIdentity), ctx, identity)
+}
+
+// DeleteNetwork mocks base method.
+func (m *MockProvisionerProvider) DeleteNetwork(ctx context.Context, identity *v1alpha1.Identity, network *v1alpha1.Network) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteNetwork", ctx, identity, network)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteNetwork indicates an expected call of DeleteNetwork.
+func (mr *MockProvisionerProviderMockRecorder) DeleteNetwork(ctx, identity, network any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteNetwork", reflect.TypeOf((*MockProvisionerProvider)(nil).DeleteNetwork), ctx, identity, network)
+}
+
+// DeleteSecurityGroup mocks base method.
+func (m *MockProvisionerProvider) DeleteSecurityGroup(ctx context.Context, identity *v1alpha1.Identity, securityGroup *v1alpha1.SecurityGroup) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteSecurityGroup", ctx, identity, securityGroup)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteSecurityGroup indicates an expected call of DeleteSecurityGroup.
+func (mr *MockProvisionerProviderMockRecorder) DeleteSecurityGroup(ctx, identity, securityGroup any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteSecurityGroup", reflect.TypeOf((*MockProvisionerProvider)(nil).DeleteSecurityGroup), ctx, identity, securityGroup)
+}
+
+// DeleteServer mocks base method.
+func (m *MockProvisionerProvider) DeleteServer(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteServer", ctx, identity, server)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteServer indicates an expected call of DeleteServer.
+func (mr *MockProvisionerProviderMockRecorder) DeleteServer(ctx, identity, server any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteServer", reflect.TypeOf((*MockProvisionerProvider)(nil).DeleteServer), ctx, identity, server)
+}
+
+// ListExternalNetworks mocks base method.
+func (m *MockProvisionerProvider) ListExternalNetworks(ctx context.Context) (types.ExternalNetworks, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListExternalNetworks", ctx)
+	ret0, _ := ret[0].(types.ExternalNetworks)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListExternalNetworks indicates an expected call of ListExternalNetworks.
+func (mr *MockProvisionerProviderMockRecorder) ListExternalNetworks(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListExternalNetworks", reflect.TypeOf((*MockProvisionerProvider)(nil).ListExternalNetworks), ctx)
+}
+
+// RebootServer mocks base method.
+func (m *MockProvisionerProvider) RebootServer(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server, hard bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RebootServer", ctx, identity, server, hard)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RebootServer indicates an expected call of RebootServer.
+func (mr *MockProvisionerProviderMockRecorder) RebootServer(ctx, identity, server, hard any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RebootServer", reflect.TypeOf((*MockProvisionerProvider)(nil).RebootServer), ctx, identity, server, hard)
+}
+
+// StartServer mocks base method.
+func (m *MockProvisionerProvider) StartServer(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StartServer", ctx, identity, server)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// StartServer indicates an expected call of StartServer.
+func (mr *MockProvisionerProviderMockRecorder) StartServer(ctx, identity, server any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartServer", reflect.TypeOf((*MockProvisionerProvider)(nil).StartServer), ctx, identity, server)
+}
+
+// StopServer mocks base method.
+func (m *MockProvisionerProvider) StopServer(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StopServer", ctx, identity, server)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// StopServer indicates an expected call of StopServer.
+func (mr *MockProvisionerProviderMockRecorder) StopServer(ctx, identity, server any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopServer", reflect.TypeOf((*MockProvisionerProvider)(nil).StopServer), ctx, identity, server)
+}
+
+// UpdateServerState mocks base method.
+func (m *MockProvisionerProvider) UpdateServerState(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateServerState", ctx, identity, server)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateServerState indicates an expected call of UpdateServerState.
+func (mr *MockProvisionerProviderMockRecorder) UpdateServerState(ctx, identity, server any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateServerState", reflect.TypeOf((*MockProvisionerProvider)(nil).UpdateServerState), ctx, identity, server)
+}
+
 // MockCommonProvider is a mock of CommonProvider interface.
 type MockCommonProvider struct {
 	ctrl     *gomock.Controller

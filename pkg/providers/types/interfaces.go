@@ -109,6 +109,16 @@ type ServerSnapshot interface {
 	CreateSnapshot(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *Image) (*Image, error)
 }
 
+// ProvisionerProvider is the subset of Provider that provisioners require.
+// It deliberately excludes image, console, snapshot and other read-heavy operations
+// that are only needed by the API layer.
+type ProvisionerProvider interface {
+	Identity
+	Network
+	SecurityGroup
+	Server
+}
+
 // CommonProvider contains functions every provider supports.
 type CommonProvider interface {
 	// Region returns the provider's region.
@@ -122,12 +132,9 @@ type CommonProvider interface {
 // to provide high performance and a decent UX.
 type Provider interface {
 	CommonProvider
+	ProvisionerProvider
 	ImageRead
 	ImageWrite
-	Identity
-	Network
-	SecurityGroup
-	Server
 	ServerConsole
 	ServerSnapshot
 }
