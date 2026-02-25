@@ -123,7 +123,7 @@ func (p *provisionerProvidersImpl) LookupProvisioner(ctx context.Context, region
 func newProvisionerProvider(ctx context.Context, c client.Client, region *unikornv1.Region) (types.ProvisionerProvider, error) {
 	switch region.Spec.Provider {
 	case unikornv1.ProviderOpenstack:
-		return openstack.New(ctx, c, region)
+		return openstack.NewProvisioner(ctx, c, region)
 	case unikornv1.ProviderKubernetes:
 		break
 	}

@@ -29,7 +29,6 @@ import (
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
-	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/rules"
@@ -40,7 +39,6 @@ import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
-	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers/allocation/vlan"
@@ -66,7 +64,7 @@ type providerCredentials struct {
 	password  string
 }
 
-type Provider struct {
+type ProvisionerProvider struct {
 	// client is Kubernetes client.
 	client client.Client
 
@@ -77,23 +75,18 @@ type Provider struct {
 	// into a Kubernetes resource of some variety to gain speculative locking
 	// powers.
 	vlanAllocator *vlan.Allocator
-
-	// imageCache is used to downsample the OpenStack image API, because responses can
-	// take seconds. This reduces the effect of that latency on most callers.
-	imageCache *cache.TimeoutCache[[]images.Image]
 }
 
-var _ types.Provider = &Provider{}
+var _ types.ProvisionerProvider = &ProvisionerProvider{}
 
-func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Provider, error) {
-	p := &Provider{
+func NewProvisioner(ctx context.Context, cli client.Client, region *unikornv1.Region) (*ProvisionerProvider, error) {
+	p := &ProvisionerProvider{
 		client: cli,
 		openstack: &openStackClients{
 			client:  cli,
 			_region: region,
 		},
 		vlanAllocator: vlan.New(cli, region),
-		imageCache:    cache.New[[]images.Image](imageCacheTTL),
 	}
 
 	if err := p.openstack.serviceClientRefresh(ctx); err != nil {
@@ -105,7 +98,7 @@ func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Pro
 
 // getProviderFromServicePrincipalData creates a generic provider client from ephemeral
 // per-service principal credentials.
-func (p *Provider) getProviderFromServicePrincipalData(identity *unikornv1.OpenstackIdentity) (CredentialProvider, error) {
+func (p *ProvisionerProvider) getProviderFromServicePrincipalData(identity *unikornv1.OpenstackIdentity) (CredentialProvider, error) {
 	if identity.Spec.UserID == nil {
 		return nil, fmt.Errorf("%w: service principal user ID not set", coreerrors.ErrConsistency)
 	}
@@ -124,7 +117,7 @@ func (p *Provider) getProviderFromServicePrincipalData(identity *unikornv1.Opens
 }
 
 // computeFromServicePrincipalData gets a compute client scoped to the service principal data.
-func (p *Provider) computeFromServicePrincipalData(ctx context.Context, identity *unikornv1.OpenstackIdentity) (ComputeInterface, error) {
+func (p *ProvisionerProvider) computeFromServicePrincipalData(ctx context.Context, identity *unikornv1.OpenstackIdentity) (ComputeInterface, error) {
 	provider, err := p.getProviderFromServicePrincipalData(identity)
 	if err != nil {
 		return nil, err
@@ -142,7 +135,7 @@ func (p *Provider) computeFromServicePrincipalData(ctx context.Context, identity
 
 // getProviderFromServicePrincipal takes a service principal and returns a generic
 // provider client for it.
-func (p *Provider) getProviderFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
+func (p *ProvisionerProvider) getProviderFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return nil, err
@@ -153,7 +146,7 @@ func (p *Provider) getProviderFromServicePrincipal(ctx context.Context, identity
 
 // getPrivilegedProviderFromServicePrincipal binds itself to the service principal's project
 // but uses the provider's top level admin credentials.
-func (p *Provider) getPrivilegedProviderFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
+func (p *ProvisionerProvider) getPrivilegedProviderFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return nil, err
@@ -169,7 +162,7 @@ func (p *Provider) getPrivilegedProviderFromServicePrincipal(ctx context.Context
 }
 
 // computeFromServicePrincipal gets a compute client scoped to the service principal.
-func (p *Provider) computeFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (ComputeInterface, error) {
+func (p *ProvisionerProvider) computeFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (ComputeInterface, error) {
 	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return nil, err
@@ -186,7 +179,7 @@ func (p *Provider) computeFromServicePrincipal(ctx context.Context, identity *un
 }
 
 // networkFromServicePrincipal gets a network client scoped to the service principal.
-func (p *Provider) networkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
+func (p *ProvisionerProvider) networkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
 	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return nil, err
@@ -204,7 +197,7 @@ func (p *Provider) networkFromServicePrincipal(ctx context.Context, identity *un
 
 // privilegedNetworkFromServicePrincipal gets a network client scoped to the service principal's
 // project but with "manager" credentials.
-func (p *Provider) privilegedNetworkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
+func (p *ProvisionerProvider) privilegedNetworkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
 	provider, err := p.getPrivilegedProviderFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return nil, err
@@ -222,7 +215,7 @@ func (p *Provider) privilegedNetworkFromServicePrincipal(ctx context.Context, id
 
 // ListExternalNetworks returns a list of external networks if the platform
 // supports such a concept.
-func (p *Provider) ListExternalNetworks(ctx context.Context) (types.ExternalNetworks, error) {
+func (p *ProvisionerProvider) ListExternalNetworks(ctx context.Context) (types.ExternalNetworks, error) {
 	networking, err := p.openstack.network(ctx)
 	if err != nil {
 		return nil, err
@@ -271,7 +264,7 @@ func identityResourceName(identity *unikornv1.OpenstackIdentity) string {
 // provisionUser creates a new user in the managed domain with a random password.
 // There is a 1:1 mapping of user to project, and the project name is unique in the
 // domain, so just reuse this, we can clean them up at the same time.
-func (p *Provider) provisionUser(ctx context.Context, identityService *IdentityClient, identity *unikornv1.OpenstackIdentity) error {
+func (p *ProvisionerProvider) provisionUser(ctx context.Context, identityService *IdentityClient, identity *unikornv1.OpenstackIdentity) error {
 	if identity.Spec.UserID != nil {
 		return nil
 	}
@@ -294,7 +287,7 @@ func (p *Provider) provisionUser(ctx context.Context, identityService *IdentityC
 // provisionProject creates a project per-cluster.  Cluster API provider Openstack is
 // somewhat broken in that networks can alias and cause all kinds of disasters, so it's
 // safest to have one cluster in one project so it has its own namespace.
-func (p *Provider) provisionProject(ctx context.Context, identityService *IdentityClient, identity *unikornv1.OpenstackIdentity) error {
+func (p *ProvisionerProvider) provisionProject(ctx context.Context, identityService *IdentityClient, identity *unikornv1.OpenstackIdentity) error {
 	if identity.Spec.ProjectID != nil {
 		return nil
 	}
@@ -326,7 +319,7 @@ func roleNameToID(roles []roles.Role, name string) (string, error) {
 
 // getRequiredProjectManagerRoles returns the roles required for a manager to create, manage
 // and delete things like provider networks to support baremetal.
-func (p *Provider) getRequiredProjectManagerRoles() []string {
+func (p *ProvisionerProvider) getRequiredProjectManagerRoles() []string {
 	defaultRoles := []string{
 		"manager",
 	}
@@ -336,7 +329,7 @@ func (p *Provider) getRequiredProjectManagerRoles() []string {
 
 // getRequiredProjectUserRoles returns the roles required for a user to create, manage and delete
 // a cluster.
-func (p *Provider) getRequiredProjectUserRoles() []string {
+func (p *ProvisionerProvider) getRequiredProjectUserRoles() []string {
 	region, _ := p.openstack.regionSnapshot()
 
 	if region.Spec.Openstack.Identity != nil && len(region.Spec.Openstack.Identity.ClusterRoles) > 0 {
@@ -354,7 +347,7 @@ func (p *Provider) getRequiredProjectUserRoles() []string {
 // provisionProjectRoles creates a binding between our service account and the project
 // with the required roles to provision an application credential that will allow cluster
 // creation, deletion and life-cycle management.
-func (p *Provider) provisionProjectRoles(ctx context.Context, identityService *IdentityClient, identity *unikornv1.OpenstackIdentity, userID string, rolesGetter func() []string) error {
+func (p *ProvisionerProvider) provisionProjectRoles(ctx context.Context, identityService *IdentityClient, identity *unikornv1.OpenstackIdentity, userID string, rolesGetter func() []string) error {
 	allRoles, err := identityService.ListRoles(ctx)
 	if err != nil {
 		return err
@@ -374,7 +367,7 @@ func (p *Provider) provisionProjectRoles(ctx context.Context, identityService *I
 	return nil
 }
 
-func (p *Provider) provisionApplicationCredential(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
+func (p *ProvisionerProvider) provisionApplicationCredential(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
 	if identity.Spec.ApplicationCredentialID != nil {
 		return nil
 	}
@@ -401,7 +394,7 @@ func (p *Provider) provisionApplicationCredential(ctx context.Context, identity 
 	return nil
 }
 
-func (p *Provider) provisionQuotas(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
+func (p *ProvisionerProvider) provisionQuotas(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
 	region, credentials := p.openstack.regionSnapshot()
 
 	providerClient := NewPasswordProvider(region.Spec.Openstack.Endpoint, credentials.userID, credentials.password, *identity.Spec.ProjectID)
@@ -436,7 +429,7 @@ func (p *Provider) provisionQuotas(ctx context.Context, identity *unikornv1.Open
 	return nil
 }
 
-func (p *Provider) createClientConfig(identity *unikornv1.OpenstackIdentity) error {
+func (p *ProvisionerProvider) createClientConfig(identity *unikornv1.OpenstackIdentity) error {
 	if identity.Spec.Cloud != nil {
 		return nil
 	}
@@ -472,7 +465,7 @@ func (p *Provider) createClientConfig(identity *unikornv1.OpenstackIdentity) err
 // keyPairName is a fixed name for our per-identity keypair.
 const keyPairName = "unikorn-openstack-provider"
 
-func (p *Provider) createIdentityComputeResources(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
+func (p *ProvisionerProvider) createIdentityComputeResources(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
 	if identity.Spec.ServerGroupID != nil {
 		return nil
 	}
@@ -512,7 +505,7 @@ func (p *Provider) createIdentityComputeResources(ctx context.Context, identity 
 	return nil
 }
 
-func (p *Provider) GetOpenstackIdentity(ctx context.Context, identity *unikornv1.Identity) (*unikornv1.OpenstackIdentity, error) {
+func (p *ProvisionerProvider) GetOpenstackIdentity(ctx context.Context, identity *unikornv1.Identity) (*unikornv1.OpenstackIdentity, error) {
 	var result unikornv1.OpenstackIdentity
 
 	if err := p.client.Get(ctx, client.ObjectKey{Namespace: identity.Namespace, Name: identity.Name}, &result); err != nil {
@@ -522,7 +515,7 @@ func (p *Provider) GetOpenstackIdentity(ctx context.Context, identity *unikornv1
 	return &result, nil
 }
 
-func (p *Provider) GetOrCreateOpenstackIdentity(ctx context.Context, identity *unikornv1.Identity) (*unikornv1.OpenstackIdentity, bool, error) {
+func (p *ProvisionerProvider) GetOrCreateOpenstackIdentity(ctx context.Context, identity *unikornv1.Identity) (*unikornv1.OpenstackIdentity, bool, error) {
 	create := false
 
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
@@ -555,7 +548,7 @@ func (p *Provider) GetOrCreateOpenstackIdentity(ctx context.Context, identity *u
 // CreateIdentity creates a new identity for cloud infrastructure.
 //
 //nolint:cyclop
-func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Identity) error {
+func (p *ProvisionerProvider) CreateIdentity(ctx context.Context, identity *unikornv1.Identity) error {
 	identityService, err := p.openstack.identity(ctx)
 	if err != nil {
 		return err
@@ -640,7 +633,7 @@ func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Ident
 // DeleteIdentity cleans up an identity for cloud infrastructure.
 //
 //nolint:cyclop,gocognit
-func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Identity) error {
+func (p *ProvisionerProvider) DeleteIdentity(ctx context.Context, identity *unikornv1.Identity) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		if !kerrors.IsNotFound(err) {
@@ -754,7 +747,7 @@ func storageRange(prefix net.IPNet) *unikornv1.AttachmentIPRange {
 	}
 }
 
-func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface, network *unikornv1.Network) (*NetworkExt, error) {
+func (p *ProvisionerProvider) reconcileNetwork(ctx context.Context, client NetworkInterface, network *unikornv1.Network) (*NetworkExt, error) {
 	log := log.FromContext(ctx)
 
 	result, err := client.GetNetwork(ctx, network)
@@ -813,7 +806,7 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 	return result, nil
 }
 
-func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, network *unikornv1.Network, openstackNetwork *NetworkExt) (*subnets.Subnet, error) {
+func (p *ProvisionerProvider) reconcileSubnet(ctx context.Context, client SubnetInterface, network *unikornv1.Network, openstackNetwork *NetworkExt) (*subnets.Subnet, error) {
 	log := log.FromContext(ctx)
 
 	var dnsNameservers []string
@@ -873,7 +866,7 @@ func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, 
 	return result, nil
 }
 
-func (p *Provider) reconcileRouter(ctx context.Context, client RouterInterface, network *unikornv1.Network) (*routers.Router, error) {
+func (p *ProvisionerProvider) reconcileRouter(ctx context.Context, client RouterInterface, network *unikornv1.Network) (*routers.Router, error) {
 	log := log.FromContext(ctx)
 
 	result, err := client.GetRouter(ctx, network)
@@ -909,7 +902,7 @@ func subnetInPorts(ports []ports.Port, subnetID string) bool {
 	return false
 }
 
-func (p *Provider) reconcileRouterInterface(ctx context.Context, client NetworkingInterface, router *routers.Router, subnet *subnets.Subnet) error {
+func (p *ProvisionerProvider) reconcileRouterInterface(ctx context.Context, client NetworkingInterface, router *routers.Router, subnet *subnets.Subnet) error {
 	log := log.FromContext(ctx)
 
 	ports, err := client.ListRouterPorts(ctx, router.ID)
@@ -933,7 +926,7 @@ func (p *Provider) reconcileRouterInterface(ctx context.Context, client Networki
 }
 
 // CreateNetwork creates a physical network for an identity.
-func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
+func (p *ProvisionerProvider) CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
 	network.Status.Openstack = &unikornv1.NetworkStatusOpenstack{}
 
 	// NOTE: this is a privileged network client as it needs permissions
@@ -968,7 +961,7 @@ func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identi
 // DeleteNetwork deletes a physical network.
 //
 //nolint:gocognit,cyclop
-func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
+func (p *ProvisionerProvider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
 	log := log.FromContext(ctx)
 
 	// NOTE: this is a privileged network client as it needs permissions
@@ -1181,7 +1174,7 @@ func generateSecurityGroupRules(securityGroup *unikornv1.SecurityGroup) (map[str
 // group.
 //
 //nolint:cyclop
-func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup, openstackSecurityGroup *groups.SecGroup) error {
+func (p *ProvisionerProvider) reconcileSecurityGroupRules(ctx context.Context, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup, openstackSecurityGroup *groups.SecGroup) error {
 	log := log.FromContext(ctx)
 
 	existing, err := listOpenstackSecurityGroupRules(ctx, client, openstackSecurityGroup.ID)
@@ -1240,7 +1233,7 @@ func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, client Secur
 	return nil
 }
 
-func (p *Provider) reconcileSecurityGroup(ctx context.Context, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup) (*groups.SecGroup, error) {
+func (p *ProvisionerProvider) reconcileSecurityGroup(ctx context.Context, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup) (*groups.SecGroup, error) {
 	log := log.FromContext(ctx)
 
 	result, err := client.GetSecurityGroup(ctx, securityGroup)
@@ -1265,7 +1258,7 @@ func (p *Provider) reconcileSecurityGroup(ctx context.Context, client SecurityGr
 }
 
 // CreateSecurityGroup creates a new security group.
-func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
+func (p *ProvisionerProvider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return err
@@ -1293,7 +1286,7 @@ func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.
 }
 
 // DeleteSecurityGroup deletes a security group.
-func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
+func (p *ProvisionerProvider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
 	log := log.FromContext(ctx)
 
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
@@ -1378,7 +1371,7 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 	}
 }
 
-func (p *Provider) lookupNetwork(ctx context.Context, networks NetworkInterface, namespace, id string) (*NetworkExt, error) {
+func (p *ProvisionerProvider) lookupNetwork(ctx context.Context, networks NetworkInterface, namespace, id string) (*NetworkExt, error) {
 	network := &unikornv1.Network{}
 
 	if err := p.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: id}, network); err != nil {
@@ -1393,7 +1386,7 @@ func (p *Provider) lookupNetwork(ctx context.Context, networks NetworkInterface,
 	return openstackNetwork, nil
 }
 
-func (p *Provider) lookupSecurityGroup(ctx context.Context, securityGroups SecurityGroupInterface, namespace, id string) (*groups.SecGroup, error) {
+func (p *ProvisionerProvider) lookupSecurityGroup(ctx context.Context, securityGroups SecurityGroupInterface, namespace, id string) (*groups.SecGroup, error) {
 	securityGroup := &unikornv1.SecurityGroup{}
 
 	if err := p.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: id}, securityGroup); err != nil {
@@ -1408,7 +1401,7 @@ func (p *Provider) lookupSecurityGroup(ctx context.Context, securityGroups Secur
 	return openstackSecurityGroup, nil
 }
 
-func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInterface, server *unikornv1.Server) (*ports.Port, error) {
+func (p *ProvisionerProvider) reconcileServerPort(ctx context.Context, client NetworkingInterface, server *unikornv1.Server) (*ports.Port, error) {
 	log := log.FromContext(ctx)
 
 	network, err := p.lookupNetwork(ctx, client, server.Namespace, server.Spec.Networks[0].ID)
@@ -1467,7 +1460,7 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 	return port, nil
 }
 
-func (p *Provider) reconcileFloatingIP(ctx context.Context, client FloatingIPInterface, server *unikornv1.Server, port *ports.Port) error {
+func (p *ProvisionerProvider) reconcileFloatingIP(ctx context.Context, client FloatingIPInterface, server *unikornv1.Server, port *ports.Port) error {
 	log := log.FromContext(ctx)
 
 	enabled := server.Spec.PublicIPAllocation != nil && server.Spec.PublicIPAllocation.Enabled
@@ -1513,7 +1506,7 @@ func (p *Provider) reconcileFloatingIP(ctx context.Context, client FloatingIPInt
 	return nil
 }
 
-func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
+func (p *ProvisionerProvider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
 	log := log.FromContext(ctx)
 
 	openstackServer, err := client.GetServer(ctx, server)
@@ -1551,7 +1544,7 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 }
 
 // CreateServer creates or updates a server.
-func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+func (p *ProvisionerProvider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return err
@@ -1584,7 +1577,7 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 }
 
 //nolint:cyclop
-func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+func (p *ProvisionerProvider) DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	log := log.FromContext(ctx)
 
 	compute, err := p.computeFromServicePrincipal(ctx, identity)
@@ -1640,7 +1633,7 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 	return nil
 }
 
-func (p *Provider) RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error {
+func (p *ProvisionerProvider) RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error {
 	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
@@ -1666,7 +1659,7 @@ func (p *Provider) RebootServer(ctx context.Context, identity *unikornv1.Identit
 	return nil
 }
 
-func (p *Provider) StartServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+func (p *ProvisionerProvider) StartServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
@@ -1692,7 +1685,7 @@ func (p *Provider) StartServer(ctx context.Context, identity *unikornv1.Identity
 	return nil
 }
 
-func (p *Provider) StopServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+func (p *ProvisionerProvider) StopServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
@@ -1719,7 +1712,7 @@ func (p *Provider) StopServer(ctx context.Context, identity *unikornv1.Identity,
 }
 
 // UpdateServerState checks a server's state and modifies the resource in place.
-func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+func (p *ProvisionerProvider) UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err

@@ -30,6 +30,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
@@ -39,6 +40,30 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+// Provider extends ProvisionerProvider with API-server-only capabilities
+// (image management, console access, snapshots).
+type Provider struct {
+	*ProvisionerProvider
+
+	// imageCache is used to downsample the OpenStack image API, because responses can
+	// take seconds. This reduces the effect of that latency on most callers.
+	imageCache *cache.TimeoutCache[[]images.Image]
+}
+
+var _ types.Provider = &Provider{}
+
+func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Provider, error) {
+	core, err := NewProvisioner(ctx, cli, region)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Provider{
+		ProvisionerProvider: core,
+		imageCache:          cache.New[[]images.Image](imageCacheTTL),
+	}, nil
+}
 
 const (
 	osKernelLabel   = "unikorn:os:kernel"

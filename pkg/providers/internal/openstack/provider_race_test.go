@@ -163,7 +163,7 @@ func TestFlavorsRegionRace(t *testing.T) {
 	require.NoError(t, fakeClient.Create(t.Context(), secret))
 	require.NoError(t, fakeClient.Create(t.Context(), region))
 
-	p := openstack.NewTestProvider(fakeClient, region)
+	p := openstack.NewTestAPIProvider(fakeClient, region)
 
 	ctx := t.Context()
 

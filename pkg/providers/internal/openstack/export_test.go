@@ -66,8 +66,8 @@ var ImageTags = imageTags
 //nolint:gochecknoglobals
 var CreateImageMetadata = createImageMetadata
 
-func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {
-	return &Provider{
+func NewTestProvider(client client.Client, region *unikornv1.Region) *ProvisionerProvider {
+	return &ProvisionerProvider{
 		client: client,
 		openstack: &openStackClients{
 			client:  client,
@@ -76,39 +76,51 @@ func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {
 	}
 }
 
-func ReconcileNetwork(ctx context.Context, p *Provider, client NetworkInterface, network *unikornv1.Network) (*NetworkExt, error) {
+func NewTestAPIProvider(client client.Client, region *unikornv1.Region) *Provider {
+	return &Provider{
+		ProvisionerProvider: &ProvisionerProvider{
+			client: client,
+			openstack: &openStackClients{
+				client:  client,
+				_region: region,
+			},
+		},
+	}
+}
+
+func ReconcileNetwork(ctx context.Context, p *ProvisionerProvider, client NetworkInterface, network *unikornv1.Network) (*NetworkExt, error) {
 	return p.reconcileNetwork(ctx, client, network)
 }
 
-func ReconcileSubnet(ctx context.Context, p *Provider, client SubnetInterface, network *unikornv1.Network, openstackNetwork *NetworkExt) (*subnets.Subnet, error) {
+func ReconcileSubnet(ctx context.Context, p *ProvisionerProvider, client SubnetInterface, network *unikornv1.Network, openstackNetwork *NetworkExt) (*subnets.Subnet, error) {
 	return p.reconcileSubnet(ctx, client, network, openstackNetwork)
 }
 
-func ReconcileRouter(ctx context.Context, p *Provider, client RouterInterface, network *unikornv1.Network) (*routers.Router, error) {
+func ReconcileRouter(ctx context.Context, p *ProvisionerProvider, client RouterInterface, network *unikornv1.Network) (*routers.Router, error) {
 	return p.reconcileRouter(ctx, client, network)
 }
 
-func ReconcileRouterInterface(ctx context.Context, p *Provider, client NetworkingInterface, router *routers.Router, subnet *subnets.Subnet) error {
+func ReconcileRouterInterface(ctx context.Context, p *ProvisionerProvider, client NetworkingInterface, router *routers.Router, subnet *subnets.Subnet) error {
 	return p.reconcileRouterInterface(ctx, client, router, subnet)
 }
 
-func ReconcileSecurityGroup(ctx context.Context, p *Provider, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup) (*groups.SecGroup, error) {
+func ReconcileSecurityGroup(ctx context.Context, p *ProvisionerProvider, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup) (*groups.SecGroup, error) {
 	return p.reconcileSecurityGroup(ctx, client, securityGroup)
 }
 
-func ReconcileSecurityGroupRules(ctx context.Context, p *Provider, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup, openstackSecurityGroup *groups.SecGroup) error {
+func ReconcileSecurityGroupRules(ctx context.Context, p *ProvisionerProvider, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup, openstackSecurityGroup *groups.SecGroup) error {
 	return p.reconcileSecurityGroupRules(ctx, client, securityGroup, openstackSecurityGroup)
 }
 
-func ReconcileServerPort(ctx context.Context, p *Provider, client NetworkingInterface, server *unikornv1.Server) (*ports.Port, error) {
+func ReconcileServerPort(ctx context.Context, p *ProvisionerProvider, client NetworkingInterface, server *unikornv1.Server) (*ports.Port, error) {
 	return p.reconcileServerPort(ctx, client, server)
 }
 
-func ReconcileFloatingIP(ctx context.Context, p *Provider, client FloatingIPInterface, server *unikornv1.Server, port *ports.Port) error {
+func ReconcileFloatingIP(ctx context.Context, p *ProvisionerProvider, client FloatingIPInterface, server *unikornv1.Server, port *ports.Port) error {
 	return p.reconcileFloatingIP(ctx, client, server, port)
 }
 
-func ReconcileServer(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
+func ReconcileServer(ctx context.Context, p *ProvisionerProvider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
 	// Lewis Denham-Parry was here.
 	return p.reconcileServer(ctx, client, server, port, keyName)
 }
