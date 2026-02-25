@@ -69,7 +69,9 @@ type Network interface {
 	// GetNetworkDetail exposes provider specific network information.
 	// NOTE: do not use this ever.
 	// TODO: used to propagate network and subnet details to CAPO, this needs fixing.
+}
 
+type ExternalNetworkRead interface {
 	// ListExternalNetworks returns a list of external networks if the platform
 	// supports such a concept.
 	ListExternalNetworks(ctx context.Context) (ExternalNetworks, error)
@@ -85,16 +87,19 @@ type SecurityGroup interface {
 type Server interface {
 	// CreateServer creates a new server.
 	CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
+	// DeleteServer deletes a server.
+	DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
+	// UpdateServerState checks a server's state and modifies the resource in place.
+	UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
+}
+
+type ServerControl interface {
 	// RebootServer soft reboots a server.
 	RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error
 	// StartServer starts a server.
 	StartServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
 	// StopServer stops a server.
 	StopServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
-	// DeleteServer deletes a server.
-	DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
-	// UpdateServerState checks a server's state and modifies the resource in place.
-	UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
 }
 
 type ServerConsole interface {
@@ -132,9 +137,10 @@ type CommonProvider interface {
 // to provide high performance and a decent UX.
 type Provider interface {
 	CommonProvider
-	ProvisionerProvider
+	ExternalNetworkRead
 	ImageRead
 	ImageWrite
+	ServerControl
 	ServerConsole
 	ServerSnapshot
 }
