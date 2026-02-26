@@ -477,6 +477,7 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 		return nil, err
 	}
 
+	region := p.region
 	result := make(types.FlavorList, len(resources))
 
 	for i := range resources {
@@ -496,7 +497,7 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 		//
 		//nolint:nestif
 		if p.region.Spec.Openstack.Compute != nil && p.region.Spec.Openstack.Compute.Flavors != nil {
-			i := slices.IndexFunc(p.region.Spec.Openstack.Compute.Flavors.Metadata, func(metadata unikornv1.FlavorMetadata) bool {
+			i := slices.IndexFunc(region.Spec.Openstack.Compute.Flavors.Metadata, func(metadata unikornv1.FlavorMetadata) bool {
 				return flavor.ID == metadata.ID
 			})
 
