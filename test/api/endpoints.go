@@ -55,6 +55,12 @@ func (e *Endpoints) ListImages(orgID, regionID string) string {
 		url.PathEscape(orgID), url.PathEscape(regionID))
 }
 
+// DeleteImage returns the endpoint for deleting a specific image.
+func (e *Endpoints) DeleteImage(orgID, regionID, imageID string) string {
+	return fmt.Sprintf("/api/v1/organizations/%s/regions/%s/images/%s",
+		url.PathEscape(orgID), url.PathEscape(regionID), url.PathEscape(imageID))
+}
+
 // ListExternalNetworks returns the endpoint for listing external networks in a region.
 func (e *Endpoints) ListExternalNetworks(orgID, regionID string) string {
 	return fmt.Sprintf("/api/v1/organizations/%s/regions/%s/externalnetworks",

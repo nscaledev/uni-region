@@ -172,6 +172,50 @@ func (c *APIClient) ListImages(ctx context.Context, orgID, regionID string) (reg
 	)
 }
 
+// CreateImage creates a custom image in a region.
+func (c *APIClient) CreateImage(ctx context.Context, orgID, regionID string, request regionopenapi.ImageCreate) (*regionopenapi.Image, error) {
+	path := c.endpoints.ListImages(orgID, regionID)
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling image request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusOK)
+	if err != nil {
+		return nil, fmt.Errorf("creating image: %w", err)
+	}
+
+	var image regionopenapi.Image
+	if err := json.Unmarshal(respBody, &image); err != nil {
+		return nil, fmt.Errorf("unmarshaling image: %w", err)
+	}
+
+	return &image, nil
+}
+
+// DeleteImage deletes a specific image from a region.
+// Returns ErrResourceNotFound if the image does not exist.
+func (c *APIClient) DeleteImage(ctx context.Context, orgID, regionID, imageID string) error {
+	path := c.endpoints.DeleteImage(orgID, regionID, imageID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	resp, _, err := c.regionClient.DoRequest(ctx, http.MethodDelete, path, nil, 0)
+	if err != nil {
+		return fmt.Errorf("deleting image: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusAccepted:
+		return nil
+	case http.StatusNotFound:
+		return fmt.Errorf("image '%s': %w", imageID, coreclient.ErrResourceNotFound)
+	default:
+		return fmt.Errorf("deleting image: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
+}
+
 // ListExternalNetworks lists all external networks available in a region.
 func (c *APIClient) ListExternalNetworks(ctx context.Context, orgID, regionID string) (regionopenapi.ExternalNetworks, error) {
 	path := c.endpoints.ListExternalNetworks(orgID, regionID)
