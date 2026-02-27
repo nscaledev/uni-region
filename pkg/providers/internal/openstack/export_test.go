@@ -71,8 +71,8 @@ var MetadataKey = metadataKey
 
 func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {
 	return &Provider{
-		client: client,
-		region: region,
+		client:  client,
+		_region: region,
 	}
 }
 
