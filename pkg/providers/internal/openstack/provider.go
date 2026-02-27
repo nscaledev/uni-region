@@ -107,15 +107,6 @@ type Provider struct {
 	// client is Kubernetes client.
 	client client.Client
 
-	// region is the current region configuration.
-	region *unikornv1.Region
-
-	// secret is the current region secret.
-	secret *corev1.Secret
-
-	// credentials hold cloud identity information.
-	credentials *providerCredentials
-
 	// vlan allocation table.
 	// NOTE: this can only be used by a single client unless it's moved
 	// into a Kubernetes resource of some variety to gain speculative locking
@@ -127,6 +118,13 @@ type Provider struct {
 	_compute  *ComputeClient
 	_image    *ImageClient
 	_network  NetworkingInterface
+
+	// region is the current region configuration.
+	_region *unikornv1.Region
+	// secret is the current region secret.
+	_secret *corev1.Secret
+	// credentials hold cloud identity information.
+	_credentials *providerCredentials
 
 	lock sync.Mutex
 
@@ -140,7 +138,7 @@ var _ types.Provider = &Provider{}
 func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Provider, error) {
 	p := &Provider{
 		client:        cli,
-		region:        region,
+		_region:       region,
 		vlanAllocator: vlan.New(cli, region),
 		imageCache:    cache.New[[]images.Image](imageCacheTTL),
 	}
@@ -162,13 +160,13 @@ func (p *Provider) serviceClientRefresh(ctx context.Context) error {
 
 	region := &unikornv1.Region{}
 
-	if err := p.client.Get(ctx, client.ObjectKey{Namespace: p.region.Namespace, Name: p.region.Name}, region); err != nil {
+	if err := p.client.Get(ctx, client.ObjectKey{Namespace: p._region.Namespace, Name: p._region.Name}, region); err != nil {
 		return err
 	}
 
 	// If anything changes with the configuration, referesh the clients as they may
 	// do caching.
-	if !reflect.DeepEqual(region.Spec.Openstack, p.region.Spec.Openstack) {
+	if !reflect.DeepEqual(region.Spec.Openstack, p._region.Spec.Openstack) {
 		refresh = true
 	}
 
@@ -185,7 +183,7 @@ func (p *Provider) serviceClientRefresh(ctx context.Context) error {
 
 	// If the secret hasn't beed read yet, or has changed e.g. credential rotation
 	// then refresh the clients as they cache the API token.
-	if p.secret == nil || !reflect.DeepEqual(secret.Data, p.secret.Data) {
+	if p._secret == nil || !reflect.DeepEqual(secret.Data, p._secret.Data) {
 		refresh = true
 	}
 
@@ -250,9 +248,9 @@ func (p *Provider) serviceClientRefresh(ctx context.Context) error {
 	}
 
 	// Save the current configuration for checking next time.
-	p.region = region
-	p.secret = secret
-	p.credentials = credentials
+	p._region = region
+	p._secret = secret
+	p._credentials = credentials
 
 	// Seve the clients
 	p._identity = identity
@@ -261,6 +259,13 @@ func (p *Provider) serviceClientRefresh(ctx context.Context) error {
 	p._network = network
 
 	return nil
+}
+
+func (p *Provider) regionSnapshot() (*unikornv1.Region, *providerCredentials) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	return p._region, p._credentials
 }
 
 // identity returns an admin-level identity client.
@@ -326,7 +331,9 @@ func (p *Provider) getProviderFromServicePrincipalData(identity *unikornv1.Opens
 		return nil, fmt.Errorf("%w: service principal project not set", coreerrors.ErrConsistency)
 	}
 
-	return NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *identity.Spec.UserID, *identity.Spec.Password, *identity.Spec.ProjectID), nil
+	region, _ := p.regionSnapshot()
+
+	return NewPasswordProvider(region.Spec.Openstack.Endpoint, *identity.Spec.UserID, *identity.Spec.Password, *identity.Spec.ProjectID), nil
 }
 
 // computeFromServicePrincipalData gets a compute client scoped to the service principal data.
@@ -336,7 +343,9 @@ func (p *Provider) computeFromServicePrincipalData(ctx context.Context, identity
 		return nil, err
 	}
 
-	client, err := NewComputeClient(ctx, provider, p.region.Spec.Openstack.Compute)
+	region, _ := p.regionSnapshot()
+
+	client, err := NewComputeClient(ctx, provider, region.Spec.Openstack.Compute)
 	if err != nil {
 		return nil, err
 	}
@@ -367,7 +376,9 @@ func (p *Provider) getPrivilegedProviderFromServicePrincipal(ctx context.Context
 		return nil, fmt.Errorf("%w: service principal project not set", coreerrors.ErrConsistency)
 	}
 
-	return NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID), nil
+	region, credentials := p.regionSnapshot()
+
+	return NewPasswordProvider(region.Spec.Openstack.Endpoint, credentials.userID, credentials.password, *openstackIdentity.Spec.ProjectID), nil
 }
 
 // computeFromServicePrincipal gets a compute client scoped to the service principal.
@@ -377,7 +388,9 @@ func (p *Provider) computeFromServicePrincipal(ctx context.Context, identity *un
 		return nil, err
 	}
 
-	client, err := NewComputeClient(ctx, provider, p.region.Spec.Openstack.Compute)
+	region, _ := p.regionSnapshot()
+
+	client, err := NewComputeClient(ctx, provider, region.Spec.Openstack.Compute)
 	if err != nil {
 		return nil, err
 	}
@@ -392,7 +405,9 @@ func (p *Provider) imageFromServicePrincipal(ctx context.Context, identity *unik
 		return nil, err
 	}
 
-	client, err := NewImageClient(ctx, provider, p.region.Spec.Openstack.Image)
+	region, _ := p.regionSnapshot()
+
+	client, err := NewImageClient(ctx, provider, region.Spec.Openstack.Image)
 	if err != nil {
 		return nil, err
 	}
@@ -408,7 +423,9 @@ func (p *Provider) privilegedImageFromServicePrincipal(ctx context.Context, iden
 		return nil, err
 	}
 
-	client, err := NewImageClient(ctx, provider, p.region.Spec.Openstack.Image)
+	region, _ := p.regionSnapshot()
+
+	client, err := NewImageClient(ctx, provider, region.Spec.Openstack.Image)
 	if err != nil {
 		return nil, err
 	}
@@ -423,7 +440,9 @@ func (p *Provider) networkFromServicePrincipal(ctx context.Context, identity *un
 		return nil, err
 	}
 
-	client, err := NewNetworkClient(ctx, provider, p.region.Spec.Openstack.Network)
+	region, _ := p.regionSnapshot()
+
+	client, err := NewNetworkClient(ctx, provider, region.Spec.Openstack.Network)
 	if err != nil {
 		return nil, err
 	}
@@ -439,7 +458,9 @@ func (p *Provider) privilegedNetworkFromServicePrincipal(ctx context.Context, id
 		return nil, err
 	}
 
-	client, err := NewNetworkClient(ctx, provider, p.region.Spec.Openstack.Network)
+	region, _ := p.regionSnapshot()
+
+	client, err := NewNetworkClient(ctx, provider, region.Spec.Openstack.Network)
 	if err != nil {
 		return nil, err
 	}
@@ -462,7 +483,7 @@ func (p *Provider) Region(ctx context.Context) (*unikornv1.Region, error) {
 		return nil, err
 	}
 
-	return p.region, nil
+	return p._region, nil // returns the field, because it's already guarded by the lock
 }
 
 // Flavors list all available flavors.
@@ -477,7 +498,7 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 		return nil, err
 	}
 
-	region := p.region
+	region, _ := p.regionSnapshot()
 	result := make(types.FlavorList, len(resources))
 
 	for i := range resources {
@@ -496,13 +517,13 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 		// Apply any extra metadata to the flavor.
 		//
 		//nolint:nestif
-		if p.region.Spec.Openstack.Compute != nil && p.region.Spec.Openstack.Compute.Flavors != nil {
+		if region.Spec.Openstack.Compute != nil && region.Spec.Openstack.Compute.Flavors != nil {
 			i := slices.IndexFunc(region.Spec.Openstack.Compute.Flavors.Metadata, func(metadata unikornv1.FlavorMetadata) bool {
 				return flavor.ID == metadata.ID
 			})
 
 			if i >= 0 {
-				metadata := &p.region.Spec.Openstack.Compute.Flavors.Metadata[i]
+				metadata := &region.Spec.Openstack.Compute.Flavors.Metadata[i]
 
 				f.Baremetal = metadata.Baremetal
 
@@ -946,7 +967,9 @@ func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
 	if identityID, ok := image.Properties[identityIDLabel].(string); ok {
 		identity := &unikornv1.Identity{}
 
-		if err := p.client.Get(ctx, client.ObjectKey{Namespace: p.region.Namespace, Name: identityID}, identity); err != nil {
+		region, _ := p.regionSnapshot()
+
+		if err := p.client.Get(ctx, client.ObjectKey{Namespace: region.Namespace, Name: identityID}, identity); err != nil {
 			return err
 		}
 
@@ -1043,8 +1066,9 @@ func (p *Provider) provisionUser(ctx context.Context, identityService *IdentityC
 
 	name := identityResourceName(identity)
 	password := string(uuid.NewUUID())
+	_, credentials := p.regionSnapshot()
 
-	user, err := identityService.CreateUser(ctx, p.credentials.domainID, name, password)
+	user, err := identityService.CreateUser(ctx, credentials.domainID, name, password)
 	if err != nil {
 		return err
 	}
@@ -1064,8 +1088,9 @@ func (p *Provider) provisionProject(ctx context.Context, identityService *Identi
 	}
 
 	name := identityResourceName(identity)
+	_, credentials := p.regionSnapshot()
 
-	project, err := identityService.CreateProject(ctx, p.credentials.domainID, name, projectTags(identity))
+	project, err := identityService.CreateProject(ctx, credentials.domainID, name, projectTags(identity))
 	if err != nil {
 		return err
 	}
@@ -1100,8 +1125,10 @@ func (p *Provider) getRequiredProjectManagerRoles() []string {
 // getRequiredProjectUserRoles returns the roles required for a user to create, manage and delete
 // a cluster.
 func (p *Provider) getRequiredProjectUserRoles() []string {
-	if p.region.Spec.Openstack.Identity != nil && len(p.region.Spec.Openstack.Identity.ClusterRoles) > 0 {
-		return p.region.Spec.Openstack.Identity.ClusterRoles
+	region, _ := p.regionSnapshot()
+
+	if region.Spec.Openstack.Identity != nil && len(region.Spec.Openstack.Identity.ClusterRoles) > 0 {
+		return region.Spec.Openstack.Identity.ClusterRoles
 	}
 
 	defaultRoles := []string{
@@ -1140,8 +1167,9 @@ func (p *Provider) provisionApplicationCredential(ctx context.Context, identity 
 		return nil
 	}
 
+	region, _ := p.regionSnapshot()
 	// Rescope to the user/project...
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, *identity.Spec.UserID, *identity.Spec.Password, *identity.Spec.ProjectID)
+	providerClient := NewPasswordProvider(region.Spec.Openstack.Endpoint, *identity.Spec.UserID, *identity.Spec.Password, *identity.Spec.ProjectID)
 
 	identityService, err := NewIdentityClient(ctx, providerClient)
 	if err != nil {
@@ -1162,14 +1190,16 @@ func (p *Provider) provisionApplicationCredential(ctx context.Context, identity 
 }
 
 func (p *Provider) provisionQuotas(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *identity.Spec.ProjectID)
+	region, credentials := p.regionSnapshot()
 
-	compute, err := NewComputeClient(ctx, providerClient, p.region.Spec.Openstack.Compute)
+	providerClient := NewPasswordProvider(region.Spec.Openstack.Endpoint, credentials.userID, credentials.password, *identity.Spec.ProjectID)
+
+	compute, err := NewComputeClient(ctx, providerClient, region.Spec.Openstack.Compute)
 	if err != nil {
 		return err
 	}
 
-	network, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	network, err := NewNetworkClient(ctx, providerClient, region.Spec.Openstack.Network)
 	if err != nil {
 		return err
 	}
@@ -1201,12 +1231,14 @@ func (p *Provider) createClientConfig(identity *unikornv1.OpenstackIdentity) err
 
 	cloud := "cloud"
 
+	region, _ := p.regionSnapshot()
+
 	clientConfig := &clientconfig.Clouds{
 		Clouds: map[string]clientconfig.Cloud{
 			cloud: {
 				AuthType: clientconfig.AuthV3ApplicationCredential,
 				AuthInfo: &clientconfig.AuthInfo{
-					AuthURL:                     p.region.Spec.Openstack.Endpoint,
+					AuthURL:                     region.Spec.Openstack.Endpoint,
 					ApplicationCredentialID:     *identity.Spec.ApplicationCredentialID,
 					ApplicationCredentialSecret: *identity.Spec.ApplicationCredentialSecret,
 				},
@@ -1347,11 +1379,13 @@ func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Ident
 		return err
 	}
 
+	_, credentials := p.regionSnapshot()
+
 	// Grant the "manager" role on the project for unikorn's user.  Sadly when provisioning
 	// resources, most services can only infer the project ID from the token, and not any
 	// of the hierarchy, so we cannot define policy rules for a domain manager in the same
 	// way as can be done for the identity service.
-	if err := p.provisionProjectRoles(ctx, identityService, openstackIdentity, p.credentials.userID, p.getRequiredProjectManagerRoles); err != nil {
+	if err := p.provisionProjectRoles(ctx, identityService, openstackIdentity, credentials.userID, p.getRequiredProjectManagerRoles); err != nil {
 		return err
 	}
 
@@ -1537,7 +1571,9 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 
 	var vlanID *int
 
-	if p.region.Spec.Openstack.Network.UseProviderNetworks() {
+	region, _ := p.regionSnapshot()
+
+	if region.Spec.Openstack.Network.UseProviderNetworks() {
 		v, err := p.vlanAllocator.Allocate(ctx, network.Name)
 		if err != nil {
 			return nil, err
@@ -1780,10 +1816,11 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 	if openstackNetwork != nil {
 		log.V(1).Info("deleting network")
 
+		region, _ := p.regionSnapshot()
 		// VLAN deallocation is idempotent, but requires the network to
 		// exist so we can lookup the segmentation ID, so this has to
 		// occur first.
-		if p.region.Spec.Openstack.Network.UseProviderNetworks() {
+		if region.Spec.Openstack.Network.UseProviderNetworks() {
 			log.V(1).Info("freeing vlan", "id", openstackNetwork.SegmentationID)
 
 			vlanID, err := strconv.Atoi(openstackNetwork.SegmentationID)
@@ -2022,9 +2059,11 @@ func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.
 		return err
 	}
 
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+	region, credentials := p.regionSnapshot()
 
-	networking, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	providerClient := NewPasswordProvider(region.Spec.Openstack.Endpoint, credentials.userID, credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	networking, err := NewNetworkClient(ctx, providerClient, region.Spec.Openstack.Network)
 	if err != nil {
 		return err
 	}
@@ -2050,9 +2089,11 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 		return err
 	}
 
-	providerClient := NewPasswordProvider(p.region.Spec.Openstack.Endpoint, p.credentials.userID, p.credentials.password, *openstackIdentity.Spec.ProjectID)
+	region, credentials := p.regionSnapshot()
 
-	networking, err := NewNetworkClient(ctx, providerClient, p.region.Spec.Openstack.Network)
+	providerClient := NewPasswordProvider(region.Spec.Openstack.Endpoint, credentials.userID, credentials.password, *openstackIdentity.Spec.ProjectID)
+
+	networking, err := NewNetworkClient(ctx, providerClient, region.Spec.Openstack.Network)
 	if err != nil {
 		return err
 	}
