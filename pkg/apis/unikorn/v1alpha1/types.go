@@ -434,6 +434,7 @@ type Network struct {
 	Status            NetworkStatus `json:"status,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:message="reservation prefix length must be greater than the network prefix length",rule="!has(self.reservations) || (self.reservations.prefixLength > int(self.prefix.split(\"/\")[1]))"
 type NetworkSpec struct {
 	// Pause, if true, will inhibit reconciliation.
 	Pause bool `json:"pause,omitempty"`
@@ -445,10 +446,38 @@ type NetworkSpec struct {
 	Provider Provider `json:"provider,omitempty"`
 	// Prefix is the IPv4 address prefix.
 	Prefix *unikornv1core.IPv4Prefix `json:"prefix"`
+	// Reservations allow parts of the address space to be reserved
+	// mainly for file storage but also VIP pools.  If not specified
+	// a default /28 is provisioned for storage to allow file storage
+	// user by default, but not consume too many IP addresses unxpectedly.
+	Reservations *NetworkReservations `json:"reservations,omitempty"`
 	// DNSNameservers are a set of DNS nameservrs for the network.
 	DNSNameservers []unikornv1core.IPv4Address `json:"dnsNameservers,omitempty"`
 	// Routes to be distributed via DHCP.
 	Routes []Route `json:"routes,omitempty"`
+}
+
+// +kubebuilder:validation:XValidation:message="vip pool prefix length must be greater than or equal to the reservation prefix length",rule="!has(self.nonStoragePrefixLength) || (self.nonStoragePrefixLength >= self.prefixLength)"
+type NetworkReservations struct {
+	// PrefixLength defines the prefix length to reserve, starting at the beginning
+	// of the network prefix e.g. if this is /24 and the network is /22, then this will
+	// start at .2 (cannot use the network or gateway addresses), and end at .255.
+	// It is due to starting at .2 that the maximum is /30, otherwise nothing would
+	// be allocated for storage at all.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=30
+	PrefixLength int `json:"prefixLength"`
+	// NonStoragePrefixLength defines how much of the storage prefix to
+	// reserve for non-storage purposes.  This is removed from the beginning
+	// of the storage prefix e.g. if this is /28 and the storage prefix is /24
+	// then non storage will run from .2 to .15, and storage will run from .16
+	// to .255.  It is due to starting at .2 that the maximum is /30, otherwise
+	// nothing would be allocated for non-storage at all.  If this prefix matches
+	// the storage prefix then all the reservation is avilabile for not-storage
+	// and none for storage.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=30
+	NonStoragePrefixLength *int `json:"nonStoragePrefixLength,omitempty"`
 }
 
 type Route struct {

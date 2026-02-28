@@ -429,6 +429,33 @@ type NetworkReadSpec struct {
 	RegionId string `json:"regionId"`
 }
 
+// NetworkReservations Network reservations allow part of the network prefix to be reserved
+// and not available to DHCP for server provisioning.  Reserved space is
+// required for fast file storage integration.  By default a /28 will be
+// allocated automatically.
+type NetworkReservations struct {
+	// NonStoragePrefixLength If specified this allows a portion of the reservation to be made
+	// available as virtual IPs that can be used as you require e.g. to
+	// implement high availability via VRRP.  A value of 28 (/28) equates
+	// to 16 network addresses.  This pool is allocated at the start of
+	// the reservation with usable VIP addresses beginning at .2.  The
+	// remaining addresses in the reservation are available for use with
+	// fast file storage etc. The VIP prefix length must be a positive integer
+	// with a maximum of 30 and must be greater than or equal to the
+	// reservation prefix length.
+	NonStoragePrefixLength *int `json:"nonStoragePrefixLength,omitempty"`
+
+	// PrefixLength Specifies the length of the IPv4 network prefix to reserve.
+	// A value of 24 (/24) equates to 256 network addresses.
+	// This will be reserved from the start of the main network
+	// prefix.  The network address (.0) and the router address (.1)
+	// are not available for end user use yielding N-2 usable
+	// addresses.  The reservation prefix length must be a positive
+	// integer with a maximum of 30 and must be greater than the network
+	// prefix length.
+	PrefixLength int `json:"prefixLength"`
+}
+
 // NetworkSpecOpenstack An openstack network.
 type NetworkSpecOpenstack struct {
 	// NetworkId The openstack network ID.
@@ -461,7 +488,11 @@ type NetworkV2CreateSpec struct {
 	// OrganizationId The organization to provision the resource in.
 	OrganizationId string `json:"organizationId"`
 
-	// Prefix An IPv4 prefix for the network.
+	// Prefix An IPv4 prefix for the network.  Dynamic modification of the
+	// network prefix is not supported at this time, and doing so
+	// would involve adding a route between discrete broadcast domains
+	// so ensure this is large enough for your potential requirements
+	// during the life time of your infrastructure.
 	Prefix string `json:"prefix"`
 
 	// ProjectId The project to provision the resource in.
@@ -469,6 +500,12 @@ type NetworkV2CreateSpec struct {
 
 	// RegionId The region a network is to be provisioned in.
 	RegionId string `json:"regionId"`
+
+	// Reservations Network reservations allow part of the network prefix to be reserved
+	// and not available to DHCP for server provisioning.  Reserved space is
+	// required for fast file storage integration.  By default a /28 will be
+	// allocated automatically.
+	Reservations *NetworkReservations `json:"reservations,omitempty"`
 
 	// Routes A list of network routes.
 	Routes *Routes `json:"routes,omitempty"`
@@ -490,6 +527,12 @@ type NetworkV2Read struct {
 type NetworkV2Spec struct {
 	// DnsNameservers A list of IPv4 addresses.
 	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
+
+	// Reservations Network reservations allow part of the network prefix to be reserved
+	// and not available to DHCP for server provisioning.  Reserved space is
+	// required for fast file storage integration.  By default a /28 will be
+	// allocated automatically.
+	Reservations *NetworkReservations `json:"reservations,omitempty"`
 
 	// Routes A list of network routes.
 	Routes *Routes `json:"routes,omitempty"`
