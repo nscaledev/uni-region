@@ -261,6 +261,17 @@ func (p *Provider) serviceClientRefresh(ctx context.Context) error {
 	return nil
 }
 
+// regionRefresh fetches new values for the Region object and credentials. This is distinct from
+// regionSnapshot, which returns the values it has (which is adequate for many situations).
+func (p *Provider) regionRefresh(ctx context.Context) (*unikornv1.Region, *providerCredentials, error) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	err := p.serviceClientRefresh(ctx)
+
+	return p._region, p._credentials, err
+}
+
 func (p *Provider) regionSnapshot() (*unikornv1.Region, *providerCredentials) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -475,15 +486,9 @@ func (p *Provider) Kind() unikornv1.Provider {
 
 // Region returns the provider's region.
 func (p *Provider) Region(ctx context.Context) (*unikornv1.Region, error) {
-	// Get the newest version of the region.
-	p.lock.Lock()
-	defer p.lock.Unlock()
+	region, _, err := p.regionRefresh(ctx)
 
-	if err := p.serviceClientRefresh(ctx); err != nil {
-		return nil, err
-	}
-
-	return p._region, nil // returns the field, because it's already guarded by the lock
+	return region, err
 }
 
 // Flavors list all available flavors.
