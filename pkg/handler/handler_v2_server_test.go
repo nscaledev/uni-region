@@ -170,7 +170,7 @@ func TestServerV2_EmptyList(t *testing.T) {
 	namespace := "region-test-home"
 
 	ctrl := gomock.NewController(t)
-	providers := mockproviders.NewMockProviders(ctrl)
+	providers := mockproviders.NewMockServerProviders(ctrl)
 
 	c := fakeClientWithSchema(t) // NB no objects
 
@@ -200,7 +200,7 @@ func TestServerV2_NotAllowedList(t *testing.T) {
 	namespace := "region-test-home"
 
 	ctrl := gomock.NewController(t)
-	providers := mockproviders.NewMockProviders(ctrl)
+	providers := mockproviders.NewMockServerProviders(ctrl)
 
 	c := fakeClientWithSchema(t, knownGoodFixture(t, "server1", namespace, "org-not-allowed-test")...)
 
@@ -247,7 +247,7 @@ func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 
 	provider := mockprovider.NewMockProvider(ctrl)
 
-	providers := mockproviders.NewMockProviders(ctrl)
+	providers := mockproviders.NewMockServerProviders(ctrl)
 	providers.EXPECT().LookupCloud(gomock.Any(), gomock.Any()).Return(provider, nil)
 
 	c := fakeClientWithSchema(t, knownGoodFixture(t, serverName, namespace, orgID)...)
@@ -336,7 +336,7 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 			return &s, nil
 		})
 
-	providers := mockproviders.NewMockProviders(ctrl)
+	providers := mockproviders.NewMockServerProviders(ctrl)
 	providers.EXPECT().LookupCloud(gomock.Any(), gomock.Any()).Return(provider, nil)
 
 	clientArgs := common.ClientArgs{

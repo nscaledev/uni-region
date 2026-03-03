@@ -171,7 +171,7 @@ func (s *Server) GetServer(client client.Client) (*http.Server, error) {
 	clientArgs := common.ClientArgs{
 		Client:    client,
 		Namespace: s.CoreOptions.Namespace,
-		Providers: providers.New(client, s.CoreOptions.Namespace),
+		Providers: providers.NewForServer(client, s.CoreOptions.Namespace),
 		Identity:  identity,
 	}
 

@@ -24,15 +24,11 @@ import (
 	"math/big"
 	"net"
 	"net/http"
-	"slices"
 	"strconv"
-	"strings"
-	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
-	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/rules"
@@ -43,7 +39,6 @@ import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
-	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers/allocation/vlan"
@@ -52,7 +47,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/utils/ptr"
@@ -60,37 +54,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/yaml"
-)
-
-const (
-	osKernelLabel   = "unikorn:os:kernel"
-	osFamilyLabel   = "unikorn:os:family"
-	osDistroLabel   = "unikorn:os:distro"
-	osVersionLabel  = "unikorn:os:version"
-	osVariantLabel  = "unikorn:os:variant"
-	osCodenameLabel = "unikorn:os:codename"
-
-	virtualizationLabel   = "unikorn:virtualization"
-	gpuModelsLabel        = "unikorn:gpu_models"
-	gpuVendorLabel        = "unikorn:gpu_vendor"
-	gpuDriverVersionLabel = "unikorn:gpu_driver_version"
-
-	packageLabelPrefix = "unikorn:package:"
-
-	kubernetesVersionLabel = "unikorn:kubernetes_version"
-
-	organizationIDLabel = "unikorn:organization:id"
-	tagLabelPrefix      = "unikorn:tag:"
-	identityIDLabel     = "unikorn:identity_id"
-
-	containerFormatBare = "bare" // there's no const in gophercloud for this, so we have our own.
-
-	// These ones are well defined openstack image properties.
-	imageArchitectureProperty = "architecture"
-)
-
-const (
-	imageCacheTTL = 5 * time.Minute
 )
 
 type providerCredentials struct {
@@ -101,34 +64,21 @@ type providerCredentials struct {
 	password  string
 }
 
-type Provider struct {
-	// client is Kubernetes client.
-	client client.Client
-
-	openstack *openStackClients
-
+type ProvisionerProvider struct {
+	core
 	// vlan allocation table.
 	// NOTE: this can only be used by a single client unless it's moved
 	// into a Kubernetes resource of some variety to gain speculative locking
 	// powers.
 	vlanAllocator *vlan.Allocator
-
-	// imageCache is used to downsample the OpenStack image API, because responses can
-	// take seconds. This reduces the effect of that latency on most callers.
-	imageCache *cache.TimeoutCache[[]images.Image]
 }
 
-var _ types.Provider = &Provider{}
+var _ types.ProvisionerProvider = &ProvisionerProvider{}
 
-func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Provider, error) {
-	p := &Provider{
-		client: cli,
-		openstack: &openStackClients{
-			client:  cli,
-			_region: region,
-		},
+func NewProvisioner(ctx context.Context, cli client.Client, region *unikornv1.Region) (*ProvisionerProvider, error) {
+	p := &ProvisionerProvider{
+		core:          newCore(cli, region),
 		vlanAllocator: vlan.New(cli, region),
-		imageCache:    cache.New[[]images.Image](imageCacheTTL),
 	}
 
 	if err := p.openstack.serviceClientRefresh(ctx); err != nil {
@@ -136,717 +86,6 @@ func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Pro
 	}
 
 	return p, nil
-}
-
-// getProviderFromServicePrincipalData creates a generic provider client from ephemeral
-// per-service principal credentials.
-func (p *Provider) getProviderFromServicePrincipalData(identity *unikornv1.OpenstackIdentity) (CredentialProvider, error) {
-	if identity.Spec.UserID == nil {
-		return nil, fmt.Errorf("%w: service principal user ID not set", coreerrors.ErrConsistency)
-	}
-
-	if identity.Spec.Password == nil {
-		return nil, fmt.Errorf("%w: service principal password not set", coreerrors.ErrConsistency)
-	}
-
-	if identity.Spec.ProjectID == nil {
-		return nil, fmt.Errorf("%w: service principal project not set", coreerrors.ErrConsistency)
-	}
-
-	region, _ := p.openstack.regionSnapshot()
-
-	return NewPasswordProvider(region.Spec.Openstack.Endpoint, *identity.Spec.UserID, *identity.Spec.Password, *identity.Spec.ProjectID), nil
-}
-
-// computeFromServicePrincipalData gets a compute client scoped to the service principal data.
-func (p *Provider) computeFromServicePrincipalData(ctx context.Context, identity *unikornv1.OpenstackIdentity) (ComputeInterface, error) {
-	provider, err := p.getProviderFromServicePrincipalData(identity)
-	if err != nil {
-		return nil, err
-	}
-
-	region, _ := p.openstack.regionSnapshot()
-
-	client, err := NewComputeClient(ctx, provider, region.Spec.Openstack.Compute)
-	if err != nil {
-		return nil, err
-	}
-
-	return client, nil
-}
-
-// getProviderFromServicePrincipal takes a service principal and returns a generic
-// provider client for it.
-func (p *Provider) getProviderFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
-	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
-	if err != nil {
-		return nil, err
-	}
-
-	return p.getProviderFromServicePrincipalData(openstackIdentity)
-}
-
-// getPrivilegedProviderFromServicePrincipal binds itself to the service principal's project
-// but uses the provider's top level admin credentials.
-func (p *Provider) getPrivilegedProviderFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
-	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
-	if err != nil {
-		return nil, err
-	}
-
-	if openstackIdentity.Spec.ProjectID == nil {
-		return nil, fmt.Errorf("%w: service principal project not set", coreerrors.ErrConsistency)
-	}
-
-	region, credentials := p.openstack.regionSnapshot()
-
-	return NewPasswordProvider(region.Spec.Openstack.Endpoint, credentials.userID, credentials.password, *openstackIdentity.Spec.ProjectID), nil
-}
-
-// computeFromServicePrincipal gets a compute client scoped to the service principal.
-func (p *Provider) computeFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (ComputeInterface, error) {
-	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return nil, err
-	}
-
-	region, _ := p.openstack.regionSnapshot()
-
-	client, err := NewComputeClient(ctx, provider, region.Spec.Openstack.Compute)
-	if err != nil {
-		return nil, err
-	}
-
-	return client, nil
-}
-
-// imageFromServicePrincipal gets a compute client scoped to the service principal data.
-func (p *Provider) imageFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (*ImageClient, error) {
-	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return nil, err
-	}
-
-	region, _ := p.openstack.regionSnapshot()
-
-	client, err := NewImageClient(ctx, provider, region.Spec.Openstack.Image)
-	if err != nil {
-		return nil, err
-	}
-
-	return client, nil
-}
-
-// privilegedImageFromServicePrincipal gets a compute client scoped to the service principal data
-// but with "manager" credentials.
-func (p *Provider) privilegedImageFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (*ImageClient, error) {
-	provider, err := p.getPrivilegedProviderFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return nil, err
-	}
-
-	region, _ := p.openstack.regionSnapshot()
-
-	client, err := NewImageClient(ctx, provider, region.Spec.Openstack.Image)
-	if err != nil {
-		return nil, err
-	}
-
-	return client, nil
-}
-
-// networkFromServicePrincipal gets a network client scoped to the service principal.
-func (p *Provider) networkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
-	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return nil, err
-	}
-
-	region, _ := p.openstack.regionSnapshot()
-
-	client, err := NewNetworkClient(ctx, provider, region.Spec.Openstack.Network)
-	if err != nil {
-		return nil, err
-	}
-
-	return client, nil
-}
-
-// privilegedNetworkFromServicePrincipal gets a network client scoped to the service principal's
-// project but with "manager" credentials.
-func (p *Provider) privilegedNetworkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
-	provider, err := p.getPrivilegedProviderFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return nil, err
-	}
-
-	region, _ := p.openstack.regionSnapshot()
-
-	client, err := NewNetworkClient(ctx, provider, region.Spec.Openstack.Network)
-	if err != nil {
-		return nil, err
-	}
-
-	return client, nil
-}
-
-// Kind returns the provider kind.
-func (p *Provider) Kind() unikornv1.Provider {
-	return unikornv1.ProviderOpenstack
-}
-
-// Region returns the provider's region.
-func (p *Provider) Region(ctx context.Context) (*unikornv1.Region, error) {
-	region, _, err := p.openstack.regionRefresh(ctx)
-
-	return region, err
-}
-
-// Flavors list all available flavors.
-func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
-	compute, err := p.openstack.compute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	resources, err := compute.GetFlavors(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	region, _ := p.openstack.regionSnapshot()
-	result := make(types.FlavorList, len(resources))
-
-	for i := range resources {
-		flavor := &resources[i]
-
-		// API memory is in MiB, disk is in GB
-		f := types.Flavor{
-			ID:           flavor.ID,
-			Name:         flavor.Name,
-			Architecture: types.X86_64,
-			CPUs:         flavor.VCPUs,
-			Memory:       resource.NewQuantity(int64(flavor.RAM)<<20, resource.BinarySI),
-			Disk:         resource.NewScaledQuantity(int64(flavor.Disk), resource.Giga),
-		}
-
-		// Apply any extra metadata to the flavor.
-		//
-		//nolint:nestif
-		if region.Spec.Openstack.Compute != nil && region.Spec.Openstack.Compute.Flavors != nil {
-			i := slices.IndexFunc(region.Spec.Openstack.Compute.Flavors.Metadata, func(metadata unikornv1.FlavorMetadata) bool {
-				return flavor.ID == metadata.ID
-			})
-
-			if i >= 0 {
-				metadata := &region.Spec.Openstack.Compute.Flavors.Metadata[i]
-
-				f.Baremetal = metadata.Baremetal
-
-				if metadata.CPU != nil {
-					if metadata.CPU.Architecture != nil {
-						f.Architecture = types.Architecture(*metadata.CPU.Architecture)
-					}
-
-					f.CPUFamily = metadata.CPU.Family
-				}
-
-				if metadata.GPU != nil {
-					f.GPU = &types.GPU{
-						// TODO: while these align, you should really put a
-						// proper conversion in here.
-						Vendor:        types.GPUVendor(metadata.GPU.Vendor),
-						Model:         metadata.GPU.Model,
-						Memory:        metadata.GPU.Memory,
-						PhysicalCount: metadata.GPU.PhysicalCount,
-						LogicalCount:  metadata.GPU.LogicalCount,
-					}
-				}
-			}
-		}
-
-		result[i] = f
-	}
-
-	return result, nil
-}
-
-// imageOS extracts the image OS from the image properties.
-func imageOS(image *images.Image) types.ImageOS {
-	kernel, _ := image.Properties[osKernelLabel].(string)
-	family, _ := image.Properties[osFamilyLabel].(string)
-	distro, _ := image.Properties[osDistroLabel].(string)
-	version, _ := image.Properties[osVersionLabel].(string)
-
-	result := types.ImageOS{
-		Kernel:  types.OsKernel(kernel),
-		Family:  types.OsFamily(family),
-		Distro:  types.OsDistro(distro),
-		Version: version,
-	}
-
-	if variant, exists := image.Properties[osVariantLabel].(string); exists {
-		result.Variant = &variant
-	}
-
-	if codename, exists := image.Properties[osCodenameLabel].(string); exists {
-		result.Codename = &codename
-	}
-
-	return result
-}
-
-// imagePackages extracts the image packages from the image properties.
-func imagePackages(image *images.Image) *types.ImagePackages {
-	result := make(types.ImagePackages)
-
-	for key, value := range image.Properties {
-		// Check if the key starts with "unikorn:package:"
-		if strings.HasPrefix(key, packageLabelPrefix) {
-			packageName := key[len(packageLabelPrefix):]
-
-			if strValue, ok := value.(string); ok {
-				result[packageName] = strValue
-			}
-		}
-	}
-
-	// https://github.com/unikorn-cloud/specifications/blob/main/specifications/providers/openstack/flavors_and_images.md
-	// kubernetes_version was removed in v2.0.0 of the specification, but we still support it for backwards compatibility.
-	if _, exists := result["kubernetes"]; !exists {
-		if version, ok := image.Properties[kubernetesVersionLabel].(string); ok {
-			result["kubernetes"] = version
-		}
-	}
-
-	return &result
-}
-
-func isPublicOrOrganizationOwnedImage(image *images.Image, organizationIDs []string) bool {
-	value, _ := image.Properties[organizationIDLabel].(string)
-	return value == "" || slices.Contains(organizationIDs, value)
-}
-
-func isOrganizationOwnedImage(image *images.Image, organizationIDs []string) bool {
-	value, _ := image.Properties[organizationIDLabel].(string)
-	return value != "" && slices.Contains(organizationIDs, value)
-}
-
-func imageStatus(image *images.Image) types.ImageStatus {
-	var status types.ImageStatus
-
-	switch image.Status {
-	case images.ImageStatusQueued:
-		status = types.ImageStatusPending
-	case images.ImageStatusSaving, images.ImageStatusImporting, images.ImageStatusUploading:
-		status = types.ImageStatusCreating
-	case images.ImageStatusActive:
-		status = types.ImageStatusReady
-	case images.ImageStatusKilled:
-		status = types.ImageStatusFailed
-	case images.ImageStatusDeleted, images.ImageStatusPendingDelete, images.ImageStatusDeactivated:
-		// These statuses are not directly mappable, mark them as failed.
-		status = types.ImageStatusFailed
-	}
-
-	return status
-}
-
-func imageArchitecture(image *images.Image) types.Architecture {
-	if v, ok := image.Properties[imageArchitectureProperty].(string); ok && v != "" {
-		return types.Architecture(v)
-	}
-
-	return types.X86_64
-}
-
-func imageTags(image *images.Image) map[string]string {
-	tags := make(map[string]string)
-
-	for k, v := range image.Properties {
-		if strings.HasPrefix(k, tagLabelPrefix) {
-			value, ok := v.(string) // empty string if this type assertion fails
-			if ok {
-				tags[k[len(tagLabelPrefix):]] = value
-			}
-		}
-	}
-
-	if len(tags) == 0 {
-		return nil
-	}
-
-	return tags
-}
-
-func convertImage(image *images.Image) (*types.Image, error) {
-	var organizationID *string
-	if temp, _ := image.Properties[organizationIDLabel].(string); temp != "" {
-		organizationID = &temp
-	}
-
-	size := image.MinDiskGigabytes
-
-	if size == 0 {
-		// Round up to the nearest GiB.
-		size = int((image.VirtualSize + (1 << 30) - 1) >> 30)
-	}
-
-	virtualization, _ := image.Properties[virtualizationLabel].(string)
-
-	tags := imageTags(image)
-
-	providerImage := types.Image{
-		ID:             image.ID,
-		Name:           image.Name,
-		Tags:           tags,
-		OrganizationID: organizationID,
-		Created:        image.CreatedAt,
-		Modified:       image.UpdatedAt,
-		Architecture:   imageArchitecture(image),
-		SizeGiB:        size,
-		Virtualization: types.ImageVirtualization(virtualization),
-		OS:             imageOS(image),
-		Packages:       imagePackages(image),
-		Status:         imageStatus(image),
-	}
-
-	if gpuVendor, ok := image.Properties[gpuVendorLabel].(string); ok {
-		gpuDriver, ok := image.Properties[gpuDriverVersionLabel].(string)
-		if !ok {
-			// TODO: it's perhaps better to just skip this one, rather than kill the entire service??
-			return nil, fmt.Errorf("%w: GPU driver is not defined for image %s", coreerrors.ErrKey, image.ID)
-		}
-
-		gpu := &types.ImageGPU{
-			Vendor: types.GPUVendor(gpuVendor),
-			Driver: gpuDriver,
-		}
-
-		if models, ok := image.Properties[gpuModelsLabel].(string); ok {
-			gpu.Models = strings.Split(models, ",")
-		}
-
-		providerImage.GPU = gpu
-	}
-
-	return &providerImage, nil
-}
-
-type imagePredicate func(*images.Image) bool
-
-type imageQuery struct {
-	listFunc   func(context.Context) ([]images.Image, error)
-	predicates []imagePredicate
-}
-
-func (q *imageQuery) AvailableToOrganization(organizationIDs ...string) types.ImageQuery {
-	q.predicates = append(q.predicates, func(im *images.Image) bool {
-		return isPublicOrOrganizationOwnedImage(im, organizationIDs)
-	})
-
-	return q
-}
-
-func (q *imageQuery) OwnedByOrganization(organizationIDs ...string) types.ImageQuery {
-	q.predicates = append(q.predicates, func(im *images.Image) bool {
-		return isOrganizationOwnedImage(im, organizationIDs)
-	})
-
-	return q
-}
-
-func (q *imageQuery) StatusIn(statuses ...types.ImageStatus) types.ImageQuery {
-	q.predicates = append(q.predicates, func(im *images.Image) bool {
-		st := imageStatus(im)
-		return slices.Contains(statuses, st)
-	})
-
-	return q
-}
-
-func (q *imageQuery) List(ctx context.Context) (types.ImageList, error) {
-	images, err := q.listFunc(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var result []types.Image
-
-images:
-	for i := range images {
-		for _, f := range q.predicates {
-			if !f(&images[i]) {
-				continue images
-			}
-		}
-
-		im, err := convertImage(&images[i])
-		if err != nil {
-			return nil, err
-		}
-
-		result = append(result, *im)
-	}
-
-	return result, nil
-}
-
-func (p *Provider) listImages(ctx context.Context) ([]images.Image, error) {
-	if cached, found := p.imageCache.Get(); found {
-		return cached, nil
-	}
-
-	imageService, err := p.openstack.image(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	resources, err := imageService.ListImages(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	p.imageCache.Set(resources)
-
-	return resources, nil
-}
-
-func (p *Provider) QueryImages() (types.ImageQuery, error) {
-	return &imageQuery{listFunc: p.listImages}, nil
-}
-
-// GetImage retrieves a specific image by its ID.
-func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
-	resource, err := p.getImage(ctx, imageID)
-	if err != nil {
-		return nil, err
-	}
-
-	if !isPublicOrOrganizationOwnedImage(resource, []string{organizationID}) {
-		return nil, fmt.Errorf(
-			"%w: image %s is not accessible to organization %s",
-			coreerrors.ErrResourceNotFound,
-			imageID,
-			organizationID,
-		)
-	}
-
-	return convertImage(resource)
-}
-
-// getImage finds a particular image, given the ID. It checks the cache first, and if not
-// present, assumes that the cache is out of date and fetches from the provider.
-func (p *Provider) getImage(ctx context.Context, imageID string) (*images.Image, error) {
-	if cached, found := p.imageCache.Get(); found {
-		imageIndexFunc := func(image images.Image) bool {
-			return image.ID == imageID
-		}
-
-		index := slices.IndexFunc(cached, imageIndexFunc)
-		if index != -1 {
-			return &cached[index], nil
-		}
-	}
-
-	imageService, err := p.openstack.image(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	resource, err := imageService.GetImage(ctx, imageID)
-	if err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return nil, fmt.Errorf("%w: no image found with ID %s", coreerrors.ErrResourceNotFound, imageID)
-		}
-
-		return nil, err
-	}
-
-	if resource.Visibility == images.ImageVisibilityPublic {
-		// Invalidate the cache as we had a cache miss.
-		p.imageCache.Invalidate()
-	}
-
-	return resource, nil
-}
-
-func setIfNotNil[T ~string](metadata map[string]string, key string, value *T) {
-	if value != nil {
-		metadata[key] = string(*value)
-	}
-}
-
-func createImageMetadata(image *types.Image) (map[string]string, error) {
-	metadata := make(map[string]string)
-
-	metadata[osKernelLabel] = string(image.OS.Kernel)
-	metadata[osFamilyLabel] = string(image.OS.Family)
-	metadata[osDistroLabel] = string(image.OS.Distro)
-	metadata[osVersionLabel] = image.OS.Version
-	setIfNotNil(metadata, osVariantLabel, image.OS.Variant)
-	setIfNotNil(metadata, osCodenameLabel, image.OS.Codename)
-
-	for k, v := range image.Tags {
-		metadata[tagLabelPrefix+k] = v
-	}
-
-	if image.Packages != nil {
-		for name, version := range *image.Packages {
-			key := fmt.Sprintf("%s%s", packageLabelPrefix, name)
-			metadata[key] = version
-		}
-	}
-
-	if image.GPU != nil {
-		if image.GPU.Vendor == "" {
-			return nil, fmt.Errorf("%w: GPU vendor must be defined when GPU information is provided", coreerrors.ErrKey)
-		}
-
-		if len(image.GPU.Models) == 0 {
-			return nil, fmt.Errorf("%w: GPU models must be defined when GPU information is provided", coreerrors.ErrKey)
-		}
-
-		if image.GPU.Driver == "" {
-			return nil, fmt.Errorf("%w: GPU driver must be defined when GPU information is provided", coreerrors.ErrKey)
-		}
-
-		gpuModels := strings.Join(image.GPU.Models, ",")
-
-		metadata[gpuVendorLabel] = string(image.GPU.Vendor)
-		metadata[gpuModelsLabel] = gpuModels
-		metadata[gpuDriverVersionLabel] = image.GPU.Driver
-	}
-
-	metadata[imageArchitectureProperty] = string(image.Architecture)
-	metadata[virtualizationLabel] = string(image.Virtualization)
-	setIfNotNil(metadata, organizationIDLabel, image.OrganizationID)
-
-	metadata["hw_disk_bus"] = "scsi"
-	metadata["hw_firmware_type"] = "uefi"
-	metadata["hw_scsi_model"] = "virtio-scsi"
-
-	// See: https://docs.openstack.org/nova/latest/admin/hw-machine-type.html
-	switch image.Architecture {
-	case types.X86_64:
-		metadata["hw_machine_type"] = "q35"
-	case types.Aarch64:
-		metadata["hw_machine_type"] = "virt"
-	}
-
-	return metadata, nil
-}
-
-// CreateImage creates a new image.
-func (p *Provider) CreateImage(ctx context.Context, image *types.Image, uri string) (*types.Image, error) {
-	imageService, err := p.openstack.image(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	properties, err := createImageMetadata(image)
-	if err != nil {
-		return nil, err
-	}
-
-	opts := &images.CreateOpts{
-		Name:            image.Name,
-		Visibility:      ptr.To(images.ImageVisibilityPublic),
-		ContainerFormat: containerFormatBare,
-		DiskFormat:      "raw",
-		Properties:      properties,
-	}
-
-	resource, err := imageService.CreateImage(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := imageService.Import(ctx, resource.ID, uri); err != nil {
-		return nil, err
-	}
-
-	p.imageCache.Invalidate()
-
-	return convertImage(resource)
-}
-
-func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
-	image, err := p.getImage(ctx, imageID)
-	if err != nil {
-		return err
-	}
-
-	// If we've set the identity ID, then that means it's a snapshot and
-	// currently lives in the service principal's project, so rescope to
-	// that.
-	if identityID, ok := image.Properties[identityIDLabel].(string); ok {
-		identity := &unikornv1.Identity{}
-
-		region, _ := p.openstack.regionSnapshot()
-
-		if err := p.client.Get(ctx, client.ObjectKey{Namespace: region.Namespace, Name: identityID}, identity); err != nil {
-			return err
-		}
-
-		imageService, err := p.imageFromServicePrincipal(ctx, identity)
-		if err != nil {
-			return err
-		}
-
-		return p.deleteImage(ctx, imageService, imageID)
-	}
-
-	// Otherwise it exists in our project...
-	imageService, err := p.openstack.image(ctx)
-	if err != nil {
-		return err
-	}
-
-	return p.deleteImage(ctx, imageService, imageID)
-}
-
-func (p *Provider) deleteImage(ctx context.Context, imageService *ImageClient, imageID string) error {
-	if err := imageService.DeleteImage(ctx, imageID); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return fmt.Errorf("image %w", coreerrors.ErrResourceNotFound)
-		}
-
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			return types.ErrImageStillInUse
-		}
-
-		return err
-	}
-
-	p.imageCache.Invalidate()
-
-	return nil
-}
-
-// ListExternalNetworks returns a list of external networks if the platform
-// supports such a concept.
-func (p *Provider) ListExternalNetworks(ctx context.Context) (types.ExternalNetworks, error) {
-	networking, err := p.openstack.network(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := networking.ExternalNetworks(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	out := make(types.ExternalNetworks, len(result))
-
-	for i, in := range result {
-		out[i] = types.ExternalNetwork{
-			ID:   in.ID,
-			Name: in.Name,
-		}
-	}
-
-	return out, nil
 }
 
 const (
@@ -875,7 +114,7 @@ func identityResourceName(identity *unikornv1.OpenstackIdentity) string {
 // provisionUser creates a new user in the managed domain with a random password.
 // There is a 1:1 mapping of user to project, and the project name is unique in the
 // domain, so just reuse this, we can clean them up at the same time.
-func (p *Provider) provisionUser(ctx context.Context, identityService *IdentityClient, identity *unikornv1.OpenstackIdentity) error {
+func (p *ProvisionerProvider) provisionUser(ctx context.Context, identityService *IdentityClient, identity *unikornv1.OpenstackIdentity) error {
 	if identity.Spec.UserID != nil {
 		return nil
 	}
@@ -898,7 +137,7 @@ func (p *Provider) provisionUser(ctx context.Context, identityService *IdentityC
 // provisionProject creates a project per-cluster.  Cluster API provider Openstack is
 // somewhat broken in that networks can alias and cause all kinds of disasters, so it's
 // safest to have one cluster in one project so it has its own namespace.
-func (p *Provider) provisionProject(ctx context.Context, identityService *IdentityClient, identity *unikornv1.OpenstackIdentity) error {
+func (p *ProvisionerProvider) provisionProject(ctx context.Context, identityService *IdentityClient, identity *unikornv1.OpenstackIdentity) error {
 	if identity.Spec.ProjectID != nil {
 		return nil
 	}
@@ -930,7 +169,7 @@ func roleNameToID(roles []roles.Role, name string) (string, error) {
 
 // getRequiredProjectManagerRoles returns the roles required for a manager to create, manage
 // and delete things like provider networks to support baremetal.
-func (p *Provider) getRequiredProjectManagerRoles() []string {
+func (p *ProvisionerProvider) getRequiredProjectManagerRoles() []string {
 	defaultRoles := []string{
 		"manager",
 	}
@@ -940,7 +179,7 @@ func (p *Provider) getRequiredProjectManagerRoles() []string {
 
 // getRequiredProjectUserRoles returns the roles required for a user to create, manage and delete
 // a cluster.
-func (p *Provider) getRequiredProjectUserRoles() []string {
+func (p *ProvisionerProvider) getRequiredProjectUserRoles() []string {
 	region, _ := p.openstack.regionSnapshot()
 
 	if region.Spec.Openstack.Identity != nil && len(region.Spec.Openstack.Identity.ClusterRoles) > 0 {
@@ -958,7 +197,7 @@ func (p *Provider) getRequiredProjectUserRoles() []string {
 // provisionProjectRoles creates a binding between our service account and the project
 // with the required roles to provision an application credential that will allow cluster
 // creation, deletion and life-cycle management.
-func (p *Provider) provisionProjectRoles(ctx context.Context, identityService *IdentityClient, identity *unikornv1.OpenstackIdentity, userID string, rolesGetter func() []string) error {
+func (p *ProvisionerProvider) provisionProjectRoles(ctx context.Context, identityService *IdentityClient, identity *unikornv1.OpenstackIdentity, userID string, rolesGetter func() []string) error {
 	allRoles, err := identityService.ListRoles(ctx)
 	if err != nil {
 		return err
@@ -978,7 +217,7 @@ func (p *Provider) provisionProjectRoles(ctx context.Context, identityService *I
 	return nil
 }
 
-func (p *Provider) provisionApplicationCredential(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
+func (p *ProvisionerProvider) provisionApplicationCredential(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
 	if identity.Spec.ApplicationCredentialID != nil {
 		return nil
 	}
@@ -1005,7 +244,7 @@ func (p *Provider) provisionApplicationCredential(ctx context.Context, identity 
 	return nil
 }
 
-func (p *Provider) provisionQuotas(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
+func (p *ProvisionerProvider) provisionQuotas(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
 	region, credentials := p.openstack.regionSnapshot()
 
 	providerClient := NewPasswordProvider(region.Spec.Openstack.Endpoint, credentials.userID, credentials.password, *identity.Spec.ProjectID)
@@ -1040,7 +279,7 @@ func (p *Provider) provisionQuotas(ctx context.Context, identity *unikornv1.Open
 	return nil
 }
 
-func (p *Provider) createClientConfig(identity *unikornv1.OpenstackIdentity) error {
+func (p *ProvisionerProvider) createClientConfig(identity *unikornv1.OpenstackIdentity) error {
 	if identity.Spec.Cloud != nil {
 		return nil
 	}
@@ -1076,7 +315,7 @@ func (p *Provider) createClientConfig(identity *unikornv1.OpenstackIdentity) err
 // keyPairName is a fixed name for our per-identity keypair.
 const keyPairName = "unikorn-openstack-provider"
 
-func (p *Provider) createIdentityComputeResources(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
+func (p *ProvisionerProvider) createIdentityComputeResources(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
 	if identity.Spec.ServerGroupID != nil {
 		return nil
 	}
@@ -1116,17 +355,7 @@ func (p *Provider) createIdentityComputeResources(ctx context.Context, identity 
 	return nil
 }
 
-func (p *Provider) GetOpenstackIdentity(ctx context.Context, identity *unikornv1.Identity) (*unikornv1.OpenstackIdentity, error) {
-	var result unikornv1.OpenstackIdentity
-
-	if err := p.client.Get(ctx, client.ObjectKey{Namespace: identity.Namespace, Name: identity.Name}, &result); err != nil {
-		return nil, err
-	}
-
-	return &result, nil
-}
-
-func (p *Provider) GetOrCreateOpenstackIdentity(ctx context.Context, identity *unikornv1.Identity) (*unikornv1.OpenstackIdentity, bool, error) {
+func (p *ProvisionerProvider) GetOrCreateOpenstackIdentity(ctx context.Context, identity *unikornv1.Identity) (*unikornv1.OpenstackIdentity, bool, error) {
 	create := false
 
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
@@ -1159,7 +388,7 @@ func (p *Provider) GetOrCreateOpenstackIdentity(ctx context.Context, identity *u
 // CreateIdentity creates a new identity for cloud infrastructure.
 //
 //nolint:cyclop
-func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Identity) error {
+func (p *ProvisionerProvider) CreateIdentity(ctx context.Context, identity *unikornv1.Identity) error {
 	identityService, err := p.openstack.identity(ctx)
 	if err != nil {
 		return err
@@ -1244,7 +473,7 @@ func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Ident
 // DeleteIdentity cleans up an identity for cloud infrastructure.
 //
 //nolint:cyclop,gocognit
-func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Identity) error {
+func (p *ProvisionerProvider) DeleteIdentity(ctx context.Context, identity *unikornv1.Identity) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		if !kerrors.IsNotFound(err) {
@@ -1358,7 +587,7 @@ func storageRange(prefix net.IPNet) *unikornv1.AttachmentIPRange {
 	}
 }
 
-func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface, network *unikornv1.Network) (*NetworkExt, error) {
+func (p *ProvisionerProvider) reconcileNetwork(ctx context.Context, client NetworkInterface, network *unikornv1.Network) (*NetworkExt, error) {
 	log := log.FromContext(ctx)
 
 	result, err := client.GetNetwork(ctx, network)
@@ -1417,7 +646,7 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 	return result, nil
 }
 
-func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, network *unikornv1.Network, openstackNetwork *NetworkExt) (*subnets.Subnet, error) {
+func (p *ProvisionerProvider) reconcileSubnet(ctx context.Context, client SubnetInterface, network *unikornv1.Network, openstackNetwork *NetworkExt) (*subnets.Subnet, error) {
 	log := log.FromContext(ctx)
 
 	var dnsNameservers []string
@@ -1477,7 +706,7 @@ func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, 
 	return result, nil
 }
 
-func (p *Provider) reconcileRouter(ctx context.Context, client RouterInterface, network *unikornv1.Network) (*routers.Router, error) {
+func (p *ProvisionerProvider) reconcileRouter(ctx context.Context, client RouterInterface, network *unikornv1.Network) (*routers.Router, error) {
 	log := log.FromContext(ctx)
 
 	result, err := client.GetRouter(ctx, network)
@@ -1513,7 +742,7 @@ func subnetInPorts(ports []ports.Port, subnetID string) bool {
 	return false
 }
 
-func (p *Provider) reconcileRouterInterface(ctx context.Context, client NetworkingInterface, router *routers.Router, subnet *subnets.Subnet) error {
+func (p *ProvisionerProvider) reconcileRouterInterface(ctx context.Context, client NetworkingInterface, router *routers.Router, subnet *subnets.Subnet) error {
 	log := log.FromContext(ctx)
 
 	ports, err := client.ListRouterPorts(ctx, router.ID)
@@ -1537,7 +766,7 @@ func (p *Provider) reconcileRouterInterface(ctx context.Context, client Networki
 }
 
 // CreateNetwork creates a physical network for an identity.
-func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
+func (p *ProvisionerProvider) CreateNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
 	network.Status.Openstack = &unikornv1.NetworkStatusOpenstack{}
 
 	// NOTE: this is a privileged network client as it needs permissions
@@ -1572,7 +801,7 @@ func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identi
 // DeleteNetwork deletes a physical network.
 //
 //nolint:gocognit,cyclop
-func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
+func (p *ProvisionerProvider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
 	log := log.FromContext(ctx)
 
 	// NOTE: this is a privileged network client as it needs permissions
@@ -1785,7 +1014,7 @@ func generateSecurityGroupRules(securityGroup *unikornv1.SecurityGroup) (map[str
 // group.
 //
 //nolint:cyclop
-func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup, openstackSecurityGroup *groups.SecGroup) error {
+func (p *ProvisionerProvider) reconcileSecurityGroupRules(ctx context.Context, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup, openstackSecurityGroup *groups.SecGroup) error {
 	log := log.FromContext(ctx)
 
 	existing, err := listOpenstackSecurityGroupRules(ctx, client, openstackSecurityGroup.ID)
@@ -1844,7 +1073,7 @@ func (p *Provider) reconcileSecurityGroupRules(ctx context.Context, client Secur
 	return nil
 }
 
-func (p *Provider) reconcileSecurityGroup(ctx context.Context, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup) (*groups.SecGroup, error) {
+func (p *ProvisionerProvider) reconcileSecurityGroup(ctx context.Context, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup) (*groups.SecGroup, error) {
 	log := log.FromContext(ctx)
 
 	result, err := client.GetSecurityGroup(ctx, securityGroup)
@@ -1869,7 +1098,7 @@ func (p *Provider) reconcileSecurityGroup(ctx context.Context, client SecurityGr
 }
 
 // CreateSecurityGroup creates a new security group.
-func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
+func (p *ProvisionerProvider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return err
@@ -1897,7 +1126,7 @@ func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.
 }
 
 // DeleteSecurityGroup deletes a security group.
-func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
+func (p *ProvisionerProvider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
 	log := log.FromContext(ctx)
 
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
@@ -1982,7 +1211,7 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 	}
 }
 
-func (p *Provider) lookupNetwork(ctx context.Context, networks NetworkInterface, namespace, id string) (*NetworkExt, error) {
+func (p *ProvisionerProvider) lookupNetwork(ctx context.Context, networks NetworkInterface, namespace, id string) (*NetworkExt, error) {
 	network := &unikornv1.Network{}
 
 	if err := p.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: id}, network); err != nil {
@@ -1997,7 +1226,7 @@ func (p *Provider) lookupNetwork(ctx context.Context, networks NetworkInterface,
 	return openstackNetwork, nil
 }
 
-func (p *Provider) lookupSecurityGroup(ctx context.Context, securityGroups SecurityGroupInterface, namespace, id string) (*groups.SecGroup, error) {
+func (p *ProvisionerProvider) lookupSecurityGroup(ctx context.Context, securityGroups SecurityGroupInterface, namespace, id string) (*groups.SecGroup, error) {
 	securityGroup := &unikornv1.SecurityGroup{}
 
 	if err := p.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: id}, securityGroup); err != nil {
@@ -2012,7 +1241,7 @@ func (p *Provider) lookupSecurityGroup(ctx context.Context, securityGroups Secur
 	return openstackSecurityGroup, nil
 }
 
-func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInterface, server *unikornv1.Server) (*ports.Port, error) {
+func (p *ProvisionerProvider) reconcileServerPort(ctx context.Context, client NetworkingInterface, server *unikornv1.Server) (*ports.Port, error) {
 	log := log.FromContext(ctx)
 
 	network, err := p.lookupNetwork(ctx, client, server.Namespace, server.Spec.Networks[0].ID)
@@ -2071,7 +1300,7 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 	return port, nil
 }
 
-func (p *Provider) reconcileFloatingIP(ctx context.Context, client FloatingIPInterface, server *unikornv1.Server, port *ports.Port) error {
+func (p *ProvisionerProvider) reconcileFloatingIP(ctx context.Context, client FloatingIPInterface, server *unikornv1.Server, port *ports.Port) error {
 	log := log.FromContext(ctx)
 
 	enabled := server.Spec.PublicIPAllocation != nil && server.Spec.PublicIPAllocation.Enabled
@@ -2117,7 +1346,7 @@ func (p *Provider) reconcileFloatingIP(ctx context.Context, client FloatingIPInt
 	return nil
 }
 
-func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
+func (p *ProvisionerProvider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
 	log := log.FromContext(ctx)
 
 	openstackServer, err := client.GetServer(ctx, server)
@@ -2155,7 +1384,7 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 }
 
 // CreateServer creates or updates a server.
-func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+func (p *ProvisionerProvider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return err
@@ -2188,7 +1417,7 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 }
 
 //nolint:cyclop
-func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+func (p *ProvisionerProvider) DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	log := log.FromContext(ctx)
 
 	compute, err := p.computeFromServicePrincipal(ctx, identity)
@@ -2244,86 +1473,8 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 	return nil
 }
 
-func (p *Provider) RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error {
-	compute, err := p.computeFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return err
-	}
-
-	openstackServer, err := compute.GetServer(ctx, server)
-	if err != nil {
-		return err
-	}
-
-	if err := compute.RebootServer(ctx, openstackServer.ID, hard); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return fmt.Errorf("%w: no server found with ID %s", coreerrors.ErrResourceNotFound, openstackServer.ID)
-		}
-
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			return fmt.Errorf("%w: server %s cannot be rebooted in its current state", coreerrors.ErrConflict, openstackServer.ID)
-		}
-
-		return err
-	}
-
-	return nil
-}
-
-func (p *Provider) StartServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	compute, err := p.computeFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return err
-	}
-
-	openstackServer, err := compute.GetServer(ctx, server)
-	if err != nil {
-		return err
-	}
-
-	if err := compute.StartServer(ctx, openstackServer.ID); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return fmt.Errorf("%w: no server found with ID %s", coreerrors.ErrResourceNotFound, openstackServer.ID)
-		}
-
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			return fmt.Errorf("%w: server %s cannot be started in its current state", coreerrors.ErrConflict, openstackServer.ID)
-		}
-
-		return err
-	}
-
-	return nil
-}
-
-func (p *Provider) StopServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	compute, err := p.computeFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return err
-	}
-
-	openstackServer, err := compute.GetServer(ctx, server)
-	if err != nil {
-		return err
-	}
-
-	if err := compute.StopServer(ctx, openstackServer.ID); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return fmt.Errorf("%w: no server found with ID %s", coreerrors.ErrResourceNotFound, openstackServer.ID)
-		}
-
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			return fmt.Errorf("%w: server %s cannot be stopped in its current state", coreerrors.ErrConflict, openstackServer.ID)
-		}
-
-		return err
-	}
-
-	return nil
-}
-
 // UpdateServerState checks a server's state and modifies the resource in place.
-func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+func (p *ProvisionerProvider) UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
@@ -2338,145 +1489,4 @@ func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Id
 	setServerPhase(ctx, server, openstackServer)
 
 	return nil
-}
-
-func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) (string, error) {
-	compute, err := p.computeFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return "", err
-	}
-
-	openstackServer, err := compute.GetServer(ctx, server)
-	if err != nil {
-		return "", err
-	}
-
-	result, err := compute.CreateRemoteConsole(ctx, openstackServer.ID)
-	if err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return "", fmt.Errorf("%w: no server found with ID %s", coreerrors.ErrResourceNotFound, openstackServer.ID)
-		}
-
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			return "", fmt.Errorf("%w: server %s cannot be accessed in its current state", coreerrors.ErrConflict, openstackServer.ID)
-		}
-
-		return "", err
-	}
-
-	return result.URL, nil
-}
-
-func (p *Provider) GetConsoleOutput(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, length *int) (string, error) {
-	compute, err := p.computeFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return "", err
-	}
-
-	openstackServer, err := compute.GetServer(ctx, server)
-	if err != nil {
-		return "", err
-	}
-
-	result, err := compute.ShowConsoleOutput(ctx, openstackServer.ID, length)
-	if err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return "", fmt.Errorf("%w: no server found with ID %s", coreerrors.ErrResourceNotFound, openstackServer.ID)
-		}
-
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			return "", fmt.Errorf("%w: console output of server %s cannot be retrieved in its current state", coreerrors.ErrConflict, openstackServer.ID)
-		}
-
-		return "", err
-	}
-
-	return result, nil
-}
-
-// CreateSnapshot creates a new image from an existing server.
-//
-//nolint:cyclop
-func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, image *types.Image) (*types.Image, error) {
-	log := log.FromContext(ctx)
-
-	compute, err := p.computeFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return nil, err
-	}
-
-	// make sure that the input image is scoped to an organization, because we're going to
-	// make this image public in a minute.
-	if image.OrganizationID == nil {
-		return nil, fmt.Errorf("%w: image not scoped to an organization", coreerrors.ErrConsistency)
-	}
-
-	openstackServer, err := compute.GetServer(ctx, server)
-	if err != nil {
-		return nil, err
-	}
-
-	metadata, err := createImageMetadata(image)
-	if err != nil {
-		return nil, err
-	}
-
-	// Save the identity this snapshot belongs to, and implicitly the project,
-	// which will be required for deletion.
-	metadata[identityIDLabel] = identity.Name
-
-	opts := &servers.CreateImageOpts{
-		Name:     image.Name,
-		Metadata: metadata,
-	}
-
-	imageID, err := compute.CreateImageFromServer(ctx, openstackServer.ID, opts)
-	if err != nil {
-		return nil, interpretGophercloudError(err)
-	}
-
-	// The snapshot is created in the project, and with the OpenStack identity, of the server.
-	// To make it public, I need a client using that identity.
-	imageService, err := p.privilegedImageFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return nil, err
-	}
-
-	publishOpts := images.UpdateOpts{
-		images.UpdateVisibility{
-			Visibility: images.ImageVisibilityPublic,
-		},
-	}
-
-	if _, err = imageService.UpdateImage(ctx, imageID, publishOpts); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return nil, fmt.Errorf("image %w", coreerrors.ErrResourceNotFound)
-		}
-
-		// Make a best effort to delete the image to free up resources.
-		if err := imageService.DeleteImage(ctx, imageID); err != nil {
-			log.Error(err, "failed to delete failed image, please manually remove me", "imageID", imageID)
-		}
-
-		return nil, err
-	}
-
-	newImage, err := p.getImage(ctx, imageID)
-	if err != nil {
-		return nil, err
-	}
-
-	return convertImage(newImage)
-}
-
-func interpretGophercloudError(err error) error {
-	if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-		return fmt.Errorf("server %w", coreerrors.ErrResourceNotFound)
-	}
-
-	if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-		return fmt.Errorf("server %w", coreerrors.ErrConflict) // FIXME: or unprocessable?
-	}
-
-	return err
 }

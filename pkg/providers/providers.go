@@ -57,41 +57,97 @@ func ProviderToServerError(err error) error {
 	return err
 }
 
-type providersImpl struct {
-	client    client.Client
-	namespace string
-	cache     map[string]types.CommonProvider
-	lock      sync.Mutex
+// providersImpl is a generic lazy cache of providers keyed by region ID.
+// The constructor is called on first lookup for each region.
+type providersImpl[T any] struct {
+	client      client.Client
+	namespace   string
+	cache       map[string]T
+	lock        sync.Mutex
+	constructor func(context.Context, client.Client, *unikornv1.Region) (T, error)
 }
 
-func New(client client.Client, namespace string) Providers {
-	return &providersImpl{
-		client:    client,
-		namespace: namespace,
-		cache:     map[string]types.CommonProvider{},
+func newProvidersImpl[T any](c client.Client, namespace string, constructor func(context.Context, client.Client, *unikornv1.Region) (T, error)) *providersImpl[T] {
+	return &providersImpl[T]{
+		client:      c,
+		namespace:   namespace,
+		cache:       map[string]T{},
+		constructor: constructor,
 	}
 }
 
-// newProvider a new Provider.
-func newProvider(ctx context.Context, client client.Client, region *unikornv1.Region) (types.CommonProvider, error) {
-	switch region.Spec.Provider {
-	case unikornv1.ProviderKubernetes:
-		return kubernetes.New(ctx, client, region)
-	case unikornv1.ProviderOpenstack:
-		return openstack.New(ctx, client, region)
+func (p *providersImpl[T]) lookup(ctx context.Context, regionID string) (T, error) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	if provider, ok := p.cache[regionID]; ok {
+		return provider, nil
 	}
 
-	return nil, ErrRegionProviderUnimplemented
+	var regions unikornv1.RegionList
+
+	if err := p.client.List(ctx, &regions, &client.ListOptions{Namespace: p.namespace}); err != nil {
+		var zero T
+		return zero, err
+	}
+
+	index := slices.IndexFunc(regions.Items, func(r unikornv1.Region) bool {
+		return r.Name == regionID
+	})
+
+	if index < 0 {
+		var zero T
+		return zero, ErrRegionNotFound
+	}
+
+	provider, err := p.constructor(ctx, p.client, &regions.Items[index])
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+
+	p.cache[regionID] = provider
+
+	return provider, nil
 }
 
-// LookupCommon returns a provider as identified by the region ID of any type.
-func (p *providersImpl) LookupCommon(ctx context.Context, regionID string) (types.CommonProvider, error) {
+// provisionerProvidersImpl implements ProvisionerProviders for controller/provisioner use.
+type provisionerProvidersImpl struct {
+	*providersImpl[types.ProvisionerProvider]
+}
+
+func (p *provisionerProvidersImpl) LookupProvisioner(ctx context.Context, regionID string) (types.ProvisionerProvider, error) {
 	return p.lookup(ctx, regionID)
 }
 
-// LookupCloud returns a provider as identified by the region ID and must be
-// a cloud type.
-func (p *providersImpl) LookupCloud(ctx context.Context, regionID string) (types.Provider, error) {
+func newProvisionerProvider(ctx context.Context, c client.Client, region *unikornv1.Region) (types.ProvisionerProvider, error) {
+	switch region.Spec.Provider {
+	case unikornv1.ProviderOpenstack:
+		return openstack.NewProvisioner(ctx, c, region)
+	case unikornv1.ProviderKubernetes:
+		break
+	}
+
+	return nil, ErrRegionWrongKind
+}
+
+// New creates a provider factory for controller/provisioner use.
+func NewForProvisioner(c client.Client, namespace string) ProvisionerProviders {
+	return &provisionerProvidersImpl{
+		newProvidersImpl(c, namespace, newProvisionerProvider),
+	}
+}
+
+// cloudProvidersImpl implements Providers for API server use.
+type serverProvidersImpl struct {
+	*providersImpl[types.CommonProvider]
+}
+
+func (p *serverProvidersImpl) LookupCommon(ctx context.Context, regionID string) (types.CommonProvider, error) {
+	return p.lookup(ctx, regionID)
+}
+
+func (p *serverProvidersImpl) LookupCloud(ctx context.Context, regionID string) (types.Provider, error) {
 	provider, err := p.lookup(ctx, regionID)
 	if err != nil {
 		return nil, err
@@ -105,38 +161,20 @@ func (p *providersImpl) LookupCloud(ctx context.Context, regionID string) (types
 	return cloudProvider, nil
 }
 
-// lookup returns a provider for the given region.
-func (p *providersImpl) lookup(ctx context.Context, regionID string) (types.CommonProvider, error) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	if provider, ok := p.cache[regionID]; ok {
-		return provider, nil
+func newServerProvider(ctx context.Context, c client.Client, region *unikornv1.Region) (types.CommonProvider, error) {
+	switch region.Spec.Provider {
+	case unikornv1.ProviderKubernetes:
+		return kubernetes.New(ctx, c, region)
+	case unikornv1.ProviderOpenstack:
+		return openstack.New(ctx, c, region)
 	}
 
-	var regions unikornv1.RegionList
+	return nil, ErrRegionProviderUnimplemented
+}
 
-	if err := p.client.List(ctx, &regions, &client.ListOptions{Namespace: p.namespace}); err != nil {
-		return nil, err
+// NewCloud creates a provider factory for API server use.
+func NewForServer(c client.Client, namespace string) ServerProviders {
+	return &serverProvidersImpl{
+		newProvidersImpl(c, namespace, newServerProvider),
 	}
-
-	matchRegionID := func(region unikornv1.Region) bool {
-		return region.Name == regionID
-	}
-
-	index := slices.IndexFunc(regions.Items, matchRegionID)
-	if index < 0 {
-		return nil, ErrRegionNotFound
-	}
-
-	region := &regions.Items[index]
-
-	provider, err := newProvider(ctx, p.client, region)
-	if err != nil {
-		return nil, err
-	}
-
-	p.cache[regionID] = provider
-
-	return provider, nil
 }

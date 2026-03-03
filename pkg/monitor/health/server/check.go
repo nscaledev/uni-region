@@ -68,7 +68,7 @@ func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server) err
 		return fmt.Errorf("%w: server %s missing region label", errors.ErrConsistency, server.Name)
 	}
 
-	provider, err := providers.New(c.client, c.namespace).LookupCloud(ctx, regionID)
+	provider, err := providers.NewForProvisioner(c.client, c.namespace).LookupProvisioner(ctx, regionID)
 	if err != nil {
 		return err
 	}
