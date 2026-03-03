@@ -68,23 +68,13 @@ var CreateImageMetadata = createImageMetadata
 
 func NewTestProvider(client client.Client, region *unikornv1.Region) *ProvisionerProvider {
 	return &ProvisionerProvider{
-		client: client,
-		openstack: &openStackClients{
-			client:  client,
-			_region: region,
-		},
+		core: newCore(client, region),
 	}
 }
 
 func NewTestAPIProvider(client client.Client, region *unikornv1.Region) *Provider {
 	return &Provider{
-		ProvisionerProvider: &ProvisionerProvider{
-			client: client,
-			openstack: &openStackClients{
-				client:  client,
-				_region: region,
-			},
-		},
+		core: newCore(client, region),
 	}
 }
 

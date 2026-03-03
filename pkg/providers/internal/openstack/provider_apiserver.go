@@ -41,11 +41,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// Provider extends ProvisionerProvider with API-server-only capabilities
+// Provider has API-server-only capabilities
 // (image management, console access, snapshots).
 type Provider struct {
-	*ProvisionerProvider
-
+	core
 	// imageCache is used to downsample the OpenStack image API, because responses can
 	// take seconds. This reduces the effect of that latency on most callers.
 	imageCache *cache.TimeoutCache[[]images.Image]
@@ -54,14 +53,9 @@ type Provider struct {
 var _ types.Provider = &Provider{}
 
 func New(ctx context.Context, cli client.Client, region *unikornv1.Region) (*Provider, error) {
-	core, err := NewProvisioner(ctx, cli, region)
-	if err != nil {
-		return nil, err
-	}
-
 	return &Provider{
-		ProvisionerProvider: core,
-		imageCache:          cache.New[[]images.Image](imageCacheTTL),
+		core:       newCore(cli, region),
+		imageCache: cache.New[[]images.Image](imageCacheTTL),
 	}, nil
 }
 
@@ -175,6 +169,31 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	}
 
 	return result, nil
+}
+
+// ListExternalNetworks returns a list of external networks if the platform
+// supports such a concept.
+func (p *Provider) ListExternalNetworks(ctx context.Context) (types.ExternalNetworks, error) {
+	networking, err := p.openstack.network(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := networking.ExternalNetworks(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(types.ExternalNetworks, len(result))
+
+	for i, in := range result {
+		out[i] = types.ExternalNetwork{
+			ID:   in.ID,
+			Name: in.Name,
+		}
+	}
+
+	return out, nil
 }
 
 func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) (string, error) {
@@ -804,4 +823,82 @@ func interpretGophercloudError(err error) error {
 	}
 
 	return err
+}
+
+func (p *Provider) RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error {
+	compute, err := p.computeFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	openstackServer, err := compute.GetServer(ctx, server)
+	if err != nil {
+		return err
+	}
+
+	if err := compute.RebootServer(ctx, openstackServer.ID, hard); err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return fmt.Errorf("%w: no server found with ID %s", coreerrors.ErrResourceNotFound, openstackServer.ID)
+		}
+
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return fmt.Errorf("%w: server %s cannot be rebooted in its current state", coreerrors.ErrConflict, openstackServer.ID)
+		}
+
+		return err
+	}
+
+	return nil
+}
+
+func (p *Provider) StartServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+	compute, err := p.computeFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	openstackServer, err := compute.GetServer(ctx, server)
+	if err != nil {
+		return err
+	}
+
+	if err := compute.StartServer(ctx, openstackServer.ID); err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return fmt.Errorf("%w: no server found with ID %s", coreerrors.ErrResourceNotFound, openstackServer.ID)
+		}
+
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return fmt.Errorf("%w: server %s cannot be started in its current state", coreerrors.ErrConflict, openstackServer.ID)
+		}
+
+		return err
+	}
+
+	return nil
+}
+
+func (p *Provider) StopServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+	compute, err := p.computeFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	openstackServer, err := compute.GetServer(ctx, server)
+	if err != nil {
+		return err
+	}
+
+	if err := compute.StopServer(ctx, openstackServer.ID); err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return fmt.Errorf("%w: no server found with ID %s", coreerrors.ErrResourceNotFound, openstackServer.ID)
+		}
+
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return fmt.Errorf("%w: server %s cannot be stopped in its current state", coreerrors.ErrConflict, openstackServer.ID)
+		}
+
+		return err
+	}
+
+	return nil
 }

@@ -65,11 +65,7 @@ type providerCredentials struct {
 }
 
 type ProvisionerProvider struct {
-	// client is Kubernetes client.
-	client client.Client
-
-	openstack *openStackClients
-
+	core
 	// vlan allocation table.
 	// NOTE: this can only be used by a single client unless it's moved
 	// into a Kubernetes resource of some variety to gain speculative locking
@@ -81,11 +77,7 @@ var _ types.ProvisionerProvider = &ProvisionerProvider{}
 
 func NewProvisioner(ctx context.Context, cli client.Client, region *unikornv1.Region) (*ProvisionerProvider, error) {
 	p := &ProvisionerProvider{
-		client: cli,
-		openstack: &openStackClients{
-			client:  cli,
-			_region: region,
-		},
+		core:          newCore(cli, region),
 		vlanAllocator: vlan.New(cli, region),
 	}
 
@@ -94,148 +86,6 @@ func NewProvisioner(ctx context.Context, cli client.Client, region *unikornv1.Re
 	}
 
 	return p, nil
-}
-
-// getProviderFromServicePrincipalData creates a generic provider client from ephemeral
-// per-service principal credentials.
-func (p *ProvisionerProvider) getProviderFromServicePrincipalData(identity *unikornv1.OpenstackIdentity) (CredentialProvider, error) {
-	if identity.Spec.UserID == nil {
-		return nil, fmt.Errorf("%w: service principal user ID not set", coreerrors.ErrConsistency)
-	}
-
-	if identity.Spec.Password == nil {
-		return nil, fmt.Errorf("%w: service principal password not set", coreerrors.ErrConsistency)
-	}
-
-	if identity.Spec.ProjectID == nil {
-		return nil, fmt.Errorf("%w: service principal project not set", coreerrors.ErrConsistency)
-	}
-
-	region, _ := p.openstack.regionSnapshot()
-
-	return NewPasswordProvider(region.Spec.Openstack.Endpoint, *identity.Spec.UserID, *identity.Spec.Password, *identity.Spec.ProjectID), nil
-}
-
-// computeFromServicePrincipalData gets a compute client scoped to the service principal data.
-func (p *ProvisionerProvider) computeFromServicePrincipalData(ctx context.Context, identity *unikornv1.OpenstackIdentity) (ComputeInterface, error) {
-	provider, err := p.getProviderFromServicePrincipalData(identity)
-	if err != nil {
-		return nil, err
-	}
-
-	region, _ := p.openstack.regionSnapshot()
-
-	client, err := NewComputeClient(ctx, provider, region.Spec.Openstack.Compute)
-	if err != nil {
-		return nil, err
-	}
-
-	return client, nil
-}
-
-// getProviderFromServicePrincipal takes a service principal and returns a generic
-// provider client for it.
-func (p *ProvisionerProvider) getProviderFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
-	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
-	if err != nil {
-		return nil, err
-	}
-
-	return p.getProviderFromServicePrincipalData(openstackIdentity)
-}
-
-// getPrivilegedProviderFromServicePrincipal binds itself to the service principal's project
-// but uses the provider's top level admin credentials.
-func (p *ProvisionerProvider) getPrivilegedProviderFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
-	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
-	if err != nil {
-		return nil, err
-	}
-
-	if openstackIdentity.Spec.ProjectID == nil {
-		return nil, fmt.Errorf("%w: service principal project not set", coreerrors.ErrConsistency)
-	}
-
-	region, credentials := p.openstack.regionSnapshot()
-
-	return NewPasswordProvider(region.Spec.Openstack.Endpoint, credentials.userID, credentials.password, *openstackIdentity.Spec.ProjectID), nil
-}
-
-// computeFromServicePrincipal gets a compute client scoped to the service principal.
-func (p *ProvisionerProvider) computeFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (ComputeInterface, error) {
-	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return nil, err
-	}
-
-	region, _ := p.openstack.regionSnapshot()
-
-	client, err := NewComputeClient(ctx, provider, region.Spec.Openstack.Compute)
-	if err != nil {
-		return nil, err
-	}
-
-	return client, nil
-}
-
-// networkFromServicePrincipal gets a network client scoped to the service principal.
-func (p *ProvisionerProvider) networkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
-	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return nil, err
-	}
-
-	region, _ := p.openstack.regionSnapshot()
-
-	client, err := NewNetworkClient(ctx, provider, region.Spec.Openstack.Network)
-	if err != nil {
-		return nil, err
-	}
-
-	return client, nil
-}
-
-// privilegedNetworkFromServicePrincipal gets a network client scoped to the service principal's
-// project but with "manager" credentials.
-func (p *ProvisionerProvider) privilegedNetworkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
-	provider, err := p.getPrivilegedProviderFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return nil, err
-	}
-
-	region, _ := p.openstack.regionSnapshot()
-
-	client, err := NewNetworkClient(ctx, provider, region.Spec.Openstack.Network)
-	if err != nil {
-		return nil, err
-	}
-
-	return client, nil
-}
-
-// ListExternalNetworks returns a list of external networks if the platform
-// supports such a concept.
-func (p *ProvisionerProvider) ListExternalNetworks(ctx context.Context) (types.ExternalNetworks, error) {
-	networking, err := p.openstack.network(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := networking.ExternalNetworks(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	out := make(types.ExternalNetworks, len(result))
-
-	for i, in := range result {
-		out[i] = types.ExternalNetwork{
-			ID:   in.ID,
-			Name: in.Name,
-		}
-	}
-
-	return out, nil
 }
 
 const (
@@ -503,16 +353,6 @@ func (p *ProvisionerProvider) createIdentityComputeResources(ctx context.Context
 	identity.Spec.SSHPrivateKey = privateKey
 
 	return nil
-}
-
-func (p *ProvisionerProvider) GetOpenstackIdentity(ctx context.Context, identity *unikornv1.Identity) (*unikornv1.OpenstackIdentity, error) {
-	var result unikornv1.OpenstackIdentity
-
-	if err := p.client.Get(ctx, client.ObjectKey{Namespace: identity.Namespace, Name: identity.Name}, &result); err != nil {
-		return nil, err
-	}
-
-	return &result, nil
 }
 
 func (p *ProvisionerProvider) GetOrCreateOpenstackIdentity(ctx context.Context, identity *unikornv1.Identity) (*unikornv1.OpenstackIdentity, bool, error) {
@@ -1628,84 +1468,6 @@ func (p *ProvisionerProvider) DeleteServer(ctx context.Context, identity *unikor
 		if err := networking.DeletePort(ctx, port.ID); err != nil {
 			return err
 		}
-	}
-
-	return nil
-}
-
-func (p *ProvisionerProvider) RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error {
-	compute, err := p.computeFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return err
-	}
-
-	openstackServer, err := compute.GetServer(ctx, server)
-	if err != nil {
-		return err
-	}
-
-	if err := compute.RebootServer(ctx, openstackServer.ID, hard); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return fmt.Errorf("%w: no server found with ID %s", coreerrors.ErrResourceNotFound, openstackServer.ID)
-		}
-
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			return fmt.Errorf("%w: server %s cannot be rebooted in its current state", coreerrors.ErrConflict, openstackServer.ID)
-		}
-
-		return err
-	}
-
-	return nil
-}
-
-func (p *ProvisionerProvider) StartServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	compute, err := p.computeFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return err
-	}
-
-	openstackServer, err := compute.GetServer(ctx, server)
-	if err != nil {
-		return err
-	}
-
-	if err := compute.StartServer(ctx, openstackServer.ID); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return fmt.Errorf("%w: no server found with ID %s", coreerrors.ErrResourceNotFound, openstackServer.ID)
-		}
-
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			return fmt.Errorf("%w: server %s cannot be started in its current state", coreerrors.ErrConflict, openstackServer.ID)
-		}
-
-		return err
-	}
-
-	return nil
-}
-
-func (p *ProvisionerProvider) StopServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
-	compute, err := p.computeFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return err
-	}
-
-	openstackServer, err := compute.GetServer(ctx, server)
-	if err != nil {
-		return err
-	}
-
-	if err := compute.StopServer(ctx, openstackServer.ID); err != nil {
-		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-			return fmt.Errorf("%w: no server found with ID %s", coreerrors.ErrResourceNotFound, openstackServer.ID)
-		}
-
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			return fmt.Errorf("%w: server %s cannot be stopped in its current state", coreerrors.ErrConflict, openstackServer.ID)
-		}
-
-		return err
 	}
 
 	return nil
