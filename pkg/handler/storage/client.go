@@ -136,7 +136,7 @@ func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttac
 		out[i] = openapi.StorageAttachmentV2Status{
 			NetworkId:          att.NetworkID,
 			MountSource:        mountSource,
-			ProvisioningStatus: coreopenapi.ResourceProvisioningStatusUnknown,
+			ProvisioningStatus: coreopenapi.ResourceProvisioningStatusPending,
 		}
 	}
 

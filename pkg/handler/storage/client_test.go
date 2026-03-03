@@ -394,9 +394,9 @@ func TestConvertV2List(t *testing.T) {
 				openapi.StorageV2Read{
 					Metadata: corev1.ProjectScopedResourceReadMetadata{
 						CreationTime:       time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC),
-						HealthStatus:       corev1.ResourceHealthStatus("unknown"),
+						HealthStatus:       corev1.ResourceHealthStatusUnknown,
 						Id:                 "test-filestorage",
-						ProvisioningStatus: corev1.ResourceProvisioningStatus("unknown"),
+						ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 					},
 
 					Spec: openapi.StorageV2Spec{
@@ -465,9 +465,9 @@ func TestConvertV2List(t *testing.T) {
 				openapi.StorageV2Read{
 					Metadata: corev1.ProjectScopedResourceReadMetadata{
 						CreationTime:       time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC),
-						HealthStatus:       corev1.ResourceHealthStatus("unknown"),
+						HealthStatus:       corev1.ResourceHealthStatusUnknown,
 						Id:                 "test-filestorage",
-						ProvisioningStatus: corev1.ResourceProvisioningStatus("unknown"),
+						ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 					},
 
 					Spec: openapi.StorageV2Spec{
@@ -483,7 +483,7 @@ func TestConvertV2List(t *testing.T) {
 					},
 
 					Status: openapi.StorageV2Status{
-						Attachments:    &openapi.StorageAttachmentListV2Status{{NetworkId: "net-1", MountSource: ptr.To("192.168.0.1:/export"), ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown}},
+						Attachments:    &openapi.StorageAttachmentListV2Status{{NetworkId: "net-1", MountSource: ptr.To("192.168.0.1:/export"), ProvisioningStatus: corev1.ResourceProvisioningStatusPending}},
 						RegionId:       "",
 						StorageClassId: "",
 					},
@@ -537,7 +537,7 @@ func TestConvertV2(t *testing.T) {
 			want: &openapi.StorageV2Read{
 				Metadata: corev1.ProjectScopedResourceReadMetadata{
 					HealthStatus:       corev1.ResourceHealthStatusUnknown,
-					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 				},
 				Spec: openapi.StorageV2Spec{
 					SizeGiB: 2,
@@ -573,7 +573,7 @@ func TestConvertV2(t *testing.T) {
 			want: &openapi.StorageV2Read{
 				Metadata: corev1.ProjectScopedResourceReadMetadata{
 					HealthStatus:       corev1.ResourceHealthStatusUnknown,
-					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 				},
 				Spec: openapi.StorageV2Spec{
 					SizeGiB:     100,
@@ -609,7 +609,7 @@ func TestConvertV2(t *testing.T) {
 			want: &openapi.StorageV2Read{
 				Metadata: corev1.ProjectScopedResourceReadMetadata{
 					HealthStatus:       corev1.ResourceHealthStatusUnknown,
-					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 				},
 				Spec: openapi.StorageV2Spec{
 					SizeGiB:     100,
@@ -641,7 +641,7 @@ func TestConvertV2(t *testing.T) {
 			want: &openapi.StorageV2Read{
 				Metadata: corev1.ProjectScopedResourceReadMetadata{
 					HealthStatus:       corev1.ResourceHealthStatusUnknown,
-					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 				},
 				Spec: openapi.StorageV2Spec{
 					SizeGiB:     100,
@@ -683,7 +683,7 @@ func TestConvertV2(t *testing.T) {
 			want: &openapi.StorageV2Read{
 				Metadata: corev1.ProjectScopedResourceReadMetadata{
 					HealthStatus:       corev1.ResourceHealthStatusUnknown,
-					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 				},
 				Spec: openapi.StorageV2Spec{
 					SizeGiB:     100,
@@ -695,7 +695,7 @@ func TestConvertV2(t *testing.T) {
 						{
 							NetworkId:          "net-1",
 							MountSource:        ptr.To("10.0.0.100:/export/data"),
-							ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+							ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 						},
 					},
 				},
@@ -746,7 +746,7 @@ func TestConvertV2SizeConversion(t *testing.T) {
 			want: &openapi.StorageV2Read{
 				Metadata: corev1.ProjectScopedResourceReadMetadata{
 					HealthStatus:       corev1.ResourceHealthStatusUnknown,
-					ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown,
+					ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 				},
 				Spec: openapi.StorageV2Spec{
 					SizeGiB: 2,

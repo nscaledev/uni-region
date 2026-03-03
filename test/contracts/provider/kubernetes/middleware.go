@@ -149,7 +149,7 @@ func IdentityCreationMockMiddleware() func(http.Handler) http.Handler {
 					CreationTime:       time.Date(2000, 2, 1, 12, 30, 0, 0, time.UTC),
 					OrganizationId:     commonmiddleware.ExtractOrganizationID(r.URL.Path),
 					ProjectId:          commonmiddleware.ExtractProjectID(r.URL.Path),
-					ProvisioningStatus: coreopenapi.ResourceProvisioningStatusUnknown,
+					ProvisioningStatus: coreopenapi.ResourceProvisioningStatusPending,
 				},
 				Spec: openapi.IdentitySpec{
 					RegionId: identityRequest.Spec.RegionId,
