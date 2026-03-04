@@ -61,7 +61,7 @@ func New(clientArgs common.ClientArgs, options *Options) (*Handler, error) {
 	return h, nil
 }
 
-func (h *Handler) setUncacheable(w http.ResponseWriter) {
+func setUncacheable(w http.ResponseWriter) {
 	w.Header().Add("Cache-Control", "no-cache")
 }
 
@@ -104,7 +104,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWrit
 		return
 	}
 
-	h.setUncacheable(w)
+	setUncacheable(w)
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
@@ -120,7 +120,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetail(w htt
 		return
 	}
 
-	h.setUncacheable(w)
+	setUncacheable(w)
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 

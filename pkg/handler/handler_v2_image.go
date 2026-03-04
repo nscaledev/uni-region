@@ -51,6 +51,6 @@ func (h *ImageV2Handler) GetApiV2RegionsRegionIDImages(w http.ResponseWriter, r 
 		return
 	}
 
-	h.options.setCacheable(w)
+	setUncacheable(w)
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
