@@ -117,7 +117,7 @@ func convertUsageStatus(in *regionv1.FileStorage) *openapi.StorageUsageV2Status 
 
 // NOTE: This returns attachment status based solely on FileStorage.Spec.Attachments (the desired state).
 // Because attachments may be reconciled asynchronously by the controller, this does not accurately reflect the actual state.
-// As a result, provisioning status is omitted (nil). This will be addressed in a future update.
+// As a result, provisioning status is pending.
 func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttachmentListV2Status {
 	if len(in.Spec.Attachments) == 0 {
 		return nil
@@ -136,7 +136,7 @@ func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttac
 		out[i] = openapi.StorageAttachmentV2Status{
 			NetworkId:          att.NetworkID,
 			MountSource:        mountSource,
-			ProvisioningStatus: coreopenapi.ResourceProvisioningStatusUnknown,
+			ProvisioningStatus: coreopenapi.ResourceProvisioningStatusPending,
 		}
 	}
 

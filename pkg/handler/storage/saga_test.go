@@ -131,7 +131,7 @@ func TestValidateAttachments_NetworkNotProvisioned(t *testing.T) {
 	m.EXPECT().
 		GetV2(gomock.Any(), "net-1").
 		Return(&openapi.NetworkV2Read{
-			Metadata: corev1.ProjectScopedResourceReadMetadata{ProjectId: "proj-OK", ProvisioningStatus: corev1.ResourceProvisioningStatusUnknown},
+			Metadata: corev1.ProjectScopedResourceReadMetadata{ProjectId: "proj-OK", ProvisioningStatus: corev1.ResourceProvisioningStatusPending},
 		}, nil)
 
 	attachments := &openapi.StorageAttachmentV2Spec{NetworkIds: []string{"net-1"}}
