@@ -52,8 +52,7 @@ var _ = Describe("Image Management", Ordered, func() {
 
 			It("should return an error for an invalid region ID", func() {
 				_, err := client.ListImages(ctx, config.OrgID, invalidUUID)
-				// FIXME: API currently returns 500 instead of the expected 400 Bad Request.
-				Expect(errors.Is(err, coreclient.ErrServerError)).To(BeTrue())
+				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
 			})
 		})
 

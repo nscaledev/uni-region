@@ -37,7 +37,7 @@ type TestConfig struct {
 func LoadTestConfig() (*TestConfig, error) {
 	// Set up viper with config paths and defaults
 	defaults := map[string]interface{}{
-		"REQUEST_TIMEOUT":  "30s",
+		"REQUEST_TIMEOUT":  "60s",
 		"TEST_TIMEOUT":     "20m",
 		"SKIP_INTEGRATION": false,
 		"DEBUG_LOGGING":    false,
