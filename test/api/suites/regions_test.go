@@ -101,9 +101,12 @@ var _ = Describe("Flavor Discovery", func() {
 					Expect(flavor.Spec).NotTo(BeNil())
 					Expect(flavor.Metadata.Id).NotTo(BeEmpty())
 					Expect(flavor.Metadata.Name).NotTo(BeEmpty())
-					Expect(flavor.Spec.Cpus).To(BeNumerically(">", 0))
-					Expect(flavor.Spec.Memory).To(BeNumerically(">=", 0)) // Memory can be 0 for some flavor types
-					Expect(flavor.Spec.Disk).To(BeNumerically(">=", 0))   // Disk can be 0 for volume-based flavor types
+					Expect(flavor.Spec.Cpus).To(BeNumerically(">", 0),
+						"flavor %q (%s) must have at least 1 CPU", flavor.Metadata.Name, flavor.Metadata.Id)
+					Expect(flavor.Spec.Memory).To(BeNumerically(">=", 0),
+						"flavor %q (%s) has negative memory - this is invalid", flavor.Metadata.Name, flavor.Metadata.Id)
+					Expect(flavor.Spec.Disk).To(BeNumerically(">=", 0),
+						"flavor %q (%s) has negative disk - this is invalid", flavor.Metadata.Name, flavor.Metadata.Id)
 				}
 
 				GinkgoWriter.Printf("Found %d flavors for region %s\n", len(flavors), config.RegionID)
