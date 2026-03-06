@@ -771,7 +771,7 @@ func (c *NetworkClient) DeletePort(ctx context.Context, portID string) error {
 }
 
 // Update quotas overrides any OpenStack default quotas for the project's networking.
-// At present it's only security groups and security group rules that are affected.
+// At present it's only security groups, security group rules and floating IPs that are affected.
 func (c *NetworkClient) UpdateQuotas(ctx context.Context, projectID string) error {
 	spanAttributes := trace.WithAttributes(
 		attribute.String("network.project.id", projectID),
@@ -783,6 +783,7 @@ func (c *NetworkClient) UpdateQuotas(ctx context.Context, projectID string) erro
 	opts := &quotas.UpdateOpts{
 		SecurityGroup:     ptr.To(-1),
 		SecurityGroupRule: ptr.To(-1),
+		FloatingIP:        ptr.To(-1),
 	}
 
 	return quotas.Update(ctx, c.client, projectID, opts).Err
