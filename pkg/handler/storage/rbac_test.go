@@ -23,7 +23,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
@@ -59,23 +58,12 @@ func aclWithOrgScopeStorageCreate() *identityapi.Acl {
 // minimalStorageV2CreateRequest returns a StorageV2Create request body with
 // the given organization and project IDs.
 func minimalStorageV2CreateRequest(orgID, projID string) *openapi.StorageV2Create {
-	return &openapi.StorageV2Create{
-		Metadata: coreapi.ResourceWriteMetadata{
-			Name: "test-storage",
-		},
-		Spec: struct {
-			Attachments    *openapi.StorageAttachmentV2Spec `json:"attachments,omitempty"`
-			OrganizationId string                           `json:"organizationId"`
-			ProjectId      string                           `json:"projectId"`
-			RegionId       string                           `json:"regionId"`
-			SizeGiB        int64                            `json:"sizeGiB"`
-			StorageClassId string                           `json:"storageClassId"`
-			StorageType    openapi.StorageTypeV2Spec        `json:"storageType"`
-		}{
-			OrganizationId: orgID,
-			ProjectId:      projID,
-		},
-	}
+	req := &openapi.StorageV2Create{}
+	req.Metadata.Name = "test-storage"
+	req.Spec.OrganizationId = orgID
+	req.Spec.ProjectId = projID
+
+	return req
 }
 
 // TestStorageCreateV2RBACOrgScopedProjectNotFound verifies that CreateV2 returns

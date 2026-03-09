@@ -71,9 +71,9 @@ func testNetworkWithProject(orgID, projID string) *regionv1.Network {
 			Name:      sgNetworkID,
 			Namespace: sgNamespace,
 			Labels: map[string]string{
-				coreconstants.OrganizationLabel:          orgID,
-				coreconstants.ProjectLabel:               projID,
-				constants.ResourceAPIVersionLabel:        constants.MarshalAPIVersion(2),
+				coreconstants.OrganizationLabel:   orgID,
+				coreconstants.ProjectLabel:        projID,
+				constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
 			},
 		},
 	}
