@@ -205,8 +205,8 @@ github.com/ugorji/go/codec v1.2.12 h1:9LC83zGrHhuUA9l16C9AHXAqEV/2wBQ4nkvumAE65E
 github.com/ugorji/go/codec v1.2.12/go.mod h1:UNopzCgEMSXjBc6AOMqYvWC1ktqTAfzJZUZgYf6w6lg=
 github.com/unikorn-cloud/core v1.14.0-rc1.0.20260303151724-ca0bb7391055 h1:w5GCtbqijAdPKMZ0GvRpKSmo/tRqanslplnOUc7NA2s=
 github.com/unikorn-cloud/core v1.14.0-rc1.0.20260303151724-ca0bb7391055/go.mod h1:hdS24spj22hzGgJy0yHqCZm+aIfK1O03HEEqNaJN3Lg=
-github.com/unikorn-cloud/identity v1.14.0-rc1.0.20260303161627-4b42c7599ace h1:ZPwolBNFsAquee8/oKu4MY+XIzHmMIAAjFu+K+Kn80A=
-github.com/unikorn-cloud/identity v1.14.0-rc1.0.20260303161627-4b42c7599ace/go.mod h1:quFHW4C3nfZ4iDn1Yy1uGPW62KHNnFiG7NmzsG/0kTw=
+github.com/unikorn-cloud/identity v1.14.0-rc1.0.20260306152311-082860f974b5 h1:fxvXLZ3d+pAM7mUPGnwx9zcjH1IqGJMKM2CauUJyNwk=
+github.com/unikorn-cloud/identity v1.14.0-rc1.0.20260306152311-082860f974b5/go.mod h1:quFHW4C3nfZ4iDn1Yy1uGPW62KHNnFiG7NmzsG/0kTw=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
 github.com/x448/float16 v0.8.4/go.mod h1:14CWIYCyZA/cWjXOioeEpHeN/83MdbZDRQHoFcYsOfg=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

@@ -338,7 +338,7 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.SecurityGroupV2C
 	organizationID := network.Labels[coreconstants.OrganizationLabel]
 	projectID := network.Labels[coreconstants.ProjectLabel]
 
-	if err := rbac.AllowProjectScope(ctx, "region:securitygroups:v2", identityapi.Create, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeCreate(ctx, c.Identity, "region:securitygroups:v2", identityapi.Create, organizationID, projectID); err != nil {
 		return nil, err
 	}
 
