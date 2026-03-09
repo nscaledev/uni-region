@@ -395,7 +395,7 @@ func (s *createSaga) Actions() []saga.Action {
 }
 
 func (c *Client) CreateV2(ctx context.Context, request *openapi.NetworkV2Create) (*openapi.NetworkV2Read, error) {
-	if err := rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Create, request.Spec.OrganizationId, request.Spec.ProjectId); err != nil {
+	if err := rbac.AllowProjectScopeCreate(ctx, c.Identity, "region:networks:v2", identityapi.Create, request.Spec.OrganizationId, request.Spec.ProjectId); err != nil {
 		return nil, err
 	}
 
