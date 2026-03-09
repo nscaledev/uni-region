@@ -389,7 +389,7 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 	organizationID := network.Labels[coreconstants.OrganizationLabel]
 	projectID := network.Labels[coreconstants.ProjectLabel]
 
-	if err := rbac.AllowProjectScopeCreate(ctx, c.Client.Identity, "region:servers", identityapi.Create, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeCreate(ctx, c.Identity, "region:servers", identityapi.Create, organizationID, projectID); err != nil {
 		return nil, err
 	}
 
