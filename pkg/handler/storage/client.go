@@ -432,7 +432,7 @@ func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.Storage
 // It does this leveraging the saga system which acts as a tape to enable rollbacks
 // in case of errors.
 func (c *Client) CreateV2(ctx context.Context, request *openapi.StorageV2Create) (*openapi.StorageV2Read, error) {
-	if err := rbac.AllowProjectScope(ctx, "region:filestorage:v2", identityapi.Create,
+	if err := rbac.AllowProjectScopeCreate(ctx, c.Identity, "region:filestorage:v2", identityapi.Create,
 		request.Spec.OrganizationId, request.Spec.ProjectId); err != nil {
 		return nil, err
 	}
