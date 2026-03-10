@@ -1,6 +1,6 @@
 module github.com/unikorn-cloud/region
 
-go 1.24.2
+go 1.25.8
 
 require (
 	github.com/getkin/kin-openapi v0.132.0

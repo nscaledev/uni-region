@@ -461,7 +461,7 @@ can-i-deploy:
 			pact-broker can-i-deploy \
 			--pacticipant="$(SERVICE_NAME)" \
 			--version="$(CONSUMER_VERSION)" \
-			--to-environment development \
+			--to-environment=development \
 			--retry-while-unknown=300 \
 			--retry-interval=10 \
 			--broker-base-url="$(PACT_BROKER_URL)" \
@@ -476,7 +476,7 @@ can-i-deploy:
 			pact-broker can-i-deploy \
 			--pacticipant="$(SERVICE_NAME)" \
 			--version="$(CONSUMER_VERSION)" \
-			--to-environment development \
+			--to-environment=development \
 			--broker-base-url="$(PACT_BROKER_URL)" \
 			--broker-username="$(PACT_BROKER_USERNAME)" \
 			--broker-password="$(PACT_BROKER_PASSWORD)"; \
@@ -489,7 +489,7 @@ record-deployment:
 	docker run --rm \
 		--network host \
 		pactfoundation/pact-cli:latest \
-		broker record-deployment \
+		pact-broker record-deployment \
 		--pacticipant="$(SERVICE_NAME)" \
 		--version="$(CONSUMER_VERSION)" \
 		--environment="development" \
