@@ -184,7 +184,7 @@ Chart configuration in `charts/region/values.yaml`:
 
 ## Dependencies
 
-- **Go 1.24.2**: Language runtime
+- **Go 1.25.8**: Language runtime
 - **Kubernetes**: v0.33.1 (client-go, api, apimachinery)
 - **controller-runtime**: v0.20.4 for Kubernetes controllers
 - **OpenAPI/oapi-codegen**: v2.4.1 for API code generation
