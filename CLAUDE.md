@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Architectural Specification
+
+All contributors and AI agents must follow the Nscale Cloud Platform Unified Architectural Specification:
+
+**https://raw.githubusercontent.com/nscaledev/uni-specifications/refs/heads/main/SPECIFICATION.md**
+
 ## Project Overview
 
 Uni-region is a centralized region discovery and routing service for the Unikorn Cloud platform. It provides a composable suite of microservices that manage different cloud provider regions (OpenStack, Kubernetes) and exposes compute resources (flavors, images, networks, servers) via a unified REST API.
