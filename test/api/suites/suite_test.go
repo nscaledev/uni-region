@@ -32,8 +32,9 @@ import (
 )
 
 var (
-	client       *api.APIClient
-	regionClient *api.APIClient
+	client          *api.APIClient
+	secondaryClient *api.APIClient // client for secondary org, used to test region visibility isolation
+	regionClient    *api.APIClient
 	ctx          context.Context
 	config       *api.TestConfig
 )
@@ -46,6 +47,12 @@ var _ = BeforeSuite(func() {
 	client = api.NewAPIClientWithConfig(config)
 	regionClient = api.NewAPIClientWithConfig(config)
 	ctx = context.Background()
+
+	if config.SecondaryOrgID != "" && config.SecondaryAuthToken != "" {
+		secondaryConfig := *config
+		secondaryConfig.AuthToken = config.SecondaryAuthToken
+		secondaryClient = api.NewAPIClientWithConfig(&secondaryConfig)
+	}
 })
 
 var _ = BeforeEach(func() {

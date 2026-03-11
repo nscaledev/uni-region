@@ -26,10 +26,13 @@ import (
 // TestConfig extends the base config with Region-specific fields.
 type TestConfig struct {
 	coreconfig.BaseConfig
-	OrgID         string
-	ProjectID     string
-	RegionBaseURL string
-	RegionID      string
+	OrgID              string
+	ProjectID          string
+	RegionBaseURL      string
+	RegionID           string
+	PrivateRegionID    string
+	SecondaryOrgID     string
+	SecondaryAuthToken string
 }
 
 // LoadTestConfig loads configuration from environment variables and .env files using viper.
@@ -68,10 +71,13 @@ func LoadTestConfig() (*TestConfig, error) {
 			LogRequests:     v.GetBool("LOG_REQUESTS"),
 			LogResponses:    v.GetBool("LOG_RESPONSES"),
 		},
-		RegionBaseURL: v.GetString("REGION_BASE_URL"),
-		OrgID:         v.GetString("TEST_ORG_ID"),
-		ProjectID:     v.GetString("TEST_PROJECT_ID"),
-		RegionID:      v.GetString("TEST_REGION_ID"),
+		RegionBaseURL:      v.GetString("REGION_BASE_URL"),
+		OrgID:              v.GetString("TEST_ORG_ID"),
+		ProjectID:          v.GetString("TEST_PROJECT_ID"),
+		RegionID:           v.GetString("TEST_REGION_ID"),
+		PrivateRegionID:    v.GetString("TEST_PRIVATE_REGION_ID"),
+		SecondaryOrgID:     v.GetString("TEST_SECONDARY_ORG_ID"),
+		SecondaryAuthToken: v.GetString("TEST_SECONDARY_AUTH_TOKEN"),
 	}
 
 	// Validate required fields
