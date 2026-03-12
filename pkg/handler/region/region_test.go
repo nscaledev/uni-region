@@ -22,7 +22,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/unikorn-cloud/identity/pkg/principal"
+	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 
@@ -58,12 +59,8 @@ func regionsFixture() *regionv1.RegionList {
 				Spec: regionv1.RegionSpec{
 					Security: &regionv1.RegionSecuritySpec{
 						Organizations: []regionv1.RegionSecurityOrganizationSpec{
-							{
-								ID: organizationID1,
-							},
-							{
-								ID: organizationID2,
-							},
+							{ID: organizationID1},
+							{ID: organizationID2},
 						},
 					},
 				},
@@ -76,9 +73,7 @@ func regionsFixture() *regionv1.RegionList {
 				Spec: regionv1.RegionSpec{
 					Security: &regionv1.RegionSecuritySpec{
 						Organizations: []regionv1.RegionSecurityOrganizationSpec{
-							{
-								ID: organizationID2,
-							},
+							{ID: organizationID2},
 						},
 					},
 				},
@@ -91,9 +86,7 @@ func regionsFixture() *regionv1.RegionList {
 				Spec: regionv1.RegionSpec{
 					Security: &regionv1.RegionSecuritySpec{
 						Organizations: []regionv1.RegionSecurityOrganizationSpec{
-							{
-								ID: organizationID3,
-							},
+							{ID: organizationID3},
 						},
 					},
 				},
@@ -102,14 +95,39 @@ func regionsFixture() *regionv1.RegionList {
 	}
 }
 
-func principalFixture(t *testing.T, organizationID string) context.Context {
+// aclFixture builds an ACL context for a regular user in the given organizations.
+func aclFixture(t *testing.T, organizationIDs ...string) context.Context {
 	t.Helper()
 
-	p := &principal.Principal{
-		OrganizationID: organizationID,
+	orgs := make(identityapi.AclOrganizationList, len(organizationIDs))
+
+	for i, id := range organizationIDs {
+		orgs[i] = identityapi.AclOrganization{
+			Id: id,
+			Endpoints: &identityapi.AclEndpoints{
+				{Name: "region:regions", Operations: identityapi.AclOperations{identityapi.Read}},
+			},
+		}
 	}
 
-	return principal.NewContext(t.Context(), p)
+	acl := &identityapi.Acl{
+		Organizations: &orgs,
+	}
+
+	return rbac.NewContext(t.Context(), acl)
+}
+
+// globalACLFixture builds an ACL context for a platform admin or service with global scope.
+func globalACLFixture(t *testing.T) context.Context {
+	t.Helper()
+
+	acl := &identityapi.Acl{
+		Global: &identityapi.AclEndpoints{
+			{Name: "region:regions", Operations: identityapi.AclOperations{identityapi.Read}},
+		},
+	}
+
+	return rbac.NewContext(t.Context(), acl)
 }
 
 // TestRegionFilteringSinglePrivate tests users can see a single private region and
@@ -117,10 +135,10 @@ func principalFixture(t *testing.T, organizationID string) context.Context {
 func TestRegionFilteringSinglePrivate(t *testing.T) {
 	t.Parallel()
 
-	ctx := principalFixture(t, organizationID1)
+	ctx := aclFixture(t, organizationID1)
 	regions := regionsFixture()
 
-	require.NoError(t, region.FilterRegions(ctx, regions))
+	region.FilterRegions(ctx, regions)
 	require.Len(t, regions.Items, 2)
 	require.Equal(t, globalRegionName, regions.Items[0].Name)
 	require.Equal(t, privateRegionName1, regions.Items[1].Name)
@@ -131,25 +149,37 @@ func TestRegionFilteringSinglePrivate(t *testing.T) {
 func TestRegionFilteringMultiplePrivate(t *testing.T) {
 	t.Parallel()
 
-	ctx := principalFixture(t, organizationID2)
+	ctx := aclFixture(t, organizationID2)
 	regions := regionsFixture()
 
-	require.NoError(t, region.FilterRegions(ctx, regions))
+	region.FilterRegions(ctx, regions)
 	require.Len(t, regions.Items, 3)
 	require.Equal(t, globalRegionName, regions.Items[0].Name)
 	require.Equal(t, privateRegionName1, regions.Items[1].Name)
 	require.Equal(t, privateRegionName2, regions.Items[2].Name)
 }
 
-// TestRegionFilteringNoPrivate tests users with no private regions cannot see any
-// and just public ones.
+// TestRegionFilteringNoPrivate tests users with no matching private regions only
+// see public ones.
 func TestRegionFilteringNoPrivate(t *testing.T) {
 	t.Parallel()
 
-	ctx := principalFixture(t, organizationID4)
+	ctx := aclFixture(t, organizationID4)
 	regions := regionsFixture()
 
-	require.NoError(t, region.FilterRegions(ctx, regions))
+	region.FilterRegions(ctx, regions)
 	require.Len(t, regions.Items, 1)
 	require.Equal(t, globalRegionName, regions.Items[0].Name)
+}
+
+// TestRegionFilteringGlobalScope tests that platform admins and services with global
+// scope see all regions including private ones.
+func TestRegionFilteringGlobalScope(t *testing.T) {
+	t.Parallel()
+
+	ctx := globalACLFixture(t)
+	regions := regionsFixture()
+
+	region.FilterRegions(ctx, regions)
+	require.Len(t, regions.Items, 4)
 }
