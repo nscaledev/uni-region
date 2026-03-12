@@ -354,6 +354,12 @@ func withNetwork(network *regionv1.Network) func(*regionv1.Server) {
 	}
 }
 
+func withTags(tags ...corev1.Tag) func(*regionv1.Server) {
+	return func(s *regionv1.Server) {
+		s.Spec.Tags = append(s.Spec.Tags, tags...)
+	}
+}
+
 // serverFixture creates a basic server definition.
 func serverFixture(opts ...func(*regionv1.Server)) *regionv1.Server {
 	s := &regionv1.Server{
@@ -921,10 +927,16 @@ func TestReconcileServer(t *testing.T) {
 	}
 
 	metadata := map[string]string{
+		// Legacy camelCase keys.
 		"serverID":       server.Name,
 		"organizationID": organizationID,
 		"projectID":      projectID,
 		"regionID":       regionID,
+		// Namespaced duplicates.
+		"region:server_id":         server.Name,
+		"identity:organization_id": organizationID,
+		"identity:project_id":      projectID,
+		"region:region_id":         regionID,
 	}
 
 	t.Run("ItDoesntExist", func(t *testing.T) {
@@ -1049,4 +1061,158 @@ func TestImageTagRoundTrip(t *testing.T) {
 			require.Equal(t, c.image.Tags, extractedTags)
 		})
 	}
+}
+
+// TestMetadataKey tests the tag key transformation from namespaced CRD tag format
+// to the OpenStack metadata key format.
+func TestMetadataKey(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		input    string
+		expected string
+		ok       bool
+	}{
+		{
+			name:     "ValidSimple",
+			input:    "compute.unikorn-cloud.org/instance-id",
+			expected: "compute:instance_id",
+			ok:       true,
+		},
+		{
+			name:     "ValidOtherService",
+			input:    "kubernetes.unikorn-cloud.org/cluster-id",
+			expected: "kubernetes:cluster_id",
+			ok:       true,
+		},
+		{
+			name:     "ValidHyphenInSubdomain",
+			input:    "my-service.unikorn-cloud.org/foo-bar",
+			expected: "my-service:foo_bar",
+			ok:       true,
+		},
+		{
+			name:  "InvalidNoSlash",
+			input: "compute.unikorn-cloud.org",
+			ok:    false,
+		},
+		{
+			name:  "InvalidUppercase",
+			input: "Compute.unikorn-cloud.org/id",
+			ok:    false,
+		},
+		{
+			name:  "InvalidBareName",
+			input: "instance-id",
+			ok:    false,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := openstack.MetadataKey(c.input)
+			require.Equal(t, c.ok, ok)
+
+			if c.ok {
+				require.Equal(t, c.expected, got)
+			}
+		})
+	}
+}
+
+// TestReconcileServerTags verifies that server tags are correctly forwarded to
+// OpenStack instance metadata, invalid keys are silently dropped, and system keys
+// are always present and cannot be overwritten by user tags.
+func TestReconcileServerTags(t *testing.T) {
+	t.Parallel()
+
+	client := getClient(t, nil)
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	network := networkFixture()
+	openstackNetwork := openstackNetworkFixture(network)
+	openstackSubnet := openstackSubnetFixture(network, openstackNetwork)
+
+	openstackNetworks := []servers.Network{
+		{
+			UUID: openstackNetwork.ID,
+		},
+	}
+
+	t.Run("ValidTagsForwarded", func(t *testing.T) {
+		t.Parallel()
+
+		server := serverFixture(withTags(
+			corev1.Tag{Name: "compute.unikorn-cloud.org/instance-type", Value: "large"},
+			corev1.Tag{Name: "app.unikorn-cloud.org/env", Value: "prod"},
+			// Invalid key — should be silently dropped.
+			corev1.Tag{Name: "not-a-valid-key", Value: "ignored"},
+		))
+		openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
+		openstackNetworks[0].Port = openstackServerPort.ID
+		openstackServer := openstackServerFixture(server)
+
+		expectedMetadata := map[string]string{
+			// User tags.
+			"compute:instance_type": "large",
+			"app:env":               "prod",
+			// Legacy system keys.
+			"serverID":       server.Name,
+			"organizationID": organizationID,
+			"projectID":      projectID,
+			"regionID":       regionID,
+			// Namespaced system keys.
+			"region:server_id":         server.Name,
+			"identity:organization_id": organizationID,
+			"identity:project_id":      projectID,
+			"region:region_id":         regionID,
+		}
+
+		compute := mock.NewMockServerInterface(c)
+		compute.EXPECT().GetServer(t.Context(), server).Return(nil, errors.ErrResourceNotFound)
+		compute.EXPECT().CreateServer(t.Context(), server, sshKeyName, openstackNetworks, nil, expectedMetadata).Return(openstackServer, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
+		require.NoError(t, err)
+	})
+
+	t.Run("SystemKeysOverwriteCollision", func(t *testing.T) {
+		t.Parallel()
+
+		// A user tag that collides with the namespaced system key "identity:organization_id".
+		server := serverFixture(withTags(
+			corev1.Tag{Name: "identity.unikorn-cloud.org/organization-id", Value: "attacker"},
+		))
+		openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
+		openstackNetworks[0].Port = openstackServerPort.ID
+		openstackServer := openstackServerFixture(server)
+
+		// The system key must win — value must be the real organizationID.
+		expectedMetadata := map[string]string{
+			"serverID":                 server.Name,
+			"organizationID":           organizationID,
+			"projectID":                projectID,
+			"regionID":                 regionID,
+			"region:server_id":         server.Name,
+			"identity:organization_id": organizationID,
+			"identity:project_id":      projectID,
+			"region:region_id":         regionID,
+		}
+
+		compute := mock.NewMockServerInterface(c)
+		compute.EXPECT().GetServer(t.Context(), server).Return(nil, errors.ErrResourceNotFound)
+		compute.EXPECT().CreateServer(t.Context(), server, sshKeyName, openstackNetworks, nil, expectedMetadata).Return(openstackServer, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
+		require.NoError(t, err)
+	})
 }

@@ -66,6 +66,9 @@ var ImageTags = imageTags
 //nolint:gochecknoglobals
 var CreateImageMetadata = createImageMetadata
 
+//nolint:gochecknoglobals
+var MetadataKey = metadataKey
+
 func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {
 	return &Provider{
 		client: client,
