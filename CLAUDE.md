@@ -98,6 +98,8 @@ make validate-docs
 make license
 ```
 
+Always run `make lint` locally before committing — CI uses the same linter version so failures will be identical.
+
 ### Helm Charts
 ```bash
 # Package charts
