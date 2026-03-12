@@ -25,7 +25,8 @@ import (
 	"slices"
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
-	"github.com/unikorn-cloud/identity/pkg/principal"
+	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	"github.com/unikorn-cloud/identity/pkg/rbac"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/conversion"
@@ -56,33 +57,30 @@ func NewClient(clientArgs common.ClientArgs) *Client {
 	}
 }
 
-func FilterRegions(ctx context.Context, regions *unikornv1.RegionList) error {
-	principal, err := principal.FromContext(ctx)
-	if err != nil {
-		return err
-	}
-
-	if principal.OrganizationID == "" {
-		regions.Items = nil
-	}
-
+func FilterRegions(ctx context.Context, regions *unikornv1.RegionList) {
 	regions.Items = slices.DeleteFunc(regions.Items, func(region unikornv1.Region) bool {
 		// Regions without security constraints are free to use.
 		if region.Spec.Security == nil || region.Spec.Security.Organizations == nil {
 			return false
 		}
 
-		// Thankfully, user roles cannot define globals so fall into this bucket.
+		// Anyone with super cow powers can see everything (platform admin, services).
+		if rbac.AllowGlobalScope(ctx, "region:regions", identityapi.Read) == nil {
+			return false
+		}
+
+		// Under impersonation the ACL is scoped to the user's organizations, so
+		// OrganizationIDs returns only what the user can see.
+		organizationIDs := rbac.OrganizationIDs(ctx)
+
 		for _, organization := range region.Spec.Security.Organizations {
-			if organization.ID == principal.OrganizationID {
+			if slices.Contains(organizationIDs, organization.ID) {
 				return false
 			}
 		}
 
 		return true
 	})
-
-	return nil
 }
 
 func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
@@ -92,9 +90,7 @@ func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
 		return nil, err
 	}
 
-	if err := FilterRegions(ctx, regions); err != nil {
-		return nil, err
-	}
+	FilterRegions(ctx, regions)
 
 	return convertList(regions), nil
 }
