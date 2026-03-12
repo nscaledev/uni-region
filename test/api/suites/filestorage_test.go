@@ -25,11 +25,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"golang.org/x/crypto/ssh"
 	"k8s.io/utils/ptr"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
@@ -217,10 +219,6 @@ var _ = Describe("File Storage Management", func() {
 			})
 
 			It("should retrieve the created file storage resource", func() {
-				if filestorageID == "" {
-					Skip("No filestorage ID available - create test may have been skipped or failed")
-				}
-
 				Eventually(func() coreapi.ResourceProvisioningStatus {
 					retrieved, err := regionClient.GetFileStorage(ctx, filestorageID)
 					if err != nil {
@@ -253,10 +251,6 @@ var _ = Describe("File Storage Management", func() {
 			})
 
 			It("should update the file storage resource", func() {
-				if filestorageID == "" {
-					Skip("No filestorage ID available - create test may have been skipped or failed")
-				}
-
 				update := regionopenapi.StorageV2UpdateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{
 						Name:        filestorageName,
@@ -275,9 +269,8 @@ var _ = Describe("File Storage Management", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(updated).NotTo(BeNil())
 				Expect(updated.Metadata.Id).To(Equal(filestorageID))
-				if updated.Metadata.Description != nil {
-					Expect(*updated.Metadata.Description).To(Equal("Updated test file storage"))
-				}
+				Expect(updated.Metadata.Description).NotTo(BeNil())
+				Expect(*updated.Metadata.Description).To(Equal("Updated test file storage"))
 				Expect(updated.Spec.SizeGiB).To(Equal(updatedStorageSizeGiB))
 
 				GinkgoWriter.Printf("Updated file storage: %s (%s) - now %dGiB\n",
@@ -287,10 +280,6 @@ var _ = Describe("File Storage Management", func() {
 			})
 
 			It("should delete the file storage resource", func() {
-				if filestorageID == "" {
-					Skip("No filestorage ID available - create test may have been skipped or failed")
-				}
-
 				err := regionClient.DeleteFileStorage(ctx, filestorageID)
 
 				Expect(err).NotTo(HaveOccurred())
@@ -299,10 +288,6 @@ var _ = Describe("File Storage Management", func() {
 			})
 
 			It("should not find the deleted file storage resource", func() {
-				if filestorageID == "" {
-					Skip("No filestorage ID available - create test may have been skipped or failed")
-				}
-
 				Eventually(func() error {
 					_, err := regionClient.GetFileStorage(ctx, filestorageID)
 					return err
@@ -325,6 +310,411 @@ var _ = Describe("File Storage Management", func() {
 		})
 	})
 
+	Context("When verifying NFS storage mount source format on attachment", Ordered, func() {
+		const storageSizeGiB = int64(10)
+
+		var filestorageID string
+		var storageClassID string
+		var networkID string
+
+		Describe("Given an NFS storage class and network", func() {
+			It("should find a storage class with NFS protocol support", func() {
+				storageClasses, err := regionClient.ListFileStorageClasses(ctx, config.RegionID)
+				Expect(err).NotTo(HaveOccurred())
+
+				if len(storageClasses) == 0 {
+					Skip(fmt.Sprintf("No storage classes allocated to region %s", config.RegionID))
+				}
+
+				// Select the highest parallelism class (best performance, typical of VAST)
+				best := storageClasses[0]
+				for _, sc := range storageClasses[1:] {
+					if sc.Spec.Parallelism > best.Spec.Parallelism {
+						best = sc
+					}
+				}
+
+				storageClassID = best.Metadata.Id
+				GinkgoWriter.Printf("Selected storage class: %s (parallelism=%d, protocols=%v)\n",
+					best.Metadata.Name, best.Spec.Parallelism, best.Spec.Protocols)
+			})
+
+			It("should use or create a network for VAST storage attachment", func() {
+				if config.NetworkID != "" {
+					networkID = config.NetworkID
+					GinkgoWriter.Printf("Using pre-existing network for VAST: %s\n", networkID)
+					return
+				}
+
+				network, err := regionClient.CreateNetwork(ctx, regionopenapi.NetworkV2CreateRequest{
+					Metadata: coreapi.ResourceWriteMetadata{
+						Name:        coreutil.GenerateRandomName("test-vast-network"),
+						Description: ptr.To("Test network for VAST storage attachment"),
+					},
+					Spec: regionopenapi.NetworkV2CreateSpec{
+						OrganizationId: config.OrgID,
+						ProjectId:      config.ProjectID,
+						RegionId:       config.RegionID,
+						Prefix:         "10.0.1.0/24",
+						DnsNameservers: regionopenapi.Ipv4AddressList{"8.8.8.8", "8.8.4.4"},
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(network).NotTo(BeNil())
+				networkID = network.Metadata.Id
+				GinkgoWriter.Printf("Created network for VAST: %s (%s)\n", network.Metadata.Name, networkID)
+
+				Eventually(func() coreapi.ResourceProvisioningStatus {
+					n, err := regionClient.GetNetwork(ctx, networkID)
+					if err != nil {
+						return ""
+					}
+					if n.Metadata.ProvisioningStatus == coreapi.ResourceProvisioningStatusError {
+						Fail(fmt.Sprintf("Network %s entered error state - check network controller logs for region %s", networkID, config.RegionID))
+					}
+					return n.Metadata.ProvisioningStatus
+				}).WithTimeout(5*time.Minute).
+					WithPolling(10*time.Second).
+					Should(Equal(coreapi.ResourceProvisioningStatusProvisioned),
+						"Network should be provisioned before attaching storage")
+			})
+
+			It("should create VAST-backed storage with network attachment", func() {
+				created, err := regionClient.CreateFileStorage(ctx, regionopenapi.StorageV2CreateRequest{
+					Metadata: coreapi.ResourceWriteMetadata{
+						Name:        coreutil.GenerateRandomName("test-vast-storage"),
+						Description: ptr.To("VAST NFS storage on NKS"),
+					},
+					Spec: struct {
+						Attachments    *regionopenapi.StorageAttachmentV2Spec `json:"attachments,omitempty"`
+						OrganizationId string                                 `json:"organizationId"`
+						ProjectId      string                                 `json:"projectId"`
+						RegionId       string                                 `json:"regionId"`
+						SizeGiB        int64                                  `json:"sizeGiB"`
+						StorageClassId string                                 `json:"storageClassId"`
+						StorageType    regionopenapi.StorageTypeV2Spec        `json:"storageType"`
+					}{
+						OrganizationId: config.OrgID,
+						ProjectId:      config.ProjectID,
+						RegionId:       config.RegionID,
+						SizeGiB:        storageSizeGiB,
+						StorageClassId: storageClassID,
+						Attachments: &regionopenapi.StorageAttachmentV2Spec{
+							NetworkIds: []string{networkID},
+						},
+						StorageType: regionopenapi.StorageTypeV2Spec{NFS: &regionopenapi.NFSV2Spec{}},
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+				filestorageID = created.Metadata.Id
+				GinkgoWriter.Printf("Created VAST storage: %s\n", filestorageID)
+			})
+
+			It("should expose a mount source in <host>:<path> format", func() {
+				var mountSource string
+				Eventually(func() string {
+					retrieved, err := regionClient.GetFileStorage(ctx, filestorageID)
+					if err != nil {
+						return ""
+					}
+					if retrieved.Status.Attachments == nil || len(*retrieved.Status.Attachments) == 0 {
+						return ""
+					}
+					for _, att := range *retrieved.Status.Attachments {
+						if att.NetworkId == networkID && att.MountSource != nil && *att.MountSource != "" {
+							mountSource = *att.MountSource
+							return mountSource
+						}
+					}
+					return ""
+				}).WithTimeout(10*time.Minute).
+					WithPolling(15*time.Second).
+					ShouldNot(BeEmpty(), "NFS storage must expose a mount source")
+
+				// NFS mount sources are in "host:/path" format, e.g. "10.0.0.16:/mnt/nfs"
+				parts := strings.SplitN(mountSource, ":", 2)
+				Expect(parts).To(HaveLen(2), "Mount source must be host:path format, got: %s", mountSource)
+				Expect(parts[0]).NotTo(BeEmpty(), "Mount host must not be empty")
+				Expect(parts[1]).To(HavePrefix("/"), "Mount path must be absolute, got: %s", parts[1])
+
+				GinkgoWriter.Printf("NFS mount source validated: host=%s path=%s\n", parts[0], parts[1])
+			})
+
+			It("should delete VAST storage", func() {
+				err := regionClient.DeleteFileStorage(ctx, filestorageID)
+				Expect(err).NotTo(HaveOccurred())
+				GinkgoWriter.Printf("Deleted VAST storage: %s\n", filestorageID)
+			})
+		})
+
+		AfterAll(func() {
+			if filestorageID != "" {
+				if err := regionClient.DeleteFileStorage(ctx, filestorageID); err != nil {
+					GinkgoWriter.Printf("Warning: Failed to cleanup VAST storage %s: %v\n", filestorageID, err)
+				}
+			}
+			if networkID != "" && config.NetworkID == "" {
+				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil {
+					GinkgoWriter.Printf("Warning: Failed to cleanup VAST network %s: %v\n", networkID, err)
+				}
+			}
+		})
+	})
+
+	Context("When verifying storage via SSH on a provisioned server", Ordered, func() {
+		const storageSizeGiB = int64(10)
+
+		var filestorageID string
+		var networkID string
+		var serverID string
+		var mountSource string
+
+		Describe("Given a server on the same network as file storage", func() {
+			BeforeAll(func() {
+				if config.FlavorID == "" || config.ImageID == "" {
+					Skip("TEST_FLAVOR_ID and TEST_IMAGE_ID must be set to run SSH storage verification tests")
+				}
+			})
+
+			It("should create a network for server and storage", func() {
+				network, err := regionClient.CreateNetwork(ctx, regionopenapi.NetworkV2CreateRequest{
+					Metadata: coreapi.ResourceWriteMetadata{
+						Name:        coreutil.GenerateRandomName("test-ssh-network"),
+						Description: ptr.To("Test network for SSH storage verification"),
+					},
+					Spec: regionopenapi.NetworkV2CreateSpec{
+						OrganizationId: config.OrgID,
+						ProjectId:      config.ProjectID,
+						RegionId:       config.RegionID,
+						Prefix:         "10.0.1.0/24",
+						DnsNameservers: regionopenapi.Ipv4AddressList{"8.8.8.8", "8.8.4.4"},
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(network).NotTo(BeNil())
+				networkID = network.Metadata.Id
+				GinkgoWriter.Printf("Created network for SSH test: %s (%s)\n", network.Metadata.Name, networkID)
+
+				Eventually(func() coreapi.ResourceProvisioningStatus {
+					n, err := regionClient.GetNetwork(ctx, networkID)
+					if err != nil {
+						return ""
+					}
+					if n.Metadata.ProvisioningStatus == coreapi.ResourceProvisioningStatusError {
+						Fail(fmt.Sprintf("Network %s entered error state - check network controller logs for region %s", networkID, config.RegionID))
+					}
+					return n.Metadata.ProvisioningStatus
+				}).WithTimeout(5*time.Minute).
+					WithPolling(10*time.Second).
+					Should(Equal(coreapi.ResourceProvisioningStatusProvisioned),
+						"Network should be provisioned before creating servers")
+			})
+
+			It("should create file storage with network attachment", func() {
+				storageClasses, err := regionClient.ListFileStorageClasses(ctx, config.RegionID)
+				Expect(err).NotTo(HaveOccurred())
+
+				if len(storageClasses) == 0 {
+					Skip(fmt.Sprintf("No storage classes allocated to region %s", config.RegionID))
+				}
+
+				created, err := regionClient.CreateFileStorage(ctx, regionopenapi.StorageV2CreateRequest{
+					Metadata: coreapi.ResourceWriteMetadata{
+						Name:        coreutil.GenerateRandomName("test-ssh-storage"),
+						Description: ptr.To("Storage for SSH verification"),
+					},
+					Spec: struct {
+						Attachments    *regionopenapi.StorageAttachmentV2Spec `json:"attachments,omitempty"`
+						OrganizationId string                                 `json:"organizationId"`
+						ProjectId      string                                 `json:"projectId"`
+						RegionId       string                                 `json:"regionId"`
+						SizeGiB        int64                                  `json:"sizeGiB"`
+						StorageClassId string                                 `json:"storageClassId"`
+						StorageType    regionopenapi.StorageTypeV2Spec        `json:"storageType"`
+					}{
+						OrganizationId: config.OrgID,
+						ProjectId:      config.ProjectID,
+						RegionId:       config.RegionID,
+						SizeGiB:        storageSizeGiB,
+						StorageClassId: storageClasses[0].Metadata.Id,
+						Attachments: &regionopenapi.StorageAttachmentV2Spec{
+							NetworkIds: []string{networkID},
+						},
+						StorageType: regionopenapi.StorageTypeV2Spec{NFS: &regionopenapi.NFSV2Spec{}},
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+				filestorageID = created.Metadata.Id
+
+				Eventually(func() string {
+					retrieved, err := regionClient.GetFileStorage(ctx, filestorageID)
+					if err != nil {
+						return ""
+					}
+					if retrieved.Status.Attachments == nil || len(*retrieved.Status.Attachments) == 0 {
+						return ""
+					}
+					for _, att := range *retrieved.Status.Attachments {
+						if att.NetworkId == networkID && att.MountSource != nil && *att.MountSource != "" {
+							return *att.MountSource
+						}
+					}
+					return ""
+				}).WithTimeout(10*time.Minute).
+					WithPolling(15*time.Second).
+					ShouldNot(BeEmpty(), "Storage must have mount source before server creation")
+
+				retrieved, err := regionClient.GetFileStorage(ctx, filestorageID)
+				Expect(err).NotTo(HaveOccurred())
+				for _, att := range *retrieved.Status.Attachments {
+					if att.NetworkId == networkID && att.MountSource != nil {
+						mountSource = *att.MountSource
+						break
+					}
+				}
+				GinkgoWriter.Printf("Storage provisioned with mount source: %s\n", mountSource)
+			})
+
+			It("should provision a server with cloud-init to mount the NFS storage", func() {
+				mountScript := fmt.Sprintf(`#!/bin/bash
+apt-get update -qq && apt-get install -y -qq nfs-common
+mkdir -p /mnt/vast
+mount -t nfs %s /mnt/vast
+echo "storage-ok" > /mnt/vast/marker.txt
+sync
+`, mountSource)
+				userData := []byte(mountScript)
+
+				server, err := regionClient.CreateServer(ctx, regionopenapi.ServerV2CreateRequest{
+					Metadata: coreapi.ResourceWriteMetadata{
+						Name:        coreutil.GenerateRandomName("test-ssh-server"),
+						Description: ptr.To("Server for SSH storage verification"),
+					},
+					Spec: regionopenapi.ServerV2CreateSpec{
+						FlavorId:  config.FlavorID,
+						ImageId:   config.ImageID,
+						NetworkId: networkID,
+						Networking: &regionopenapi.ServerV2Networking{
+							PublicIP: ptr.To(true),
+						},
+						UserData: &userData,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+				serverID = server.Metadata.Id
+				GinkgoWriter.Printf("Created server: %s\n", serverID)
+			})
+
+			It("should wait for the server to be Running with a public IP", func() {
+				Eventually(func() regionopenapi.InstanceLifecyclePhase {
+					server, err := regionClient.GetServer(ctx, serverID)
+					if err != nil || server.Status.PowerState == nil {
+						return ""
+					}
+					GinkgoWriter.Printf("Server power state: %s\n", *server.Status.PowerState)
+					return *server.Status.PowerState
+				}).WithTimeout(15 * time.Minute).
+					WithPolling(15 * time.Second).
+					Should(Equal(regionopenapi.InstanceLifecyclePhaseRunning))
+
+				server, err := regionClient.GetServer(ctx, serverID)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(server.Status.PublicIP).NotTo(BeNil(), "Server must have a public IP for SSH access")
+				GinkgoWriter.Printf("Server running at: %s\n", *server.Status.PublicIP)
+			})
+
+			It("should SSH into the server and verify the NFS mount", func() {
+				sshKey, err := regionClient.GetServerSSHKey(ctx, serverID)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(sshKey.PrivateKey).NotTo(BeEmpty())
+
+				server, err := regionClient.GetServer(ctx, serverID)
+				Expect(err).NotTo(HaveOccurred())
+
+				signer, err := ssh.ParsePrivateKey([]byte(sshKey.PrivateKey))
+				Expect(err).NotTo(HaveOccurred())
+
+				sshUser := config.SSHUser
+				if sshUser == "" {
+					sshUser = "ubuntu"
+				}
+
+				sshCfg := &ssh.ClientConfig{
+					User: sshUser,
+					Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)},
+					//nolint:gosec // G106: InsecureIgnoreHostKey acceptable for ephemeral test VMs
+					HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+					Timeout:         30 * time.Second,
+				}
+
+				var sshClient *ssh.Client
+				Eventually(func() error {
+					c, err := ssh.Dial("tcp", fmt.Sprintf("%s:22", *server.Status.PublicIP), sshCfg)
+					if err != nil {
+						GinkgoWriter.Printf("Waiting for SSH: %v\n", err)
+						return err
+					}
+					sshClient = c
+					return nil
+				}).WithTimeout(5 * time.Minute).
+					WithPolling(15 * time.Second).
+					Should(Succeed())
+
+				defer sshClient.Close() //nolint:errcheck
+
+				// Wait for cloud-init to complete before checking the mount and marker.
+				// SSH becomes available before cloud-init finishes, so without this
+				// the NFS mount and marker file may not be present yet.
+				GinkgoWriter.Printf("Waiting for cloud-init to complete...\n")
+				cloudInitOut := sshRun(sshClient, "cloud-init status --wait")
+				GinkgoWriter.Printf("cloud-init status: %s\n", strings.TrimSpace(cloudInitOut))
+
+				// Verify the NFS storage is mounted
+				mountOut := sshRun(sshClient, "mount | grep nfs")
+				Expect(mountOut).NotTo(BeEmpty(), "NFS should appear in mount list")
+				GinkgoWriter.Printf("NFS mount entry: %s\n", mountOut)
+
+				// Verify the marker written by cloud-init is present
+				markerOut := sshRun(sshClient, "cat /mnt/vast/marker.txt")
+				Expect(strings.TrimSpace(markerOut)).To(Equal("storage-ok"))
+				GinkgoWriter.Printf("Storage marker verified on server\n")
+			})
+
+			It("should delete the test server", func() {
+				Expect(regionClient.DeleteServer(ctx, serverID)).To(Succeed())
+				GinkgoWriter.Printf("Deleted SSH test server: %s\n", serverID)
+			})
+
+			It("should delete the test storage", func() {
+				Expect(regionClient.DeleteFileStorage(ctx, filestorageID)).To(Succeed())
+				GinkgoWriter.Printf("Deleted SSH test storage: %s\n", filestorageID)
+			})
+
+			It("should delete the test network", func() {
+				Expect(regionClient.DeleteNetwork(ctx, networkID)).To(Succeed())
+				GinkgoWriter.Printf("Deleted SSH test network: %s\n", networkID)
+			})
+		})
+
+		AfterAll(func() {
+			if serverID != "" {
+				if err := regionClient.DeleteServer(ctx, serverID); err != nil {
+					GinkgoWriter.Printf("Warning: Failed to cleanup server %s: %v\n", serverID, err)
+				}
+			}
+			if filestorageID != "" {
+				if err := regionClient.DeleteFileStorage(ctx, filestorageID); err != nil {
+					GinkgoWriter.Printf("Warning: Failed to cleanup storage %s: %v\n", filestorageID, err)
+				}
+			}
+			if networkID != "" {
+				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil {
+					GinkgoWriter.Printf("Warning: Failed to cleanup network %s: %v\n", networkID, err)
+				}
+			}
+		})
+	})
+
 	Context("When managing file storage attachments", Ordered, func() {
 		const storageSizeGiB = int64(10)
 
@@ -332,50 +722,40 @@ var _ = Describe("File Storage Management", func() {
 		var filestorageName string
 		var storageClassID string
 		var networkID string
-		var networkName string
 
 		Describe("Given a network and file storage resource", func() {
 			It("should create a network for attachment", func() {
-				networkName = coreutil.GenerateRandomName("test-attach-network")
-				networkRequest := regionopenapi.NetworkV2CreateRequest{
+				network, err := regionClient.CreateNetwork(ctx, regionopenapi.NetworkV2CreateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{
-						Name:        networkName,
-						Description: ptr.To("Test network for storage attachment"),
+						Name:        coreutil.GenerateRandomName("test-attach-network"),
+						Description: ptr.To("Test network for file storage attachment lifecycle"),
 					},
 					Spec: regionopenapi.NetworkV2CreateSpec{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
 						RegionId:       config.RegionID,
 						Prefix:         "10.0.1.0/24",
-						DnsNameservers: []string{"8.8.8.8", "8.8.4.4"},
+						DnsNameservers: regionopenapi.Ipv4AddressList{"8.8.8.8", "8.8.4.4"},
 					},
-				}
-
-				network, err := regionClient.CreateNetwork(ctx, networkRequest)
+				})
 				Expect(err).NotTo(HaveOccurred())
 				Expect(network).NotTo(BeNil())
-				Expect(network.Metadata.Id).NotTo(BeEmpty())
-
 				networkID = network.Metadata.Id
-				GinkgoWriter.Printf("Created network for attachment: %s (%s)\n", networkName, networkID)
+				GinkgoWriter.Printf("Created network for attachment: %s (%s)\n", network.Metadata.Name, networkID)
 
 				Eventually(func() coreapi.ResourceProvisioningStatus {
-					networks, err := regionClient.ListNetworks(ctx, config.OrgID, config.ProjectID, config.RegionID)
+					n, err := regionClient.GetNetwork(ctx, networkID)
 					if err != nil {
 						return ""
 					}
-					for _, n := range networks {
-						if n.Metadata.Id == networkID {
-							return n.Metadata.ProvisioningStatus
-						}
+					if n.Metadata.ProvisioningStatus == coreapi.ResourceProvisioningStatusError {
+						Fail(fmt.Sprintf("Network %s entered error state - check network controller logs for region %s", networkID, config.RegionID))
 					}
-					return ""
+					return n.Metadata.ProvisioningStatus
 				}).WithTimeout(5*time.Minute).
 					WithPolling(10*time.Second).
 					Should(Equal(coreapi.ResourceProvisioningStatusProvisioned),
-						"Network should eventually be provisioned")
-
-				GinkgoWriter.Printf("Network provisioned: %s\n", networkID)
+						"Network should be provisioned before attaching storage")
 			})
 
 			It("should create a file storage resource without attachments", func() {
@@ -436,10 +816,6 @@ var _ = Describe("File Storage Management", func() {
 			})
 
 			It("should update file storage to add network attachment", func() {
-				if filestorageID == "" || networkID == "" {
-					Skip("No filestorage or network ID available")
-				}
-
 				update := regionopenapi.StorageV2UpdateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{
 						Name:        filestorageName,
@@ -466,12 +842,7 @@ var _ = Describe("File Storage Management", func() {
 			})
 
 			It("should verify attachment is available on status with mount info", func() {
-				if filestorageID == "" || networkID == "" {
-					Skip("No filestorage or network ID available")
-				}
-
 				// Attachment is complete when mountSource is present
-				// Note: attachment.provisioningStatus may remain "unknown"
 				Eventually(func() string {
 					retrieved, err := regionClient.GetFileStorage(ctx, filestorageID)
 					if err != nil {
@@ -510,20 +881,15 @@ var _ = Describe("File Storage Management", func() {
 				Expect(attachment.NetworkId).To(Equal(networkID))
 				Expect(attachment.MountSource).NotTo(BeNil(), "MountSource should be present")
 				Expect(*attachment.MountSource).NotTo(BeEmpty(), "MountSource should not be empty")
-				// Note: attachment.ProvisioningStatus may be "unknown" - this is acceptable and tracked separately
 
 				GinkgoWriter.Printf("Attachment verified:\n")
 				GinkgoWriter.Printf("  Network ID: %s\n", attachment.NetworkId)
 				GinkgoWriter.Printf("  Mount Source: %s\n", *attachment.MountSource)
-				GinkgoWriter.Printf("  Attachment Status: %s (may be 'unknown' - acceptable)\n", attachment.ProvisioningStatus)
+				GinkgoWriter.Printf("  Attachment Status: %s\n", attachment.ProvisioningStatus)
 				GinkgoWriter.Printf("  Storage Status: %s\n", retrieved.Metadata.ProvisioningStatus)
 			})
 
 			It("should remove network attachment from file storage", func() {
-				if filestorageID == "" {
-					Skip("No filestorage ID available")
-				}
-
 				update := regionopenapi.StorageV2UpdateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{
 						Name:        filestorageName,
@@ -565,10 +931,6 @@ var _ = Describe("File Storage Management", func() {
 			})
 
 			It("should delete the file storage resource after detachment", func() {
-				if filestorageID == "" {
-					Skip("No filestorage ID available")
-				}
-
 				err := regionClient.DeleteFileStorage(ctx, filestorageID)
 				Expect(err).NotTo(HaveOccurred())
 
@@ -586,10 +948,6 @@ var _ = Describe("File Storage Management", func() {
 			})
 
 			It("should delete the network resource", func() {
-				if networkID == "" {
-					Skip("No network ID available")
-				}
-
 				err := regionClient.DeleteNetwork(ctx, networkID)
 				Expect(err).NotTo(HaveOccurred())
 
@@ -642,3 +1000,20 @@ var _ = Describe("File Storage Management", func() {
 		})
 	})
 })
+
+// sshRun executes a command on an SSH client and returns the combined output.
+// Non-zero exit codes are logged but not returned — callers assert on the output content.
+func sshRun(client *ssh.Client, cmd string) string {
+	sess, err := client.NewSession()
+	if err != nil {
+		GinkgoWriter.Printf("Failed to create SSH session: %v\n", err)
+		return ""
+	}
+	defer sess.Close() //nolint:errcheck
+
+	out, err := sess.CombinedOutput(cmd)
+	if err != nil {
+		GinkgoWriter.Printf("Command %q exited with error: %v\n", cmd, err)
+	}
+	return string(out)
+}

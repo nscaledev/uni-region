@@ -30,6 +30,14 @@ type TestConfig struct {
 	ProjectID     string
 	RegionBaseURL string
 	RegionID      string
+	// FlavorID is the flavor ID to use when creating servers in integration tests.
+	FlavorID string
+	// ImageID is the image ID to use when creating servers in integration tests.
+	ImageID string
+	// SSHUser is the default user to connect as when SSH-ing into provisioned servers.
+	SSHUser string
+	// NetworkID is a pre-existing provisioned network ID to use in tests that require network attachment.
+	NetworkID string
 }
 
 // LoadTestConfig loads configuration from environment variables and .env files using viper.
@@ -72,6 +80,10 @@ func LoadTestConfig() (*TestConfig, error) {
 		OrgID:         v.GetString("TEST_ORG_ID"),
 		ProjectID:     v.GetString("TEST_PROJECT_ID"),
 		RegionID:      v.GetString("TEST_REGION_ID"),
+		FlavorID:      v.GetString("TEST_FLAVOR_ID"),
+		ImageID:       v.GetString("TEST_IMAGE_ID"),
+		SSHUser:       v.GetString("TEST_SSH_USER"),
+		NetworkID:     v.GetString("TEST_NETWORK_ID"),
 	}
 
 	// Validate required fields

@@ -113,8 +113,43 @@ func (e *Endpoints) CreateNetwork() string {
 	return "/api/v2/networks"
 }
 
+// GetNetwork returns the endpoint for getting a specific network resource.
+func (e *Endpoints) GetNetwork(networkID string) string {
+	return fmt.Sprintf("/api/v2/networks/%s",
+		url.PathEscape(networkID))
+}
+
 // DeleteNetwork returns the endpoint for deleting a specific network resource.
 func (e *Endpoints) DeleteNetwork(networkID string) string {
 	return fmt.Sprintf("/api/v2/networks/%s",
 		url.PathEscape(networkID))
+}
+
+// ListServers returns the endpoint for listing servers in a project.
+func (e *Endpoints) ListServers(orgID, projectID, regionID string) string {
+	return fmt.Sprintf("/api/v2/servers?organizationId=%s&projectId=%s&regionId=%s",
+		url.QueryEscape(orgID), url.QueryEscape(projectID), url.QueryEscape(regionID))
+}
+
+// CreateServer returns the endpoint for creating a server.
+func (e *Endpoints) CreateServer() string {
+	return "/api/v2/servers"
+}
+
+// GetServer returns the endpoint for getting a specific server.
+func (e *Endpoints) GetServer(serverID string) string {
+	return fmt.Sprintf("/api/v2/servers/%s",
+		url.PathEscape(serverID))
+}
+
+// DeleteServer returns the endpoint for deleting a specific server.
+func (e *Endpoints) DeleteServer(serverID string) string {
+	return fmt.Sprintf("/api/v2/servers/%s",
+		url.PathEscape(serverID))
+}
+
+// GetServerSSHKey returns the endpoint for retrieving the SSH key of a server.
+func (e *Endpoints) GetServerSSHKey(serverID string) string {
+	return fmt.Sprintf("/api/v2/servers/%s/sshkey",
+		url.PathEscape(serverID))
 }
