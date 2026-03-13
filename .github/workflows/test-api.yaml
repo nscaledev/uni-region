@@ -46,6 +46,9 @@ jobs:
       TEST_PROJECT_ID: ${{ vars.DEV_TEST_PROJECT_ID }}
       TEST_REGION_ID: ${{ inputs.region_id || vars.DEV_TEST_REGION_ID }}
       TEST_NETWORK_ID: ${{ vars.DEV_TEST_NETWORK_ID }}
+      TEST_PRIVATE_REGION_ID: ${{ vars.DEV_TEST_PRIVATE_REGION_ID }}
+      TEST_SECONDARY_ORG_ID: ${{ vars.DEV_TEST_SECONDARY_ORG_ID }}
+      TEST_SECONDARY_AUTH_TOKEN: ${{ secrets.DEV_TEST_SECONDARY_AUTH_TOKEN }}
 
     steps:
     - name: Checkout
@@ -116,6 +119,9 @@ jobs:
       TEST_PROJECT_ID: ${{ vars.UAT_TEST_PROJECT_ID }}
       TEST_REGION_ID: ${{ inputs.region_id || vars.UAT_TEST_REGION_ID }}
       TEST_NETWORK_ID: ${{ vars.UAT_TEST_NETWORK_ID }}
+      TEST_PRIVATE_REGION_ID: ${{ vars.UAT_TEST_PRIVATE_REGION_ID }}
+      TEST_SECONDARY_ORG_ID: ${{ vars.UAT_TEST_SECONDARY_ORG_ID }}
+      TEST_SECONDARY_AUTH_TOKEN: ${{ secrets.UAT_TEST_SECONDARY_AUTH_TOKEN }}
 
     steps:
     - name: Checkout

@@ -78,6 +78,48 @@ var _ = Describe("Region Discovery", func() {
 				GinkgoWriter.Printf("Expected error for invalid organization ID: %v\n", err)
 			})
 		})
+
+		Describe("Given the region is private to the requesting organization", func() {
+			It("should be visible to the owning organization", func() {
+				regions, err := client.ListRegions(ctx, config.OrgID)
+
+				Expect(err).NotTo(HaveOccurred())
+
+				regionIDs := make([]string, 0, len(regions))
+				for _, r := range regions {
+					regionIDs = append(regionIDs, r.Metadata.Id)
+				}
+
+				Expect(regionIDs).To(ContainElement(config.PrivateRegionID),
+					"private region %s should be visible to owning org %s", config.PrivateRegionID, config.OrgID)
+
+				GinkgoWriter.Printf("Private region %s is visible to owning org %s as expected\n",
+					config.PrivateRegionID, config.OrgID)
+			})
+		})
+
+		Describe("Given the region is private to a different organization", func() {
+			It("should not be visible to other organizations", func() {
+				if secondaryClient == nil {
+					Skip("TEST_SECONDARY_ORG_ID and TEST_SECONDARY_AUTH_TOKEN not configured")
+				}
+
+				regions, err := secondaryClient.ListRegions(ctx, config.SecondaryOrgID)
+
+				Expect(err).NotTo(HaveOccurred())
+
+				regionIDs := make([]string, 0, len(regions))
+				for _, r := range regions {
+					regionIDs = append(regionIDs, r.Metadata.Id)
+				}
+
+				Expect(regionIDs).NotTo(ContainElement(config.PrivateRegionID),
+					"private region %s should not be visible to org %s", config.PrivateRegionID, config.SecondaryOrgID)
+
+				GinkgoWriter.Printf("Private region %s is not visible to org %s as expected\n",
+					config.PrivateRegionID, config.SecondaryOrgID)
+			})
+		})
 	})
 })
 
