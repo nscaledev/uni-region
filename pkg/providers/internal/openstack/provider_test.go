@@ -1131,21 +1131,15 @@ func TestReconcileServerTags(t *testing.T) {
 
 	client := getClient(t, nil)
 
-	c := gomock.NewController(t)
-	t.Cleanup(c.Finish)
-
 	network := networkFixture()
 	openstackNetwork := openstackNetworkFixture(network)
 	openstackSubnet := openstackSubnetFixture(network, openstackNetwork)
 
-	openstackNetworks := []servers.Network{
-		{
-			UUID: openstackNetwork.ID,
-		},
-	}
-
 	t.Run("ValidTagsForwarded", func(t *testing.T) {
 		t.Parallel()
+
+		c := gomock.NewController(t)
+		t.Cleanup(c.Finish)
 
 		server := serverFixture(withTags(
 			corev1.Tag{Name: "compute.unikorn-cloud.org/instance-type", Value: "large"},
@@ -1154,7 +1148,12 @@ func TestReconcileServerTags(t *testing.T) {
 			corev1.Tag{Name: "not-a-valid-key", Value: "ignored"},
 		))
 		openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
-		openstackNetworks[0].Port = openstackServerPort.ID
+		openstackNetworks := []servers.Network{
+			{
+				UUID: openstackNetwork.ID,
+				Port: openstackServerPort.ID,
+			},
+		}
 		openstackServer := openstackServerFixture(server)
 
 		expectedMetadata := map[string]string{
@@ -1186,12 +1185,20 @@ func TestReconcileServerTags(t *testing.T) {
 	t.Run("SystemKeysOverwriteCollision", func(t *testing.T) {
 		t.Parallel()
 
+		c := gomock.NewController(t)
+		t.Cleanup(c.Finish)
+
 		// A user tag that collides with the namespaced system key "identity:organization_id".
 		server := serverFixture(withTags(
 			corev1.Tag{Name: "identity.unikorn-cloud.org/organization-id", Value: "attacker"},
 		))
 		openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
-		openstackNetworks[0].Port = openstackServerPort.ID
+		openstackNetworks := []servers.Network{
+			{
+				UUID: openstackNetwork.ID,
+				Port: openstackServerPort.ID,
+			},
+		}
 		openstackServer := openstackServerFixture(server)
 
 		// The system key must win — value must be the real organizationID.
