@@ -385,6 +385,24 @@ func (c *APIClient) CreateNetwork(ctx context.Context, request regionopenapi.Net
 	return &network, nil
 }
 
+// GetNetwork gets a specific network resource by ID.
+func (c *APIClient) GetNetwork(ctx context.Context, networkID string) (*regionopenapi.NetworkV2Read, error) {
+	path := c.endpoints.GetNetwork(networkID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	if err != nil {
+		return nil, fmt.Errorf("getting network: %w", err)
+	}
+
+	var network regionopenapi.NetworkV2Read
+	if err := json.Unmarshal(respBody, &network); err != nil {
+		return nil, fmt.Errorf("unmarshaling network: %w", err)
+	}
+
+	return &network, nil
+}
+
 // DeleteNetwork deletes a network resource.
 func (c *APIClient) DeleteNetwork(ctx context.Context, networkID string) error {
 	path := c.endpoints.DeleteNetwork(networkID)
@@ -396,4 +414,92 @@ func (c *APIClient) DeleteNetwork(ctx context.Context, networkID string) error {
 	}
 
 	return nil
+}
+
+// ListServers lists all servers for a project in a region.
+func (c *APIClient) ListServers(ctx context.Context, orgID, projectID, regionID string) (regionopenapi.ServersV2Read, error) {
+	path := c.endpoints.ListServers(orgID, projectID, regionID)
+
+	return coreclient.ListResource[regionopenapi.ServerV2Read](
+		ctx,
+		c.regionClient,
+		path,
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "servers",
+			ResourceID:     projectID,
+			ResourceIDType: "project",
+		},
+	)
+}
+
+// CreateServer creates a new server resource.
+func (c *APIClient) CreateServer(ctx context.Context, request regionopenapi.ServerV2CreateRequest) (*regionopenapi.ServerV2Read, error) {
+	path := c.endpoints.CreateServer()
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling server request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusCreated)
+	if err != nil {
+		return nil, fmt.Errorf("creating server: %w", err)
+	}
+
+	var server regionopenapi.ServerV2Read
+	if err := json.Unmarshal(respBody, &server); err != nil {
+		return nil, fmt.Errorf("unmarshaling server: %w", err)
+	}
+
+	return &server, nil
+}
+
+// GetServer gets a specific server by ID.
+func (c *APIClient) GetServer(ctx context.Context, serverID string) (*regionopenapi.ServerV2Read, error) {
+	path := c.endpoints.GetServer(serverID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	if err != nil {
+		return nil, fmt.Errorf("getting server: %w", err)
+	}
+
+	var server regionopenapi.ServerV2Read
+	if err := json.Unmarshal(respBody, &server); err != nil {
+		return nil, fmt.Errorf("unmarshaling server: %w", err)
+	}
+
+	return &server, nil
+}
+
+// DeleteServer deletes a server resource.
+func (c *APIClient) DeleteServer(ctx context.Context, serverID string) error {
+	path := c.endpoints.DeleteServer(serverID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, _, err := c.regionClient.DoRequest(ctx, http.MethodDelete, path, nil, http.StatusAccepted)
+	if err != nil {
+		return fmt.Errorf("deleting server: %w", err)
+	}
+
+	return nil
+}
+
+// GetServerSSHKey retrieves the SSH key for a specific server.
+func (c *APIClient) GetServerSSHKey(ctx context.Context, serverID string) (*regionopenapi.SshKey, error) {
+	path := c.endpoints.GetServerSSHKey(serverID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	if err != nil {
+		return nil, fmt.Errorf("getting server SSH key: %w", err)
+	}
+
+	var sshKey regionopenapi.SshKey
+	if err := json.Unmarshal(respBody, &sshKey); err != nil {
+		return nil, fmt.Errorf("unmarshaling SSH key: %w", err)
+	}
+
+	return &sshKey, nil
 }
