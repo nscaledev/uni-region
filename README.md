@@ -310,6 +310,34 @@ make test-contracts
 
 This is useful for ensuring both your consumer expectations and provider implementations are working correctly before publishing to the Pact Broker.
 
+## Contract Test Escape Hatch
+
+In emergencies (e.g. a hotfix that can't wait for contract tests to be updated), you can skip the `ConsumerContractTests` and `CanIDeploy` jobs without permanently weakening the CI gate.
+
+### How to use it
+
+1. Apply the `skip-contract-tests` label to your pull request.
+2. The workflow re-triggers automatically (via the `labeled` event) — no new commit needed.
+3. `ConsumerContractTests` and `CanIDeploy` are both skipped. Skipped jobs count as neutral in GitHub and satisfy branch protection required-status checks.
+4. Remove the label once the contracts are updated.
+
+The label is recorded in the PR timeline, providing a full audit trail of when the escape hatch was used and by whom.
+
+### Behaviour
+
+| Scenario | ConsumerContractTests | CanIDeploy |
+|---|---|---|
+| Normal PR (no label) | Runs normally | Runs if tests pass |
+| PR has `skip-contract-tests` label | Skipped | Skipped |
+
+### One-time setup
+
+Create the label in **GitHub → Settings → Labels**:
+
+- **Name:** `skip-contract-tests`
+- **Description:** Use only when contract tests need updating but can't block a hotfix.
+- **Colour:** your choice (red is a good reminder it's a bypass)
+
 ## What Next?
 
 The region controller is useless as it is, and requires a service provider to use it to yield a consumable resource.
