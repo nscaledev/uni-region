@@ -36,7 +36,3 @@ v{{ .Chart.Version }}
 {{- define "unikorn.serverControllerImage" -}}
 {{- .Values.serverController.image | default (printf "%s/unikorn-server-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default (include "unikorn.defaultTag" .))) }}
 {{- end }}
-
-{{- define "unikorn.fileStorageControllerImage" -}}
-{{- .Values.fileStorageController.image | default (printf "%s/unikorn-file-storage-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default (include "unikorn.defaultTag" .))) }}
-{{- end }}
