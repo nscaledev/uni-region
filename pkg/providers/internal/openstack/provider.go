@@ -19,6 +19,8 @@ package openstack
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"math/big"
@@ -57,7 +59,6 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -1058,7 +1059,13 @@ func (p *Provider) provisionUser(ctx context.Context, identityService *IdentityC
 	}
 
 	name := identityResourceName(identity)
-	password := string(uuid.NewUUID())
+
+	b := make([]byte, 9)
+	if _, err := rand.Read(b); err != nil {
+		return err
+	}
+
+	password := base64.RawURLEncoding.EncodeToString(b)
 
 	user, err := identityService.CreateUser(ctx, p.credentials.domainID, name, password)
 	if err != nil {
