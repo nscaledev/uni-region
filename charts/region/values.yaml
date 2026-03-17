@@ -176,17 +176,6 @@ serverController:
       cpu: 100m
       memory: 100Mi
 
-fileStorageController:
-  # Enable or disable the file storage controller.
-  enabled: true
-  # Allow override of the controller image.
-  image: ~
-  # Allows resource limits to be set.
-  resources:
-    limits:
-      cpu: 100m
-      memory: 100Mi
-
 # Sets the DNS hosts/X.509 Certs.
 region:
   host: region.unikorn-cloud.org

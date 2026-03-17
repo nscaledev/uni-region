@@ -38,7 +38,6 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/file-storage/provisioners/types"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
@@ -57,10 +56,6 @@ const (
 	// This maintains legacy default behaviour for storage classes that do not specify a value.
 	DefaultParallelism = 4
 )
-
-type Driver interface {
-	GetDetails(ctx context.Context, projectID string, fileStorageID string) (*types.FileStorageDetails, error)
-}
 
 // Client provides a restful API for storage.
 type Client struct {

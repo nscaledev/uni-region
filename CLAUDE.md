@@ -113,14 +113,13 @@ RELEASE=1 make charts
 
 ### Core Components
 
-#### Controllers (8 Kubernetes Controllers)
+#### Controllers (7 Kubernetes Controllers)
 Located in `cmd/unikorn-*/main.go`, each controller manages specific Kubernetes resources:
 - **unikorn-region-controller**: Reconciles `Region` CRDs, manages region lifecycle
 - **unikorn-identity-controller**: Manages identity resources (projects, users, roles)
 - **unikorn-network-controller**: Manages network provisioning
 - **unikorn-security-group-controller**: Manages security groups and rules
 - **unikorn-server-controller**: Manages compute server resources
-- **unikorn-file-storage-controller**: Manages file storage resources
 - **unikorn-region-project-consumer**: Handles project-level resource consumption
 - **unikorn-region-monitor**: Monitors region health and status
 
