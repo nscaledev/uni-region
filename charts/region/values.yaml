@@ -207,5 +207,5 @@ identity:
 #   secretName: ~
 
 # Sets the OTLP endpoint for shipping spans.
-# otlp:
-#   endpoint: jaeger-collector.default:4318
+otlp:
+  endpoint: agent-collector.telemetry.svc.cluster.local:4318
