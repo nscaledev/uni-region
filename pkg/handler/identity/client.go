@@ -64,7 +64,7 @@ func (c *Client) convert(ctx context.Context, in *unikornv1.Identity) *openapi.I
 		},
 	}
 
-	//nolint:exhaustive,gocritic
+	//nolint:exhaustive
 	switch in.Spec.Provider {
 	case unikornv1.ProviderOpenstack:
 		out.Spec.Type = openapi.RegionTypeOpenstack
@@ -92,6 +92,8 @@ func (c *Client) convert(ctx context.Context, in *unikornv1.Identity) *openapi.I
 				out.Spec.Openstack.CloudConfig = &cloudConfig
 			}
 		}
+	case unikornv1.ProviderSimulated:
+		out.Spec.Type = openapi.RegionTypeSimulated
 	}
 
 	return out

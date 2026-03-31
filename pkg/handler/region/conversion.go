@@ -37,6 +37,8 @@ func convertRegionType(in unikornv1.Provider) openapi.RegionType {
 		return openapi.RegionTypeKubernetes
 	case unikornv1.ProviderOpenstack:
 		return openapi.RegionTypeOpenstack
+	case unikornv1.ProviderSimulated:
+		return openapi.RegionTypeSimulated
 	}
 
 	return ""
@@ -93,6 +95,7 @@ func (c *Client) convertDetail(ctx context.Context, in *unikornv1.Region) (*open
 		if in.Spec.Openstack.Network != nil && in.Spec.Openstack.Network.ProviderNetworks != nil {
 			out.Spec.Features.PhysicalNetworks = true
 		}
+	case unikornv1.ProviderSimulated:
 	}
 
 	return out, nil

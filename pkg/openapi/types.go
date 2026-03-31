@@ -84,6 +84,7 @@ const (
 const (
 	RegionTypeKubernetes RegionType = "kubernetes"
 	RegionTypeOpenstack  RegionType = "openstack"
+	RegionTypeSimulated  RegionType = "simulated"
 )
 
 // Defines values for StorageClassProtocolType.

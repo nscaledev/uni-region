@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# Composable install unit for region.
+# Installs the pinned identity dependency from go.mod first, then deploys region.
+# Outputs a .env fragment to stdout for downstream steps.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+IDENTITY_NAMESPACE=""
+IDENTITY_RELEASE_NAME=""
+NAMESPACE=""
+RELEASE_NAME=""
+EXTRA_VALUES=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --identity-namespace)
+      IDENTITY_NAMESPACE="$2"
+      shift 2
+      ;;
+    --identity-release-name)
+      IDENTITY_RELEASE_NAME="$2"
+      shift 2
+      ;;
+    --namespace)
+      NAMESPACE="$2"
+      shift 2
+      ;;
+    --release-name)
+      RELEASE_NAME="$2"
+      shift 2
+      ;;
+    --values)
+      EXTRA_VALUES+=("-f" "$2")
+      shift 2
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -z "${IDENTITY_NAMESPACE}" || -z "${IDENTITY_RELEASE_NAME}" || -z "${NAMESPACE}" || -z "${RELEASE_NAME}" ]]; then
+  echo "Usage: $0 --identity-namespace NS --identity-release-name NAME --namespace NS --release-name NAME [--values FILE]..." >&2
+  exit 1
+fi
+
+CONTEXT=$(kubectl config current-context)
+IS_KIND=false
+IS_COLIMA=false
+KIND_CLUSTER_NAME=""
+
+if [[ "${CONTEXT}" == kind-* ]]; then
+  IS_KIND=true
+  KIND_CLUSTER_NAME="${CONTEXT#kind-}"
+elif [[ "${CONTEXT}" == colima || "${CONTEXT}" == colima-* ]]; then
+  IS_COLIMA=true
+fi
+
+SUFFIX="${RELEASE_NAME#region-}"
+INGRESS_IP=""
+
+if [[ "${IS_KIND}" == true ]]; then
+  INGRESS_IP=$(kubectl get service ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+  if [[ -z "${INGRESS_IP}" ]]; then
+    echo "ERROR: ingress-nginx-controller does not have a LoadBalancer IP" >&2
+    exit 1
+  fi
+fi
+
+if [[ -n "${INGRESS_IP}" ]]; then
+  INGRESS_HOST="region-${SUFFIX}.${INGRESS_IP}.nip.io"
+else
+  INGRESS_HOST="region-${SUFFIX}.127.0.0.1.nip.io"
+fi
+
+echo "==> Installing region: namespace=${NAMESPACE}, release=${RELEASE_NAME}, host=${INGRESS_HOST}" >&2
+echo "==> Cluster context: ${CONTEXT} (KinD: ${IS_KIND}, Colima: ${IS_COLIMA})" >&2
+
+chart_version() {
+  awk '$1 == "version:" { print $2; exit }' "$1"
+}
+
+cd "${REPO_ROOT}"
+echo "==> Resolving unikorn-identity from go.mod (respects replace directives)..." >&2
+go mod download github.com/unikorn-cloud/identity > /dev/null 2>&1
+IDENTITY_DIR=$(go list -m -f '{{.Dir}}' github.com/unikorn-cloud/identity)
+IDENTITY_VERSION=$(go list -m -f '{{.Version}}' github.com/unikorn-cloud/identity)
+echo "==> Installing unikorn-identity ${IDENTITY_VERSION} from ${IDENTITY_DIR}..." >&2
+
+IDENTITY_TMP=$(mktemp -d)
+IDENTITY_ENV_FILE=$(mktemp)
+IDENTITY_TOOL_TMP=$(mktemp -d)
+trap 'chmod -R u+w "${IDENTITY_TMP}" "${IDENTITY_TOOL_TMP}" && rm -rf "${IDENTITY_TMP}" "${IDENTITY_TOOL_TMP}" "${IDENTITY_ENV_FILE}"' EXIT
+cp -r "${IDENTITY_DIR}/." "${IDENTITY_TMP}"
+chmod -R u+w "${IDENTITY_TMP}"
+cp "${SCRIPT_DIR}/ca-bundle.pem" "${IDENTITY_TMP}/hack/ci/ca-bundle.pem"
+
+if [[ ! -d "${IDENTITY_TMP}/.git" ]]; then
+  echo "==> Initialising synthetic git metadata for copied identity module..." >&2
+  (
+    cd "${IDENTITY_TMP}"
+    git init -q
+    git add -A
+    git -c user.name='Codex' -c user.email='codex@example.invalid' commit -q -m "temp"
+  )
+fi
+
+cat > "${IDENTITY_TOOL_TMP}/yq" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$#" -eq 2 && "$1" == ".version" ]]; then
+  awk '$1 == "version:" { print $2; exit }' "$2"
+  exit 0
+fi
+echo "unsupported yq invocation: $*" >&2
+exit 1
+EOF
+chmod +x "${IDENTITY_TOOL_TMP}/yq"
+
+IDENTITY_ARGS=(
+  --namespace "${IDENTITY_NAMESPACE}"
+  --release-name "${IDENTITY_RELEASE_NAME}"
+)
+if [[ -f "${IDENTITY_TMP}/hack/ci/test-values.yaml" ]]; then
+  IDENTITY_ARGS+=(--values "${IDENTITY_TMP}/hack/ci/test-values.yaml")
+fi
+
+PATH="${IDENTITY_TOOL_TMP}:$PATH" bash "${IDENTITY_TMP}/hack/ci/install" "${IDENTITY_ARGS[@]}" > "${IDENTITY_ENV_FILE}"
+# shellcheck disable=SC1090
+. "${IDENTITY_ENV_FILE}"
+IDENTITY_HOST="${IDENTITY_BASE_URL#https://}"
+
+VERSION="v$(chart_version "${REPO_ROOT}/charts/region/Chart.yaml")"
+
+if [[ "${IS_KIND}" == true ]]; then
+  echo "==> Building and loading region images into KinD cluster '${KIND_CLUSTER_NAME}'..." >&2
+  make images-kind-load VERSION="${VERSION}" KIND_CLUSTER="${KIND_CLUSTER_NAME}" >&2
+elif [[ "${IS_COLIMA}" == true ]]; then
+  echo "==> Building region images for Colima..." >&2
+  make images VERSION="${VERSION}" >&2
+else
+  echo "==> Cloud cluster - using pre-built images from registry (tag: ${VERSION})" >&2
+fi
+
+while IFS=$'\t' read -r rel ns; do
+  [[ -z "${rel}" ]] && continue
+  echo "==> Uninstalling previous region release ${rel} from ${ns}..." >&2
+  helm uninstall "${rel}" -n "${ns}" >&2 || true
+done < <(helm list -A --filter '^region-' -o json 2>/dev/null | jq -r '.[] | [.name, .namespace] | @tsv')
+
+echo "==> Applying region CRDs..." >&2
+kubectl apply -f "${REPO_ROOT}/charts/region/crds/" >&2
+
+echo "==> Deploying region via Helm..." >&2
+helm dependency update "${REPO_ROOT}/charts/region" > /dev/null 2>&1
+helm upgrade --install \
+  --namespace "${NAMESPACE}" \
+  --create-namespace \
+  --wait \
+  --timeout 300s \
+  --set "region.host=${INGRESS_HOST}" \
+  --set "identity.host=${IDENTITY_HOST}" \
+  --set "ingress.clusterIssuer=unikorn-issuer" \
+  --set "ingress.class=nginx" \
+  --set "ca.secretNamespace=cert-manager" \
+  --set "ca.secretName=unikorn-ca" \
+  --set "tag=${VERSION}" \
+  "${EXTRA_VALUES[@]}" \
+  "${RELEASE_NAME}" \
+  "${REPO_ROOT}/charts/region" >&2
+
+echo "==> Waiting for ingress TLS certificate to be issued..." >&2
+kubectl wait --for=condition=Ready \
+  "certificate/${RELEASE_NAME}-ingress-tls" \
+  -n "${NAMESPACE}" --timeout=60s >&2
+
+echo "==> Waiting for nginx to serve the correct TLS cert for ${INGRESS_HOST}..." >&2
+for i in $(seq 1 60); do
+  SERVED=$(echo | openssl s_client -servername "${INGRESS_HOST}" \
+    -connect "${INGRESS_HOST}:443" 2>/dev/null \
+    | openssl x509 -noout -text 2>/dev/null \
+    | grep -o "DNS:${INGRESS_HOST}" || true)
+  if [[ -n "${SERVED}" ]]; then
+    echo "==> nginx is serving the correct TLS cert." >&2
+    break
+  fi
+  if [[ "${i}" -eq 60 ]]; then
+    echo "ERROR: nginx did not serve correct TLS cert after 120s" >&2
+    exit 1
+  fi
+  sleep 2
+done
+
+echo "==> Region installed successfully." >&2
+
+cat <<EOF
+IDENTITY_BASE_URL=${IDENTITY_BASE_URL}
+IDENTITY_INGRESS_IP=${IDENTITY_INGRESS_IP:-}
+IDENTITY_NAMESPACE=${IDENTITY_NAMESPACE}
+IDENTITY_RELEASE=${IDENTITY_RELEASE}
+IDENTITY_CA_CERT=${SCRIPT_DIR}/ca-bundle.pem
+REGION_BASE_URL=https://${INGRESS_HOST}
+API_BASE_URL=https://${INGRESS_HOST}
+REGION_NAMESPACE=${NAMESPACE}
+REGION_RELEASE=${RELEASE_NAME}
+REGION_CA_CERT=${SCRIPT_DIR}/ca-bundle.pem
+EOF

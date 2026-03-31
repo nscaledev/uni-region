@@ -49,6 +49,7 @@ var _ = Describe("Region Discovery", func() {
 					Expect(region.Spec.Type).To(Or(
 						Equal(regionopenapi.RegionTypeOpenstack),
 						Equal(regionopenapi.RegionTypeKubernetes),
+						Equal(regionopenapi.RegionTypeSimulated),
 					))
 				}
 

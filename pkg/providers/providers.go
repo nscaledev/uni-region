@@ -27,6 +27,7 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/kubernetes"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
+	"github.com/unikorn-cloud/region/pkg/providers/internal/simulated"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -79,6 +80,8 @@ func newProvider(ctx context.Context, client client.Client, region *unikornv1.Re
 		return kubernetes.New(ctx, client, region)
 	case unikornv1.ProviderOpenstack:
 		return openstack.New(ctx, client, region)
+	case unikornv1.ProviderSimulated:
+		return simulated.New(ctx, client, region)
 	}
 
 	return nil, ErrRegionProviderUnimplemented

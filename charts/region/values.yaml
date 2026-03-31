@@ -23,7 +23,7 @@ organization: nscaledev
 #     # Organizations to allow access to, default is allow all.
 #     organizationIDs:
 #     - 5fb90278-7365-4c0a-a00c-fba299d99c52
-#   # Provider type, must be one of "openstack".
+#   # Provider type, must be one of "openstack", "kubernetes", or "simulated".
 #   provider: openstack
 #   # Openstack specific configuration.
 #   openstack:

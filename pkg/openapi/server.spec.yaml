@@ -1612,6 +1612,7 @@ components:
       enum:
       - openstack
       - kubernetes
+      - simulated
     regionFeatures:
       description: A set of features the region may provide to clients.
       type: object

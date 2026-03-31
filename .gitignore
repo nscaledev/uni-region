@@ -8,3 +8,7 @@ cover.html
 go.work.sum
 go.work
 test/.env
+test/.env.install
+junit.xml
+test-results.json
+hack/ci/ca-bundle.pem

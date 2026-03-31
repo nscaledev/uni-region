@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Delegates cluster-level prerequisite setup to the pinned identity module.
+# Copies the module to a writable temp dir so generated artifacts can be produced.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+cd "${REPO_ROOT}"
+echo "==> Resolving unikorn-identity from go.mod (respects replace directives)..."
+go mod download github.com/unikorn-cloud/identity > /dev/null 2>&1
+IDENTITY_DIR=$(go list -m -f '{{.Dir}}' github.com/unikorn-cloud/identity)
+IDENTITY_VERSION=$(go list -m -f '{{.Version}}' github.com/unikorn-cloud/identity)
+echo "==> Running unikorn-identity ${IDENTITY_VERSION} hack/ci/setup-infra from ${IDENTITY_DIR}..."
+
+IDENTITY_TMP=$(mktemp -d)
+trap 'chmod -R u+w "${IDENTITY_TMP}" && rm -rf "${IDENTITY_TMP}"' EXIT
+cp -r "${IDENTITY_DIR}/." "${IDENTITY_TMP}"
+chmod -R u+w "${IDENTITY_TMP}"
+
+if [[ ! -d "${IDENTITY_TMP}/.git" ]]; then
+  echo "==> Initialising synthetic git metadata for copied identity module..." >&2
+  (
+    cd "${IDENTITY_TMP}"
+    git init -q
+    git add -A
+    git -c user.name='Codex' -c user.email='codex@example.invalid' commit -q -m "temp"
+  )
+fi
+
+(cd "${IDENTITY_TMP}" && bash "hack/ci/setup-infra")
+cp "${IDENTITY_TMP}/hack/ci/ca-bundle.pem" "${SCRIPT_DIR}/ca-bundle.pem"
+
+echo "==> Synced CA bundle to ${SCRIPT_DIR}/ca-bundle.pem."
