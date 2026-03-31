@@ -440,6 +440,7 @@ spec:
                 enum:
                 - openstack
                 - kubernetes
+                - simulated
                 maxLength: 63
                 type: string
               security:

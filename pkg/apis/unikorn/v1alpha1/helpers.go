@@ -169,6 +169,7 @@ func (r *Region) VLANSpec() *VLANSpec {
 		if r.Spec.Openstack != nil && r.Spec.Openstack.Network != nil && r.Spec.Openstack.Network.ProviderNetworks != nil {
 			return r.Spec.Openstack.Network.ProviderNetworks.VLAN
 		}
+	case ProviderSimulated:
 	}
 
 	return nil
