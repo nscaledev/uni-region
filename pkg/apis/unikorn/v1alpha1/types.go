@@ -666,6 +666,35 @@ type OpenstackSecurityGroupSpec struct {
 type OpenstackSecurityGroupStatus struct {
 }
 
+// SSHCertificateAuthorityList is a typed list of SSH certificate authorities.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type SSHCertificateAuthorityList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []SSHCertificateAuthority `json:"items"`
+}
+
+// SSHCertificateAuthority defines a project scoped OpenSSH user certificate authority.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type SSHCertificateAuthority struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              SSHCertificateAuthoritySpec `json:"spec"`
+}
+
+type SSHCertificateAuthoritySpec struct {
+	// Pause, if true, will inhibit reconciliation.
+	Pause bool `json:"pause,omitempty"`
+	// Tags are an abitrary list of key/value pairs that a client
+	// may populate to store metadata for the resource.
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
+	// PublicKey is an OpenSSH-formatted CA public key trusted for user certificate authentication.
+	PublicKey string `json:"publicKey"`
+}
+
 // ServerList is a typed list of servers.
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type ServerList struct {
@@ -708,6 +737,8 @@ type ServerSpec struct {
 	PublicIPAllocation *ServerPublicIPAllocationSpec `json:"publicIPAllocation,omitempty"`
 	// Networks is the server network configuration.
 	Networks []ServerNetworkSpec `json:"networks,omitempty"`
+	// SSHCertificateAuthorityID is an optional project scoped OpenSSH user CA trust anchor.
+	SSHCertificateAuthorityID *string `json:"sshCertificateAuthorityID,omitempty"`
 	// UserData contains configuration information or scripts to use upon launch.
 	UserData []byte `json:"userData,omitempty"`
 }

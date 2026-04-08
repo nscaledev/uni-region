@@ -18,6 +18,7 @@ rules:
   resources:
   - identities
   - filestorages
+  - sshcertificateauthorities
   verbs:
   - list
   - watch

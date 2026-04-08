@@ -307,6 +307,20 @@ type ClientInterface interface {
 
 	// PostApiV2ServersServerIDStop request
 	PostApiV2ServersServerIDStop(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiV2Sshcertificateauthorities request
+	GetApiV2Sshcertificateauthorities(ctx context.Context, params *GetApiV2SshcertificateauthoritiesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApiV2SshcertificateauthoritiesWithBody request with any body
+	PostApiV2SshcertificateauthoritiesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostApiV2Sshcertificateauthorities(ctx context.Context, body PostApiV2SshcertificateauthoritiesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityID request
+	DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityID(ctx context.Context, sshCertificateAuthorityID SshCertificateAuthorityIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID request
+	GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID(ctx context.Context, sshCertificateAuthorityID SshCertificateAuthorityIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) GetWellKnownOpenidProtectedResource(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -1235,6 +1249,66 @@ func (c *Client) PostApiV2ServersServerIDStart(ctx context.Context, serverID Ser
 
 func (c *Client) PostApiV2ServersServerIDStop(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostApiV2ServersServerIDStopRequest(c.Server, serverID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiV2Sshcertificateauthorities(ctx context.Context, params *GetApiV2SshcertificateauthoritiesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV2SshcertificateauthoritiesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiV2SshcertificateauthoritiesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV2SshcertificateauthoritiesRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiV2Sshcertificateauthorities(ctx context.Context, body PostApiV2SshcertificateauthoritiesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV2SshcertificateauthoritiesRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityID(ctx context.Context, sshCertificateAuthorityID SshCertificateAuthorityIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDRequest(c.Server, sshCertificateAuthorityID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID(ctx context.Context, sshCertificateAuthorityID SshCertificateAuthorityIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDRequest(c.Server, sshCertificateAuthorityID)
 	if err != nil {
 		return nil, err
 	}
@@ -4387,6 +4461,195 @@ func NewPostApiV2ServersServerIDStopRequest(server string, serverID ServerIDPara
 	return req, nil
 }
 
+// NewGetApiV2SshcertificateauthoritiesRequest generates requests for GetApiV2Sshcertificateauthorities
+func NewGetApiV2SshcertificateauthoritiesRequest(server string, params *GetApiV2SshcertificateauthoritiesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/sshcertificateauthorities")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Tag != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "tag", runtime.ParamLocationQuery, *params.Tag); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.OrganizationID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "organizationID", runtime.ParamLocationQuery, *params.OrganizationID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.ProjectID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "projectID", runtime.ParamLocationQuery, *params.ProjectID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostApiV2SshcertificateauthoritiesRequest calls the generic PostApiV2Sshcertificateauthorities builder with application/json body
+func NewPostApiV2SshcertificateauthoritiesRequest(server string, body PostApiV2SshcertificateauthoritiesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApiV2SshcertificateauthoritiesRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostApiV2SshcertificateauthoritiesRequestWithBody generates requests for PostApiV2Sshcertificateauthorities with any type of body
+func NewPostApiV2SshcertificateauthoritiesRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/sshcertificateauthorities")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDRequest generates requests for DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityID
+func NewDeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDRequest(server string, sshCertificateAuthorityID SshCertificateAuthorityIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "sshCertificateAuthorityID", runtime.ParamLocationPath, sshCertificateAuthorityID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/sshcertificateauthorities/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDRequest generates requests for GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID
+func NewGetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDRequest(server string, sshCertificateAuthorityID SshCertificateAuthorityIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "sshCertificateAuthorityID", runtime.ParamLocationPath, sshCertificateAuthorityID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/sshcertificateauthorities/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -4647,6 +4910,20 @@ type ClientWithResponsesInterface interface {
 
 	// PostApiV2ServersServerIDStopWithResponse request
 	PostApiV2ServersServerIDStopWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDStopResponse, error)
+
+	// GetApiV2SshcertificateauthoritiesWithResponse request
+	GetApiV2SshcertificateauthoritiesWithResponse(ctx context.Context, params *GetApiV2SshcertificateauthoritiesParams, reqEditors ...RequestEditorFn) (*GetApiV2SshcertificateauthoritiesResponse, error)
+
+	// PostApiV2SshcertificateauthoritiesWithBodyWithResponse request with any body
+	PostApiV2SshcertificateauthoritiesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2SshcertificateauthoritiesResponse, error)
+
+	PostApiV2SshcertificateauthoritiesWithResponse(ctx context.Context, body PostApiV2SshcertificateauthoritiesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV2SshcertificateauthoritiesResponse, error)
+
+	// DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDWithResponse request
+	DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDWithResponse(ctx context.Context, sshCertificateAuthorityID SshCertificateAuthorityIDParameter, reqEditors ...RequestEditorFn) (*DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse, error)
+
+	// GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDWithResponse request
+	GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDWithResponse(ctx context.Context, sshCertificateAuthorityID SshCertificateAuthorityIDParameter, reqEditors ...RequestEditorFn) (*GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse, error)
 }
 
 type GetWellKnownOpenidProtectedResourceResponse struct {
@@ -6286,6 +6563,112 @@ func (r PostApiV2ServersServerIDStopResponse) StatusCode() int {
 	return 0
 }
 
+type GetApiV2SshcertificateauthoritiesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *SshCertificateAuthoritiesV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV2SshcertificateauthoritiesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV2SshcertificateauthoritiesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostApiV2SshcertificateauthoritiesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *SshCertificateAuthorityV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON422      *externalRef0.UnprocessableContentResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApiV2SshcertificateauthoritiesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApiV2SshcertificateauthoritiesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *SshCertificateAuthorityV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 // GetWellKnownOpenidProtectedResourceWithResponse request returning *GetWellKnownOpenidProtectedResourceResponse
 func (c *ClientWithResponses) GetWellKnownOpenidProtectedResourceWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWellKnownOpenidProtectedResourceResponse, error) {
 	rsp, err := c.GetWellKnownOpenidProtectedResource(ctx, reqEditors...)
@@ -6970,6 +7353,50 @@ func (c *ClientWithResponses) PostApiV2ServersServerIDStopWithResponse(ctx conte
 		return nil, err
 	}
 	return ParsePostApiV2ServersServerIDStopResponse(rsp)
+}
+
+// GetApiV2SshcertificateauthoritiesWithResponse request returning *GetApiV2SshcertificateauthoritiesResponse
+func (c *ClientWithResponses) GetApiV2SshcertificateauthoritiesWithResponse(ctx context.Context, params *GetApiV2SshcertificateauthoritiesParams, reqEditors ...RequestEditorFn) (*GetApiV2SshcertificateauthoritiesResponse, error) {
+	rsp, err := c.GetApiV2Sshcertificateauthorities(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV2SshcertificateauthoritiesResponse(rsp)
+}
+
+// PostApiV2SshcertificateauthoritiesWithBodyWithResponse request with arbitrary body returning *PostApiV2SshcertificateauthoritiesResponse
+func (c *ClientWithResponses) PostApiV2SshcertificateauthoritiesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2SshcertificateauthoritiesResponse, error) {
+	rsp, err := c.PostApiV2SshcertificateauthoritiesWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiV2SshcertificateauthoritiesResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostApiV2SshcertificateauthoritiesWithResponse(ctx context.Context, body PostApiV2SshcertificateauthoritiesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV2SshcertificateauthoritiesResponse, error) {
+	rsp, err := c.PostApiV2Sshcertificateauthorities(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiV2SshcertificateauthoritiesResponse(rsp)
+}
+
+// DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDWithResponse request returning *DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse
+func (c *ClientWithResponses) DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDWithResponse(ctx context.Context, sshCertificateAuthorityID SshCertificateAuthorityIDParameter, reqEditors ...RequestEditorFn) (*DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse, error) {
+	rsp, err := c.DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityID(ctx, sshCertificateAuthorityID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse(rsp)
+}
+
+// GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDWithResponse request returning *GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse
+func (c *ClientWithResponses) GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDWithResponse(ctx context.Context, sshCertificateAuthorityID SshCertificateAuthorityIDParameter, reqEditors ...RequestEditorFn) (*GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse, error) {
+	rsp, err := c.GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID(ctx, sshCertificateAuthorityID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse(rsp)
 }
 
 // ParseGetWellKnownOpenidProtectedResourceResponse parses an HTTP response from a GetWellKnownOpenidProtectedResourceWithResponse call
@@ -10455,6 +10882,236 @@ func ParsePostApiV2ServersServerIDStopResponse(rsp *http.Response) (*PostApiV2Se
 	}
 
 	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiV2SshcertificateauthoritiesResponse parses an HTTP response from a GetApiV2SshcertificateauthoritiesWithResponse call
+func ParseGetApiV2SshcertificateauthoritiesResponse(rsp *http.Response) (*GetApiV2SshcertificateauthoritiesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV2SshcertificateauthoritiesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SshCertificateAuthoritiesV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostApiV2SshcertificateauthoritiesResponse parses an HTTP response from a PostApiV2SshcertificateauthoritiesWithResponse call
+func ParsePostApiV2SshcertificateauthoritiesResponse(rsp *http.Response) (*PostApiV2SshcertificateauthoritiesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApiV2SshcertificateauthoritiesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest SshCertificateAuthorityV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest externalRef0.UnprocessableContentResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse parses an HTTP response from a DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDWithResponse call
+func ParseDeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse(rsp *http.Response) (*DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse parses an HTTP response from a GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDWithResponse call
+func ParseGetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse(rsp *http.Response) (*GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SshCertificateAuthorityV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest externalRef0.BadRequestResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

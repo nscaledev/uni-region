@@ -60,6 +60,7 @@ func main() {
 
 	identityConsumer := consumer.NewCascadingDelete(cli, &regionv1.IdentityList{}, consumer.WithNamespace(options.Namespace), consumer.WithResourceLabel(coreconstants.ProjectLabel))
 	fileStorageConsumer := consumer.NewCascadingDelete(cli, &regionv1.FileStorageList{}, consumer.WithNamespace(options.Namespace), consumer.WithResourceLabel(coreconstants.ProjectLabel))
+	sshCertificateAuthorityConsumer := consumer.NewCascadingDelete(cli, &regionv1.SSHCertificateAuthorityList{}, consumer.WithNamespace(options.Namespace), consumer.WithResourceLabel(coreconstants.ProjectLabel))
 
 	scheme, err := client.NewScheme(identityv1.AddToScheme)
 	if err != nil {
@@ -67,7 +68,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := kubernetes.New(cr.GetConfigOrDie(), scheme, &identityv1.Project{}).Run(ctx, identityConsumer, fileStorageConsumer); err != nil {
+	if err := kubernetes.New(cr.GetConfigOrDie(), scheme, &identityv1.Project{}).Run(ctx, identityConsumer, fileStorageConsumer, sshCertificateAuthorityConsumer); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
