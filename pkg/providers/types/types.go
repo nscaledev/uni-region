@@ -195,3 +195,9 @@ type ExternalNetwork struct {
 
 // ExternalNetworks is a list of provider networks.
 type ExternalNetworks []ExternalNetwork
+
+// ServerCreateOptions contains launch-time options derived from a server resource.
+type ServerCreateOptions struct {
+	// UserData overrides the user data passed to the provider when specified.
+	UserData []byte
+}

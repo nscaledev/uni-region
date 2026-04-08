@@ -18,7 +18,6 @@ limitations under the License.
 package server
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -26,7 +25,6 @@ import (
 	"net"
 	"reflect"
 	"slices"
-	"strings"
 
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -47,6 +45,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
+	servermanager "github.com/unikorn-cloud/region/pkg/provisioners/managers/server"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -272,28 +271,11 @@ func validateUserDataForSSHCertificateAuthority(sshCertificateAuthorityID *strin
 		return nil
 	}
 
-	if bytes.HasPrefix(*userData, []byte{0x1f, 0x8b}) {
-		return errors.HTTPUnprocessableContent("userData gzip format is not supported when sshCertificateAuthorityId is specified")
-	}
-
-	if isRecognizedCloudInitUserData(string(bytes.TrimSpace(bytes.SplitN(*userData, []byte{'\n'}, 2)[0]))) {
+	if err := servermanager.ValidateManagedUserData(*userData); err == nil {
 		return nil
 	}
 
 	return errors.HTTPUnprocessableContent("userData must be a recognized cloud-init format when sshCertificateAuthorityId is specified")
-}
-
-func isRecognizedCloudInitUserData(firstLine string) bool {
-	if strings.HasPrefix(firstLine, "Content-Type: multipart/") {
-		return true
-	}
-
-	switch firstLine {
-	case "#cloud-config", "#cloud-boothook", "#cloud-config-archive", "## template: jinja", "#include", "#part-handler":
-		return true
-	}
-
-	return strings.HasPrefix(firstLine, "#!")
 }
 
 func (c *ClientV2) validateSSHCertificateAuthorityReference(ctx context.Context, organizationID, projectID string, sshCertificateAuthorityID *string) error {

@@ -69,6 +69,9 @@ var CreateImageMetadata = createImageMetadata
 //nolint:gochecknoglobals
 var MetadataKey = metadataKey
 
+//nolint:gochecknoglobals
+var ServerForCreate = serverForCreate
+
 func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {
 	return &Provider{
 		client: client,
@@ -114,4 +117,8 @@ func ReconcileFloatingIP(ctx context.Context, p *Provider, client FloatingIPInte
 func ReconcileServer(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
 	// Lewis Denham-Parry was here.
 	return p.reconcileServer(ctx, client, server, port, keyName)
+}
+
+func ResolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {
+	return resolveServerKeyName(server, identity)
 }

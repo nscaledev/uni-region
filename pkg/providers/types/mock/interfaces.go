@@ -406,17 +406,17 @@ func (m *MockServer) EXPECT() *MockServerMockRecorder {
 }
 
 // CreateServer mocks base method.
-func (m *MockServer) CreateServer(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server) error {
+func (m *MockServer) CreateServer(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server, options *types.ServerCreateOptions) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateServer", ctx, identity, server)
+	ret := m.ctrl.Call(m, "CreateServer", ctx, identity, server, options)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // CreateServer indicates an expected call of CreateServer.
-func (mr *MockServerMockRecorder) CreateServer(ctx, identity, server any) *gomock.Call {
+func (mr *MockServerMockRecorder) CreateServer(ctx, identity, server, options any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateServer", reflect.TypeOf((*MockServer)(nil).CreateServer), ctx, identity, server)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateServer", reflect.TypeOf((*MockServer)(nil).CreateServer), ctx, identity, server, options)
 }
 
 // DeleteServer mocks base method.
@@ -729,17 +729,17 @@ func (mr *MockProviderMockRecorder) CreateSecurityGroup(ctx, identity, securityG
 }
 
 // CreateServer mocks base method.
-func (m *MockProvider) CreateServer(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server) error {
+func (m *MockProvider) CreateServer(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server, options *types.ServerCreateOptions) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateServer", ctx, identity, server)
+	ret := m.ctrl.Call(m, "CreateServer", ctx, identity, server, options)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // CreateServer indicates an expected call of CreateServer.
-func (mr *MockProviderMockRecorder) CreateServer(ctx, identity, server any) *gomock.Call {
+func (mr *MockProviderMockRecorder) CreateServer(ctx, identity, server, options any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateServer", reflect.TypeOf((*MockProvider)(nil).CreateServer), ctx, identity, server)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateServer", reflect.TypeOf((*MockProvider)(nil).CreateServer), ctx, identity, server, options)
 }
 
 // CreateSnapshot mocks base method.

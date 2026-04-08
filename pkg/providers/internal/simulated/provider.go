@@ -334,7 +334,7 @@ func (p *Provider) DeleteSecurityGroup(_ context.Context, _ *unikornv1.Identity,
 	return unsupported("DeleteSecurityGroup")
 }
 
-func (p *Provider) CreateServer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server) error {
+func (p *Provider) CreateServer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ *types.ServerCreateOptions) error {
 	return unsupported("CreateServer")
 }
 
