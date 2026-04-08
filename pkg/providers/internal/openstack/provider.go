@@ -2197,11 +2197,24 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 }
 
 // CreateServer creates or updates a server.
-func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
+func serverForCreate(server *unikornv1.Server, options *types.ServerCreateOptions) *unikornv1.Server {
+	if options == nil || options.UserData == nil {
+		return server
+	}
+
+	serverForCreate := server.DeepCopy()
+	serverForCreate.Spec.UserData = options.UserData
+
+	return serverForCreate
+}
+
+func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, options *types.ServerCreateOptions) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return err
 	}
+
+	serverForCreate := serverForCreate(server, options)
 
 	networking, err := p.networkFromServicePrincipal(ctx, identity)
 	if err != nil {
@@ -2222,11 +2235,25 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
-	if _, err := p.reconcileServer(ctx, compute, server, port, *openstackIdentity.Spec.SSHKeyName); err != nil {
+	if _, err := p.reconcileServer(ctx, compute, serverForCreate, port, resolveServerKeyName(server, openstackIdentity)); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func resolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {
+	if server.Spec.SSHCertificateAuthorityID != nil {
+		// gophercloud omits the empty key_name field, which disables legacy Nova key injection
+		// for CA-bootstrapped servers.
+		return ""
+	}
+
+	if identity.Spec.SSHKeyName == nil {
+		return ""
+	}
+
+	return *identity.Spec.SSHKeyName
 }
 
 //nolint:cyclop

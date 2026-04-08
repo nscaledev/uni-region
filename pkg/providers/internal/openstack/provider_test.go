@@ -413,6 +413,25 @@ func openstackServerFixture(server *regionv1.Server) *servers.Server {
 	}
 }
 
+func sshCertificateAuthorityFixture() *regionv1.SSHCertificateAuthority {
+	return &regionv1.SSHCertificateAuthority{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      string(uuid.NewUUID()),
+			Namespace: "default",
+		},
+		Spec: regionv1.SSHCertificateAuthoritySpec{
+			PublicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMI0BxP3V7j7iB5nV5d8zWwM9W4a8W2R7x5gNBy3M2Q7 test-ca",
+		},
+	}
+}
+
+func withSSHCertificateAuthority(sshCertificateAuthority *regionv1.SSHCertificateAuthority) func(*regionv1.Server) {
+	return func(s *regionv1.Server) {
+		s.Namespace = sshCertificateAuthority.Namespace
+		s.Spec.SSHCertificateAuthorityID = ptr.To(sshCertificateAuthority.Name)
+	}
+}
+
 // getClient is a terse way to create a Kubernetes client.
 func getClient(t *testing.T, objects []client.Object) client.Client {
 	t.Helper()
@@ -1221,5 +1240,72 @@ func TestReconcileServerTags(t *testing.T) {
 
 		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
 		require.NoError(t, err)
+	})
+}
+
+func TestResolveServerKeyName(t *testing.T) {
+	t.Parallel()
+
+	t.Run("UsesImplicitKeyWithoutSSHCertificateAuthority", func(t *testing.T) {
+		t.Parallel()
+
+		server := serverFixture()
+		identity := &regionv1.OpenstackIdentity{
+			Spec: regionv1.OpenstackIdentitySpec{
+				SSHKeyName: ptr.To(sshKeyName),
+			},
+		}
+
+		require.Equal(t, sshKeyName, openstack.ResolveServerKeyName(server, identity))
+	})
+
+	t.Run("SuppressesImplicitKeyWithSSHCertificateAuthority", func(t *testing.T) {
+		t.Parallel()
+
+		sshCertificateAuthority := sshCertificateAuthorityFixture()
+		server := serverFixture(withSSHCertificateAuthority(sshCertificateAuthority))
+		identity := &regionv1.OpenstackIdentity{
+			Spec: regionv1.OpenstackIdentitySpec{
+				SSHKeyName: ptr.To(sshKeyName),
+			},
+		}
+
+		require.Empty(t, openstack.ResolveServerKeyName(server, identity))
+	})
+}
+
+func TestServerForCreate(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ReturnsOriginalServerWithoutInjectedUserData", func(t *testing.T) {
+		t.Parallel()
+
+		server := serverFixture()
+
+		result := openstack.ServerForCreate(server, nil)
+
+		require.Same(t, server, result)
+		require.Nil(t, server.Spec.UserData)
+	})
+
+	t.Run("ReturnsCopyWhenInjectedUserDataIsPresent", func(t *testing.T) {
+		t.Parallel()
+
+		sshCertificateAuthority := sshCertificateAuthorityFixture()
+		server := serverFixture(withSSHCertificateAuthority(sshCertificateAuthority))
+		server.Status.PrivateIP = ptr.To(serverPortIP)
+		server.Status.PublicIP = ptr.To("12.34.56.78")
+
+		options := &types.ServerCreateOptions{
+			UserData: []byte("#cloud-config\nusers: []\n"),
+		}
+
+		result := openstack.ServerForCreate(server, options)
+
+		require.NotSame(t, server, result)
+		require.Equal(t, options.UserData, result.Spec.UserData)
+		require.Nil(t, server.Spec.UserData)
+		require.Equal(t, ptr.To(serverPortIP), server.Status.PrivateIP)
+		require.Equal(t, ptr.To("12.34.56.78"), server.Status.PublicIP)
 	})
 }

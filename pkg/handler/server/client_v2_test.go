@@ -146,6 +146,7 @@ func aclWithSrvUpdate(orgID string) *identityapi.Acl {
 		},
 	}
 }
+
 func minimalServerV2CreateRequest() *openapi.ServerV2Create {
 	return &openapi.ServerV2Create{
 		Metadata: coreapi.ResourceWriteMetadata{Name: "test-server"},
@@ -167,19 +168,46 @@ func withPrincipal(ctx context.Context) context.Context {
 	})
 }
 
-func testSSHCertificateAuthorityWithProject(orgID, projID, caID string) *regionv1.SSHCertificateAuthority {
+func testSSHCertificateAuthorityWithProject(projID, caID string) *regionv1.SSHCertificateAuthority {
 	return &regionv1.SSHCertificateAuthority{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      caID,
 			Namespace: srvNamespace,
 			Labels: map[string]string{
-				coreconstants.OrganizationLabel:   orgID,
+				coreconstants.OrganizationLabel:   srvOrganizationID,
 				coreconstants.ProjectLabel:        projID,
 				constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
 			},
 		},
 		Spec: regionv1.SSHCertificateAuthoritySpec{
 			PublicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBuildOnlyTrustAnchor comment",
+		},
+	}
+}
+
+func testServerWithSSHCertificateAuthority(orgID, projID, serverID, caID string) *regionv1.Server {
+	return &regionv1.Server{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      serverID,
+			Namespace: srvNamespace,
+			Labels: map[string]string{
+				coreconstants.OrganizationLabel:   orgID,
+				coreconstants.ProjectLabel:        projID,
+				constants.RegionLabel:             "test-region",
+				constants.IdentityLabel:           "test-identity",
+				constants.NetworkLabel:            srvNetworkID,
+				constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
+			},
+		},
+		Spec: regionv1.ServerSpec{
+			FlavorID: "flavor-1",
+			Image: &regionv1.ServerImage{
+				ID: "image-1",
+			},
+			Networks: []regionv1.ServerNetworkSpec{{
+				ID: srvNetworkID,
+			}},
+			SSHCertificateAuthorityID: ptr.To(caID),
 		},
 	}
 }
@@ -285,7 +313,7 @@ func TestServerCreateV2SSHCertificateAuthorityRejectsCrossProjectReference(t *te
 	ctrl := gomock.NewController(t)
 
 	network := testSrvNetworkWithProject(srvProjectID)
-	ca := testSSHCertificateAuthorityWithProject(srvOrganizationID, "other-project", "ca-1")
+	ca := testSSHCertificateAuthorityWithProject("other-project", "ca-1")
 
 	k8sClient := newSrvFakeClient(t, network, ca).Build()
 
@@ -319,7 +347,7 @@ func TestServerCreateV2SSHCertificateAuthorityRejectsUnsupportedUserData(t *test
 	ctrl := gomock.NewController(t)
 
 	network := testSrvNetworkWithProject(srvProjectID)
-	ca := testSSHCertificateAuthorityWithProject(srvOrganizationID, srvProjectID, "ca-1")
+	ca := testSSHCertificateAuthorityWithProject(srvProjectID, "ca-1")
 
 	k8sClient := newSrvFakeClient(t, network, ca).Build()
 
@@ -351,37 +379,57 @@ func TestServerCreateV2SSHCertificateAuthorityRejectsUnsupportedUserData(t *test
 func TestServerCreateV2SSHCertificateAuthorityAcceptsSupportedUserData(t *testing.T) {
 	t.Parallel()
 
-	ctrl := gomock.NewController(t)
+	tests := []struct {
+		name     string
+		userData []byte
+	}{
+		{
+			name:     "CloudConfig",
+			userData: []byte("#cloud-config\nusers: []\n"),
+		},
+		{
+			name:     "Multipart",
+			userData: []byte("Content-Type: multipart/mixed; boundary=\"BOUNDARY\"\r\nMIME-Version: 1.0\r\n\r\n--BOUNDARY\r\nContent-Type: text/x-shellscript\r\n\r\n#!/bin/sh\necho hello\r\n--BOUNDARY--\r\n"),
+		},
+	}
 
-	network := testSrvNetworkWithProject(srvProjectID)
-	ca := testSSHCertificateAuthorityWithProject(srvOrganizationID, srvProjectID, "ca-1")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-	k8sClient := newSrvFakeClient(t, network, ca).Build()
+			ctrl := gomock.NewController(t)
 
-	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
-		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
-			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
-		}, nil)
+			network := testSrvNetworkWithProject(srvProjectID)
+			ca := testSSHCertificateAuthorityWithProject(srvProjectID, "ca-1")
 
-	c := server.NewClientV2(common.ClientArgs{
-		Client:    k8sClient,
-		Namespace: srvNamespace,
-		Identity:  mockIdentity,
-	})
+			k8sClient := newSrvFakeClient(t, network, ca).Build()
 
-	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+			mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+			mockIdentity.EXPECT().
+				GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
+				Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
+					HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+				}, nil)
 
-	request := minimalServerV2CreateRequest()
-	request.Spec.SshCertificateAuthorityId = ptr.To(ca.Name)
-	request.Spec.UserData = ptr.To([]byte("#cloud-config\nusers: []\n"))
+			c := server.NewClientV2(common.ClientArgs{
+				Client:    k8sClient,
+				Namespace: srvNamespace,
+				Identity:  mockIdentity,
+			})
 
-	result, err := c.CreateV2(ctx, request)
+			ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
 
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, ca.Name, *result.Status.SshCertificateAuthorityId)
+			request := minimalServerV2CreateRequest()
+			request.Spec.SshCertificateAuthorityId = ptr.To(ca.Name)
+			request.Spec.UserData = ptr.To(test.userData)
+
+			result, err := c.CreateV2(ctx, request)
+
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Equal(t, ca.Name, *result.Status.SshCertificateAuthorityId)
+		})
+	}
 }
 
 func TestServerCreateV2RejectsInvalidAllowedSourceAddress(t *testing.T) {

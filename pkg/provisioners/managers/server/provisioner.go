@@ -84,6 +84,83 @@ func (p *Provisioner) securityGroupIDs() []string {
 	return ids
 }
 
+func (p *Provisioner) sshCertificateAuthorityKey() *client.ObjectKey {
+	if p.server.Spec.SSHCertificateAuthorityID == nil {
+		return nil
+	}
+
+	return &client.ObjectKey{
+		Namespace: p.server.Namespace,
+		Name:      *p.server.Spec.SSHCertificateAuthorityID,
+	}
+}
+
+func (p *Provisioner) addSSHCertificateAuthorityReference(ctx context.Context, cli client.Client, reference string) error {
+	key := p.sshCertificateAuthorityKey()
+	if key == nil {
+		return nil
+	}
+
+	return manager.AddResourceReference(ctx, cli, &unikornv1.SSHCertificateAuthority{}, *key, reference)
+}
+
+func (p *Provisioner) removeSSHCertificateAuthorityReference(ctx context.Context, cli client.Client, reference string) error {
+	key := p.sshCertificateAuthorityKey()
+	if key == nil {
+		return nil
+	}
+
+	return manager.RemoveResourceReference(ctx, cli, &unikornv1.SSHCertificateAuthority{}, *key, reference)
+}
+
+func (p *Provisioner) addConsumedResourceReferences(ctx context.Context, cli client.Client, reference string) error {
+	if err := manager.AddResourceReferences(ctx, cli, &unikornv1.NetworkList{}, p.identityListOptions(), reference, p.networkIDs()); err != nil {
+		return fmt.Errorf("%w: failed to add network references", err)
+	}
+
+	if err := manager.AddResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, p.identityListOptions(), reference, p.securityGroupIDs()); err != nil {
+		return fmt.Errorf("%w: failed to add security group references", err)
+	}
+
+	if err := p.addSSHCertificateAuthorityReference(ctx, cli, reference); err != nil {
+		return fmt.Errorf("%w: failed to add SSH certificate authority reference", err)
+	}
+
+	return nil
+}
+
+func (p *Provisioner) removeConsumedResourceReferences(ctx context.Context, cli client.Client, reference string) error {
+	if err := manager.RemoveResourceReferences(ctx, cli, &unikornv1.NetworkList{}, p.identityListOptions(), reference, p.networkIDs()); err != nil {
+		return fmt.Errorf("%w: failed to remove network references", err)
+	}
+
+	if err := manager.RemoveResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, p.identityListOptions(), reference, p.securityGroupIDs()); err != nil {
+		return fmt.Errorf("%w: failed to remove security group references", err)
+	}
+
+	if err := p.removeSSHCertificateAuthorityReference(ctx, cli, reference); err != nil {
+		return fmt.Errorf("%w: failed to remove SSH certificate authority reference", err)
+	}
+
+	return nil
+}
+
+func (p *Provisioner) clearConsumedResourceReferences(ctx context.Context, cli client.Client, reference string) error {
+	if err := manager.ClearResourceReferences(ctx, cli, &unikornv1.NetworkList{}, p.identityListOptions(), reference); err != nil {
+		return fmt.Errorf("%w: failed to clear network references", err)
+	}
+
+	if err := manager.ClearResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, p.identityListOptions(), reference); err != nil {
+		return fmt.Errorf("%w: failed to clear security group references", err)
+	}
+
+	if err := p.removeSSHCertificateAuthorityReference(ctx, cli, reference); err != nil {
+		return fmt.Errorf("%w: failed to clear SSH certificate authority reference", err)
+	}
+
+	return nil
+}
+
 // identityListOptions lists all resources associated with an identity.
 func (p *Provisioner) identityListOptions() *client.ListOptions {
 	selector := map[string]string{
@@ -109,12 +186,8 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
-	if err := manager.AddResourceReferences(ctx, cli, &unikornv1.NetworkList{}, p.identityListOptions(), reference, p.networkIDs()); err != nil {
-		return fmt.Errorf("%w: failed to add network references", err)
-	}
-
-	if err := manager.AddResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, p.identityListOptions(), reference, p.securityGroupIDs()); err != nil {
-		return fmt.Errorf("%w: failed to add security group references", err)
+	if err := p.addConsumedResourceReferences(ctx, cli, reference); err != nil {
+		return err
 	}
 
 	provider, identity, err := p.ProviderAndIdentity(ctx, p.server)
@@ -126,18 +199,19 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
+	options, err := p.serverCreateOptions(ctx, cli)
+	if err != nil {
+		return err
+	}
+
 	// Do the provisioning.
-	if err := provider.CreateServer(ctx, identity, p.server); err != nil {
+	if err := provider.CreateServer(ctx, identity, p.server, options); err != nil {
 		return err
 	}
 
 	// Release any references to any resources we no longer consume.
-	if err := manager.RemoveResourceReferences(ctx, cli, &unikornv1.NetworkList{}, p.identityListOptions(), reference, p.networkIDs()); err != nil {
-		return fmt.Errorf("%w: failed to remove network references", err)
-	}
-
-	if err := manager.RemoveResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, p.identityListOptions(), reference, p.securityGroupIDs()); err != nil {
-		return fmt.Errorf("%w: failed to remove security group references", err)
+	if err := p.removeConsumedResourceReferences(ctx, cli, reference); err != nil {
+		return err
 	}
 
 	return nil
@@ -165,12 +239,8 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
-	if err := manager.ClearResourceReferences(ctx, cli, &unikornv1.NetworkList{}, p.identityListOptions(), reference); err != nil {
-		return fmt.Errorf("%w: failed to clear network references", err)
-	}
-
-	if err := manager.ClearResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, p.identityListOptions(), reference); err != nil {
-		return fmt.Errorf("%w: failed to clear security group references", err)
+	if err := p.clearConsumedResourceReferences(ctx, cli, reference); err != nil {
+		return err
 	}
 
 	return nil

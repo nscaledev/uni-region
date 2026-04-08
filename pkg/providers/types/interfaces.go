@@ -84,7 +84,7 @@ type SecurityGroup interface {
 
 type Server interface {
 	// CreateServer creates a new server.
-	CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
+	CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, options *ServerCreateOptions) error
 	// RebootServer soft reboots a server.
 	RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error
 	// StartServer starts a server.

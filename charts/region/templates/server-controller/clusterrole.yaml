@@ -44,6 +44,15 @@ rules:
   verbs:
   - update
   - patch
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - sshcertificateauthorities
+  verbs:
+  - get
+  - list
+  - update
+  - watch
 # TODO: delete me
 # ---- SNIP ----
 - apiGroups:
