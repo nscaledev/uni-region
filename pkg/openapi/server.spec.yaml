@@ -2792,9 +2792,10 @@ components:
             description: The network ID to attach a server to.
             type: string
           sshCertificateAuthorityId:
+            description: The SSH certificate authority used to bootstrap login trust when the server is created.
             $ref: '#/components/schemas/sshCertificateAuthorityID'
     serverV2Status:
-      description: Read only status information about a security group.
+      description: Read only status information about a server.
       type: object
       required:
       - regionId
@@ -2807,6 +2808,7 @@ components:
           description: The network a security group belongs to.
           type: string
         sshCertificateAuthorityId:
+          description: The SSH certificate authority configured when the server was created.
           $ref: '#/components/schemas/sshCertificateAuthorityID'
         powerState:
           $ref: '#/components/schemas/instanceLifecyclePhase'
