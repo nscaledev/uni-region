@@ -18,6 +18,7 @@ limitations under the License.
 package server
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -25,6 +26,7 @@ import (
 	"net"
 	"reflect"
 	"slices"
+	"strings"
 
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -40,6 +42,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
+	"github.com/unikorn-cloud/region/pkg/handler/sshcertificateauthority"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
@@ -151,11 +154,12 @@ func convertV2(in *regionv1.Server) *openapi.ServerV2Read {
 			UserData:   convertUserData(in.Spec.UserData),
 		},
 		Status: openapi.ServerV2Status{
-			RegionId:   in.Labels[constants.RegionLabel],
-			NetworkId:  in.Spec.Networks[0].ID,
-			PowerState: convertPowerStateV2(in.Status.Phase),
-			PrivateIP:  in.Status.PrivateIP,
-			PublicIP:   in.Status.PublicIP,
+			RegionId:                  in.Labels[constants.RegionLabel],
+			NetworkId:                 in.Spec.Networks[0].ID,
+			SshCertificateAuthorityId: in.Spec.SSHCertificateAuthorityID,
+			PowerState:                convertPowerStateV2(in.Status.Phase),
+			PrivateIP:                 in.Status.PrivateIP,
+			PublicIP:                  in.Status.PublicIP,
 		},
 	}
 
@@ -216,9 +220,9 @@ func generateSecurityGroups(in *openapi.ServerV2Networking) []regionv1.ServerSec
 	return out
 }
 
-func generateAllowedAddressPairs(in *openapi.ServerV2Networking) []regionv1.ServerNetworkAddressPair {
+func generateAllowedAddressPairs(in *openapi.ServerV2Networking) ([]regionv1.ServerNetworkAddressPair, error) {
 	if in == nil || in.AllowedSourceAddresses == nil || len(*in.AllowedSourceAddresses) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	prefixes := *in.AllowedSourceAddresses
@@ -226,7 +230,10 @@ func generateAllowedAddressPairs(in *openapi.ServerV2Networking) []regionv1.Serv
 	out := make([]regionv1.ServerNetworkAddressPair, len(prefixes))
 
 	for i := range prefixes {
-		_, prefix, _ := net.ParseCIDR(prefixes[i])
+		_, prefix, err := net.ParseCIDR(prefixes[i])
+		if err != nil {
+			return nil, errors.HTTPUnprocessableContent("allowedSourceAddresses must contain valid CIDR prefixes")
+		}
 
 		out[i] = regionv1.ServerNetworkAddressPair{
 			CIDR: corev1.IPv4Prefix{
@@ -235,16 +242,21 @@ func generateAllowedAddressPairs(in *openapi.ServerV2Networking) []regionv1.Serv
 		}
 	}
 
-	return out
+	return out, nil
 }
 
-func generateNetworks(networkID string, in *openapi.ServerV2Networking) []regionv1.ServerNetworkSpec {
-	out := regionv1.ServerNetworkSpec{
-		ID:                  networkID,
-		AllowedAddressPairs: generateAllowedAddressPairs(in),
+func generateNetworks(networkID string, in *openapi.ServerV2Networking) ([]regionv1.ServerNetworkSpec, error) {
+	allowedAddressPairs, err := generateAllowedAddressPairs(in)
+	if err != nil {
+		return nil, err
 	}
 
-	return []regionv1.ServerNetworkSpec{out}
+	out := regionv1.ServerNetworkSpec{
+		ID:                  networkID,
+		AllowedAddressPairs: allowedAddressPairs,
+	}
+
+	return []regionv1.ServerNetworkSpec{out}, nil
 }
 
 func generateUserData(in *[]byte) []byte {
@@ -255,7 +267,58 @@ func generateUserData(in *[]byte) []byte {
 	return *in
 }
 
-func (c *ClientV2) generateV2(ctx context.Context, organizationID, projectID string, in *openapi.ServerV2Update, network *regionv1.Network) (*regionv1.Server, error) {
+func validateUserDataForSSHCertificateAuthority(sshCertificateAuthorityID *string, userData *[]byte) error {
+	if sshCertificateAuthorityID == nil || userData == nil || len(*userData) == 0 {
+		return nil
+	}
+
+	if bytes.HasPrefix(*userData, []byte{0x1f, 0x8b}) {
+		return errors.HTTPUnprocessableContent("userData gzip format is not supported when sshCertificateAuthorityId is specified")
+	}
+
+	if isRecognizedCloudInitUserData(string(bytes.TrimSpace(bytes.SplitN(*userData, []byte{'\n'}, 2)[0]))) {
+		return nil
+	}
+
+	return errors.HTTPUnprocessableContent("userData must be a recognized cloud-init format when sshCertificateAuthorityId is specified")
+}
+
+func isRecognizedCloudInitUserData(firstLine string) bool {
+	if strings.HasPrefix(firstLine, "Content-Type: multipart/") {
+		return true
+	}
+
+	switch firstLine {
+	case "#cloud-config", "#cloud-boothook", "#cloud-config-archive", "## template: jinja", "#include", "#part-handler":
+		return true
+	}
+
+	return strings.HasPrefix(firstLine, "#!")
+}
+
+func (c *ClientV2) validateSSHCertificateAuthorityReference(ctx context.Context, organizationID, projectID string, sshCertificateAuthorityID *string) error {
+	if sshCertificateAuthorityID == nil {
+		return nil
+	}
+
+	resource, err := sshcertificateauthority.New(c.Client.ClientArgs).GetV2Raw(ctx, *sshCertificateAuthorityID)
+	if err != nil {
+		return err
+	}
+
+	if resource.Labels[coreconstants.OrganizationLabel] != organizationID || resource.Labels[coreconstants.ProjectLabel] != projectID {
+		return errors.HTTPUnprocessableContent("sshCertificateAuthorityId must reference an SSH certificate authority in the same organization and project as the server")
+	}
+
+	return nil
+}
+
+func (c *ClientV2) generateV2(ctx context.Context, organizationID, projectID string, in *openapi.ServerV2Update, network *regionv1.Network, sshCertificateAuthorityID *string) (*regionv1.Server, error) {
+	networks, err := generateNetworks(network.Name, in.Spec.Networking)
+	if err != nil {
+		return nil, err
+	}
+
 	out := &regionv1.Server{
 		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, c.Namespace).
 			WithOrganization(organizationID).
@@ -271,10 +334,11 @@ func (c *ClientV2) generateV2(ctx context.Context, organizationID, projectID str
 			Image: &regionv1.ServerImage{
 				ID: in.Spec.ImageId,
 			},
-			PublicIPAllocation: generatePublicIPAllocation(in.Spec.Networking),
-			SecurityGroups:     generateSecurityGroups(in.Spec.Networking),
-			Networks:           generateNetworks(network.Name, in.Spec.Networking),
-			UserData:           generateUserData(in.Spec.UserData),
+			PublicIPAllocation:        generatePublicIPAllocation(in.Spec.Networking),
+			SecurityGroups:            generateSecurityGroups(in.Spec.Networking),
+			Networks:                  networks,
+			SSHCertificateAuthorityID: sshCertificateAuthorityID,
+			UserData:                  generateUserData(in.Spec.UserData),
 		},
 	}
 
@@ -397,12 +461,20 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 		return nil, err
 	}
 
+	if err := validateUserDataForSSHCertificateAuthority(request.Spec.SshCertificateAuthorityId, request.Spec.UserData); err != nil {
+		return nil, err
+	}
+
 	commonRequest, err := convertCreateToUpdateRequest(request)
 	if err != nil {
 		return nil, err
 	}
 
-	resource, err := c.generateV2(ctx, organizationID, projectID, commonRequest, network)
+	if err := c.validateSSHCertificateAuthorityReference(ctx, organizationID, projectID, request.Spec.SshCertificateAuthorityId); err != nil {
+		return nil, err
+	}
+
+	resource, err := c.generateV2(ctx, organizationID, projectID, commonRequest, network, request.Spec.SshCertificateAuthorityId)
 	if err != nil {
 		return nil, err
 	}
@@ -462,7 +534,7 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *opena
 		return nil, err
 	}
 
-	if err := rbac.AllowProjectScope(ctx, "region:servers", identityapi.Delete, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel]); err != nil {
+	if err := rbac.AllowProjectScope(ctx, "region:servers", identityapi.Update, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel]); err != nil {
 		return nil, err
 	}
 
@@ -476,7 +548,9 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *opena
 		return nil, err
 	}
 
-	required, err := c.generateV2(ctx, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel], request, network)
+	// User data is only consumed during initial server bootstrap. Updates preserve it for
+	// completeness and future rebuild support, but they do not re-run cloud-init validation.
+	required, err := c.generateV2(ctx, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel], request, network, current.Spec.SSHCertificateAuthorityID)
 	if err != nil {
 		return nil, err
 	}
