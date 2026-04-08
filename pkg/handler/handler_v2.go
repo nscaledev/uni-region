@@ -23,6 +23,7 @@ import (
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/region/pkg/handler/sshcertificateauthority"
 	"github.com/unikorn-cloud/region/pkg/handler/storage"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
@@ -146,6 +147,56 @@ func (h *Handler) PutApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter, r
 
 func (h *Handler) DeleteApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, securityGroupID openapi.SecurityGroupIDParameter) {
 	if err := h.securityGroupClient().DeleteV2(r.Context(), securityGroupID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (h *Handler) sshCertificateAuthorityClient() *sshcertificateauthority.Client {
+	return sshcertificateauthority.New(h.ClientArgs)
+}
+
+func (h *Handler) GetApiV2Sshcertificateauthorities(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2SshcertificateauthoritiesParams) {
+	result, err := h.sshCertificateAuthorityClient().ListV2(r.Context(), params)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
+func (h *Handler) PostApiV2Sshcertificateauthorities(w http.ResponseWriter, r *http.Request) {
+	request := &openapi.SshCertificateAuthorityV2Create{}
+
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := h.sshCertificateAuthorityClient().CreateV2(r.Context(), request)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusCreated, result)
+}
+
+func (h *Handler) GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID(w http.ResponseWriter, r *http.Request, sshCertificateAuthorityID openapi.SshCertificateAuthorityIDParameter) {
+	result, err := h.sshCertificateAuthorityClient().GetV2(r.Context(), sshCertificateAuthorityID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
+func (h *Handler) DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityID(w http.ResponseWriter, r *http.Request, sshCertificateAuthorityID openapi.SshCertificateAuthorityIDParameter) {
+	if err := h.sshCertificateAuthorityClient().DeleteV2(r.Context(), sshCertificateAuthorityID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}

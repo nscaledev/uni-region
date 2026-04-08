@@ -200,6 +200,18 @@ type ServerInterface interface {
 
 	// (POST /api/v2/servers/{serverID}/stop)
 	PostApiV2ServersServerIDStop(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter)
+	// List SSH certificate authorities
+	// (GET /api/v2/sshcertificateauthorities)
+	GetApiV2Sshcertificateauthorities(w http.ResponseWriter, r *http.Request, params GetApiV2SshcertificateauthoritiesParams)
+	// Create SSH certificate authority
+	// (POST /api/v2/sshcertificateauthorities)
+	PostApiV2Sshcertificateauthorities(w http.ResponseWriter, r *http.Request)
+	// Delete SSH certificate authority
+	// (DELETE /api/v2/sshcertificateauthorities/{sshCertificateAuthorityID})
+	DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityID(w http.ResponseWriter, r *http.Request, sshCertificateAuthorityID SshCertificateAuthorityIDParameter)
+	// Get SSH certificate authority
+	// (GET /api/v2/sshcertificateauthorities/{sshCertificateAuthorityID})
+	GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID(w http.ResponseWriter, r *http.Request, sshCertificateAuthorityID SshCertificateAuthorityIDParameter)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -532,6 +544,30 @@ func (_ Unimplemented) PostApiV2ServersServerIDStart(w http.ResponseWriter, r *h
 
 // (POST /api/v2/servers/{serverID}/stop)
 func (_ Unimplemented) PostApiV2ServersServerIDStop(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List SSH certificate authorities
+// (GET /api/v2/sshcertificateauthorities)
+func (_ Unimplemented) GetApiV2Sshcertificateauthorities(w http.ResponseWriter, r *http.Request, params GetApiV2SshcertificateauthoritiesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create SSH certificate authority
+// (POST /api/v2/sshcertificateauthorities)
+func (_ Unimplemented) PostApiV2Sshcertificateauthorities(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Delete SSH certificate authority
+// (DELETE /api/v2/sshcertificateauthorities/{sshCertificateAuthorityID})
+func (_ Unimplemented) DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityID(w http.ResponseWriter, r *http.Request, sshCertificateAuthorityID SshCertificateAuthorityIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get SSH certificate authority
+// (GET /api/v2/sshcertificateauthorities/{sshCertificateAuthorityID})
+func (_ Unimplemented) GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID(w http.ResponseWriter, r *http.Request, sshCertificateAuthorityID SshCertificateAuthorityIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3138,6 +3174,137 @@ func (siw *ServerInterfaceWrapper) PostApiV2ServersServerIDStop(w http.ResponseW
 	handler.ServeHTTP(w, r)
 }
 
+// GetApiV2Sshcertificateauthorities operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV2Sshcertificateauthorities(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetApiV2SshcertificateauthoritiesParams
+
+	// ------------- Optional query parameter "tag" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "tag", r.URL.Query(), &params.Tag)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "organizationID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "organizationID", r.URL.Query(), &params.OrganizationID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "projectID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "projectID", r.URL.Query(), &params.ProjectID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV2Sshcertificateauthorities(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostApiV2Sshcertificateauthorities operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV2Sshcertificateauthorities(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiV2Sshcertificateauthorities(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityID operation middleware
+func (siw *ServerInterfaceWrapper) DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "sshCertificateAuthorityID" -------------
+	var sshCertificateAuthorityID SshCertificateAuthorityIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sshCertificateAuthorityID", chi.URLParam(r, "sshCertificateAuthorityID"), &sshCertificateAuthorityID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sshCertificateAuthorityID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityID(w, r, sshCertificateAuthorityID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "sshCertificateAuthorityID" -------------
+	var sshCertificateAuthorityID SshCertificateAuthorityIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sshCertificateAuthorityID", chi.URLParam(r, "sshCertificateAuthorityID"), &sshCertificateAuthorityID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sshCertificateAuthorityID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID(w, r, sshCertificateAuthorityID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -3436,6 +3603,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v2/servers/{serverID}/stop", wrapper.PostApiV2ServersServerIDStop)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v2/sshcertificateauthorities", wrapper.GetApiV2Sshcertificateauthorities)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v2/sshcertificateauthorities", wrapper.PostApiV2Sshcertificateauthorities)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v2/sshcertificateauthorities/{sshCertificateAuthorityID}", wrapper.DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v2/sshcertificateauthorities/{sshCertificateAuthorityID}", wrapper.GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID)
 	})
 
 	return r

@@ -57,6 +57,7 @@ func init() {
 	SchemeBuilder.Register(&VLANAllocation{}, &VLANAllocationList{})
 	SchemeBuilder.Register(&SecurityGroup{}, &SecurityGroupList{})
 	SchemeBuilder.Register(&OpenstackSecurityGroup{}, &OpenstackSecurityGroupList{})
+	SchemeBuilder.Register(&SSHCertificateAuthority{}, &SSHCertificateAuthorityList{})
 	SchemeBuilder.Register(&Server{}, &ServerList{})
 	SchemeBuilder.Register(&OpenstackServer{}, &OpenstackServerList{})
 	SchemeBuilder.Register(&FileStorage{}, &FileStorageList{})

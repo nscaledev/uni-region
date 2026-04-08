@@ -1015,6 +1015,98 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 
+  /api/v2/sshcertificateauthorities:
+    description: Manages project scoped OpenSSH user certificate authorities.
+    get:
+      description: List SSH certificate authorities.
+      summary: List SSH certificate authorities
+      tags:
+      - SSH certificate authorities
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: '#/components/parameters/organizationIDQueryParameter'
+      - $ref: '#/components/parameters/projectIDQueryParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/sshCertificateAuthoritiesV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    post:
+      description: Create a new SSH certificate authority.
+      summary: Create SSH certificate authority
+      tags:
+      - SSH certificate authorities
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/sshCertificateAuthorityV2CreateRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/sshCertificateAuthorityV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+
+  /api/v2/sshcertificateauthorities/{sshCertificateAuthorityID}:
+    description: Manages project scoped OpenSSH user certificate authorities.
+    parameters:
+    - $ref: '#/components/parameters/sshCertificateAuthorityIDParameter'
+    get:
+      description: Get an SSH certificate authority.
+      summary: Get SSH certificate authority
+      tags:
+      - SSH certificate authorities
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/sshCertificateAuthorityV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    delete:
+      description: Delete an SSH certificate authority.
+      summary: Delete SSH certificate authority
+      tags:
+      - SSH certificate authorities
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+
   /api/v2/regions/{regionID}/images:
     description: Manage compute disk images
     get:
@@ -1527,6 +1619,13 @@ components:
       name: securityGroupID
       in: path
       description: The security group ID.
+      required: true
+      schema:
+        $ref: '#/components/schemas/kubernetesNameParameter'
+    sshCertificateAuthorityIDParameter:
+      name: sshCertificateAuthorityID
+      in: path
+      description: The SSH certificate authority ID.
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
@@ -2443,6 +2542,61 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/securityGroupV2Read'
+    sshCertificateAuthorityV2Spec:
+      description: An OpenSSH user certificate authority trust anchor.
+      type: object
+      required:
+      - publicKey
+      properties:
+        publicKey:
+          description: A single-line OpenSSH-formatted CA public key.
+          type: string
+    sshCertificateAuthorityV2CreateSpec:
+      description: An SSH certificate authority creation specification.
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/sshCertificateAuthorityV2Spec'
+      - type: object
+        required:
+        - organizationId
+        - projectId
+        properties:
+          organizationId:
+            description: The organization the SSH certificate authority belongs to.
+            type: string
+          projectId:
+            description: The project the SSH certificate authority belongs to.
+            type: string
+    sshCertificateAuthorityV2Create:
+      description: An SSH certificate authority creation request.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/sshCertificateAuthorityV2CreateSpec'
+    sshCertificateAuthorityV2Read:
+      description: An SSH certificate authority.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+        spec:
+          $ref: '#/components/schemas/sshCertificateAuthorityV2Spec'
+    sshCertificateAuthoritiesV2Read:
+      description: A list of SSH certificate authorities.
+      type: array
+      items:
+        $ref: '#/components/schemas/sshCertificateAuthorityV2Read'
+    sshCertificateAuthorityID:
+      description: The SSH certificate authority ID.
+      type: string
     serverSpec:
       description: A server's specification.
       type: object
@@ -2637,6 +2791,8 @@ components:
           networkId:
             description: The network ID to attach a server to.
             type: string
+          sshCertificateAuthorityId:
+            $ref: '#/components/schemas/sshCertificateAuthorityID'
     serverV2Status:
       description: Read only status information about a security group.
       type: object
@@ -2650,6 +2806,8 @@ components:
         networkId:
           description: The network a security group belongs to.
           type: string
+        sshCertificateAuthorityId:
+          $ref: '#/components/schemas/sshCertificateAuthorityID'
         powerState:
           $ref: '#/components/schemas/instanceLifecyclePhase'
         privateIP:
@@ -3097,6 +3255,23 @@ components:
                 protocol: tcp
                 port: 80
                 cidr: 172.16.0.0/12
+    sshCertificateAuthorityV2CreateRequest:
+      description: A request for an SSH certificate authority.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/sshCertificateAuthorityV2Create'
+          example:
+            metadata:
+              name: ssh-ca-name
+              description: A verbose description
+              tags:
+              - name: cluster-id
+                value: 9361402c-f998-49cc-ab21-9bb99afcfde8
+            spec:
+              organizationId: 161b9d5a-701d-4fea-848d-0e345edf16e9
+              projectId: f113be96-4dd2-4c14-9c0e-e96c500f21e0
+              publicKey: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBuildOnlyTrustAnchor comment
     serverRequest:
       description: A request for a server.
       content:
@@ -3603,6 +3778,42 @@ components:
             status:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
               networkId: 61f0ad85-3001-41cb-824a-e6a047668dfe
+    sshCertificateAuthorityV2Response:
+      description: An SSH certificate authority.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/sshCertificateAuthorityV2Read'
+          example:
+            metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: undefined
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2024-05-31T14:11:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: provisioned
+              healthStatus: healthy
+            spec:
+              publicKey: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBuildOnlyTrustAnchor comment
+    sshCertificateAuthoritiesV2Response:
+      description: A list of SSH certificate authorities.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/sshCertificateAuthoritiesV2Read'
+          example:
+          - metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: undefined
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2024-05-31T14:11:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: provisioned
+              healthStatus: healthy
+            spec:
+              publicKey: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBuildOnlyTrustAnchor comment
     serverResponse:
       description: A server.
       content:

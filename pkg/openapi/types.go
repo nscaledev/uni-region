@@ -874,6 +874,9 @@ type ServerV2CreateSpec struct {
 	// Networking A server's network configuration.
 	Networking *ServerV2Networking `json:"networking,omitempty"`
 
+	// SshCertificateAuthorityId The SSH certificate authority ID.
+	SshCertificateAuthorityId *SshCertificateAuthorityID `json:"sshCertificateAuthorityId,omitempty"`
+
 	// UserData Contains base64-encoded configuration information or scripts to use upon launch.
 	// The format of the data is governed by the cloud-init standard, and may be a script,
 	// a MIME multipart archive, etc.
@@ -943,6 +946,9 @@ type ServerV2Status struct {
 
 	// RegionId The region a security group belongs to.
 	RegionId string `json:"regionId"`
+
+	// SshCertificateAuthorityId The SSH certificate authority ID.
+	SshCertificateAuthorityId *SshCertificateAuthorityID `json:"sshCertificateAuthorityId,omitempty"`
 }
 
 // ServerV2Update A server update request.
@@ -983,6 +989,48 @@ type SnapshotCreateSpec = map[string]interface{}
 
 // SoftwareVersions Image preinstalled version version metadata.
 type SoftwareVersions map[string]externalRef0.Semver
+
+// SshCertificateAuthoritiesV2Read A list of SSH certificate authorities.
+type SshCertificateAuthoritiesV2Read = []SshCertificateAuthorityV2Read
+
+// SshCertificateAuthorityID The SSH certificate authority ID.
+type SshCertificateAuthorityID = string
+
+// SshCertificateAuthorityV2Create An SSH certificate authority creation request.
+type SshCertificateAuthorityV2Create struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec An SSH certificate authority creation specification.
+	Spec SshCertificateAuthorityV2CreateSpec `json:"spec"`
+}
+
+// SshCertificateAuthorityV2CreateSpec defines model for sshCertificateAuthorityV2CreateSpec.
+type SshCertificateAuthorityV2CreateSpec struct {
+	// OrganizationId The organization the SSH certificate authority belongs to.
+	OrganizationId string `json:"organizationId"`
+
+	// ProjectId The project the SSH certificate authority belongs to.
+	ProjectId string `json:"projectId"`
+
+	// PublicKey A single-line OpenSSH-formatted CA public key.
+	PublicKey string `json:"publicKey"`
+}
+
+// SshCertificateAuthorityV2Read An SSH certificate authority.
+type SshCertificateAuthorityV2Read struct {
+	// Metadata Metadata required by project scoped resource reads.
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+
+	// Spec An OpenSSH user certificate authority trust anchor.
+	Spec SshCertificateAuthorityV2Spec `json:"spec"`
+}
+
+// SshCertificateAuthorityV2Spec An OpenSSH user certificate authority trust anchor.
+type SshCertificateAuthorityV2Spec struct {
+	// PublicKey A single-line OpenSSH-formatted CA public key.
+	PublicKey string `json:"publicKey"`
+}
 
 // SshKey An SSH key.
 type SshKey struct {
@@ -1184,6 +1232,9 @@ type SecurityGroupIDParameter = KubernetesNameParameter
 // ServerIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type ServerIDParameter = KubernetesNameParameter
 
+// SshCertificateAuthorityIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
+type SshCertificateAuthorityIDParameter = KubernetesNameParameter
+
 // ConsoleOutputResponse Console output
 type ConsoleOutputResponse = ConsoleOutput
 
@@ -1250,6 +1301,12 @@ type ServersResponse = ServersRead
 // ServersV2Response A list of servers.
 type ServersV2Response = ServersV2Read
 
+// SshCertificateAuthoritiesV2Response A list of SSH certificate authorities.
+type SshCertificateAuthoritiesV2Response = SshCertificateAuthoritiesV2Read
+
+// SshCertificateAuthorityV2Response An SSH certificate authority.
+type SshCertificateAuthorityV2Response = SshCertificateAuthorityV2Read
+
 // SshKeyResponse An SSH key.
 type SshKeyResponse = SshKey
 
@@ -1297,6 +1354,9 @@ type ServerV2UpdateRequest = ServerV2Update
 
 // SnapshotServerRequest A compute image create request.
 type SnapshotServerRequest = SnapshotCreate
+
+// SshCertificateAuthorityV2CreateRequest An SSH certificate authority creation request.
+type SshCertificateAuthorityV2CreateRequest = SshCertificateAuthorityV2Create
 
 // StorageV2CreateRequest A storage create request.
 type StorageV2CreateRequest = StorageV2Create
@@ -1421,6 +1481,19 @@ type GetApiV2ServersServerIDConsoleoutputParams struct {
 	Length *LengthParameter `form:"length,omitempty" json:"length,omitempty"`
 }
 
+// GetApiV2SshcertificateauthoritiesParams defines parameters for GetApiV2Sshcertificateauthorities.
+type GetApiV2SshcertificateauthoritiesParams struct {
+	// Tag A set of tags to match against resources in the form "name=value",
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+
+	// OrganizationID Allows resources to be filtered by organization.
+	OrganizationID *OrganizationIDQueryParameter `form:"organizationID,omitempty" json:"organizationID,omitempty"`
+
+	// ProjectID Allows resources to be filtered by project.
+	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
+}
+
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody = IdentityWrite
 
@@ -1468,3 +1541,6 @@ type PutApiV2ServersServerIDJSONRequestBody = ServerV2Update
 
 // PostApiV2ServersServerIDSnapshotJSONRequestBody defines body for PostApiV2ServersServerIDSnapshot for application/json ContentType.
 type PostApiV2ServersServerIDSnapshotJSONRequestBody = SnapshotCreate
+
+// PostApiV2SshcertificateauthoritiesJSONRequestBody defines body for PostApiV2Sshcertificateauthorities for application/json ContentType.
+type PostApiV2SshcertificateauthoritiesJSONRequestBody = SshCertificateAuthorityV2Create
