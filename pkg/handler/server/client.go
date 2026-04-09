@@ -114,7 +114,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 		return nil, err
 	}
 
-	provider, err := c.Providers.LookupCloud(ctx, identity.Labels[constants.RegionLabel])
+	provider, err := c.Providers.LookupCloud(identity.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
 	}
@@ -158,7 +158,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 		return nil, err
 	}
 
-	provider, err := c.Providers.LookupCloud(ctx, identity.Labels[constants.RegionLabel])
+	provider, err := c.Providers.LookupCloud(identity.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
 	}
@@ -208,7 +208,7 @@ func (c *Client) getServerIdentityAndProvider(ctx context.Context, organizationI
 		return nil, nil, nil, err
 	}
 
-	provider, err := c.Providers.LookupCloud(ctx, current.Labels[constants.RegionLabel])
+	provider, err := c.Providers.LookupCloud(current.Labels[constants.RegionLabel])
 	if err != nil {
 		return nil, nil, nil, providers.ProviderToServerError(err)
 	}

@@ -359,10 +359,10 @@ func buildRouter(schema *helpers.Schema, corsOpts *cors.Options) *chi.Mux {
 	router.Use(cors.Middleware)
 
 	// Mock ACL middleware allows all organizations for contract testing
-	router.Use(MockACLMiddleware(nil))              // Inject mock ACL for contract testing
-	router.Use(IdentityCreationMockMiddleware())    // Mock identity creation for contract testing
-	router.Use(ExternalNetworksMockMiddleware())    // Mock external networks for OpenStack-specific tests
-	router.Use(ImagesMockMiddleware())              // Mock images for OpenStack-specific tests
+	router.Use(MockACLMiddleware(nil))                // Inject mock ACL for contract testing
+	router.Use(IdentityCreationMockMiddleware())      // Mock identity creation for contract testing
+	router.Use(ExternalNetworksMockMiddleware())      // Mock external networks for OpenStack-specific tests
+	router.Use(ImagesMockMiddleware())                // Mock images for OpenStack-specific tests
 	router.Use(commonstate.RegionSortingMiddleware()) // Sort regions for Pact contract testing
 	router.NotFound(http.HandlerFunc(handler.NotFound))
 	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
@@ -398,7 +398,12 @@ func createHandlerInterface(ctx context.Context, k8sClient client.Client, namesp
 	}
 
 	// Create providers interface
-	providers := providers.New(k8sClient, namespace)
+	providers, err := providers.New(ctx, k8sClient, k8sClient, namespace, providers.Options{
+		WarmImageCache: true,
+	})
+	if err != nil {
+		panic(fmt.Sprintf("failed to create providers: %v", err))
+	}
 
 	handlerOpts := handler.Options{}
 

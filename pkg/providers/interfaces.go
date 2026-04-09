@@ -19,15 +19,13 @@ limitations under the License.
 package providers
 
 import (
-	"context"
-
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 )
 
 type Providers interface {
 	// LookupCommon returns a provider as identified by the region ID of any type.
-	LookupCommon(ctx context.Context, regionID string) (types.CommonProvider, error)
+	LookupCommon(regionID string) (types.CommonProvider, error)
 	// LookupCloud returns a provider as identified by the region ID and must be
 	// a cloud type.
-	LookupCloud(ctx context.Context, regionID string) (types.Provider, error)
+	LookupCloud(regionID string) (types.Provider, error)
 }

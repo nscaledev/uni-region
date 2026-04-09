@@ -17,6 +17,12 @@ rules:
   verbs:
   - list
   - watch
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - regions
+  verbs:
+  - get
 # Update status conditions
 - apiGroups:
   - region.unikorn-cloud.org

@@ -906,7 +906,7 @@ type ServerV2Read struct {
 	// Spec A server's specification.
 	Spec ServerV2Spec `json:"spec"`
 
-	// Status Read only status information about a security group.
+	// Status Read only status information about a server.
 	Status ServerV2Status `json:"status"`
 }
 
@@ -930,7 +930,7 @@ type ServerV2Spec struct {
 	UserData *[]byte `json:"userData,omitempty"`
 }
 
-// ServerV2Status Read only status information about a security group.
+// ServerV2Status Read only status information about a server.
 type ServerV2Status struct {
 	// NetworkId The network a security group belongs to.
 	NetworkId string `json:"networkId"`

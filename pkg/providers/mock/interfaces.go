@@ -9,7 +9,6 @@
 package mock
 
 import (
-	context "context"
 	reflect "reflect"
 
 	types "github.com/unikorn-cloud/region/pkg/providers/types"
@@ -40,31 +39,31 @@ func (m *MockProviders) EXPECT() *MockProvidersMockRecorder {
 }
 
 // LookupCloud mocks base method.
-func (m *MockProviders) LookupCloud(ctx context.Context, regionID string) (types.Provider, error) {
+func (m *MockProviders) LookupCloud(regionID string) (types.Provider, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "LookupCloud", ctx, regionID)
+	ret := m.ctrl.Call(m, "LookupCloud", regionID)
 	ret0, _ := ret[0].(types.Provider)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // LookupCloud indicates an expected call of LookupCloud.
-func (mr *MockProvidersMockRecorder) LookupCloud(ctx, regionID any) *gomock.Call {
+func (mr *MockProvidersMockRecorder) LookupCloud(regionID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LookupCloud", reflect.TypeOf((*MockProviders)(nil).LookupCloud), ctx, regionID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LookupCloud", reflect.TypeOf((*MockProviders)(nil).LookupCloud), regionID)
 }
 
 // LookupCommon mocks base method.
-func (m *MockProviders) LookupCommon(ctx context.Context, regionID string) (types.CommonProvider, error) {
+func (m *MockProviders) LookupCommon(regionID string) (types.CommonProvider, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "LookupCommon", ctx, regionID)
+	ret := m.ctrl.Call(m, "LookupCommon", regionID)
 	ret0, _ := ret[0].(types.CommonProvider)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // LookupCommon indicates an expected call of LookupCommon.
-func (mr *MockProvidersMockRecorder) LookupCommon(ctx, regionID any) *gomock.Call {
+func (mr *MockProvidersMockRecorder) LookupCommon(regionID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LookupCommon", reflect.TypeOf((*MockProviders)(nil).LookupCommon), ctx, regionID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LookupCommon", reflect.TypeOf((*MockProviders)(nil).LookupCommon), regionID)
 }

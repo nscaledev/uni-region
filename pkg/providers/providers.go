@@ -20,7 +20,7 @@ package providers
 import (
 	"context"
 	"errors"
-	"slices"
+	"fmt"
 	"sync"
 
 	servererrors "github.com/unikorn-cloud/core/pkg/server/errors"
@@ -59,27 +59,65 @@ func ProviderToServerError(err error) error {
 }
 
 type providersImpl struct {
+	reader    client.Reader
 	client    client.Client
 	namespace string
-	cache     map[string]types.CommonProvider
-	lock      sync.Mutex
+	opts      Options
+
+	mu    sync.RWMutex
+	cache map[string]types.CommonProvider
 }
 
-func New(client client.Client, namespace string) Providers {
-	return &providersImpl{
-		client:    client,
-		namespace: namespace,
-		cache:     map[string]types.CommonProvider{},
+type Options struct {
+	// WarmImageCache enables startup-time image cache initialization.
+	WarmImageCache bool
+}
+
+// New creates and synchronously initializes all region providers. The chosen behaviour
+// is to fail on initialization failure, the reasoning is that during upgrade an old version
+// of the service should be running to handle traffic, and we'd rather not have something
+// put into production that is known to be broken. Regions discovered after startup are
+// loaded on demand and then shared for subsequent lookups.
+func New(ctx context.Context, reader client.Reader, c client.Client, namespace string, opts Options) (Providers, error) {
+	var regions unikornv1.RegionList
+
+	if err := reader.List(ctx, &regions, &client.ListOptions{Namespace: namespace}); err != nil {
+		return nil, fmt.Errorf("%w: failed to list regions", err)
 	}
+
+	cache := map[string]types.CommonProvider{}
+
+	// TODO: we can avoid long warm ups in future by doing this concurrently
+	// if it becomes too slow.
+	for i := range regions.Items {
+		provider, err := newProvider(ctx, c, &regions.Items[i], opts)
+		if err != nil {
+			return nil, err
+		}
+
+		cache[regions.Items[i].Name] = provider
+	}
+
+	providers := &providersImpl{
+		reader:    reader,
+		client:    c,
+		namespace: namespace,
+		opts:      opts,
+		cache:     cache,
+	}
+
+	return providers, nil
 }
 
 // newProvider a new Provider.
-func newProvider(ctx context.Context, client client.Client, region *unikornv1.Region) (types.CommonProvider, error) {
+func newProvider(ctx context.Context, client client.Client, region *unikornv1.Region, opts Options) (types.CommonProvider, error) {
 	switch region.Spec.Provider {
 	case unikornv1.ProviderKubernetes:
 		return kubernetes.New(ctx, client, region)
 	case unikornv1.ProviderOpenstack:
-		return openstack.New(ctx, client, region)
+		return openstack.New(ctx, client, region, openstack.Options{
+			WarmImageCache: opts.WarmImageCache,
+		})
 	case unikornv1.ProviderSimulated:
 		return simulated.New(ctx, client, region)
 	}
@@ -88,14 +126,14 @@ func newProvider(ctx context.Context, client client.Client, region *unikornv1.Re
 }
 
 // LookupCommon returns a provider as identified by the region ID of any type.
-func (p *providersImpl) LookupCommon(ctx context.Context, regionID string) (types.CommonProvider, error) {
-	return p.lookup(ctx, regionID)
+func (p *providersImpl) LookupCommon(regionID string) (types.CommonProvider, error) {
+	return p.lookup(context.Background(), regionID)
 }
 
 // LookupCloud returns a provider as identified by the region ID and must be
 // a cloud type.
-func (p *providersImpl) LookupCloud(ctx context.Context, regionID string) (types.Provider, error) {
-	provider, err := p.lookup(ctx, regionID)
+func (p *providersImpl) LookupCloud(regionID string) (types.Provider, error) {
+	provider, err := p.lookup(context.Background(), regionID)
 	if err != nil {
 		return nil, err
 	}
@@ -110,31 +148,38 @@ func (p *providersImpl) LookupCloud(ctx context.Context, regionID string) (types
 
 // lookup returns a provider for the given region.
 func (p *providersImpl) lookup(ctx context.Context, regionID string) (types.CommonProvider, error) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
+	p.mu.RLock()
+	provider, ok := p.cache[regionID]
+	p.mu.RUnlock()
 
+	if !ok {
+		return p.load(ctx, regionID)
+	}
+
+	return provider, nil
+}
+
+func (p *providersImpl) load(ctx context.Context, regionID string) (types.CommonProvider, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Another goroutine may have populated the cache after the read-side miss
+	// and before we acquired the write lock, so recheck under exclusive access.
 	if provider, ok := p.cache[regionID]; ok {
 		return provider, nil
 	}
 
-	var regions unikornv1.RegionList
+	region := &unikornv1.Region{}
 
-	if err := p.client.List(ctx, &regions, &client.ListOptions{Namespace: p.namespace}); err != nil {
-		return nil, err
+	if err := p.reader.Get(ctx, client.ObjectKey{Namespace: p.namespace, Name: regionID}, region); err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			return nil, ErrRegionNotFound
+		}
+
+		return nil, fmt.Errorf("%w: failed to get region", err)
 	}
 
-	matchRegionID := func(region unikornv1.Region) bool {
-		return region.Name == regionID
-	}
-
-	index := slices.IndexFunc(regions.Items, matchRegionID)
-	if index < 0 {
-		return nil, ErrRegionNotFound
-	}
-
-	region := &regions.Items[index]
-
-	provider, err := newProvider(ctx, p.client, region)
+	provider, err := newProvider(ctx, p.client, region, p.opts)
 	if err != nil {
 		return nil, err
 	}

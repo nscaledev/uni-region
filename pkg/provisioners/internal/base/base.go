@@ -48,8 +48,8 @@ func getIdentity(ctx context.Context, object client.Object) (*unikornv1.Identity
 	return identity, nil
 }
 
-func (b *Base) Provider(ctx context.Context, object client.Object) (types.Provider, error) {
-	return b.Providers.LookupCloud(ctx, object.GetLabels()[constants.RegionLabel])
+func (b *Base) Provider(_ context.Context, object client.Object) (types.Provider, error) {
+	return b.Providers.LookupCloud(object.GetLabels()[constants.RegionLabel])
 }
 
 func (b *Base) ProviderAndIdentity(ctx context.Context, object client.Object) (types.Provider, *unikornv1.Identity, error) {
