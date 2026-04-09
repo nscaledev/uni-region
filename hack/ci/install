@@ -12,6 +12,7 @@ IDENTITY_RELEASE_NAME=""
 NAMESPACE=""
 RELEASE_NAME=""
 EXTRA_VALUES=()
+HELM_TIMEOUT_SECONDS="${HELM_TIMEOUT_SECONDS:-420}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -44,6 +45,11 @@ done
 
 if [[ -z "${IDENTITY_NAMESPACE}" || -z "${IDENTITY_RELEASE_NAME}" || -z "${NAMESPACE}" || -z "${RELEASE_NAME}" ]]; then
   echo "Usage: $0 --identity-namespace NS --identity-release-name NAME --namespace NS --release-name NAME [--values FILE]..." >&2
+  exit 1
+fi
+
+if ! [[ "${HELM_TIMEOUT_SECONDS}" =~ ^[0-9]+$ ]]; then
+  echo "HELM_TIMEOUT_SECONDS must be an integer number of seconds" >&2
   exit 1
 fi
 
@@ -160,7 +166,7 @@ helm upgrade --install \
   --namespace "${NAMESPACE}" \
   --create-namespace \
   --wait \
-  --timeout 300s \
+  --timeout "${HELM_TIMEOUT_SECONDS}s" \
   --set "region.host=${INGRESS_HOST}" \
   --set "identity.host=${IDENTITY_HOST}" \
   --set "ingress.clusterIssuer=unikorn-issuer" \
