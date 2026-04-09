@@ -18,6 +18,12 @@ rules:
   verbs:
   - list
   - watch
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - regions
+  verbs:
+  - get
 # Manage references.
 - apiGroups:
   - region.unikorn-cloud.org

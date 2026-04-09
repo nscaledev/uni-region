@@ -38,7 +38,11 @@ type ProvidersInit struct {
 var _ coremanager.ControllerInitializer = &ProvidersInit{}
 
 func (f *ProvidersInit) Initialize(ctx context.Context, mgr manager.Manager, opts *options.Options) error {
-	providers := providers.New(mgr.GetClient(), opts.Namespace)
+	providers, err := providers.New(ctx, mgr.GetAPIReader(), mgr.GetClient(), opts.Namespace, providers.Options{})
+	if err != nil {
+		return err
+	}
+
 	f.Providers = providers
 
 	return nil

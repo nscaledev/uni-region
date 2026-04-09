@@ -24,6 +24,7 @@ import (
 	"github.com/spf13/pflag"
 
 	serverhealth "github.com/unikorn-cloud/region/pkg/monitor/health/server"
+	"github.com/unikorn-cloud/region/pkg/providers"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -56,11 +57,18 @@ type Checker interface {
 func Run(ctx context.Context, c client.Client, o *Options) {
 	log := log.FromContext(ctx)
 
+	providers, err := providers.New(ctx, c, c, o.namespace, providers.Options{})
+	if err != nil {
+		log.Error(err, "failed to initialize providers")
+
+		return
+	}
+
 	ticker := time.NewTicker(o.pollPeriod)
 	defer ticker.Stop()
 
 	checkers := []Checker{
-		serverhealth.New(c, o.namespace),
+		serverhealth.New(c, o.namespace, providers),
 	}
 
 	for {

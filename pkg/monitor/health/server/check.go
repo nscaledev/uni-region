@@ -36,13 +36,16 @@ type Checker struct {
 	client client.Client
 	// namespace is where we are running.
 	namespace string
+	// providers is the shared provider cache for monitor checks.
+	providers providers.Providers
 }
 
 // New creates a new helath checker.
-func New(client client.Client, namespace string) *Checker {
+func New(client client.Client, namespace string, providers providers.Providers) *Checker {
 	return &Checker{
 		client:    client,
 		namespace: namespace,
+		providers: providers,
 	}
 }
 
@@ -68,7 +71,7 @@ func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server) err
 		return fmt.Errorf("%w: server %s missing region label", errors.ErrConsistency, server.Name)
 	}
 
-	provider, err := providers.New(c.client, c.namespace).LookupCloud(ctx, regionID)
+	provider, err := c.providers.LookupCloud(regionID)
 	if err != nil {
 		return err
 	}

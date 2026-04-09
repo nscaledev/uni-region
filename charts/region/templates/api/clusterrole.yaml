@@ -18,6 +18,13 @@ rules:
 - apiGroups:
   - region.unikorn-cloud.org
   resources:
+  - regions
+  - filestorageclasses
+  verbs:
+  - get
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
   - identities
   - networks
   - quotas

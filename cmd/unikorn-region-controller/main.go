@@ -69,7 +69,7 @@ func start() {
 		return
 	}
 
-	server, err := s.GetServer(client)
+	server, err := s.GetServer(ctx, client)
 	if err != nil {
 		logger.Error(err, "failed to setup Handler")
 
