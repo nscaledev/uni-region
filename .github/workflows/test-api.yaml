@@ -76,20 +76,20 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: api-test-results-dev
-        path: test/api/suites/test-results.json
+        path: test-results.json
 
     - name: Archive API Test JUnit Report
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
       with:
         name: api-test-junit-dev
-        path: test/api/suites/junit.xml
+        path: junit.xml
 
     - name: Create Linear Issues for Test Failures
       uses: nscaledev/quality-tooling/.github/actions/linear-test-failures@main
       if: ${{ !cancelled() }}
       with:
-        test-results-path: test/api/suites/test-results.json
+        test-results-path: test-results.json
         workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         linear-api-key: ${{ secrets.LINEAR_API_KEY }}
         linear-team-id: ${{ vars.LINEAR_TEAM_ID }}
@@ -99,12 +99,14 @@ jobs:
         max-failures: '5'
 
     - name: Send Slack Notification
+      uses: nscaledev/quality-tooling/.github/actions/slack-test-notifications@main
       if: ${{ !cancelled() }}
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      run: |
-        WORKFLOW_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        go run test/api/scripts/slack-notify.go test/api/suites/test-results.json "$WORKFLOW_URL"
+      with:
+        test-results-path: test-results.json
+        workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        environment: dev
+        title: 'Region API Test Results'
 
   API-Tests-UAT:
     name: API Tests (uat)
@@ -149,20 +151,20 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: api-test-results-uat
-        path: test/api/suites/test-results.json
+        path: test-results.json
 
     - name: Archive API Test JUnit Report
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
       with:
         name: api-test-junit-uat
-        path: test/api/suites/junit.xml
+        path: junit.xml
 
     - name: Create Linear Issues for Test Failures
       uses: nscaledev/quality-tooling/.github/actions/linear-test-failures@main
       if: ${{ !cancelled() }}
       with:
-        test-results-path: test/api/suites/test-results.json
+        test-results-path: test-results.json
         workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         linear-api-key: ${{ secrets.LINEAR_API_KEY }}
         linear-team-id: ${{ vars.LINEAR_TEAM_ID }}
@@ -172,9 +174,10 @@ jobs:
         max-failures: '5'
 
     - name: Send Slack Notification
+      uses: nscaledev/quality-tooling/.github/actions/slack-test-notifications@main
       if: ${{ !cancelled() }}
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      run: |
-        WORKFLOW_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        go run test/api/scripts/slack-notify.go test/api/suites/test-results.json "$WORKFLOW_URL"
+      with:
+        test-results-path: test-results.json
+        workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        environment: uat
