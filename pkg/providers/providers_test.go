@@ -55,15 +55,14 @@ func TestLookupCommonLoadsRegionOnMiss(t *testing.T) {
 		},
 	}
 
-	reader := fake.NewClientBuilder().WithScheme(scheme).Build()
 	runtimeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-	providerSet, err := providers.New(ctx, reader, runtimeClient, namespace, providers.Options{})
+	providerSet, err := providers.New(ctx, runtimeClient, runtimeClient, namespace, providers.Options{})
 	if err != nil {
 		t.Fatalf("creating providers: %v", err)
 	}
 
-	if err := reader.Create(ctx, region); err != nil {
+	if err := runtimeClient.Create(ctx, region); err != nil {
 		t.Fatalf("creating region after startup: %v", err)
 	}
 
@@ -71,7 +70,7 @@ func TestLookupCommonLoadsRegionOnMiss(t *testing.T) {
 		t.Fatalf("lookup on miss: %v", err)
 	}
 
-	if err := reader.Delete(ctx, region); err != nil {
+	if err := runtimeClient.Delete(ctx, region); err != nil {
 		t.Fatalf("deleting region after lazy load: %v", err)
 	}
 

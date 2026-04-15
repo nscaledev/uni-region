@@ -24,6 +24,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	"github.com/unikorn-cloud/region/pkg/providers"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
@@ -38,7 +39,14 @@ type ProvidersInit struct {
 var _ coremanager.ControllerInitializer = &ProvidersInit{}
 
 func (f *ProvidersInit) Initialize(ctx context.Context, mgr manager.Manager, opts *options.Options) error {
-	providers, err := providers.New(ctx, mgr.GetAPIReader(), mgr.GetClient(), opts.Namespace, providers.Options{})
+	// The manager cache is not started during factory initialization, so provider warm-up
+	// must use a direct client rather than the manager's cache-backed client.
+	cli, err := crclient.New(mgr.GetConfig(), crclient.Options{Scheme: mgr.GetScheme()})
+	if err != nil {
+		return err
+	}
+
+	providers, err := providers.New(ctx, cli, mgr.GetClient(), opts.Namespace, providers.Options{})
 	if err != nil {
 		return err
 	}

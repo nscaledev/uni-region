@@ -138,19 +138,34 @@ type Options struct {
 	WarmImageCache bool
 }
 
-func New(ctx context.Context, cli client.Client, region *unikornv1.Region, opts Options) (*Provider, error) {
-	p := &Provider{
-		client: cli,
-		openstack: &openStackClients{
-			client:  cli,
-			_region: region,
-		},
-		vlanAllocator: vlan.New(cli, region),
-	}
-
-	if err := p.openstack.serviceClientRefresh(ctx); err != nil {
+// New constructs an OpenStack provider.
+//
+// Provider construction has two phases:
+// 1. Bootstrap service-client state with initClient before any controller cache exists.
+// 2. Return a provider that retains runtimeClient for all subsequent Kubernetes reads.
+//
+// This makes the bootstrap/runtime boundary explicit: direct reads are used only while
+// building the initial OpenStack client state, and normal provider operation switches
+// back to the runtime client immediately afterwards.
+func New(ctx context.Context, initClient client.Client, runtimeClient client.Client, region *unikornv1.Region, opts Options) (*Provider, error) {
+	bootstrapState, err := bootstrapServiceClientState(ctx, initClient, region)
+	if err != nil {
 		return nil, err
 	}
+
+	p := &Provider{
+		client: runtimeClient,
+		openstack: &openStackClients{
+			client:  runtimeClient,
+			_region: region,
+		},
+		vlanAllocator: vlan.New(runtimeClient, region),
+	}
+
+	// Install the bootstrapped OpenStack client state onto the long-lived runtime wrapper.
+	// After this point, Kubernetes reads flow through runtimeClient and no bootstrap-only
+	// client is retained by the provider.
+	p.openstack.install(bootstrapState)
 
 	if opts.WarmImageCache {
 		imageCacheOptions := &cache.RefreshAheadCacheOptions{
