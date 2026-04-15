@@ -50,11 +50,128 @@ type openStackClients struct {
 	lock sync.Mutex
 }
 
+// serviceClientState is the fully-initialized OpenStack client state for a region.
+// It is separate from openStackClients so bootstrap can build the derived state
+// once and then install it onto the long-lived runtime wrapper.
+type serviceClientState struct {
+	region      *unikornv1.Region
+	secret      *corev1.Secret
+	credentials *providerCredentials
+	identity    *IdentityClient
+	compute     *ComputeClient
+	image       *ImageClient
+	network     NetworkingInterface
+}
+
+// bootstrapServiceClientState performs the direct Kubernetes reads needed to build
+// the initial OpenStack service clients before a controller manager cache exists.
+// This is the only place that should require uncached Kubernetes access during
+// provider construction.
+func bootstrapServiceClientState(ctx context.Context, cli client.Client, region *unikornv1.Region) (*serviceClientState, error) {
+	currentRegion := &unikornv1.Region{}
+
+	if err := cli.Get(ctx, client.ObjectKey{Namespace: region.Namespace, Name: region.Name}, currentRegion); err != nil {
+		return nil, err
+	}
+
+	secretKey := client.ObjectKey{
+		Namespace: currentRegion.Spec.Openstack.ServiceAccountSecret.Namespace,
+		Name:      currentRegion.Spec.Openstack.ServiceAccountSecret.Name,
+	}
+
+	secret := &corev1.Secret{}
+
+	if err := cli.Get(ctx, secretKey, secret); err != nil {
+		return nil, err
+	}
+
+	return newServiceClientState(ctx, currentRegion, secret)
+}
+
+// newServiceClientState constructs the OpenStack service clients from already-read
+// Kubernetes objects. Keeping this logic in one place ensures bootstrap and runtime
+// refresh build the same client state.
+func newServiceClientState(ctx context.Context, region *unikornv1.Region, secret *corev1.Secret) (*serviceClientState, error) {
+	domainID, ok := secret.Data["domain-id"]
+	if !ok {
+		return nil, fmt.Errorf("%w: domain-id", coreerrors.ErrKey)
+	}
+
+	userID, ok := secret.Data["user-id"]
+	if !ok {
+		return nil, fmt.Errorf("%w: user-id", coreerrors.ErrKey)
+	}
+
+	password, ok := secret.Data["password"]
+	if !ok {
+		return nil, fmt.Errorf("%w: password", coreerrors.ErrKey)
+	}
+
+	projectID, ok := secret.Data["project-id"]
+	if !ok {
+		return nil, fmt.Errorf("%w: project-id", coreerrors.ErrKey)
+	}
+
+	credentials := &providerCredentials{
+		endpoint:  region.Spec.Openstack.Endpoint,
+		domainID:  string(domainID),
+		projectID: string(projectID),
+		userID:    string(userID),
+		password:  string(password),
+	}
+
+	// The identity client needs to have "manager" powers, so it create projects and
+	// users within a domain without full admin.
+	identity, err := NewIdentityClient(ctx, NewDomainScopedPasswordProvider(region.Spec.Openstack.Endpoint, string(userID), string(password), string(domainID)))
+	if err != nil {
+		return nil, err
+	}
+
+	// Everything else gets a default view when bound to a project as a "member".
+	// Sadly, domain scoped accesses do not work by default any longer.
+	providerClient := NewPasswordProvider(region.Spec.Openstack.Endpoint, string(userID), string(password), string(projectID))
+
+	compute, err := NewComputeClient(ctx, providerClient, region.Spec.Openstack.Compute)
+	if err != nil {
+		return nil, err
+	}
+
+	image, err := NewImageClient(ctx, providerClient, region.Spec.Openstack.Image)
+	if err != nil {
+		return nil, err
+	}
+
+	network, err := NewNetworkClient(ctx, providerClient, region.Spec.Openstack.Network)
+	if err != nil {
+		return nil, err
+	}
+
+	return &serviceClientState{
+		region:      region,
+		secret:      secret,
+		credentials: credentials,
+		identity:    identity,
+		compute:     compute,
+		image:       image,
+		network:     network,
+	}, nil
+}
+
+// install replaces the cached service-client state on the runtime wrapper.
+// The wrapper keeps its Kubernetes client; only the derived OpenStack state is swapped.
+func (c *openStackClients) install(state *serviceClientState) {
+	c._region = state.region
+	c._secret = state.secret
+	c._credentials = state.credentials
+	c._identity = state.identity
+	c._compute = state.compute
+	c._image = state.image
+	c._network = state.network
+}
+
 // serviceClientRefresh updates clients if they need to e.g. in the event
 // of a configuration update.
 // NOTE: you MUST get the lock before calling this function.
-//
-//nolint:cyclop
 func (c *openStackClients) serviceClientRefresh(ctx context.Context) error {
 	refresh := false
 
@@ -92,71 +209,12 @@ func (c *openStackClients) serviceClientRefresh(ctx context.Context) error {
 		return nil
 	}
 
-	// Create the core credential provider.
-	domainID, ok := secret.Data["domain-id"]
-	if !ok {
-		return fmt.Errorf("%w: domain-id", coreerrors.ErrKey)
-	}
-
-	userID, ok := secret.Data["user-id"]
-	if !ok {
-		return fmt.Errorf("%w: user-id", coreerrors.ErrKey)
-	}
-
-	password, ok := secret.Data["password"]
-	if !ok {
-		return fmt.Errorf("%w: password", coreerrors.ErrKey)
-	}
-
-	projectID, ok := secret.Data["project-id"]
-	if !ok {
-		return fmt.Errorf("%w: project-id", coreerrors.ErrKey)
-	}
-
-	credentials := &providerCredentials{
-		endpoint:  region.Spec.Openstack.Endpoint,
-		domainID:  string(domainID),
-		projectID: string(projectID),
-		userID:    string(userID),
-		password:  string(password),
-	}
-
-	// The identity client needs to have "manager" powers, so it create projects and
-	// users within a domain without full admin.
-	identity, err := NewIdentityClient(ctx, NewDomainScopedPasswordProvider(region.Spec.Openstack.Endpoint, string(userID), string(password), string(domainID)))
+	state, err := newServiceClientState(ctx, region, secret)
 	if err != nil {
 		return err
 	}
 
-	// Everything else gets a default view when bound to a project as a "member".
-	// Sadly, domain scoped accesses do not work by default any longer.
-	providerClient := NewPasswordProvider(region.Spec.Openstack.Endpoint, string(userID), string(password), string(projectID))
-
-	compute, err := NewComputeClient(ctx, providerClient, region.Spec.Openstack.Compute)
-	if err != nil {
-		return err
-	}
-
-	image, err := NewImageClient(ctx, providerClient, region.Spec.Openstack.Image)
-	if err != nil {
-		return err
-	}
-
-	network, err := NewNetworkClient(ctx, providerClient, region.Spec.Openstack.Network)
-	if err != nil {
-		return err
-	}
-
-	// Save the current configuration for checking next time.
-	c._region = region
-	c._secret = secret
-	c._credentials = credentials
-
-	// Seve the clients
-	c._identity = identity
-	c._compute = compute
-	c._image = image
-	c._network = network
+	c.install(state)
 
 	return nil
 }

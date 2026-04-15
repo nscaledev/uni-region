@@ -59,7 +59,6 @@ func ProviderToServerError(err error) error {
 }
 
 type providersImpl struct {
-	reader    client.Reader
 	client    client.Client
 	namespace string
 	opts      Options
@@ -73,15 +72,18 @@ type Options struct {
 	WarmImageCache bool
 }
 
-// New creates and synchronously initializes all region providers. The chosen behaviour
-// is to fail on initialization failure, the reasoning is that during upgrade an old version
-// of the service should be running to handle traffic, and we'd rather not have something
+// New creates and synchronously initializes all region providers. Startup-time region
+// discovery and provider construction use initClient so bootstrap reads can happen
+// before a controller manager cache has started, while the returned provider set retains
+// runtimeClient for normal cached operation after startup. The chosen behaviour is to
+// fail on initialization failure, the reasoning is that during upgrade an old version of
+// the service should be running to handle traffic, and we'd rather not have something
 // put into production that is known to be broken. Regions discovered after startup are
 // loaded on demand and then shared for subsequent lookups.
-func New(ctx context.Context, reader client.Reader, c client.Client, namespace string, opts Options) (Providers, error) {
+func New(ctx context.Context, initClient client.Client, runtimeClient client.Client, namespace string, opts Options) (Providers, error) {
 	var regions unikornv1.RegionList
 
-	if err := reader.List(ctx, &regions, &client.ListOptions{Namespace: namespace}); err != nil {
+	if err := initClient.List(ctx, &regions, &client.ListOptions{Namespace: namespace}); err != nil {
 		return nil, fmt.Errorf("%w: failed to list regions", err)
 	}
 
@@ -90,7 +92,7 @@ func New(ctx context.Context, reader client.Reader, c client.Client, namespace s
 	// TODO: we can avoid long warm ups in future by doing this concurrently
 	// if it becomes too slow.
 	for i := range regions.Items {
-		provider, err := newProvider(ctx, c, &regions.Items[i], opts)
+		provider, err := newProvider(ctx, initClient, runtimeClient, &regions.Items[i], opts)
 		if err != nil {
 			return nil, err
 		}
@@ -99,8 +101,7 @@ func New(ctx context.Context, reader client.Reader, c client.Client, namespace s
 	}
 
 	providers := &providersImpl{
-		reader:    reader,
-		client:    c,
+		client:    runtimeClient,
 		namespace: namespace,
 		opts:      opts,
 		cache:     cache,
@@ -109,17 +110,19 @@ func New(ctx context.Context, reader client.Reader, c client.Client, namespace s
 	return providers, nil
 }
 
-// newProvider a new Provider.
-func newProvider(ctx context.Context, client client.Client, region *unikornv1.Region, opts Options) (types.CommonProvider, error) {
+// newProvider constructs a provider for a region. initClient is used only for
+// startup-time bootstrap work that cannot rely on a started manager cache, while
+// runtimeClient is retained by the provider for normal operation afterwards.
+func newProvider(ctx context.Context, initClient client.Client, runtimeClient client.Client, region *unikornv1.Region, opts Options) (types.CommonProvider, error) {
 	switch region.Spec.Provider {
 	case unikornv1.ProviderKubernetes:
-		return kubernetes.New(ctx, client, region)
+		return kubernetes.New(ctx, runtimeClient, region)
 	case unikornv1.ProviderOpenstack:
-		return openstack.New(ctx, client, region, openstack.Options{
+		return openstack.New(ctx, initClient, runtimeClient, region, openstack.Options{
 			WarmImageCache: opts.WarmImageCache,
 		})
 	case unikornv1.ProviderSimulated:
-		return simulated.New(ctx, client, region)
+		return simulated.New(ctx, runtimeClient, region)
 	}
 
 	return nil, ErrRegionProviderUnimplemented
@@ -171,7 +174,7 @@ func (p *providersImpl) load(ctx context.Context, regionID string) (types.Common
 
 	region := &unikornv1.Region{}
 
-	if err := p.reader.Get(ctx, client.ObjectKey{Namespace: p.namespace, Name: regionID}, region); err != nil {
+	if err := p.client.Get(ctx, client.ObjectKey{Namespace: p.namespace, Name: regionID}, region); err != nil {
 		if client.IgnoreNotFound(err) == nil {
 			return nil, ErrRegionNotFound
 		}
@@ -179,7 +182,7 @@ func (p *providersImpl) load(ctx context.Context, regionID string) (types.Common
 		return nil, fmt.Errorf("%w: failed to get region", err)
 	}
 
-	provider, err := newProvider(ctx, p.client, region, p.opts)
+	provider, err := newProvider(ctx, p.client, p.client, region, p.opts)
 	if err != nil {
 		return nil, err
 	}

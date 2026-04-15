@@ -32,6 +32,7 @@ rules:
   - securitygrouprules
   - servers
   - filestorages
+  - sshcertificateauthorities
   verbs:
   - list
   - watch
