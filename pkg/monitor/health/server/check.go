@@ -21,13 +21,16 @@ import (
 	"context"
 	goerrors "errors"
 	"fmt"
+	"time"
 
+	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // Checker for server health.
@@ -84,6 +87,17 @@ func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server) err
 
 	if err := c.client.Status().Patch(ctx, updated, client.MergeFromWithOptions(server, client.MergeFromWithOptimisticLock{})); err != nil {
 		return err
+	}
+
+	if server.Status.Phase != updated.Status.Phase {
+		log.FromContext(ctx).Info("instance state transition",
+			"instance_id", server.Name,
+			"org_id", server.Labels[coreconstants.OrganizationLabel],
+			"region_id", server.Labels[constants.RegionLabel],
+			"from_state", server.Status.Phase,
+			"to_state", updated.Status.Phase,
+			"time_since_creation_ms", time.Since(server.CreationTimestamp.Time).Milliseconds(),
+		)
 	}
 
 	return nil
