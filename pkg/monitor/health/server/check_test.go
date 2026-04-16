@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
@@ -59,6 +60,7 @@ type captureSink struct {
 
 func newCaptureSink() *captureSink {
 	entries := make([]map[string]any, 0)
+
 	return &captureSink{entries: &entries}
 }
 
@@ -90,11 +92,11 @@ func (s *captureSink) Info(_ int, msg string, keysAndValues ...any) {
 	*s.entries = append(*s.entries, entry)
 }
 
-func (s *captureSink) transitionEntries() []map[string]any {
+func (s *captureSink) entriesWithMsg(msg string) []map[string]any {
 	var out []map[string]any
 
 	for _, e := range *s.entries {
-		if e["_msg"] == "instance state transition" {
+		if e["_msg"] == msg {
 			out = append(out, e)
 		}
 	}
@@ -119,7 +121,7 @@ func newFakeClient(t *testing.T, objects ...runtime.Object) client.Client {
 	return builder.Build()
 }
 
-func serverFixture(phase unikornv1.InstanceLifecyclePhase) *unikornv1.Server {
+func serverFixture(phase unikornv1.InstanceLifecyclePhase, conditions ...unikornv1core.Condition) *unikornv1.Server {
 	return &unikornv1.Server{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serverID,
@@ -131,7 +133,8 @@ func serverFixture(phase unikornv1.InstanceLifecyclePhase) *unikornv1.Server {
 			},
 		},
 		Status: unikornv1.ServerStatus{
-			Phase: phase,
+			Phase:      phase,
+			Conditions: conditions,
 		},
 	}
 }
@@ -142,6 +145,15 @@ func identityFixture() *unikornv1.Identity {
 			Name:      identityID,
 			Namespace: namespace,
 		},
+	}
+}
+
+func healthCondition() unikornv1core.Condition {
+	return unikornv1core.Condition{
+		Type:               unikornv1core.ConditionHealthy,
+		Status:             corev1.ConditionTrue,
+		Reason:             unikornv1core.ConditionReasonHealthy,
+		LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Minute)),
 	}
 }
 
@@ -170,8 +182,8 @@ func runCheck(t *testing.T, srv *unikornv1.Server, updateFn func(*unikornv1.Serv
 	return sink, checker.Check(ctx)
 }
 
-// TestCheckServerLogsOnPhaseChange verifies that a transition log is emitted when the
-// server's lifecycle phase changes, and that it contains the required fields.
+// TestCheckServerLogsOnPhaseChange verifies that a phase transition log is emitted when
+// the server's lifecycle phase changes, and that it contains the required fields.
 func TestCheckServerLogsOnPhaseChange(t *testing.T) {
 	t.Parallel()
 
@@ -183,17 +195,17 @@ func TestCheckServerLogsOnPhaseChange(t *testing.T) {
 
 	require.NoError(t, err)
 
-	entries := sink.transitionEntries()
+	entries := sink.entriesWithMsg("instance phase transition")
 	require.Len(t, entries, 1)
 	require.Equal(t, serverID, entries[0]["instance_id"])
 	require.Equal(t, orgID, entries[0]["org_id"])
 	require.Equal(t, regionID, entries[0]["region_id"])
-	require.Equal(t, unikornv1.InstanceLifecyclePhasePending, entries[0]["from_state"])
-	require.Equal(t, unikornv1.InstanceLifecyclePhaseRunning, entries[0]["to_state"])
+	require.Equal(t, unikornv1.InstanceLifecyclePhasePending, entries[0]["from_phase"])
+	require.Equal(t, unikornv1.InstanceLifecyclePhaseRunning, entries[0]["to_phase"])
 	require.NotZero(t, entries[0]["time_since_creation_ms"])
 }
 
-// TestCheckServerNoLogWhenPhaseUnchanged verifies that no transition log is emitted
+// TestCheckServerNoLogWhenPhaseUnchanged verifies that no phase transition log is emitted
 // when the provider reports the same phase.
 func TestCheckServerNoLogWhenPhaseUnchanged(t *testing.T) {
 	t.Parallel()
@@ -205,20 +217,87 @@ func TestCheckServerNoLogWhenPhaseUnchanged(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Empty(t, sink.transitionEntries())
+	require.Empty(t, sink.entriesWithMsg("instance phase transition"))
 }
 
-// TestCheckServerNoLogWhenOnlyConditionChanges verifies that a health condition change
-// does not produce a transition log when the phase is unchanged.
-func TestCheckServerNoLogWhenOnlyConditionChanges(t *testing.T) {
+// TestCheckServerLogsOnStateChange verifies that a state transition log is emitted when
+// the server's health condition changes, and that it contains the required fields.
+func TestCheckServerLogsOnStateChange(t *testing.T) {
 	t.Parallel()
 
-	srv := serverFixture(unikornv1.InstanceLifecyclePhaseRunning)
+	srv := serverFixture(unikornv1.InstanceLifecyclePhaseRunning,
+		healthCondition(),
+	)
 
 	sink, err := runCheck(t, srv, func(s *unikornv1.Server) {
 		s.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "")
 	})
 
 	require.NoError(t, err)
-	require.Empty(t, sink.transitionEntries())
+
+	entries := sink.entriesWithMsg("instance state transition")
+	require.Len(t, entries, 1)
+	require.Equal(t, serverID, entries[0]["instance_id"])
+	require.Equal(t, orgID, entries[0]["org_id"])
+	require.Equal(t, regionID, entries[0]["region_id"])
+	require.Equal(t, string(unikornv1core.ConditionReasonHealthy), entries[0]["from_state"])
+	require.Equal(t, string(unikornv1core.ConditionReasonDegraded), entries[0]["to_state"])
+	require.NotZero(t, entries[0]["duration_ms"])
+}
+
+// TestCheckServerNoLogWhenStateUnchanged verifies that no state transition log is emitted
+// when the provider reports the same health condition.
+func TestCheckServerNoLogWhenStateUnchanged(t *testing.T) {
+	t.Parallel()
+
+	srv := serverFixture(unikornv1.InstanceLifecyclePhaseRunning,
+		healthCondition(),
+	)
+
+	sink, err := runCheck(t, srv, func(s *unikornv1.Server) {
+		s.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "")
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, sink.entriesWithMsg("instance state transition"))
+}
+
+// TestCheckServerLogsWhenConditionAppearsForFirstTime verifies that a state transition log
+// is emitted when there was no prior ConditionHealthy and the provider sets one, and that
+// from_state is empty since there was no previous condition.
+func TestCheckServerLogsWhenConditionAppearsForFirstTime(t *testing.T) {
+	t.Parallel()
+
+	srv := serverFixture(unikornv1.InstanceLifecyclePhaseRunning) // no prior condition
+
+	sink, err := runCheck(t, srv, func(s *unikornv1.Server) {
+		s.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "")
+	})
+
+	require.NoError(t, err)
+
+	entries := sink.entriesWithMsg("instance state transition")
+	require.Len(t, entries, 1)
+	require.Empty(t, entries[0]["from_state"])
+	require.Equal(t, string(unikornv1core.ConditionReasonHealthy), entries[0]["to_state"])
+	require.NotZero(t, entries[0]["duration_ms"])
+}
+
+// TestCheckServerLogsBothOnCombinedChange verifies that both log entries are emitted when
+// phase and health condition change simultaneously.
+func TestCheckServerLogsBothOnCombinedChange(t *testing.T) {
+	t.Parallel()
+
+	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending,
+		healthCondition(),
+	)
+
+	sink, err := runCheck(t, srv, func(s *unikornv1.Server) {
+		s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+		s.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "")
+	})
+
+	require.NoError(t, err)
+	require.Len(t, sink.entriesWithMsg("instance phase transition"), 1)
+	require.Len(t, sink.entriesWithMsg("instance state transition"), 1)
 }
