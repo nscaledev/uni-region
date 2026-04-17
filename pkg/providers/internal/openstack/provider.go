@@ -1361,13 +1361,19 @@ func gatewayIP(prefix net.IPNet) string {
 	return ip.String()
 }
 
-// dhcpRange returns a range from the prefix starting at after the first /25
-// and extending to the address before the subnet's broadcast address.
-func dhcpRange(prefix net.IPNet) (string, string) {
+// dhcpRange returns a range from the prefix starting after any requested
+// reservation length, or at the start of the subnet when no reservations
+// are configured.
+func dhcpRange(prefix net.IPNet, reservations *unikornv1.NetworkReservations) (string, string) {
 	ba := big.NewInt(0).SetBytes(prefix.IP)
 
 	// Start.
-	bs := big.NewInt(0).Add(ba, big.NewInt(128))
+	startOffset := int64(2)
+	if reservations != nil {
+		startOffset = 1 << (32 - reservations.PrefixLength)
+	}
+
+	bs := big.NewInt(0).Add(ba, big.NewInt(startOffset))
 
 	// End.
 	ones, bits := prefix.Mask.Size()
@@ -1381,16 +1387,33 @@ func dhcpRange(prefix net.IPNet) (string, string) {
 	return start.String(), end.String()
 }
 
-// storageRange returns a range from the prefix that comes from the first /25
-// but leaves some spare IPs around for various uses.
-func storageRange(prefix net.IPNet) *unikornv1.AttachmentIPRange {
+// storageRange returns a range from the prefix that comes from the requested
+// reservation less any requested infrastructure-reserved space.
+func storageRange(prefix net.IPNet, reservations *unikornv1.NetworkReservations) *unikornv1.AttachmentIPRange {
+	if reservations == nil {
+		return nil
+	}
+
+	dotStart := 2
+
+	if reservations.ProviderReservedPrefixLength != nil {
+		// Users can explicitly opt out of storage.
+		if *reservations.ProviderReservedPrefixLength == reservations.PrefixLength {
+			return nil
+		}
+
+		dotStart = 1 << (32 - *reservations.ProviderReservedPrefixLength)
+	}
+
 	ba := big.NewInt(0).SetBytes(prefix.IP)
 
 	// Start.
-	bs := big.NewInt(0).Add(ba, big.NewInt(16))
+	bs := big.NewInt(0).Add(ba, big.NewInt(int64(dotStart)))
 
 	// End.
-	be := big.NewInt(0).Add(ba, big.NewInt(127))
+	dotEnd := 1 << (32 - reservations.PrefixLength)
+
+	be := big.NewInt(0).Add(ba, big.NewInt(int64(dotEnd-1)))
 
 	start := net.IP(bs.Bytes())
 	end := net.IP(be.Bytes())
@@ -1462,6 +1485,7 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 
 func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, network *unikornv1.Network, openstackNetwork *NetworkExt) (*subnets.Subnet, error) {
 	log := log.FromContext(ctx)
+	effectiveReservations := network.EffectiveReservations()
 
 	var dnsNameservers []string
 
@@ -1480,6 +1504,15 @@ func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, 
 		routes[i].NextHop = route.NextHop.String()
 	}
 
+	start, end := dhcpRange(network.Spec.Prefix.IPNet, effectiveReservations)
+
+	allocationPools := []subnets.AllocationPool{
+		{
+			Start: start,
+			End:   end,
+		},
+	}
+
 	result, err := client.GetSubnet(ctx, network)
 	if err != nil {
 		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
@@ -1488,22 +1521,13 @@ func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, 
 
 		log.V(1).Info("creating L3 subnet")
 
-		start, end := dhcpRange(network.Spec.Prefix.IPNet)
-
-		allocationPools := []subnets.AllocationPool{
-			{
-				Start: start,
-				End:   end,
-			},
-		}
-
 		result, err = client.CreateSubnet(ctx, network, openstackNetwork.ID, network.Spec.Prefix.String(), gatewayIP(network.Spec.Prefix.IPNet), dnsNameservers, routes, allocationPools)
 		if err != nil {
 			return nil, err
 		}
 
 		network.Status.Openstack.SubnetID = ptr.To(result.ID)
-		network.Status.Openstack.StorageRange = storageRange(network.Spec.Prefix.IPNet)
+		network.Status.Openstack.StorageRange = storageRange(network.Spec.Prefix.IPNet, effectiveReservations)
 
 		return result, nil
 	}
@@ -1515,7 +1539,7 @@ func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, 
 	}
 
 	network.Status.Openstack.SubnetID = ptr.To(result.ID)
-	network.Status.Openstack.StorageRange = storageRange(network.Spec.Prefix.IPNet)
+	network.Status.Openstack.StorageRange = storageRange(network.Spec.Prefix.IPNet, effectiveReservations)
 
 	return result, nil
 }

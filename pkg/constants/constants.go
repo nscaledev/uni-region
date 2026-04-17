@@ -75,6 +75,24 @@ const (
 	// ServerLabel creates an indexable linkage between resources and an
 	// owning entity.
 	ServerLabel = "regions.unikorn-cloud.org/server-id"
+	// NetworkReservationDefaultsAnnotation records which implicit network
+	// reservation compatibility rules should be used when spec.reservations is
+	// omitted.
+	NetworkReservationDefaultsAnnotation = "regions.unikorn-cloud.org/network-reservation-defaults"
+)
+
+const (
+	// NetworkReservationDefaultsV2 marks resources created after reservations
+	// support was introduced.  For these resources, omitting reservations means
+	// "no reservations"; the annotation exists only to distinguish them from
+	// legacy resources that relied on implicit reserved ranges.
+	NetworkReservationDefaultsV2 = 2
+	// LegacyNetworkReservationPrefixLength is the historic implicit reservation
+	// used before reservations were added to the API.
+	LegacyNetworkReservationPrefixLength = 25
+	// LegacyNetworkProviderReservedPrefixLength is the historic implicit carve-out
+	// for provider use within the reserved space.
+	LegacyNetworkProviderReservedPrefixLength = 28
 )
 
 const (

@@ -435,6 +435,7 @@ type Network struct {
 	Status            NetworkStatus `json:"status,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:message="reservation prefix length must be greater than the network prefix length",rule="!has(self.reservations) || (self.reservations.prefixLength > int(self.prefix.split(\"/\")[1]))"
 type NetworkSpec struct {
 	// Pause, if true, will inhibit reconciliation.
 	Pause bool `json:"pause,omitempty"`
@@ -446,10 +447,42 @@ type NetworkSpec struct {
 	Provider Provider `json:"provider,omitempty"`
 	// Prefix is the IPv4 address prefix.
 	Prefix *unikornv1core.IPv4Prefix `json:"prefix"`
+	// Reservations reserve a prefix at the start of the network for
+	// infrastructure use such as file storage and internal platform use
+	// as directed by the infrastructure provider.
+	// For example, on a /24 network a reservation prefix length of 25
+	// reserves 192.168.0.0/25, leaving 192.168.0.128-192.168.0.254 for DHCP.
+	// On create, omitting reservations means no reservations for newly-created
+	// networks.  Older networks that predate reservations retain their historic
+	// implicit /25 reservation with an internal /28 carve-out until a client
+	// explicitly supplies reservations.  Updates use read/modify/write
+	// semantics, so omitting reservations preserves the current policy.
+	Reservations *NetworkReservations `json:"reservations,omitempty"`
 	// DNSNameservers are a set of DNS nameservrs for the network.
 	DNSNameservers []unikornv1core.IPv4Address `json:"dnsNameservers,omitempty"`
 	// Routes to be distributed via DHCP.
 	Routes []Route `json:"routes,omitempty"`
+}
+
+// +kubebuilder:validation:XValidation:message="provider reserved prefix length must be greater than or equal to the reservation prefix length",rule="!has(self.providerReservedPrefixLength) || (self.providerReservedPrefixLength >= self.prefixLength)"
+type NetworkReservations struct {
+	// PrefixLength defines how much of the network to reserve, starting at the
+	// beginning of the network CIDR.  For example, on a /24 network a value of
+	// 25 reserves the lower half of the network, i.e. 192.168.0.0/25.
+	// The network address (.0) and gateway (.1) are platform-reserved within
+	// that space, so usable reserved addresses begin at .2.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=30
+	PrefixLength int `json:"prefixLength"`
+	// ProviderReservedPrefixLength optionally carves a prefix from the start of
+	// the reserved space for provider use.  For example, on a /24 network with
+	// PrefixLength=25 and ProviderReservedPrefixLength=28, 192.168.0.0/28 is
+	// reserved for provider use and storage uses the remainder of the reserved space,
+	// 192.168.0.16-192.168.0.127.  If this matches PrefixLength, the full
+	// reservation is treated as infrastructure space and no storage range is left.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=30
+	ProviderReservedPrefixLength *int `json:"providerReservedPrefixLength,omitempty"`
 }
 
 type Route struct {

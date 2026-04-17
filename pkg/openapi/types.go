@@ -430,6 +430,37 @@ type NetworkReadSpec struct {
 	RegionId string `json:"regionId"`
 }
 
+// NetworkReservations Network reservations reserve a prefix at the start of the network for
+// infrastructure use such as file storage and internal platform use as
+// directed by the infrastructure provider.
+// For example, on a /24 network a reservation prefix length of 25
+// reserves 192.168.0.0/25, leaving 192.168.0.128-192.168.0.254 for DHCP.
+// When returned on read for legacy networks created before reservations
+// support existed, this may reflect the historical implicit reservation
+// policy applied to those networks.
+// Reservations are fixed when the network is created and are immutable
+// afterwards.
+type NetworkReservations struct {
+	// PrefixLength Defines how much of the network to reserve, starting at the
+	// beginning of the network CIDR.  For example, on a /24 network a
+	// value of 25 reserves the lower half of the network, i.e.
+	// 192.168.0.0/25.  The network address (.0) and gateway (.1) are
+	// platform-reserved within that space, so usable reserved addresses
+	// begin at .2.  The reservation prefix length must be greater than
+	// the network prefix length.
+	PrefixLength int `json:"prefixLength"`
+
+	// ProviderReservedPrefixLength Optionally carves a prefix from the start of the reserved space for
+	// provider use.
+	// For example, on a /24 network with prefixLength=25 and
+	// providerReservedPrefixLength=28, 192.168.0.0/28 is reserved for
+	// provider use and storage uses the remainder of the reserved space,
+	// 192.168.0.16-192.168.0.127. If this matches prefixLength, the full
+	// reservation is treated as provider-reserved space and no storage range
+	// is left.
+	ProviderReservedPrefixLength *int `json:"providerReservedPrefixLength,omitempty"`
+}
+
 // NetworkSpecOpenstack An openstack network.
 type NetworkSpecOpenstack struct {
 	// NetworkId The openstack network ID.
@@ -462,7 +493,11 @@ type NetworkV2CreateSpec struct {
 	// OrganizationId The organization to provision the resource in.
 	OrganizationId string `json:"organizationId"`
 
-	// Prefix An IPv4 prefix for the network.
+	// Prefix An IPv4 prefix for the network.  Dynamic modification of the
+	// network prefix is not supported at this time, and doing so
+	// would involve adding a route between discrete broadcast domains
+	// so ensure this is large enough for your potential requirements
+	// during the life time of your infrastructure.
 	Prefix string `json:"prefix"`
 
 	// ProjectId The project to provision the resource in.
@@ -470,6 +505,18 @@ type NetworkV2CreateSpec struct {
 
 	// RegionId The region a network is to be provisioned in.
 	RegionId string `json:"regionId"`
+
+	// Reservations Network reservations reserve a prefix at the start of the network for
+	// infrastructure use such as file storage and internal platform use as
+	// directed by the infrastructure provider.
+	// For example, on a /24 network a reservation prefix length of 25
+	// reserves 192.168.0.0/25, leaving 192.168.0.128-192.168.0.254 for DHCP.
+	// When returned on read for legacy networks created before reservations
+	// support existed, this may reflect the historical implicit reservation
+	// policy applied to those networks.
+	// Reservations are fixed when the network is created and are immutable
+	// afterwards.
+	Reservations *NetworkReservations `json:"reservations,omitempty"`
 
 	// Routes A list of network routes.
 	Routes *Routes `json:"routes,omitempty"`
@@ -503,15 +550,38 @@ type NetworkV2Status struct {
 
 	// RegionId The region a network is provisioned in.
 	RegionId string `json:"regionId"`
+
+	// Reservations Network reservations reserve a prefix at the start of the network for
+	// infrastructure use such as file storage and internal platform use as
+	// directed by the infrastructure provider.
+	// For example, on a /24 network a reservation prefix length of 25
+	// reserves 192.168.0.0/25, leaving 192.168.0.128-192.168.0.254 for DHCP.
+	// When returned on read for legacy networks created before reservations
+	// support existed, this may reflect the historical implicit reservation
+	// policy applied to those networks.
+	// Reservations are fixed when the network is created and are immutable
+	// afterwards.
+	Reservations *NetworkReservations `json:"reservations,omitempty"`
 }
 
-// NetworkV2Update A network request.
+// NetworkV2Update A network update request.
+// Read-only fields returned on read, including the network prefix and
+// reservations, are omitted from update requests.
 type NetworkV2Update struct {
 	// Metadata Metadata required for all API resource reads and writes.
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
 
-	// Spec A network's specification.
-	Spec NetworkV2Spec `json:"spec"`
+	// Spec The mutable portion of a network's specification.
+	Spec NetworkV2UpdateSpec `json:"spec"`
+}
+
+// NetworkV2UpdateSpec The mutable portion of a network's specification.
+type NetworkV2UpdateSpec struct {
+	// DnsNameservers A list of IPv4 addresses.
+	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
+
+	// Routes A list of network routes.
+	Routes *Routes `json:"routes,omitempty"`
 }
 
 // NetworkWrite A network request.
@@ -1334,7 +1404,9 @@ type NetworkRequest = NetworkWrite
 // NetworkV2CreateRequest A network request.
 type NetworkV2CreateRequest = NetworkV2Create
 
-// NetworkV2UpdateRequest A network request.
+// NetworkV2UpdateRequest A network update request.
+// Read-only fields returned on read, including the network prefix and
+// reservations, are omitted from update requests.
 type NetworkV2UpdateRequest = NetworkV2Update
 
 // SecurityGroupRequest A security group request.
