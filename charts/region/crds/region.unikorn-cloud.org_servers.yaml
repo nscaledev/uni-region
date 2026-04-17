@@ -125,6 +125,10 @@ spec:
                   - id
                   type: object
                 type: array
+              sshCertificateAuthorityID:
+                description: SSHCertificateAuthorityID is an optional project scoped
+                  OpenSSH user CA trust anchor.
+                type: string
               tags:
                 description: |-
                   Tags are an abitrary list of key/value pairs that a client
