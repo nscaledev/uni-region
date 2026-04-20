@@ -48,6 +48,12 @@ const (
 	InstanceLifecyclePhaseStopping InstanceLifecyclePhase = "Stopping"
 )
 
+// Defines values for LoadBalancerListenerProtocolV2.
+const (
+	LoadBalancerListenerProtocolV2Tcp LoadBalancerListenerProtocolV2 = "tcp"
+	LoadBalancerListenerProtocolV2Udp LoadBalancerListenerProtocolV2 = "udp"
+)
+
 // Defines values for NetworkDirection.
 const (
 	NetworkDirectionEgress  NetworkDirection = "egress"
@@ -396,6 +402,141 @@ type Ipv4AddressList = []Ipv4Address
 
 // KubernetesNameParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type KubernetesNameParameter = string
+
+// LoadBalancerHealthCheckV2 A load balancer pool health check.
+type LoadBalancerHealthCheckV2 struct {
+	HealthyThreshold   *int `json:"healthyThreshold,omitempty"`
+	IntervalSeconds    *int `json:"intervalSeconds,omitempty"`
+	TimeoutSeconds     *int `json:"timeoutSeconds,omitempty"`
+	UnhealthyThreshold *int `json:"unhealthyThreshold,omitempty"`
+}
+
+// LoadBalancerListenerNameV2 A load balancer listener name. Must start with a lower-case letter and otherwise be a valid DNS label.
+type LoadBalancerListenerNameV2 = string
+
+// LoadBalancerListenerProtocolV2 The load balancer listener protocol.
+type LoadBalancerListenerProtocolV2 string
+
+// LoadBalancerListenerV2 A load balancer listener.
+type LoadBalancerListenerV2 struct {
+	// AllowedCidrs A list of source IPv4 CIDRs allowed to access the listener.
+	AllowedCidrs *[]string `json:"allowedCidrs,omitempty"`
+
+	// IdleTimeoutSeconds The TCP idle timeout in seconds.
+	IdleTimeoutSeconds *int `json:"idleTimeoutSeconds,omitempty"`
+
+	// Name A load balancer listener name. Must start with a lower-case letter and otherwise be a valid DNS label.
+	Name LoadBalancerListenerNameV2 `json:"name"`
+
+	// Pool A load balancer listener pool.
+	Pool LoadBalancerPoolV2 `json:"pool"`
+
+	// Port The listener port.
+	Port int `json:"port"`
+
+	// Protocol The load balancer listener protocol.
+	Protocol LoadBalancerListenerProtocolV2 `json:"protocol"`
+}
+
+// LoadBalancerMemberV2 A load balancer pool member.
+type LoadBalancerMemberV2 struct {
+	// Address An IPv4 address.
+	Address Ipv4Address `json:"address"`
+	Port    int         `json:"port"`
+}
+
+// LoadBalancerPoolV2 A load balancer listener pool.
+type LoadBalancerPoolV2 struct {
+	// HealthCheck A load balancer pool health check.
+	HealthCheck *LoadBalancerHealthCheckV2 `json:"healthCheck,omitempty"`
+
+	// Members A list of pool members.
+	Members []LoadBalancerMemberV2 `json:"members"`
+
+	// ProxyProtocolV2 Whether to enable Proxy Protocol v2.
+	ProxyProtocolV2 *bool `json:"proxyProtocolV2,omitempty"`
+}
+
+// LoadBalancerV2Create A load balancer creation request.
+type LoadBalancerV2Create struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A load balancer creation specification.
+	Spec LoadBalancerV2CreateSpec `json:"spec"`
+}
+
+// LoadBalancerV2CreateSpec defines model for loadBalancerV2CreateSpec.
+type LoadBalancerV2CreateSpec struct {
+	// Listeners A list of load balancer listeners.
+	Listeners []LoadBalancerListenerV2 `json:"listeners"`
+
+	// NetworkId The network the load balancer belongs to.
+	NetworkId string `json:"networkId"`
+
+	// OrganizationId The organization the load balancer belongs to.
+	OrganizationId string `json:"organizationId"`
+
+	// ProjectId The project the load balancer belongs to.
+	ProjectId string `json:"projectId"`
+
+	// PublicIP Whether to allocate a public IP.
+	PublicIP *bool `json:"publicIP,omitempty"`
+
+	// RegionId The region the load balancer belongs to.
+	RegionId string `json:"regionId"`
+
+	// VipAddress An IPv4 address.
+	VipAddress *Ipv4Address `json:"vipAddress,omitempty"`
+}
+
+// LoadBalancerV2Read A load balancer.
+type LoadBalancerV2Read struct {
+	// Metadata Metadata required by project scoped resource reads.
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+
+	// Spec A load balancer's specification.
+	Spec LoadBalancerV2Spec `json:"spec"`
+
+	// Status Read only status information about a load balancer.
+	Status LoadBalancerV2Status `json:"status"`
+}
+
+// LoadBalancerV2Spec A load balancer's specification.
+type LoadBalancerV2Spec struct {
+	// Listeners A list of load balancer listeners.
+	Listeners []LoadBalancerListenerV2 `json:"listeners"`
+
+	// PublicIP Whether to allocate a public IP.
+	PublicIP *bool `json:"publicIP,omitempty"`
+}
+
+// LoadBalancerV2Status Read only status information about a load balancer.
+type LoadBalancerV2Status struct {
+	// NetworkId The network the load balancer belongs to.
+	NetworkId string `json:"networkId"`
+
+	// PublicIP An IPv4 address.
+	PublicIP *Ipv4Address `json:"publicIP,omitempty"`
+
+	// RegionId The region the load balancer belongs to.
+	RegionId string `json:"regionId"`
+
+	// VipAddress An IPv4 address.
+	VipAddress *Ipv4Address `json:"vipAddress,omitempty"`
+}
+
+// LoadBalancerV2Update A load balancer update request.
+type LoadBalancerV2Update struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A load balancer's specification.
+	Spec LoadBalancerV2Spec `json:"spec"`
+}
+
+// LoadBalancersV2Read A list of load balancers.
+type LoadBalancersV2Read = []LoadBalancerV2Read
 
 // NetworkDirection The direction of the rule.
 type NetworkDirection string
@@ -1202,6 +1343,9 @@ type ImageStatusQueryParameter = []ImageState
 // LengthParameter defines model for lengthParameter.
 type LengthParameter = int
 
+// LoadBalancerIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
+type LoadBalancerIDParameter = KubernetesNameParameter
+
 // NetworkIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type NetworkIDParameter = KubernetesNameParameter
 
@@ -1261,6 +1405,12 @@ type ImageResponse = Image
 
 // ImagesResponse A list of images that are compatible with this platform.
 type ImagesResponse = Images
+
+// LoadBalancerV2Response A load balancer.
+type LoadBalancerV2Response = LoadBalancerV2Read
+
+// LoadBalancersV2Response A list of load balancers.
+type LoadBalancersV2Response = LoadBalancersV2Read
 
 // NetworkResponse A network.
 type NetworkResponse = NetworkRead
@@ -1327,6 +1477,12 @@ type IdentityRequest = IdentityWrite
 
 // ImageCreateRequest A compute image create request.
 type ImageCreateRequest = ImageCreate
+
+// LoadBalancerV2CreateRequest A load balancer creation request.
+type LoadBalancerV2CreateRequest = LoadBalancerV2Create
+
+// LoadBalancerV2UpdateRequest A load balancer update request.
+type LoadBalancerV2UpdateRequest = LoadBalancerV2Update
 
 // NetworkRequest A network request.
 type NetworkRequest = NetworkWrite
@@ -1407,6 +1563,25 @@ type GetApiV2FilestorageParams struct {
 type GetApiV2FilestorageclassesParams struct {
 	// RegionID Allows resources to be filtered by region.
 	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+}
+
+// GetApiV2LoadbalancersParams defines parameters for GetApiV2Loadbalancers.
+type GetApiV2LoadbalancersParams struct {
+	// Tag A set of tags to match against resources in the form "name=value",
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+
+	// OrganizationID Allows resources to be filtered by organization.
+	OrganizationID *OrganizationIDQueryParameter `form:"organizationID,omitempty" json:"organizationID,omitempty"`
+
+	// ProjectID Allows resources to be filtered by project.
+	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+
+	// NetworkID Allows resources to be filtered by network.
+	NetworkID *NetworkIDQueryParameter `form:"networkID,omitempty" json:"networkID,omitempty"`
 }
 
 // GetApiV2NetworksParams defines parameters for GetApiV2Networks.
@@ -1523,6 +1698,12 @@ type PostApiV2FilestorageJSONRequestBody = StorageV2Create
 
 // PutApiV2FilestorageFilestorageIDJSONRequestBody defines body for PutApiV2FilestorageFilestorageID for application/json ContentType.
 type PutApiV2FilestorageFilestorageIDJSONRequestBody = StorageV2Update
+
+// PostApiV2LoadbalancersJSONRequestBody defines body for PostApiV2Loadbalancers for application/json ContentType.
+type PostApiV2LoadbalancersJSONRequestBody = LoadBalancerV2Create
+
+// PutApiV2LoadbalancersLoadBalancerIDJSONRequestBody defines body for PutApiV2LoadbalancersLoadBalancerID for application/json ContentType.
+type PutApiV2LoadbalancersLoadBalancerIDJSONRequestBody = LoadBalancerV2Update
 
 // PostApiV2NetworksJSONRequestBody defines body for PostApiV2Networks for application/json ContentType.
 type PostApiV2NetworksJSONRequestBody = NetworkV2Create
