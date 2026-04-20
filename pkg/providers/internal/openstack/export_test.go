@@ -39,6 +39,19 @@ func NewImageQuery(listFunc func() (*cache.ListSnapshot[types.Image], error)) ty
 	return &imageQuery{listFunc: listFunc}
 }
 
+type ImageCacheBase = imageCacheBase
+
+type ImageCacheWrapper = imageCacheWrapper
+
+//nolint:gochecknoglobals
+var NewImageCacheWrapper = newImageCacheWrapper
+
+//nolint:gochecknoglobals
+var NewCacheEpoch = newCacheEpoch
+
+//nolint:gochecknoglobals
+var ImageStatusPendingDelete = imageStatusPendingDelete
+
 //nolint:gochecknoglobals
 var ConvertImage = convertImage
 

@@ -129,6 +129,9 @@ type Provider struct {
 	// imageCache is used to downsample the OpenStack image API, because responses can
 	// take seconds. This reduces the effect of that latency on all callers.
 	imageCache *cache.RefreshAheadCache[types.Image, *types.Image]
+	// imageView wraps imageCache with temporary write-through bridge semantics until the
+	// shared cache grows native insert/update support.
+	imageView *imageCacheWrapper
 }
 
 var _ types.Provider = &Provider{}
@@ -178,6 +181,7 @@ func New(ctx context.Context, initClient client.Client, runtimeClient client.Cli
 		}
 
 		p.imageCache = imageCache
+		p.imageView = newImageCacheWrapper(imageCache)
 	}
 
 	return p, nil
@@ -668,7 +672,7 @@ func (p *Provider) QueryImages() (types.ImageQuery, error) {
 		return nil, fmt.Errorf("%w: image caching is disabled", coreerrors.ErrResourceNotFound)
 	}
 
-	return &imageQuery{listFunc: p.imageCache.List}, nil
+	return &imageQuery{listFunc: p.imageView.List}, nil
 }
 
 // GetImage retrieves a specific image by its ID.
@@ -677,7 +681,7 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 		return nil, fmt.Errorf("%w: image caching is disabled", coreerrors.ErrResourceNotFound)
 	}
 
-	image, err := p.imageCache.Get(imageID)
+	image, err := p.imageView.Get(imageID)
 	if err != nil {
 		return nil, err
 	}
@@ -793,13 +797,34 @@ func (p *Provider) CreateImage(ctx context.Context, image *types.Image, uri stri
 		return nil, err
 	}
 
-	// Invalidation is synchronous so any subsequent API requests after image
-	// completion has been reported to the client will feature the image.
-	if err := p.imageCache.Invalidate(); err != nil {
+	// The underlying cache currently only supports full invalidation-based refreshes.
+	// Those refreshes can fail transiently when Glance list calls time out, even after
+	// the create/import path itself succeeded.
+	//
+	// The temporary imageView wrapper bridges that gap.  We insert a synthetic image
+	// view now so that subsequent cache-backed reads reflect the successful write
+	// immediately.
+	//
+	// We deliberately do not synchronously invalidate the underlying cache here.  The
+	// whole point of this temporary bridge is to remove Glance relist latency from the
+	// HTTP critical path.  A blocking invalidation would put the same timeout-sensitive
+	// list call back into the handler and reintroduce the 502 we are trying to avoid.
+	// Normal refresh-ahead reconciliation will fold this bridge state away on the next
+	// successful cache epoch change.
+	//
+	// InsertIfAbsent is deliberate here: if an earlier refresh already surfaced the
+	// image, that refreshed entry remains authoritative and we do not overwrite it with
+	// locally synthesised data.
+	syntheticImage, err := convertImage(resource)
+	if err != nil {
 		return nil, err
 	}
 
-	return convertImage(resource)
+	if err := p.imageView.InsertIfAbsent(syntheticImage); err != nil {
+		return nil, err
+	}
+
+	return syntheticImage, nil
 }
 
 func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
@@ -807,7 +832,7 @@ func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
 		return fmt.Errorf("%w: image caching is disabled", coreerrors.ErrResourceNotFound)
 	}
 
-	image, err := p.imageCache.Get(imageID)
+	image, err := p.imageView.Get(imageID)
 	if err != nil {
 		return err
 	}
@@ -829,7 +854,7 @@ func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
 			return err
 		}
 
-		return p.deleteImage(ctx, imageService, imageID)
+		return p.deleteImage(ctx, imageService, image.Item, imageID)
 	}
 
 	// Otherwise it exists in our project...
@@ -838,10 +863,10 @@ func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
 		return err
 	}
 
-	return p.deleteImage(ctx, imageService, imageID)
+	return p.deleteImage(ctx, imageService, image.Item, imageID)
 }
 
-func (p *Provider) deleteImage(ctx context.Context, imageService *ImageClient, imageID string) error {
+func (p *Provider) deleteImage(ctx context.Context, imageService *ImageClient, image *types.Image, imageID string) error {
 	if p.imageCache == nil {
 		return fmt.Errorf("%w: image caching is disabled", coreerrors.ErrResourceNotFound)
 	}
@@ -858,9 +883,23 @@ func (p *Provider) deleteImage(ctx context.Context, imageService *ImageClient, i
 		return err
 	}
 
-	// Invalidation is synchronous so any subsequent API requests after image
-	// completion has been reported to the client will no longer feature the image.
-	if err := p.imageCache.Invalidate(); err != nil {
+	// Delete is bridged through imageView as an update rather than a removal.
+	// The wrapper only exists until the next successful underlying cache refresh, but it
+	// needs to prevent the stale pre-delete image from being served in the meantime.
+	//
+	// We intentionally use an internal pending_delete sentinel status here rather than
+	// deleting the entry from the temporary view outright.  Removing the image
+	// immediately would allow it to "reappear" if the next successful refresh still
+	// observes Glance reporting it in a transitional delete state.
+	//
+	// We also deliberately avoid forcing a synchronous cache invalidation here.  The
+	// bridge update is enough to give the caller the correct post-delete view
+	// immediately, while the background refresh cadence will eventually reconcile the
+	// base cache without keeping the delete handler open long enough to time out.
+	deleting := cloneProviderImage(image)
+	deleting.Status = imageStatusPendingDelete
+
+	if err := p.imageView.Update(deleting); err != nil {
 		return err
 	}
 
@@ -2497,7 +2536,7 @@ func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Ident
 		return nil, fmt.Errorf("%w: image caching is disabled", coreerrors.ErrResourceNotFound)
 	}
 
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
@@ -2554,22 +2593,47 @@ func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Ident
 
 		// Make a best effort to delete the image to free up resources.
 		if err := imageService.DeleteImage(ctx, imageID); err != nil {
-			log.Error(err, "failed to delete failed image, please manually remove me", "imageID", imageID)
+			logger.Error(err, "failed to delete failed image, please manually remove me", "imageID", imageID)
 		}
 
 		return nil, err
 	}
 
-	if err := p.imageCache.Invalidate(); err != nil {
+	imageSnapshot := cloneProviderImage(image)
+	imageSnapshot.ID = imageID
+	imageSnapshot.IdentityID = identity.Name
+	imageSnapshot.Status = types.ImageStatusCreating
+
+	// Snapshot creation follows the same temporary cache semantics as direct image
+	// creation.
+	//
+	// The only difference is the synthetic data we hand to the wrapper before the
+	// insert: snapshots must preserve the service-principal identity label so that a
+	// later delete can still route through the owning OpenStack project correctly.
+	// We intentionally keep the caller-provided Created/Modified timestamps here rather
+	// than inventing new ones locally.  This bridge object is temporary and exists only
+	// until the next successful cache refresh, so changing timestamps here would create
+	// an observable inconsistency for no real benefit.
+	//
+	// As with direct image creation, InsertIfAbsent is deliberate.  If an earlier
+	// refresh has already surfaced the snapshot, the refreshed cache entry remains the
+	// source of truth and we do not overwrite it with temporary locally synthesised
+	// data.
+	//
+	// We deliberately do not synchronously invalidate the underlying cache here for the
+	// same reason as direct image creation: doing so would put the Glance relist back in
+	// the handler path and recreate the timeout/502 failure mode this temporary bridge is
+	// meant to avoid.
+	if err := p.imageView.InsertIfAbsent(imageSnapshot); err != nil {
 		return nil, err
 	}
 
-	imageSnapshot, err := p.imageCache.Get(imageID)
+	imageSnapshotView, err := p.imageView.Get(imageID)
 	if err != nil {
 		return nil, err
 	}
 
-	return imageSnapshot.Item, nil
+	return imageSnapshotView.Item, nil
 }
 
 func interpretGophercloudError(err error) error {
