@@ -68,6 +68,9 @@ type Server struct {
 
 	// OpenAPIOptions are for OpenAPI processing.
 	OpenAPIOptions openapimiddleware.Options
+
+	// ProviderOptions sets provider-specific options e.g. password length.
+	ProviderOptions providers.Options
 }
 
 func (s *Server) AddFlags(flags *pflag.FlagSet) {
@@ -82,6 +85,7 @@ func (s *Server) AddFlags(flags *pflag.FlagSet) {
 	s.IdentityOptions.AddFlags(flags)
 	s.CORSOptions.AddFlags(flags)
 	s.OpenAPIOptions.AddFlags(flags)
+	s.ProviderOptions.AddFlags(flags)
 }
 
 func (s *Server) SetupLogging() {
@@ -168,9 +172,10 @@ func (s *Server) GetServer(ctx context.Context, client client.Client) (*http.Ser
 		return nil, err
 	}
 
-	providers, err := providers.New(ctx, client, client, s.CoreOptions.Namespace, providers.Options{
-		WarmImageCache: true,
-	})
+	providerOpts := s.ProviderOptions
+	providerOpts.WarmImageCache = true
+
+	providers, err := providers.New(ctx, client, client, s.CoreOptions.Namespace, providerOpts)
 	if err != nil {
 		return nil, err
 	}

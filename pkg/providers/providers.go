@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/spf13/pflag"
+
 	servererrors "github.com/unikorn-cloud/core/pkg/server/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/kubernetes"
@@ -70,6 +72,13 @@ type providersImpl struct {
 type Options struct {
 	// WarmImageCache enables startup-time image cache initialization.
 	WarmImageCache bool
+
+	// PasswordLength is the number of random bytes used to generate user passwords.
+	PasswordLength int
+}
+
+func (o *Options) AddFlags(flags *pflag.FlagSet) {
+	flags.IntVar(&o.PasswordLength, "generated-password-length", 9, "Number of random bytes used to generate user passwords.")
 }
 
 // New creates and synchronously initializes all region providers. Startup-time region
@@ -120,6 +129,7 @@ func newProvider(ctx context.Context, initClient client.Client, runtimeClient cl
 	case unikornv1.ProviderOpenstack:
 		return openstack.New(ctx, initClient, runtimeClient, region, openstack.Options{
 			WarmImageCache: opts.WarmImageCache,
+			PasswordLength: opts.PasswordLength,
 		})
 	case unikornv1.ProviderSimulated:
 		return simulated.New(ctx, runtimeClient, region)

@@ -130,6 +130,9 @@ type Provider struct {
 	// imageCache is used to downsample the OpenStack image API, because responses can
 	// take seconds. This reduces the effect of that latency on all callers.
 	imageCache *cache.RefreshAheadCache[types.Image, *types.Image]
+
+	// passwordLength is the number of random bytes used to generate OpenStack user passwords.
+	passwordLength int
 }
 
 var _ types.Provider = &Provider{}
@@ -137,6 +140,10 @@ var _ types.Provider = &Provider{}
 type Options struct {
 	// WarmImageCache enables startup-time image cache initialization.
 	WarmImageCache bool
+
+	// PasswordLength is the number of random bytes used to generate OpenStack user passwords.
+	// The resulting base64url-encoded string will be longer. Defaults to 9.
+	PasswordLength int
 }
 
 // New constructs an OpenStack provider.
@@ -154,13 +161,19 @@ func New(ctx context.Context, initClient client.Client, runtimeClient client.Cli
 		return nil, err
 	}
 
+	passwordLength := opts.PasswordLength
+	if passwordLength == 0 {
+		passwordLength = 9
+	}
+
 	p := &Provider{
 		client: runtimeClient,
 		openstack: &openStackClients{
 			client:  runtimeClient,
 			_region: region,
 		},
-		vlanAllocator: vlan.New(runtimeClient, region),
+		vlanAllocator:  vlan.New(runtimeClient, region),
+		passwordLength: passwordLength,
 	}
 
 	// Install the bootstrapped OpenStack client state onto the long-lived runtime wrapper.
@@ -926,7 +939,7 @@ func (p *Provider) provisionUser(ctx context.Context, identityService *IdentityC
 
 	name := identityResourceName(identity)
 
-	b := make([]byte, 9)
+	b := make([]byte, p.passwordLength)
 	if _, err := rand.Read(b); err != nil {
 		return err
 	}
