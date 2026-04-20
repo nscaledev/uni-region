@@ -397,3 +397,96 @@ func (c *APIClient) DeleteNetwork(ctx context.Context, networkID string) error {
 
 	return nil
 }
+
+// ListLoadBalancers lists all load balancers for a project in a region.
+func (c *APIClient) ListLoadBalancers(ctx context.Context, orgID, projectID, regionID string) (regionopenapi.LoadBalancersV2Read, error) {
+	path := c.endpoints.ListLoadBalancers(orgID, projectID, regionID)
+
+	return coreclient.ListResource[regionopenapi.LoadBalancerV2Read](
+		ctx,
+		c.regionClient,
+		path,
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "loadbalancers",
+			ResourceID:     projectID,
+			ResourceIDType: "project",
+		},
+	)
+}
+
+// CreateLoadBalancer creates a new load balancer.
+func (c *APIClient) CreateLoadBalancer(ctx context.Context, request regionopenapi.LoadBalancerV2Create) (*regionopenapi.LoadBalancerV2Read, error) {
+	path := c.endpoints.CreateLoadBalancer()
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling loadbalancer request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusCreated)
+	if err != nil {
+		return nil, fmt.Errorf("creating loadbalancer: %w", err)
+	}
+
+	var lb regionopenapi.LoadBalancerV2Read
+	if err := json.Unmarshal(respBody, &lb); err != nil {
+		return nil, fmt.Errorf("unmarshaling loadbalancer: %w", err)
+	}
+
+	return &lb, nil
+}
+
+// GetLoadBalancer gets a specific load balancer by ID.
+func (c *APIClient) GetLoadBalancer(ctx context.Context, loadBalancerID string) (*regionopenapi.LoadBalancerV2Read, error) {
+	path := c.endpoints.GetLoadBalancer(loadBalancerID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	if err != nil {
+		return nil, fmt.Errorf("getting loadbalancer: %w", err)
+	}
+
+	var lb regionopenapi.LoadBalancerV2Read
+	if err := json.Unmarshal(respBody, &lb); err != nil {
+		return nil, fmt.Errorf("unmarshaling loadbalancer: %w", err)
+	}
+
+	return &lb, nil
+}
+
+// UpdateLoadBalancer updates a load balancer.
+func (c *APIClient) UpdateLoadBalancer(ctx context.Context, loadBalancerID string, request regionopenapi.LoadBalancerV2Update) (*regionopenapi.LoadBalancerV2Read, error) {
+	path := c.endpoints.UpdateLoadBalancer(loadBalancerID)
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling loadbalancer update request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPut, path, bytes.NewReader(reqBody), http.StatusAccepted)
+	if err != nil {
+		return nil, fmt.Errorf("updating loadbalancer: %w", err)
+	}
+
+	var lb regionopenapi.LoadBalancerV2Read
+	if err := json.Unmarshal(respBody, &lb); err != nil {
+		return nil, fmt.Errorf("unmarshaling loadbalancer: %w", err)
+	}
+
+	return &lb, nil
+}
+
+// DeleteLoadBalancer deletes a load balancer.
+func (c *APIClient) DeleteLoadBalancer(ctx context.Context, loadBalancerID string) error {
+	path := c.endpoints.DeleteLoadBalancer(loadBalancerID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, _, err := c.regionClient.DoRequest(ctx, http.MethodDelete, path, nil, http.StatusAccepted)
+	if err != nil {
+		return fmt.Errorf("deleting loadbalancer: %w", err)
+	}
+
+	return nil
+}
