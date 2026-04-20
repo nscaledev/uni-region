@@ -638,6 +638,128 @@ type SecurityGroupRule struct {
 	CIDR *unikornv1core.IPv4Prefix `json:"cidr,omitempty"`
 }
 
+// LoadBalancerList is a typed list of load balancers.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type LoadBalancerList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []LoadBalancer `json:"items"`
+}
+
+// LoadBalancer defines a network scoped layer 4 load balancer.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="vipAddress",type="string",JSONPath=".status.vipAddress"
+// +kubebuilder:printcolumn:name="publicIP",type="string",JSONPath=".status.publicIP"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type LoadBalancer struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              LoadBalancerSpec   `json:"spec"`
+	Status            LoadBalancerStatus `json:"status,omitempty"`
+}
+
+type LoadBalancerSpec struct {
+	// Pause, if true, will inhibit reconciliation.
+	Pause bool `json:"pause,omitempty"`
+	// Tags are an abitrary list of key/value pairs that a client
+	// may populate to store metadata for the resource.
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
+	// RequestedVIPAddress is the optional requested virtual IP address.
+	RequestedVIPAddress *unikornv1core.IPv4Address `json:"requestedVIPAddress,omitempty"`
+	// PublicIP controls whether a public IP should be allocated.
+	PublicIP bool `json:"publicIP,omitempty"`
+	// Listeners is the set of listeners exposed by the load balancer.
+	// +kubebuilder:validation:MinItems=1
+	// +listType=map
+	// +listMapKey=name
+	Listeners []LoadBalancerListener `json:"listeners,omitempty"`
+}
+
+type LoadBalancerStatus struct {
+	// Current service state of a load balancer.
+	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	// VIPAddress is the provisioned virtual IP address.
+	VIPAddress *unikornv1core.IPv4Address `json:"vipAddress,omitempty"`
+	// PublicIP is the provisioned public IP address.
+	PublicIP *unikornv1core.IPv4Address `json:"publicIP,omitempty"`
+}
+
+// +kubebuilder:validation:Enum=tcp;udp
+type LoadBalancerListenerProtocol string
+
+const (
+	LoadBalancerListenerProtocolTCP LoadBalancerListenerProtocol = "tcp"
+	LoadBalancerListenerProtocolUDP LoadBalancerListenerProtocol = "udp"
+)
+
+// +kubebuilder:validation:XValidation:rule="self.protocol == 'tcp' || !has(self.idleTimeoutSeconds)",message="idleTimeoutSeconds is only supported for TCP listeners"
+// +kubebuilder:validation:XValidation:rule="self.protocol == 'tcp' || self.pool.proxyProtocolV2 == false",message="proxyProtocolV2 is only supported for TCP listeners"
+type LoadBalancerListener struct {
+	// Name is the listener name.
+	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=63
+	Name string `json:"name"`
+	// Protocol is the listener protocol.
+	Protocol LoadBalancerListenerProtocol `json:"protocol"`
+	// Port is the listener port.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port int `json:"port"`
+	// AllowedCIDRs is an optional list of source CIDRs that may access the listener.
+	AllowedCIDRs []unikornv1core.IPv4Prefix `json:"allowedCIDRs,omitempty"`
+	// IdleTimeoutSeconds is the optional TCP idle timeout.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=86400
+	IdleTimeoutSeconds *int `json:"idleTimeoutSeconds,omitempty"`
+	// Pool is the listener backend pool.
+	Pool LoadBalancerPool `json:"pool"`
+}
+
+type LoadBalancerPool struct {
+	// ProxyProtocolV2 enables Proxy Protocol v2.
+	ProxyProtocolV2 bool `json:"proxyProtocolV2,omitempty"`
+	// Members is the set of pool members.
+	// +listType=map
+	// +listMapKey=address
+	// +listMapKey=port
+	Members []LoadBalancerMember `json:"members"`
+	// HealthCheck is the optional health check definition.
+	HealthCheck *LoadBalancerHealthCheck `json:"healthCheck,omitempty"`
+}
+
+type LoadBalancerMember struct {
+	// Address is the member IP address.
+	Address unikornv1core.IPv4Address `json:"address"`
+	// Port is the member port.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port int `json:"port"`
+}
+
+// +kubebuilder:validation:XValidation:rule="self.timeoutSeconds < self.intervalSeconds",message="timeoutSeconds must be less than intervalSeconds"
+type LoadBalancerHealthCheck struct {
+	// IntervalSeconds is the health check interval.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=300
+	IntervalSeconds int `json:"intervalSeconds"`
+	// TimeoutSeconds is the health check timeout.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=300
+	TimeoutSeconds int `json:"timeoutSeconds"`
+	// HealthyThreshold is the consecutive healthy threshold.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=10
+	HealthyThreshold int `json:"healthyThreshold"`
+	// UnhealthyThreshold is the consecutive unhealthy threshold.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=10
+	UnhealthyThreshold int `json:"unhealthyThreshold"`
+}
+
 // OpenstackSecurityGroupList is a typed list of security groups.
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type OpenstackSecurityGroupList struct {
