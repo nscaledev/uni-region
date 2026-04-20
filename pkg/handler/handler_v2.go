@@ -23,6 +23,7 @@ import (
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/region/pkg/handler/loadbalancer"
 	"github.com/unikorn-cloud/region/pkg/handler/sshcertificateauthority"
 	"github.com/unikorn-cloud/region/pkg/handler/storage"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -167,6 +168,73 @@ func (h *Handler) PutApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter, r
 
 func (h *Handler) DeleteApiV2SecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, securityGroupID openapi.SecurityGroupIDParameter) {
 	if err := h.securityGroupClient().DeleteV2(r.Context(), securityGroupID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (h *Handler) loadBalancerClient() *loadbalancer.Client {
+	return loadbalancer.New(h.ClientArgs)
+}
+
+func (h *Handler) GetApiV2Loadbalancers(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2LoadbalancersParams) {
+	result, err := h.loadBalancerClient().ListV2(r.Context(), params)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
+func (h *Handler) PostApiV2Loadbalancers(w http.ResponseWriter, r *http.Request) {
+	request := &openapi.LoadBalancerV2Create{}
+
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := h.loadBalancerClient().CreateV2(r.Context(), request)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusCreated, result)
+}
+
+func (h *Handler) GetApiV2LoadbalancersLoadBalancerID(w http.ResponseWriter, r *http.Request, loadBalancerID openapi.LoadBalancerIDParameter) {
+	result, err := h.loadBalancerClient().GetV2(r.Context(), loadBalancerID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
+func (h *Handler) PutApiV2LoadbalancersLoadBalancerID(w http.ResponseWriter, r *http.Request, loadBalancerID openapi.LoadBalancerIDParameter) {
+	request := &openapi.LoadBalancerV2Update{}
+
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := h.loadBalancerClient().UpdateV2(r.Context(), loadBalancerID, request)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
+}
+
+func (h *Handler) DeleteApiV2LoadbalancersLoadBalancerID(w http.ResponseWriter, r *http.Request, loadBalancerID openapi.LoadBalancerIDParameter) {
+	if err := h.loadBalancerClient().DeleteV2(r.Context(), loadBalancerID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
