@@ -793,13 +793,22 @@ func (p *Provider) CreateImage(ctx context.Context, image *types.Image, uri stri
 		return nil, err
 	}
 
-	// Invalidation is synchronous so any subsequent API requests after image
-	// completion has been reported to the client will feature the image.
-	if err := p.imageCache.Invalidate(); err != nil {
+	// Bridge successful writes into the cache immediately so the handler does not need
+	// to force a synchronous Glance relist back onto the request path.
+	//
+	// This seeds the cache from the pre-import Glance response, so callers may observe
+	// an intermediate queued/importing status until the next background refresh
+	// converges on the fully updated image state.
+	syntheticImage, err := convertImage(resource)
+	if err != nil {
 		return nil, err
 	}
 
-	return convertImage(resource)
+	if err := p.imageCache.InsertIfAbsent(syntheticImage); err != nil {
+		return nil, err
+	}
+
+	return syntheticImage, nil
 }
 
 func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
@@ -829,7 +838,7 @@ func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
 			return err
 		}
 
-		return p.deleteImage(ctx, imageService, imageID)
+		return p.deleteImage(ctx, imageService, image.Item, imageID)
 	}
 
 	// Otherwise it exists in our project...
@@ -838,10 +847,10 @@ func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
 		return err
 	}
 
-	return p.deleteImage(ctx, imageService, imageID)
+	return p.deleteImage(ctx, imageService, image.Item, imageID)
 }
 
-func (p *Provider) deleteImage(ctx context.Context, imageService *ImageClient, imageID string) error {
+func (p *Provider) deleteImage(ctx context.Context, imageService *ImageClient, image *types.Image, imageID string) error {
 	if p.imageCache == nil {
 		return fmt.Errorf("%w: image caching is disabled", coreerrors.ErrResourceNotFound)
 	}
@@ -858,9 +867,23 @@ func (p *Provider) deleteImage(ctx context.Context, imageService *ImageClient, i
 		return err
 	}
 
-	// Invalidation is synchronous so any subsequent API requests after image
-	// completion has been reported to the client will no longer feature the image.
-	if err := p.imageCache.Invalidate(); err != nil {
+	// Bridge delete visibility through the cache immediately without forcing a blocking
+	// relist. The public provider model does not have a delete-tombstone image status,
+	// so we mark the cached entry failed until a later refresh removes it.
+	//
+	// Cache reads are intentionally zero-copy for performance, so image may alias the
+	// currently published cache object. Clone before mutating the status we upsert back
+	// into the cache.
+	//
+	// The current cache API no longer supports a custom retire-on-absence policy for
+	// Upsert overlays, so this tombstone remains visible only until the next
+	// authoritative refresh that starts after this write.
+	deleting := image.DeepCopy()
+	deleting.Status = types.ImageStatusFailed
+
+	// Image cache warmup is part of API readiness, so Upsert is expected to be available
+	// for all normal request paths by the time delete can be called.
+	if err := p.imageCache.Upsert(deleting); err != nil {
 		return err
 	}
 
@@ -2547,7 +2570,8 @@ func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Ident
 		},
 	}
 
-	if _, err = imageService.UpdateImage(ctx, imageID, publishOpts); err != nil {
+	updatedImage, err := imageService.UpdateImage(ctx, imageID, publishOpts)
+	if err != nil {
 		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			return nil, fmt.Errorf("image %w", coreerrors.ErrResourceNotFound)
 		}
@@ -2560,16 +2584,19 @@ func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Ident
 		return nil, err
 	}
 
-	if err := p.imageCache.Invalidate(); err != nil {
-		return nil, err
-	}
-
-	imageSnapshot, err := p.imageCache.Get(imageID)
+	imageSnapshot, err := convertImage(updatedImage)
 	if err != nil {
 		return nil, err
 	}
 
-	return imageSnapshot.Item, nil
+	// Snapshot creation follows the same cache-overlay path as direct image creation,
+	// but the seeded entry should come from the authoritative OpenStack response rather
+	// than the request-shaped provider image.
+	if err := p.imageCache.InsertIfAbsent(imageSnapshot); err != nil {
+		return nil, err
+	}
+
+	return imageSnapshot, nil
 }
 
 func interpretGophercloudError(err error) error {

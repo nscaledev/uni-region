@@ -18,7 +18,9 @@ limitations under the License.
 package types
 
 import (
+	"maps"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/unikorn-cloud/core/pkg/util/cache"
@@ -132,6 +134,43 @@ func (i *Image) Index() string {
 
 func (i *Image) Equal(o *Image) bool {
 	return reflect.DeepEqual(i, o)
+}
+
+func (i *Image) DeepCopy() *Image {
+	if i == nil {
+		return nil
+	}
+
+	clone := *i
+	clone.Tags = maps.Clone(i.Tags)
+
+	if i.OrganizationID != nil {
+		organizationID := *i.OrganizationID
+		clone.OrganizationID = &organizationID
+	}
+
+	if i.GPU != nil {
+		gpu := *i.GPU
+		gpu.Models = slices.Clone(i.GPU.Models)
+		clone.GPU = &gpu
+	}
+
+	if i.OS.Variant != nil {
+		variant := *i.OS.Variant
+		clone.OS.Variant = &variant
+	}
+
+	if i.OS.Codename != nil {
+		codename := *i.OS.Codename
+		clone.OS.Codename = &codename
+	}
+
+	if i.Packages != nil {
+		packages := maps.Clone(*i.Packages)
+		clone.Packages = &packages
+	}
+
+	return &clone
 }
 
 // ImageGPU defines image specific GPU compatibility information.
