@@ -4,7 +4,7 @@ description:
 ---
 
 When starting an implementation from a design, before making edits,
-first work out with the user a series of changes to achieve the
+first work out with the user a series of commits to achieve the
 design.
 
 **Plan as commits**
@@ -16,14 +16,29 @@ specify each diff exactly, just the series of steps.
 Each commit should make a single logical change. For example, a
 refactor, or the addition of interrelated API definitions.
 
-It may be necessary to refactor a package or introduce an abstraction,
-to make a later change possible. Prefer refactoring to adding
-abstractions.
+**Generated code**
+
+Changes to generated code should go in the commit that provoked the
+regeneration. A common example is
+pkg/openapi/router.go, generated from server.spec.yaml in the same
+directory.
+
+To make the code compile after regenerating code, it may
+be necessary to fill in stubs.
+
+**Ordering the changes**
+
+Think about which steps depend on which others. It may be necessary to
+refactor a package or introduce an abstraction, to make a later change
+possible. Prefer refactoring to adding abstractions.
 
 A commit should come with proof that it works, or at least a
-justification. This will often be a test. The plan should include an
-outline of how to test each change. Refactors may need additional
-tests to prove they have not changed behaviour.
+justification. This will often be a test. With each step the plan
+should include an outline of how to test the change made in the
+commit.
+
+Refactors may need additional tests to prove they have not changed
+behaviour. You should think about what it is necessary to demonstrate.
 
 The code should compile and pass tests after each commit. Strive to
 make each commit safe to merge to main branch on its own. This may not
