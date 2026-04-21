@@ -74,6 +74,7 @@ func newLBFakeClientBuilder(t *testing.T, objects ...runtime.Object) *fake.Clien
 	// These tests exercise identity allocation creation/update, which calls
 	// manager.GenerateResourceReference and needs RESTMapping for custom
 	// resources. The fake client defaults to an empty REST mapper.
+    // a restMapper with entries for referenced types is assumed by manager.GenerateResourceReference
 	restMapper := apimeta.NewDefaultRESTMapper([]schema.GroupVersion{regionv1.SchemeGroupVersion})
 	restMapper.Add(regionv1.SchemeGroupVersion.WithKind("Network"), apimeta.RESTScopeNamespace)
 	restMapper.Add(regionv1.SchemeGroupVersion.WithKind("LoadBalancer"), apimeta.RESTScopeNamespace)
