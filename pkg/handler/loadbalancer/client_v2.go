@@ -629,7 +629,7 @@ func allocationRequirements(publicIP bool) identityapi.ResourceAllocationList {
 		{
 			Kind:      "loadbalancers",
 			Committed: 1,
-			Reserved:  1,
+			Reserved:  0,
 		},
 	}
 
@@ -637,7 +637,7 @@ func allocationRequirements(publicIP bool) identityapi.ResourceAllocationList {
 		out = append(out, identityapi.ResourceAllocation{
 			Kind:      "publicips",
 			Committed: 1,
-			Reserved:  1,
+			Reserved:  0,
 		})
 	}
 

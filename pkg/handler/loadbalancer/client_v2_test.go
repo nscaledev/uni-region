@@ -351,8 +351,8 @@ func TestCreateV2(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	expectAllocationCreate(t, mockIdentity, identityapi.ResourceAllocationList{
-		{Kind: "loadbalancers", Committed: 1, Reserved: 1},
-		{Kind: "publicips", Committed: 1, Reserved: 1},
+		{Kind: "loadbalancers", Committed: 1, Reserved: 0},
+		{Kind: "publicips", Committed: 1, Reserved: 0},
 	})
 
 	network := testLBNetworkWithProject(lbProjectID)
@@ -384,8 +384,8 @@ func TestCreateV2AllowsEmptyPoolMembers(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	expectAllocationCreate(t, mockIdentity, identityapi.ResourceAllocationList{
-		{Kind: "loadbalancers", Committed: 1, Reserved: 1},
-		{Kind: "publicips", Committed: 1, Reserved: 1},
+		{Kind: "loadbalancers", Committed: 1, Reserved: 0},
+		{Kind: "publicips", Committed: 1, Reserved: 0},
 	})
 
 	network := testLBNetworkWithProject(lbProjectID)
@@ -475,8 +475,8 @@ func TestUpdateV2(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	expectAllocationUpdate(t, mockIdentity, identityapi.ResourceAllocationList{
-		{Kind: "loadbalancers", Committed: 1, Reserved: 1},
-		{Kind: "publicips", Committed: 1, Reserved: 1},
+		{Kind: "loadbalancers", Committed: 1, Reserved: 0},
+		{Kind: "publicips", Committed: 1, Reserved: 0},
 	})
 
 	network := testLBNetworkWithProject(lbProjectID)
@@ -510,7 +510,7 @@ func TestUpdateV2AllowsEmptyPoolMembers(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	expectAllocationUpdate(t, mockIdentity, identityapi.ResourceAllocationList{
-		{Kind: "loadbalancers", Committed: 1, Reserved: 1},
+		{Kind: "loadbalancers", Committed: 1, Reserved: 0},
 	})
 
 	network := testLBNetworkWithProject(lbProjectID)
@@ -868,11 +868,11 @@ func TestUpdateV2ConflictRollsBackAllocation(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	expectAllocationUpdate(t, mockIdentity, identityapi.ResourceAllocationList{
-		{Kind: "loadbalancers", Committed: 1, Reserved: 1},
-		{Kind: "publicips", Committed: 1, Reserved: 1},
+		{Kind: "loadbalancers", Committed: 1, Reserved: 0},
+		{Kind: "publicips", Committed: 1, Reserved: 0},
 	})
 	expectAllocationUpdate(t, mockIdentity, identityapi.ResourceAllocationList{
-		{Kind: "loadbalancers", Committed: 1, Reserved: 1},
+		{Kind: "loadbalancers", Committed: 1, Reserved: 0},
 	})
 
 	network := testLBNetworkWithProject(lbProjectID)
