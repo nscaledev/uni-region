@@ -222,6 +222,25 @@ type ClientInterface interface {
 	// GetApiV2Filestorageclasses request
 	GetApiV2Filestorageclasses(ctx context.Context, params *GetApiV2FilestorageclassesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiV2Loadbalancers request
+	GetApiV2Loadbalancers(ctx context.Context, params *GetApiV2LoadbalancersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApiV2LoadbalancersWithBody request with any body
+	PostApiV2LoadbalancersWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostApiV2Loadbalancers(ctx context.Context, body PostApiV2LoadbalancersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteApiV2LoadbalancersLoadBalancerID request
+	DeleteApiV2LoadbalancersLoadBalancerID(ctx context.Context, loadBalancerID LoadBalancerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiV2LoadbalancersLoadBalancerID request
+	GetApiV2LoadbalancersLoadBalancerID(ctx context.Context, loadBalancerID LoadBalancerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutApiV2LoadbalancersLoadBalancerIDWithBody request with any body
+	PutApiV2LoadbalancersLoadBalancerIDWithBody(ctx context.Context, loadBalancerID LoadBalancerIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PutApiV2LoadbalancersLoadBalancerID(ctx context.Context, loadBalancerID LoadBalancerIDParameter, body PutApiV2LoadbalancersLoadBalancerIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApiV2Networks request
 	GetApiV2Networks(ctx context.Context, params *GetApiV2NetworksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -883,6 +902,90 @@ func (c *Client) PutApiV2FilestorageFilestorageID(ctx context.Context, filestora
 
 func (c *Client) GetApiV2Filestorageclasses(ctx context.Context, params *GetApiV2FilestorageclassesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiV2FilestorageclassesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiV2Loadbalancers(ctx context.Context, params *GetApiV2LoadbalancersParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV2LoadbalancersRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiV2LoadbalancersWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV2LoadbalancersRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiV2Loadbalancers(ctx context.Context, body PostApiV2LoadbalancersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV2LoadbalancersRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteApiV2LoadbalancersLoadBalancerID(ctx context.Context, loadBalancerID LoadBalancerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApiV2LoadbalancersLoadBalancerIDRequest(c.Server, loadBalancerID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiV2LoadbalancersLoadBalancerID(ctx context.Context, loadBalancerID LoadBalancerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV2LoadbalancersLoadBalancerIDRequest(c.Server, loadBalancerID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiV2LoadbalancersLoadBalancerIDWithBody(ctx context.Context, loadBalancerID LoadBalancerIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiV2LoadbalancersLoadBalancerIDRequestWithBody(c.Server, loadBalancerID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiV2LoadbalancersLoadBalancerID(ctx context.Context, loadBalancerID LoadBalancerIDParameter, body PutApiV2LoadbalancersLoadBalancerIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiV2LoadbalancersLoadBalancerIDRequest(c.Server, loadBalancerID, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3308,6 +3411,274 @@ func NewGetApiV2FilestorageclassesRequest(server string, params *GetApiV2Filesto
 	return req, nil
 }
 
+// NewGetApiV2LoadbalancersRequest generates requests for GetApiV2Loadbalancers
+func NewGetApiV2LoadbalancersRequest(server string, params *GetApiV2LoadbalancersParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/loadbalancers")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Tag != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "tag", runtime.ParamLocationQuery, *params.Tag); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.OrganizationID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "organizationID", runtime.ParamLocationQuery, *params.OrganizationID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.ProjectID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "projectID", runtime.ParamLocationQuery, *params.ProjectID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RegionID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "regionID", runtime.ParamLocationQuery, *params.RegionID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.NetworkID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "networkID", runtime.ParamLocationQuery, *params.NetworkID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostApiV2LoadbalancersRequest calls the generic PostApiV2Loadbalancers builder with application/json body
+func NewPostApiV2LoadbalancersRequest(server string, body PostApiV2LoadbalancersJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApiV2LoadbalancersRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostApiV2LoadbalancersRequestWithBody generates requests for PostApiV2Loadbalancers with any type of body
+func NewPostApiV2LoadbalancersRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/loadbalancers")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteApiV2LoadbalancersLoadBalancerIDRequest generates requests for DeleteApiV2LoadbalancersLoadBalancerID
+func NewDeleteApiV2LoadbalancersLoadBalancerIDRequest(server string, loadBalancerID LoadBalancerIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "loadBalancerID", runtime.ParamLocationPath, loadBalancerID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/loadbalancers/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiV2LoadbalancersLoadBalancerIDRequest generates requests for GetApiV2LoadbalancersLoadBalancerID
+func NewGetApiV2LoadbalancersLoadBalancerIDRequest(server string, loadBalancerID LoadBalancerIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "loadBalancerID", runtime.ParamLocationPath, loadBalancerID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/loadbalancers/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutApiV2LoadbalancersLoadBalancerIDRequest calls the generic PutApiV2LoadbalancersLoadBalancerID builder with application/json body
+func NewPutApiV2LoadbalancersLoadBalancerIDRequest(server string, loadBalancerID LoadBalancerIDParameter, body PutApiV2LoadbalancersLoadBalancerIDJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutApiV2LoadbalancersLoadBalancerIDRequestWithBody(server, loadBalancerID, "application/json", bodyReader)
+}
+
+// NewPutApiV2LoadbalancersLoadBalancerIDRequestWithBody generates requests for PutApiV2LoadbalancersLoadBalancerID with any type of body
+func NewPutApiV2LoadbalancersLoadBalancerIDRequestWithBody(server string, loadBalancerID LoadBalancerIDParameter, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "loadBalancerID", runtime.ParamLocationPath, loadBalancerID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/loadbalancers/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetApiV2NetworksRequest generates requests for GetApiV2Networks
 func NewGetApiV2NetworksRequest(server string, params *GetApiV2NetworksParams) (*http.Request, error) {
 	var err error
@@ -4937,6 +5308,25 @@ type ClientWithResponsesInterface interface {
 	// GetApiV2FilestorageclassesWithResponse request
 	GetApiV2FilestorageclassesWithResponse(ctx context.Context, params *GetApiV2FilestorageclassesParams, reqEditors ...RequestEditorFn) (*GetApiV2FilestorageclassesResponse, error)
 
+	// GetApiV2LoadbalancersWithResponse request
+	GetApiV2LoadbalancersWithResponse(ctx context.Context, params *GetApiV2LoadbalancersParams, reqEditors ...RequestEditorFn) (*GetApiV2LoadbalancersResponse, error)
+
+	// PostApiV2LoadbalancersWithBodyWithResponse request with any body
+	PostApiV2LoadbalancersWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2LoadbalancersResponse, error)
+
+	PostApiV2LoadbalancersWithResponse(ctx context.Context, body PostApiV2LoadbalancersJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV2LoadbalancersResponse, error)
+
+	// DeleteApiV2LoadbalancersLoadBalancerIDWithResponse request
+	DeleteApiV2LoadbalancersLoadBalancerIDWithResponse(ctx context.Context, loadBalancerID LoadBalancerIDParameter, reqEditors ...RequestEditorFn) (*DeleteApiV2LoadbalancersLoadBalancerIDResponse, error)
+
+	// GetApiV2LoadbalancersLoadBalancerIDWithResponse request
+	GetApiV2LoadbalancersLoadBalancerIDWithResponse(ctx context.Context, loadBalancerID LoadBalancerIDParameter, reqEditors ...RequestEditorFn) (*GetApiV2LoadbalancersLoadBalancerIDResponse, error)
+
+	// PutApiV2LoadbalancersLoadBalancerIDWithBodyWithResponse request with any body
+	PutApiV2LoadbalancersLoadBalancerIDWithBodyWithResponse(ctx context.Context, loadBalancerID LoadBalancerIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiV2LoadbalancersLoadBalancerIDResponse, error)
+
+	PutApiV2LoadbalancersLoadBalancerIDWithResponse(ctx context.Context, loadBalancerID LoadBalancerIDParameter, body PutApiV2LoadbalancersLoadBalancerIDJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiV2LoadbalancersLoadBalancerIDResponse, error)
+
 	// GetApiV2NetworksWithResponse request
 	GetApiV2NetworksWithResponse(ctx context.Context, params *GetApiV2NetworksParams, reqEditors ...RequestEditorFn) (*GetApiV2NetworksResponse, error)
 
@@ -6040,6 +6430,142 @@ func (r GetApiV2FilestorageclassesResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetApiV2FilestorageclassesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetApiV2LoadbalancersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *LoadBalancersV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV2LoadbalancersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV2LoadbalancersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostApiV2LoadbalancersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *LoadBalancerV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON422      *externalRef0.UnprocessableContentResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApiV2LoadbalancersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApiV2LoadbalancersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteApiV2LoadbalancersLoadBalancerIDResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteApiV2LoadbalancersLoadBalancerIDResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteApiV2LoadbalancersLoadBalancerIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetApiV2LoadbalancersLoadBalancerIDResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *LoadBalancerV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV2LoadbalancersLoadBalancerIDResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV2LoadbalancersLoadBalancerIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PutApiV2LoadbalancersLoadBalancerIDResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *LoadBalancerV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON409      *externalRef0.ConflictResponse
+	JSON422      *externalRef0.UnprocessableContentResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r PutApiV2LoadbalancersLoadBalancerIDResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutApiV2LoadbalancersLoadBalancerIDResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -7251,6 +7777,67 @@ func (c *ClientWithResponses) GetApiV2FilestorageclassesWithResponse(ctx context
 		return nil, err
 	}
 	return ParseGetApiV2FilestorageclassesResponse(rsp)
+}
+
+// GetApiV2LoadbalancersWithResponse request returning *GetApiV2LoadbalancersResponse
+func (c *ClientWithResponses) GetApiV2LoadbalancersWithResponse(ctx context.Context, params *GetApiV2LoadbalancersParams, reqEditors ...RequestEditorFn) (*GetApiV2LoadbalancersResponse, error) {
+	rsp, err := c.GetApiV2Loadbalancers(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV2LoadbalancersResponse(rsp)
+}
+
+// PostApiV2LoadbalancersWithBodyWithResponse request with arbitrary body returning *PostApiV2LoadbalancersResponse
+func (c *ClientWithResponses) PostApiV2LoadbalancersWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2LoadbalancersResponse, error) {
+	rsp, err := c.PostApiV2LoadbalancersWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiV2LoadbalancersResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostApiV2LoadbalancersWithResponse(ctx context.Context, body PostApiV2LoadbalancersJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV2LoadbalancersResponse, error) {
+	rsp, err := c.PostApiV2Loadbalancers(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiV2LoadbalancersResponse(rsp)
+}
+
+// DeleteApiV2LoadbalancersLoadBalancerIDWithResponse request returning *DeleteApiV2LoadbalancersLoadBalancerIDResponse
+func (c *ClientWithResponses) DeleteApiV2LoadbalancersLoadBalancerIDWithResponse(ctx context.Context, loadBalancerID LoadBalancerIDParameter, reqEditors ...RequestEditorFn) (*DeleteApiV2LoadbalancersLoadBalancerIDResponse, error) {
+	rsp, err := c.DeleteApiV2LoadbalancersLoadBalancerID(ctx, loadBalancerID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteApiV2LoadbalancersLoadBalancerIDResponse(rsp)
+}
+
+// GetApiV2LoadbalancersLoadBalancerIDWithResponse request returning *GetApiV2LoadbalancersLoadBalancerIDResponse
+func (c *ClientWithResponses) GetApiV2LoadbalancersLoadBalancerIDWithResponse(ctx context.Context, loadBalancerID LoadBalancerIDParameter, reqEditors ...RequestEditorFn) (*GetApiV2LoadbalancersLoadBalancerIDResponse, error) {
+	rsp, err := c.GetApiV2LoadbalancersLoadBalancerID(ctx, loadBalancerID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV2LoadbalancersLoadBalancerIDResponse(rsp)
+}
+
+// PutApiV2LoadbalancersLoadBalancerIDWithBodyWithResponse request with arbitrary body returning *PutApiV2LoadbalancersLoadBalancerIDResponse
+func (c *ClientWithResponses) PutApiV2LoadbalancersLoadBalancerIDWithBodyWithResponse(ctx context.Context, loadBalancerID LoadBalancerIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiV2LoadbalancersLoadBalancerIDResponse, error) {
+	rsp, err := c.PutApiV2LoadbalancersLoadBalancerIDWithBody(ctx, loadBalancerID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiV2LoadbalancersLoadBalancerIDResponse(rsp)
+}
+
+func (c *ClientWithResponses) PutApiV2LoadbalancersLoadBalancerIDWithResponse(ctx context.Context, loadBalancerID LoadBalancerIDParameter, body PutApiV2LoadbalancersLoadBalancerIDJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiV2LoadbalancersLoadBalancerIDResponse, error) {
+	rsp, err := c.PutApiV2LoadbalancersLoadBalancerID(ctx, loadBalancerID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiV2LoadbalancersLoadBalancerIDResponse(rsp)
 }
 
 // GetApiV2NetworksWithResponse request returning *GetApiV2NetworksResponse
@@ -9724,6 +10311,318 @@ func ParseGetApiV2FilestorageclassesResponse(rsp *http.Response) (*GetApiV2Files
 			return nil, err
 		}
 		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiV2LoadbalancersResponse parses an HTTP response from a GetApiV2LoadbalancersWithResponse call
+func ParseGetApiV2LoadbalancersResponse(rsp *http.Response) (*GetApiV2LoadbalancersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV2LoadbalancersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LoadBalancersV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostApiV2LoadbalancersResponse parses an HTTP response from a PostApiV2LoadbalancersWithResponse call
+func ParsePostApiV2LoadbalancersResponse(rsp *http.Response) (*PostApiV2LoadbalancersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApiV2LoadbalancersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest LoadBalancerV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest externalRef0.UnprocessableContentResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteApiV2LoadbalancersLoadBalancerIDResponse parses an HTTP response from a DeleteApiV2LoadbalancersLoadBalancerIDWithResponse call
+func ParseDeleteApiV2LoadbalancersLoadBalancerIDResponse(rsp *http.Response) (*DeleteApiV2LoadbalancersLoadBalancerIDResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteApiV2LoadbalancersLoadBalancerIDResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiV2LoadbalancersLoadBalancerIDResponse parses an HTTP response from a GetApiV2LoadbalancersLoadBalancerIDWithResponse call
+func ParseGetApiV2LoadbalancersLoadBalancerIDResponse(rsp *http.Response) (*GetApiV2LoadbalancersLoadBalancerIDResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV2LoadbalancersLoadBalancerIDResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LoadBalancerV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutApiV2LoadbalancersLoadBalancerIDResponse parses an HTTP response from a PutApiV2LoadbalancersLoadBalancerIDWithResponse call
+func ParsePutApiV2LoadbalancersLoadBalancerIDResponse(rsp *http.Response) (*PutApiV2LoadbalancersLoadBalancerIDResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutApiV2LoadbalancersLoadBalancerIDResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest LoadBalancerV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest externalRef0.ConflictResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest externalRef0.UnprocessableContentResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest externalRef0.InternalServerErrorResponse

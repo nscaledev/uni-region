@@ -1062,6 +1062,127 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 
+  /api/v2/loadbalancers:
+    description: Manages network scoped layer 4 load balancers.
+    get:
+      description: List load balancers.
+      summary: List load balancers
+      tags:
+      - Load balancers
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: '#/components/parameters/organizationIDQueryParameter'
+      - $ref: '#/components/parameters/projectIDQueryParameter'
+      - $ref: '#/components/parameters/regionIDQueryParameter'
+      - $ref: '#/components/parameters/networkIDQueryParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/loadBalancersV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    post:
+      description: Create a new load balancer.
+      summary: Create load balancer
+      tags:
+      - Load balancers
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/loadBalancerV2CreateRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/loadBalancerV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/loadbalancers/{loadBalancerID}:
+    description: Manages network scoped layer 4 load balancers.
+    parameters:
+    - $ref: '#/components/parameters/loadBalancerIDParameter'
+    get:
+      description: Get a load balancer.
+      summary: Get load balancer
+      tags:
+      - Load balancers
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/loadBalancerV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    put:
+      description: Update a load balancer.
+      summary: Update load balancer
+      tags:
+      - Load balancers
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/loadBalancerV2UpdateRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/loadBalancerV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    delete:
+      description: Delete a load balancer.
+      summary: Delete load balancer
+      tags:
+      - Load balancers
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+
   /api/v2/sshcertificateauthorities:
     description: Manages project scoped OpenSSH user certificate authorities.
     get:
@@ -1666,6 +1787,13 @@ components:
       name: securityGroupID
       in: path
       description: The security group ID.
+      required: true
+      schema:
+        $ref: '#/components/schemas/kubernetesNameParameter'
+    loadBalancerIDParameter:
+      name: loadBalancerID
+      in: path
+      description: The load balancer ID.
       required: true
       schema:
         $ref: '#/components/schemas/kubernetesNameParameter'
@@ -2596,6 +2724,188 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/securityGroupV2Read'
+    loadBalancerListenerProtocolV2:
+      description: The load balancer listener protocol.
+      type: string
+      enum:
+      - tcp
+      - udp
+    loadBalancerListenerNameV2:
+      description: A load balancer listener name. Must start with a lower-case letter and otherwise be a valid DNS label.
+      type: string
+      maxLength: 63
+      pattern: '^[a-z]([-a-z0-9]*[a-z0-9])?$'
+    loadBalancerMemberV2:
+      description: A load balancer pool member.
+      type: object
+      required:
+      - address
+      - port
+      properties:
+        address:
+          $ref: '#/components/schemas/ipv4Address'
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+    loadBalancerHealthCheckV2:
+      description: A load balancer pool health check.
+      type: object
+      properties:
+        intervalSeconds:
+          type: integer
+          minimum: 1
+          maximum: 300
+        timeoutSeconds:
+          type: integer
+          minimum: 1
+          maximum: 300
+        healthyThreshold:
+          type: integer
+          minimum: 1
+          maximum: 10
+        unhealthyThreshold:
+          type: integer
+          minimum: 1
+          maximum: 10
+    loadBalancerPoolV2:
+      description: A load balancer listener pool.
+      type: object
+      required:
+      - members
+      properties:
+        proxyProtocolV2:
+          description: Whether to enable Proxy Protocol v2.
+          type: boolean
+        members:
+          description: A list of pool members.
+          type: array
+          items:
+            $ref: '#/components/schemas/loadBalancerMemberV2'
+        healthCheck:
+          $ref: '#/components/schemas/loadBalancerHealthCheckV2'
+    loadBalancerListenerV2:
+      description: A load balancer listener.
+      type: object
+      required:
+      - name
+      - protocol
+      - port
+      - pool
+      properties:
+        name:
+          description: The listener name.
+          $ref: '#/components/schemas/loadBalancerListenerNameV2'
+        protocol:
+          $ref: '#/components/schemas/loadBalancerListenerProtocolV2'
+        port:
+          description: The listener port.
+          type: integer
+          minimum: 1
+          maximum: 65535
+        allowedCidrs:
+          description: A list of source IPv4 CIDRs allowed to access the listener.
+          type: array
+          items:
+            type: string
+            pattern: '^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\/(?:3[0-2]|[1-2]?[0-9])$'
+        idleTimeoutSeconds:
+          description: The TCP idle timeout in seconds.
+          type: integer
+          minimum: 1
+          maximum: 86400
+        pool:
+          $ref: '#/components/schemas/loadBalancerPoolV2'
+    loadBalancerV2Spec:
+      description: A load balancer's specification.
+      type: object
+      required:
+      - listeners
+      properties:
+        publicIP:
+          description: Whether to allocate a public IP.
+          type: boolean
+        listeners:
+          description: A list of load balancer listeners.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/loadBalancerListenerV2'
+    loadBalancerV2CreateSpec:
+      description: A load balancer creation specification.
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/loadBalancerV2Spec'
+      - type: object
+        required:
+        - networkId
+        properties:
+          networkId:
+            description: The network the load balancer belongs to.
+            type: string
+          vipAddress:
+            description: The requested virtual IP address. When provided, it must fall within the selected network CIDR.
+            $ref: '#/components/schemas/ipv4Address'
+    loadBalancerV2Status:
+      description: Read only status information about a load balancer.
+      type: object
+      required:
+      - regionId
+      - networkId
+      properties:
+        regionId:
+          description: The region the load balancer belongs to.
+          type: string
+        networkId:
+          description: The network the load balancer belongs to.
+          type: string
+        vipAddress:
+          description: The provisioned virtual IP address.
+          $ref: '#/components/schemas/ipv4Address'
+        publicIP:
+          description: The provisioned public IP address.
+          $ref: '#/components/schemas/ipv4Address'
+    loadBalancerV2Create:
+      description: A load balancer creation request.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/loadBalancerV2CreateSpec'
+    loadBalancerV2Update:
+      description: A load balancer update request.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/loadBalancerV2Spec'
+    loadBalancerV2Read:
+      description: A load balancer.
+      type: object
+      required:
+      - metadata
+      - spec
+      - status
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+        spec:
+          $ref: '#/components/schemas/loadBalancerV2Spec'
+        status:
+          $ref: '#/components/schemas/loadBalancerV2Status'
+    loadBalancersV2Read:
+      description: A list of load balancers.
+      type: array
+      items:
+        $ref: '#/components/schemas/loadBalancerV2Read'
     sshCertificateAuthorityV2Spec:
       description: An OpenSSH user certificate authority trust anchor.
       type: object
@@ -3311,6 +3621,72 @@ components:
                 protocol: tcp
                 port: 80
                 cidr: 172.16.0.0/12
+    loadBalancerV2CreateRequest:
+      description: A request for a load balancer.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/loadBalancerV2Create'
+          example:
+            metadata:
+              name: web-lb
+              description: Public TCP load balancer
+              tags:
+              - name: service
+                value: ingress
+            spec:
+              networkId: 61f0ad85-3001-41cb-824a-e6a047668dfe
+              publicIP: true
+              vipAddress: 192.168.10.20
+              listeners:
+              - name: http
+                protocol: tcp
+                port: 80
+                allowedCidrs:
+                - 0.0.0.0/0
+                idleTimeoutSeconds: 30
+                pool:
+                  proxyProtocolV2: false
+                  members:
+                  - address: 10.0.0.10
+                    port: 8080
+                  healthCheck:
+                    intervalSeconds: 10
+                    timeoutSeconds: 5
+                    healthyThreshold: 2
+                    unhealthyThreshold: 2
+    loadBalancerV2UpdateRequest:
+      description: A request to update a load balancer.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/loadBalancerV2Update'
+          example:
+            metadata:
+              name: web-lb
+              description: Public TCP load balancer
+              tags:
+              - name: service
+                value: ingress
+            spec:
+              publicIP: true
+              listeners:
+              - name: http
+                protocol: tcp
+                port: 80
+                allowedCidrs:
+                - 0.0.0.0/0
+                idleTimeoutSeconds: 30
+                pool:
+                  proxyProtocolV2: false
+                  members:
+                  - address: 10.0.0.10
+                    port: 8080
+                  healthCheck:
+                    intervalSeconds: 10
+                    timeoutSeconds: 5
+                    healthyThreshold: 2
+                    unhealthyThreshold: 2
     sshCertificateAuthorityV2CreateRequest:
       description: A request for an SSH certificate authority.
       content:
@@ -3834,6 +4210,86 @@ components:
             status:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
               networkId: 61f0ad85-3001-41cb-824a-e6a047668dfe
+    loadBalancerV2Response:
+      description: A load balancer.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/loadBalancerV2Read'
+          example:
+            metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: web-lb
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2024-05-31T14:11:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: pending
+              healthStatus: healthy
+            spec:
+              publicIP: true
+              listeners:
+              - name: http
+                protocol: tcp
+                port: 80
+                allowedCidrs:
+                - 0.0.0.0/0
+                idleTimeoutSeconds: 30
+                pool:
+                  proxyProtocolV2: false
+                  members:
+                  - address: 10.0.0.10
+                    port: 8080
+                  healthCheck:
+                    intervalSeconds: 10
+                    timeoutSeconds: 5
+                    healthyThreshold: 2
+                    unhealthyThreshold: 2
+            status:
+              regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
+              networkId: 61f0ad85-3001-41cb-824a-e6a047668dfe
+              vipAddress: 192.168.10.20
+              publicIP: 203.0.113.10
+    loadBalancersV2Response:
+      description: A list of load balancers.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/loadBalancersV2Read'
+          example:
+          - metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: web-lb
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2024-05-31T14:11:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: pending
+              healthStatus: healthy
+            spec:
+              publicIP: true
+              listeners:
+              - name: http
+                protocol: tcp
+                port: 80
+                allowedCidrs:
+                - 0.0.0.0/0
+                idleTimeoutSeconds: 30
+                pool:
+                  proxyProtocolV2: false
+                  members:
+                  - address: 10.0.0.10
+                    port: 8080
+                  healthCheck:
+                    intervalSeconds: 10
+                    timeoutSeconds: 5
+                    healthyThreshold: 2
+                    unhealthyThreshold: 2
+            status:
+              regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
+              networkId: 61f0ad85-3001-41cb-824a-e6a047668dfe
+              vipAddress: 192.168.10.20
+              publicIP: 203.0.113.10
     sshCertificateAuthorityV2Response:
       description: An SSH certificate authority.
       content:

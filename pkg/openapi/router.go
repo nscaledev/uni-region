@@ -128,6 +128,21 @@ type ServerInterface interface {
 	// List file storage classes
 	// (GET /api/v2/filestorageclasses)
 	GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request, params GetApiV2FilestorageclassesParams)
+	// List load balancers
+	// (GET /api/v2/loadbalancers)
+	GetApiV2Loadbalancers(w http.ResponseWriter, r *http.Request, params GetApiV2LoadbalancersParams)
+	// Create load balancer
+	// (POST /api/v2/loadbalancers)
+	PostApiV2Loadbalancers(w http.ResponseWriter, r *http.Request)
+	// Delete load balancer
+	// (DELETE /api/v2/loadbalancers/{loadBalancerID})
+	DeleteApiV2LoadbalancersLoadBalancerID(w http.ResponseWriter, r *http.Request, loadBalancerID LoadBalancerIDParameter)
+	// Get load balancer
+	// (GET /api/v2/loadbalancers/{loadBalancerID})
+	GetApiV2LoadbalancersLoadBalancerID(w http.ResponseWriter, r *http.Request, loadBalancerID LoadBalancerIDParameter)
+	// Update load balancer
+	// (PUT /api/v2/loadbalancers/{loadBalancerID})
+	PutApiV2LoadbalancersLoadBalancerID(w http.ResponseWriter, r *http.Request, loadBalancerID LoadBalancerIDParameter)
 	// List networks
 	// (GET /api/v2/networks)
 	GetApiV2Networks(w http.ResponseWriter, r *http.Request, params GetApiV2NetworksParams)
@@ -419,6 +434,36 @@ func (_ Unimplemented) PutApiV2FilestorageFilestorageID(w http.ResponseWriter, r
 // List file storage classes
 // (GET /api/v2/filestorageclasses)
 func (_ Unimplemented) GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request, params GetApiV2FilestorageclassesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List load balancers
+// (GET /api/v2/loadbalancers)
+func (_ Unimplemented) GetApiV2Loadbalancers(w http.ResponseWriter, r *http.Request, params GetApiV2LoadbalancersParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create load balancer
+// (POST /api/v2/loadbalancers)
+func (_ Unimplemented) PostApiV2Loadbalancers(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Delete load balancer
+// (DELETE /api/v2/loadbalancers/{loadBalancerID})
+func (_ Unimplemented) DeleteApiV2LoadbalancersLoadBalancerID(w http.ResponseWriter, r *http.Request, loadBalancerID LoadBalancerIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get load balancer
+// (GET /api/v2/loadbalancers/{loadBalancerID})
+func (_ Unimplemented) GetApiV2LoadbalancersLoadBalancerID(w http.ResponseWriter, r *http.Request, loadBalancerID LoadBalancerIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Update load balancer
+// (PUT /api/v2/loadbalancers/{loadBalancerID})
+func (_ Unimplemented) PutApiV2LoadbalancersLoadBalancerID(w http.ResponseWriter, r *http.Request, loadBalancerID LoadBalancerIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2347,6 +2392,184 @@ func (siw *ServerInterfaceWrapper) GetApiV2Filestorageclasses(w http.ResponseWri
 	handler.ServeHTTP(w, r)
 }
 
+// GetApiV2Loadbalancers operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV2Loadbalancers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetApiV2LoadbalancersParams
+
+	// ------------- Optional query parameter "tag" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "tag", r.URL.Query(), &params.Tag)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "organizationID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "organizationID", r.URL.Query(), &params.OrganizationID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "projectID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "projectID", r.URL.Query(), &params.ProjectID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "regionID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "regionID", r.URL.Query(), &params.RegionID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "regionID", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "networkID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "networkID", r.URL.Query(), &params.NetworkID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "networkID", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV2Loadbalancers(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostApiV2Loadbalancers operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV2Loadbalancers(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiV2Loadbalancers(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteApiV2LoadbalancersLoadBalancerID operation middleware
+func (siw *ServerInterfaceWrapper) DeleteApiV2LoadbalancersLoadBalancerID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "loadBalancerID" -------------
+	var loadBalancerID LoadBalancerIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "loadBalancerID", chi.URLParam(r, "loadBalancerID"), &loadBalancerID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "loadBalancerID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteApiV2LoadbalancersLoadBalancerID(w, r, loadBalancerID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetApiV2LoadbalancersLoadBalancerID operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV2LoadbalancersLoadBalancerID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "loadBalancerID" -------------
+	var loadBalancerID LoadBalancerIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "loadBalancerID", chi.URLParam(r, "loadBalancerID"), &loadBalancerID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "loadBalancerID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV2LoadbalancersLoadBalancerID(w, r, loadBalancerID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutApiV2LoadbalancersLoadBalancerID operation middleware
+func (siw *ServerInterfaceWrapper) PutApiV2LoadbalancersLoadBalancerID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "loadBalancerID" -------------
+	var loadBalancerID LoadBalancerIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "loadBalancerID", chi.URLParam(r, "loadBalancerID"), &loadBalancerID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "loadBalancerID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutApiV2LoadbalancersLoadBalancerID(w, r, loadBalancerID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetApiV2Networks operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV2Networks(w http.ResponseWriter, r *http.Request) {
 
@@ -3627,6 +3850,21 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/filestorageclasses", wrapper.GetApiV2Filestorageclasses)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v2/loadbalancers", wrapper.GetApiV2Loadbalancers)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v2/loadbalancers", wrapper.PostApiV2Loadbalancers)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v2/loadbalancers/{loadBalancerID}", wrapper.DeleteApiV2LoadbalancersLoadBalancerID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v2/loadbalancers/{loadBalancerID}", wrapper.GetApiV2LoadbalancersLoadBalancerID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v2/loadbalancers/{loadBalancerID}", wrapper.PutApiV2LoadbalancersLoadBalancerID)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/networks", wrapper.GetApiV2Networks)

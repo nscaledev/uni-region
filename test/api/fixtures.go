@@ -122,6 +122,93 @@ func (b *ImagePayloadBuilder) Build() regionopenapi.ImageCreate {
 	return b.image
 }
 
+// NetworkPayloadBuilder builds NetworkV2Create payloads for testing.
+type NetworkPayloadBuilder struct {
+	network regionopenapi.NetworkV2Create
+}
+
+// NewNetworkPayload creates a builder with sensible defaults for a project-scoped v2 network.
+func NewNetworkPayload(orgID, projectID, regionID string) *NetworkPayloadBuilder {
+	return &NetworkPayloadBuilder{
+		network: regionopenapi.NetworkV2Create{
+			Metadata: coreapi.ResourceWriteMetadata{
+				Name: uniqueName("network"),
+			},
+			Spec: regionopenapi.NetworkV2CreateSpec{
+				OrganizationId: orgID,
+				ProjectId:      projectID,
+				RegionId:       regionID,
+				Prefix:         "10.0.0.0/16",
+				DnsNameservers: []regionopenapi.Ipv4Address{"8.8.8.8"},
+			},
+		},
+	}
+}
+
+// WithName overrides the network name.
+func (b *NetworkPayloadBuilder) WithName(name string) *NetworkPayloadBuilder {
+	b.network.Metadata.Name = name
+	return b
+}
+
+// Build returns the typed NetworkV2Create struct.
+func (b *NetworkPayloadBuilder) Build() regionopenapi.NetworkV2Create {
+	return b.network
+}
+
+// LoadBalancerPayloadBuilder builds LoadBalancerV2Create payloads for testing.
+type LoadBalancerPayloadBuilder struct {
+	lb regionopenapi.LoadBalancerV2Create
+}
+
+// NewLoadBalancerPayload creates a builder with a single TCP listener and empty
+// pool members, wired to the given network.
+func NewLoadBalancerPayload(networkID string) *LoadBalancerPayloadBuilder {
+	return &LoadBalancerPayloadBuilder{
+		lb: regionopenapi.LoadBalancerV2Create{
+			Metadata: coreapi.ResourceWriteMetadata{
+				Name: uniqueName("lb"),
+			},
+			Spec: regionopenapi.LoadBalancerV2CreateSpec{
+				NetworkId: networkID,
+				Listeners: []regionopenapi.LoadBalancerListenerV2{
+					{
+						Name:     "http",
+						Protocol: regionopenapi.LoadBalancerListenerProtocolV2("tcp"),
+						Port:     80,
+						Pool: regionopenapi.LoadBalancerPoolV2{
+							Members: []regionopenapi.LoadBalancerMemberV2{},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// WithName overrides the load balancer name.
+func (b *LoadBalancerPayloadBuilder) WithName(name string) *LoadBalancerPayloadBuilder {
+	b.lb.Metadata.Name = name
+	return b
+}
+
+// WithPublicIP sets whether a public IP should be allocated.
+func (b *LoadBalancerPayloadBuilder) WithPublicIP(publicIP bool) *LoadBalancerPayloadBuilder {
+	b.lb.Spec.PublicIP = ptr.To(publicIP)
+	return b
+}
+
+// WithListeners overrides the listener list.
+func (b *LoadBalancerPayloadBuilder) WithListeners(listeners []regionopenapi.LoadBalancerListenerV2) *LoadBalancerPayloadBuilder {
+	b.lb.Spec.Listeners = listeners
+	return b
+}
+
+// Build returns the typed LoadBalancerV2Create struct.
+func (b *LoadBalancerPayloadBuilder) Build() regionopenapi.LoadBalancerV2Create {
+	return b.lb
+}
+
 // WaitForImageReady polls until the image appears in the region with state ready.
 // Uses a 1-hour timeout to accommodate image download and import times.
 func WaitForImageReady(c *APIClient, ctx context.Context, config *TestConfig, imageID string) {

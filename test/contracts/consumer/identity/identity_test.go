@@ -203,6 +203,237 @@ var _ = Describe("Identity Service Contract", func() {
 			})
 		})
 
+		Context("when creating a public load balancer allocation", func() {
+			It("creates allocation for load balancer and public IP resources", func() {
+				params := allocationTestParams{
+					organizationID: "b69950c1-5d4d-443c-b94a-6663fc84210d",
+					projectID:      "101c9857-72b1-40db-a3f1-529e55e1937e",
+					allocationID:   "be866dfb-aaf3-49fd-b0d7-f833fd46ad93",
+					name:           "test-public-loadbalancer",
+					kind:           "loadbalancer",
+					description:    "a request to create public load balancer allocation",
+				}
+
+				pact.AddInteraction().
+					GivenWithParameter(models.ProviderState{
+						Name: "project exists",
+						Parameters: map[string]interface{}{
+							"organizationID": params.organizationID,
+							"projectID":      params.projectID,
+						},
+					}).
+					UponReceiving(params.description).
+					WithRequest("POST", fmt.Sprintf("/api/v1/organizations/%s/projects/%s/allocations", params.organizationID, params.projectID), func(b *consumer.V4RequestBuilder) {
+						b.JSONBody(map[string]interface{}{
+							"metadata": map[string]interface{}{
+								"name": matchers.String(params.name),
+							},
+							"spec": map[string]interface{}{
+								"id":   matchers.String(params.allocationID),
+								"kind": matchers.String(params.kind),
+								"allocations": []map[string]interface{}{
+									{
+										"kind":      matchers.String("loadbalancers"),
+										"committed": matchers.Integer(1),
+										"reserved":  matchers.Integer(1),
+									},
+									{
+										"kind":      matchers.String("publicips"),
+										"committed": matchers.Integer(1),
+										"reserved":  matchers.Integer(1),
+									},
+								},
+							},
+						})
+					}).
+					WillRespondWith(201, func(b *consumer.V4ResponseBuilder) {
+						b.JSONBody(map[string]interface{}{
+							"metadata": map[string]interface{}{
+								"id":           matchers.UUID(),
+								"name":         matchers.String(params.name),
+								"creationTime": matchers.Timestamp(),
+							},
+							"spec": map[string]interface{}{
+								"id":   matchers.String(params.allocationID),
+								"kind": matchers.String(params.kind),
+								"allocations": []map[string]interface{}{
+									{
+										"kind":      matchers.String("loadbalancers"),
+										"committed": matchers.Integer(1),
+										"reserved":  matchers.Integer(1),
+									},
+									{
+										"kind":      matchers.String("publicips"),
+										"committed": matchers.Integer(1),
+										"reserved":  matchers.Integer(1),
+									},
+								},
+							},
+						})
+					})
+
+				test := func(config consumer.MockServerConfig) error {
+					identityClient, err := createIdentityClient(config)
+					if err != nil {
+						return fmt.Errorf("creating identity client: %w", err)
+					}
+
+					allocationReq := identityapi.AllocationWrite{
+						Metadata: coreclient.ResourceWriteMetadata{
+							Name: params.name,
+						},
+						Spec: identityapi.AllocationSpec{
+							Id:   params.allocationID,
+							Kind: params.kind,
+							Allocations: identityapi.ResourceAllocationList{
+								{
+									Kind:      "loadbalancers",
+									Committed: 1,
+									Reserved:  1,
+								},
+								{
+									Kind:      "publicips",
+									Committed: 1,
+									Reserved:  1,
+								},
+							},
+						},
+					}
+
+					resp, err := identityClient.PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsWithResponse(
+						ctx, params.organizationID, params.projectID, allocationReq)
+					if err != nil {
+						return fmt.Errorf("creating allocation: %w", err)
+					}
+
+					Expect(resp.StatusCode()).To(Equal(201))
+					Expect(resp.JSON201).NotTo(BeNil())
+					Expect(resp.JSON201.Spec.Id).To(Equal(params.allocationID))
+
+					return nil
+				}
+
+				Expect(pact.ExecuteTest(testingT, test)).To(Succeed())
+			})
+		})
+
+		Context("when updating a public load balancer allocation", func() {
+			It("updates allocation for load balancer and public IP resources", func() {
+				params := allocationTestParams{
+					organizationID: "57ff7c16-9a3b-45f0-830c-73f146123353",
+					projectID:      "f0bff67e-7cb1-41ff-955d-4766205b26fa",
+					allocationID:   "9be0db1f-a967-49f2-aa14-b7638fbc62c4",
+					name:           "test-public-loadbalancer",
+					kind:           "loadbalancer",
+					description:    "a request to update public load balancer allocation",
+				}
+
+				pact.AddInteraction().
+					GivenWithParameter(models.ProviderState{
+						Name: "allocation exists",
+						Parameters: map[string]interface{}{
+							"organizationID": params.organizationID,
+							"projectID":      params.projectID,
+							"allocationID":   params.allocationID,
+						},
+					}).
+					UponReceiving(params.description).
+					WithRequest("PUT",
+						fmt.Sprintf("/api/v1/organizations/%s/projects/%s/allocations/%s",
+							params.organizationID, params.projectID, params.allocationID), func(b *consumer.V4RequestBuilder) {
+							b.JSONBody(map[string]interface{}{
+								"metadata": map[string]interface{}{
+									"name": matchers.String(params.name),
+								},
+								"spec": map[string]interface{}{
+									"id":   matchers.String(params.allocationID),
+									"kind": matchers.String(params.kind),
+									"allocations": []map[string]interface{}{
+										{
+											"kind":      matchers.String("loadbalancers"),
+											"committed": matchers.Integer(1),
+											"reserved":  matchers.Integer(1),
+										},
+										{
+											"kind":      matchers.String("publicips"),
+											"committed": matchers.Integer(1),
+											"reserved":  matchers.Integer(1),
+										},
+									},
+								},
+							})
+						}).
+					WillRespondWith(200, func(b *consumer.V4ResponseBuilder) {
+						b.JSONBody(map[string]interface{}{
+							"metadata": map[string]interface{}{
+								"id":           matchers.UUID(),
+								"name":         matchers.String(params.name),
+								"creationTime": matchers.Timestamp(),
+							},
+							"spec": map[string]interface{}{
+								"id":   matchers.String(params.allocationID),
+								"kind": matchers.String(params.kind),
+								"allocations": []map[string]interface{}{
+									{
+										"kind":      matchers.String("loadbalancers"),
+										"committed": matchers.Integer(1),
+										"reserved":  matchers.Integer(1),
+									},
+									{
+										"kind":      matchers.String("publicips"),
+										"committed": matchers.Integer(1),
+										"reserved":  matchers.Integer(1),
+									},
+								},
+							},
+						})
+					})
+
+				test := func(config consumer.MockServerConfig) error {
+					identityClient, err := createIdentityClient(config)
+					if err != nil {
+						return fmt.Errorf("creating identity client: %w", err)
+					}
+
+					allocationReq := identityapi.AllocationWrite{
+						Metadata: coreclient.ResourceWriteMetadata{
+							Name: params.name,
+						},
+						Spec: identityapi.AllocationSpec{
+							Id:   params.allocationID,
+							Kind: params.kind,
+							Allocations: identityapi.ResourceAllocationList{
+								{
+									Kind:      "loadbalancers",
+									Committed: 1,
+									Reserved:  1,
+								},
+								{
+									Kind:      "publicips",
+									Committed: 1,
+									Reserved:  1,
+								},
+							},
+						},
+					}
+
+					resp, err := identityClient.PutApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDWithResponse(
+						ctx, params.organizationID, params.projectID, params.allocationID, allocationReq)
+					if err != nil {
+						return fmt.Errorf("updating allocation: %w", err)
+					}
+
+					Expect(resp.StatusCode()).To(Equal(200))
+					Expect(resp.JSON200).NotTo(BeNil())
+					Expect(resp.JSON200.Spec.Id).To(Equal(params.allocationID))
+
+					return nil
+				}
+
+				Expect(pact.ExecuteTest(testingT, test)).To(Succeed())
+			})
+		})
+
 		Context("when updating an allocation", func() {
 			It("updates allocation with new resource counts", func() {
 				organizationID := "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f"

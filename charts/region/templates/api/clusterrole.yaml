@@ -29,6 +29,7 @@ rules:
   - networks
   - quotas
   - securitygroups
+  - loadbalancers
   - securitygrouprules
   - servers
   - filestorages

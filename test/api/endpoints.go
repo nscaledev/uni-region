@@ -118,3 +118,32 @@ func (e *Endpoints) DeleteNetwork(networkID string) string {
 	return fmt.Sprintf("/api/v2/networks/%s",
 		url.PathEscape(networkID))
 }
+
+// ListLoadBalancers returns the endpoint for listing load balancers in a project.
+func (e *Endpoints) ListLoadBalancers(orgID, projectID, regionID string) string {
+	return fmt.Sprintf("/api/v2/loadbalancers?organizationId=%s&projectId=%s&regionId=%s",
+		url.QueryEscape(orgID), url.QueryEscape(projectID), url.QueryEscape(regionID))
+}
+
+// CreateLoadBalancer returns the endpoint for creating a load balancer.
+func (e *Endpoints) CreateLoadBalancer() string {
+	return "/api/v2/loadbalancers"
+}
+
+// GetLoadBalancer returns the endpoint for getting a specific load balancer.
+func (e *Endpoints) GetLoadBalancer(loadBalancerID string) string {
+	return fmt.Sprintf("/api/v2/loadbalancers/%s",
+		url.PathEscape(loadBalancerID))
+}
+
+// UpdateLoadBalancer returns the endpoint for updating a specific load balancer.
+func (e *Endpoints) UpdateLoadBalancer(loadBalancerID string) string {
+	return fmt.Sprintf("/api/v2/loadbalancers/%s",
+		url.PathEscape(loadBalancerID))
+}
+
+// DeleteLoadBalancer returns the endpoint for deleting a specific load balancer.
+func (e *Endpoints) DeleteLoadBalancer(loadBalancerID string) string {
+	return fmt.Sprintf("/api/v2/loadbalancers/%s",
+		url.PathEscape(loadBalancerID))
+}
