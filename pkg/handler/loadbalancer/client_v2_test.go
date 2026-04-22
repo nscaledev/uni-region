@@ -276,12 +276,9 @@ func minimalCreateRequest() *openapi.LoadBalancerV2Create {
 			Name: "web-lb",
 		},
 		Spec: openapi.LoadBalancerV2CreateSpec{
-			OrganizationId: lbOrganizationID,
-			ProjectId:      lbProjectID,
-			RegionId:       lbRegionID,
-			NetworkId:      lbNetworkID,
-			PublicIP:       &publicIP,
-			VipAddress:     &vipAddress,
+			NetworkId:  lbNetworkID,
+			PublicIP:   &publicIP,
+			VipAddress: &vipAddress,
 			Listeners: []openapi.LoadBalancerListenerV2{
 				{
 					Name:               "http",
@@ -381,12 +378,19 @@ func TestCreateV2(t *testing.T) {
 	result, err := client.CreateV2(ctx, minimalCreateRequest())
 	require.NoError(t, err)
 	require.NotNil(t, result)
+	require.Equal(t, lbOrganizationID, result.Metadata.OrganizationId)
+	require.Equal(t, lbProjectID, result.Metadata.ProjectId)
 	require.NotNil(t, result.Spec.PublicIP)
 	require.True(t, *result.Spec.PublicIP)
+	require.Equal(t, lbRegionID, result.Status.RegionId)
 	require.Equal(t, lbNetworkID, result.Status.NetworkId)
 
 	resource := getLoadBalancer(t, cli, result.Metadata.Id)
 	require.Equal(t, lbAllocationID, resource.Annotations[coreconstants.AllocationAnnotation])
+	require.Equal(t, lbOrganizationID, resource.Labels[coreconstants.OrganizationLabel])
+	require.Equal(t, lbProjectID, resource.Labels[coreconstants.ProjectLabel])
+	require.Equal(t, lbRegionID, resource.Labels[constants.RegionLabel])
+	require.Equal(t, lbNetworkID, resource.Labels[constants.NetworkLabel])
 	require.True(t, resource.Spec.PublicIP)
 	require.NotNil(t, resource.Spec.RequestedVIPAddress)
 }
@@ -646,10 +650,7 @@ func TestCreateV2RBACOrgScopedProjectNotFound(t *testing.T) {
 		Identity:  mockIdentity,
 	})
 
-	request := minimalCreateRequest()
-	request.Spec.ProjectId = "missing-project"
-
-	_, err := client.CreateV2(rbac.NewContext(t.Context(), orgScopeCreateACL()), request)
+	_, err := client.CreateV2(rbac.NewContext(t.Context(), orgScopeCreateACL()), minimalCreateRequest())
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
 }
@@ -671,54 +672,6 @@ func TestCreateV2NoCreatePermission(t *testing.T) {
 	_, err := client.CreateV2(rbac.NewContext(t.Context(), projectACL()), minimalCreateRequest())
 	require.Error(t, err)
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
-}
-
-func TestCreateV2ScopeMismatch(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name   string
-		mutate func(*openapi.LoadBalancerV2Create)
-	}{
-		{
-			name: "Organization",
-			mutate: func(request *openapi.LoadBalancerV2Create) {
-				request.Spec.OrganizationId = "other-org"
-			},
-		},
-		{
-			name: "Project",
-			mutate: func(request *openapi.LoadBalancerV2Create) {
-				request.Spec.ProjectId = "other-project"
-			},
-		},
-		{
-			name: "Region",
-			mutate: func(request *openapi.LoadBalancerV2Create) {
-				request.Spec.RegionId = "other-region"
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
-			network := testLBNetworkWithProject(lbProjectID)
-			cli := newLBFakeClientBuilder(t, network).Build()
-			client := loadbalancer.New(common.ClientArgs{
-				Client:    cli,
-				Namespace: lbNamespace,
-			})
-
-			request := minimalCreateRequest()
-			test.mutate(request)
-
-			_, err := client.CreateV2(withPrincipal(rbac.NewContext(t.Context(), projectACL(identityapi.Create))), request)
-			require.Error(t, err)
-			require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
-		})
-	}
 }
 
 func TestCreateV2MalformedVIPAddress(t *testing.T) {

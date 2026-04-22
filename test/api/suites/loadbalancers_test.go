@@ -63,7 +63,7 @@ var _ = Describe("LoadBalancer", func() {
 			})
 
 			It("creates, lists, gets, updates, and deletes a load balancer", func() {
-				createReq := api.NewLoadBalancerPayload(config.OrgID, config.ProjectID, config.RegionID, networkID).Build()
+				createReq := api.NewLoadBalancerPayload(networkID).Build()
 				created, err := regionClient.CreateLoadBalancer(ctx, createReq)
 				Expect(err).NotTo(HaveOccurred(), "failed to create load balancer")
 				Expect(created).NotTo(BeNil())

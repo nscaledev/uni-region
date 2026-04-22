@@ -2838,20 +2838,8 @@ components:
       - $ref: '#/components/schemas/loadBalancerV2Spec'
       - type: object
         required:
-        - organizationId
-        - projectId
-        - regionId
         - networkId
         properties:
-          organizationId:
-            description: The organization the load balancer belongs to.
-            type: string
-          projectId:
-            description: The project the load balancer belongs to.
-            type: string
-          regionId:
-            description: The region the load balancer belongs to.
-            type: string
           networkId:
             description: The network the load balancer belongs to.
             type: string
@@ -3647,9 +3635,6 @@ components:
               - name: service
                 value: ingress
             spec:
-              organizationId: 161b9d5a-701d-4fea-848d-0e345edf16e9
-              projectId: f113be96-4dd2-4c14-9c0e-e96c500f21e0
-              regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
               networkId: 61f0ad85-3001-41cb-824a-e6a047668dfe
               publicIP: true
               vipAddress: 192.168.10.20

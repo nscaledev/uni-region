@@ -474,17 +474,8 @@ type LoadBalancerV2CreateSpec struct {
 	// NetworkId The network the load balancer belongs to.
 	NetworkId string `json:"networkId"`
 
-	// OrganizationId The organization the load balancer belongs to.
-	OrganizationId string `json:"organizationId"`
-
-	// ProjectId The project the load balancer belongs to.
-	ProjectId string `json:"projectId"`
-
 	// PublicIP Whether to allocate a public IP.
 	PublicIP *bool `json:"publicIP,omitempty"`
-
-	// RegionId The region the load balancer belongs to.
-	RegionId string `json:"regionId"`
 
 	// VipAddress An IPv4 address.
 	VipAddress *Ipv4Address `json:"vipAddress,omitempty"`

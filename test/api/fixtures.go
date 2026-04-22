@@ -163,17 +163,14 @@ type LoadBalancerPayloadBuilder struct {
 
 // NewLoadBalancerPayload creates a builder with a single TCP listener and empty
 // pool members, wired to the given network.
-func NewLoadBalancerPayload(orgID, projectID, regionID, networkID string) *LoadBalancerPayloadBuilder {
+func NewLoadBalancerPayload(networkID string) *LoadBalancerPayloadBuilder {
 	return &LoadBalancerPayloadBuilder{
 		lb: regionopenapi.LoadBalancerV2Create{
 			Metadata: coreapi.ResourceWriteMetadata{
 				Name: uniqueName("lb"),
 			},
 			Spec: regionopenapi.LoadBalancerV2CreateSpec{
-				OrganizationId: orgID,
-				ProjectId:      projectID,
-				RegionId:       regionID,
-				NetworkId:      networkID,
+				NetworkId: networkID,
 				Listeners: []regionopenapi.LoadBalancerListenerV2{
 					{
 						Name:     "http",

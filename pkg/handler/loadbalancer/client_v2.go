@@ -627,22 +627,6 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 	return out, nil
 }
 
-func validateCreateRequestMatchesNetwork(request *openapi.LoadBalancerV2Create, network *regionv1.Network) error {
-	if request.Spec.OrganizationId != network.Labels[coreconstants.OrganizationLabel] {
-		return errors.HTTPUnprocessableContent("organizationId must match the selected network")
-	}
-
-	if request.Spec.ProjectId != network.Labels[coreconstants.ProjectLabel] {
-		return errors.HTTPUnprocessableContent("projectId must match the selected network")
-	}
-
-	if request.Spec.RegionId != network.Labels[constants.RegionLabel] {
-		return errors.HTTPUnprocessableContent("regionId must match the selected network")
-	}
-
-	return nil
-}
-
 func allocationRequirements(publicIP bool) identityapi.ResourceAllocationList {
 	out := identityapi.ResourceAllocationList{
 		{
@@ -760,10 +744,6 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.LoadBalancerV2Cr
 	projectID := networkResource.Labels[coreconstants.ProjectLabel]
 
 	if err := rbac.AllowProjectScopeCreate(ctx, c.Identity, endpoint, identityapi.Create, organizationID, projectID); err != nil {
-		return nil, err
-	}
-
-	if err := validateCreateRequestMatchesNetwork(request, networkResource); err != nil {
 		return nil, err
 	}
 
