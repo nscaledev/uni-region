@@ -2856,7 +2856,7 @@ components:
             description: The network the load balancer belongs to.
             type: string
           vipAddress:
-            description: The requested virtual IP address.
+            description: The requested virtual IP address. When provided, it must fall within the selected network CIDR.
             $ref: '#/components/schemas/ipv4Address'
     loadBalancerV2Status:
       description: Read only status information about a load balancer.

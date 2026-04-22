@@ -118,6 +118,11 @@ func ipPrefix(t *testing.T, value string) unikornv1core.IPv4Prefix {
 }
 
 func testLBNetworkWithProject(projectID string) *regionv1.Network {
+	_, prefix, err := net.ParseCIDR("10.0.0.0/24")
+	if err != nil {
+		panic(err)
+	}
+
 	return &regionv1.Network{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            lbNetworkID,
@@ -130,6 +135,9 @@ func testLBNetworkWithProject(projectID string) *regionv1.Network {
 				constants.IdentityLabel:           lbIdentityID,
 				constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
 			},
+		},
+		Spec: regionv1.NetworkSpec{
+			Prefix: &unikornv1core.IPv4Prefix{IPNet: *prefix},
 		},
 	}
 }
@@ -413,6 +421,62 @@ func TestCreateV2AllowsEmptyPoolMembers(t *testing.T) {
 	resource := getLoadBalancer(t, cli, result.Metadata.Id)
 	require.NotNil(t, resource.Spec.Listeners[0].Pool.Members)
 	require.Empty(t, resource.Spec.Listeners[0].Pool.Members)
+}
+
+func TestCreateV2RejectsVIPAddressOutsideNetworkCIDR(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	network := testLBNetworkWithProject(lbProjectID)
+	cli := newLBFakeClientBuilder(t, network).Build()
+	lbClient := loadbalancer.New(common.ClientArgs{
+		Client:    cli,
+		Namespace: lbNamespace,
+		Identity:  mockIdentity,
+	})
+
+	request := minimalCreateRequest()
+	vipAddress := openapi.Ipv4Address("10.0.1.50")
+	request.Spec.VipAddress = &vipAddress
+
+	_, err := lbClient.CreateV2(withPrincipal(rbac.NewContext(t.Context(), projectACL(identityapi.Create))), request)
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+
+	loadBalancers := &regionv1.LoadBalancerList{}
+	require.NoError(t, cli.List(t.Context(), loadBalancers, client.InNamespace(lbNamespace)))
+	require.Empty(t, loadBalancers.Items)
+}
+
+func TestCreateV2AllowsOmittedVIPAddress(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectAllocationCreate(t, mockIdentity, identityapi.ResourceAllocationList{
+		{Kind: "loadbalancers", Committed: 1, Reserved: 0},
+		{Kind: "publicips", Committed: 1, Reserved: 0},
+	})
+
+	network := testLBNetworkWithProject(lbProjectID)
+	cli := newLBFakeClientBuilder(t, network).Build()
+	lbClient := loadbalancer.New(common.ClientArgs{
+		Client:    cli,
+		Namespace: lbNamespace,
+		Identity:  mockIdentity,
+	})
+
+	request := minimalCreateRequest()
+	request.Spec.VipAddress = nil
+
+	result, err := lbClient.CreateV2(withPrincipal(rbac.NewContext(t.Context(), projectACL(identityapi.Create))), request)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	resource := getLoadBalancer(t, cli, result.Metadata.Id)
+	require.Nil(t, resource.Spec.RequestedVIPAddress)
 }
 
 func TestListV2(t *testing.T) {

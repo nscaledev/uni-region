@@ -20,6 +20,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"net"
 	"slices"
@@ -58,6 +59,8 @@ const (
 	defaultHealthCheckHealthyThreshold   = 2
 	defaultHealthCheckUnhealthyThreshold = 2
 )
+
+var errNetworkPrefixMissing = stderrors.New("selected network has no prefix")
 
 type Client struct {
 	handlercommon.ClientArgs
@@ -428,6 +431,22 @@ func generateRequestedVIPAddress(in *openapi.Ipv4Address) (unikornv1core.IPv4Add
 	return unikornv1core.IPv4Address{IP: ip}, true, nil
 }
 
+func validateRequestedVIPAddressMatchesNetwork(vipAddress *unikornv1core.IPv4Address, network *regionv1.Network) error {
+	if vipAddress == nil {
+		return nil
+	}
+
+	if network.Spec.Prefix == nil {
+		return fmt.Errorf("%w: %q", errNetworkPrefixMissing, network.Name)
+	}
+
+	if !network.Spec.Prefix.Contains(vipAddress.IP) {
+		return errors.HTTPUnprocessableContent("vipAddress must be within the selected network CIDR")
+	}
+
+	return nil
+}
+
 func generateAllowedCIDRsV2(in *[]string) ([]unikornv1core.IPv4Prefix, error) {
 	if in == nil || len(*in) == 0 {
 		return nil, nil
@@ -756,6 +775,10 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.LoadBalancerV2Cr
 	var requestedVIPAddressPtr *unikornv1core.IPv4Address
 	if ok {
 		requestedVIPAddressPtr = &requestedVIPAddress
+	}
+
+	if err := validateRequestedVIPAddressMatchesNetwork(requestedVIPAddressPtr, networkResource); err != nil {
+		return nil, err
 	}
 
 	updateRequest, err := convertCreateToUpdateRequest(request)
