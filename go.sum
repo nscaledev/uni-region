@@ -197,10 +197,10 @@ github.com/test-go/testify v1.1.4 h1:Tf9lntrKUMHiXQ07qBScBTSA0dhYQlu83hswqelv1iE
 github.com/test-go/testify v1.1.4/go.mod h1:rH7cfJo/47vWGdi4GPj16x3/t1xGOj2YxzmNQzk2ghU=
 github.com/ugorji/go/codec v1.2.12 h1:9LC83zGrHhuUA9l16C9AHXAqEV/2wBQ4nkvumAE65EE=
 github.com/ugorji/go/codec v1.2.12/go.mod h1:UNopzCgEMSXjBc6AOMqYvWC1ktqTAfzJZUZgYf6w6lg=
-github.com/unikorn-cloud/core v1.14.0-rc1.0.20260422145135-733e5169a07e h1:BJBiASTtWfEJ1/yn26K18JxnMeLB4ucpuJcU0bVbpBo=
-github.com/unikorn-cloud/core v1.14.0-rc1.0.20260422145135-733e5169a07e/go.mod h1:t91+Hw7YbNt5nOtp93Ij826iQfYDcz6Og0KAi2xq+B8=
-github.com/unikorn-cloud/identity v1.14.0-rc1.0.20260421095602-a005bcea5bed h1:2DBYOqaL2jMLhMFHLvS29a6jjTra8+Mdlos4FMpQBMc=
-github.com/unikorn-cloud/identity v1.14.0-rc1.0.20260421095602-a005bcea5bed/go.mod h1:N5F9BXYWcv5VKNgKo/NRWII+A4x+KGiDlU7o1c/rU54=
+github.com/unikorn-cloud/core v1.16.0-rc4 h1:hmivT/nN/1el492TP86QsQpXc2K+TTnCmAhn3n5VAyU=
+github.com/unikorn-cloud/core v1.16.0-rc4/go.mod h1:xbPBXjhgOp2O0HSx+utFwmVkxheAHp7z+h1RCyBEswE=
+github.com/unikorn-cloud/identity v1.16.0-rc4 h1:PP7MHIxINimNJePKUXPsGFbuQBh/mAE1UaUCtAk5e/c=
+github.com/unikorn-cloud/identity v1.16.0-rc4/go.mod h1:3Uy1svDZlpANFUMYiBmQVUUsx67mpgJO8l6dvTzs0dM=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
 github.com/x448/float16 v0.8.4/go.mod h1:14CWIYCyZA/cWjXOioeEpHeN/83MdbZDRQHoFcYsOfg=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
@@ -208,12 +208,8 @@ github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9dec
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=
 go.opentelemetry.io/auto/sdk v1.2.1/go.mod h1:KRTj+aOaElaLi+wW1kO/DZRXwkF4C5xPbEe3ZiIhN7Y=
-go.opentelemetry.io/contrib/bridges/prometheus v0.68.0 h1:w3zlHYETbDwXyWHZlyyR58ZC39XGi8rAhkBgUgJ9d5w=
-go.opentelemetry.io/contrib/bridges/prometheus v0.68.0/go.mod h1:GR/mClR2nn7vE8RLwxKjoBNg+QtgdDhRzxVa93koy5o=
 go.opentelemetry.io/otel v1.43.0 h1:mYIM03dnh5zfN7HautFE4ieIig9amkNANT+xcVxAj9I=
 go.opentelemetry.io/otel v1.43.0/go.mod h1:JuG+u74mvjvcm8vj8pI5XiHy1zDeoCS2LB1spIq7Ay0=
-go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.43.0 h1:w1K+pCJoPpQifuVpsKamUdn9U0zM3xUziVOqsGksUrY=
-go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.43.0/go.mod h1:HBy4BjzgVE8139ieRI75oXm3EcDN+6GhD88JT1Kjvxg=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.43.0 h1:88Y4s2C8oTui1LGM6bTWkw0ICGcOLCAI5l6zsD1j20k=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.43.0/go.mod h1:Vl1/iaggsuRlrHf/hfPJPvVag77kKyvrLeD10kpMl+A=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.43.0 h1:3iZJKlCZufyRzPzlQhUIWVmfltrXuGyfjREgGP3UUjc=
