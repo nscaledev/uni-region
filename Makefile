@@ -117,7 +117,7 @@ $(BINDIR)/arm64-linux-gnu/%: $(SOURCES) $(GENDIR) $(OPENAPI_FILES) | $(BINDIR)/a
 .PHONY: generate
 generate:
 	@go install go.uber.org/mock/mockgen@$(MOCKGEN_VERSION)
-	go generate ./...
+	PATH="$(GOBIN):$$PATH" go generate ./...
 
 # Create container images.  Use buildkit here, as it's the future, and it does
 # good things, like per file .dockerignores and all that jazz.
@@ -161,19 +161,19 @@ $(GENDIR): $(APISRC)
 # Generate the server schema, types and router boilerplate.
 pkg/openapi/types.go: $(OPENAPI_SCHEMA)
 	@go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OPENAPI_CODEGEN_VERSION)
-	oapi-codegen -generate types $(OPENAPI_CODEGEN_FLAGS) -o $@ $<
+	$(GOBIN)/oapi-codegen -generate types $(OPENAPI_CODEGEN_FLAGS) -o $@ $<
 
 pkg/openapi/schema.go: $(OPENAPI_SCHEMA)
 	@go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OPENAPI_CODEGEN_VERSION)
-	oapi-codegen -generate spec $(OPENAPI_CODEGEN_FLAGS) -o $@ $<
+	$(GOBIN)/oapi-codegen -generate spec $(OPENAPI_CODEGEN_FLAGS) -o $@ $<
 
 pkg/openapi/client.go: $(OPENAPI_SCHEMA)
 	@go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OPENAPI_CODEGEN_VERSION)
-	oapi-codegen -generate client $(OPENAPI_CODEGEN_FLAGS) -o $@ $<
+	$(GOBIN)/oapi-codegen -generate client $(OPENAPI_CODEGEN_FLAGS) -o $@ $<
 
 pkg/openapi/router.go: $(OPENAPI_SCHEMA)
 	@go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OPENAPI_CODEGEN_VERSION)
-	oapi-codegen -generate chi-server $(OPENAPI_CODEGEN_FLAGS) -o $@ $<
+	$(GOBIN)/oapi-codegen -generate chi-server $(OPENAPI_CODEGEN_FLAGS) -o $@ $<
 
 # When checking out, the files timestamps are pretty much random, and make cause
 # spurious rebuilds of generated content.  Call this to prevent that.
@@ -212,37 +212,37 @@ GINKGO_INTEGRATION_TEST_FLAGS = --json-report=test-results.json --junit-report=j
 test-api: test-api-setup
 	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
 	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
-	ginkgo run -v --show-node-events $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
+	$(GOBIN)/ginkgo run -v --show-node-events $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
 
 .PHONY: test-api-verbose
 test-api-verbose: test-api-setup
 	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
 	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
-	ginkgo run -v --show-node-events $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
+	$(GOBIN)/ginkgo run -v --show-node-events $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
 
 .PHONY: test-api-focus
 test-api-focus: test-api-setup
 	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
 	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
-	LOG_REQUESTS=true LOG_RESPONSES=true ginkgo run -v --focus="$(FOCUS)" $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
+	LOG_REQUESTS=true LOG_RESPONSES=true $(GOBIN)/ginkgo run -v --focus="$(FOCUS)" $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
 
 .PHONY: test-api-suite
 test-api-suite: test-api-setup
 	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
 	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
-	ginkgo run $(SUITE) $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
+	$(GOBIN)/ginkgo run $(SUITE) $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
 
 .PHONY: test-api-parallel
 test-api-parallel: test-api-setup
 	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
 	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
-	ginkgo run --procs=4 $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
+	$(GOBIN)/ginkgo run --procs=4 $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
 
 .PHONY: test-api-ci
 test-api-ci: test-api-setup
 	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
 	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
-	ginkgo run --randomize-all --randomize-suites --race $(GINKGO_INTEGRATION_TEST_FLAGS) --output-interceptor-mode=none ./test/api/suites/
+	$(GOBIN)/ginkgo run --randomize-all --randomize-suites --race $(GINKGO_INTEGRATION_TEST_FLAGS) --output-interceptor-mode=none ./test/api/suites/
 
 .PHONY: test-api-setup
 test-api-setup:
