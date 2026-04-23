@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"time"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -43,12 +44,56 @@ type Checker struct {
 	providers providers.Providers
 }
 
-// New creates a new helath checker.
+// New creates a new health checker.
 func New(client client.Client, namespace string, providers providers.Providers) *Checker {
 	return &Checker{
 		client:    client,
 		namespace: namespace,
 		providers: providers,
+	}
+}
+
+// logTransitions emits structured log entries for any phase or health condition changes
+// between the server's previous and updated state.
+// Precondition: server must have valid identity and region labels (validated by checkServer).
+func logTransitions(ctx context.Context, server, updated *unikornv1.Server) {
+	logger := log.FromContext(ctx).WithValues(
+		"instance_id", server.Name,
+		"org_id", server.Labels[coreconstants.OrganizationLabel],
+		"region_id", server.Labels[constants.RegionLabel],
+	)
+
+	if server.Status.Phase != updated.Status.Phase {
+		logger.Info("instance phase transition",
+			"from_phase", server.Status.Phase,
+			"to_phase", updated.Status.Phase,
+			"time_since_creation_ms", time.Since(server.CreationTimestamp.Time).Milliseconds(),
+		)
+	}
+
+	// StatusConditionRead only errors when the condition is absent (ErrStatusConditionLookup).
+	oldCondition, oldErr := server.StatusConditionRead(unikornv1core.ConditionHealthy)
+	newCondition, newErr := updated.StatusConditionRead(unikornv1core.ConditionHealthy)
+
+	if newErr == nil && (oldErr != nil || oldCondition.Status != newCondition.Status) {
+		// Condition appeared for the first time, or its status changed.
+		durationSource := server.CreationTimestamp.Time
+
+		if oldErr == nil {
+			durationSource = oldCondition.LastTransitionTime.Time
+		}
+
+		var fromState string
+
+		if oldErr == nil {
+			fromState = string(oldCondition.Reason)
+		}
+
+		logger.Info("instance state transition",
+			"from_state", fromState,
+			"to_state", string(newCondition.Reason),
+			"duration_ms", newCondition.LastTransitionTime.Sub(durationSource).Milliseconds(),
+		)
 	}
 }
 
@@ -89,16 +134,7 @@ func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server) err
 		return err
 	}
 
-	if server.Status.Phase != updated.Status.Phase {
-		log.FromContext(ctx).Info("instance state transition",
-			"instance_id", server.Name,
-			"org_id", server.Labels[coreconstants.OrganizationLabel],
-			"region_id", server.Labels[constants.RegionLabel],
-			"from_state", server.Status.Phase,
-			"to_state", updated.Status.Phase,
-			"time_since_creation_ms", time.Since(server.CreationTimestamp.Time).Milliseconds(),
-		)
-	}
+	logTransitions(ctx, server, updated)
 
 	return nil
 }
