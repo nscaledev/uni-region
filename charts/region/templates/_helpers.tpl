@@ -29,6 +29,10 @@ v{{ .Chart.Version }}
 {{- .Values.securityGroupController.image | default (printf "%s/unikorn-security-group-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default (include "unikorn.defaultTag" .))) }}
 {{- end }}
 
+{{- define "unikorn.loadBalancerControllerImage" -}}
+{{- .Values.loadBalancerController.image | default (printf "%s/unikorn-load-balancer-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default (include "unikorn.defaultTag" .))) }}
+{{- end }}
+
 {{- define "unikorn.securityGroupRuleControllerImage" -}}
 {{- .Values.securityGroupRuleController.image | default (printf "%s/unikorn-security-group-rule-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default (include "unikorn.defaultTag" .))) }}
 {{- end }}

@@ -80,6 +80,20 @@
     "image": {
       "type": "string"
     },
+    "loadBalancerController": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resources": {
+          "type": "object"
+        }
+      }
+    },
     "region": {
       "type": "object",
       "required": [
