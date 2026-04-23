@@ -32,6 +32,7 @@ import (
 
 const (
 	invalidUUID           = "invalid-uuid"
+	nonExistentImageID    = "00000000-0000-0000-0000-000000000000"
 	ubuntuNobleAMD64Image = "https://s3.glo1.nscale.com/os-images/noble-server-cloudimg-amd64.raw"
 )
 
@@ -62,6 +63,15 @@ var _ = Describe("Image Management", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(images).NotTo(BeEmpty())
 				GinkgoWriter.Printf("Found %d images for region %s\n", len(images), config.RegionID)
+			})
+		})
+	})
+
+	Context("When deleting an image", func() {
+		Describe("Given an image ID that does not exist in the cache", func() {
+			It("should return not found", func() {
+				err := regionClient.DeleteImage(ctx, config.OrgID, config.RegionID, nonExistentImageID)
+				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
 			})
 		})
 	})
