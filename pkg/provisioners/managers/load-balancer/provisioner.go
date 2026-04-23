@@ -100,7 +100,21 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	log.FromContext(ctx).Info("load balancer deprovision", "name", p.loadbalancer.Name, "namespace", p.loadbalancer.Namespace)
+	log.FromContext(ctx).Info("load balancer deprovision (release quota allocation)", "name", p.loadbalancer.Name, "namespace", p.loadbalancer.Namespace)
+
+	cli, err := coreclient.FromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	api, err := p.identityClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := identityclient.NewAllocations(cli, api).Delete(ctx, p.loadbalancer); err != nil {
+		return err
+	}
 
 	return nil
 }
