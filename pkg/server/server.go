@@ -37,7 +37,7 @@ import (
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/middleware/audit"
 	openapimiddleware "github.com/unikorn-cloud/identity/pkg/middleware/openapi"
-	openapimiddlewareremote "github.com/unikorn-cloud/identity/pkg/middleware/openapi/remote"
+	openapimiddlewarepassport "github.com/unikorn-cloud/identity/pkg/middleware/openapi/passport"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
@@ -68,6 +68,9 @@ type Server struct {
 
 	// OpenAPIOptions are for OpenAPI processing.
 	OpenAPIOptions openapimiddleware.Options
+
+	// newAuthorizer allows authorizer construction to be overridden in tests.
+	newAuthorizer func(cli client.Client, identityOptions *identityclient.Options, clientOptions *coreclient.HTTPClientOptions) (openapimiddleware.Authorizer, error)
 }
 
 func (s *Server) AddFlags(flags *pflag.FlagSet) {
@@ -93,6 +96,22 @@ func (s *Server) SetupLogging() {
 // TODO: move config into an otel specific options struct.
 func (s *Server) SetupOpenTelemetry(ctx context.Context) error {
 	return s.CoreOptions.SetupOpenTelemetry(ctx)
+}
+
+func (s *Server) authorizer(kubeClient client.Client) (openapimiddleware.Authorizer, error) {
+	newAuthorizer := s.newAuthorizer
+	if newAuthorizer == nil {
+		newAuthorizer = func(kubeClient client.Client, identityOptions *identityclient.Options, httpClientOptions *coreclient.HTTPClientOptions) (openapimiddleware.Authorizer, error) {
+			return openapimiddlewarepassport.NewAuthorizer(kubeClient, identityOptions, httpClientOptions)
+		}
+	}
+
+	authorizer, err := newAuthorizer(kubeClient, s.IdentityOptions, &s.ClientOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize API authorizer: %w", err)
+	}
+
+	return authorizer, nil
 }
 
 func (s *Server) GetServer(ctx context.Context, client client.Client) (*http.Server, error) {
@@ -144,7 +163,7 @@ func (s *Server) GetServer(ctx context.Context, client client.Client) (*http.Ser
 	router.NotFound(http.HandlerFunc(handler.NotFound))
 	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
 
-	authorizer, err := openapimiddlewareremote.NewAuthorizer(client, s.IdentityOptions, &s.ClientOptions)
+	authorizer, err := s.authorizer(client)
 	if err != nil {
 		return nil, err
 	}
