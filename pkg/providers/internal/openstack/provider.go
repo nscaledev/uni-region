@@ -679,6 +679,10 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 
 	image, err := p.imageCache.Get(imageID)
 	if err != nil {
+		if errors.Is(err, cache.ErrNotFound) {
+			return nil, fmt.Errorf("%w: image %s", coreerrors.ErrResourceNotFound, imageID)
+		}
+
 		return nil, err
 	}
 
