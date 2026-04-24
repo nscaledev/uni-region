@@ -1070,6 +1070,9 @@ type ServerV2Spec struct {
 
 // ServerV2Status Read only status information about a server.
 type ServerV2Status struct {
+	// InfrastructureRef A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
+	InfrastructureRef *InfrastructureRef `json:"infrastructureRef,omitempty"`
+
 	// MacAddress The MAC address of the server.
 	MacAddress *string `json:"macAddress,omitempty"`
 
