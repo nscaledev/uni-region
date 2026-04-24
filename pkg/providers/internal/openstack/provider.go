@@ -270,6 +270,32 @@ func (p *Provider) computeFromServicePrincipal(ctx context.Context, identity *un
 	return client, nil
 }
 
+// providerForServerCreate gets the credential provider to use for creating a server.
+func (p *Provider) providerForServerCreate(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) (CredentialProvider, error) {
+	if server.Spec.InfrastructureRef != nil {
+		return p.getPrivilegedProviderFromServicePrincipal(ctx, identity)
+	}
+
+	return p.getProviderFromServicePrincipal(ctx, identity)
+}
+
+// computeForServerCreate gets a compute client for creating a server.
+func (p *Provider) computeForServerCreate(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) (ComputeInterface, error) {
+	provider, err := p.providerForServerCreate(ctx, identity, server)
+	if err != nil {
+		return nil, err
+	}
+
+	region, _ := p.openstack.regionSnapshot()
+
+	client, err := NewComputeClient(ctx, provider, region.Spec.Openstack.Compute)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
 // imageFromServicePrincipal gets a compute client scoped to the service principal data.
 func (p *Provider) imageFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (*ImageClient, error) {
 	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
@@ -2389,7 +2415,7 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
-	compute, err := p.computeFromServicePrincipal(ctx, identity)
+	compute, err := p.computeForServerCreate(ctx, identity, server)
 	if err != nil {
 		return err
 	}
