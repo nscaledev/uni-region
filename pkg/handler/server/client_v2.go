@@ -156,6 +156,7 @@ func convertV2(in *regionv1.Server) *openapi.ServerV2Read {
 			RegionId:                  in.Labels[constants.RegionLabel],
 			NetworkId:                 in.Spec.Networks[0].ID,
 			SshCertificateAuthorityId: in.Spec.SSHCertificateAuthorityID,
+			InfrastructureRef:         in.Spec.InfrastructureRef,
 			PowerState:                convertPowerStateV2(in.Status.Phase),
 			PrivateIP:                 in.Status.PrivateIP,
 			PublicIP:                  in.Status.PublicIP,
@@ -295,7 +296,7 @@ func (c *ClientV2) validateSSHCertificateAuthorityReference(ctx context.Context,
 	return nil
 }
 
-func (c *ClientV2) generateV2(ctx context.Context, organizationID, projectID string, in *openapi.ServerV2Update, network *regionv1.Network, sshCertificateAuthorityID *string) (*regionv1.Server, error) {
+func (c *ClientV2) generateV2(ctx context.Context, organizationID, projectID string, in *openapi.ServerV2Update, network *regionv1.Network, sshCertificateAuthorityID *string, infrastructureRef *string) (*regionv1.Server, error) {
 	networks, err := generateNetworks(network.Name, in.Spec.Networking)
 	if err != nil {
 		return nil, err
@@ -320,6 +321,7 @@ func (c *ClientV2) generateV2(ctx context.Context, organizationID, projectID str
 			SecurityGroups:            generateSecurityGroups(in.Spec.Networking),
 			Networks:                  networks,
 			SSHCertificateAuthorityID: sshCertificateAuthorityID,
+			InfrastructureRef:         infrastructureRef,
 			UserData:                  generateUserData(in.Spec.UserData),
 		},
 	}
@@ -456,7 +458,7 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 		return nil, err
 	}
 
-	resource, err := c.generateV2(ctx, organizationID, projectID, commonRequest, network, request.Spec.SshCertificateAuthorityId)
+	resource, err := c.generateV2(ctx, organizationID, projectID, commonRequest, network, request.Spec.SshCertificateAuthorityId, request.Spec.InfrastructureRef)
 	if err != nil {
 		return nil, err
 	}
@@ -532,7 +534,7 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *opena
 
 	// User data is only consumed during initial server bootstrap. Updates preserve it for
 	// completeness and future rebuild support, but they do not re-run cloud-init validation.
-	required, err := c.generateV2(ctx, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel], request, network, current.Spec.SSHCertificateAuthorityID)
+	required, err := c.generateV2(ctx, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel], request, network, current.Spec.SSHCertificateAuthorityID, current.Spec.InfrastructureRef)
 	if err != nil {
 		return nil, err
 	}

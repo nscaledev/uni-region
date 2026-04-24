@@ -3179,6 +3179,8 @@ components:
         sshCertificateAuthorityId:
           description: The SSH certificate authority configured when the server was created.
           $ref: '#/components/schemas/sshCertificateAuthorityID'
+        infrastructureRef:
+          $ref: '#/components/schemas/infrastructureRef'
         powerState:
           $ref: '#/components/schemas/instanceLifecyclePhase'
         privateIP:
