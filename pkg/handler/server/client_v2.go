@@ -297,6 +297,29 @@ func (c *ClientV2) validateSSHCertificateAuthorityReference(ctx context.Context,
 	return nil
 }
 
+func (c *ClientV2) validateInfrastructureRefForFlavor(ctx context.Context, regionID, flavorID string, infrastructureRef *string) error {
+	if infrastructureRef != nil {
+		return nil
+	}
+
+	provider, err := c.getProvider(regionID)
+	if err != nil {
+		return err
+	}
+
+	flavors, err := provider.Flavors(ctx)
+	if err != nil {
+		return err
+	}
+
+	i := slices.IndexFunc(flavors, func(f types.Flavor) bool { return f.ID == flavorID })
+	if i >= 0 && flavors[i].PinnedOnly {
+		return errors.HTTPUnprocessableContent("flavor requires infrastructureRef to be set")
+	}
+
+	return nil
+}
+
 func (c *ClientV2) generateV2(ctx context.Context, organizationID, projectID string, in *openapi.ServerV2Update, network *regionv1.Network, sshCertificateAuthorityID *string, infrastructureRef *string) (*regionv1.Server, error) {
 	networks, err := generateNetworks(network.Name, in.Spec.Networking)
 	if err != nil {
@@ -456,6 +479,10 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 	}
 
 	if err := c.validateSSHCertificateAuthorityReference(ctx, organizationID, projectID, request.Spec.SshCertificateAuthorityId); err != nil {
+		return nil, err
+	}
+
+	if err := c.validateInfrastructureRefForFlavor(ctx, network.Labels[constants.RegionLabel], request.Spec.FlavorId, request.Spec.InfrastructureRef); err != nil {
 		return nil, err
 	}
 
