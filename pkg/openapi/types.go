@@ -391,6 +391,9 @@ type ImageVirtualization string
 // Images A list of images that are compatible with this platform.
 type Images = []Image
 
+// InfrastructureRef A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
+type InfrastructureRef = string
+
 // InstanceLifecyclePhase The lifecycle phase of an instance.
 type InstanceLifecyclePhase string
 
@@ -999,6 +1002,9 @@ type ServerV2CreateSpec struct {
 
 	// ImageId The image of the server.
 	ImageId string `json:"imageId"`
+
+	// InfrastructureRef A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
+	InfrastructureRef *InfrastructureRef `json:"infrastructureRef,omitempty"`
 
 	// NetworkId The network ID to attach a server to.
 	NetworkId string `json:"networkId"`

@@ -2961,6 +2961,9 @@ components:
     sshCertificateAuthorityID:
       description: The SSH certificate authority ID.
       type: string
+    infrastructureRef:
+      description: A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
+      type: string
     serverSpec:
       description: A server's specification.
       type: object
@@ -3158,6 +3161,8 @@ components:
           sshCertificateAuthorityId:
             description: The SSH certificate authority used to bootstrap login trust when the server is created.
             $ref: '#/components/schemas/sshCertificateAuthorityID'
+          infrastructureRef:
+            $ref: '#/components/schemas/infrastructureRef'
     serverV2Status:
       description: Read only status information about a server.
       type: object
