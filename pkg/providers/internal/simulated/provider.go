@@ -371,6 +371,8 @@ func deterministicIPv4Address(prefix net.IPNet, seed string) (*unikornv1core.IPv
 	return &unikornv1core.IPv4Address{IP: address}, nil
 }
 
+// documentationPublicIPPrefix returns RFC 5737 TEST-NET-2 for deterministic,
+// non-routable simulated public IP allocation.
 func documentationPublicIPPrefix() net.IPNet {
 	return net.IPNet{
 		IP:   net.IPv4(198, 51, 100, 0).To4(),
