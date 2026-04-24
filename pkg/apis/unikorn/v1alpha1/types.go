@@ -872,6 +872,7 @@ type Server struct {
 	Status            ServerStatus `json:"status,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.infrastructureRef) == !has(self.infrastructureRef) && (!has(self.infrastructureRef) || self.infrastructureRef == oldSelf.infrastructureRef)",message="infrastructureRef is immutable"
 type ServerSpec struct {
 	// Pause, if true, will inhibit reconciliation.
 	Pause bool `json:"pause,omitempty"`
