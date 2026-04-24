@@ -66,6 +66,10 @@ func ConvertFlavor(in *types.Flavor) *openapi.Flavor {
 		out.Spec.Baremetal = ptr.To(true)
 	}
 
+	if in.PinnedOnly {
+		out.Spec.PinnedOnly = ptr.To(true)
+	}
+
 	if in.GPU != nil {
 		out.Spec.Gpu = &openapi.GpuSpec{
 			Vendor:        ConvertGpuVendor(in.GPU.Vendor),
