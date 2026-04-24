@@ -387,6 +387,7 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 				metadata := &region.Spec.Openstack.Compute.Flavors.Metadata[i]
 
 				f.Baremetal = metadata.Baremetal
+				f.PinnedOnly = metadata.PinnedOnly
 
 				if metadata.CPU != nil {
 					if metadata.CPU.Architecture != nil {

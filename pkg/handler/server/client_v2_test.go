@@ -37,6 +37,8 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
+	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -411,10 +413,17 @@ func TestServerCreateV2SSHCertificateAuthorityAcceptsSupportedUserData(t *testin
 					HTTPResponse: &http.Response{StatusCode: http.StatusOK},
 				}, nil)
 
+			mockProvider := mocktypes.NewMockProvider(ctrl)
+			mockProvider.EXPECT().Flavors(gomock.Any()).Return(nil, nil)
+
+			mockProviders := mockproviders.NewMockProviders(ctrl)
+			mockProviders.EXPECT().LookupCloud(gomock.Any()).Return(mockProvider, nil)
+
 			c := server.NewClientV2(common.ClientArgs{
 				Client:    k8sClient,
 				Namespace: srvNamespace,
 				Identity:  mockIdentity,
+				Providers: mockProviders,
 			})
 
 			ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
@@ -448,10 +457,17 @@ func TestServerCreateV2RejectsInvalidAllowedSourceAddress(t *testing.T) {
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
 		}, nil)
 
+	mockProvider := mocktypes.NewMockProvider(ctrl)
+	mockProvider.EXPECT().Flavors(gomock.Any()).Return(nil, nil)
+
+	mockProviders := mockproviders.NewMockProviders(ctrl)
+	mockProviders.EXPECT().LookupCloud(gomock.Any()).Return(mockProvider, nil)
+
 	c := server.NewClientV2(common.ClientArgs{
 		Client:    k8sClient,
 		Namespace: srvNamespace,
 		Identity:  mockIdentity,
+		Providers: mockProviders,
 	})
 
 	ctx := rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate())
