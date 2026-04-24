@@ -289,6 +289,12 @@ spec:
                                     be overridden.
                                   pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                                   x-kubernetes-int-or-string: true
+                                pinnedOnly:
+                                  description: |-
+                                    PinnedOnly indicates that this flavor requires a specific physical host to
+                                    be identified via InfrastructureRef when creating a server. Attempts to
+                                    create a server with this flavor without an InfrastructureRef are rejected.
+                                  type: boolean
                               required:
                               - id
                               type: object
