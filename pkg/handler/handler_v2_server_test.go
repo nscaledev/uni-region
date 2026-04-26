@@ -94,6 +94,24 @@ func (b *aclBuilder) addEndpoint(endpoint string, perms ...identityapi.AclOperat
 	return b
 }
 
+func (b *aclBuilder) addProjectEndpoint(projectID, endpoint string, perms ...identityapi.AclOperation) *aclBuilder {
+	var projects identityapi.AclProjectList
+	if b.org.Projects != nil {
+		projects = *b.org.Projects
+	}
+
+	projects = append(projects, identityapi.AclProject{
+		Id: projectID,
+		Endpoints: identityapi.AclEndpoints{
+			{Name: endpoint, Operations: perms},
+		},
+	})
+
+	b.org.Projects = &projects
+
+	return b
+}
+
 func (b *aclBuilder) buildContext(ctx context.Context) context.Context {
 	return rbac.NewContext(ctx, &identityapi.Acl{
 		Organizations: &identityapi.AclOrganizationList{b.org},
@@ -370,4 +388,66 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 		Name:  regionconstants.ImageSourceTag,
 		Value: regionconstants.ImageSourceSnapshot,
 	})
+}
+
+func TestServerV2_Create_PinnedOnlyFlavorWithoutInfrastructureRef(t *testing.T) {
+	t.Parallel()
+
+	const (
+		namespace = "region-test-home"
+		orgID     = "org-pinned-only"
+		projectID = "project1"
+		regionID  = "region1"
+		networkID = "net1"
+		flavorID  = "pinned-flavor"
+	)
+
+	ctrl := gomock.NewController(t)
+
+	provider := mockprovider.NewMockProvider(ctrl)
+	provider.EXPECT().Flavors(gomock.Any()).Return(types.FlavorList{
+		{ID: flavorID, PinnedOnly: true},
+	}, nil)
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(regionID).Return(provider, nil)
+
+	net := withMeta(&regionv1.Network{}, networkID, namespace, labels{
+		constants.OrganizationLabel:             orgID,
+		constants.ProjectLabel:                  projectID,
+		regionconstants.RegionLabel:             regionID,
+		regionconstants.IdentityLabel:           "id1",
+		regionconstants.ResourceAPIVersionLabel: "2",
+	})
+
+	c := fakeClientWithSchema(t, net)
+
+	clientArgs := common.ClientArgs{
+		Client:    c,
+		Namespace: namespace,
+		Providers: providers,
+	}
+
+	handler := NewServerV2Handler(clientArgs)
+
+	ctx := newOrganisationACLBuilder(orgID).
+		addEndpoint("region:networks:v2", identityapi.Read).
+		addProjectEndpoint(projectID, "region:servers", identityapi.Create).
+		buildContext(t.Context())
+
+	requestBody := bytes.NewBufferString(`{
+		"metadata": {"name": "test-server"},
+		"spec": {
+			"flavorId": "` + flavorID + `",
+			"imageId": "image1",
+			"networkId": "` + networkID + `"
+		}
+	}`)
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v2/servers", requestBody)
+
+	handler.PostApiV2Servers(response, request)
+
+	require.Equal(t, http.StatusUnprocessableEntity, response.Result().StatusCode)
 }
