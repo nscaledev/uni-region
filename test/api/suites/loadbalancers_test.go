@@ -21,7 +21,6 @@ limitations under the License.
 package suites
 
 import (
-	"errors"
 	"net/http"
 	"time"
 
@@ -31,7 +30,6 @@ import (
 	"k8s.io/utils/ptr"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
-	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/test/api"
 )
@@ -52,13 +50,9 @@ var _ = Describe("LoadBalancer", func() {
 
 				DeferCleanup(func() {
 					if lbID != "" {
-						if err := regionClient.DeleteLoadBalancer(ctx, lbID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-							GinkgoWriter.Printf("Warning: cleanup delete load balancer %s: %v\n", lbID, err)
-						}
+						Expect(regionClient.DeleteLoadBalancer(ctx, lbID)).To(Succeed())
 					}
-					if err := regionClient.DeleteNetwork(ctx, networkID); err != nil {
-						GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
-					}
+					Expect(regionClient.DeleteNetwork(ctx, networkID)).To(Succeed())
 				})
 			})
 

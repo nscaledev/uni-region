@@ -84,9 +84,7 @@ var _ = Describe("Image Management", Ordered, func() {
 				return
 			}
 			GinkgoWriter.Printf("Cleaning up image %s\n", customImageID)
-			if err := regionClient.DeleteImage(ctx, config.OrgID, config.RegionID, customImageID); err != nil {
-				GinkgoWriter.Printf("Failed to clean up image %s: %v\n", customImageID, err)
-			}
+			Expect(regionClient.DeleteImage(ctx, config.OrgID, config.RegionID, customImageID)).To(Succeed())
 		})
 
 		It("should create a custom image and return its ID", func() {
@@ -120,6 +118,7 @@ var _ = Describe("Image Management", Ordered, func() {
 			err := regionClient.DeleteImage(ctx, config.OrgID, config.RegionID, customImageID)
 			Expect(err).NotTo(HaveOccurred())
 			GinkgoWriter.Printf("Deleted image %s\n", customImageID)
+			customImageID = ""
 		})
 
 		It("should return not found when deleting the already-deleted image", func() {

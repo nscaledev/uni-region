@@ -118,9 +118,7 @@ var _ = Describe("File Storage Management", func() {
 			AfterEach(func() {
 				if testStorageID != "" {
 					GinkgoWriter.Printf("Cleaning up test list storage: %s\n", testStorageID)
-					if err := regionClient.DeleteFileStorage(ctx, testStorageID); err != nil {
-						GinkgoWriter.Printf("Warning: Failed to cleanup test storage %s: %v\n", testStorageID, err)
-					}
+					Expect(regionClient.DeleteFileStorage(ctx, testStorageID)).To(Succeed())
 				}
 			})
 		})
@@ -296,6 +294,7 @@ var _ = Describe("File Storage Management", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				GinkgoWriter.Printf("Deleted file storage: %s\n", filestorageID)
+				filestorageID = "" // suppress cleanup — already deleted
 			})
 
 			It("should not find the deleted file storage resource", func() {
@@ -318,9 +317,7 @@ var _ = Describe("File Storage Management", func() {
 		AfterAll(func() {
 			if filestorageID != "" {
 				GinkgoWriter.Printf("Cleaning up test filestorage: %s\n", filestorageID)
-				if err := regionClient.DeleteFileStorage(ctx, filestorageID); err != nil {
-					GinkgoWriter.Printf("Warning: Failed to cleanup filestorage %s: %v\n", filestorageID, err)
-				}
+				Expect(regionClient.DeleteFileStorage(ctx, filestorageID)).To(Succeed())
 			}
 		})
 	})
@@ -612,6 +609,7 @@ var _ = Describe("File Storage Management", func() {
 					Should(Equal(0), "Network should be deleted")
 
 				GinkgoWriter.Printf("Confirmed network deleted: %s\n", networkID)
+				networkID = "" // suppress cleanup — already deleted
 			})
 		})
 
@@ -619,9 +617,7 @@ var _ = Describe("File Storage Management", func() {
 			// Delete storage first to detach from network
 			if filestorageID != "" {
 				GinkgoWriter.Printf("Cleaning up test filestorage: %s\n", filestorageID)
-				if err := regionClient.DeleteFileStorage(ctx, filestorageID); err != nil {
-					GinkgoWriter.Printf("Warning: Failed to cleanup filestorage %s: %v\n", filestorageID, err)
-				}
+				Expect(regionClient.DeleteFileStorage(ctx, filestorageID)).To(Succeed())
 			}
 
 			if networkID != "" {
@@ -635,9 +631,7 @@ var _ = Describe("File Storage Management", func() {
 						"Storage should be deleted before network cleanup")
 
 				GinkgoWriter.Printf("Cleaning up test network: %s\n", networkID)
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil {
-					GinkgoWriter.Printf("Warning: Failed to cleanup network %s: %v\n", networkID, err)
-				}
+				Expect(regionClient.DeleteNetwork(ctx, networkID)).To(Succeed())
 			}
 		})
 	})
