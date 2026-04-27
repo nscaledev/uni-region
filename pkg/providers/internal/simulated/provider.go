@@ -31,6 +31,7 @@ import (
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -333,6 +334,107 @@ func (p *Provider) CreateSecurityGroup(_ context.Context, _ *unikornv1.Identity,
 
 func (p *Provider) DeleteSecurityGroup(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.SecurityGroup) error {
 	return unsupported("DeleteSecurityGroup")
+}
+
+func deterministicIPv4Address(prefix net.IPNet, seed string) (*unikornv1core.IPv4Address, error) {
+	networkIP := prefix.IP.To4()
+	if networkIP == nil {
+		return nil, fmt.Errorf("%w: prefix %s is not IPv4", coreerrors.ErrConsistency, prefix.String())
+	}
+
+	ones, bits := prefix.Mask.Size()
+	if bits != net.IPv4len*8 {
+		return nil, fmt.Errorf("%w: prefix %s is not IPv4", coreerrors.ErrConsistency, prefix.String())
+	}
+
+	hostBits := bits - ones
+	if hostBits < 2 {
+		return nil, fmt.Errorf("%w: prefix %s has no usable host addresses", coreerrors.ErrConsistency, prefix.String())
+	}
+
+	usableHostCount := big.NewInt(1)
+	usableHostCount.Lsh(usableHostCount, uint(hostBits))
+	usableHostCount.Sub(usableHostCount, big.NewInt(2))
+
+	hash := uuid.NewSHA1(uuid.NameSpaceURL, []byte(seed))
+	offset := big.NewInt(0).SetBytes(hash[:])
+	offset.Mod(offset, usableHostCount)
+	offset.Add(offset, big.NewInt(1))
+
+	ip := big.NewInt(0).SetBytes(networkIP.Mask(prefix.Mask))
+	ip.Add(ip, offset)
+
+	addressBytes := ip.Bytes()
+	address := make(net.IP, net.IPv4len)
+	copy(address[net.IPv4len-len(addressBytes):], addressBytes)
+
+	return &unikornv1core.IPv4Address{IP: address}, nil
+}
+
+// documentationPublicIPPrefix returns RFC 5737 TEST-NET-2 for deterministic,
+// non-routable simulated public IP allocation.
+func documentationPublicIPPrefix() net.IPNet {
+	return net.IPNet{
+		IP:   net.IPv4(198, 51, 100, 0).To4(),
+		Mask: net.CIDRMask(24, 32),
+	}
+}
+
+func (p *Provider) loadBalancerNetwork(ctx context.Context, loadBalancer *unikornv1.LoadBalancer) (*unikornv1.Network, error) {
+	networkID, ok := loadBalancer.Labels[constants.NetworkLabel]
+	if !ok || networkID == "" {
+		return nil, fmt.Errorf("%w: load balancer %s missing network label", coreerrors.ErrConsistency, loadBalancer.Name)
+	}
+
+	if p.client == nil {
+		return nil, fmt.Errorf("%w: kubernetes client not configured", coreerrors.ErrConsistency)
+	}
+
+	network := &unikornv1.Network{}
+	if err := p.client.Get(ctx, client.ObjectKey{Namespace: loadBalancer.Namespace, Name: networkID}, network); err != nil {
+		return nil, fmt.Errorf("%w: get network %s for load balancer %s: %w", coreerrors.ErrConsistency, networkID, loadBalancer.Name, err)
+	}
+
+	return network, nil
+}
+
+func (p *Provider) CreateLoadBalancer(ctx context.Context, _ *unikornv1.Identity, loadBalancer *unikornv1.LoadBalancer) error {
+	if loadBalancer.Spec.RequestedVIPAddress != nil {
+		loadBalancer.Status.VIPAddress = loadBalancer.Spec.RequestedVIPAddress.DeepCopy()
+	} else {
+		network, err := p.loadBalancerNetwork(ctx, loadBalancer)
+		if err != nil {
+			return err
+		}
+
+		if network.Spec.Prefix == nil {
+			return fmt.Errorf("%w: network %s missing prefix", coreerrors.ErrConsistency, network.Name)
+		}
+
+		vipAddress, err := deterministicIPv4Address(network.Spec.Prefix.IPNet, fmt.Sprintf("simulated-loadbalancer-vip/%s/%s", network.Spec.Prefix.String(), loadBalancer.Name))
+		if err != nil {
+			return err
+		}
+
+		loadBalancer.Status.VIPAddress = vipAddress
+	}
+
+	if loadBalancer.Spec.PublicIP {
+		publicIP, err := deterministicIPv4Address(documentationPublicIPPrefix(), fmt.Sprintf("simulated-loadbalancer-publicip/%s", loadBalancer.Name))
+		if err != nil {
+			return err
+		}
+
+		loadBalancer.Status.PublicIP = publicIP
+	} else {
+		loadBalancer.Status.PublicIP = nil
+	}
+
+	return nil
+}
+
+func (p *Provider) DeleteLoadBalancer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.LoadBalancer) error {
+	return nil
 }
 
 func (p *Provider) CreateServer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ *types.ServerCreateOptions) error {

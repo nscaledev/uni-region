@@ -382,6 +382,57 @@ func (mr *MockSecurityGroupMockRecorder) DeleteSecurityGroup(ctx, identity, secu
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteSecurityGroup", reflect.TypeOf((*MockSecurityGroup)(nil).DeleteSecurityGroup), ctx, identity, securityGroup)
 }
 
+// MockLoadBalancer is a mock of LoadBalancer interface.
+type MockLoadBalancer struct {
+	ctrl     *gomock.Controller
+	recorder *MockLoadBalancerMockRecorder
+}
+
+// MockLoadBalancerMockRecorder is the mock recorder for MockLoadBalancer.
+type MockLoadBalancerMockRecorder struct {
+	mock *MockLoadBalancer
+}
+
+// NewMockLoadBalancer creates a new mock instance.
+func NewMockLoadBalancer(ctrl *gomock.Controller) *MockLoadBalancer {
+	mock := &MockLoadBalancer{ctrl: ctrl}
+	mock.recorder = &MockLoadBalancerMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockLoadBalancer) EXPECT() *MockLoadBalancerMockRecorder {
+	return m.recorder
+}
+
+// CreateLoadBalancer mocks base method.
+func (m *MockLoadBalancer) CreateLoadBalancer(ctx context.Context, identity *v1alpha1.Identity, loadBalancer *v1alpha1.LoadBalancer) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateLoadBalancer", ctx, identity, loadBalancer)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateLoadBalancer indicates an expected call of CreateLoadBalancer.
+func (mr *MockLoadBalancerMockRecorder) CreateLoadBalancer(ctx, identity, loadBalancer any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLoadBalancer", reflect.TypeOf((*MockLoadBalancer)(nil).CreateLoadBalancer), ctx, identity, loadBalancer)
+}
+
+// DeleteLoadBalancer mocks base method.
+func (m *MockLoadBalancer) DeleteLoadBalancer(ctx context.Context, identity *v1alpha1.Identity, loadBalancer *v1alpha1.LoadBalancer) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteLoadBalancer", ctx, identity, loadBalancer)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteLoadBalancer indicates an expected call of DeleteLoadBalancer.
+func (mr *MockLoadBalancerMockRecorder) DeleteLoadBalancer(ctx, identity, loadBalancer any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLoadBalancer", reflect.TypeOf((*MockLoadBalancer)(nil).DeleteLoadBalancer), ctx, identity, loadBalancer)
+}
+
 // MockServer is a mock of Server interface.
 type MockServer struct {
 	ctrl     *gomock.Controller
@@ -700,6 +751,20 @@ func (mr *MockProviderMockRecorder) CreateImage(ctx, image, uri any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateImage", reflect.TypeOf((*MockProvider)(nil).CreateImage), ctx, image, uri)
 }
 
+// CreateLoadBalancer mocks base method.
+func (m *MockProvider) CreateLoadBalancer(ctx context.Context, identity *v1alpha1.Identity, loadBalancer *v1alpha1.LoadBalancer) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateLoadBalancer", ctx, identity, loadBalancer)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateLoadBalancer indicates an expected call of CreateLoadBalancer.
+func (mr *MockProviderMockRecorder) CreateLoadBalancer(ctx, identity, loadBalancer any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLoadBalancer", reflect.TypeOf((*MockProvider)(nil).CreateLoadBalancer), ctx, identity, loadBalancer)
+}
+
 // CreateNetwork mocks base method.
 func (m *MockProvider) CreateNetwork(ctx context.Context, identity *v1alpha1.Identity, network *v1alpha1.Network) error {
 	m.ctrl.T.Helper()
@@ -783,6 +848,20 @@ func (m *MockProvider) DeleteImage(ctx context.Context, imageID string) error {
 func (mr *MockProviderMockRecorder) DeleteImage(ctx, imageID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteImage", reflect.TypeOf((*MockProvider)(nil).DeleteImage), ctx, imageID)
+}
+
+// DeleteLoadBalancer mocks base method.
+func (m *MockProvider) DeleteLoadBalancer(ctx context.Context, identity *v1alpha1.Identity, loadBalancer *v1alpha1.LoadBalancer) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteLoadBalancer", ctx, identity, loadBalancer)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteLoadBalancer indicates an expected call of DeleteLoadBalancer.
+func (mr *MockProviderMockRecorder) DeleteLoadBalancer(ctx, identity, loadBalancer any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLoadBalancer", reflect.TypeOf((*MockProvider)(nil).DeleteLoadBalancer), ctx, identity, loadBalancer)
 }
 
 // DeleteNetwork mocks base method.
