@@ -61,6 +61,30 @@ var SecurityGroupName = securityGroupName
 var ServerName = serverName
 
 //nolint:gochecknoglobals
+var LoadBalancerName = loadBalancerName
+
+//nolint:gochecknoglobals
+var LoadBalancerListenerName = loadBalancerListenerName
+
+//nolint:gochecknoglobals
+var LoadBalancerPoolName = loadBalancerPoolName
+
+//nolint:gochecknoglobals
+var LoadBalancerMonitorName = loadBalancerMonitorName
+
+//nolint:gochecknoglobals
+var FindExactLoadBalancer = findExactLoadBalancer
+
+//nolint:gochecknoglobals
+var FindExactListener = findExactListener
+
+//nolint:gochecknoglobals
+var FindExactPool = findExactPool
+
+//nolint:gochecknoglobals
+var FindExactMonitor = findExactMonitor
+
+//nolint:gochecknoglobals
 var ImageTags = imageTags
 
 //nolint:gochecknoglobals
