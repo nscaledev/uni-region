@@ -3182,6 +3182,9 @@ components:
         publicIP:
           description: The public IP address of the server.
           type: string
+        macAddress:
+          description: The MAC address of the server.
+          type: string
     serverV2Read:
       description: A server.
       type: object
@@ -4430,6 +4433,7 @@ components:
               powerState: Running
               privateIP: 192.168.1.50
               publicIP: 142.250.66.196
+              macAddress: fa:16:3e:12:34:56
     serversV2Response:
       description: A list of servers.
       content:
@@ -4466,6 +4470,7 @@ components:
               powerState: Running
               privateIP: 192.168.1.50
               publicIP: 142.250.66.196
+              macAddress: fa:16:3e:12:34:56
     consoleSessionResponse:
       description: A console session response.
       content:

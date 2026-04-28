@@ -1064,6 +1064,9 @@ type ServerV2Spec struct {
 
 // ServerV2Status Read only status information about a server.
 type ServerV2Status struct {
+	// MacAddress The MAC address of the server.
+	MacAddress *string `json:"macAddress,omitempty"`
+
 	// NetworkId The network a security group belongs to.
 	NetworkId string `json:"networkId"`
 
