@@ -159,6 +159,7 @@ func convertV2(in *regionv1.Server) *openapi.ServerV2Read {
 			PowerState:                convertPowerStateV2(in.Status.Phase),
 			PrivateIP:                 in.Status.PrivateIP,
 			PublicIP:                  in.Status.PublicIP,
+			MacAddress:                in.Status.MACAddress,
 		},
 	}
 

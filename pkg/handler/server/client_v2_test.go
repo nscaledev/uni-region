@@ -506,3 +506,34 @@ func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, resource.Spec.SSHCertificateAuthorityID, updated.Spec.SSHCertificateAuthorityID)
 }
+
+func TestServerGetV2ReturnsMACAddress(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, "server-1", "ca-1")
+	resource.Status.Phase = regionv1.InstanceLifecyclePhaseRunning
+	resource.Status.PrivateIP = ptr.To("192.168.0.42")
+	resource.Status.PublicIP = ptr.To("203.0.113.10")
+	resource.Status.MACAddress = ptr.To("fa:16:3e:12:34:56")
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate(srvOrganizationID))
+
+	result, err := c.GetV2(ctx, resource.Name)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, resource.Status.PrivateIP, result.Status.PrivateIP)
+	require.Equal(t, resource.Status.PublicIP, result.Status.PublicIP)
+	require.Equal(t, resource.Status.MACAddress, result.Status.MacAddress)
+}
