@@ -473,6 +473,41 @@ func TestServerCreateV2RejectsInvalidAllowedSourceAddress(t *testing.T) {
 	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
 }
 
+// TestServerCreateV2AcceptsPinnedOnlyFlavorWithInfrastructureRef verifies that
+// a pinnedOnly flavor is accepted when infrastructureRef is set, and that the
+// provider's flavor list is never consulted.
+func TestServerCreateV2AcceptsPinnedOnlyFlavorWithInfrastructureRef(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	k8sClient := newSrvFakeClient(t, network).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	// No provider mock — Flavors must not be called when infrastructureRef is set.
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	request := minimalServerV2CreateRequest()
+	request.Spec.InfrastructureRef = ptr.To("node-42")
+
+	result, err := c.CreateV2(ctx, request)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, ptr.To("node-42"), result.Status.InfrastructureRef)
+}
+
 func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 	t.Parallel()
 
