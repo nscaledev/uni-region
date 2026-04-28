@@ -30,6 +30,13 @@ rules:
   - servers/status
   verbs:
   - patch
+# Patch server metadata (annotations) for Pending phase duration tracking.
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - servers
+  verbs:
+  - patch
 # Get region credentials.
 - apiGroups:
   - ""
