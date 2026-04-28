@@ -913,6 +913,8 @@ type ServerStatus struct {
 	PrivateIP *string `json:"privateIP,omitempty"`
 	// PublicIP is the public IP address of the server.
 	PublicIP *string `json:"publicIP,omitempty"`
+	// MACAddress is the MAC address of the server's primary network interface.
+	MACAddress *string `json:"macAddress,omitempty"`
 }
 
 // OpenstackServerList is a typed list of servers.

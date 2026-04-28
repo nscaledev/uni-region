@@ -208,6 +208,10 @@ spec:
                   - type
                   type: object
                 type: array
+              macAddress:
+                description: MACAddress is the MAC address of the server's primary
+                  network interface.
+                type: string
               phase:
                 description: Phase is the current lifecycle phase of the server.
                 enum:

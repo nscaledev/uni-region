@@ -2124,6 +2124,7 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 		}
 
 		server.Status.PrivateIP = ptr.To(port.FixedIPs[0].IPAddress)
+		server.Status.MACAddress = stringPtrOrNil(port.MACAddress)
 
 		return port, nil
 	}
@@ -2137,8 +2138,17 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 	}
 
 	server.Status.PrivateIP = ptr.To(port.FixedIPs[0].IPAddress)
+	server.Status.MACAddress = stringPtrOrNil(port.MACAddress)
 
 	return port, nil
+}
+
+func stringPtrOrNil(value string) *string {
+	if value == "" {
+		return nil
+	}
+
+	return ptr.To(value)
 }
 
 func (p *Provider) reconcileFloatingIP(ctx context.Context, client FloatingIPInterface, server *unikornv1.Server, port *ports.Port) error {
