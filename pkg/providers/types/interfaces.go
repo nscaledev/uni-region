@@ -82,6 +82,13 @@ type SecurityGroup interface {
 	DeleteSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error
 }
 
+type LoadBalancer interface {
+	// CreateLoadBalancer creates a new load balancer.
+	CreateLoadBalancer(ctx context.Context, identity *unikornv1.Identity, loadBalancer *unikornv1.LoadBalancer) error
+	// DeleteLoadBalancer deletes a load balancer.
+	DeleteLoadBalancer(ctx context.Context, identity *unikornv1.Identity, loadBalancer *unikornv1.LoadBalancer) error
+}
+
 type Server interface {
 	// CreateServer creates a new server.
 	CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, options *ServerCreateOptions) error
@@ -127,6 +134,7 @@ type Provider interface {
 	Identity
 	Network
 	SecurityGroup
+	LoadBalancer
 	Server
 	ServerConsole
 	ServerSnapshot

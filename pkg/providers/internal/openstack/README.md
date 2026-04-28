@@ -63,10 +63,12 @@ for role in member load-balancer_member manager; do
 done
 ```
 
-Grant the `member` role on the project we created in a previous step:
+Grant the `member` and `manager` roles on the project we created in a previous step:
 
 ```bash
-openstack role add --user ${USER_ID} --project ${PROJECT_ID} member
+for role in member manager; do
+    openstack role add --user ${USER_ID} --project ${PROJECT_ID} ${role}
+done
 ```
 
 ### Unikorn Configuration
