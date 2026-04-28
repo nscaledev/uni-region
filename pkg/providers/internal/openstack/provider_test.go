@@ -384,11 +384,13 @@ func serverFixture(opts ...func(*regionv1.Server)) *regionv1.Server {
 }
 
 const serverPortIP = "192.168.0.42"
+const serverPortMAC = "fa:16:3e:12:34:56"
 
 func openstackServerPortFixture(server *regionv1.Server, openstackNetwork *openstack.NetworkExt, openstackSubnet *subnets.Subnet) *ports.Port {
 	return &ports.Port{
 		ID:          string(uuid.NewUUID()),
 		Name:        openstack.ServerName(server),
+		MACAddress:  serverPortMAC,
 		DeviceOwner: "compute:nova",
 		NetworkID:   openstackNetwork.ID,
 		FixedIPs: []ports.IP{
@@ -813,6 +815,8 @@ func TestReconcileServerPort(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, server.Status.PrivateIP)
 		require.Equal(t, serverPortIP, *server.Status.PrivateIP)
+		require.NotNil(t, server.Status.MACAddress)
+		require.Equal(t, serverPortMAC, *server.Status.MACAddress)
 	})
 
 	t.Run("ItExists", func(t *testing.T) {
@@ -833,6 +837,8 @@ func TestReconcileServerPort(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, server.Status.PrivateIP)
 		require.Equal(t, serverPortIP, *server.Status.PrivateIP)
+		require.NotNil(t, server.Status.MACAddress)
+		require.Equal(t, serverPortMAC, *server.Status.MACAddress)
 	})
 
 	t.Run("ItUpdatesSecurityGroups", func(t *testing.T) {
@@ -1297,6 +1303,7 @@ func TestServerForCreate(t *testing.T) {
 		server := serverFixture(withSSHCertificateAuthority(sshCertificateAuthority))
 		server.Status.PrivateIP = ptr.To(serverPortIP)
 		server.Status.PublicIP = ptr.To("12.34.56.78")
+		server.Status.MACAddress = ptr.To(serverPortMAC)
 
 		options := &types.ServerCreateOptions{
 			UserData: []byte("#cloud-config\nusers: []\n"),
@@ -1309,5 +1316,6 @@ func TestServerForCreate(t *testing.T) {
 		require.Nil(t, server.Spec.UserData)
 		require.Equal(t, ptr.To(serverPortIP), server.Status.PrivateIP)
 		require.Equal(t, ptr.To("12.34.56.78"), server.Status.PublicIP)
+		require.Equal(t, ptr.To(serverPortMAC), server.Status.MACAddress)
 	})
 }
