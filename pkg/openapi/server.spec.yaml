@@ -2219,6 +2219,9 @@ components:
           $ref: '#/components/schemas/architecture'
         gpu:
           $ref: '#/components/schemas/gpuSpec'
+        pinnedOnly:
+          description: When true, a server using this flavor must specify an infrastructureRef to identify the target host.
+          type: boolean
     flavor:
       description: A flavor.
       type: object

@@ -37,6 +37,8 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
+	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -145,6 +147,24 @@ func aclWithSrvUpdate(orgID string) *identityapi.Acl {
 			},
 		},
 	}
+}
+
+func expectProjectFound(mockIdentity *identitymock.MockClientWithResponsesInterface) {
+	mockIdentity.EXPECT().
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
+		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+		}, nil)
+}
+
+func newMockProvidersWithNoFlavors(ctrl *gomock.Controller) *mockproviders.MockProviders {
+	mockProvider := mocktypes.NewMockProvider(ctrl)
+	mockProvider.EXPECT().Flavors(gomock.Any()).Return(nil, nil)
+
+	mockProviders := mockproviders.NewMockProviders(ctrl)
+	mockProviders.EXPECT().LookupCloud(gomock.Any()).Return(mockProvider, nil)
+
+	return mockProviders
 }
 
 func minimalServerV2CreateRequest() *openapi.ServerV2Create {
@@ -284,11 +304,7 @@ func TestServerCreateV2SSHCertificateAuthorityNotFound(t *testing.T) {
 	k8sClient := newSrvFakeClient(t, network).Build()
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
-		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
-			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
-		}, nil)
+	expectProjectFound(mockIdentity)
 
 	c := server.NewClientV2(common.ClientArgs{
 		Client:    k8sClient,
@@ -318,11 +334,7 @@ func TestServerCreateV2SSHCertificateAuthorityRejectsCrossProjectReference(t *te
 	k8sClient := newSrvFakeClient(t, network, ca).Build()
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
-		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
-			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
-		}, nil)
+	expectProjectFound(mockIdentity)
 
 	c := server.NewClientV2(common.ClientArgs{
 		Client:    k8sClient,
@@ -352,11 +364,7 @@ func TestServerCreateV2SSHCertificateAuthorityRejectsUnsupportedUserData(t *test
 	k8sClient := newSrvFakeClient(t, network, ca).Build()
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
-		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
-			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
-		}, nil)
+	expectProjectFound(mockIdentity)
 
 	c := server.NewClientV2(common.ClientArgs{
 		Client:    k8sClient,
@@ -405,16 +413,15 @@ func TestServerCreateV2SSHCertificateAuthorityAcceptsSupportedUserData(t *testin
 			k8sClient := newSrvFakeClient(t, network, ca).Build()
 
 			mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-			mockIdentity.EXPECT().
-				GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
-				Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
-					HTTPResponse: &http.Response{StatusCode: http.StatusOK},
-				}, nil)
+			expectProjectFound(mockIdentity)
+
+			mockProviders := newMockProvidersWithNoFlavors(ctrl)
 
 			c := server.NewClientV2(common.ClientArgs{
 				Client:    k8sClient,
 				Namespace: srvNamespace,
 				Identity:  mockIdentity,
+				Providers: mockProviders,
 			})
 
 			ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
@@ -442,16 +449,15 @@ func TestServerCreateV2RejectsInvalidAllowedSourceAddress(t *testing.T) {
 	k8sClient := newSrvFakeClient(t, network).Build()
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
-		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
-			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
-		}, nil)
+	expectProjectFound(mockIdentity)
+
+	mockProviders := newMockProvidersWithNoFlavors(ctrl)
 
 	c := server.NewClientV2(common.ClientArgs{
 		Client:    k8sClient,
 		Namespace: srvNamespace,
 		Identity:  mockIdentity,
+		Providers: mockProviders,
 	})
 
 	ctx := rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate())
@@ -465,6 +471,41 @@ func TestServerCreateV2RejectsInvalidAllowedSourceAddress(t *testing.T) {
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+}
+
+// TestServerCreateV2AcceptsPinnedOnlyFlavorWithInfrastructureRef verifies that
+// a pinnedOnly flavor is accepted when infrastructureRef is set, and that the
+// provider's flavor list is never consulted.
+func TestServerCreateV2AcceptsPinnedOnlyFlavorWithInfrastructureRef(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	k8sClient := newSrvFakeClient(t, network).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	// No provider mock — Flavors must not be called when infrastructureRef is set.
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	request := minimalServerV2CreateRequest()
+	request.Spec.InfrastructureRef = ptr.To("node-42")
+
+	result, err := c.CreateV2(ctx, request)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, ptr.To("node-42"), result.Status.InfrastructureRef)
 }
 
 func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {

@@ -215,6 +215,10 @@ type FlavorMetadata struct {
 	// GPU defines additional GPU metadata.  When provided it will enable selection
 	// of images based on GPU vendor and model.
 	GPU *GPUSpec `json:"gpu,omitempty"`
+	// PinnedOnly indicates that this flavor requires a specific physical host to
+	// be identified via InfrastructureRef when creating a server. Attempts to
+	// create a server with this flavor without an InfrastructureRef are rejected.
+	PinnedOnly bool `json:"pinnedOnly,omitempty"`
 }
 
 type CPUSpec struct {

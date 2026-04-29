@@ -183,6 +183,9 @@ type FlavorSpec struct {
 
 	// Memory The amount of memory in GiB.
 	Memory int `json:"memory"`
+
+	// PinnedOnly When true, a server using this flavor must specify an infrastructureRef to identify the target host.
+	PinnedOnly *bool `json:"pinnedOnly,omitempty"`
 }
 
 // Flavors A list of flavors.
