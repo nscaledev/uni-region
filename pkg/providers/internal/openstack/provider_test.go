@@ -1012,8 +1012,8 @@ func TestImageTagRoundTrip(t *testing.T) {
 				},
 				OS: types.ImageOS{
 					Kernel:  types.Linux,
-					Family:  types.Debian,
-					Distro:  types.Ubuntu,
+					Family:  "debian",
+					Distro:  "ubuntu",
 					Version: "24.04",
 				},
 			},
@@ -1025,8 +1025,8 @@ func TestImageTagRoundTrip(t *testing.T) {
 				Tags: nil,
 				OS: types.ImageOS{
 					Kernel:  types.Linux,
-					Family:  types.Redhat,
-					Distro:  types.Rocky,
+					Family:  "redhat",
+					Distro:  "rocky",
 					Version: "9.3",
 				},
 			},
@@ -1042,8 +1042,8 @@ func TestImageTagRoundTrip(t *testing.T) {
 				},
 				OS: types.ImageOS{
 					Kernel:  types.Linux,
-					Family:  types.Debian,
-					Distro:  types.Ubuntu,
+					Family:  "debian",
+					Distro:  "ubuntu",
 					Version: "22.04",
 				},
 			},
@@ -1057,8 +1057,8 @@ func TestImageTagRoundTrip(t *testing.T) {
 				},
 				OS: types.ImageOS{
 					Kernel:  types.Linux,
-					Family:  types.Debian,
-					Distro:  types.Ubuntu,
+					Family:  "debian",
+					Distro:  "ubuntu",
 					Version: "24.04",
 				},
 			},

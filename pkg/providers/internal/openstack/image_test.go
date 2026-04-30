@@ -179,16 +179,6 @@ func TestImageSchema(t *testing.T) {
 			mutator: replacePropertyMutator(osKernelProperty, "darwin"),
 		},
 		{
-			name:    "BasicImageInvalidFamily",
-			fixture: basicImageFixture,
-			mutator: replacePropertyMutator(osFamilyProperty, "gentoo"),
-		},
-		{
-			name:    "BasicImageInvalidDistro",
-			fixture: basicImageFixture,
-			mutator: replacePropertyMutator(osDistroProperty, "mandriver"),
-		},
-		{
 			name:    "BasicImageInvalidVirtualization",
 			fixture: basicImageFixture,
 			mutator: replacePropertyMutator(virtualizationProperty, "virtualised"),

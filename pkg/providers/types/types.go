@@ -190,30 +190,14 @@ const (
 	Linux OsKernel = "linux"
 )
 
-// OsFamily A family of operating systems.  This typically defines the package format.
-type OsFamily string
-
-const (
-	Debian OsFamily = "debian"
-	Redhat OsFamily = "redhat"
-)
-
-// OsDistro A distribution name.
-type OsDistro string
-
-const (
-	Rocky  OsDistro = "rocky"
-	Ubuntu OsDistro = "ubuntu"
-)
-
 // ImageOS defines the operating system of an image.
 type ImageOS struct {
 	// Kernel is the kernel type of the OS.
 	Kernel OsKernel
 	// Family is the family of the OS.
-	Family OsFamily
+	Family string
 	// Distro is the distribution of the OS.
-	Distro OsDistro
+	Distro string
 	// Variant is the variant of the OS.
 	Variant *string
 	// Codename is the codename of the OS.
