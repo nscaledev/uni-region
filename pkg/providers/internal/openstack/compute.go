@@ -278,6 +278,10 @@ func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Serv
 		UserData:  server.Spec.UserData,
 	}
 
+	if server.Spec.InfrastructureRef != nil {
+		serverCreateOpts.HypervisorHostname = *server.Spec.InfrastructureRef
+	}
+
 	createOpts := keypairs.CreateOptsExt{
 		CreateOptsBuilder: serverCreateOpts,
 		KeyName:           keyName,

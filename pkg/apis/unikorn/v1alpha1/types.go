@@ -863,6 +863,11 @@ type ServerSpec struct {
 	SSHCertificateAuthorityID *string `json:"sshCertificateAuthorityID,omitempty"`
 	// UserData contains configuration information or scripts to use upon launch.
 	UserData []byte `json:"userData,omitempty"`
+	// InfrastructureRef pins the server to a specific physical host. When set,
+	// the provider bypasses its scheduler and provisions directly onto the
+	// identified host.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="infrastructureRef is immutable"
+	InfrastructureRef *string `json:"infrastructureRef,omitempty"`
 }
 
 type ServerSecurityGroupSpec struct {

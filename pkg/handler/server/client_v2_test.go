@@ -42,6 +42,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -465,6 +466,47 @@ func TestServerCreateV2RejectsInvalidAllowedSourceAddress(t *testing.T) {
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+}
+
+func TestServerCreateV2SetsInfrastructureRef(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	k8sClient := newSrvFakeClient(t, network).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	mockIdentity.EXPECT().
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
+		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+		}, nil)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	infrastructureRef := "node-uuid-123"
+	request := minimalServerV2CreateRequest()
+	request.Spec.InfrastructureRef = &infrastructureRef
+
+	result, err := c.CreateV2(ctx, request)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Status.InfrastructureRef)
+	require.Equal(t, infrastructureRef, *result.Status.InfrastructureRef)
+
+	created := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: result.Metadata.Id}, created))
+	require.NotNil(t, created.Spec.InfrastructureRef)
+	require.Equal(t, infrastructureRef, *created.Spec.InfrastructureRef)
 }
 
 func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
