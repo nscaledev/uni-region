@@ -91,8 +91,8 @@ var _ = Describe("Image Management", Ordered, func() {
 			data, err := regionClient.CreateImage(ctx, config.OrgID, config.RegionID,
 				api.NewImagePayload().
 					WithURI(ubuntuNobleAMD64Image).
-					WithOSDistro(regionopenapi.OsDistroUbuntu).
-					WithOSFamily(regionopenapi.OsFamilyDebian).
+					WithOSDistro("ubuntu").
+					WithOSFamily("debian").
 					WithOSKernel(regionopenapi.OsKernelLinux).
 					WithOSCodename("noble").
 					WithOSVersion("24.04").

@@ -120,8 +120,8 @@ func TestImages(t *testing.T) {
 		Virtualization: types.Virtualized,
 		OS: types.ImageOS{
 			Kernel:  types.Linux,
-			Family:  types.Debian,
-			Distro:  types.Ubuntu,
+			Family:  "debian",
+			Distro:  "ubuntu",
 			Version: "24.04",
 		},
 	}, "https://example.invalid/image.raw")

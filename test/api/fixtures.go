@@ -52,8 +52,8 @@ func NewImagePayload() *ImagePayloadBuilder {
 				Architecture: regionopenapi.ArchitectureX8664,
 				Os: regionopenapi.ImageOS{
 					Codename: ptr.To("noble"),
-					Distro:   regionopenapi.OsDistroUbuntu,
-					Family:   regionopenapi.OsFamilyDebian,
+					Distro:   "ubuntu",
+					Family:   "debian",
 					Kernel:   regionopenapi.OsKernelLinux,
 					Version:  "23.04",
 				},

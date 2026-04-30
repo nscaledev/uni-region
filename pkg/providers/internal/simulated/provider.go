@@ -202,8 +202,8 @@ func builtInImages() []types.Image {
 			Virtualization: types.Virtualized,
 			OS: types.ImageOS{
 				Kernel:   types.Linux,
-				Family:   types.Debian,
-				Distro:   types.Ubuntu,
+				Family:   "debian",
+				Distro:   "ubuntu",
 				Codename: &noble,
 				Version:  "24.04",
 			},
@@ -227,8 +227,8 @@ func builtInImages() []types.Image {
 			},
 			OS: types.ImageOS{
 				Kernel:   types.Linux,
-				Family:   types.Debian,
-				Distro:   types.Ubuntu,
+				Family:   "debian",
+				Distro:   "ubuntu",
 				Codename: &noble,
 				Version:  "24.04",
 			},

@@ -425,8 +425,8 @@ func imageOS(image *images.Image) types.ImageOS {
 
 	result := types.ImageOS{
 		Kernel:  types.OsKernel(kernel),
-		Family:  types.OsFamily(family),
-		Distro:  types.OsDistro(distro),
+		Family:  family,
+		Distro:  distro,
 		Version: version,
 	}
 
@@ -708,8 +708,8 @@ func createImageMetadata(image *types.Image) (map[string]string, error) {
 	metadata := make(map[string]string)
 
 	metadata[osKernelLabel] = string(image.OS.Kernel)
-	metadata[osFamilyLabel] = string(image.OS.Family)
-	metadata[osDistroLabel] = string(image.OS.Distro)
+	metadata[osFamilyLabel] = image.OS.Family
+	metadata[osDistroLabel] = image.OS.Distro
 	metadata[osVersionLabel] = image.OS.Version
 	setIfNotNil(metadata, osVariantLabel, image.OS.Variant)
 	setIfNotNil(metadata, osCodenameLabel, image.OS.Codename)

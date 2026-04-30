@@ -2024,15 +2024,9 @@ components:
     osFamily:
       description: A family of operating systems.  This typically defines the package format.
       type: string
-      enum:
-      - redhat
-      - debian
     osDistro:
       description: A distribution name.
       type: string
-      enum:
-      - rocky
-      - ubuntu
     imageOS:
       description: An operating system description.
       type: object
