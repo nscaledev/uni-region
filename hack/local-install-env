@@ -1,0 +1,358 @@
+#!/usr/bin/env bash
+# Generate test/.env.install from an existing Helm-based local installation.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+IDENTITY_NAMESPACE="${IDENTITY_NAMESPACE:-}"
+IDENTITY_RELEASE="${IDENTITY_RELEASE:-}"
+IDENTITY_BASE_URL="${IDENTITY_BASE_URL:-}"
+REGION_NAMESPACE="${REGION_NAMESPACE:-}"
+REGION_RELEASE="${REGION_RELEASE:-}"
+REGION_BASE_URL="${REGION_BASE_URL:-}"
+OUTPUT_FILE="${REPO_ROOT}/test/.env.install"
+CA_CERT="${REPO_ROOT}/test/ca-bundle.pem"
+CA_SECRET_NAMESPACE="${CA_SECRET_NAMESPACE:-cert-manager}"
+CA_SECRET_NAME="${CA_SECRET_NAME:-unikorn-ca}"
+SYNC_CA=true
+
+usage() {
+  cat >&2 <<EOF
+Usage: $0 [options]
+
+Discovers an existing identity and region Helm installation in the current
+kubectl context and writes a shell-compatible test/.env.install file.
+
+Options:
+  --identity-namespace NS       Identity release namespace
+  --identity-release NAME       Identity Helm release name
+  --identity-release-name NAME  Alias for --identity-release
+  --identity-base-url URL       Override discovered identity URL
+  --region-namespace NS         Region release namespace
+  --namespace NS                Alias for --region-namespace
+  --region-release NAME         Region Helm release name
+  --release-name NAME           Alias for --region-release
+  --region-base-url URL         Override discovered region URL
+  --ca-cert FILE                CA bundle output path (default: test/ca-bundle.pem)
+  --ca-secret-namespace NS      CA secret namespace (default: cert-manager)
+  --ca-secret-name NAME         CA secret name (default: unikorn-ca)
+  --no-sync-ca                  Use --ca-cert as-is instead of extracting it
+  --output FILE                 Env file path (default: test/.env.install)
+  --stdout                      Write env content to stdout
+  -h, --help                    Show this help
+
+Environment defaults:
+  IDENTITY_NAMESPACE, IDENTITY_RELEASE, IDENTITY_BASE_URL
+  REGION_NAMESPACE, REGION_RELEASE, REGION_BASE_URL
+  CA_SECRET_NAMESPACE, CA_SECRET_NAME
+EOF
+}
+
+log() {
+  echo "==> $*" >&2
+}
+
+fatal() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
+
+require() {
+  command -v "$1" >/dev/null 2>&1 || fatal "$1 is required"
+}
+
+abs_path() {
+  local path="$1"
+
+  if [[ "${path}" == /* ]]; then
+    printf "%s\n" "${path}"
+    return
+  fi
+
+  printf "%s\n" "${PWD}/${path#./}"
+}
+
+decode_base64() {
+  local input="$1"
+  local output="$2"
+
+  if base64 --decode < "${input}" > "${output}" 2>/dev/null; then
+    return
+  fi
+
+  if base64 -d < "${input}" > "${output}" 2>/dev/null; then
+    return
+  fi
+
+  if base64 -D < "${input}" > "${output}" 2>/dev/null; then
+    return
+  fi
+
+  fatal "failed to decode CA data from ${CA_SECRET_NAMESPACE}/${CA_SECRET_NAME}"
+}
+
+discover_release() {
+  local component="$1"
+  local release="$2"
+  local namespace="$3"
+  local matches
+  local count
+
+  matches=$(helm list -A -o json | jq -r \
+    --arg component "${component}" \
+    --arg release "${release}" \
+    --arg namespace "${namespace}" \
+    '
+      .[]
+      | select($release == "" or .name == $release)
+      | select($namespace == "" or .namespace == $namespace)
+      | select(
+          $release != ""
+          or .name == $component
+          or (.name | startswith($component + "-"))
+          or .name == ("unikorn-" + $component)
+          or (.name | startswith("unikorn-" + $component + "-"))
+          or (.chart | startswith($component + "-"))
+          or (.chart | startswith("unikorn-" + $component + "-"))
+        )
+      | [.name, .namespace]
+      | @tsv
+    ')
+  count=$(printf "%s\n" "${matches}" | awk 'NF { c++ } END { print c + 0 }')
+
+  if [[ "${count}" -eq 0 ]]; then
+    fatal "could not find a ${component} Helm release; pass --${component}-release and --${component}-namespace"
+  fi
+
+  if [[ "${count}" -gt 1 ]]; then
+    echo "Multiple ${component} Helm releases matched:" >&2
+    printf "%s\n" "${matches}" | awk 'NF { printf "  release=%s namespace=%s\n", $1, $2 }' >&2
+    fatal "pass --${component}-release and --${component}-namespace"
+  fi
+
+  printf "%s\n" "${matches}" | awk 'NF { print; exit }'
+}
+
+base_url() {
+  local value="$1"
+
+  if [[ "${value}" =~ ^https?:// ]]; then
+    printf "%s\n" "${value}"
+    return
+  fi
+
+  printf "https://%s\n" "${value}"
+}
+
+unique_non_empty_lines() {
+  awk 'NF && !seen[$0]++'
+}
+
+discover_base_url() {
+  local component="$1"
+  local release="$2"
+  local namespace="$3"
+  local override="$4"
+  local hosts
+  local count
+
+  if [[ -n "${override}" ]]; then
+    base_url "${override}"
+    return
+  fi
+
+  hosts=$(kubectl get ingress "${release}-server" \
+    -n "${namespace}" \
+    -o jsonpath='{range .spec.rules[*]}{.host}{"\n"}{end}' 2>/dev/null \
+    | unique_non_empty_lines || true)
+
+  if [[ -z "${hosts}" ]]; then
+    hosts=$(kubectl get ingress \
+      -n "${namespace}" \
+      -l "app.kubernetes.io/instance=${release}" \
+      -o json 2>/dev/null \
+      | jq -r '.items[].spec.rules[]?.host' \
+      | unique_non_empty_lines || true)
+  fi
+
+  count=$(printf "%s\n" "${hosts}" | awk 'NF { c++ } END { print c + 0 }')
+
+  if [[ "${count}" -eq 0 ]]; then
+    fatal "could not find ${component} ingress host; pass --${component}-base-url"
+  fi
+
+  if [[ "${count}" -gt 1 ]]; then
+    echo "Multiple ${component} ingress hosts matched:" >&2
+    printf "%s\n" "${hosts}" | awk 'NF { printf "  %s\n", $0 }' >&2
+    fatal "pass --${component}-base-url"
+  fi
+
+  base_url "${hosts}"
+}
+
+discover_ingress_ip() {
+  kubectl get service ingress-nginx-controller \
+    -n ingress-nginx \
+    -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true
+}
+
+sync_ca_bundle() {
+  local encoded
+  local encoded_file
+  local decoded_file
+  local cert_dir
+
+  cert_dir="$(dirname "${CA_CERT}")"
+  mkdir -p "${cert_dir}"
+
+  log "Extracting CA bundle from ${CA_SECRET_NAMESPACE}/${CA_SECRET_NAME}..."
+  encoded=$(kubectl get secret "${CA_SECRET_NAME}" \
+    -n "${CA_SECRET_NAMESPACE}" \
+    -o jsonpath='{.data.ca\.crt}' 2>/dev/null || true)
+
+  if [[ -z "${encoded}" ]]; then
+    encoded=$(kubectl get secret "${CA_SECRET_NAME}" \
+      -n "${CA_SECRET_NAMESPACE}" \
+      -o jsonpath='{.data.tls\.crt}' 2>/dev/null || true)
+  fi
+
+  [[ -n "${encoded}" ]] || fatal "secret ${CA_SECRET_NAMESPACE}/${CA_SECRET_NAME} has no ca.crt or tls.crt data"
+
+  encoded_file="$(mktemp)"
+  decoded_file="$(mktemp)"
+
+  printf "%s" "${encoded}" > "${encoded_file}"
+  decode_base64 "${encoded_file}" "${decoded_file}"
+  rm -f "${encoded_file}"
+  mv "${decoded_file}" "${CA_CERT}"
+}
+
+emit_env() {
+  cat <<EOF
+IDENTITY_BASE_URL=${IDENTITY_BASE_URL}
+IDENTITY_INGRESS_IP=${IDENTITY_INGRESS_IP}
+IDENTITY_NAMESPACE=${IDENTITY_NAMESPACE}
+IDENTITY_RELEASE=${IDENTITY_RELEASE}
+IDENTITY_CA_CERT=${CA_CERT}
+REGION_BASE_URL=${REGION_BASE_URL}
+API_BASE_URL=${REGION_BASE_URL}
+REGION_NAMESPACE=${REGION_NAMESPACE}
+REGION_RELEASE=${REGION_RELEASE}
+REGION_CA_CERT=${CA_CERT}
+EOF
+}
+
+write_env_file() {
+  local output="$1"
+  local dir
+  local base
+  local tmp
+
+  if [[ "${output}" == "-" ]]; then
+    emit_env
+    return
+  fi
+
+  dir="$(dirname "${output}")"
+  base="$(basename "${output}")"
+  mkdir -p "${dir}"
+  tmp="$(mktemp "${dir}/.${base}.XXXXXX")"
+  emit_env > "${tmp}"
+  mv "${tmp}" "${output}"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --identity-namespace)
+      IDENTITY_NAMESPACE="$2"
+      shift 2
+      ;;
+    --identity-release|--identity-release-name)
+      IDENTITY_RELEASE="$2"
+      shift 2
+      ;;
+    --identity-base-url)
+      IDENTITY_BASE_URL="$2"
+      shift 2
+      ;;
+    --region-namespace|--namespace)
+      REGION_NAMESPACE="$2"
+      shift 2
+      ;;
+    --region-release|--release-name)
+      REGION_RELEASE="$2"
+      shift 2
+      ;;
+    --region-base-url)
+      REGION_BASE_URL="$2"
+      shift 2
+      ;;
+    --ca-cert)
+      CA_CERT="$2"
+      shift 2
+      ;;
+    --ca-secret-namespace)
+      CA_SECRET_NAMESPACE="$2"
+      shift 2
+      ;;
+    --ca-secret-name)
+      CA_SECRET_NAME="$2"
+      shift 2
+      ;;
+    --no-sync-ca)
+      SYNC_CA=false
+      shift
+      ;;
+    --output)
+      OUTPUT_FILE="$2"
+      shift 2
+      ;;
+    --stdout)
+      OUTPUT_FILE="-"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      fatal "unknown argument: $1"
+      ;;
+  esac
+done
+
+require kubectl
+require helm
+require jq
+require awk
+require base64
+
+CA_CERT="$(abs_path "${CA_CERT}")"
+if [[ "${OUTPUT_FILE}" != "-" ]]; then
+  OUTPUT_FILE="$(abs_path "${OUTPUT_FILE}")"
+fi
+
+CONTEXT=$(kubectl config current-context)
+log "Cluster context: ${CONTEXT}"
+
+read -r IDENTITY_RELEASE IDENTITY_NAMESPACE < <(discover_release identity "${IDENTITY_RELEASE}" "${IDENTITY_NAMESPACE}")
+read -r REGION_RELEASE REGION_NAMESPACE < <(discover_release region "${REGION_RELEASE}" "${REGION_NAMESPACE}")
+
+IDENTITY_BASE_URL="$(discover_base_url identity "${IDENTITY_RELEASE}" "${IDENTITY_NAMESPACE}" "${IDENTITY_BASE_URL}")"
+REGION_BASE_URL="$(discover_base_url region "${REGION_RELEASE}" "${REGION_NAMESPACE}" "${REGION_BASE_URL}")"
+IDENTITY_INGRESS_IP="$(discover_ingress_ip)"
+
+if [[ "${SYNC_CA}" == true ]]; then
+  sync_ca_bundle
+elif [[ ! -f "${CA_CERT}" ]]; then
+  fatal "CA bundle does not exist: ${CA_CERT}"
+fi
+
+log "Identity: release=${IDENTITY_RELEASE}, namespace=${IDENTITY_NAMESPACE}, url=${IDENTITY_BASE_URL}"
+log "Region: release=${REGION_RELEASE}, namespace=${REGION_NAMESPACE}, url=${REGION_BASE_URL}"
+write_env_file "${OUTPUT_FILE}"
+
+if [[ "${OUTPUT_FILE}" != "-" ]]; then
+  log "Wrote ${OUTPUT_FILE}"
+fi
