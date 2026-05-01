@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+# Register an OpenStack-backed Region CR in the current Kubernetes cluster.
+set -euo pipefail
+
+NAMESPACE="${REGION_NAMESPACE:-}"
+REGION_ID="${REGION_ID:-}"
+DISPLAY_NAME="${REGION_DISPLAY_NAME:-}"
+SECRET_NAME="${OPENSTACK_SECRET_NAME:-}"
+ORGANIZATION_ID="${REGION_ORGANIZATION_ID:-}"
+PROVIDER_ENV_FILE=""
+
+log() {
+  echo "==> $*" >&2
+}
+
+fatal() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
+
+require() {
+  command -v "$1" >/dev/null 2>&1 || fatal "$1 is required"
+}
+
+shell_quote() {
+  local value="$1"
+
+  printf "'"
+  printf "%s" "${value}" | sed "s/'/'\\\\''/g"
+  printf "'"
+}
+
+emit_env() {
+  printf "%s=%s\n" "$1" "$(shell_quote "$2")"
+}
+
+usage() {
+  cat >&2 <<EOF
+Usage: $0 [--provider-env FILE] --namespace NS [--region-id ID] [--display-name NAME] [--secret-name NAME] [--organization-id ID]
+
+Environment:
+  UNIKORN_OPENSTACK_AUTH_URL
+  UNIKORN_OPENSTACK_DOMAIN_ID
+  UNIKORN_OPENSTACK_PROJECT_ID
+  UNIKORN_OPENSTACK_USER_ID
+  UNIKORN_OPENSTACK_PASSWORD
+  REGION_NAMESPACE
+  REGION_ID
+  REGION_DISPLAY_NAME
+  OPENSTACK_SECRET_NAME
+  REGION_ORGANIZATION_ID
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --provider-env)
+      PROVIDER_ENV_FILE="$2"
+      shift 2
+      ;;
+    --namespace)
+      NAMESPACE="$2"
+      shift 2
+      ;;
+    --region-id)
+      REGION_ID="$2"
+      shift 2
+      ;;
+    --display-name)
+      DISPLAY_NAME="$2"
+      shift 2
+      ;;
+    --secret-name)
+      SECRET_NAME="$2"
+      shift 2
+      ;;
+    --organization-id)
+      ORGANIZATION_ID="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      fatal "unknown argument: $1"
+      ;;
+  esac
+done
+
+if [[ -n "${PROVIDER_ENV_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  . "${PROVIDER_ENV_FILE}"
+fi
+
+REGION_ID="${REGION_ID:-${OPENSTACK_REGION_ID:-devstack}}"
+DISPLAY_NAME="${DISPLAY_NAME:-${OPENSTACK_REGION_NAME:-DevStack}}"
+SECRET_NAME="${SECRET_NAME:-${REGION_ID}-openstack-credentials}"
+
+require kubectl
+
+[[ -n "${NAMESPACE}" ]] || fatal "--namespace or REGION_NAMESPACE is required"
+[[ -n "${UNIKORN_OPENSTACK_AUTH_URL:-}" ]] || fatal "UNIKORN_OPENSTACK_AUTH_URL is required"
+[[ -n "${UNIKORN_OPENSTACK_DOMAIN_ID:-}" ]] || fatal "UNIKORN_OPENSTACK_DOMAIN_ID is required"
+[[ -n "${UNIKORN_OPENSTACK_PROJECT_ID:-}" ]] || fatal "UNIKORN_OPENSTACK_PROJECT_ID is required"
+[[ -n "${UNIKORN_OPENSTACK_USER_ID:-}" ]] || fatal "UNIKORN_OPENSTACK_USER_ID is required"
+[[ -n "${UNIKORN_OPENSTACK_PASSWORD:-}" ]] || fatal "UNIKORN_OPENSTACK_PASSWORD is required"
+
+log "Applying OpenStack credential Secret ${NAMESPACE}/${SECRET_NAME}..."
+kubectl create secret generic "${SECRET_NAME}" \
+  --namespace "${NAMESPACE}" \
+  --from-literal="domain-id=${UNIKORN_OPENSTACK_DOMAIN_ID}" \
+  --from-literal="project-id=${UNIKORN_OPENSTACK_PROJECT_ID}" \
+  --from-literal="user-id=${UNIKORN_OPENSTACK_USER_ID}" \
+  --from-literal="password=${UNIKORN_OPENSTACK_PASSWORD}" \
+  --dry-run=client \
+  -o yaml | kubectl apply -f - >&2
+
+security_block=""
+if [[ -n "${ORGANIZATION_ID}" ]]; then
+  security_block=$(cat <<EOF
+  security:
+    organizations:
+    - id: ${ORGANIZATION_ID}
+EOF
+)
+fi
+
+network_block=""
+if [[ -n "${UNIKORN_OPENSTACK_EXTERNAL_NETWORK_ID:-}" ]]; then
+  network_block=$(cat <<EOF
+    network:
+      externalNetworks:
+        selector:
+          ids:
+          - ${UNIKORN_OPENSTACK_EXTERNAL_NETWORK_ID}
+EOF
+)
+fi
+
+flavor_block=""
+if [[ -n "${UNIKORN_OPENSTACK_FLAVOR_ID:-}" ]]; then
+  flavor_block=$(cat <<EOF
+    compute:
+      flavors:
+        selector:
+          ids:
+          - ${UNIKORN_OPENSTACK_FLAVOR_ID}
+EOF
+)
+fi
+
+log "Applying OpenStack Region ${NAMESPACE}/${REGION_ID}..."
+cat <<EOF | kubectl apply -f - >&2
+apiVersion: region.unikorn-cloud.org/v1alpha1
+kind: Region
+metadata:
+  name: ${REGION_ID}
+  namespace: ${NAMESPACE}
+  labels:
+    unikorn-cloud.org/name: ${DISPLAY_NAME}
+spec:
+${security_block}
+  provider: openstack
+  openstack:
+    endpoint: ${UNIKORN_OPENSTACK_AUTH_URL}
+    serviceAccountSecret:
+      namespace: ${NAMESPACE}
+      name: ${SECRET_NAME}
+    identity:
+      clusterRoles:
+      - member
+      - load-balancer_member
+${flavor_block}
+${network_block}
+EOF
+
+emit_env REGION_PROVIDER openstack
+emit_env OPENSTACK_REGION_ID "${REGION_ID}"
+emit_env TEST_REGION_ID "${REGION_ID}"
