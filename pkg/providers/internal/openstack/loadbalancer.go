@@ -432,11 +432,3 @@ func (c *LoadBalancerClient) DeleteMonitor(ctx context.Context, id string) error
 
 	return monitors.Delete(ctx, c.client, id).ExtractErr()
 }
-
-func (p *Provider) CreateLoadBalancer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.LoadBalancer) error {
-	return errLoadBalancerUnsupported
-}
-
-func (p *Provider) DeleteLoadBalancer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.LoadBalancer) error {
-	return errLoadBalancerUnsupported
-}

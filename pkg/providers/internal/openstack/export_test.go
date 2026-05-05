@@ -21,6 +21,10 @@ import (
 	"context"
 
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/listeners"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/loadbalancers"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/monitors"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/pools"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
@@ -146,3 +150,72 @@ func ReconcileServer(ctx context.Context, p *Provider, client ServerInterface, s
 func ResolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {
 	return resolveServerKeyName(server, identity)
 }
+
+func LoadBalancerNetwork(ctx context.Context, p *Provider, loadBalancer *unikornv1.LoadBalancer) (*unikornv1.Network, error) {
+	return p.loadBalancerNetwork(ctx, loadBalancer)
+}
+
+func ReconcileLoadBalancer(ctx context.Context, p *Provider, lbClient LoadBalancingInterface, loadBalancer *unikornv1.LoadBalancer, subnetID string) (*loadbalancers.LoadBalancer, error) {
+	return p.reconcileLoadBalancer(ctx, lbClient, loadBalancer, subnetID)
+}
+
+func ReconcileListener(ctx context.Context, p *Provider, lbClient LoadBalancingInterface, loadBalancer *unikornv1.LoadBalancer, listener *unikornv1.LoadBalancerListener, loadBalancerID, defaultPoolID string) (*listeners.Listener, error) {
+	return p.reconcileListener(ctx, lbClient, loadBalancer, listener, loadBalancerID, defaultPoolID)
+}
+
+func ReconcilePool(ctx context.Context, p *Provider, lbClient LoadBalancingInterface, loadBalancer *unikornv1.LoadBalancer, listener *unikornv1.LoadBalancerListener, loadBalancerID string) (*pools.Pool, error) {
+	return p.reconcilePool(ctx, lbClient, loadBalancer, listener, loadBalancerID)
+}
+
+func ReconcileMembers(ctx context.Context, p *Provider, lbClient LoadBalancingInterface, loadBalancer *unikornv1.LoadBalancer, listener *unikornv1.LoadBalancerListener, poolID string) (bool, error) {
+	return p.reconcileMembers(ctx, lbClient, loadBalancer, listener, poolID)
+}
+
+func ReconcileMonitor(ctx context.Context, p *Provider, lbClient LoadBalancingInterface, loadBalancer *unikornv1.LoadBalancer, listener *unikornv1.LoadBalancerListener, poolID string) (*monitors.Monitor, error) {
+	return p.reconcileMonitor(ctx, lbClient, loadBalancer, listener, poolID)
+}
+
+func PruneOrphanedListenersOnce(ctx context.Context, p *Provider, lbClient LoadBalancingInterface, loadBalancer *unikornv1.LoadBalancer, loadBalancerID string) (bool, error) {
+	return p.pruneOrphanedListenersOnce(ctx, lbClient, loadBalancer, loadBalancerID)
+}
+
+func PruneOrphanedPoolsAndMonitorsOnce(ctx context.Context, p *Provider, lbClient LoadBalancingInterface, loadBalancer *unikornv1.LoadBalancer, loadBalancerID string) (bool, error) {
+	return p.pruneOrphanedPoolsAndMonitorsOnce(ctx, lbClient, loadBalancer, loadBalancerID)
+}
+
+func CreateLoadBalancerWithClient(ctx context.Context, p *Provider, lbClient LoadBalancingInterface, loadBalancer *unikornv1.LoadBalancer, subnetID string) error {
+	return p.createLoadBalancer(ctx, lbClient, loadBalancer, subnetID)
+}
+
+//nolint:gochecknoglobals
+var ClassifyOctaviaStatus = classifyOctaviaStatus
+
+//nolint:gochecknoglobals
+var EffectiveMemberCount = effectiveMemberCount
+
+//nolint:gochecknoglobals
+var OctaviaPoolProtocol = octaviaPoolProtocol
+
+//nolint:gochecknoglobals
+var OctaviaListenerProtocol = octaviaListenerProtocol
+
+//nolint:gochecknoglobals
+var OctaviaMonitorType = octaviaMonitorType
+
+//nolint:gochecknoglobals
+var IdleTimeoutMillis = idleTimeoutMillis
+
+//nolint:gochecknoglobals
+var BuildLoadBalancerCreateOpts = buildLoadBalancerCreateOpts
+
+//nolint:gochecknoglobals
+var BuildListenerCreateOpts = buildListenerCreateOpts
+
+//nolint:gochecknoglobals
+var BuildPoolCreateOpts = buildPoolCreateOpts
+
+//nolint:gochecknoglobals
+var BuildMonitorCreateOpts = buildMonitorCreateOpts
+
+//nolint:gochecknoglobals
+var BuildMemberOpts = buildMemberOpts

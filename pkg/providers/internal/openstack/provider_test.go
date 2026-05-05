@@ -23,6 +23,10 @@ import (
 
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/listeners"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/loadbalancers"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/monitors"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/pools"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/floatingips"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
@@ -37,6 +41,7 @@ import (
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/provisioners"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -433,6 +438,235 @@ func withSSHCertificateAuthority(sshCertificateAuthority *regionv1.SSHCertificat
 	return func(s *regionv1.Server) {
 		s.Namespace = sshCertificateAuthority.Namespace
 		s.Spec.SSHCertificateAuthorityID = ptr.To(sshCertificateAuthority.Name)
+	}
+}
+
+// loadBalancerNetworkFixture creates a Network CRD with a populated
+// Status.Openstack.SubnetID, suitable for seeding the fake client when the
+// load balancer reconciler resolves its parent network.
+func loadBalancerNetworkFixture() *regionv1.Network {
+	return &regionv1.Network{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      string(uuid.NewUUID()),
+			Namespace: "default",
+		},
+		Status: regionv1.NetworkStatus{
+			Openstack: &regionv1.NetworkStatusOpenstack{
+				SubnetID: ptr.To(string(uuid.NewUUID())),
+			},
+		},
+	}
+}
+
+// loadBalancerMember encodes a CRD pool member.
+func loadBalancerMember(address string, port int) regionv1.LoadBalancerMember {
+	return regionv1.LoadBalancerMember{
+		Address: corev1.IPv4Address{IP: net.ParseIP(address).To4()},
+		Port:    port,
+	}
+}
+
+// withRequestedVIP sets Spec.RequestedVIPAddress on a load balancer fixture.
+func withRequestedVIP(addr string) func(*regionv1.LoadBalancer) {
+	return func(lb *regionv1.LoadBalancer) {
+		lb.Spec.RequestedVIPAddress = &corev1.IPv4Address{IP: net.ParseIP(addr).To4()}
+	}
+}
+
+// listenerFixture creates a CRD listener with the given name/protocol/port and
+// applies any per-listener mutators. IdleTimeoutSeconds is preset to 60 to
+// mirror the CRD admission default; opts may override it.
+func listenerFixture(name string, protocol regionv1.LoadBalancerListenerProtocol, port int, opts ...func(*regionv1.LoadBalancerListener)) regionv1.LoadBalancerListener {
+	listener := regionv1.LoadBalancerListener{
+		Name:               name,
+		Protocol:           protocol,
+		Port:               port,
+		IdleTimeoutSeconds: ptr.To(60),
+		Pool: regionv1.LoadBalancerPool{
+			Members: []regionv1.LoadBalancerMember{},
+		},
+	}
+
+	for _, o := range opts {
+		o(&listener)
+	}
+
+	return listener
+}
+
+// withMember appends a member to a listener's pool.
+func withMember(addr string, port int) func(*regionv1.LoadBalancerListener) {
+	return func(l *regionv1.LoadBalancerListener) {
+		l.Pool.Members = append(l.Pool.Members, loadBalancerMember(addr, port))
+	}
+}
+
+// withHealthCheck attaches a HealthCheck to the listener's pool.
+//
+//nolint:unparam
+func withHealthCheck(interval, timeout, healthy, unhealthy int) func(*regionv1.LoadBalancerListener) {
+	return func(l *regionv1.LoadBalancerListener) {
+		l.Pool.HealthCheck = &regionv1.LoadBalancerHealthCheck{
+			IntervalSeconds:    interval,
+			TimeoutSeconds:     timeout,
+			HealthyThreshold:   healthy,
+			UnhealthyThreshold: unhealthy,
+		}
+	}
+}
+
+// withProxyProtocolV2 enables PROXYV2 on a TCP listener's pool.
+func withProxyProtocolV2() func(*regionv1.LoadBalancerListener) {
+	return func(l *regionv1.LoadBalancerListener) {
+		l.Pool.ProxyProtocolV2 = true
+	}
+}
+
+// withIdleTimeoutSeconds overrides the listener's idle timeout.
+func withIdleTimeoutSeconds(seconds int) func(*regionv1.LoadBalancerListener) {
+	return func(l *regionv1.LoadBalancerListener) {
+		l.IdleTimeoutSeconds = ptr.To(seconds)
+	}
+}
+
+// withAllowedCIDRs sets the listener's allow list.
+func withAllowedCIDRs(cidrs ...string) func(*regionv1.LoadBalancerListener) {
+	return func(l *regionv1.LoadBalancerListener) {
+		l.AllowedCIDRs = make([]corev1.IPv4Prefix, len(cidrs))
+
+		for i, c := range cidrs {
+			_, ipnet, err := net.ParseCIDR(c)
+			if err != nil {
+				panic(err)
+			}
+
+			l.AllowedCIDRs[i] = corev1.IPv4Prefix{IPNet: *ipnet}
+		}
+	}
+}
+
+// loadBalancerFixture creates a basic load balancer pinned to the given
+// network. The default listener is "http" tcp/80 with a single member.
+func loadBalancerFixture(network *regionv1.Network, opts ...func(*regionv1.LoadBalancer)) *regionv1.LoadBalancer {
+	lb := &regionv1.LoadBalancer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      string(uuid.NewUUID()),
+			Namespace: network.Namespace,
+			Labels: map[string]string{
+				constants.NetworkLabel: network.Name,
+			},
+		},
+		Spec: regionv1.LoadBalancerSpec{
+			Listeners: []regionv1.LoadBalancerListener{
+				listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80,
+					withMember("10.0.0.5", 8080),
+				),
+			},
+		},
+	}
+
+	for _, o := range opts {
+		o(lb)
+	}
+
+	return lb
+}
+
+// loadBalancerMatcher matches a LoadBalancer argument by Name.
+func loadBalancerMatcher(lb *regionv1.LoadBalancer) gomock.Matcher {
+	return gomock.Cond(func(x *regionv1.LoadBalancer) bool {
+		return x.Name == lb.Name
+	})
+}
+
+// listenerCRDMatcher matches a CRD listener argument by Name.
+func listenerCRDMatcher(name string) gomock.Matcher {
+	return gomock.Cond(func(x *regionv1.LoadBalancerListener) bool {
+		return x.Name == name
+	})
+}
+
+// withProvisioningStatus sets the openstack load balancer's ProvisioningStatus.
+func withProvisioningStatus(s string) func(*loadbalancers.LoadBalancer) {
+	return func(lb *loadbalancers.LoadBalancer) {
+		lb.ProvisioningStatus = s
+	}
+}
+
+// withVip sets the openstack load balancer's VipAddress.
+func withVip(addr string) func(*loadbalancers.LoadBalancer) {
+	return func(lb *loadbalancers.LoadBalancer) {
+		lb.VipAddress = addr
+	}
+}
+
+// openstackLoadBalancerFixture builds a default ACTIVE load balancer with the
+// canonical VIP, optionally tweaked.
+func openstackLoadBalancerFixture(lb *regionv1.LoadBalancer, opts ...func(*loadbalancers.LoadBalancer)) *loadbalancers.LoadBalancer {
+	osLB := &loadbalancers.LoadBalancer{
+		ID:                 string(uuid.NewUUID()),
+		Name:               openstack.LoadBalancerName(lb),
+		ProvisioningStatus: "ACTIVE",
+		VipAddress:         "10.0.0.42",
+	}
+
+	for _, o := range opts {
+		o(osLB)
+	}
+
+	return osLB
+}
+
+// openstackListenerFixture builds an ACTIVE listener live representation. The
+// timeout fields default to the 60s admission default in millis so steady-state
+// tests don't need to repeat them.
+func openstackListenerFixture(lb *regionv1.LoadBalancer, listener *regionv1.LoadBalancerListener) *listeners.Listener {
+	return &listeners.Listener{
+		ID:                 string(uuid.NewUUID()),
+		Name:               openstack.LoadBalancerListenerName(lb, listener),
+		ProvisioningStatus: "ACTIVE",
+		Protocol:           string(openstack.OctaviaListenerProtocol(listener.Protocol)),
+		ProtocolPort:       listener.Port,
+		TimeoutClientData:  60000,
+		TimeoutMemberData:  60000,
+	}
+}
+
+// openstackPoolFixture builds an ACTIVE pool live representation.
+func openstackPoolFixture(lb *regionv1.LoadBalancer, listener *regionv1.LoadBalancerListener) *pools.Pool {
+	return &pools.Pool{
+		ID:                 string(uuid.NewUUID()),
+		Name:               openstack.LoadBalancerPoolName(lb, listener),
+		ProvisioningStatus: "ACTIVE",
+		Protocol:           string(openstack.OctaviaPoolProtocol(listener.Protocol, listener.Pool.ProxyProtocolV2)),
+		LBMethod:           string(pools.LBMethodRoundRobin),
+	}
+}
+
+// openstackMonitorFixture builds an ACTIVE health monitor live representation.
+func openstackMonitorFixture(lb *regionv1.LoadBalancer, listener *regionv1.LoadBalancerListener) *monitors.Monitor {
+	hc := listener.Pool.HealthCheck
+
+	return &monitors.Monitor{
+		ID:                 string(uuid.NewUUID()),
+		Name:               openstack.LoadBalancerMonitorName(lb, listener),
+		ProvisioningStatus: "ACTIVE",
+		Type:               openstack.OctaviaMonitorType(listener.Protocol),
+		Delay:              hc.IntervalSeconds,
+		Timeout:            hc.TimeoutSeconds,
+		MaxRetries:         hc.HealthyThreshold,
+		MaxRetriesDown:     hc.UnhealthyThreshold,
+	}
+}
+
+// openstackMemberFixture builds a live pool.Member for a (address, port) pair.
+//
+//nolint:unparam
+func openstackMemberFixture(address string, port int) pools.Member {
+	return pools.Member{
+		ID:           string(uuid.NewUUID()),
+		Address:      address,
+		ProtocolPort: port,
 	}
 }
 
@@ -1317,5 +1551,1324 @@ func TestServerForCreate(t *testing.T) {
 		require.Equal(t, ptr.To(serverPortIP), server.Status.PrivateIP)
 		require.Equal(t, ptr.To("12.34.56.78"), server.Status.PublicIP)
 		require.Equal(t, ptr.To(serverPortMAC), server.Status.MACAddress)
+	})
+}
+
+func TestLoadBalancerNetwork(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ItHasNoNetworkLabel", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		delete(lb.Labels, constants.NetworkLabel)
+
+		c := getClient(t, []client.Object{network})
+		p := openstack.NewTestProvider(c, regionFixture())
+
+		_, err := openstack.LoadBalancerNetwork(t.Context(), p, lb)
+		require.ErrorIs(t, err, errors.ErrConsistency)
+	})
+
+	t.Run("ItReferencesMissingNetwork", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+
+		c := getClient(t, nil)
+		p := openstack.NewTestProvider(c, regionFixture())
+
+		_, err := openstack.LoadBalancerNetwork(t.Context(), p, lb)
+		require.ErrorIs(t, err, errors.ErrConsistency)
+	})
+
+	t.Run("ItFindsTheNetwork", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+
+		c := getClient(t, []client.Object{network})
+		p := openstack.NewTestProvider(c, regionFixture())
+
+		got, err := openstack.LoadBalancerNetwork(t.Context(), p, lb)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		require.Equal(t, network.Name, got.Name)
+	})
+}
+
+func TestReconcileLoadBalancer(t *testing.T) {
+	t.Parallel()
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	t.Run("ItDoesntExist", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network,
+			withRequestedVIP("10.0.0.42"),
+		)
+
+		osLB := openstackLoadBalancerFixture(lb)
+
+		expectedOpts := openstack.BuildLoadBalancerCreateOpts(lb, *network.Status.Openstack.SubnetID)
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(nil, errors.ErrResourceNotFound)
+		lbClient.EXPECT().CreateLoadBalancer(t.Context(), expectedOpts).Return(osLB, nil)
+
+		client := getClient(t, []client.Object{network})
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		got, err := openstack.ReconcileLoadBalancer(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		require.NoError(t, err)
+		require.Equal(t, osLB.ID, got.ID)
+		require.NotNil(t, lb.Status.VIPAddress)
+		require.Equal(t, osLB.VipAddress, lb.Status.VIPAddress.String())
+	})
+
+	t.Run("ItIsAlreadyCorrect", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+
+		osLB := openstackLoadBalancerFixture(lb)
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+
+		client := getClient(t, []client.Object{network})
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		got, err := openstack.ReconcileLoadBalancer(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		require.NoError(t, err)
+		require.Equal(t, osLB.ID, got.ID)
+		require.Equal(t, "ACTIVE", got.ProvisioningStatus)
+		require.NotNil(t, lb.Status.VIPAddress)
+		require.Equal(t, osLB.VipAddress, lb.Status.VIPAddress.String())
+	})
+
+	t.Run("ItIsPending", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+
+		osLB := openstackLoadBalancerFixture(lb, withProvisioningStatus("PENDING_UPDATE"))
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+
+		client := getClient(t, []client.Object{network})
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		got, err := openstack.ReconcileLoadBalancer(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		require.NoError(t, err)
+		require.Equal(t, "PENDING_UPDATE", got.ProvisioningStatus)
+		require.NotNil(t, lb.Status.VIPAddress)
+		require.Equal(t, osLB.VipAddress, lb.Status.VIPAddress.String())
+	})
+
+	t.Run("ItHasMismatchedVIP", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network, withRequestedVIP("10.0.0.5"))
+
+		osLB := openstackLoadBalancerFixture(lb, withVip("10.0.0.7"))
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+
+		client := getClient(t, []client.Object{network})
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileLoadBalancer(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.NotNil(t, lb.Status.VIPAddress)
+		require.Equal(t, "10.0.0.7", lb.Status.VIPAddress.String())
+	})
+}
+
+func TestBuildLoadBalancerCreateOpts(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Minimal", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+
+		opts := openstack.BuildLoadBalancerCreateOpts(lb, *network.Status.Openstack.SubnetID)
+
+		require.Equal(t, openstack.LoadBalancerName(lb), opts.Name)
+		require.Equal(t, *network.Status.Openstack.SubnetID, opts.VipSubnetID)
+		require.Empty(t, opts.VipAddress)
+		require.Len(t, opts.Listeners, 1)
+
+		listener := opts.Listeners[0]
+		require.Equal(t, listeners.ProtocolTCP, listener.Protocol)
+		require.Equal(t, 80, listener.ProtocolPort)
+		require.Nil(t, listener.AllowedCIDRs)
+		require.Equal(t, ptr.To(60000), listener.TimeoutClientData)
+		require.Equal(t, ptr.To(60000), listener.TimeoutMemberData)
+
+		require.NotNil(t, listener.DefaultPool)
+		require.Equal(t, pools.ProtocolTCP, listener.DefaultPool.Protocol)
+		require.Equal(t, pools.LBMethodRoundRobin, listener.DefaultPool.LBMethod)
+
+		require.Len(t, listener.DefaultPool.Members, 1)
+		require.Equal(t, "10.0.0.5", listener.DefaultPool.Members[0].Address)
+		require.Equal(t, 8080, listener.DefaultPool.Members[0].ProtocolPort)
+		require.Empty(t, listener.DefaultPool.Members[0].SubnetID)
+		require.Nil(t, listener.DefaultPool.Members[0].Weight)
+
+		require.Nil(t, listener.DefaultPool.Monitor)
+	})
+
+	t.Run("WithRequestedVIP", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network, withRequestedVIP("10.0.0.42"))
+
+		opts := openstack.BuildLoadBalancerCreateOpts(lb, *network.Status.Openstack.SubnetID)
+		require.Equal(t, "10.0.0.42", opts.VipAddress)
+	})
+
+	t.Run("WithProxyProtocolV2", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("proxy", regionv1.LoadBalancerListenerProtocolTCP, 443,
+				withMember("10.0.0.5", 8443),
+				withProxyProtocolV2(),
+			),
+		}
+
+		opts := openstack.BuildLoadBalancerCreateOpts(lb, *network.Status.Openstack.SubnetID)
+		require.Len(t, opts.Listeners, 1)
+		require.Equal(t, pools.ProtocolPROXYV2, opts.Listeners[0].DefaultPool.Protocol)
+	})
+
+	t.Run("WithHealthCheck", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80,
+				withMember("10.0.0.5", 8080),
+				withHealthCheck(10, 5, 3, 3),
+			),
+		}
+
+		opts := openstack.BuildLoadBalancerCreateOpts(lb, *network.Status.Openstack.SubnetID)
+		require.NotNil(t, opts.Listeners[0].DefaultPool.Monitor)
+
+		monitorOpts, ok := opts.Listeners[0].DefaultPool.Monitor.(monitors.CreateOpts)
+		require.True(t, ok)
+		require.Equal(t, monitors.TypeTCP, monitorOpts.Type)
+		require.Equal(t, 10, monitorOpts.Delay)
+		require.Equal(t, 5, monitorOpts.Timeout)
+		require.Equal(t, 3, monitorOpts.MaxRetries)
+		require.Equal(t, 3, monitorOpts.MaxRetriesDown)
+	})
+
+	t.Run("WithIdleTimeout", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80,
+				withMember("10.0.0.5", 8080),
+				withIdleTimeoutSeconds(60),
+			),
+		}
+
+		opts := openstack.BuildLoadBalancerCreateOpts(lb, *network.Status.Openstack.SubnetID)
+		require.Equal(t, ptr.To(60000), opts.Listeners[0].TimeoutClientData)
+		require.Equal(t, ptr.To(60000), opts.Listeners[0].TimeoutMemberData)
+	})
+
+	t.Run("MultipleListeners", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80,
+				withMember("10.0.0.5", 8080),
+			),
+			listenerFixture("dns", regionv1.LoadBalancerListenerProtocolUDP, 53,
+				withMember("10.0.0.6", 53),
+			),
+		}
+
+		opts := openstack.BuildLoadBalancerCreateOpts(lb, *network.Status.Openstack.SubnetID)
+		require.Len(t, opts.Listeners, 2)
+		require.Equal(t, listeners.ProtocolTCP, opts.Listeners[0].Protocol)
+		require.Equal(t, listeners.ProtocolUDP, opts.Listeners[1].Protocol)
+		require.Equal(t, pools.ProtocolUDP, opts.Listeners[1].DefaultPool.Protocol)
+	})
+}
+
+func TestReconcileListener(t *testing.T) {
+	t.Parallel()
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	t.Run("ItDoesntExist", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80,
+				withMember("10.0.0.5", 8080),
+				withIdleTimeoutSeconds(60),
+				withAllowedCIDRs("10.0.0.0/8"),
+			),
+		}
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+		osListener := openstackListenerFixture(lb, listener)
+
+		expectedOpts := openstack.BuildListenerCreateOpts(lb, listener, osLB.ID, osPool.ID)
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetListener(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(nil, errors.ErrResourceNotFound)
+		lbClient.EXPECT().CreateListener(t.Context(), expectedOpts).Return(osListener, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		got, err := openstack.ReconcileListener(t.Context(), p, lbClient, lb, listener, osLB.ID, osPool.ID)
+		require.NoError(t, err)
+		require.Equal(t, osListener.ID, got.ID)
+	})
+
+	t.Run("ItIsAlreadyCorrect", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80,
+				withMember("10.0.0.5", 8080),
+				withAllowedCIDRs("10.0.0.0/8"),
+			),
+		}
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+		osListener := openstackListenerFixture(lb, listener)
+		osListener.AllowedCIDRs = []string{"10.0.0.0/8"}
+		osListener.DefaultPoolID = osPool.ID
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetListener(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osListener, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		got, err := openstack.ReconcileListener(t.Context(), p, lbClient, lb, listener, osLB.ID, osPool.ID)
+		require.NoError(t, err)
+		require.Equal(t, osListener.ID, got.ID)
+	})
+
+	t.Run("ItUpdatesAllowedCIDRsOnly", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80,
+				withMember("10.0.0.5", 8080),
+				withAllowedCIDRs("10.0.0.0/8"),
+			),
+		}
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+		osListener := openstackListenerFixture(lb, listener)
+		osListener.AllowedCIDRs = []string{"172.16.0.0/12"}
+		osListener.DefaultPoolID = osPool.ID
+
+		expectedUpdate := listeners.UpdateOpts{
+			AllowedCIDRs: &[]string{"10.0.0.0/8"},
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetListener(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osListener, nil)
+		lbClient.EXPECT().UpdateListener(t.Context(), osListener.ID, expectedUpdate).Return(osListener, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		_, err := openstack.ReconcileListener(t.Context(), p, lbClient, lb, listener, osLB.ID, osPool.ID)
+		require.NoError(t, err)
+	})
+
+	t.Run("ItClearsAllowedCIDRs", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+		osListener := openstackListenerFixture(lb, listener)
+		osListener.AllowedCIDRs = []string{"10.0.0.0/8"}
+		osListener.DefaultPoolID = osPool.ID
+
+		expectedUpdate := listeners.UpdateOpts{
+			AllowedCIDRs: &[]string{},
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetListener(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osListener, nil)
+		lbClient.EXPECT().UpdateListener(t.Context(), osListener.ID, expectedUpdate).Return(osListener, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		_, err := openstack.ReconcileListener(t.Context(), p, lbClient, lb, listener, osLB.ID, osPool.ID)
+		require.NoError(t, err)
+	})
+
+	t.Run("ItUpdatesDefaultPoolIDOnly", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+		osListener := openstackListenerFixture(lb, listener)
+		osListener.DefaultPoolID = string(uuid.NewUUID())
+
+		expectedUpdate := listeners.UpdateOpts{
+			DefaultPoolID: ptr.To(osPool.ID),
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetListener(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osListener, nil)
+		lbClient.EXPECT().UpdateListener(t.Context(), osListener.ID, expectedUpdate).Return(osListener, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		_, err := openstack.ReconcileListener(t.Context(), p, lbClient, lb, listener, osLB.ID, osPool.ID)
+		require.NoError(t, err)
+	})
+
+	t.Run("ItUpdatesTimeoutToDefaultWhenSpecOmitted", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+		osListener := openstackListenerFixture(lb, listener)
+		osListener.DefaultPoolID = osPool.ID
+		osListener.TimeoutClientData = 30000
+		osListener.TimeoutMemberData = 30000
+
+		expectedUpdate := listeners.UpdateOpts{
+			TimeoutClientData: ptr.To(60000),
+			TimeoutMemberData: ptr.To(60000),
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetListener(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osListener, nil)
+		lbClient.EXPECT().UpdateListener(t.Context(), osListener.ID, expectedUpdate).Return(osListener, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		_, err := openstack.ReconcileListener(t.Context(), p, lbClient, lb, listener, osLB.ID, osPool.ID)
+		require.NoError(t, err)
+	})
+}
+
+func TestReconcilePool(t *testing.T) {
+	t.Parallel()
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	t.Run("ItDoesntExist", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+
+		expectedOpts := openstack.BuildPoolCreateOpts(lb, listener)
+		expectedOpts.LoadbalancerID = osLB.ID
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetPool(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(nil, errors.ErrResourceNotFound)
+		lbClient.EXPECT().CreatePool(t.Context(), expectedOpts).Return(osPool, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		got, err := openstack.ReconcilePool(t.Context(), p, lbClient, lb, listener, osLB.ID)
+		require.NoError(t, err)
+		require.Equal(t, osPool.ID, got.ID)
+	})
+
+	t.Run("ItHasProxyProtocolV2", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("proxy", regionv1.LoadBalancerListenerProtocolTCP, 443,
+				withMember("10.0.0.5", 8443),
+				withProxyProtocolV2(),
+			),
+		}
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+
+		expectedOpts := openstack.BuildPoolCreateOpts(lb, listener)
+		expectedOpts.LoadbalancerID = osLB.ID
+		require.Equal(t, pools.ProtocolPROXYV2, expectedOpts.Protocol)
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetPool(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("proxy")).Return(nil, errors.ErrResourceNotFound)
+		lbClient.EXPECT().CreatePool(t.Context(), expectedOpts).Return(osPool, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		_, err := openstack.ReconcilePool(t.Context(), p, lbClient, lb, listener, osLB.ID)
+		require.NoError(t, err)
+	})
+
+	t.Run("ItIsUDP", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("dns", regionv1.LoadBalancerListenerProtocolUDP, 53,
+				withMember("10.0.0.6", 53),
+			),
+		}
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+
+		expectedOpts := openstack.BuildPoolCreateOpts(lb, listener)
+		expectedOpts.LoadbalancerID = osLB.ID
+		require.Equal(t, pools.ProtocolUDP, expectedOpts.Protocol)
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetPool(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("dns")).Return(nil, errors.ErrResourceNotFound)
+		lbClient.EXPECT().CreatePool(t.Context(), expectedOpts).Return(osPool, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		_, err := openstack.ReconcilePool(t.Context(), p, lbClient, lb, listener, osLB.ID)
+		require.NoError(t, err)
+	})
+
+	t.Run("ItIsAlreadyCorrect", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetPool(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osPool, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		got, err := openstack.ReconcilePool(t.Context(), p, lbClient, lb, listener, osLB.ID)
+		require.NoError(t, err)
+		require.Equal(t, osPool.ID, got.ID)
+	})
+}
+
+func TestReconcileMembers(t *testing.T) {
+	t.Parallel()
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	t.Run("ItIsIdempotent", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		listener := &lb.Spec.Listeners[0]
+
+		osPool := openstackPoolFixture(lb, listener)
+
+		liveMembers := []pools.Member{
+			openstackMemberFixture("10.0.0.5", 8080),
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().ListMembers(t.Context(), osPool.ID).Return(liveMembers, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		mutated, err := openstack.ReconcileMembers(t.Context(), p, lbClient, lb, listener, osPool.ID)
+		require.NoError(t, err)
+		require.False(t, mutated)
+	})
+
+	t.Run("ItIsIdempotentRegardlessOfOrder", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80,
+				withMember("10.0.0.5", 8080),
+				withMember("10.0.0.6", 8080),
+			),
+		}
+		listener := &lb.Spec.Listeners[0]
+
+		osPool := openstackPoolFixture(lb, listener)
+
+		liveMembers := []pools.Member{
+			openstackMemberFixture("10.0.0.6", 8080),
+			openstackMemberFixture("10.0.0.5", 8080),
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().ListMembers(t.Context(), osPool.ID).Return(liveMembers, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		mutated, err := openstack.ReconcileMembers(t.Context(), p, lbClient, lb, listener, osPool.ID)
+		require.NoError(t, err)
+		require.False(t, mutated)
+	})
+
+	t.Run("ItHasNewMembers", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80,
+				withMember("10.0.0.5", 8080),
+				withMember("10.0.0.6", 8080),
+			),
+		}
+		listener := &lb.Spec.Listeners[0]
+
+		osPool := openstackPoolFixture(lb, listener)
+
+		expectedPayload := []pools.BatchUpdateMemberOpts{
+			{Address: "10.0.0.5", ProtocolPort: 8080},
+			{Address: "10.0.0.6", ProtocolPort: 8080},
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().ListMembers(t.Context(), osPool.ID).Return(nil, nil)
+		lbClient.EXPECT().BatchUpdateMembers(t.Context(), osPool.ID, expectedPayload).Return(nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		mutated, err := openstack.ReconcileMembers(t.Context(), p, lbClient, lb, listener, osPool.ID)
+		require.NoError(t, err)
+		require.True(t, mutated)
+	})
+
+	t.Run("ItHasRemovedMember", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		listener := &lb.Spec.Listeners[0]
+
+		osPool := openstackPoolFixture(lb, listener)
+
+		liveMembers := []pools.Member{
+			openstackMemberFixture("10.0.0.5", 8080),
+			openstackMemberFixture("10.0.0.99", 8080),
+		}
+
+		expectedPayload := []pools.BatchUpdateMemberOpts{
+			{Address: "10.0.0.5", ProtocolPort: 8080},
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().ListMembers(t.Context(), osPool.ID).Return(liveMembers, nil)
+		lbClient.EXPECT().BatchUpdateMembers(t.Context(), osPool.ID, expectedPayload).Return(nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		mutated, err := openstack.ReconcileMembers(t.Context(), p, lbClient, lb, listener, osPool.ID)
+		require.NoError(t, err)
+		require.True(t, mutated)
+	})
+}
+
+func TestReconcileMonitor(t *testing.T) {
+	t.Parallel()
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	t.Run("ItDoesntExist", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80,
+				withMember("10.0.0.5", 8080),
+				withHealthCheck(10, 5, 3, 3),
+			),
+		}
+		listener := &lb.Spec.Listeners[0]
+
+		osPool := openstackPoolFixture(lb, listener)
+		osMonitor := openstackMonitorFixture(lb, listener)
+
+		expectedOpts := openstack.BuildMonitorCreateOpts(lb, listener, osPool.ID)
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetMonitor(t.Context(), osPool.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(nil, errors.ErrResourceNotFound)
+		lbClient.EXPECT().CreateMonitor(t.Context(), expectedOpts).Return(osMonitor, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		got, err := openstack.ReconcileMonitor(t.Context(), p, lbClient, lb, listener, osPool.ID)
+		require.NoError(t, err)
+		require.Equal(t, osMonitor.ID, got.ID)
+	})
+
+	t.Run("ItIsAlreadyCorrect", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80,
+				withMember("10.0.0.5", 8080),
+				withHealthCheck(10, 5, 3, 3),
+			),
+		}
+		listener := &lb.Spec.Listeners[0]
+
+		osPool := openstackPoolFixture(lb, listener)
+		osMonitor := openstackMonitorFixture(lb, listener)
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetMonitor(t.Context(), osPool.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osMonitor, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		got, err := openstack.ReconcileMonitor(t.Context(), p, lbClient, lb, listener, osPool.ID)
+		require.NoError(t, err)
+		require.Equal(t, osMonitor.ID, got.ID)
+	})
+
+	t.Run("ItUpdatesDelayOnly", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80,
+				withMember("10.0.0.5", 8080),
+				withHealthCheck(10, 5, 3, 3),
+			),
+		}
+		listener := &lb.Spec.Listeners[0]
+
+		osPool := openstackPoolFixture(lb, listener)
+		osMonitor := openstackMonitorFixture(lb, listener)
+		osMonitor.Delay = 5
+
+		expectedUpdate := monitors.UpdateOpts{
+			Delay: 10,
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetMonitor(t.Context(), osPool.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osMonitor, nil)
+		lbClient.EXPECT().UpdateMonitor(t.Context(), osMonitor.ID, expectedUpdate).Return(osMonitor, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		_, err := openstack.ReconcileMonitor(t.Context(), p, lbClient, lb, listener, osPool.ID)
+		require.NoError(t, err)
+	})
+
+	t.Run("ItUpdatesAllFourFields", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80,
+				withMember("10.0.0.5", 8080),
+				withHealthCheck(10, 5, 3, 3),
+			),
+		}
+		listener := &lb.Spec.Listeners[0]
+
+		osPool := openstackPoolFixture(lb, listener)
+		osMonitor := openstackMonitorFixture(lb, listener)
+		osMonitor.Delay = 1
+		osMonitor.Timeout = 1
+		osMonitor.MaxRetries = 1
+		osMonitor.MaxRetriesDown = 1
+
+		expectedUpdate := monitors.UpdateOpts{
+			Delay:          10,
+			Timeout:        5,
+			MaxRetries:     3,
+			MaxRetriesDown: 3,
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetMonitor(t.Context(), osPool.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osMonitor, nil)
+		lbClient.EXPECT().UpdateMonitor(t.Context(), osMonitor.ID, expectedUpdate).Return(osMonitor, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		_, err := openstack.ReconcileMonitor(t.Context(), p, lbClient, lb, listener, osPool.ID)
+		require.NoError(t, err)
+	})
+}
+
+//nolint:dupl // distinct mock surfaces and assertions; sharing would obscure intent.
+func TestPruneOrphanedListenersOnce(t *testing.T) {
+	t.Parallel()
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	t.Run("ItHasNothingToPrune", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osListener := openstackListenerFixture(lb, listener)
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().ListListeners(t.Context(), osLB.ID, "").Return([]listeners.Listener{*osListener}, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		mutated, err := openstack.PruneOrphanedListenersOnce(t.Context(), p, lbClient, lb, osLB.ID)
+		require.NoError(t, err)
+		require.False(t, mutated)
+	})
+
+	t.Run("ItDeletesRenamedListener", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+
+		osLB := openstackLoadBalancerFixture(lb)
+
+		oldListener := listeners.Listener{
+			ID:   string(uuid.NewUUID()),
+			Name: openstack.LoadBalancerName(lb) + "-old-listener",
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().ListListeners(t.Context(), osLB.ID, "").Return([]listeners.Listener{oldListener}, nil)
+		lbClient.EXPECT().DeleteListener(t.Context(), oldListener.ID).Return(nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		mutated, err := openstack.PruneOrphanedListenersOnce(t.Context(), p, lbClient, lb, osLB.ID)
+		require.NoError(t, err)
+		require.True(t, mutated)
+	})
+}
+
+//nolint:dupl // distinct mock surfaces and assertions; sharing would obscure intent.
+func TestPruneOrphanedPoolsAndMonitorsOnce(t *testing.T) {
+	t.Parallel()
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	t.Run("ItHasNothingToPrune", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().ListPools(t.Context(), osLB.ID, "").Return([]pools.Pool{*osPool}, nil)
+		lbClient.EXPECT().ListMonitors(t.Context(), osPool.ID, "").Return([]monitors.Monitor{}, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		mutated, err := openstack.PruneOrphanedPoolsAndMonitorsOnce(t.Context(), p, lbClient, lb, osLB.ID)
+		require.NoError(t, err)
+		require.False(t, mutated)
+	})
+
+	t.Run("ItDeletesOrphanedPool", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+
+		osLB := openstackLoadBalancerFixture(lb)
+
+		oldPool := pools.Pool{
+			ID:   string(uuid.NewUUID()),
+			Name: openstack.LoadBalancerName(lb) + "-old-pool",
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().ListPools(t.Context(), osLB.ID, "").Return([]pools.Pool{oldPool}, nil)
+		lbClient.EXPECT().DeletePool(t.Context(), oldPool.ID).Return(nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		mutated, err := openstack.PruneOrphanedPoolsAndMonitorsOnce(t.Context(), p, lbClient, lb, osLB.ID)
+		require.NoError(t, err)
+		require.True(t, mutated)
+	})
+
+	t.Run("ItDeletesOrphanedMonitor", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+
+		oldMonitor := monitors.Monitor{
+			ID:   string(uuid.NewUUID()),
+			Name: openstack.LoadBalancerName(lb) + "-old-monitor",
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().ListPools(t.Context(), osLB.ID, "").Return([]pools.Pool{*osPool}, nil)
+		lbClient.EXPECT().ListMonitors(t.Context(), osPool.ID, "").Return([]monitors.Monitor{oldMonitor}, nil)
+		lbClient.EXPECT().DeleteMonitor(t.Context(), oldMonitor.ID).Return(nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		mutated, err := openstack.PruneOrphanedPoolsAndMonitorsOnce(t.Context(), p, lbClient, lb, osLB.ID)
+		require.NoError(t, err)
+		require.True(t, mutated)
+	})
+
+	t.Run("ItDeletesMonitorWhenHealthCheckRemoved", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+
+		// The live monitor is owned by the desired pool but the spec listener
+		// no longer declares a HealthCheck — desiredLoadBalancerNames omits the
+		// monitor, and pruneOrphanedMonitor should delete it.
+		liveMonitor := monitors.Monitor{
+			ID:   string(uuid.NewUUID()),
+			Name: openstack.LoadBalancerMonitorName(lb, listener),
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().ListPools(t.Context(), osLB.ID, "").Return([]pools.Pool{*osPool}, nil)
+		lbClient.EXPECT().ListMonitors(t.Context(), osPool.ID, "").Return([]monitors.Monitor{liveMonitor}, nil)
+		lbClient.EXPECT().DeleteMonitor(t.Context(), liveMonitor.ID).Return(nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		mutated, err := openstack.PruneOrphanedPoolsAndMonitorsOnce(t.Context(), p, lbClient, lb, osLB.ID)
+		require.NoError(t, err)
+		require.True(t, mutated)
+	})
+}
+
+func TestEffectiveMemberCount(t *testing.T) {
+	t.Parallel()
+
+	network := loadBalancerNetworkFixture()
+
+	t.Run("ZeroMembers", func(t *testing.T) {
+		t.Parallel()
+
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80),
+		}
+
+		require.Equal(t, 0, openstack.EffectiveMemberCount(lb))
+	})
+
+	t.Run("OneMember", func(t *testing.T) {
+		t.Parallel()
+
+		lb := loadBalancerFixture(network)
+
+		require.Equal(t, 1, openstack.EffectiveMemberCount(lb))
+	})
+
+	t.Run("MultipleListeners", func(t *testing.T) {
+		t.Parallel()
+
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80,
+				withMember("10.0.0.5", 8080),
+				withMember("10.0.0.6", 8080),
+			),
+			listenerFixture("dns", regionv1.LoadBalancerListenerProtocolUDP, 53,
+				withMember("10.0.0.7", 53),
+			),
+		}
+
+		require.Equal(t, 3, openstack.EffectiveMemberCount(lb))
+	})
+}
+
+func TestClassifyOctaviaStatus(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Active", func(t *testing.T) {
+		t.Parallel()
+
+		require.NoError(t, openstack.ClassifyOctaviaStatus("loadbalancer", "name", "ACTIVE"))
+	})
+
+	pendings := []string{"PENDING_CREATE", "PENDING_UPDATE", "PENDING_DELETE"}
+	for _, status := range pendings {
+		t.Run("Pending/"+status, func(t *testing.T) {
+			t.Parallel()
+
+			err := openstack.ClassifyOctaviaStatus("pool", "name", status)
+			require.ErrorIs(t, err, provisioners.ErrYield)
+		})
+	}
+
+	terminals := []string{"ERROR", "DELETED", ""}
+	for _, status := range terminals {
+		t.Run("Terminal/"+status, func(t *testing.T) {
+			t.Parallel()
+
+			err := openstack.ClassifyOctaviaStatus("listener", "name", status)
+			require.ErrorIs(t, err, errors.ErrConsistency)
+		})
+	}
+}
+
+//nolint:maintidx // table of focused subtests; splitting would fragment the reconcile contract.
+func TestCreateLoadBalancer(t *testing.T) {
+	t.Parallel()
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	t.Run("MissingVIP_Yields", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+
+		osLB := openstackLoadBalancerFixture(lb, withVip(""))
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
+
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		require.ErrorIs(t, err, provisioners.ErrYield)
+	})
+
+	t.Run("LBPending_Yields", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+
+		osLB := openstackLoadBalancerFixture(lb, withProvisioningStatus("PENDING_UPDATE"))
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
+
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		require.ErrorIs(t, err, provisioners.ErrYield)
+	})
+
+	t.Run("LBTerminal_Errors", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+
+		osLB := openstackLoadBalancerFixture(lb, withProvisioningStatus("ERROR"))
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
+
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		require.ErrorIs(t, err, errors.ErrConsistency)
+	})
+
+	t.Run("ZeroMembers_Yields", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80),
+		}
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+		osListener := openstackListenerFixture(lb, listener)
+		osListener.DefaultPoolID = osPool.ID
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+		lbClient.EXPECT().ListListeners(t.Context(), osLB.ID, "").Return([]listeners.Listener{*osListener}, nil)
+		lbClient.EXPECT().GetPool(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osPool, nil)
+		lbClient.EXPECT().GetListener(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osListener, nil)
+		lbClient.EXPECT().ListMembers(t.Context(), osPool.ID).Return(nil, nil)
+		lbClient.EXPECT().ListPools(t.Context(), osLB.ID, "").Return([]pools.Pool{*osPool}, nil)
+		lbClient.EXPECT().ListMonitors(t.Context(), osPool.ID, "").Return(nil, nil)
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
+
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		require.ErrorIs(t, err, provisioners.ErrYield)
+	})
+
+	t.Run("MembersChanged_Yields", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+		osListener := openstackListenerFixture(lb, listener)
+		osListener.DefaultPoolID = osPool.ID
+
+		expectedPayload := []pools.BatchUpdateMemberOpts{
+			{Address: "10.0.0.5", ProtocolPort: 8080},
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+		lbClient.EXPECT().ListListeners(t.Context(), osLB.ID, "").Return([]listeners.Listener{*osListener}, nil)
+		lbClient.EXPECT().GetPool(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osPool, nil)
+		lbClient.EXPECT().GetListener(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osListener, nil)
+		lbClient.EXPECT().ListMembers(t.Context(), osPool.ID).Return([]pools.Member{
+			openstackMemberFixture("10.0.0.99", 8080),
+		}, nil)
+		lbClient.EXPECT().BatchUpdateMembers(t.Context(), osPool.ID, expectedPayload).Return(nil)
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
+
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		require.ErrorIs(t, err, provisioners.ErrYield)
+	})
+
+	t.Run("OrphanListenerPruned_Yields", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+
+		osLB := openstackLoadBalancerFixture(lb)
+
+		oldListener := listeners.Listener{
+			ID:   string(uuid.NewUUID()),
+			Name: openstack.LoadBalancerName(lb) + "-old",
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		gomock.InOrder(
+			lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil),
+			lbClient.EXPECT().ListListeners(t.Context(), osLB.ID, "").Return([]listeners.Listener{oldListener}, nil),
+			lbClient.EXPECT().DeleteListener(t.Context(), oldListener.ID).Return(nil),
+		)
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
+
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		require.ErrorIs(t, err, provisioners.ErrYield)
+	})
+
+	t.Run("ListenerRename_PruneFirst", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("api", regionv1.LoadBalancerListenerProtocolTCP, 80,
+				withMember("10.0.0.5", 8080),
+			),
+		}
+
+		osLB := openstackLoadBalancerFixture(lb)
+
+		// Live listener uses the old "http" name on the same TCP/80 port —
+		// without prune-first, a CreateListener for "api" would conflict.
+		oldListener := listeners.Listener{
+			ID:           string(uuid.NewUUID()),
+			Name:         openstack.LoadBalancerName(lb) + "-http",
+			Protocol:     string(listeners.ProtocolTCP),
+			ProtocolPort: 80,
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		gomock.InOrder(
+			lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil),
+			lbClient.EXPECT().ListListeners(t.Context(), osLB.ID, "").Return([]listeners.Listener{oldListener}, nil),
+			lbClient.EXPECT().DeleteListener(t.Context(), oldListener.ID).Return(nil),
+		)
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
+
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		require.ErrorIs(t, err, provisioners.ErrYield)
+	})
+
+	t.Run("OrphanPoolPruned_Yields", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+		osListener := openstackListenerFixture(lb, listener)
+		osListener.DefaultPoolID = osPool.ID
+
+		oldPool := pools.Pool{
+			ID:   string(uuid.NewUUID()),
+			Name: openstack.LoadBalancerName(lb) + "-old-pool",
+		}
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+		lbClient.EXPECT().ListListeners(t.Context(), osLB.ID, "").Return([]listeners.Listener{*osListener}, nil)
+		lbClient.EXPECT().GetPool(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osPool, nil)
+		lbClient.EXPECT().GetListener(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osListener, nil)
+		lbClient.EXPECT().ListMembers(t.Context(), osPool.ID).Return([]pools.Member{
+			openstackMemberFixture("10.0.0.5", 8080),
+		}, nil)
+		lbClient.EXPECT().ListPools(t.Context(), osLB.ID, "").Return([]pools.Pool{*osPool, oldPool}, nil)
+		lbClient.EXPECT().DeletePool(t.Context(), oldPool.ID).Return(nil)
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
+
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		require.ErrorIs(t, err, provisioners.ErrYield)
+	})
+
+	t.Run("PoolLBMethodDrift_Updated_Yields", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+		osPool.LBMethod = string(pools.LBMethodLeastConnections)
+		osListener := openstackListenerFixture(lb, listener)
+
+		// UpdatePool returns the pool in PENDING_UPDATE — the classify gate
+		// then yields without invoking reconcileListener.
+		updatedPool := *osPool
+		updatedPool.ProvisioningStatus = "PENDING_UPDATE"
+		updatedPool.LBMethod = string(pools.LBMethodRoundRobin)
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+		lbClient.EXPECT().ListListeners(t.Context(), osLB.ID, "").Return([]listeners.Listener{*osListener}, nil)
+		lbClient.EXPECT().GetPool(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osPool, nil)
+		lbClient.EXPECT().UpdatePool(t.Context(), osPool.ID, pools.UpdateOpts{LBMethod: pools.LBMethodRoundRobin}).Return(&updatedPool, nil)
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
+
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		require.ErrorIs(t, err, provisioners.ErrYield)
+	})
+
+	t.Run("Steady_State_NoMutations_NoYield", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+		osListener := openstackListenerFixture(lb, listener)
+		osListener.DefaultPoolID = osPool.ID
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+		lbClient.EXPECT().ListListeners(t.Context(), osLB.ID, "").Return([]listeners.Listener{*osListener}, nil)
+		lbClient.EXPECT().GetPool(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osPool, nil)
+		lbClient.EXPECT().GetListener(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osListener, nil)
+		lbClient.EXPECT().ListMembers(t.Context(), osPool.ID).Return([]pools.Member{
+			openstackMemberFixture("10.0.0.5", 8080),
+		}, nil)
+		lbClient.EXPECT().ListPools(t.Context(), osLB.ID, "").Return([]pools.Pool{*osPool}, nil)
+		lbClient.EXPECT().ListMonitors(t.Context(), osPool.ID, "").Return(nil, nil)
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
+
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		require.NoError(t, err)
 	})
 }

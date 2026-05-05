@@ -667,6 +667,14 @@ func validateUpdateImmutability(current, required *regionv1.LoadBalancer) error 
 		if currentListener.Port != required.Spec.Listeners[i].Port {
 			return errors.HTTPUnprocessableContent("listener port cannot be changed for an existing listener name")
 		}
+
+		// Octavia treats pool Protocol as immutable, and our pool Protocol is
+		// derived from (listener Protocol, ProxyProtocolV2). Listener Protocol
+		// is already pinned above, so toggling ProxyProtocolV2 is the only
+		// way the user can drift the pool Protocol — block it here.
+		if currentListener.Pool.ProxyProtocolV2 != required.Spec.Listeners[i].Pool.ProxyProtocolV2 {
+			return errors.HTTPUnprocessableContent("listener pool proxyProtocolV2 cannot be changed for an existing listener name")
+		}
 	}
 
 	return nil
