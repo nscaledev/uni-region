@@ -866,6 +866,26 @@ func TestUpdateV2RejectsListenerPortMutation(t *testing.T) {
 	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
 }
 
+func TestUpdateV2RejectsListenerPoolProxyProtocolV2Mutation(t *testing.T) {
+	t.Parallel()
+
+	network := testLBNetworkWithProject(lbProjectID)
+	resource := testLoadBalancerResource(t, false)
+	cli := newLBFakeClientBuilder(t, network, resource).Build()
+	client := loadbalancer.New(common.ClientArgs{
+		Client:    cli,
+		Namespace: lbNamespace,
+	})
+
+	request := minimalUpdateRequest()
+	request.Spec.PublicIP = ptr.To(false)
+	request.Spec.Listeners[0].Pool.ProxyProtocolV2 = ptr.To(true)
+
+	_, err := client.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), projectACL(identityapi.Read, identityapi.Update))), lbLoadBalancerID, request)
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+}
+
 func TestDeleteV2AlreadyDeleting(t *testing.T) {
 	t.Parallel()
 

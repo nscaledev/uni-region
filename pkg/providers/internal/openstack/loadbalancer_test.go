@@ -32,7 +32,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func loadBalancerFixture() *regionv1.LoadBalancer {
+func namedLoadBalancerFixture() *regionv1.LoadBalancer {
 	return &regionv1.LoadBalancer{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test",
@@ -40,7 +40,7 @@ func loadBalancerFixture() *regionv1.LoadBalancer {
 	}
 }
 
-func loadBalancerListenerFixture() *regionv1.LoadBalancerListener {
+func namedLoadBalancerListenerFixture() *regionv1.LoadBalancerListener {
 	return &regionv1.LoadBalancerListener{
 		Name: "http",
 	}
@@ -49,8 +49,8 @@ func loadBalancerListenerFixture() *regionv1.LoadBalancerListener {
 func TestLoadBalancerNames(t *testing.T) {
 	t.Parallel()
 
-	loadBalancer := loadBalancerFixture()
-	listener := loadBalancerListenerFixture()
+	loadBalancer := namedLoadBalancerFixture()
+	listener := namedLoadBalancerListenerFixture()
 
 	require.Equal(t, "lb-test", openstack.LoadBalancerName(loadBalancer))
 	require.Equal(t, "lb-test-http-listener", openstack.LoadBalancerListenerName(loadBalancer, listener))
@@ -61,7 +61,7 @@ func TestLoadBalancerNames(t *testing.T) {
 func TestFindExactLoadBalancer(t *testing.T) {
 	t.Parallel()
 
-	name := openstack.LoadBalancerName(loadBalancerFixture())
+	name := openstack.LoadBalancerName(namedLoadBalancerFixture())
 
 	result, err := openstack.FindExactLoadBalancer([]loadbalancers.LoadBalancer{
 		{
@@ -103,7 +103,7 @@ func TestFindExactLoadBalancer(t *testing.T) {
 func TestFindExactListener(t *testing.T) {
 	t.Parallel()
 
-	name := openstack.LoadBalancerListenerName(loadBalancerFixture(), loadBalancerListenerFixture())
+	name := openstack.LoadBalancerListenerName(namedLoadBalancerFixture(), namedLoadBalancerListenerFixture())
 
 	result, err := openstack.FindExactListener([]listeners.Listener{
 		{
@@ -139,7 +139,7 @@ func TestFindExactListener(t *testing.T) {
 func TestFindExactPool(t *testing.T) {
 	t.Parallel()
 
-	name := openstack.LoadBalancerPoolName(loadBalancerFixture(), loadBalancerListenerFixture())
+	name := openstack.LoadBalancerPoolName(namedLoadBalancerFixture(), namedLoadBalancerListenerFixture())
 
 	result, err := openstack.FindExactPool([]pools.Pool{
 		{
@@ -175,7 +175,7 @@ func TestFindExactPool(t *testing.T) {
 func TestFindExactMonitor(t *testing.T) {
 	t.Parallel()
 
-	name := openstack.LoadBalancerMonitorName(loadBalancerFixture(), loadBalancerListenerFixture())
+	name := openstack.LoadBalancerMonitorName(namedLoadBalancerFixture(), namedLoadBalancerListenerFixture())
 
 	result, err := openstack.FindExactMonitor([]monitors.Monitor{
 		{

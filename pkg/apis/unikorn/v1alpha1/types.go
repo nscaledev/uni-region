@@ -711,9 +711,10 @@ type LoadBalancerListener struct {
 	Port int `json:"port"`
 	// AllowedCIDRs is an optional list of source CIDRs that may access the listener.
 	AllowedCIDRs []unikornv1core.IPv4Prefix `json:"allowedCIDRs,omitempty"`
-	// IdleTimeoutSeconds is the optional TCP idle timeout.
+	// IdleTimeoutSeconds is the TCP idle timeout. Defaults to 60 seconds.
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=86400
+	// +kubebuilder:default=60
 	IdleTimeoutSeconds *int `json:"idleTimeoutSeconds,omitempty"`
 	// Pool is the listener backend pool.
 	Pool LoadBalancerPool `json:"pool"`
