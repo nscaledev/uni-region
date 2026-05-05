@@ -363,7 +363,7 @@ func (c *APIClient) ListNetworks(ctx context.Context, orgID, projectID, regionID
 }
 
 // CreateNetwork creates a new network resource.
-func (c *APIClient) CreateNetwork(ctx context.Context, request regionopenapi.NetworkV2CreateRequest) (*regionopenapi.NetworkV2Read, error) {
+func (c *APIClient) CreateNetwork(ctx context.Context, request regionopenapi.NetworkV2Create) (*regionopenapi.NetworkV2Read, error) {
 	path := c.endpoints.CreateNetwork()
 
 	reqBody, err := json.Marshal(request)
@@ -375,6 +375,47 @@ func (c *APIClient) CreateNetwork(ctx context.Context, request regionopenapi.Net
 	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusCreated)
 	if err != nil {
 		return nil, fmt.Errorf("creating network: %w", err)
+	}
+
+	var network regionopenapi.NetworkV2Read
+	if err := json.Unmarshal(respBody, &network); err != nil {
+		return nil, fmt.Errorf("unmarshaling network: %w", err)
+	}
+
+	return &network, nil
+}
+
+// GetNetwork gets a specific network by ID.
+func (c *APIClient) GetNetwork(ctx context.Context, networkID string) (*regionopenapi.NetworkV2Read, error) {
+	path := c.endpoints.GetNetwork(networkID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	if err != nil {
+		return nil, fmt.Errorf("getting network: %w", err)
+	}
+
+	var network regionopenapi.NetworkV2Read
+	if err := json.Unmarshal(respBody, &network); err != nil {
+		return nil, fmt.Errorf("unmarshaling network: %w", err)
+	}
+
+	return &network, nil
+}
+
+// UpdateNetwork updates a network resource.
+func (c *APIClient) UpdateNetwork(ctx context.Context, networkID string, request regionopenapi.NetworkV2Update) (*regionopenapi.NetworkV2Read, error) {
+	path := c.endpoints.UpdateNetwork(networkID)
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling network update request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPut, path, bytes.NewReader(reqBody), http.StatusAccepted)
+	if err != nil {
+		return nil, fmt.Errorf("updating network: %w", err)
 	}
 
 	var network regionopenapi.NetworkV2Read
