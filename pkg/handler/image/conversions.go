@@ -70,28 +70,6 @@ func convertOsKernel(in types.OsKernel) openapi.OsKernel {
 	return ""
 }
 
-func convertOsFamily(in types.OsFamily) openapi.OsFamily {
-	switch in {
-	case types.Debian:
-		return openapi.OsFamilyDebian
-	case types.Redhat:
-		return openapi.OsFamilyRedhat
-	}
-
-	return ""
-}
-
-func convertOsDistro(in types.OsDistro) openapi.OsDistro {
-	switch in {
-	case types.Rocky:
-		return openapi.OsDistroRocky
-	case types.Ubuntu:
-		return openapi.OsDistroUbuntu
-	}
-
-	return ""
-}
-
 func convertPackages(in *types.ImagePackages) *openapi.SoftwareVersions {
 	if in == nil {
 		return nil
@@ -156,8 +134,8 @@ func convertImage(in *types.Image) *openapi.Image {
 			Virtualization: convertImageVirtualization(in.Virtualization),
 			Os: openapi.ImageOS{
 				Kernel:   convertOsKernel(in.OS.Kernel),
-				Family:   convertOsFamily(in.OS.Family),
-				Distro:   convertOsDistro(in.OS.Distro),
+				Family:   in.OS.Family,
+				Distro:   in.OS.Distro,
 				Codename: in.OS.Codename,
 				Variant:  in.OS.Variant,
 				Version:  in.OS.Version,
@@ -228,28 +206,6 @@ func generateOSKernel(source openapi.OsKernel) types.OsKernel {
 	}
 }
 
-func generateOSFamily(source openapi.OsFamily) types.OsFamily {
-	switch source {
-	case openapi.OsFamilyDebian:
-		return types.Debian
-	case openapi.OsFamilyRedhat:
-		return types.Redhat
-	default:
-		return ""
-	}
-}
-
-func generateOSDistro(source openapi.OsDistro) types.OsDistro {
-	switch source {
-	case openapi.OsDistroRocky:
-		return types.Rocky
-	case openapi.OsDistroUbuntu:
-		return types.Ubuntu
-	default:
-		return ""
-	}
-}
-
 func generatePackages(source openapi.SoftwareVersions) types.ImagePackages {
 	target := make(types.ImagePackages, len(source))
 
@@ -287,8 +243,8 @@ func generateImageGPU(source *openapi.ImageGpu) *types.ImageGPU {
 func generateImageOS(source *openapi.ImageOS) *types.ImageOS {
 	return &types.ImageOS{
 		Kernel:   generateOSKernel(source.Kernel),
-		Family:   generateOSFamily(source.Family),
-		Distro:   generateOSDistro(source.Distro),
+		Family:   source.Family,
+		Distro:   source.Distro,
 		Variant:  source.Variant,
 		Codename: source.Codename,
 		Version:  source.Version,

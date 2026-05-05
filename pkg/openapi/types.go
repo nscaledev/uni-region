@@ -69,18 +69,6 @@ const (
 	NetworkProtocolVrrp NetworkProtocol = "vrrp"
 )
 
-// Defines values for OsDistro.
-const (
-	OsDistroRocky  OsDistro = "rocky"
-	OsDistroUbuntu OsDistro = "ubuntu"
-)
-
-// Defines values for OsFamily.
-const (
-	OsFamilyDebian OsFamily = "debian"
-	OsFamilyRedhat OsFamily = "redhat"
-)
-
 // Defines values for OsKernel.
 const (
 	OsKernelLinux OsKernel = "linux"
@@ -671,10 +659,10 @@ type NetworksRead = []NetworkRead
 type NetworksV2Read = []NetworkV2Read
 
 // OsDistro A distribution name.
-type OsDistro string
+type OsDistro = string
 
 // OsFamily A family of operating systems.  This typically defines the package format.
-type OsFamily string
+type OsFamily = string
 
 // OsKernel A kernel type.
 type OsKernel string
@@ -1064,6 +1052,9 @@ type ServerV2Spec struct {
 
 // ServerV2Status Read only status information about a server.
 type ServerV2Status struct {
+	// MacAddress The MAC address of the server.
+	MacAddress *string `json:"macAddress,omitempty"`
+
 	// NetworkId The network a security group belongs to.
 	NetworkId string `json:"networkId"`
 

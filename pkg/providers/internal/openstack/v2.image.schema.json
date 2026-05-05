@@ -20,18 +20,10 @@
                         ]
                 },
                 "unikorn:os:family":{
-                        "type":"string",
-                        "enum":[
-                                "debian",
-                                "redhat"
-                        ]
+                        "type":"string"
                 },
                 "unikorn:os:distro":{
-                        "type":"string",
-                        "enum":[
-                                "ubuntu",
-                                "rocky"
-                        ]
+                        "type":"string"
                 },
                 "unikorn:os:variant":{
                         "type":"string"

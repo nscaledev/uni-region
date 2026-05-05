@@ -2508,6 +2508,11 @@ func (in *ServerStatus) DeepCopyInto(out *ServerStatus) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.MACAddress != nil {
+		in, out := &in.MACAddress, &out.MACAddress
+		*out = new(string)
+		**out = **in
+	}
 	return
 }
 
