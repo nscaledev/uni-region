@@ -1,97 +1,116 @@
-# Unikorn OpenStack Provider
+# OpenStack Provider Administration
 
-Provides a driver for OpenStack based regions.
+`pkg/providers/internal/openstack` provides the driver for OpenStack-backed
+regions.
 
 ## Initial Setup
 
-It is envisaged that an OpenStack cluster may be used for things other than the exclusive use of Unikorn, and as such it tries to respect this as much as possible.
-We also operate under the principle of least privilege, so don't want to have a full admin credential alyng around.
+An OpenStack cloud may be shared with workloads other than UNI. The region
+provider therefore avoids requiring a long-lived full administrator credential
+at runtime and supports multiple Unikorn deployments cohabiting on the same
+cloud, for example staging and production regions.
 
-In particular we want to allow different instances of Unikorn to cohabit to support, for example, staging environments.
+Install the required OpenStack policies before registering the region. Follow
+the instructions in the
+[UNI OpenStack Policy repository][policy-repo].
 
-We need a number of policies installing to function correctly.
-Follow the instructions in the [Unikorn OpenStack Policy repository](https://github.com/unikorn-cloud/python-unikorn-openstack-policy) to install them.
+[policy-repo]: https://github.com/nscaledev/uni-python-unikorn-openstack-policy)
 
-### OpenStack Platform Configuration
+## Configure OpenStack Provider Credentials
 
-Start by selecting a unique name that will be used for the deployment's name, project, and domain:
+Use `hack/openstack/configure` to produce the provider environment consumed by
+the region registration step. It accepts the usual OpenStack CLI authentication
+inputs: a standard `openrc`, existing `OS_*` variables, or `OS_CLOUD`.
 
-```bash
-export USER=unikorn-staging
-export DOMAIN=unikorn-staging
-export PROJECT=unikorn-default
-export PASSWORD=$(apg -n 1 -m 24)
-```
-
-#### Create the domain.
-
-The use of project domains for projects deployed to provision Kubernetes cluster achieves a few aims.
-First namespace isolation.
-Second is a security consideration.
-It is dangerous, anecdotally, to have a privileged process that has the power of deletion.
-By limiting the scope of list operations to that of the project domain we limit our impact on other tenants on the system.
-A domain may also aid in simplifying operations like auditing and capacity planning.
+The default `create` mode creates or updates the Keystone domain, project, user,
+and role grants used by the region provider. Choose a stable prefix for
+persistent regions and keep the output in a secret store because it contains the
+provider user's password.
 
 ```bash
-DOMAIN_ID=$(openstack domain create ${DOMAIN} -f json | jq -r .id)
+provider_env="${TMPDIR:-/tmp}/gb-north-1.openstack.env"
+
+hack/openstack/configure \
+    --openrc /path/to/admin-openrc \
+    --prefix gb-north-1 \
+    --output "${provider_env}"
 ```
 
-#### Create the project.
+By default, `configure` grants the provider user these roles:
 
-As the OpenStack provider for the region controller also functions as a client in order to retrieve information such as available images, flavors, and so on it also needs to be associated with a project so that the default policy for various API requests is correctly satisfied:
+- domain roles: `member`, `load-balancer_member`, and `manager`
+- project roles: `member` and `manager`
+
+Set `UNIKORN_OPENSTACK_INCLUDE_LEGACY_MEMBER_ROLE=true` when targeting older
+OpenStack deployments where Neutron still requires the `_member_` role. Override
+`UNIKORN_OPENSTACK_DOMAIN_ROLES` or `UNIKORN_OPENSTACK_PROJECT_ROLES` only when
+the target cloud's policy model has intentionally diverged from the defaults.
+
+If the provider user already exists, `configure` sets it to the supplied or
+generated password. Source the existing provider env file, set
+`UNIKORN_OPENSTACK_PASSWORD`, or pass `--password` when re-running the script and
+the password must stay stable.
+
+When the OpenStack resources are managed elsewhere, use `existing` mode to
+validate and re-emit an already supplied provider env file without creating
+domains, projects, users, or role grants:
 
 ```bash
-PROJECT_ID=$(openstack project create $PROJECT --domain $DOMAIN -f json | jq -r .id)
+. "${provider_env}"
+
+hack/openstack/configure \
+    --mode existing \
+    --output "${provider_env}"
 ```
 
-#### Create the user.
+The generated file contains the values needed by region registration:
 
 ```bash
-USER_ID=$(openstack user create --domain ${DOMAIN_ID} --password ${PASSWORD} ${USER} -f json | jq -r .id)
+UNIKORN_OPENSTACK_AUTH_URL=...
+UNIKORN_OPENSTACK_DOMAIN_ID=...
+UNIKORN_OPENSTACK_PROJECT_ID=...
+UNIKORN_OPENSTACK_USER_ID=...
+UNIKORN_OPENSTACK_PASSWORD=...
 ```
 
-### Grant any roles to the user.
+It may also include optional selectors such as
+`UNIKORN_OPENSTACK_EXTERNAL_NETWORK_ID`, `UNIKORN_OPENSTACK_FLAVOR_ID`, or
+`UNIKORN_OPENSTACK_IMAGE_ID` when those values were supplied or discovered.
 
-When a Kubernetes cluster is provisioned, it will be done using application credentials, so ensure any required application credentials as configured for the region are explicitly associated with the user here.
+## Register The Region
 
-> [!NOTE]
-> It may be necessary to add the `_member_` role on older OpenStack deployments where Neutron requires it to function.
+Use `hack/openstack/register-region` to create or update both the Kubernetes
+Secret containing provider credentials and the `Region` resource.
 
 ```bash
-for role in member load-balancer_member manager; do
-	openstack role add --user ${USER_ID} --domain ${DOMAIN_ID} ${role}
-done
+hack/openstack/register-region \
+    --provider-env "${provider_env}" \
+    --namespace unikorn-region \
+    --region-id c7e8492f-c320-4278-8201-48cd38fed38b \
+    --display-name gb-north-1 \
+    --secret-name gb-north-1-openstack-credentials
 ```
 
-Grant the `member` and `manager` roles on the project we created in a previous step:
+Pass `--organization-id` to restrict the region to a single organization. If it
+is omitted, the region is visible to all organizations.
+
+`register-region` also prints `REGION_PROVIDER`, `OPENSTACK_REGION_ID`, and
+`TEST_REGION_ID` entries for local test environments. Those can be ignored for
+persistent region setup.
+
+For additional configuration options for individual OpenStack services, consult
+the CRD documentation:
 
 ```bash
-for role in member manager; do
-    openstack role add --user ${USER_ID} --project ${PROJECT_ID} ${role}
-done
+kubectl explain regions.region.unikorn-cloud.org
 ```
 
-### Unikorn Configuration
-
-When we create a `Region` of type `openstack`, it will require a secret that contains credentials.
-This can be configured as follows.
-
-```bash
-kubectl create secret generic -n unikorn-region gb-north-1-credentials \
-    --from-literal=domain-id=${DOMAIN_ID} \
-    --from-literal=project-id=${PROJECT_ID} \
-    --from-literal=user-id=${USER_ID} \
-    --from-literal=password=${PASSWORD}
-```
-
-Finally we can create the region itself, although this should be statically configured via Helm.
-For additional configuration options for individual OpenStack services, consult `kubectl explain regions.region.unikorn-cloud.org` for documentation.
+The resulting `Region` shape is equivalent to:
 
 ```yaml
 apiVersion: region.unikorn-cloud.org/v1alpha1
 kind: Region
 metadata:
-  # Use "uuidgen -r" to select a random ID, this MUST start with a character a-f.
   namespace: unikorn-region
   name: c7e8492f-c320-4278-8201-48cd38fed38b
   labels:
@@ -101,18 +120,10 @@ spec:
   openstack:
     endpoint: https://openstack.gb-north-1.unikorn-cloud.org:5000
     serviceAccountSecret:
-      namespace: unikorn
-      name: gb-north-1-credentials
-```
-
-Cleanup actions.
-
-```bash
-unset DOMAIN
-unset DOMAIN_ID
-unset USER
-unset USER_ID
-unset PASSWORD
-unset PROJECT
-unset PROJECT_ID
+      namespace: unikorn-region
+      name: gb-north-1-openstack-credentials
+    identity:
+      clusterRoles:
+      - member
+      - load-balancer_member
 ```

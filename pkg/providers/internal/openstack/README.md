@@ -60,6 +60,18 @@ covers the local VLAN allocator used when provider networks need segmentation ID
 `ADMIN.md` keeps the human operator setup guidance for preparing an OpenStack
 region.
 
+## OpenStack Region Registration
+
+An OpenStack-backed region should be registered with `hack/openstack/configure`
+and `hack/openstack/register-region`, rather than by hand-creating the Keystone
+domain, project, user, Kubernetes Secret, and `Region` manifest. That flow keeps
+operator setup aligned with this package's scoping model: region-level provider
+credentials are used to manage provider-domain scaffolding and discover region
+inventory, while workload operations still context-switch into per-identity
+OpenStack projects.
+
+The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
+
 ## Invariants And Guard Rails
 
 - This package implements the full `types.Provider` contract for OpenStack
