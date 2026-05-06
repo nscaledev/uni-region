@@ -329,11 +329,11 @@ func (p *Provider) DeleteNetwork(_ context.Context, _ *unikornv1.Identity, _ *un
 }
 
 func (p *Provider) CreateSecurityGroup(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.SecurityGroup) error {
-	return unsupported("CreateSecurityGroup")
+	return nil
 }
 
 func (p *Provider) DeleteSecurityGroup(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.SecurityGroup) error {
-	return unsupported("DeleteSecurityGroup")
+	return nil
 }
 
 func deterministicIPv4Address(prefix net.IPNet, seed string) (*unikornv1core.IPv4Address, error) {

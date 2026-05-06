@@ -209,6 +209,51 @@ func (b *LoadBalancerPayloadBuilder) Build() regionopenapi.LoadBalancerV2Create 
 	return b.lb
 }
 
+// SecurityGroupPayloadBuilder builds SecurityGroupV2Create payloads for testing.
+type SecurityGroupPayloadBuilder struct {
+	sg regionopenapi.SecurityGroupV2Create
+}
+
+// NewSecurityGroupPayload creates a builder pre-loaded with a single allow-all TCP ingress rule.
+func NewSecurityGroupPayload(networkID string) *SecurityGroupPayloadBuilder {
+	port := 22
+
+	return &SecurityGroupPayloadBuilder{
+		sg: regionopenapi.SecurityGroupV2Create{
+			Metadata: coreapi.ResourceWriteMetadata{
+				Name: uniqueName("sg"),
+			},
+			Spec: regionopenapi.SecurityGroupV2CreateSpec{
+				NetworkId: networkID,
+				Rules: regionopenapi.SecurityGroupRuleV2List{
+					{
+						Direction: regionopenapi.NetworkDirectionIngress,
+						Protocol:  regionopenapi.NetworkProtocolTcp,
+						Port:      &port,
+					},
+				},
+			},
+		},
+	}
+}
+
+// WithName overrides the security group name.
+func (b *SecurityGroupPayloadBuilder) WithName(name string) *SecurityGroupPayloadBuilder {
+	b.sg.Metadata.Name = name
+	return b
+}
+
+// WithRules overrides the rule list.
+func (b *SecurityGroupPayloadBuilder) WithRules(rules regionopenapi.SecurityGroupRuleV2List) *SecurityGroupPayloadBuilder {
+	b.sg.Spec.Rules = rules
+	return b
+}
+
+// Build returns the typed SecurityGroupV2Create struct.
+func (b *SecurityGroupPayloadBuilder) Build() regionopenapi.SecurityGroupV2Create {
+	return b.sg
+}
+
 // WaitForImageReady polls until the image appears in the region with state ready.
 // Uses a 1-hour timeout to accommodate image download and import times.
 func WaitForImageReady(c *APIClient, ctx context.Context, config *TestConfig, imageID string) {
