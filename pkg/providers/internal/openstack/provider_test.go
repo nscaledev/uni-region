@@ -473,6 +473,13 @@ func withRequestedVIP(addr string) func(*regionv1.LoadBalancer) {
 	}
 }
 
+// withPublicIP enables Spec.PublicIP on a load balancer fixture.
+func withPublicIP() func(*regionv1.LoadBalancer) {
+	return func(lb *regionv1.LoadBalancer) {
+		lb.Spec.PublicIP = true
+	}
+}
+
 // listenerFixture creates a CRD listener with the given name/protocol/port and
 // applies any per-listener mutators. IdleTimeoutSeconds is preset to 60 to
 // mirror the CRD admission default; opts may override it.
@@ -600,14 +607,24 @@ func withVip(addr string) func(*loadbalancers.LoadBalancer) {
 	}
 }
 
+// withVipPortID sets the openstack load balancer's VipPortID.
+func withVipPortID(id string) func(*loadbalancers.LoadBalancer) {
+	return func(lb *loadbalancers.LoadBalancer) {
+		lb.VipPortID = id
+	}
+}
+
 // openstackLoadBalancerFixture builds a default ACTIVE load balancer with the
-// canonical VIP, optionally tweaked.
+// canonical VIP, optionally tweaked. VipPortID defaults to a fresh UUID so the
+// orchestrator's VIP-port guard always passes; tests that need to exercise the
+// guard should use withVipPortID("").
 func openstackLoadBalancerFixture(lb *regionv1.LoadBalancer, opts ...func(*loadbalancers.LoadBalancer)) *loadbalancers.LoadBalancer {
 	osLB := &loadbalancers.LoadBalancer{
 		ID:                 string(uuid.NewUUID()),
 		Name:               openstack.LoadBalancerName(lb),
 		ProvisioningStatus: "ACTIVE",
 		VipAddress:         "10.0.0.42",
+		VipPortID:          string(uuid.NewUUID()),
 	}
 
 	for _, o := range opts {
@@ -615,6 +632,18 @@ func openstackLoadBalancerFixture(lb *regionv1.LoadBalancer, opts ...func(*loadb
 	}
 
 	return osLB
+}
+
+// expectNoFloatingIP records the default no-public-IP convergence —
+// GetFloatingIP returns ErrResourceNotFound on the VIP port and no
+// Create/Delete is invoked.
+func expectNoFloatingIP(t *testing.T, c *gomock.Controller, vipPortID string) *mock.MockNetworkingInterface {
+	t.Helper()
+
+	m := mock.NewMockNetworkingInterface(c)
+	m.EXPECT().GetFloatingIP(t.Context(), vipPortID).Return(nil, errors.ErrResourceNotFound)
+
+	return m
 }
 
 // openstackListenerFixture builds an ACTIVE listener live representation. The
@@ -1160,6 +1189,149 @@ func TestReconcileFloatingIP(t *testing.T) {
 
 		require.NoError(t, openstack.ReconcileFloatingIP(t.Context(), p, networking, server, openstackServerPort))
 		require.Nil(t, server.Status.PublicIP)
+	})
+}
+
+// TestReconcileLoadBalancerFloatingIP exercises the floating-IP convergence on
+// the Octavia VIP port.
+func TestReconcileLoadBalancerFloatingIP(t *testing.T) {
+	t.Parallel()
+
+	client := getClient(t, nil)
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	network := loadBalancerNetworkFixture()
+	lb := loadBalancerFixture(network)
+	vipPortID := string(uuid.NewUUID())
+	openstackFloatingIP := openstackFloatingIPFixture(&ports.Port{ID: vipPortID})
+
+	t.Run("ItDoesntExistAndDisabled", func(t *testing.T) {
+		t.Parallel()
+
+		lb := lb.DeepCopy()
+
+		networking := mock.NewMockFloatingIPInterface(c)
+		networking.EXPECT().GetFloatingIP(t.Context(), vipPortID).Return(nil, errors.ErrResourceNotFound)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		require.NoError(t, openstack.ReconcileLoadBalancerFloatingIP(t.Context(), p, networking, lb, vipPortID))
+		require.Nil(t, lb.Status.PublicIP)
+	})
+
+	t.Run("ItDoesntExistAndEnabled", func(t *testing.T) {
+		t.Parallel()
+
+		lb := lb.DeepCopy()
+		lb.Spec.PublicIP = true
+
+		networking := mock.NewMockFloatingIPInterface(c)
+		networking.EXPECT().GetFloatingIP(t.Context(), vipPortID).Return(nil, errors.ErrResourceNotFound)
+		networking.EXPECT().CreateFloatingIP(t.Context(), vipPortID).Return(openstackFloatingIP, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		require.NoError(t, openstack.ReconcileLoadBalancerFloatingIP(t.Context(), p, networking, lb, vipPortID))
+		require.NotNil(t, lb.Status.PublicIP)
+		require.Equal(t, openstackFloatingIP.FloatingIP, lb.Status.PublicIP.String())
+	})
+
+	t.Run("ItExistsAndEnabled", func(t *testing.T) {
+		t.Parallel()
+
+		lb := lb.DeepCopy()
+		lb.Spec.PublicIP = true
+
+		networking := mock.NewMockFloatingIPInterface(c)
+		networking.EXPECT().GetFloatingIP(t.Context(), vipPortID).Return(openstackFloatingIP, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		require.NoError(t, openstack.ReconcileLoadBalancerFloatingIP(t.Context(), p, networking, lb, vipPortID))
+		require.NotNil(t, lb.Status.PublicIP)
+		require.Equal(t, openstackFloatingIP.FloatingIP, lb.Status.PublicIP.String())
+	})
+
+	t.Run("ItExistsAndDisabled", func(t *testing.T) {
+		t.Parallel()
+
+		lb := lb.DeepCopy()
+		lb.Status.PublicIP = &corev1.IPv4Address{IP: net.ParseIP("99.88.77.66").To4()}
+
+		networking := mock.NewMockFloatingIPInterface(c)
+		networking.EXPECT().GetFloatingIP(t.Context(), vipPortID).Return(openstackFloatingIP, nil)
+		networking.EXPECT().DeleteFloatingIP(t.Context(), openstackFloatingIP.ID).Return(nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		require.NoError(t, openstack.ReconcileLoadBalancerFloatingIP(t.Context(), p, networking, lb, vipPortID))
+		require.Nil(t, lb.Status.PublicIP)
+	})
+
+	t.Run("ItErrorsOnAmbiguousLiveState", func(t *testing.T) {
+		t.Parallel()
+
+		lb := lb.DeepCopy()
+		lb.Spec.PublicIP = true
+
+		networking := mock.NewMockFloatingIPInterface(c)
+		networking.EXPECT().GetFloatingIP(t.Context(), vipPortID).Return(nil, errors.ErrConsistency)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		err := openstack.ReconcileLoadBalancerFloatingIP(t.Context(), p, networking, lb, vipPortID)
+		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.Nil(t, lb.Status.PublicIP)
+	})
+
+	t.Run("ItErrorsOnEmptyFloatingIPField", func(t *testing.T) {
+		t.Parallel()
+
+		lb := lb.DeepCopy()
+		lb.Spec.PublicIP = true
+
+		networking := mock.NewMockFloatingIPInterface(c)
+		networking.EXPECT().GetFloatingIP(t.Context(), vipPortID).Return(&floatingips.FloatingIP{ID: string(uuid.NewUUID()), FloatingIP: ""}, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		err := openstack.ReconcileLoadBalancerFloatingIP(t.Context(), p, networking, lb, vipPortID)
+		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.Nil(t, lb.Status.PublicIP)
+	})
+
+	t.Run("ItErrorsOnMalformedFloatingIP", func(t *testing.T) {
+		t.Parallel()
+
+		lb := lb.DeepCopy()
+		lb.Spec.PublicIP = true
+
+		networking := mock.NewMockFloatingIPInterface(c)
+		networking.EXPECT().GetFloatingIP(t.Context(), vipPortID).Return(&floatingips.FloatingIP{ID: string(uuid.NewUUID()), FloatingIP: "not-an-ip"}, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		err := openstack.ReconcileLoadBalancerFloatingIP(t.Context(), p, networking, lb, vipPortID)
+		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.Nil(t, lb.Status.PublicIP)
+	})
+
+	t.Run("ItErrorsOnIPv6FloatingIP", func(t *testing.T) {
+		t.Parallel()
+
+		lb := lb.DeepCopy()
+		lb.Spec.PublicIP = true
+
+		networking := mock.NewMockFloatingIPInterface(c)
+		networking.EXPECT().GetFloatingIP(t.Context(), vipPortID).Return(&floatingips.FloatingIP{ID: string(uuid.NewUUID()), FloatingIP: "2001:db8::1"}, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		err := openstack.ReconcileLoadBalancerFloatingIP(t.Context(), p, networking, lb, vipPortID)
+		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.Nil(t, lb.Status.PublicIP)
 	})
 }
 
@@ -2605,7 +2777,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 	c := gomock.NewController(t)
 	t.Cleanup(c.Finish)
 
-	t.Run("MissingVIP_Yields", func(t *testing.T) {
+	t.Run("MissingVIP_Errors", func(t *testing.T) {
 		t.Parallel()
 
 		network := loadBalancerNetworkFixture()
@@ -2618,8 +2790,25 @@ func TestCreateLoadBalancer(t *testing.T) {
 
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
-		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
-		require.ErrorIs(t, err, provisioners.ErrYield)
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, nil, lb, *network.Status.Openstack.SubnetID)
+		require.ErrorIs(t, err, errors.ErrConsistency)
+	})
+
+	t.Run("MalformedVIP_Errors", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+
+		osLB := openstackLoadBalancerFixture(lb, withVip("not-an-ip"))
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
+
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, nil, lb, *network.Status.Openstack.SubnetID)
+		require.ErrorIs(t, err, errors.ErrConsistency)
 	})
 
 	t.Run("LBPending_Yields", func(t *testing.T) {
@@ -2635,7 +2824,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
-		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, nil, lb, *network.Status.Openstack.SubnetID)
 		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
 
@@ -2652,7 +2841,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
-		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, nil, lb, *network.Status.Openstack.SubnetID)
 		require.ErrorIs(t, err, errors.ErrConsistency)
 	})
 
@@ -2680,9 +2869,11 @@ func TestCreateLoadBalancer(t *testing.T) {
 		lbClient.EXPECT().ListPools(t.Context(), osLB.ID, "").Return([]pools.Pool{*osPool}, nil)
 		lbClient.EXPECT().ListMonitors(t.Context(), osPool.ID, "").Return(nil, nil)
 
+		networkClient := expectNoFloatingIP(t, c, osLB.VipPortID)
+
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
-		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb, *network.Status.Openstack.SubnetID)
 		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
 
@@ -2712,9 +2903,11 @@ func TestCreateLoadBalancer(t *testing.T) {
 		}, nil)
 		lbClient.EXPECT().BatchUpdateMembers(t.Context(), osPool.ID, expectedPayload).Return(nil)
 
+		networkClient := expectNoFloatingIP(t, c, osLB.VipPortID)
+
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
-		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb, *network.Status.Openstack.SubnetID)
 		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
 
@@ -2738,9 +2931,11 @@ func TestCreateLoadBalancer(t *testing.T) {
 			lbClient.EXPECT().DeleteListener(t.Context(), oldListener.ID).Return(nil),
 		)
 
+		networkClient := expectNoFloatingIP(t, c, osLB.VipPortID)
+
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
-		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb, *network.Status.Openstack.SubnetID)
 		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
 
@@ -2773,9 +2968,11 @@ func TestCreateLoadBalancer(t *testing.T) {
 			lbClient.EXPECT().DeleteListener(t.Context(), oldListener.ID).Return(nil),
 		)
 
+		networkClient := expectNoFloatingIP(t, c, osLB.VipPortID)
+
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
-		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb, *network.Status.Openstack.SubnetID)
 		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
 
@@ -2807,9 +3004,11 @@ func TestCreateLoadBalancer(t *testing.T) {
 		lbClient.EXPECT().ListPools(t.Context(), osLB.ID, "").Return([]pools.Pool{*osPool, oldPool}, nil)
 		lbClient.EXPECT().DeletePool(t.Context(), oldPool.ID).Return(nil)
 
+		networkClient := expectNoFloatingIP(t, c, osLB.VipPortID)
+
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
-		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb, *network.Status.Openstack.SubnetID)
 		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
 
@@ -2837,9 +3036,11 @@ func TestCreateLoadBalancer(t *testing.T) {
 		lbClient.EXPECT().GetPool(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osPool, nil)
 		lbClient.EXPECT().UpdatePool(t.Context(), osPool.ID, pools.UpdateOpts{LBMethod: pools.LBMethodRoundRobin}).Return(&updatedPool, nil)
 
+		networkClient := expectNoFloatingIP(t, c, osLB.VipPortID)
+
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
-		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb, *network.Status.Openstack.SubnetID)
 		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
 
@@ -2866,9 +3067,66 @@ func TestCreateLoadBalancer(t *testing.T) {
 		lbClient.EXPECT().ListPools(t.Context(), osLB.ID, "").Return([]pools.Pool{*osPool}, nil)
 		lbClient.EXPECT().ListMonitors(t.Context(), osPool.ID, "").Return(nil, nil)
 
+		networkClient := expectNoFloatingIP(t, c, osLB.VipPortID)
+
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
-		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb, *network.Status.Openstack.SubnetID)
 		require.NoError(t, err)
+	})
+
+	t.Run("PublicIP_Reconciled", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network, withPublicIP())
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80),
+		}
+		listener := &lb.Spec.Listeners[0]
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+		osListener := openstackListenerFixture(lb, listener)
+		osListener.DefaultPoolID = osPool.ID
+
+		openstackFloatingIP := openstackFloatingIPFixture(&ports.Port{ID: osLB.VipPortID})
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+		lbClient.EXPECT().ListListeners(t.Context(), osLB.ID, "").Return([]listeners.Listener{*osListener}, nil)
+		lbClient.EXPECT().GetPool(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osPool, nil)
+		lbClient.EXPECT().GetListener(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(osListener, nil)
+		lbClient.EXPECT().ListMembers(t.Context(), osPool.ID).Return(nil, nil)
+		lbClient.EXPECT().ListPools(t.Context(), osLB.ID, "").Return([]pools.Pool{*osPool}, nil)
+		lbClient.EXPECT().ListMonitors(t.Context(), osPool.ID, "").Return(nil, nil)
+
+		networkClient := mock.NewMockNetworkingInterface(c)
+		networkClient.EXPECT().GetFloatingIP(t.Context(), osLB.VipPortID).Return(nil, errors.ErrResourceNotFound)
+		networkClient.EXPECT().CreateFloatingIP(t.Context(), osLB.VipPortID).Return(openstackFloatingIP, nil)
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
+
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb, *network.Status.Openstack.SubnetID)
+		require.ErrorIs(t, err, provisioners.ErrYield)
+		require.NotNil(t, lb.Status.PublicIP)
+		require.Equal(t, openstackFloatingIP.FloatingIP, lb.Status.PublicIP.String())
+	})
+
+	t.Run("EmptyVipPortID_Errors", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+
+		osLB := openstackLoadBalancerFixture(lb, withVipPortID(""))
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
+
+		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, nil, lb, *network.Status.Openstack.SubnetID)
+		require.ErrorIs(t, err, errors.ErrConsistency)
 	})
 }

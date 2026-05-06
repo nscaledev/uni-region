@@ -142,6 +142,10 @@ func ReconcileFloatingIP(ctx context.Context, p *Provider, client FloatingIPInte
 	return p.reconcileFloatingIP(ctx, client, server, port)
 }
 
+func ReconcileLoadBalancerFloatingIP(ctx context.Context, p *Provider, client FloatingIPInterface, loadBalancer *unikornv1.LoadBalancer, vipPortID string) error {
+	return p.reconcileLoadBalancerFloatingIP(ctx, client, loadBalancer, vipPortID)
+}
+
 func ReconcileServer(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
 	// Lewis Denham-Parry was here.
 	return p.reconcileServer(ctx, client, server, port, keyName)
@@ -183,8 +187,8 @@ func PruneOrphanedPoolsAndMonitorsOnce(ctx context.Context, p *Provider, lbClien
 	return p.pruneOrphanedPoolsAndMonitorsOnce(ctx, lbClient, loadBalancer, loadBalancerID)
 }
 
-func CreateLoadBalancerWithClient(ctx context.Context, p *Provider, lbClient LoadBalancingInterface, loadBalancer *unikornv1.LoadBalancer, subnetID string) error {
-	return p.createLoadBalancer(ctx, lbClient, loadBalancer, subnetID)
+func CreateLoadBalancerWithClient(ctx context.Context, p *Provider, lbClient LoadBalancingInterface, fipClient FloatingIPInterface, loadBalancer *unikornv1.LoadBalancer, subnetID string) error {
+	return p.createLoadBalancer(ctx, lbClient, fipClient, loadBalancer, subnetID)
 }
 
 //nolint:gochecknoglobals
