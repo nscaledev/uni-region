@@ -139,6 +139,72 @@ var _ = Describe("LoadBalancer", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp.StatusCode).NotTo(Equal(http.StatusOK))
 			})
+
+			It("creates a load balancer with two listeners and asserts both survive round-trips", func() {
+				twoListeners := []regionopenapi.LoadBalancerListenerV2{
+					{
+						Name:     "http",
+						Protocol: regionopenapi.LoadBalancerListenerProtocolV2Tcp,
+						Port:     80,
+						Pool:     regionopenapi.LoadBalancerPoolV2{Members: []regionopenapi.LoadBalancerMemberV2{}},
+					},
+					{
+						Name:     "http-alt",
+						Protocol: regionopenapi.LoadBalancerListenerProtocolV2Tcp,
+						Port:     8080,
+						Pool:     regionopenapi.LoadBalancerPoolV2{Members: []regionopenapi.LoadBalancerMemberV2{}},
+					},
+				}
+				createReq := api.NewLoadBalancerPayload(networkID).WithListeners(twoListeners).Build()
+				created, err := regionClient.CreateLoadBalancer(ctx, createReq)
+				Expect(err).NotTo(HaveOccurred(), "failed to create two-listener load balancer")
+				Expect(created).NotTo(BeNil())
+				lbID = created.Metadata.Id
+
+				By("asserting both listeners are present on the create response")
+				Expect(created.Spec.Listeners).To(HaveLen(2))
+				Expect(created.Spec.Listeners[0].Port).To(Equal(80))
+				Expect(created.Spec.Listeners[0].Protocol).To(Equal(regionopenapi.LoadBalancerListenerProtocolV2Tcp))
+				Expect(created.Spec.Listeners[1].Port).To(Equal(8080))
+				Expect(created.Spec.Listeners[1].Protocol).To(Equal(regionopenapi.LoadBalancerListenerProtocolV2Tcp))
+
+				By("asserting GET returns both listeners")
+				got, err := regionClient.GetLoadBalancer(ctx, lbID)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(got.Spec.Listeners).To(HaveLen(2))
+
+				By("updating pool members on both listeners and asserting round-trip persistence")
+				membersHTTP := []regionopenapi.LoadBalancerMemberV2{
+					{Address: "10.0.1.10", Port: 80},
+				}
+				membersAlt := []regionopenapi.LoadBalancerMemberV2{
+					{Address: "10.0.1.11", Port: 8080},
+				}
+				got.Spec.Listeners[0].Pool.Members = membersHTTP
+				got.Spec.Listeners[1].Pool.Members = membersAlt
+				updateReq := regionopenapi.LoadBalancerV2Update{
+					Metadata: coreapi.ResourceWriteMetadata{Name: got.Metadata.Name},
+					Spec:     got.Spec,
+				}
+				putResp, err := regionClient.UpdateLoadBalancer(ctx, lbID, updateReq)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(putResp.Spec.Listeners[0].Pool.Members).To(Equal(membersHTTP))
+				Expect(putResp.Spec.Listeners[1].Pool.Members).To(Equal(membersAlt))
+
+				roundTrip, err := regionClient.GetLoadBalancer(ctx, lbID)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(roundTrip.Spec.Listeners).To(HaveLen(2))
+				Expect(roundTrip.Spec.Listeners[0].Pool.Members).To(Equal(membersHTTP))
+				Expect(roundTrip.Spec.Listeners[1].Pool.Members).To(Equal(membersAlt))
+
+				By("deleting the two-listener load balancer and confirming removal")
+				Expect(regionClient.DeleteLoadBalancer(ctx, lbID)).To(Succeed())
+				Eventually(func() bool {
+					_, err := regionClient.GetLoadBalancer(ctx, lbID)
+					return err != nil
+				}).WithTimeout(30 * time.Second).WithPolling(1 * time.Second).Should(BeTrue())
+				lbID = "" // suppress cleanup delete — already gone
+			})
 		})
 	})
 })
