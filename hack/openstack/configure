@@ -11,6 +11,8 @@ DOMAIN_NAME_OVERRIDE=""
 PROJECT_NAME_OVERRIDE=""
 USER_NAME_OVERRIDE=""
 PASSWORD_OVERRIDE=""
+ROTATE_PASSWORD="${UNIKORN_OPENSTACK_ROTATE_PASSWORD:-false}"
+USER_ID=""
 
 log() {
   echo "==> $*" >&2
@@ -39,7 +41,7 @@ emit_env() {
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 [--openrc FILE] [--output FILE] [--mode create|existing]
+Usage: $0 [--openrc FILE] [--output FILE] [--mode create|existing] [--rotate-password]
 
 Configures an existing OpenStack cloud for the Region OpenStack provider and
 emits a shell-compatible provider env file.
@@ -56,10 +58,14 @@ Common environment overrides:
   UNIKORN_OPENSTACK_DOMAIN_ROLES
   UNIKORN_OPENSTACK_PROJECT_ROLES
   UNIKORN_OPENSTACK_INCLUDE_LEGACY_MEMBER_ROLE=true
+  UNIKORN_OPENSTACK_ROTATE_PASSWORD=true
 
 Modes:
   create    Create or update the domain, project, user, and role grants.
   existing  Re-emit an already supplied UNIKORN_OPENSTACK_* provider env.
+
+By default, an existing provider user's password is never changed. Set
+UNIKORN_OPENSTACK_ROTATE_PASSWORD=true or pass --rotate-password to reset it.
 EOF
 }
 
@@ -96,6 +102,10 @@ while [[ $# -gt 0 ]]; do
     --password)
       PASSWORD_OVERRIDE="$2"
       shift 2
+      ;;
+    --rotate-password)
+      ROTATE_PASSWORD="true"
+      shift
       ;;
     -h|--help)
       usage
@@ -219,22 +229,52 @@ ensure_project() {
 ensure_user() {
   local domain_id="$1"
   local user="$2"
-  local password="$3"
   local id
 
   if [[ -n "${UNIKORN_OPENSTACK_USER_ID:-}" ]]; then
-    echo "${UNIKORN_OPENSTACK_USER_ID}"
+    if [[ -z "${PASSWORD}" ]]; then
+      if [[ "${ROTATE_PASSWORD}" == "true" ]]; then
+        PASSWORD="$(generate_password)"
+      else
+        fatal "--password or UNIKORN_OPENSTACK_PASSWORD is required when UNIKORN_OPENSTACK_USER_ID is supplied"
+      fi
+    fi
+
+    if [[ "${ROTATE_PASSWORD}" == "true" ]]; then
+      log "Resetting password for existing user ${UNIKORN_OPENSTACK_USER_ID}..."
+      "${OPENSTACK_CLI}" user set --enable --password "${PASSWORD}" "${UNIKORN_OPENSTACK_USER_ID}" >/dev/null
+    fi
+
+    USER_ID="${UNIKORN_OPENSTACK_USER_ID}"
     return
   fi
 
   if id="$("${OPENSTACK_CLI}" user show "${user}" --domain "${domain_id}" -f value -c id 2>/dev/null)"; then
-    "${OPENSTACK_CLI}" user set --enable --password "${password}" "${id}" >/dev/null
-    echo "${id}"
+    if [[ -z "${PASSWORD}" ]]; then
+      if [[ "${ROTATE_PASSWORD}" == "true" ]]; then
+        PASSWORD="$(generate_password)"
+      else
+        fatal "provider user ${user} already exists; supply --password or UNIKORN_OPENSTACK_PASSWORD, or pass --rotate-password to reset it"
+      fi
+    fi
+
+    if [[ "${ROTATE_PASSWORD}" == "true" ]]; then
+      log "Resetting password for existing user ${user}..."
+      "${OPENSTACK_CLI}" user set --enable --password "${PASSWORD}" "${id}" >/dev/null
+    else
+      "${OPENSTACK_CLI}" user set --enable "${id}" >/dev/null
+    fi
+
+    USER_ID="${id}"
     return
   fi
 
+  if [[ -z "${PASSWORD}" ]]; then
+    PASSWORD="$(generate_password)"
+  fi
+
   log "Creating user ${user}..."
-  "${OPENSTACK_CLI}" user create "${user}" --domain "${domain_id}" --password "${password}" --enable -f value -c id
+  USER_ID="$("${OPENSTACK_CLI}" user create "${user}" --domain "${domain_id}" --password "${PASSWORD}" --enable -f value -c id)"
 }
 
 assign_role_to_domain() {
@@ -331,20 +371,13 @@ configure_created() {
 
   require "${OPENSTACK_CLI}"
 
-  if [[ -n "${UNIKORN_OPENSTACK_USER_ID:-}" && -z "${PASSWORD}" ]]; then
-    fatal "UNIKORN_OPENSTACK_PASSWORD is required when UNIKORN_OPENSTACK_USER_ID is supplied"
-  fi
-
-  if [[ -z "${PASSWORD}" ]]; then
-    PASSWORD="$(generate_password)"
-  fi
-
   log "Checking OpenStack credentials..."
   "${OPENSTACK_CLI}" token issue >/dev/null
 
   domain_id="$(ensure_domain "${DOMAIN_NAME}")"
   project_id="$(ensure_project "${domain_id}" "${PROJECT_NAME}")"
-  user_id="$(ensure_user "${domain_id}" "${USER_NAME}" "${PASSWORD}")"
+  ensure_user "${domain_id}" "${USER_NAME}"
+  user_id="${USER_ID}"
 
   for role in ${DOMAIN_ROLES}; do
     if ensure_role "${role}"; then
