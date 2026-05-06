@@ -237,6 +237,114 @@ func (c *APIClient) ListExternalNetworks(ctx context.Context, orgID, regionID st
 	)
 }
 
+// ListSecurityGroups lists security groups filtered by org, project and region.
+func (c *APIClient) ListSecurityGroups(ctx context.Context, orgID, projectID, regionID string) (regionopenapi.SecurityGroupsV2Read, error) {
+	path := c.endpoints.ListSecurityGroups(orgID, projectID, regionID)
+
+	return coreclient.ListResource[regionopenapi.SecurityGroupV2Read](
+		ctx,
+		c.regionClient,
+		path,
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "securityGroups",
+			ResourceID:     projectID,
+			ResourceIDType: "project",
+		},
+	)
+}
+
+// CreateSecurityGroup creates a new security group.
+func (c *APIClient) CreateSecurityGroup(ctx context.Context, request regionopenapi.SecurityGroupV2Create) (*regionopenapi.SecurityGroupV2Read, error) {
+	path := c.endpoints.CreateSecurityGroup()
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling security group request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusCreated)
+	if err != nil {
+		return nil, fmt.Errorf("creating security group: %w", err)
+	}
+
+	var sg regionopenapi.SecurityGroupV2Read
+	if err := json.Unmarshal(respBody, &sg); err != nil {
+		return nil, fmt.Errorf("unmarshaling security group: %w", err)
+	}
+
+	return &sg, nil
+}
+
+// GetSecurityGroup gets a specific security group by ID.
+// Returns ErrResourceNotFound if the security group does not exist.
+func (c *APIClient) GetSecurityGroup(ctx context.Context, securityGroupID string) (*regionopenapi.SecurityGroupV2Read, error) {
+	path := c.endpoints.GetSecurityGroup(securityGroupID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	resp, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, 0)
+	if err != nil {
+		return nil, fmt.Errorf("getting security group: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var sg regionopenapi.SecurityGroupV2Read
+		if err := json.Unmarshal(respBody, &sg); err != nil {
+			return nil, fmt.Errorf("unmarshaling security group: %w", err)
+		}
+
+		return &sg, nil
+	case http.StatusNotFound:
+		return nil, fmt.Errorf("security group '%s': %w", securityGroupID, coreclient.ErrResourceNotFound)
+	default:
+		return nil, fmt.Errorf("getting security group: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
+}
+
+// UpdateSecurityGroup updates a security group's rules.
+func (c *APIClient) UpdateSecurityGroup(ctx context.Context, securityGroupID string, request regionopenapi.SecurityGroupV2Update) (*regionopenapi.SecurityGroupV2Read, error) {
+	path := c.endpoints.UpdateSecurityGroup(securityGroupID)
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling security group update request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPut, path, bytes.NewReader(reqBody), http.StatusAccepted)
+	if err != nil {
+		return nil, fmt.Errorf("updating security group: %w", err)
+	}
+
+	var sg regionopenapi.SecurityGroupV2Read
+	if err := json.Unmarshal(respBody, &sg); err != nil {
+		return nil, fmt.Errorf("unmarshaling security group: %w", err)
+	}
+
+	return &sg, nil
+}
+
+// DeleteSecurityGroup deletes a security group.
+func (c *APIClient) DeleteSecurityGroup(ctx context.Context, securityGroupID string) error {
+	path := c.endpoints.DeleteSecurityGroup(securityGroupID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	resp, _, err := c.regionClient.DoRequest(ctx, http.MethodDelete, path, nil, 0)
+	if err != nil {
+		return fmt.Errorf("deleting security group: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusAccepted:
+		return nil
+	case http.StatusNotFound:
+		return fmt.Errorf("security group '%s': %w", securityGroupID, coreclient.ErrResourceNotFound)
+	default:
+		return fmt.Errorf("deleting security group: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
+}
+
 // ListFileStorage lists all file storage resources for a project in a region.
 func (c *APIClient) ListFileStorage(ctx context.Context, orgID, projectID, regionID string) (regionopenapi.StorageV2List, error) {
 	path := c.endpoints.ListFileStorage(orgID, projectID, regionID)
