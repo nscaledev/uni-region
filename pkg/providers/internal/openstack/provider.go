@@ -2217,6 +2217,65 @@ func (p *Provider) reconcileFloatingIP(ctx context.Context, client FloatingIPInt
 	return nil
 }
 
+// reconcileLoadBalancerFloatingIP converges the floating IP attached to the
+// Octavia VIP port to match loadBalancer.Spec.PublicIP. The VIP port is
+// owned by Octavia, not a Neutron port we created ourselves.
+func (p *Provider) reconcileLoadBalancerFloatingIP(ctx context.Context, client FloatingIPInterface, loadBalancer *unikornv1.LoadBalancer, vipPortID string) error {
+	log := log.FromContext(ctx)
+
+	enabled := loadBalancer.Spec.PublicIP
+
+	loadBalancer.Status.PublicIP = nil
+
+	floatingip, err := client.GetFloatingIP(ctx, vipPortID)
+	if err == nil {
+		if enabled {
+			log.V(1).Info("floating ip already exists")
+
+			addr, err := parseIPv4Address(floatingip.FloatingIP)
+			if err != nil {
+				return fmt.Errorf("load balancer %s public IP: %w", loadBalancer.Name, err)
+			}
+
+			loadBalancer.Status.PublicIP = addr
+
+			return nil
+		}
+
+		log.V(1).Info("deleting floating ip")
+
+		if err := client.DeleteFloatingIP(ctx, floatingip.ID); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	if !errors.Is(err, coreerrors.ErrResourceNotFound) {
+		return err
+	}
+
+	if !enabled {
+		return nil
+	}
+
+	log.V(1).Info("creating floating ip")
+
+	floatingip, err = client.CreateFloatingIP(ctx, vipPortID)
+	if err != nil {
+		return err
+	}
+
+	addr, err := parseIPv4Address(floatingip.FloatingIP)
+	if err != nil {
+		return fmt.Errorf("load balancer %s public IP: %w", loadBalancer.Name, err)
+	}
+
+	loadBalancer.Status.PublicIP = addr
+
+	return nil
+}
+
 func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
 	log := log.FromContext(ctx)
 
@@ -2677,6 +2736,20 @@ func classifyOctaviaStatus(kind, name, status string) error {
 	}
 }
 
+// parseIPv4Address parses a non-empty OpenStack-returned address string into
+// an IPv4Address. Empty, malformed, and IPv6 inputs return ErrConsistency —
+// callers wrap with their own context. Callers that want to tolerate an
+// empty input (e.g. pre-ACTIVE Octavia states) must guard with `if s != ""`
+// before calling.
+func parseIPv4Address(s string) (*unikornv1core.IPv4Address, error) {
+	ip := net.ParseIP(s).To4()
+	if ip == nil {
+		return nil, fmt.Errorf("%w: %q is not a valid IPv4 address", coreerrors.ErrConsistency, s)
+	}
+
+	return &unikornv1core.IPv4Address{IP: ip}, nil
+}
+
 // effectiveMemberCount returns the total number of members declared across all
 // listener pools on the load balancer spec.
 func effectiveMemberCount(lb *unikornv1.LoadBalancer) int {
@@ -2876,10 +2949,12 @@ func (p *Provider) reconcileLoadBalancer(ctx context.Context, lbClient LoadBalan
 	}
 
 	if osLB.VipAddress != "" {
-		ip := net.ParseIP(osLB.VipAddress)
-		if ip != nil {
-			loadBalancer.Status.VIPAddress = &unikornv1core.IPv4Address{IP: ip}
+		addr, err := parseIPv4Address(osLB.VipAddress)
+		if err != nil {
+			return nil, fmt.Errorf("load balancer %s VIP: %w", loadBalancer.Name, err)
 		}
+
+		loadBalancer.Status.VIPAddress = addr
 	}
 
 	if loadBalancer.Spec.RequestedVIPAddress != nil && osLB.VipAddress != "" && osLB.VipAddress != loadBalancer.Spec.RequestedVIPAddress.String() {
@@ -3264,15 +3339,20 @@ func (p *Provider) CreateLoadBalancer(ctx context.Context, identity *unikornv1.I
 		return err
 	}
 
-	return p.createLoadBalancer(ctx, lbClient, loadBalancer, subnetID)
+	networking, err := p.networkFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	return p.createLoadBalancer(ctx, lbClient, networking, loadBalancer, subnetID)
 }
 
 // createLoadBalancer drives the reconcile-up flow against a resolved load
 // balancing client. Split from CreateLoadBalancer so unit tests can inject a
 // mock without standing up a service principal.
 //
-//nolint:cyclop
-func (p *Provider) createLoadBalancer(ctx context.Context, lbClient LoadBalancingInterface, loadBalancer *unikornv1.LoadBalancer, subnetID string) error {
+//nolint:cyclop,gocognit
+func (p *Provider) createLoadBalancer(ctx context.Context, lbClient LoadBalancingInterface, fipClient FloatingIPInterface, loadBalancer *unikornv1.LoadBalancer, subnetID string) error {
 	osLB, err := p.reconcileLoadBalancer(ctx, lbClient, loadBalancer, subnetID)
 	if err != nil {
 		return err
@@ -3283,7 +3363,16 @@ func (p *Provider) createLoadBalancer(ctx context.Context, lbClient LoadBalancin
 	}
 
 	if osLB.VipAddress == "" {
-		return provisioners.ErrYield
+		return fmt.Errorf("%w: load balancer %s is ACTIVE but has no VIP address",
+			coreerrors.ErrConsistency, loadBalancer.Name)
+	}
+
+	if osLB.VipPortID == "" {
+		return fmt.Errorf("%w: load balancer %s has VIP %s but no VIP port", coreerrors.ErrConsistency, loadBalancer.Name, osLB.VipAddress)
+	}
+
+	if err := p.reconcileLoadBalancerFloatingIP(ctx, fipClient, loadBalancer, osLB.VipPortID); err != nil {
+		return err
 	}
 
 	mutated, err := p.pruneOrphanedListenersOnce(ctx, lbClient, loadBalancer, osLB.ID)
