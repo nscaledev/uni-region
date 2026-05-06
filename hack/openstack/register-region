@@ -8,6 +8,7 @@ DISPLAY_NAME="${REGION_DISPLAY_NAME:-}"
 SECRET_NAME="${OPENSTACK_SECRET_NAME:-}"
 ORGANIZATION_ID="${REGION_ORGANIZATION_ID:-}"
 PROVIDER_ENV_FILE=""
+CREATE_SECRET="${OPENSTACK_CREATE_SECRET:-false}"
 
 log() {
   echo "==> $*" >&2
@@ -36,7 +37,7 @@ emit_env() {
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 [--provider-env FILE] --namespace NS [--region-id ID] [--display-name NAME] [--secret-name NAME] [--organization-id ID]
+Usage: $0 [--provider-env FILE] --namespace NS [--region-id ID] [--display-name NAME] [--secret-name NAME] [--organization-id ID] [--create-secret]
 
 Environment:
   UNIKORN_OPENSTACK_AUTH_URL
@@ -48,7 +49,13 @@ Environment:
   REGION_ID
   REGION_DISPLAY_NAME
   OPENSTACK_SECRET_NAME
+  OPENSTACK_CREATE_SECRET=true
   REGION_ORGANIZATION_ID
+
+By default, this script references an existing Kubernetes Secret. Create or sync
+that Secret from your password manager before registering persistent regions.
+Use --create-secret only for local or test regions where direct Secret creation
+from the provider env file is acceptable.
 EOF
 }
 
@@ -78,6 +85,10 @@ while [[ $# -gt 0 ]]; do
       ORGANIZATION_ID="$2"
       shift 2
       ;;
+    --create-secret)
+      CREATE_SECRET="true"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -101,20 +112,25 @@ require kubectl
 
 [[ -n "${NAMESPACE}" ]] || fatal "--namespace or REGION_NAMESPACE is required"
 [[ -n "${UNIKORN_OPENSTACK_AUTH_URL:-}" ]] || fatal "UNIKORN_OPENSTACK_AUTH_URL is required"
-[[ -n "${UNIKORN_OPENSTACK_DOMAIN_ID:-}" ]] || fatal "UNIKORN_OPENSTACK_DOMAIN_ID is required"
-[[ -n "${UNIKORN_OPENSTACK_PROJECT_ID:-}" ]] || fatal "UNIKORN_OPENSTACK_PROJECT_ID is required"
-[[ -n "${UNIKORN_OPENSTACK_USER_ID:-}" ]] || fatal "UNIKORN_OPENSTACK_USER_ID is required"
-[[ -n "${UNIKORN_OPENSTACK_PASSWORD:-}" ]] || fatal "UNIKORN_OPENSTACK_PASSWORD is required"
 
-log "Applying OpenStack credential Secret ${NAMESPACE}/${SECRET_NAME}..."
-kubectl create secret generic "${SECRET_NAME}" \
-  --namespace "${NAMESPACE}" \
-  --from-literal="domain-id=${UNIKORN_OPENSTACK_DOMAIN_ID}" \
-  --from-literal="project-id=${UNIKORN_OPENSTACK_PROJECT_ID}" \
-  --from-literal="user-id=${UNIKORN_OPENSTACK_USER_ID}" \
-  --from-literal="password=${UNIKORN_OPENSTACK_PASSWORD}" \
-  --dry-run=client \
-  -o yaml | kubectl apply -f - >&2
+if [[ "${CREATE_SECRET}" == "true" ]]; then
+  [[ -n "${UNIKORN_OPENSTACK_DOMAIN_ID:-}" ]] || fatal "UNIKORN_OPENSTACK_DOMAIN_ID is required with --create-secret"
+  [[ -n "${UNIKORN_OPENSTACK_PROJECT_ID:-}" ]] || fatal "UNIKORN_OPENSTACK_PROJECT_ID is required with --create-secret"
+  [[ -n "${UNIKORN_OPENSTACK_USER_ID:-}" ]] || fatal "UNIKORN_OPENSTACK_USER_ID is required with --create-secret"
+  [[ -n "${UNIKORN_OPENSTACK_PASSWORD:-}" ]] || fatal "UNIKORN_OPENSTACK_PASSWORD is required with --create-secret"
+
+  log "Applying OpenStack credential Secret ${NAMESPACE}/${SECRET_NAME}..."
+  kubectl create secret generic "${SECRET_NAME}" \
+    --namespace "${NAMESPACE}" \
+    --from-literal="domain-id=${UNIKORN_OPENSTACK_DOMAIN_ID}" \
+    --from-literal="project-id=${UNIKORN_OPENSTACK_PROJECT_ID}" \
+    --from-literal="user-id=${UNIKORN_OPENSTACK_USER_ID}" \
+    --from-literal="password=${UNIKORN_OPENSTACK_PASSWORD}" \
+    --dry-run=client \
+    -o yaml | kubectl apply -f - >&2
+else
+  log "Referencing existing OpenStack credential Secret ${NAMESPACE}/${SECRET_NAME}."
+fi
 
 security_block=""
 if [[ -n "${ORGANIZATION_ID}" ]]; then

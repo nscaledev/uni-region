@@ -79,8 +79,41 @@ It may also include optional selectors such as
 
 ## Register The Region
 
-Use `hack/openstack/register-region` to create or update both the Kubernetes
-Secret containing provider credentials and the `Region` resource.
+For persistent regions, put the credentials from the provider env file in a
+password manager and sync them to Kubernetes as a Secret. The Secret referenced
+by the `Region` must contain these keys:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  namespace: unikorn-region
+  name: gb-north-1-openstack-credentials
+stringData:
+  domain-id: ...
+  project-id: ...
+  user-id: ...
+  password: ...
+```
+
+Once that Secret exists, use `hack/openstack/register-region` to create or
+update the `Region` resource and reference the Secret by name:
+
+```bash
+export UNIKORN_OPENSTACK_AUTH_URL=https://openstack.gb-north-1.unikorn-cloud.org:5000
+
+hack/openstack/register-region \
+    --namespace unikorn-region \
+    --region-id c7e8492f-c320-4278-8201-48cd38fed38b \
+    --display-name gb-north-1 \
+    --secret-name gb-north-1-openstack-credentials
+```
+
+`register-region` references the existing Kubernetes Secret. It does not write
+OpenStack credentials to the cluster by default.
+
+For local or test regions where direct Kubernetes Secret creation is acceptable,
+pass `--create-secret` with the provider env file:
 
 ```bash
 hack/openstack/register-region \
@@ -88,7 +121,8 @@ hack/openstack/register-region \
     --namespace unikorn-region \
     --region-id c7e8492f-c320-4278-8201-48cd38fed38b \
     --display-name gb-north-1 \
-    --secret-name gb-north-1-openstack-credentials
+    --secret-name gb-north-1-openstack-credentials \
+    --create-secret
 ```
 
 Pass `--organization-id` to restrict the region to a single organization. If it
