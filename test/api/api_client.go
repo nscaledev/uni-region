@@ -490,3 +490,88 @@ func (c *APIClient) DeleteLoadBalancer(ctx context.Context, loadBalancerID strin
 
 	return nil
 }
+
+// ListSSHCertificateAuthorities lists SSH certificate authorities for an org and project.
+func (c *APIClient) ListSSHCertificateAuthorities(ctx context.Context, orgID, projectID string) (regionopenapi.SshCertificateAuthoritiesV2Read, error) {
+	path := c.endpoints.ListSSHCertificateAuthorities(orgID, projectID)
+
+	return coreclient.ListResource[regionopenapi.SshCertificateAuthorityV2Read](
+		ctx,
+		c.regionClient,
+		path,
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "sshCertificateAuthorities",
+			ResourceID:     projectID,
+			ResourceIDType: "project",
+		},
+	)
+}
+
+// CreateSSHCertificateAuthority creates a new SSH certificate authority.
+func (c *APIClient) CreateSSHCertificateAuthority(ctx context.Context, request regionopenapi.SshCertificateAuthorityV2Create) (*regionopenapi.SshCertificateAuthorityV2Read, error) {
+	path := c.endpoints.CreateSSHCertificateAuthority()
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling ssh certificate authority request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusCreated)
+	if err != nil {
+		return nil, fmt.Errorf("creating ssh certificate authority: %w", err)
+	}
+
+	var ca regionopenapi.SshCertificateAuthorityV2Read
+	if err := json.Unmarshal(respBody, &ca); err != nil {
+		return nil, fmt.Errorf("unmarshaling ssh certificate authority: %w", err)
+	}
+
+	return &ca, nil
+}
+
+// GetSSHCertificateAuthority gets a specific SSH certificate authority by ID.
+// Returns ErrResourceNotFound if the resource does not exist.
+func (c *APIClient) GetSSHCertificateAuthority(ctx context.Context, sshCAID string) (*regionopenapi.SshCertificateAuthorityV2Read, error) {
+	path := c.endpoints.GetSSHCertificateAuthority(sshCAID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	resp, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, 0)
+	if err != nil {
+		return nil, fmt.Errorf("getting ssh certificate authority: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var ca regionopenapi.SshCertificateAuthorityV2Read
+		if err := json.Unmarshal(respBody, &ca); err != nil {
+			return nil, fmt.Errorf("unmarshaling ssh certificate authority: %w", err)
+		}
+
+		return &ca, nil
+	case http.StatusNotFound:
+		return nil, fmt.Errorf("ssh certificate authority '%s': %w", sshCAID, coreclient.ErrResourceNotFound)
+	default:
+		return nil, fmt.Errorf("getting ssh certificate authority: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
+}
+
+// DeleteSSHCertificateAuthority deletes an SSH certificate authority.
+func (c *APIClient) DeleteSSHCertificateAuthority(ctx context.Context, sshCAID string) error {
+	path := c.endpoints.DeleteSSHCertificateAuthority(sshCAID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	resp, _, err := c.regionClient.DoRequest(ctx, http.MethodDelete, path, nil, 0)
+	if err != nil {
+		return fmt.Errorf("deleting ssh certificate authority: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusAccepted:
+		return nil
+	case http.StatusNotFound:
+		return fmt.Errorf("ssh certificate authority '%s': %w", sshCAID, coreclient.ErrResourceNotFound)
+	default:
+		return fmt.Errorf("deleting ssh certificate authority: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
+}

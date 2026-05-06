@@ -19,12 +19,16 @@ package api
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"golang.org/x/crypto/ssh"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
@@ -207,6 +211,55 @@ func (b *LoadBalancerPayloadBuilder) WithListeners(listeners []regionopenapi.Loa
 // Build returns the typed LoadBalancerV2Create struct.
 func (b *LoadBalancerPayloadBuilder) Build() regionopenapi.LoadBalancerV2Create {
 	return b.lb
+}
+
+// generateSSHPublicKey generates a random Ed25519 SSH public key in authorized_keys format.
+func generateSSHPublicKey() string {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	Expect(err).NotTo(HaveOccurred(), "failed to generate ed25519 key")
+
+	publicKey, err := ssh.NewPublicKey(privateKey.Public())
+	Expect(err).NotTo(HaveOccurred(), "failed to create ssh public key")
+
+	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(publicKey)))
+}
+
+// SSHCertificateAuthorityPayloadBuilder builds SshCertificateAuthorityV2Create payloads for testing.
+type SSHCertificateAuthorityPayloadBuilder struct {
+	ca regionopenapi.SshCertificateAuthorityV2Create
+}
+
+// NewSSHCertificateAuthorityPayload creates a builder pre-loaded with a random Ed25519 public key.
+func NewSSHCertificateAuthorityPayload(orgID, projectID string) *SSHCertificateAuthorityPayloadBuilder {
+	return &SSHCertificateAuthorityPayloadBuilder{
+		ca: regionopenapi.SshCertificateAuthorityV2Create{
+			Metadata: coreapi.ResourceWriteMetadata{
+				Name: uniqueName("sshca"),
+			},
+			Spec: regionopenapi.SshCertificateAuthorityV2CreateSpec{
+				OrganizationId: orgID,
+				ProjectId:      projectID,
+				PublicKey:      generateSSHPublicKey(),
+			},
+		},
+	}
+}
+
+// WithName overrides the SSH CA name.
+func (b *SSHCertificateAuthorityPayloadBuilder) WithName(name string) *SSHCertificateAuthorityPayloadBuilder {
+	b.ca.Metadata.Name = name
+	return b
+}
+
+// WithPublicKey overrides the public key.
+func (b *SSHCertificateAuthorityPayloadBuilder) WithPublicKey(key string) *SSHCertificateAuthorityPayloadBuilder {
+	b.ca.Spec.PublicKey = key
+	return b
+}
+
+// Build returns the typed SshCertificateAuthorityV2Create struct.
+func (b *SSHCertificateAuthorityPayloadBuilder) Build() regionopenapi.SshCertificateAuthorityV2Create {
+	return b.ca
 }
 
 // WaitForImageReady polls until the image appears in the region with state ready.

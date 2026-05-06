@@ -69,7 +69,7 @@ func (e *Endpoints) ListExternalNetworks(orgID, regionID string) string {
 
 // ListFileStorage returns the endpoint for listing file storage in a project.
 func (e *Endpoints) ListFileStorage(orgID, projectID, regionID string) string {
-	return fmt.Sprintf("/api/v2/filestorage?organizationId=%s&projectId=%s&regionId=%s",
+	return fmt.Sprintf("/api/v2/filestorage?organizationID=%s&projectID=%s&regionID=%s",
 		url.QueryEscape(orgID), url.QueryEscape(projectID), url.QueryEscape(regionID))
 }
 
@@ -98,13 +98,13 @@ func (e *Endpoints) DeleteFileStorage(filestorageID string) string {
 
 // ListFileStorageClasses returns the endpoint for listing available file storage classes.
 func (e *Endpoints) ListFileStorageClasses(regionID string) string {
-	return fmt.Sprintf("/api/v2/filestorageclasses?regionId=%s",
+	return fmt.Sprintf("/api/v2/filestorageclasses?regionID=%s",
 		url.QueryEscape(regionID))
 }
 
 // ListNetworks returns the endpoint for listing networks in a project.
 func (e *Endpoints) ListNetworks(orgID, projectID, regionID string) string {
-	return fmt.Sprintf("/api/v2/networks?organizationId=%s&projectId=%s&regionId=%s",
+	return fmt.Sprintf("/api/v2/networks?organizationID=%s&projectID=%s&regionID=%s",
 		url.QueryEscape(orgID), url.QueryEscape(projectID), url.QueryEscape(regionID))
 }
 
@@ -121,7 +121,7 @@ func (e *Endpoints) DeleteNetwork(networkID string) string {
 
 // ListLoadBalancers returns the endpoint for listing load balancers in a project.
 func (e *Endpoints) ListLoadBalancers(orgID, projectID, regionID string) string {
-	return fmt.Sprintf("/api/v2/loadbalancers?organizationId=%s&projectId=%s&regionId=%s",
+	return fmt.Sprintf("/api/v2/loadbalancers?organizationID=%s&projectID=%s&regionID=%s",
 		url.QueryEscape(orgID), url.QueryEscape(projectID), url.QueryEscape(regionID))
 }
 
@@ -146,4 +146,25 @@ func (e *Endpoints) UpdateLoadBalancer(loadBalancerID string) string {
 func (e *Endpoints) DeleteLoadBalancer(loadBalancerID string) string {
 	return fmt.Sprintf("/api/v2/loadbalancers/%s",
 		url.PathEscape(loadBalancerID))
+}
+
+// ListSSHCertificateAuthorities returns the endpoint for listing SSH certificate authorities.
+func (e *Endpoints) ListSSHCertificateAuthorities(orgID, projectID string) string {
+	return fmt.Sprintf("/api/v2/sshcertificateauthorities?organizationID=%s&projectID=%s",
+		url.QueryEscape(orgID), url.QueryEscape(projectID))
+}
+
+// CreateSSHCertificateAuthority returns the endpoint for creating an SSH certificate authority.
+func (e *Endpoints) CreateSSHCertificateAuthority() string {
+	return "/api/v2/sshcertificateauthorities"
+}
+
+// GetSSHCertificateAuthority returns the endpoint for getting a specific SSH certificate authority.
+func (e *Endpoints) GetSSHCertificateAuthority(sshCAID string) string {
+	return fmt.Sprintf("/api/v2/sshcertificateauthorities/%s", url.PathEscape(sshCAID))
+}
+
+// DeleteSSHCertificateAuthority returns the endpoint for deleting a specific SSH certificate authority.
+func (e *Endpoints) DeleteSSHCertificateAuthority(sshCAID string) string {
+	return fmt.Sprintf("/api/v2/sshcertificateauthorities/%s", url.PathEscape(sshCAID))
 }
