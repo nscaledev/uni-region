@@ -1,5 +1,6 @@
 /bin
 /sboms
+/.devstack
 /charts/region/Chart.lock
 /charts/region/charts
 *.swp
@@ -9,6 +10,9 @@ go.work.sum
 go.work
 test/.env
 test/.env.install
+test/.env.openstack
+test/.env.provider
+test/ca-bundle.pem
 junit.xml
 test-results.json
 hack/ci/ca-bundle.pem
