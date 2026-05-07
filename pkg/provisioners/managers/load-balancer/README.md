@@ -1,22 +1,34 @@
 # Load Balancer
 
-`pkg/provisioners/managers/load-balancer` is intentionally unusual.
+`pkg/provisioners/managers/load-balancer` drives controller-side lifecycle for
+`LoadBalancer` resources.
 
-Provision is currently a scaffolded no-op that yields, while deprovision still
-has real work to do:
+Provision resolves the cloud provider and service-principal identity for the
+load balancer, resolves the parent `Network` from the resource label, waits for
+both the network and identity to be ready, then asks the provider to reconcile
+the provider-side load balancer topology.
 
-- release identity-side quota allocation on teardown
+Deprovision is ordered the other way around: it asks the provider to remove the
+provider-side load balancer first, then releases the identity-side quota
+allocation.
 
-So this package is mostly an accounting-edge maintainer rather than a full
-provider lifecycle driver today.
+This package therefore owns the controller boundary between the stored
+`LoadBalancer` resource, prerequisite readiness, provider reconciliation, and
+allocation cleanup.
 
-## Caveats
+## Invariants And Guard Rails
 
-- This asymmetry is easy to miss: create/update semantics are currently driven
-  elsewhere, but deprovision still carries cleanup obligations here.
+- A load balancer must carry the network label written by the handler layer.
+- Provider reconciliation must not begin until both the parent network and the
+  service-principal identity are ready.
+- Allocation cleanup happens only after provider deletion has succeeded or
+  converged idempotently.
 
-## TODO
+## Cross-Package Context
 
-- Either implement the intended provider lifecycle here or retire the remaining
-  teardown-only allocation cleanup path if the architecture moves elsewhere for
-  good.
+- [../../../providers](../../../providers/README.md) documents the provider
+  contract driven by this provisioner
+- [../../../providers/internal/openstack](../../../providers/internal/openstack/README.md)
+  documents the Octavia implementation for OpenStack-backed regions
+- [../../../handler/loadbalancer](../../../handler/loadbalancer/README.md)
+  documents API-layer validation, network linkage, and quota allocation
