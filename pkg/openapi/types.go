@@ -410,7 +410,7 @@ type LoadBalancerListenerV2 struct {
 	// AllowedCidrs A list of source IPv4 CIDRs allowed to access the listener.
 	AllowedCidrs *[]string `json:"allowedCidrs,omitempty"`
 
-	// IdleTimeoutSeconds The TCP idle timeout in seconds. Defaults to 60.
+	// IdleTimeoutSeconds The idle timeout in seconds. Defaults to 60 for TCP listeners and is unsupported for UDP listeners.
 	IdleTimeoutSeconds *int `json:"idleTimeoutSeconds,omitempty"`
 
 	// Name A load balancer listener name. Must start with a lower-case letter and otherwise be a valid DNS label.

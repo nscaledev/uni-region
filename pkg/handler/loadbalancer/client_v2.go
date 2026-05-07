@@ -54,6 +54,8 @@ import (
 const (
 	endpoint = "region:loadbalancers:v2"
 
+	defaultIdleTimeoutSeconds = 60
+
 	defaultHealthCheckIntervalSeconds    = 10
 	defaultHealthCheckTimeoutSeconds     = 5
 	defaultHealthCheckHealthyThreshold   = 2
@@ -576,12 +578,17 @@ func generateListenerListV2(in []openapi.LoadBalancerListenerV2) ([]regionv1.Loa
 			return nil, err
 		}
 
+		idleTimeoutSeconds := in[i].IdleTimeoutSeconds
+		if idleTimeoutSeconds == nil && in[i].Protocol == openapi.LoadBalancerListenerProtocolV2Tcp {
+			idleTimeoutSeconds = ptr.To(defaultIdleTimeoutSeconds)
+		}
+
 		out[i] = regionv1.LoadBalancerListener{
 			Name:               in[i].Name,
 			Protocol:           regionv1.LoadBalancerListenerProtocol(in[i].Protocol),
 			Port:               in[i].Port,
 			AllowedCIDRs:       allowedCIDRs,
-			IdleTimeoutSeconds: in[i].IdleTimeoutSeconds,
+			IdleTimeoutSeconds: idleTimeoutSeconds,
 			Pool:               *pool,
 		}
 	}

@@ -2804,11 +2804,10 @@ components:
             type: string
             pattern: '^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\/(?:3[0-2]|[1-2]?[0-9])$'
         idleTimeoutSeconds:
-          description: The TCP idle timeout in seconds. Defaults to 60.
+          description: The idle timeout in seconds. Defaults to 60 for TCP listeners and is unsupported for UDP listeners.
           type: integer
           minimum: 1
           maximum: 86400
-          default: 60
         pool:
           $ref: '#/components/schemas/loadBalancerPoolV2'
     loadBalancerV2Spec:
