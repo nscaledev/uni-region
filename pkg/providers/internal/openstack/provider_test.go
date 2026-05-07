@@ -484,17 +484,21 @@ func withPublicIP() func(*regionv1.LoadBalancer) {
 }
 
 // listenerFixture creates a CRD listener with the given name/protocol/port and
-// applies any per-listener mutators. IdleTimeoutSeconds is preset to 60 to
-// mirror the CRD admission default; opts may override it.
+// applies any per-listener mutators. IdleTimeoutSeconds is preset to 60 for TCP
+// listeners (mirroring the handler default) and left nil for UDP; opts may
+// override either.
 func listenerFixture(name string, protocol regionv1.LoadBalancerListenerProtocol, port int, opts ...func(*regionv1.LoadBalancerListener)) regionv1.LoadBalancerListener {
 	listener := regionv1.LoadBalancerListener{
-		Name:               name,
-		Protocol:           protocol,
-		Port:               port,
-		IdleTimeoutSeconds: ptr.To(60),
+		Name:     name,
+		Protocol: protocol,
+		Port:     port,
 		Pool: regionv1.LoadBalancerPool{
 			Members: []regionv1.LoadBalancerMember{},
 		},
+	}
+
+	if protocol == regionv1.LoadBalancerListenerProtocolTCP {
+		listener.IdleTimeoutSeconds = ptr.To(60)
 	}
 
 	for _, o := range opts {
@@ -1995,6 +1999,23 @@ func TestBuildLoadBalancerCreateOpts(t *testing.T) {
 		require.Equal(t, listeners.ProtocolUDP, opts.Listeners[1].Protocol)
 		require.Equal(t, pools.ProtocolUDP, opts.Listeners[1].DefaultPool.Protocol)
 	})
+
+	t.Run("UDPListenerHasNilTimeouts", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("dns", regionv1.LoadBalancerListenerProtocolUDP, 53,
+				withMember("10.0.0.6", 53),
+			),
+		}
+
+		opts := openstack.BuildLoadBalancerCreateOpts(lb, *network.Status.Openstack.SubnetID)
+		require.Len(t, opts.Listeners, 1)
+		require.Nil(t, opts.Listeners[0].TimeoutClientData)
+		require.Nil(t, opts.Listeners[0].TimeoutMemberData)
+	})
 }
 
 func TestReconcileListener(t *testing.T) {
@@ -2176,6 +2197,34 @@ func TestReconcileListener(t *testing.T) {
 
 		_, err := openstack.ReconcileListener(t.Context(), p, lbClient, lb, listener, osLB.ID, osPool.ID)
 		require.NoError(t, err)
+	})
+
+	t.Run("ItSkipsTimeoutUpdateWhenSpecIsNil", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
+			listenerFixture("dns", regionv1.LoadBalancerListenerProtocolUDP, 53,
+				withMember("10.0.0.6", 53),
+			),
+		}
+		listener := &lb.Spec.Listeners[0]
+		require.Nil(t, listener.IdleTimeoutSeconds)
+
+		osLB := openstackLoadBalancerFixture(lb)
+		osPool := openstackPoolFixture(lb, listener)
+		osListener := openstackListenerFixture(lb, listener)
+		osListener.DefaultPoolID = osPool.ID
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetListener(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("dns")).Return(osListener, nil)
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		got, err := openstack.ReconcileListener(t.Context(), p, lbClient, lb, listener, osLB.ID, osPool.ID)
+		require.NoError(t, err)
+		require.Equal(t, osListener.ID, got.ID)
 	})
 }
 

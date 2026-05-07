@@ -732,6 +732,69 @@ func TestCreateV2RejectsUDPIdleTimeout(t *testing.T) {
 	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
 }
 
+func TestCreateV2DefaultsTCPIdleTimeoutWhenOmitted(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectAllocationCreate(t, mockIdentity, identityapi.ResourceAllocationList{
+		{Kind: "loadbalancers", Committed: 1, Reserved: 0},
+		{Kind: "publicips", Committed: 1, Reserved: 0},
+	})
+
+	network := testLBNetworkWithProject(lbProjectID)
+	cli := newLBFakeClientBuilder(t, network).Build()
+	lbClient := loadbalancer.New(common.ClientArgs{
+		Client:    cli,
+		Namespace: lbNamespace,
+		Identity:  mockIdentity,
+	})
+
+	request := minimalCreateRequest()
+	request.Spec.Listeners[0].IdleTimeoutSeconds = nil
+
+	result, err := lbClient.CreateV2(withPrincipal(rbac.NewContext(t.Context(), projectACL(identityapi.Create))), request)
+	require.NoError(t, err)
+	require.NotNil(t, result.Spec.Listeners[0].IdleTimeoutSeconds)
+	require.Equal(t, 60, *result.Spec.Listeners[0].IdleTimeoutSeconds)
+
+	resource := getLoadBalancer(t, cli, result.Metadata.Id)
+	require.NotNil(t, resource.Spec.Listeners[0].IdleTimeoutSeconds)
+	require.Equal(t, 60, *resource.Spec.Listeners[0].IdleTimeoutSeconds)
+}
+
+func TestCreateV2AcceptsUDPListenerWithoutIdleTimeout(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectAllocationCreate(t, mockIdentity, identityapi.ResourceAllocationList{
+		{Kind: "loadbalancers", Committed: 1, Reserved: 0},
+		{Kind: "publicips", Committed: 1, Reserved: 0},
+	})
+
+	network := testLBNetworkWithProject(lbProjectID)
+	cli := newLBFakeClientBuilder(t, network).Build()
+	lbClient := loadbalancer.New(common.ClientArgs{
+		Client:    cli,
+		Namespace: lbNamespace,
+		Identity:  mockIdentity,
+	})
+
+	request := minimalCreateRequest()
+	request.Spec.Listeners[0].Protocol = openapi.LoadBalancerListenerProtocolV2Udp
+	request.Spec.Listeners[0].Port = 53
+	request.Spec.Listeners[0].IdleTimeoutSeconds = nil
+
+	result, err := lbClient.CreateV2(withPrincipal(rbac.NewContext(t.Context(), projectACL(identityapi.Create))), request)
+	require.NoError(t, err)
+	require.Nil(t, result.Spec.Listeners[0].IdleTimeoutSeconds)
+
+	resource := getLoadBalancer(t, cli, result.Metadata.Id)
+	require.Nil(t, resource.Spec.Listeners[0].IdleTimeoutSeconds)
+	require.Equal(t, regionv1.LoadBalancerListenerProtocolUDP, resource.Spec.Listeners[0].Protocol)
+}
+
 func TestCreateV2RejectsInvalidHealthCheckWindow(t *testing.T) {
 	t.Parallel()
 

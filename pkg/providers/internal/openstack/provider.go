@@ -3033,11 +3033,12 @@ func (p *Provider) reconcileListener(ctx context.Context, lbClient LoadBalancing
 		dirty = true
 	}
 
-	desiredTimeout := idleTimeoutMillis(listener.IdleTimeoutSeconds)
-	if live.TimeoutClientData != *desiredTimeout || live.TimeoutMemberData != *desiredTimeout {
-		updateOpts.TimeoutClientData = desiredTimeout
-		updateOpts.TimeoutMemberData = desiredTimeout
-		dirty = true
+	if desiredTimeout := idleTimeoutMillis(listener.IdleTimeoutSeconds); desiredTimeout != nil {
+		if live.TimeoutClientData != *desiredTimeout || live.TimeoutMemberData != *desiredTimeout {
+			updateOpts.TimeoutClientData = desiredTimeout
+			updateOpts.TimeoutMemberData = desiredTimeout
+			dirty = true
+		}
 	}
 
 	if !dirty {

@@ -211,6 +211,67 @@ var _ = Describe("LoadBalancer", func() {
 		})
 	})
 
+	Context("When creating a UDP listener without idleTimeoutSeconds", Ordered, func() {
+		var (
+			networkID string
+			lbID      string
+		)
+
+		BeforeAll(func() {
+			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
+			network, err := regionClient.CreateNetwork(ctx, networkReq)
+			Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
+			Expect(network).NotTo(BeNil())
+			networkID = network.Metadata.Id
+			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
+
+			DeferCleanup(func() {
+				if lbID != "" {
+					if err := regionClient.DeleteLoadBalancer(ctx, lbID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
+						GinkgoWriter.Printf("Warning: cleanup delete load balancer %s: %v\n", lbID, err)
+					}
+					api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
+				}
+				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil {
+					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
+				}
+			})
+		})
+
+		Describe("Given a UDP listener on port 53 with idleTimeoutSeconds omitted", func() {
+			It("creates the load balancer and persists idleTimeoutSeconds as nil", func() {
+				createReq := api.NewLoadBalancerPayload(networkID).
+					WithListeners([]regionopenapi.LoadBalancerListenerV2{
+						{
+							Name:     "dns",
+							Protocol: regionopenapi.LoadBalancerListenerProtocolV2Udp,
+							Port:     53,
+							Pool: regionopenapi.LoadBalancerPoolV2{
+								Members: []regionopenapi.LoadBalancerMemberV2{
+									{Address: "10.0.1.10", Port: 53},
+								},
+							},
+						},
+					}).Build()
+
+				created, err := regionClient.CreateLoadBalancer(ctx, createReq)
+				Expect(err).NotTo(HaveOccurred(), "failed to create UDP load balancer")
+				Expect(created).NotTo(BeNil())
+				lbID = created.Metadata.Id
+
+				Expect(created.Spec.Listeners).To(HaveLen(1))
+				Expect(created.Spec.Listeners[0].Name).To(Equal("dns"))
+				Expect(created.Spec.Listeners[0].Protocol).To(Equal(regionopenapi.LoadBalancerListenerProtocolV2Udp))
+				Expect(created.Spec.Listeners[0].Port).To(Equal(53))
+				Expect(created.Spec.Listeners[0].IdleTimeoutSeconds).To(BeNil())
+
+				roundTrip, err := regionClient.GetLoadBalancer(ctx, lbID)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(roundTrip.Spec.Listeners[0].IdleTimeoutSeconds).To(BeNil())
+			})
+		})
+	})
+
 	Context("When delete is invoked repeatedly during cleanup", Ordered, func() {
 		var (
 			networkID string

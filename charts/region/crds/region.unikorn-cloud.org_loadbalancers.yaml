@@ -66,9 +66,9 @@ spec:
                         type: string
                       type: array
                     idleTimeoutSeconds:
-                      default: 60
-                      description: IdleTimeoutSeconds is the TCP idle timeout. Defaults
-                        to 60 seconds.
+                      description: |-
+                        IdleTimeoutSeconds is the TCP idle timeout. Defaults to 60 seconds for
+                        TCP listeners and is unsupported for UDP listeners.
                       maximum: 86400
                       minimum: 1
                       type: integer
