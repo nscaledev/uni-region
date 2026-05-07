@@ -163,7 +163,8 @@ spec:
                   - message: idleTimeoutSeconds is only supported for TCP listeners
                     rule: self.protocol == 'tcp' || !has(self.idleTimeoutSeconds)
                   - message: proxyProtocolV2 is only supported for TCP listeners
-                    rule: self.protocol == 'tcp' || self.pool.proxyProtocolV2 == false
+                    rule: self.protocol == 'tcp' || !has(self.pool.proxyProtocolV2)
+                      || self.pool.proxyProtocolV2 == false
                 minItems: 1
                 type: array
                 x-kubernetes-list-map-keys:

@@ -697,7 +697,7 @@ const (
 )
 
 // +kubebuilder:validation:XValidation:rule="self.protocol == 'tcp' || !has(self.idleTimeoutSeconds)",message="idleTimeoutSeconds is only supported for TCP listeners"
-// +kubebuilder:validation:XValidation:rule="self.protocol == 'tcp' || self.pool.proxyProtocolV2 == false",message="proxyProtocolV2 is only supported for TCP listeners"
+// +kubebuilder:validation:XValidation:rule="self.protocol == 'tcp' || !has(self.pool.proxyProtocolV2) || self.pool.proxyProtocolV2 == false",message="proxyProtocolV2 is only supported for TCP listeners"
 type LoadBalancerListener struct {
 	// Name is the listener name.
 	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
