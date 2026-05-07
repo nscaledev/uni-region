@@ -115,41 +115,73 @@ Regions define cloud instances to expose to clients.
 
 ### Local Testing
 
-1. **Set up your environment configuration:**
+The API test targets load `test/.env` when it exists.
 
-   Copy the example config and update with your values:
-   ```bash
-   cp test/.env.example test/.env
-   ```
+For tests against an existing deployment, copy the example config and update it
+with your service URLs, tokens, and fixture IDs:
 
-   Or create environment-specific files (not tracked in git):
-   ```bash
-   # Create .env.dev with your dev credentials
-   cp test/.env.example test/.env.dev
-   # Edit test/.env.dev with dev values
+```bash
+cp test/.env.example test/.env
+```
 
-   # Create .env.uat with your UAT credentials
-   cp test/.env.example test/.env.uat
-   # Edit test/.env.uat with UAT values
+The required values are:
 
-   # Use the appropriate environment
-   cp test/.env.dev test/.env    # For dev environment
-   cp test/.env.uat test/.env    # For UAT environment
-   ```
+- `API_BASE_URL` - Region API server URL
+- `API_AUTH_TOKEN` - service token from console
+- `TEST_ORG_ID`, `TEST_PROJECT_ID`, `TEST_REGION_ID` - test data IDs
 
-2. **Configure the required values in `test/.env`:**
-   - `API_BASE_URL` - Region API server URL
-   - `API_AUTH_TOKEN` - Service token from console
-   - `TEST_ORG_ID`, `TEST_PROJECT_ID`, `TEST_REGION_ID` - Test data IDs
+For a Helm-based local install in the current `kubectl` context, generate the
+install environment and fixtures instead of hand-editing `test/.env`:
 
-3. **Run tests:**
-   ```bash
-   make test-api                                              # Run all tests
-   make test-api-verbose                                      # Verbose output
-   make test-api-focus FOCUS="should return all available"   # Run focused tests
-   ```
+```bash
+hack/local-install-env --output test/.env.install
+make integration-fixtures
+```
 
-**Note:** The `.env`, `.env.dev`, and `.env.uat` files are gitignored and contain sensitive credentials. They should never be committed to the repository.
+`hack/local-install-env` discovers the identity and region Helm releases, their
+ingress hosts, and the local CA bundle. `make integration-fixtures` creates the
+identity fixtures and writes `test/.env`.
+
+To run API tests against an OpenStack-backed region, generate `test/.env.install`
+first, then register or reference the region. In OpenStack mode the public test
+region is the existing Region CR identified by `TEST_REGION_ID`; the simulated
+private region fixture is still created. `OPENSTACK_REGION_ID` is accepted as a
+fallback alias for the value printed by `register-region`, but `TEST_REGION_ID`
+takes precedence when both are set. `register-region` prints the environment
+entries the fixture setup needs:
+
+```bash
+provider_env="${TMPDIR:-/tmp}/gb-north-1.openstack.env" # From hack/openstack/configure.
+
+hack/openstack/register-region \
+    --provider-env "${provider_env}" \
+    --namespace unikorn-region \
+    --region-id c7e8492f-c320-4278-8201-48cd38fed38b \
+    --display-name gb-north-1 \
+    --secret-name gb-north-1-openstack-credentials \
+    --create-secret \
+    > test/.env.openstack
+
+set -a
+. test/.env.openstack
+set +a
+make integration-fixtures
+```
+
+For persistent regions, create or sync the OpenStack credential Secret from a
+password manager and omit `--create-secret`; see the OpenStack provider
+documentation for details.
+
+Run tests with:
+
+```bash
+make test-api                                             # Run all tests
+make test-api-verbose                                     # Verbose output
+make test-api-focus FOCUS="should return all available"   # Run focused tests
+```
+
+**Note:** Local env files and CA bundles under `test/` are gitignored and may
+contain sensitive credentials. They should never be committed to the repository.
 
 ### Integration Fixtures
 
