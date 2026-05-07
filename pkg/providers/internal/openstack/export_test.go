@@ -191,6 +191,10 @@ func CreateLoadBalancerWithClient(ctx context.Context, p *Provider, lbClient Loa
 	return p.createLoadBalancer(ctx, lbClient, fipClient, loadBalancer, subnetID)
 }
 
+func DeleteLoadBalancerWithClient(ctx context.Context, p *Provider, lbClient LoadBalancingInterface, fipClient FloatingIPInterface, loadBalancer *unikornv1.LoadBalancer) error {
+	return p.deleteLoadBalancer(ctx, lbClient, fipClient, loadBalancer)
+}
+
 //nolint:gochecknoglobals
 var ClassifyOctaviaStatus = classifyOctaviaStatus
 
