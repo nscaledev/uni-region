@@ -1,6 +1,19 @@
 # Region
 
-Centralized region discovery and routing service.
+Region is the platform's cloud and region abstraction service. It exposes
+provider-backed regions, networks, images, servers, load balancers, storage,
+and related project-scoped infrastructure through one API and lifecycle model.
+
+## Developers
+
+[Developer Hub](https://github.com/nscaledev/uni/blob/main/DEVELOPER.md)
+
+## Package Documentation
+
+Implementation-level package documentation lives in [pkg/README.md](./pkg/README.md).
+Use that as the drill-down entry point for the service internals, especially
+for the API model, provider bindings, handlers, controller lifecycle, and
+monitoring behaviour.
 
 ## Architecture
 
@@ -9,13 +22,33 @@ We provide a composable suite of different micro-services that provide different
 Hardware provisioning can come in a number of different flavors, namely bare-metal, managed Kubernetes etc.
 These services have a common requirement on a compute cloud/region to provision projects, users, roles, networking etc. in order to function.
 
+The current region service is therefore more than simple discovery. It is the
+shared layer that:
+
+- maps platform resources onto real cloud/provider resources
+- maintains project-scoped service-principal and resource lifecycle
+- exposes a common API shape across different provider substrates
+- coordinates both desired-state reconciliation and observed-state monitoring
+
+The preferred API direction is `v2`. Older `v1` shapes remain as deprecated
+compatibility surface and should be migrated away from as quickly as practical.
+
 ### A Note on Security
 
-At present this region controller is monolithic, offering region discovery and routing to allow scoped provisioning and deprovisioning or the aforementioned hardware prerequisites.
+At present this service is still monolithic. It combines region discovery and
+routing with the provider-facing lifecycle work needed to provision and
+deprovision the aforementioned hardware prerequisites.
 
-Given this service holds elevated privilege credentials to all of those clouds, it make it somewhat of a honey pot.
-Eventually, the goal is to have this act as a purely discovery and routing service, and platform specific region controllers live in those platforms, including their credentials.
-The end goal being the compromise of one, doesn't affect the others, limiting blast radius, and not having to disseminate credentials across the internet, they would reside locally in the cloud platform's AS to improve security guarantees.
+Given this service holds elevated-privilege credentials to those clouds, it is
+somewhat of a honey pot.
+
+Longer term, the goal is to move toward a model where this service is primarily
+discovery and routing, and platform-specific region controllers live within the
+target platforms alongside their credentials.
+
+That would reduce blast radius, because compromise of one provider-local
+controller would not automatically affect the others, and it would avoid having
+to disseminate provider credentials across the internet.
 
 ## Supported Providers
 
@@ -25,20 +58,28 @@ OpenStack is an open source cloud provider that allows on premise provisioning o
 It allows a vertically integrated stack from server to application, so you have full control over the platform.
 This obviously entails a support crew to keep it up and running!
 
-For further info see the [OpenStack provider documentation](pkg/providers/internal/openstack/README.md).
+For further info see the [OpenStack provider documentation](pkg/providers/internal/openstack/ADMIN.md).
 
 ### Kubernetes
 
-Kubernetes regions allow Kubernetes clusters from any cloud provider to be consumed and increase capacity without the hassle of physical infrastructure.
-Kubernetes regions are exposed to end users with virtual Kubernetes clusters.
+Kubernetes regions allow existing Kubernetes clusters from any cloud provider
+to be consumed as region substrates without the hassle of physical
+infrastructure.
 
-For further info see the [Kubernetes provider documentation](pkg/providers/internal/kubernetes/README.md).
+They are not limited to one workload model. A Kubernetes-backed region can be
+used for Kubernetes-on-Kubernetes patterns such as virtual clusters, but the
+important contract is broader than that: the backing cluster must expose a
+region shape that higher-level services can consume in roughly the same way as
+other clouds. That could include virtual clusters, VM-style provisioning, or
+other region-shaped services.
+
+For further info see the [Kubernetes provider documentation](pkg/providers/internal/kubernetes/ADMIN.md).
 
 ## Installation
 
 ### Prerequisites
 
-The use the Kubernetes service you first need to install:
+To use the region service you first need to install:
 
 * [The identity service](https://github.com/nscaledev/uni-identity) to provide API authentication and authorization.
 
