@@ -1,118 +1,184 @@
-# Unikorn OpenStack Provider
+# pkg/providers/internal/openstack
 
-Provides a driver for OpenStack based regions.
+## Intention
 
-## Initial Setup
+`pkg/providers/internal/openstack` is the real cloud provider implementation
+for OpenStack-backed regions.
 
-It is envisaged that an OpenStack cluster may be used for things other than the exclusive use of Unikorn, and as such it tries to respect this as much as possible.
-We also operate under the principle of least privilege, so don't want to have a full admin credential alyng around.
+It does not merely wrap the OpenStack SDK. It is the package that translates
+the region service's storage model, tenancy model, metadata conventions, and
+lifecycle rules into concrete OpenStack operations across identity, compute,
+image, network, security group, load balancer, quota, and block storage
+surfaces.
 
-In particular we want to allow different instances of Unikorn to cohabit to support, for example, staging environments.
+The most important philosophy in this package is the trust and scoping model:
 
-We need a number of policies installing to function correctly.
-Follow the instructions in the [Unikorn OpenStack Policy repository](https://github.com/unikorn-cloud/python-unikorn-openstack-policy) to install them.
+- region-level `manager` authority is used only to provision and manage users
+  and projects inside a managed Keystone domain
+- once that scaffolding exists, most OpenStack operations deliberately context
+  switch into the specific project provisioned for one Unikorn identity
+- that OpenStack project then becomes the practical mapping, isolation, and
+  accounting boundary between Unikorn resources and real cloud resources
 
-### OpenStack Platform Configuration
+That model is what makes it realistic for multiple regions or deployments to
+share one underlying cloud while still limiting blast radius. It is also what
+makes backchannel accounting and billing integration plausible, because the
+project scope becomes the place where cloud resource usage can be tied back to a
+specific Unikorn identity and its descendants.
 
-Start by selecting a unique name that will be used for the deployment's name, project, and domain:
+The most important architectural rule is that this package prefers deterministic
+lookup against OpenStack over maintaining broad mirrored OpenStack state in
+Kubernetes. In older designs, dedicated `Openstack*` CRDs were used to persist
+more provider-side state locally. That drifted from reality and introduced race
+conditions. The current direction is:
 
-```bash
-export USER=unikorn-staging
-export DOMAIN=unikorn-staging
-export PROJECT=unikorn-default
-export PASSWORD=$(apg -n 1 -m 24)
-```
+- service-native CRDs remain the primary control objects
+- OpenStack remains the source of truth for cloud-side resources where they can
+  be re-found deterministically
+- only the provider state that still cannot be reconstructed safely or
+  sufficiently remains persisted locally, most notably `OpenstackIdentity`
 
-#### Create the domain.
+This package therefore owns the mapping between:
 
-The use of project domains for projects deployed to provision Kubernetes cluster achieves a few aims.
-First namespace isolation.
-Second is a security consideration.
-It is dangerous, anecdotally, to have a privileged process that has the power of deletion.
-By limiting the scope of list operations to that of the project domain we limit our impact on other tenants on the system.
-A domain may also aid in simplifying operations like auditing and capacity planning.
+- region-native CRDs and OpenStack resources
+- service labels, tags, and metadata conventions
+- per-identity delegated cloud credentials
+- compensating local mechanisms where OpenStack is not sufficient on its own,
+  such as image caching and provider-network VLAN allocation
 
-```bash
-DOMAIN_ID=$(openstack domain create ${DOMAIN} -f json | jq -r .id)
-```
+## Links
 
-#### Create the project.
+- [../../../apis/unikorn/v1alpha1](../../../apis/unikorn/v1alpha1/README.md)
+- [../../types](../../types/README.md)
+- [../allocation/vlan](../allocation/vlan/README.md)
+- [./ADMIN.md](./ADMIN.md)
 
-As the OpenStack provider for the region controller also functions as a client in order to retrieve information such as available images, flavors, and so on it also needs to be associated with a project so that the default policy for various API requests is correctly satisfied:
+`pkg/apis/unikorn/v1alpha1` defines the service-native resources and the
+remaining persisted provider-state records this package consumes. `pkg/providers/types`
+defines the provider-neutral contract this package implements. `pkg/providers/allocation/vlan`
+covers the local VLAN allocator used when provider networks need segmentation IDs.
+`ADMIN.md` keeps the human operator setup guidance for preparing an OpenStack
+region.
 
-```bash
-PROJECT_ID=$(openstack project create $PROJECT --domain $DOMAIN -f json | jq -r .id)
-```
+## Invariants And Guard Rails
 
-#### Create the user.
+- This package implements the full `types.Provider` contract for OpenStack
+  regions.
+- Provider construction has an explicit bootstrap/runtime split:
+  - bootstrap uses uncached Kubernetes reads to assemble OpenStack service
+    clients before controller-manager caches exist
+  - runtime operation switches back to the normal Kubernetes client and refreshes
+    derived OpenStack client state when region configuration or credentials
+    change
+- OpenStack access is intentionally scoped through different credential modes:
+  - region-level service credentials bootstrap privileged service clients and
+    managed-domain scaffolding
+  - per-identity credentials are used for most project-scoped operations
+  - some operations deliberately bind privileged credentials to a service
+    principal's project when manager-level powers are required
+- `OpenstackIdentity` is the remaining persisted provider-state anchor. It
+  currently stores the secret-bearing user/project/application-credential and
+  bootstrap state needed to operate on behalf of a region `Identity`.
+- The package relies heavily on deterministic naming and metadata conventions to
+  re-find cloud-side resources. This is a convention-heavy contract, not magic:
+  - identity-scoped resources use fixed generated names
+  - network lookups rely on deterministic names
+  - server metadata is written deliberately as both a control-plane lookup aid
+    and an in-guest linkage surface exposed through the metadata service
+  - legacy camelCase server metadata keys remain frozen for backwards
+    compatibility while newer namespaced keys provide the upgrade path
+- Flavor export is a hybrid model: OpenStack discovers the flavor inventory, but
+  region configuration can enrich or override user-facing flavor metadata such
+  as architecture, baremetal status, and GPU semantics.
+- Image handling is a first-class contract surface here:
+  - OpenStack image properties are validated against a schema
+  - public images can additionally be signature-verified
+  - image properties are translated into provider-neutral OS, package, GPU,
+    ownership, virtualization, and tag metadata
+  - an optional refresh-ahead cache exists because raw image API latency is too
+    expensive to expose directly to every caller
+- Quota and role behaviour are not purely discovered from OpenStack defaults.
+  The package assumes and applies a managed-role model, including default role
+  names such as `manager`, `member`, and `load-balancer_member`, unless region
+  configuration overrides parts of that behaviour.
+- Network, security group, and server resources are re-found in OpenStack by
+  deterministic lookup rather than relying on mirrored `OpenstackNetwork`,
+  `OpenstackSecurityGroup`, or `OpenstackServer` CRDs as authoritative state.
+- Some OpenStack list APIs are not safe to treat as exact lookup, notably
+  server and network `name` filters:
+  - `name` filters behave like prefix or regular-expression matches rather than
+    strict equality
+  - this package therefore re-checks exact names after listing to avoid aliasing
+    and false matches
+- Provider networks that require VLAN segmentation use the local VLAN allocator
+  because OpenStack does not allocate those IDs for us.
 
-```bash
-USER_ID=$(openstack user create --domain ${DOMAIN_ID} --password ${PASSWORD} ${USER} -f json | jq -r .id)
-```
+## Caveats
 
-### Grant any roles to the user.
+- This package is the convergence point of a large amount of platform policy,
+  provider behaviour, and historical baggage. Its size reflects real behaviour,
+  not just poor code hygiene.
+- Deterministic lookup is the preferred direction, but the package still lives
+  in a mixed world:
+  - some cloud-side state is derived live from OpenStack
+  - some transitional compatibility fields still exist in repo-native CRDs
+  - `OpenstackIdentity` still persists state that the service would ideally stop
+    owning over time
+- Deterministic lookup is cleaner than mirrored CRDs, but it is still sensitive
+  to convention drift. Renaming generated resources, changing metadata keys, or
+  casually altering project-scoping assumptions can break the linkage between
+  Unikorn resources, what OpenStack stores, and what users can see from inside
+  provisioned servers.
+- `OpenstackIdentity` should not be treated as permanently special. Its current
+  survival is largely driven by implicit side effects and secret-bearing
+  service-owned state that the architecture should work to remove:
+  - ephemeral SSH key generation and download
+  - implicit server-group creation
+  - persisted service-principal/user/project/application-credential data
+- Exposing application credentials to higher layers is current operational
+  reality, not the desired end state. The package's scoping model helps contain
+  blast radius today, while the wider platform works toward removing that
+  exposure entirely.
+- If the wider API moves toward explicit SSH certificate authority use, explicit
+  server-group resources, and less implicit provider-side identity scaffolding,
+  deleting `OpenstackIdentity` becomes more realistic.
+- Image metadata translation is powerful but fragile. This package currently
+  depends on OpenStack image properties carrying a large amount of semantic
+  information correctly.
+- Image query, get, create, delete, and snapshot flows are tightly coupled to
+  the image cache path. When caching is disabled, large parts of the higher
+  image contract are effectively unavailable rather than merely slower.
+- The image query layer still contains its own comment admitting that some logic
+  now operates on generic types and probably should not live here long term.
+- Some older assumptions still leak through in status fields and helper paths,
+  especially where compatibility with older API or storage shapes is still being
+  carried.
 
-When a Kubernetes cluster is provisioned, it will be done using application credentials, so ensure any required application credentials as configured for the region are explicitly associated with the user here.
+## TODO
 
-> [!NOTE]
-> It may be necessary to add the `_member_` role on older OpenStack deployments where Neutron requires it to function.
+- Delete the remaining mirror-state OpenStack CRD usage paths entirely:
+  `OpenstackNetwork`, `OpenstackSecurityGroup`, and `OpenstackServer` should not
+  survive as authoritative provider-state patterns.
+- Continue shrinking the reasons `OpenstackIdentity` must exist:
+  - remove service-handled private SSH key material in favour of explicit SSH
+    certificate trust
+  - stop relying on implicit server-group provisioning
+  - move toward explicit API shapes where reconstructable state does not need to
+    be persisted here
+- Revisit image-query and image-metadata logic that now operates on
+  provider-neutral types but still lives in this package because of historical
+  coupling.
+- Remove remaining compatibility writes and reads that depend on transitional
+  CRD status shapes as those fields disappear from the wider system.
 
-```bash
-for role in member load-balancer_member manager; do
-	openstack role add --user ${USER_ID} --domain ${DOMAIN_ID} ${role}
-done
-```
+## Cross-Package Context
 
-Grant the `member` and `manager` roles on the project we created in a previous step:
-
-```bash
-for role in member manager; do
-    openstack role add --user ${USER_ID} --project ${PROJECT_ID} ${role}
-done
-```
-
-### Unikorn Configuration
-
-When we create a `Region` of type `openstack`, it will require a secret that contains credentials.
-This can be configured as follows.
-
-```bash
-kubectl create secret generic -n unikorn-region gb-north-1-credentials \
-    --from-literal=domain-id=${DOMAIN_ID} \
-    --from-literal=project-id=${PROJECT_ID} \
-    --from-literal=user-id=${USER_ID} \
-    --from-literal=password=${PASSWORD}
-```
-
-Finally we can create the region itself, although this should be statically configured via Helm.
-For additional configuration options for individual OpenStack services, consult `kubectl explain regions.region.unikorn-cloud.org` for documentation.
-
-```yaml
-apiVersion: region.unikorn-cloud.org/v1alpha1
-kind: Region
-metadata:
-  # Use "uuidgen -r" to select a random ID, this MUST start with a character a-f.
-  namespace: unikorn-region
-  name: c7e8492f-c320-4278-8201-48cd38fed38b
-  labels:
-    unikorn-cloud.org/name: gb-north-1
-spec:
-  provider: openstack
-  openstack:
-    endpoint: https://openstack.gb-north-1.unikorn-cloud.org:5000
-    serviceAccountSecret:
-      namespace: unikorn
-      name: gb-north-1-credentials
-```
-
-Cleanup actions.
-
-```bash
-unset DOMAIN
-unset DOMAIN_ID
-unset USER
-unset USER_ID
-unset PASSWORD
-unset PROJECT
-unset PROJECT_ID
-```
+- [../../types](../../types/README.md) defines the neutral provider contract and
+  intermediate types this package must satisfy
+- [../../../apis/unikorn/v1alpha1](../../../apis/unikorn/v1alpha1/README.md)
+  defines the service-native control objects and the remaining persisted
+  provider-state records this package consumes
+- [../../../handler](../../../handler/README.md) and specific handler packages
+  depend on this package to make region API operations real against OpenStack
+- [../allocation/vlan](../allocation/vlan/README.md) exists because this
+  package needs a compensating local allocator for provider-network VLAN IDs
