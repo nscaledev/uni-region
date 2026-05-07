@@ -2475,6 +2475,11 @@ func (in *ServerSpec) DeepCopyInto(out *ServerSpec) {
 		*out = make([]byte, len(*in))
 		copy(*out, *in)
 	}
+	if in.InfrastructureRef != nil {
+		in, out := &in.InfrastructureRef, &out.InfrastructureRef
+		*out = new(string)
+		**out = **in
+	}
 	return
 }
 

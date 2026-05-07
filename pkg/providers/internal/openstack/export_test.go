@@ -19,7 +19,10 @@ package openstack
 
 import (
 	"context"
+	"time"
 
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
@@ -71,6 +74,16 @@ var MetadataKey = metadataKey
 
 //nolint:gochecknoglobals
 var ServerForCreate = serverForCreate
+
+func NewTestComputeClient(endpoint string) *ComputeClient {
+	return &ComputeClient{
+		client: &gophercloud.ServiceClient{
+			ProviderClient: &gophercloud.ProviderClient{},
+			Endpoint:       endpoint,
+		},
+		flavorCache: cache.New[[]flavors.Flavor](time.Hour),
+	}
+}
 
 func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {
 	return &Provider{

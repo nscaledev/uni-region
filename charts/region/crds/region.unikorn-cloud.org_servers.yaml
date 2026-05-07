@@ -67,6 +67,15 @@ spec:
                 required:
                 - id
                 type: object
+              infrastructureRef:
+                description: |-
+                  InfrastructureRef pins the server to a specific physical host. When set,
+                  the provider bypasses its scheduler and provisions directly onto the
+                  identified host.
+                type: string
+                x-kubernetes-validations:
+                - message: infrastructureRef is immutable
+                  rule: self == oldSelf
               networks:
                 description: Networks is the server network configuration.
                 items:
