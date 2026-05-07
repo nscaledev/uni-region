@@ -3442,7 +3442,82 @@ func (p *Provider) createLoadBalancer(ctx context.Context, lbClient LoadBalancin
 	return nil
 }
 
-// DeleteLoadBalancer is a stub; the delete path is implemented in commit 4.
-func (p *Provider) DeleteLoadBalancer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.LoadBalancer) error {
-	return errLoadBalancerUnsupported
+// DeleteLoadBalancer removes the Octavia topology and any attached floating
+// IP idempotently. It yields while Octavia is in any PENDING_* state and
+// after issuing a cascade delete so the next reconcile can confirm completion.
+func (p *Provider) DeleteLoadBalancer(ctx context.Context, identity *unikornv1.Identity, loadBalancer *unikornv1.LoadBalancer) error {
+	lbClient, err := p.loadBalancerFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	networking, err := p.networkFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	return p.deleteLoadBalancer(ctx, lbClient, networking, loadBalancer)
+}
+
+// deleteLoadBalancer drives the delete flow against resolved clients. Split
+// from DeleteLoadBalancer so unit tests can inject mocks without standing up a
+// service principal. Cleanup order: floating IP first (the cascade kills the
+// VIP port, after which the FIP would leak), then cascade-delete the load
+// balancer. Already-absent resources are success.
+//
+//nolint:cyclop
+func (p *Provider) deleteLoadBalancer(ctx context.Context, lbClient LoadBalancingInterface, fipClient FloatingIPInterface, loadBalancer *unikornv1.LoadBalancer) error {
+	log := log.FromContext(ctx)
+
+	osLB, err := lbClient.GetLoadBalancer(ctx, loadBalancer)
+	if err != nil {
+		if errors.Is(err, coreerrors.ErrResourceNotFound) {
+			loadBalancer.Status.PublicIP = nil
+			loadBalancer.Status.VIPAddress = nil
+
+			return nil
+		}
+
+		return err
+	}
+
+	if osLB.ProvisioningStatus == "PENDING_CREATE" ||
+		osLB.ProvisioningStatus == "PENDING_UPDATE" ||
+		osLB.ProvisioningStatus == "PENDING_DELETE" {
+		return provisioners.ErrYield
+	}
+
+	// FIP first — cascade kills the VIP port, after which the FIP would leak.
+	if osLB.VipPortID != "" {
+		floatingip, err := fipClient.GetFloatingIP(ctx, osLB.VipPortID)
+		if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
+			return err
+		}
+
+		if floatingip != nil {
+			log.V(1).Info("deleting floating ip")
+
+			if err := fipClient.DeleteFloatingIP(ctx, floatingip.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+				return err
+			}
+		}
+	}
+
+	// PublicIP cleared eagerly: the FIP is gone (deleted above or never existed).
+	// VIPAddress stays until GetLoadBalancer returns NotFound — the LB still exists.
+	loadBalancer.Status.PublicIP = nil
+
+	log.V(1).Info("deleting load balancer")
+
+	if err := lbClient.DeleteLoadBalancer(ctx, osLB.ID, true); err != nil {
+		if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return err
+		}
+
+		loadBalancer.Status.VIPAddress = nil
+
+		return nil
+	}
+
+	return provisioners.ErrYield
 }

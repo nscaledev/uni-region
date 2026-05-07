@@ -18,7 +18,6 @@ package openstack
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/gophercloud/gophercloud/v2"
@@ -33,8 +32,6 @@ import (
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 )
-
-var errLoadBalancerUnsupported = errors.New("load balancer provider support not implemented")
 
 // LoadBalancerClient wraps the generic client because gophercloud is unsafe.
 type LoadBalancerClient struct {
