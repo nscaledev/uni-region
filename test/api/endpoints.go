@@ -113,6 +113,18 @@ func (e *Endpoints) CreateNetwork() string {
 	return "/api/v2/networks"
 }
 
+// GetNetwork returns the endpoint for getting a specific network resource.
+func (e *Endpoints) GetNetwork(networkID string) string {
+	return fmt.Sprintf("/api/v2/networks/%s",
+		url.PathEscape(networkID))
+}
+
+// UpdateNetwork returns the endpoint for updating a specific network resource.
+func (e *Endpoints) UpdateNetwork(networkID string) string {
+	return fmt.Sprintf("/api/v2/networks/%s",
+		url.PathEscape(networkID))
+}
+
 // DeleteNetwork returns the endpoint for deleting a specific network resource.
 func (e *Endpoints) DeleteNetwork(networkID string) string {
 	return fmt.Sprintf("/api/v2/networks/%s",
