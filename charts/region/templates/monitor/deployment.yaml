@@ -19,6 +19,7 @@ spec:
         image: {{ include "unikorn.regionMonitorImage" . }}
         args:
         - --namespace={{ .Release.Namespace }}
+        {{- include "unikorn.otlp.flags" . | nindent 8 }}
         resources:
           {{- .Values.monitor.resources | toYaml | nindent 10 }}
         securityContext:

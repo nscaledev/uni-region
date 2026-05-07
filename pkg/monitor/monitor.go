@@ -22,7 +22,10 @@ import (
 	"time"
 
 	"github.com/spf13/pflag"
+	"go.opentelemetry.io/otel"
 
+	"github.com/unikorn-cloud/core/pkg/options"
+	"github.com/unikorn-cloud/region/pkg/constants"
 	serverhealth "github.com/unikorn-cloud/region/pkg/monitor/health/server"
 	"github.com/unikorn-cloud/region/pkg/providers"
 
@@ -32,19 +35,19 @@ import (
 
 // Options allow modification of parameters via the CLI.
 type Options struct {
+	// CoreOptions provides --namespace, --otlp-endpoint, logging, and OTel setup.
+	CoreOptions options.CoreOptions
+
 	// pollPeriod defines how often to run.  There's no harm in having it
 	// run with high frequency, reads are all cached.  It's mostly down to
 	// burning CPU unnecessarily.
 	pollPeriod time.Duration
-
-	// namespace we are running in.
-	namespace string
 }
 
 // AddFlags registers option flags with pflag.
 func (o *Options) AddFlags(flags *pflag.FlagSet) {
+	o.CoreOptions.AddFlags(flags)
 	flags.DurationVar(&o.pollPeriod, "poll-period", time.Minute, "Period to poll for updates")
-	flags.StringVar(&o.namespace, "namespace", "", "Namespace the service is running in")
 }
 
 // Checker is an interface that monitors must implement.
@@ -54,27 +57,38 @@ type Checker interface {
 }
 
 // Run sits in an infinite loop, polling every so often.
-func Run(ctx context.Context, c client.Client, o *Options) {
+// It returns an error if initialisation fails; a nil return means the context
+// was cancelled and the monitor shut down cleanly.
+func Run(ctx context.Context, c client.Client, o *Options) error {
 	log := log.FromContext(ctx)
 
-	providers, err := providers.New(ctx, c, c, o.namespace, providers.Options{})
+	providerCache, err := providers.New(ctx, c, c, o.CoreOptions.Namespace, providers.Options{})
 	if err != nil {
 		log.Error(err, "failed to initialize providers")
 
-		return
+		return err
+	}
+
+	meter := otel.GetMeterProvider().Meter(constants.Application)
+
+	serverMetrics, err := serverhealth.NewMetrics(meter)
+	if err != nil {
+		log.Error(err, "failed to initialize server metrics")
+
+		return err
 	}
 
 	ticker := time.NewTicker(o.pollPeriod)
 	defer ticker.Stop()
 
 	checkers := []Checker{
-		serverhealth.New(c, o.namespace, providers),
+		serverhealth.New(c, o.CoreOptions.Namespace, providerCache, serverMetrics),
 	}
 
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		case <-ticker.C:
 			for _, checker := range checkers {
 				if err := checker.Check(ctx); err != nil {

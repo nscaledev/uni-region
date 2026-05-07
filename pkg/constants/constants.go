@@ -75,6 +75,12 @@ const (
 	// ServerLabel creates an indexable linkage between resources and an
 	// owning entity.
 	ServerLabel = "regions.unikorn-cloud.org/server-id"
+	// ServerPendingEntryTimeAnnotation records when a server entered the Pending phase.
+	// Value is an RFC 3339 UTC timestamp. The region monitor is the sole writer of this
+	// annotation: it is stamped on Pending entry and removed on Pending exit. Manual edits
+	// to the timestamp value while the server remains Pending are not corrected — the
+	// existing annotation is left intact until the server next leaves or re-enters Pending.
+	ServerPendingEntryTimeAnnotation = "regions.unikorn-cloud.org/pending-entry-time"
 )
 
 const (
