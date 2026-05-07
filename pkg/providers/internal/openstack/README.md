@@ -105,13 +105,73 @@ region.
   deterministic lookup rather than relying on mirrored `OpenstackNetwork`,
   `OpenstackSecurityGroup`, or `OpenstackServer` CRDs as authoritative state.
 - Some OpenStack list APIs are not safe to treat as exact lookup, notably
-  server and network `name` filters:
+  server, network, and Octavia load-balancer `name` filters:
   - `name` filters behave like prefix or regular-expression matches rather than
     strict equality
   - this package therefore re-checks exact names after listing to avoid aliasing
     and false matches
 - Provider networks that require VLAN segmentation use the local VLAN allocator
   because OpenStack does not allocate those IDs for us.
+
+## Octavia Load Balancers
+
+OpenStack load balancers are reconciled through Octavia in the service
+principal's project. The region `LoadBalancer` CRD is still the desired-state
+root, while Octavia remains the cloud-side source of truth for the realized
+topology.
+
+The provider reconciles the full topology:
+
+- the Octavia load balancer and VIP
+- listeners, pools, members, and optional health monitors
+- the optional public floating IP attached to the Octavia-owned VIP port
+
+Cloud-side lookup uses deterministic names:
+
+- load balancer: `lb-{loadBalancer}`
+- listener: `lb-{loadBalancer}-{listener}-listener`
+- pool: `lb-{loadBalancer}-{listener}-pool`
+- health monitor: `lb-{loadBalancer}-{listener}-monitor`
+
+Those names are not just cosmetic. They are the linkage contract that lets the
+provider re-find and converge existing Octavia resources without mirrored
+provider-state CRDs. Octavia list filters are fuzzy in the same way as other
+OpenStack name filters, so the client always post-filters returned resources by
+exact name and treats duplicate exact matches as consistency errors.
+
+Octavia provisioning status controls the reconcile outcome:
+
+- `ACTIVE` allows the provider to continue reconciling the next part of the
+  topology
+- `PENDING_CREATE`, `PENDING_UPDATE`, and `PENDING_DELETE` yield the controller
+  so the next pass can observe settled state
+- any other state is treated as a consistency error because the provider cannot
+  safely infer a valid next action
+
+Mutable topology is converged in place where Octavia permits it:
+
+- listener allowed CIDRs
+- listener default-pool linkage
+- TCP listener idle timeouts
+- pool members
+- health-monitor thresholds
+- orphaned listeners, pools, and monitors whose deterministic names are no
+  longer implied by the current spec
+
+Other fields are intentionally blocked before they reach this provider. The
+handler keeps existing listener protocol and port immutable, and it blocks
+`proxyProtocolV2` drift for an existing listener name because that changes the
+derived Octavia pool protocol, which Octavia does not allow to be updated in
+place.
+
+There are a few Octavia-specific constraints worth preserving:
+
+- UDP listeners do not support idle timeouts or Proxy Protocol v2.
+- UDP health checks use Octavia's UDP connect monitor type.
+- TCP pools use Octavia `PROXYV2` only when `proxyProtocolV2` is enabled; the
+  load-balancer client pins microversion `2.22` so that protocol is available.
+- Floating IP cleanup runs before cascade-deleting the load balancer because the
+  cascade removes the VIP port that otherwise anchors the floating IP lookup.
 
 ## Caveats
 
