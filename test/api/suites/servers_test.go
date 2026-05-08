@@ -34,12 +34,22 @@ import (
 )
 
 func skipUnlessOpenStackRegion() {
-	region, err := regionClient.GetRegionDetail(ctx, config.OrgID, config.RegionID)
+	regions, err := regionClient.ListRegions(ctx, config.OrgID)
 	Expect(err).NotTo(HaveOccurred(), "failed to resolve region provider")
 
-	if region.Spec.Type != regionopenapi.RegionTypeOpenstack {
-		Skip("server lifecycle tests require an OpenStack-backed region")
+	for _, region := range regions {
+		if region.Metadata.Id != config.RegionID {
+			continue
+		}
+
+		if region.Spec.Type != regionopenapi.RegionTypeOpenstack {
+			Skip("server lifecycle tests require an OpenStack-backed region")
+		}
+
+		return
 	}
+
+	Skip("server lifecycle tests require TEST_REGION_ID to be visible")
 }
 
 func testFlavorID() string {
