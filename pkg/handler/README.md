@@ -115,7 +115,7 @@ That means handler scope is reconstructed through:
 - RBAC checks against recovered organization/project bindings
 
 This is one of the biggest architectural differences from
-[`identity/pkg/handler`](../../../identity/pkg/handler/README.md).
+[`identity/pkg/handler`](https://github.com/nscaledev/uni-identity/blob/main/pkg/handler/README.md).
 
 ## Shared Lifecycle Graph
 
@@ -243,11 +243,11 @@ but we do not have transactions.”
 
 - [`../openapi`](../openapi/README.md), which documents the public contract these
   handlers implement
-- [`../../../identity/pkg/middleware/openapi`](../../../identity/pkg/middleware/openapi/README.md),
+- [`identity/pkg/middleware/openapi`](https://github.com/nscaledev/uni-identity/blob/main/pkg/middleware/openapi/README.md),
   which establishes the trusted request context handlers consume
 - [`../apis/unikorn/v1alpha1`](../apis/unikorn/v1alpha1/README.md), which defines
   the persisted storage contract the handlers read and write
 - [`../providers`](../providers/README.md), which documents the provider layer
   many handlers depend on for real cloud-side behaviour
-- [`../../../core/pkg/server/conversion`](../../../core/pkg/server/conversion/README.md),
+- [`core/pkg/server/conversion`](https://github.com/nscaledev/uni-core/blob/main/pkg/server/conversion/README.md),
   which provides shared metadata and conversion helpers used heavily here
