@@ -46,5 +46,5 @@ domain-specific resource handlers.
 ## Cross-Package Context
 
 - [../network](../network/README.md) documents the parent linkage model
-- [../../../core/pkg/server/saga](../../../core/pkg/server/saga/README.md)
+- [core/pkg/server/saga](https://github.com/nscaledev/uni-core/blob/main/pkg/server/saga/README.md)
   documents the compensating-workflow machinery used here

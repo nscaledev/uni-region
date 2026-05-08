@@ -74,6 +74,6 @@ ad hoc.
   dependency bundle
 - [../../providers](../../providers/README.md) provides the provider lookup
   façade injected through `ClientArgs`
-- [`identity/pkg/handler/common`](../../../identity/pkg/handler/common/README.md)
+- [`identity/pkg/handler/common`](https://github.com/nscaledev/uni-identity/blob/main/pkg/handler/common/README.md)
   provides identity-specific handler helpers that many concrete region handlers
   also depend on alongside this package

@@ -86,6 +86,6 @@ considered finished.
   helpers when implementing flat region API endpoints
 - [../../openapi](../../openapi/README.md) defines the query-parameter shapes
   these helpers normalize
-- [`identity/pkg/middleware/openapi`](../../../identity/pkg/middleware/openapi/README.md)
+- [`identity/pkg/middleware/openapi`](https://github.com/nscaledev/uni-identity/blob/main/pkg/middleware/openapi/README.md)
   defines the inbound principal derivation path that this package sometimes has
   to complete with additional org/project context
