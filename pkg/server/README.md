@@ -9,7 +9,7 @@ server, OpenAPI router, middleware stack, and runtime dependency construction
 needed to serve the API.
 
 Structurally, it is very close to
-[`identity/pkg/server`](../../../identity/pkg/server/README.md). The important
+[`identity/pkg/server`](https://github.com/nscaledev/uni-identity/blob/main/pkg/server/README.md). The important
 difference is that region does not own the full authentication and authorization
 stack locally. Instead it delegates trust assembly back through identity and
 focuses on constructing:
@@ -73,7 +73,7 @@ Identity builds its own local authn/authz runtime:
 Region does not.
 
 Instead, region constructs a remote authorizer using
-[`identity/pkg/middleware/openapi/remote`](../../../identity/pkg/middleware/openapi/remote/README.md)
+[`identity/pkg/middleware/openapi/remote`](https://github.com/nscaledev/uni-identity/tree/main/pkg/middleware/openapi/remote)
 and an outbound identity API client configuration. That means:
 
 - identity remains the source of truth for trust and authorization context
@@ -160,9 +160,9 @@ provider layer before the handler is built.
   package serves
 - [../providers](../providers/README.md) documents the provider registry built
   here
-- [`../../../identity/pkg/server`](../../../identity/pkg/server/README.md)
+- [`identity/pkg/server`](https://github.com/nscaledev/uni-identity/blob/main/pkg/server/README.md)
   documents the closely related server composition pattern this package mirrors
-- [`../../../identity/pkg/middleware/openapi/remote`](../../../identity/pkg/middleware/openapi/remote/README.md)
+- [`identity/pkg/middleware/openapi/remote`](https://github.com/nscaledev/uni-identity/tree/main/pkg/middleware/openapi/remote)
   documents the remote trust model region relies on
-- [`../../../core/pkg/server/middleware`](../../../core/pkg/server/middleware/README.md)
+- [`core/pkg/server/middleware`](https://github.com/nscaledev/uni-core/blob/main/pkg/server/middleware/README.md)
   documents the canonical shared pre-routing middleware pipeline composed here

@@ -95,7 +95,8 @@ the primary authoring surface:
 - schema changes can affect documentation, client generation, server binding,
   route resolution, and request/response validation simultaneously
 - shared platform API primitives are imported from
-  [`core/pkg/openapi`](../../core/pkg/openapi), rather than being redefined here
+  [`core/pkg/openapi`](https://github.com/nscaledev/uni-core/blob/main/pkg/openapi/README.md),
+  rather than being redefined here
 - this package carries both deprecated `v1` and preferred `v2` generations in
   one contract, so compatibility changes, migration steps, and publication
   decisions must be made deliberately
