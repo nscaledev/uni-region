@@ -76,5 +76,5 @@ service and are not isolated by per-project namespaces.
 - [../../pkg/handler/README.md](../../pkg/handler/README.md) documents the
   region-side deletion and ownership semantics this command relies on after it
   deletes a root
-- [`../../../identity/pkg/handler/README.md`](../../../identity/pkg/handler/README.md)
+- [`identity/pkg/handler`](https://github.com/nscaledev/uni-identity/blob/main/pkg/handler/README.md)
   documents the identity-side project lifecycle this command listens to
