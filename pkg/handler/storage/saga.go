@@ -155,14 +155,12 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 }
 
 func (s *createSaga) validateRegion(ctx context.Context, regionID string) error {
-	regionClient := region.NewClient(s.client.ClientArgs)
-
-	if _, err := regionClient.GetDetail(ctx, regionID); err != nil {
+	if err := region.NewClient(s.client.ClientArgs).CheckAccess(ctx, regionID); err != nil {
 		if !errors.IsHTTPNotFound(err) {
 			return err
 		}
 
-		return errors.HTTPUnprocessableContent("region does not exist").WithError(err)
+		return errors.HTTPUnprocessableContent("region does not exist or is not accessible").WithError(err)
 	}
 
 	return nil

@@ -30,6 +30,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
+	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -51,6 +52,10 @@ var ErrFailedImageFetch = goerrors.New("image fetch failed")
 var ErrProviderResource = goerrors.New("conflict with resource at provider")
 
 func (c *Client) ListImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {
+	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, regionID); err != nil {
+		return nil, err
+	}
+
 	provider, err := c.Providers.LookupCloud(regionID)
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
@@ -142,6 +147,10 @@ func validateImage(ctx context.Context, uri string) error {
 }
 
 func (c *Client) CreateImage(ctx context.Context, organizationID, regionID string, request *openapi.ImageCreateRequest) (*openapi.ImageResponse, error) {
+	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, regionID); err != nil {
+		return nil, err
+	}
+
 	provider, err := c.Providers.LookupCloud(regionID)
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
@@ -190,6 +199,10 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 }
 
 func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imageID string) error {
+	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, regionID); err != nil {
+		return err
+	}
+
 	provider, err := c.Providers.LookupCloud(regionID)
 	if err != nil {
 		return providers.ProviderToServerError(err)
