@@ -199,9 +199,6 @@ func DeleteLoadBalancerWithClient(ctx context.Context, p *Provider, lbClient Loa
 var ClassifyOctaviaStatus = classifyOctaviaStatus
 
 //nolint:gochecknoglobals
-var EffectiveMemberCount = effectiveMemberCount
-
-//nolint:gochecknoglobals
 var OctaviaPoolProtocol = octaviaPoolProtocol
 
 //nolint:gochecknoglobals

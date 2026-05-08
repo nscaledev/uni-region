@@ -2750,18 +2750,6 @@ func parseIPv4Address(s string) (*unikornv1core.IPv4Address, error) {
 	return &unikornv1core.IPv4Address{IP: ip}, nil
 }
 
-// effectiveMemberCount returns the total number of members declared across all
-// listener pools on the load balancer spec.
-func effectiveMemberCount(lb *unikornv1.LoadBalancer) int {
-	total := 0
-
-	for i := range lb.Spec.Listeners {
-		total += len(lb.Spec.Listeners[i].Pool.Members)
-	}
-
-	return total
-}
-
 // octaviaListenerProtocol maps a CRD listener protocol to Octavia's listener
 // protocol enum.
 func octaviaListenerProtocol(protocol unikornv1.LoadBalancerListenerProtocol) listeners.Protocol {
@@ -3352,7 +3340,7 @@ func (p *Provider) CreateLoadBalancer(ctx context.Context, identity *unikornv1.I
 // balancing client. Split from CreateLoadBalancer so unit tests can inject a
 // mock without standing up a service principal.
 //
-//nolint:cyclop,gocognit
+//nolint:cyclop
 func (p *Provider) createLoadBalancer(ctx context.Context, lbClient LoadBalancingInterface, fipClient FloatingIPInterface, loadBalancer *unikornv1.LoadBalancer, subnetID string) error {
 	osLB, err := p.reconcileLoadBalancer(ctx, lbClient, loadBalancer, subnetID)
 	if err != nil {
@@ -3433,10 +3421,6 @@ func (p *Provider) createLoadBalancer(ctx context.Context, lbClient LoadBalancin
 	}
 
 	if mutated {
-		return provisioners.ErrYield
-	}
-
-	if effectiveMemberCount(loadBalancer) == 0 {
 		return provisioners.ErrYield
 	}
 

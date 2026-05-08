@@ -2750,48 +2750,6 @@ func TestPruneOrphanedPoolsAndMonitorsOnce(t *testing.T) {
 	})
 }
 
-func TestEffectiveMemberCount(t *testing.T) {
-	t.Parallel()
-
-	network := loadBalancerNetworkFixture()
-
-	t.Run("ZeroMembers", func(t *testing.T) {
-		t.Parallel()
-
-		lb := loadBalancerFixture(network)
-		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
-			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80),
-		}
-
-		require.Equal(t, 0, openstack.EffectiveMemberCount(lb))
-	})
-
-	t.Run("OneMember", func(t *testing.T) {
-		t.Parallel()
-
-		lb := loadBalancerFixture(network)
-
-		require.Equal(t, 1, openstack.EffectiveMemberCount(lb))
-	})
-
-	t.Run("MultipleListeners", func(t *testing.T) {
-		t.Parallel()
-
-		lb := loadBalancerFixture(network)
-		lb.Spec.Listeners = []regionv1.LoadBalancerListener{
-			listenerFixture("http", regionv1.LoadBalancerListenerProtocolTCP, 80,
-				withMember("10.0.0.5", 8080),
-				withMember("10.0.0.6", 8080),
-			),
-			listenerFixture("dns", regionv1.LoadBalancerListenerProtocolUDP, 53,
-				withMember("10.0.0.7", 53),
-			),
-		}
-
-		require.Equal(t, 3, openstack.EffectiveMemberCount(lb))
-	})
-}
-
 func TestClassifyOctaviaStatus(t *testing.T) {
 	t.Parallel()
 
@@ -2897,7 +2855,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 		require.ErrorIs(t, err, errors.ErrConsistency)
 	})
 
-	t.Run("ZeroMembers_Yields", func(t *testing.T) {
+	t.Run("ZeroMembers_Provisioned", func(t *testing.T) {
 		t.Parallel()
 
 		network := loadBalancerNetworkFixture()
@@ -2926,7 +2884,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
 		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb, *network.Status.Openstack.SubnetID)
-		require.ErrorIs(t, err, provisioners.ErrYield)
+		require.NoError(t, err)
 	})
 
 	t.Run("MembersChanged_Yields", func(t *testing.T) {
@@ -3160,7 +3118,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
 		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb, *network.Status.Openstack.SubnetID)
-		require.ErrorIs(t, err, provisioners.ErrYield)
+		require.NoError(t, err)
 		require.NotNil(t, lb.Status.PublicIP)
 		require.Equal(t, openstackFloatingIP.FloatingIP, lb.Status.PublicIP.String())
 	})
