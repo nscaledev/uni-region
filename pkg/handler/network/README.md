@@ -64,5 +64,5 @@ service-principal root.
 - [../storage](../storage/README.md), [../securitygroup](../securitygroup/README.md),
   [../loadbalancer](../loadbalancer/README.md), and [../server](../server/README.md)
   all depend on `Network v2` as a parent/linkage root
-- [../../../core/pkg/server/saga](../../../core/pkg/server/saga/README.md)
+- [core/pkg/server/saga](https://github.com/nscaledev/uni-core/blob/main/pkg/server/saga/README.md)
   documents the saga machinery used heavily here

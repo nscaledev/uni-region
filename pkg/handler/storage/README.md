@@ -59,7 +59,7 @@ accounting meet.
 
 - [../network](../network/README.md) documents the network dependency used for
   attachments
-- [../../../core/pkg/server/saga](../../../core/pkg/server/saga/README.md)
+- [core/pkg/server/saga](https://github.com/nscaledev/uni-core/blob/main/pkg/server/saga/README.md)
   documents the compensating-workflow machinery used heavily here
-- [`../../../identity/pkg/client`](../../../identity/pkg/client/README.md)
+- [`identity/pkg/client`](https://github.com/nscaledev/uni-identity/blob/main/pkg/client/README.md)
   documents the allocation client helpers this package coordinates with

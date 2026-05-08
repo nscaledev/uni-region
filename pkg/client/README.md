@@ -3,9 +3,9 @@
 ## Purpose
 
 This package is the region-specific realization of the generic client machinery
-in [`core/pkg/client`](../../../core/pkg/client/README.md), built on top of
-the outbound identity-aware transport model already established in
-[`identity/pkg/client`](../../../identity/pkg/client/README.md).
+in [`core/pkg/client`](https://github.com/nscaledev/uni-core/blob/main/pkg/client/README.md),
+built on top of the outbound identity-aware transport model already established
+in [`identity/pkg/client`](https://github.com/nscaledev/uni-identity/blob/main/pkg/client/README.md).
 
 Its main job is to construct outbound region API clients that obey the same
 internal service-to-service trust model used elsewhere in the platform.
@@ -14,9 +14,9 @@ In practice that means:
 
 - building generated [OpenAPI](../openapi/README.md) clients for the region API
 - reusing the shared TLS and HTTP client construction from
-  [`core/pkg/client`](../../../core/pkg/client/README.md)
+  [`core/pkg/client`](https://github.com/nscaledev/uni-core/blob/main/pkg/client/README.md)
 - reusing the delegated-principal and trace-propagation model from
-  [`identity/pkg/client`](../../../identity/pkg/client/README.md)
+  [`identity/pkg/client`](https://github.com/nscaledev/uni-identity/blob/main/pkg/client/README.md)
 - exposing a small region-specific helper for network reference lifecycle
 
 This is not a general client-abstraction package. Most of the interesting trust
@@ -67,7 +67,7 @@ package.
 
 It wraps the region API's network-reference endpoints so remote services can add
 or remove dependency references on a `Network` using the shared resource
-reference model from [`core/pkg/manager`](../../../core/pkg/manager/README.md).
+reference model from [`core/pkg/manager`](https://github.com/nscaledev/uni-core/blob/main/pkg/manager/README.md).
 
 That matters because deletion protection is not purely local to region-owned
 descendants. Other services may hold logical dependencies on a network, and the
@@ -85,7 +85,7 @@ normal service boundary.
 - `ControllerClient` is for controller/provisioner-style calls that must derive
   delegated principal context from durable resource metadata.
 - `References` uses the shared resource-reference model from
-  [`core/pkg/manager`](../../../core/pkg/manager/README.md) rather than inventing
+  [`core/pkg/manager`](https://github.com/nscaledev/uni-core/blob/main/pkg/manager/README.md) rather than inventing
   a region-specific dependency identity format.
 - Reference add/remove operations are thin API wrappers intended for normal
   convergent lifecycle use, with success determined by the region API response
