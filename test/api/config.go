@@ -34,6 +34,8 @@ type TestConfig struct {
 	SecondaryOrgID     string
 	SecondaryProjectID string
 	SecondaryAuthToken string
+	ServerFlavorID     string
+	ServerImageID      string
 }
 
 // LoadTestConfig loads configuration from environment variables and .env files using viper.
@@ -80,6 +82,8 @@ func LoadTestConfig() (*TestConfig, error) {
 		SecondaryOrgID:     v.GetString("TEST_SECONDARY_ORG_ID"),
 		SecondaryProjectID: v.GetString("TEST_SECONDARY_PROJECT_ID"),
 		SecondaryAuthToken: v.GetString("TEST_SECONDARY_AUTH_TOKEN"),
+		ServerFlavorID:     v.GetString("TEST_SERVER_FLAVOR_ID"),
+		ServerImageID:      v.GetString("TEST_SERVER_IMAGE_ID"),
 	}
 
 	// Validate required fields

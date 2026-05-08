@@ -128,6 +128,7 @@ The required values are:
 
 - `API_BASE_URL` - Region API server URL
 - `API_AUTH_TOKEN` - service token from console
+- `REGION_BASE_URL` - Direct Region API server URL for hidden endpoints
 - `TEST_ORG_ID`, `TEST_PROJECT_ID`, `TEST_REGION_ID` - test data IDs
 
 For a Helm-based local install in the current `kubectl` context, generate the
