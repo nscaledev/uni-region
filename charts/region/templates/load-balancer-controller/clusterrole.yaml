@@ -45,3 +45,10 @@ rules:
   - list
   - watch
   - get
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - networks
+  verbs:
+  - list
+  - watch

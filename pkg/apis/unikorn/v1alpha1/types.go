@@ -697,7 +697,7 @@ const (
 )
 
 // +kubebuilder:validation:XValidation:rule="self.protocol == 'tcp' || !has(self.idleTimeoutSeconds)",message="idleTimeoutSeconds is only supported for TCP listeners"
-// +kubebuilder:validation:XValidation:rule="self.protocol == 'tcp' || self.pool.proxyProtocolV2 == false",message="proxyProtocolV2 is only supported for TCP listeners"
+// +kubebuilder:validation:XValidation:rule="self.protocol == 'tcp' || !has(self.pool.proxyProtocolV2) || self.pool.proxyProtocolV2 == false",message="proxyProtocolV2 is only supported for TCP listeners"
 type LoadBalancerListener struct {
 	// Name is the listener name.
 	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
@@ -711,7 +711,8 @@ type LoadBalancerListener struct {
 	Port int `json:"port"`
 	// AllowedCIDRs is an optional list of source CIDRs that may access the listener.
 	AllowedCIDRs []unikornv1core.IPv4Prefix `json:"allowedCIDRs,omitempty"`
-	// IdleTimeoutSeconds is the optional TCP idle timeout.
+	// IdleTimeoutSeconds is the TCP idle timeout. Defaults to 60 seconds for
+	// TCP listeners and is unsupported for UDP listeners.
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=86400
 	IdleTimeoutSeconds *int `json:"idleTimeoutSeconds,omitempty"`

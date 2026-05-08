@@ -54,6 +54,8 @@ import (
 const (
 	endpoint = "region:loadbalancers:v2"
 
+	defaultIdleTimeoutSeconds = 60
+
 	defaultHealthCheckIntervalSeconds    = 10
 	defaultHealthCheckTimeoutSeconds     = 5
 	defaultHealthCheckHealthyThreshold   = 2
@@ -576,12 +578,17 @@ func generateListenerListV2(in []openapi.LoadBalancerListenerV2) ([]regionv1.Loa
 			return nil, err
 		}
 
+		idleTimeoutSeconds := in[i].IdleTimeoutSeconds
+		if idleTimeoutSeconds == nil && in[i].Protocol == openapi.LoadBalancerListenerProtocolV2Tcp {
+			idleTimeoutSeconds = ptr.To(defaultIdleTimeoutSeconds)
+		}
+
 		out[i] = regionv1.LoadBalancerListener{
 			Name:               in[i].Name,
 			Protocol:           regionv1.LoadBalancerListenerProtocol(in[i].Protocol),
 			Port:               in[i].Port,
 			AllowedCIDRs:       allowedCIDRs,
-			IdleTimeoutSeconds: in[i].IdleTimeoutSeconds,
+			IdleTimeoutSeconds: idleTimeoutSeconds,
 			Pool:               *pool,
 		}
 	}
@@ -666,6 +673,14 @@ func validateUpdateImmutability(current, required *regionv1.LoadBalancer) error 
 
 		if currentListener.Port != required.Spec.Listeners[i].Port {
 			return errors.HTTPUnprocessableContent("listener port cannot be changed for an existing listener name")
+		}
+
+		// Octavia treats pool Protocol as immutable, and our pool Protocol is
+		// derived from (listener Protocol, ProxyProtocolV2). Listener Protocol
+		// is already pinned above, so toggling ProxyProtocolV2 is the only
+		// way the user can drift the pool Protocol — block it here.
+		if currentListener.Pool.ProxyProtocolV2 != required.Spec.Listeners[i].Pool.ProxyProtocolV2 {
+			return errors.HTTPUnprocessableContent("listener pool proxyProtocolV2 cannot be changed for an existing listener name")
 		}
 	}
 

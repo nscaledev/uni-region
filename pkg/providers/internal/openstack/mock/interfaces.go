@@ -16,6 +16,10 @@ import (
 	remoteconsoles "github.com/gophercloud/gophercloud/v2/openstack/compute/v2/remoteconsoles"
 	servergroups "github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
 	servers "github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
+	listeners "github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/listeners"
+	loadbalancers "github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/loadbalancers"
+	monitors "github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/monitors"
+	pools "github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/pools"
 	floatingips "github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/floatingips"
 	routers "github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	groups "github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
@@ -1032,6 +1036,794 @@ func (m *MockNetworkingInterface) UpdateSubnet(ctx context.Context, subnetID str
 func (mr *MockNetworkingInterfaceMockRecorder) UpdateSubnet(ctx, subnetID, dnsNameservers, routes any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSubnet", reflect.TypeOf((*MockNetworkingInterface)(nil).UpdateSubnet), ctx, subnetID, dnsNameservers, routes)
+}
+
+// MockLoadBalancerInterface is a mock of LoadBalancerInterface interface.
+type MockLoadBalancerInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockLoadBalancerInterfaceMockRecorder
+}
+
+// MockLoadBalancerInterfaceMockRecorder is the mock recorder for MockLoadBalancerInterface.
+type MockLoadBalancerInterfaceMockRecorder struct {
+	mock *MockLoadBalancerInterface
+}
+
+// NewMockLoadBalancerInterface creates a new mock instance.
+func NewMockLoadBalancerInterface(ctrl *gomock.Controller) *MockLoadBalancerInterface {
+	mock := &MockLoadBalancerInterface{ctrl: ctrl}
+	mock.recorder = &MockLoadBalancerInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockLoadBalancerInterface) EXPECT() *MockLoadBalancerInterfaceMockRecorder {
+	return m.recorder
+}
+
+// CreateLoadBalancer mocks base method.
+func (m *MockLoadBalancerInterface) CreateLoadBalancer(ctx context.Context, opts loadbalancers.CreateOptsBuilder) (*loadbalancers.LoadBalancer, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateLoadBalancer", ctx, opts)
+	ret0, _ := ret[0].(*loadbalancers.LoadBalancer)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateLoadBalancer indicates an expected call of CreateLoadBalancer.
+func (mr *MockLoadBalancerInterfaceMockRecorder) CreateLoadBalancer(ctx, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLoadBalancer", reflect.TypeOf((*MockLoadBalancerInterface)(nil).CreateLoadBalancer), ctx, opts)
+}
+
+// DeleteLoadBalancer mocks base method.
+func (m *MockLoadBalancerInterface) DeleteLoadBalancer(ctx context.Context, id string, cascade bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteLoadBalancer", ctx, id, cascade)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteLoadBalancer indicates an expected call of DeleteLoadBalancer.
+func (mr *MockLoadBalancerInterfaceMockRecorder) DeleteLoadBalancer(ctx, id, cascade any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLoadBalancer", reflect.TypeOf((*MockLoadBalancerInterface)(nil).DeleteLoadBalancer), ctx, id, cascade)
+}
+
+// GetLoadBalancer mocks base method.
+func (m *MockLoadBalancerInterface) GetLoadBalancer(ctx context.Context, loadBalancer *v1alpha1.LoadBalancer) (*loadbalancers.LoadBalancer, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLoadBalancer", ctx, loadBalancer)
+	ret0, _ := ret[0].(*loadbalancers.LoadBalancer)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLoadBalancer indicates an expected call of GetLoadBalancer.
+func (mr *MockLoadBalancerInterfaceMockRecorder) GetLoadBalancer(ctx, loadBalancer any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLoadBalancer", reflect.TypeOf((*MockLoadBalancerInterface)(nil).GetLoadBalancer), ctx, loadBalancer)
+}
+
+// ListLoadBalancers mocks base method.
+func (m *MockLoadBalancerInterface) ListLoadBalancers(ctx context.Context, name string) ([]loadbalancers.LoadBalancer, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListLoadBalancers", ctx, name)
+	ret0, _ := ret[0].([]loadbalancers.LoadBalancer)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListLoadBalancers indicates an expected call of ListLoadBalancers.
+func (mr *MockLoadBalancerInterfaceMockRecorder) ListLoadBalancers(ctx, name any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLoadBalancers", reflect.TypeOf((*MockLoadBalancerInterface)(nil).ListLoadBalancers), ctx, name)
+}
+
+// UpdateLoadBalancer mocks base method.
+func (m *MockLoadBalancerInterface) UpdateLoadBalancer(ctx context.Context, id string, opts loadbalancers.UpdateOptsBuilder) (*loadbalancers.LoadBalancer, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateLoadBalancer", ctx, id, opts)
+	ret0, _ := ret[0].(*loadbalancers.LoadBalancer)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateLoadBalancer indicates an expected call of UpdateLoadBalancer.
+func (mr *MockLoadBalancerInterfaceMockRecorder) UpdateLoadBalancer(ctx, id, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateLoadBalancer", reflect.TypeOf((*MockLoadBalancerInterface)(nil).UpdateLoadBalancer), ctx, id, opts)
+}
+
+// MockLoadBalancerListenerInterface is a mock of LoadBalancerListenerInterface interface.
+type MockLoadBalancerListenerInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockLoadBalancerListenerInterfaceMockRecorder
+}
+
+// MockLoadBalancerListenerInterfaceMockRecorder is the mock recorder for MockLoadBalancerListenerInterface.
+type MockLoadBalancerListenerInterfaceMockRecorder struct {
+	mock *MockLoadBalancerListenerInterface
+}
+
+// NewMockLoadBalancerListenerInterface creates a new mock instance.
+func NewMockLoadBalancerListenerInterface(ctrl *gomock.Controller) *MockLoadBalancerListenerInterface {
+	mock := &MockLoadBalancerListenerInterface{ctrl: ctrl}
+	mock.recorder = &MockLoadBalancerListenerInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockLoadBalancerListenerInterface) EXPECT() *MockLoadBalancerListenerInterfaceMockRecorder {
+	return m.recorder
+}
+
+// CreateListener mocks base method.
+func (m *MockLoadBalancerListenerInterface) CreateListener(ctx context.Context, opts listeners.CreateOptsBuilder) (*listeners.Listener, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateListener", ctx, opts)
+	ret0, _ := ret[0].(*listeners.Listener)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateListener indicates an expected call of CreateListener.
+func (mr *MockLoadBalancerListenerInterfaceMockRecorder) CreateListener(ctx, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateListener", reflect.TypeOf((*MockLoadBalancerListenerInterface)(nil).CreateListener), ctx, opts)
+}
+
+// DeleteListener mocks base method.
+func (m *MockLoadBalancerListenerInterface) DeleteListener(ctx context.Context, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteListener", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteListener indicates an expected call of DeleteListener.
+func (mr *MockLoadBalancerListenerInterfaceMockRecorder) DeleteListener(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteListener", reflect.TypeOf((*MockLoadBalancerListenerInterface)(nil).DeleteListener), ctx, id)
+}
+
+// GetListener mocks base method.
+func (m *MockLoadBalancerListenerInterface) GetListener(ctx context.Context, loadBalancerID string, loadBalancer *v1alpha1.LoadBalancer, listener *v1alpha1.LoadBalancerListener) (*listeners.Listener, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetListener", ctx, loadBalancerID, loadBalancer, listener)
+	ret0, _ := ret[0].(*listeners.Listener)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetListener indicates an expected call of GetListener.
+func (mr *MockLoadBalancerListenerInterfaceMockRecorder) GetListener(ctx, loadBalancerID, loadBalancer, listener any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetListener", reflect.TypeOf((*MockLoadBalancerListenerInterface)(nil).GetListener), ctx, loadBalancerID, loadBalancer, listener)
+}
+
+// ListListeners mocks base method.
+func (m *MockLoadBalancerListenerInterface) ListListeners(ctx context.Context, loadBalancerID, name string) ([]listeners.Listener, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListListeners", ctx, loadBalancerID, name)
+	ret0, _ := ret[0].([]listeners.Listener)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListListeners indicates an expected call of ListListeners.
+func (mr *MockLoadBalancerListenerInterfaceMockRecorder) ListListeners(ctx, loadBalancerID, name any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListListeners", reflect.TypeOf((*MockLoadBalancerListenerInterface)(nil).ListListeners), ctx, loadBalancerID, name)
+}
+
+// UpdateListener mocks base method.
+func (m *MockLoadBalancerListenerInterface) UpdateListener(ctx context.Context, id string, opts listeners.UpdateOptsBuilder) (*listeners.Listener, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateListener", ctx, id, opts)
+	ret0, _ := ret[0].(*listeners.Listener)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateListener indicates an expected call of UpdateListener.
+func (mr *MockLoadBalancerListenerInterfaceMockRecorder) UpdateListener(ctx, id, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateListener", reflect.TypeOf((*MockLoadBalancerListenerInterface)(nil).UpdateListener), ctx, id, opts)
+}
+
+// MockLoadBalancerPoolInterface is a mock of LoadBalancerPoolInterface interface.
+type MockLoadBalancerPoolInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockLoadBalancerPoolInterfaceMockRecorder
+}
+
+// MockLoadBalancerPoolInterfaceMockRecorder is the mock recorder for MockLoadBalancerPoolInterface.
+type MockLoadBalancerPoolInterfaceMockRecorder struct {
+	mock *MockLoadBalancerPoolInterface
+}
+
+// NewMockLoadBalancerPoolInterface creates a new mock instance.
+func NewMockLoadBalancerPoolInterface(ctrl *gomock.Controller) *MockLoadBalancerPoolInterface {
+	mock := &MockLoadBalancerPoolInterface{ctrl: ctrl}
+	mock.recorder = &MockLoadBalancerPoolInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockLoadBalancerPoolInterface) EXPECT() *MockLoadBalancerPoolInterfaceMockRecorder {
+	return m.recorder
+}
+
+// CreatePool mocks base method.
+func (m *MockLoadBalancerPoolInterface) CreatePool(ctx context.Context, opts pools.CreateOptsBuilder) (*pools.Pool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreatePool", ctx, opts)
+	ret0, _ := ret[0].(*pools.Pool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreatePool indicates an expected call of CreatePool.
+func (mr *MockLoadBalancerPoolInterfaceMockRecorder) CreatePool(ctx, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePool", reflect.TypeOf((*MockLoadBalancerPoolInterface)(nil).CreatePool), ctx, opts)
+}
+
+// DeletePool mocks base method.
+func (m *MockLoadBalancerPoolInterface) DeletePool(ctx context.Context, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeletePool", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeletePool indicates an expected call of DeletePool.
+func (mr *MockLoadBalancerPoolInterfaceMockRecorder) DeletePool(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeletePool", reflect.TypeOf((*MockLoadBalancerPoolInterface)(nil).DeletePool), ctx, id)
+}
+
+// GetPool mocks base method.
+func (m *MockLoadBalancerPoolInterface) GetPool(ctx context.Context, loadBalancerID string, loadBalancer *v1alpha1.LoadBalancer, listener *v1alpha1.LoadBalancerListener) (*pools.Pool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPool", ctx, loadBalancerID, loadBalancer, listener)
+	ret0, _ := ret[0].(*pools.Pool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPool indicates an expected call of GetPool.
+func (mr *MockLoadBalancerPoolInterfaceMockRecorder) GetPool(ctx, loadBalancerID, loadBalancer, listener any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPool", reflect.TypeOf((*MockLoadBalancerPoolInterface)(nil).GetPool), ctx, loadBalancerID, loadBalancer, listener)
+}
+
+// ListPools mocks base method.
+func (m *MockLoadBalancerPoolInterface) ListPools(ctx context.Context, loadBalancerID, name string) ([]pools.Pool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListPools", ctx, loadBalancerID, name)
+	ret0, _ := ret[0].([]pools.Pool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListPools indicates an expected call of ListPools.
+func (mr *MockLoadBalancerPoolInterfaceMockRecorder) ListPools(ctx, loadBalancerID, name any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPools", reflect.TypeOf((*MockLoadBalancerPoolInterface)(nil).ListPools), ctx, loadBalancerID, name)
+}
+
+// UpdatePool mocks base method.
+func (m *MockLoadBalancerPoolInterface) UpdatePool(ctx context.Context, id string, opts pools.UpdateOptsBuilder) (*pools.Pool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdatePool", ctx, id, opts)
+	ret0, _ := ret[0].(*pools.Pool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdatePool indicates an expected call of UpdatePool.
+func (mr *MockLoadBalancerPoolInterfaceMockRecorder) UpdatePool(ctx, id, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePool", reflect.TypeOf((*MockLoadBalancerPoolInterface)(nil).UpdatePool), ctx, id, opts)
+}
+
+// MockLoadBalancerMemberInterface is a mock of LoadBalancerMemberInterface interface.
+type MockLoadBalancerMemberInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockLoadBalancerMemberInterfaceMockRecorder
+}
+
+// MockLoadBalancerMemberInterfaceMockRecorder is the mock recorder for MockLoadBalancerMemberInterface.
+type MockLoadBalancerMemberInterfaceMockRecorder struct {
+	mock *MockLoadBalancerMemberInterface
+}
+
+// NewMockLoadBalancerMemberInterface creates a new mock instance.
+func NewMockLoadBalancerMemberInterface(ctrl *gomock.Controller) *MockLoadBalancerMemberInterface {
+	mock := &MockLoadBalancerMemberInterface{ctrl: ctrl}
+	mock.recorder = &MockLoadBalancerMemberInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockLoadBalancerMemberInterface) EXPECT() *MockLoadBalancerMemberInterfaceMockRecorder {
+	return m.recorder
+}
+
+// BatchUpdateMembers mocks base method.
+func (m *MockLoadBalancerMemberInterface) BatchUpdateMembers(ctx context.Context, poolID string, opts []pools.BatchUpdateMemberOpts) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BatchUpdateMembers", ctx, poolID, opts)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// BatchUpdateMembers indicates an expected call of BatchUpdateMembers.
+func (mr *MockLoadBalancerMemberInterfaceMockRecorder) BatchUpdateMembers(ctx, poolID, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BatchUpdateMembers", reflect.TypeOf((*MockLoadBalancerMemberInterface)(nil).BatchUpdateMembers), ctx, poolID, opts)
+}
+
+// ListMembers mocks base method.
+func (m *MockLoadBalancerMemberInterface) ListMembers(ctx context.Context, poolID string) ([]pools.Member, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListMembers", ctx, poolID)
+	ret0, _ := ret[0].([]pools.Member)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListMembers indicates an expected call of ListMembers.
+func (mr *MockLoadBalancerMemberInterfaceMockRecorder) ListMembers(ctx, poolID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMembers", reflect.TypeOf((*MockLoadBalancerMemberInterface)(nil).ListMembers), ctx, poolID)
+}
+
+// MockLoadBalancerMonitorInterface is a mock of LoadBalancerMonitorInterface interface.
+type MockLoadBalancerMonitorInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockLoadBalancerMonitorInterfaceMockRecorder
+}
+
+// MockLoadBalancerMonitorInterfaceMockRecorder is the mock recorder for MockLoadBalancerMonitorInterface.
+type MockLoadBalancerMonitorInterfaceMockRecorder struct {
+	mock *MockLoadBalancerMonitorInterface
+}
+
+// NewMockLoadBalancerMonitorInterface creates a new mock instance.
+func NewMockLoadBalancerMonitorInterface(ctrl *gomock.Controller) *MockLoadBalancerMonitorInterface {
+	mock := &MockLoadBalancerMonitorInterface{ctrl: ctrl}
+	mock.recorder = &MockLoadBalancerMonitorInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockLoadBalancerMonitorInterface) EXPECT() *MockLoadBalancerMonitorInterfaceMockRecorder {
+	return m.recorder
+}
+
+// CreateMonitor mocks base method.
+func (m *MockLoadBalancerMonitorInterface) CreateMonitor(ctx context.Context, opts monitors.CreateOptsBuilder) (*monitors.Monitor, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateMonitor", ctx, opts)
+	ret0, _ := ret[0].(*monitors.Monitor)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateMonitor indicates an expected call of CreateMonitor.
+func (mr *MockLoadBalancerMonitorInterfaceMockRecorder) CreateMonitor(ctx, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateMonitor", reflect.TypeOf((*MockLoadBalancerMonitorInterface)(nil).CreateMonitor), ctx, opts)
+}
+
+// DeleteMonitor mocks base method.
+func (m *MockLoadBalancerMonitorInterface) DeleteMonitor(ctx context.Context, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteMonitor", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteMonitor indicates an expected call of DeleteMonitor.
+func (mr *MockLoadBalancerMonitorInterfaceMockRecorder) DeleteMonitor(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteMonitor", reflect.TypeOf((*MockLoadBalancerMonitorInterface)(nil).DeleteMonitor), ctx, id)
+}
+
+// GetMonitor mocks base method.
+func (m *MockLoadBalancerMonitorInterface) GetMonitor(ctx context.Context, poolID string, loadBalancer *v1alpha1.LoadBalancer, listener *v1alpha1.LoadBalancerListener) (*monitors.Monitor, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMonitor", ctx, poolID, loadBalancer, listener)
+	ret0, _ := ret[0].(*monitors.Monitor)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetMonitor indicates an expected call of GetMonitor.
+func (mr *MockLoadBalancerMonitorInterfaceMockRecorder) GetMonitor(ctx, poolID, loadBalancer, listener any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMonitor", reflect.TypeOf((*MockLoadBalancerMonitorInterface)(nil).GetMonitor), ctx, poolID, loadBalancer, listener)
+}
+
+// ListMonitors mocks base method.
+func (m *MockLoadBalancerMonitorInterface) ListMonitors(ctx context.Context, poolID, name string) ([]monitors.Monitor, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListMonitors", ctx, poolID, name)
+	ret0, _ := ret[0].([]monitors.Monitor)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListMonitors indicates an expected call of ListMonitors.
+func (mr *MockLoadBalancerMonitorInterfaceMockRecorder) ListMonitors(ctx, poolID, name any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMonitors", reflect.TypeOf((*MockLoadBalancerMonitorInterface)(nil).ListMonitors), ctx, poolID, name)
+}
+
+// UpdateMonitor mocks base method.
+func (m *MockLoadBalancerMonitorInterface) UpdateMonitor(ctx context.Context, id string, opts monitors.UpdateOptsBuilder) (*monitors.Monitor, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateMonitor", ctx, id, opts)
+	ret0, _ := ret[0].(*monitors.Monitor)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateMonitor indicates an expected call of UpdateMonitor.
+func (mr *MockLoadBalancerMonitorInterfaceMockRecorder) UpdateMonitor(ctx, id, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateMonitor", reflect.TypeOf((*MockLoadBalancerMonitorInterface)(nil).UpdateMonitor), ctx, id, opts)
+}
+
+// MockLoadBalancingInterface is a mock of LoadBalancingInterface interface.
+type MockLoadBalancingInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockLoadBalancingInterfaceMockRecorder
+}
+
+// MockLoadBalancingInterfaceMockRecorder is the mock recorder for MockLoadBalancingInterface.
+type MockLoadBalancingInterfaceMockRecorder struct {
+	mock *MockLoadBalancingInterface
+}
+
+// NewMockLoadBalancingInterface creates a new mock instance.
+func NewMockLoadBalancingInterface(ctrl *gomock.Controller) *MockLoadBalancingInterface {
+	mock := &MockLoadBalancingInterface{ctrl: ctrl}
+	mock.recorder = &MockLoadBalancingInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockLoadBalancingInterface) EXPECT() *MockLoadBalancingInterfaceMockRecorder {
+	return m.recorder
+}
+
+// BatchUpdateMembers mocks base method.
+func (m *MockLoadBalancingInterface) BatchUpdateMembers(ctx context.Context, poolID string, opts []pools.BatchUpdateMemberOpts) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BatchUpdateMembers", ctx, poolID, opts)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// BatchUpdateMembers indicates an expected call of BatchUpdateMembers.
+func (mr *MockLoadBalancingInterfaceMockRecorder) BatchUpdateMembers(ctx, poolID, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BatchUpdateMembers", reflect.TypeOf((*MockLoadBalancingInterface)(nil).BatchUpdateMembers), ctx, poolID, opts)
+}
+
+// CreateListener mocks base method.
+func (m *MockLoadBalancingInterface) CreateListener(ctx context.Context, opts listeners.CreateOptsBuilder) (*listeners.Listener, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateListener", ctx, opts)
+	ret0, _ := ret[0].(*listeners.Listener)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateListener indicates an expected call of CreateListener.
+func (mr *MockLoadBalancingInterfaceMockRecorder) CreateListener(ctx, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateListener", reflect.TypeOf((*MockLoadBalancingInterface)(nil).CreateListener), ctx, opts)
+}
+
+// CreateLoadBalancer mocks base method.
+func (m *MockLoadBalancingInterface) CreateLoadBalancer(ctx context.Context, opts loadbalancers.CreateOptsBuilder) (*loadbalancers.LoadBalancer, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateLoadBalancer", ctx, opts)
+	ret0, _ := ret[0].(*loadbalancers.LoadBalancer)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateLoadBalancer indicates an expected call of CreateLoadBalancer.
+func (mr *MockLoadBalancingInterfaceMockRecorder) CreateLoadBalancer(ctx, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLoadBalancer", reflect.TypeOf((*MockLoadBalancingInterface)(nil).CreateLoadBalancer), ctx, opts)
+}
+
+// CreateMonitor mocks base method.
+func (m *MockLoadBalancingInterface) CreateMonitor(ctx context.Context, opts monitors.CreateOptsBuilder) (*monitors.Monitor, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateMonitor", ctx, opts)
+	ret0, _ := ret[0].(*monitors.Monitor)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateMonitor indicates an expected call of CreateMonitor.
+func (mr *MockLoadBalancingInterfaceMockRecorder) CreateMonitor(ctx, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateMonitor", reflect.TypeOf((*MockLoadBalancingInterface)(nil).CreateMonitor), ctx, opts)
+}
+
+// CreatePool mocks base method.
+func (m *MockLoadBalancingInterface) CreatePool(ctx context.Context, opts pools.CreateOptsBuilder) (*pools.Pool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreatePool", ctx, opts)
+	ret0, _ := ret[0].(*pools.Pool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreatePool indicates an expected call of CreatePool.
+func (mr *MockLoadBalancingInterfaceMockRecorder) CreatePool(ctx, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePool", reflect.TypeOf((*MockLoadBalancingInterface)(nil).CreatePool), ctx, opts)
+}
+
+// DeleteListener mocks base method.
+func (m *MockLoadBalancingInterface) DeleteListener(ctx context.Context, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteListener", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteListener indicates an expected call of DeleteListener.
+func (mr *MockLoadBalancingInterfaceMockRecorder) DeleteListener(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteListener", reflect.TypeOf((*MockLoadBalancingInterface)(nil).DeleteListener), ctx, id)
+}
+
+// DeleteLoadBalancer mocks base method.
+func (m *MockLoadBalancingInterface) DeleteLoadBalancer(ctx context.Context, id string, cascade bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteLoadBalancer", ctx, id, cascade)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteLoadBalancer indicates an expected call of DeleteLoadBalancer.
+func (mr *MockLoadBalancingInterfaceMockRecorder) DeleteLoadBalancer(ctx, id, cascade any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLoadBalancer", reflect.TypeOf((*MockLoadBalancingInterface)(nil).DeleteLoadBalancer), ctx, id, cascade)
+}
+
+// DeleteMonitor mocks base method.
+func (m *MockLoadBalancingInterface) DeleteMonitor(ctx context.Context, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteMonitor", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteMonitor indicates an expected call of DeleteMonitor.
+func (mr *MockLoadBalancingInterfaceMockRecorder) DeleteMonitor(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteMonitor", reflect.TypeOf((*MockLoadBalancingInterface)(nil).DeleteMonitor), ctx, id)
+}
+
+// DeletePool mocks base method.
+func (m *MockLoadBalancingInterface) DeletePool(ctx context.Context, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeletePool", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeletePool indicates an expected call of DeletePool.
+func (mr *MockLoadBalancingInterfaceMockRecorder) DeletePool(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeletePool", reflect.TypeOf((*MockLoadBalancingInterface)(nil).DeletePool), ctx, id)
+}
+
+// GetListener mocks base method.
+func (m *MockLoadBalancingInterface) GetListener(ctx context.Context, loadBalancerID string, loadBalancer *v1alpha1.LoadBalancer, listener *v1alpha1.LoadBalancerListener) (*listeners.Listener, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetListener", ctx, loadBalancerID, loadBalancer, listener)
+	ret0, _ := ret[0].(*listeners.Listener)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetListener indicates an expected call of GetListener.
+func (mr *MockLoadBalancingInterfaceMockRecorder) GetListener(ctx, loadBalancerID, loadBalancer, listener any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetListener", reflect.TypeOf((*MockLoadBalancingInterface)(nil).GetListener), ctx, loadBalancerID, loadBalancer, listener)
+}
+
+// GetLoadBalancer mocks base method.
+func (m *MockLoadBalancingInterface) GetLoadBalancer(ctx context.Context, loadBalancer *v1alpha1.LoadBalancer) (*loadbalancers.LoadBalancer, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLoadBalancer", ctx, loadBalancer)
+	ret0, _ := ret[0].(*loadbalancers.LoadBalancer)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLoadBalancer indicates an expected call of GetLoadBalancer.
+func (mr *MockLoadBalancingInterfaceMockRecorder) GetLoadBalancer(ctx, loadBalancer any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLoadBalancer", reflect.TypeOf((*MockLoadBalancingInterface)(nil).GetLoadBalancer), ctx, loadBalancer)
+}
+
+// GetMonitor mocks base method.
+func (m *MockLoadBalancingInterface) GetMonitor(ctx context.Context, poolID string, loadBalancer *v1alpha1.LoadBalancer, listener *v1alpha1.LoadBalancerListener) (*monitors.Monitor, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMonitor", ctx, poolID, loadBalancer, listener)
+	ret0, _ := ret[0].(*monitors.Monitor)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetMonitor indicates an expected call of GetMonitor.
+func (mr *MockLoadBalancingInterfaceMockRecorder) GetMonitor(ctx, poolID, loadBalancer, listener any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMonitor", reflect.TypeOf((*MockLoadBalancingInterface)(nil).GetMonitor), ctx, poolID, loadBalancer, listener)
+}
+
+// GetPool mocks base method.
+func (m *MockLoadBalancingInterface) GetPool(ctx context.Context, loadBalancerID string, loadBalancer *v1alpha1.LoadBalancer, listener *v1alpha1.LoadBalancerListener) (*pools.Pool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPool", ctx, loadBalancerID, loadBalancer, listener)
+	ret0, _ := ret[0].(*pools.Pool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPool indicates an expected call of GetPool.
+func (mr *MockLoadBalancingInterfaceMockRecorder) GetPool(ctx, loadBalancerID, loadBalancer, listener any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPool", reflect.TypeOf((*MockLoadBalancingInterface)(nil).GetPool), ctx, loadBalancerID, loadBalancer, listener)
+}
+
+// ListListeners mocks base method.
+func (m *MockLoadBalancingInterface) ListListeners(ctx context.Context, loadBalancerID, name string) ([]listeners.Listener, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListListeners", ctx, loadBalancerID, name)
+	ret0, _ := ret[0].([]listeners.Listener)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListListeners indicates an expected call of ListListeners.
+func (mr *MockLoadBalancingInterfaceMockRecorder) ListListeners(ctx, loadBalancerID, name any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListListeners", reflect.TypeOf((*MockLoadBalancingInterface)(nil).ListListeners), ctx, loadBalancerID, name)
+}
+
+// ListLoadBalancers mocks base method.
+func (m *MockLoadBalancingInterface) ListLoadBalancers(ctx context.Context, name string) ([]loadbalancers.LoadBalancer, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListLoadBalancers", ctx, name)
+	ret0, _ := ret[0].([]loadbalancers.LoadBalancer)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListLoadBalancers indicates an expected call of ListLoadBalancers.
+func (mr *MockLoadBalancingInterfaceMockRecorder) ListLoadBalancers(ctx, name any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLoadBalancers", reflect.TypeOf((*MockLoadBalancingInterface)(nil).ListLoadBalancers), ctx, name)
+}
+
+// ListMembers mocks base method.
+func (m *MockLoadBalancingInterface) ListMembers(ctx context.Context, poolID string) ([]pools.Member, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListMembers", ctx, poolID)
+	ret0, _ := ret[0].([]pools.Member)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListMembers indicates an expected call of ListMembers.
+func (mr *MockLoadBalancingInterfaceMockRecorder) ListMembers(ctx, poolID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMembers", reflect.TypeOf((*MockLoadBalancingInterface)(nil).ListMembers), ctx, poolID)
+}
+
+// ListMonitors mocks base method.
+func (m *MockLoadBalancingInterface) ListMonitors(ctx context.Context, poolID, name string) ([]monitors.Monitor, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListMonitors", ctx, poolID, name)
+	ret0, _ := ret[0].([]monitors.Monitor)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListMonitors indicates an expected call of ListMonitors.
+func (mr *MockLoadBalancingInterfaceMockRecorder) ListMonitors(ctx, poolID, name any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMonitors", reflect.TypeOf((*MockLoadBalancingInterface)(nil).ListMonitors), ctx, poolID, name)
+}
+
+// ListPools mocks base method.
+func (m *MockLoadBalancingInterface) ListPools(ctx context.Context, loadBalancerID, name string) ([]pools.Pool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListPools", ctx, loadBalancerID, name)
+	ret0, _ := ret[0].([]pools.Pool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListPools indicates an expected call of ListPools.
+func (mr *MockLoadBalancingInterfaceMockRecorder) ListPools(ctx, loadBalancerID, name any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPools", reflect.TypeOf((*MockLoadBalancingInterface)(nil).ListPools), ctx, loadBalancerID, name)
+}
+
+// UpdateListener mocks base method.
+func (m *MockLoadBalancingInterface) UpdateListener(ctx context.Context, id string, opts listeners.UpdateOptsBuilder) (*listeners.Listener, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateListener", ctx, id, opts)
+	ret0, _ := ret[0].(*listeners.Listener)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateListener indicates an expected call of UpdateListener.
+func (mr *MockLoadBalancingInterfaceMockRecorder) UpdateListener(ctx, id, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateListener", reflect.TypeOf((*MockLoadBalancingInterface)(nil).UpdateListener), ctx, id, opts)
+}
+
+// UpdateLoadBalancer mocks base method.
+func (m *MockLoadBalancingInterface) UpdateLoadBalancer(ctx context.Context, id string, opts loadbalancers.UpdateOptsBuilder) (*loadbalancers.LoadBalancer, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateLoadBalancer", ctx, id, opts)
+	ret0, _ := ret[0].(*loadbalancers.LoadBalancer)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateLoadBalancer indicates an expected call of UpdateLoadBalancer.
+func (mr *MockLoadBalancingInterfaceMockRecorder) UpdateLoadBalancer(ctx, id, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateLoadBalancer", reflect.TypeOf((*MockLoadBalancingInterface)(nil).UpdateLoadBalancer), ctx, id, opts)
+}
+
+// UpdateMonitor mocks base method.
+func (m *MockLoadBalancingInterface) UpdateMonitor(ctx context.Context, id string, opts monitors.UpdateOptsBuilder) (*monitors.Monitor, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateMonitor", ctx, id, opts)
+	ret0, _ := ret[0].(*monitors.Monitor)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateMonitor indicates an expected call of UpdateMonitor.
+func (mr *MockLoadBalancingInterfaceMockRecorder) UpdateMonitor(ctx, id, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateMonitor", reflect.TypeOf((*MockLoadBalancingInterface)(nil).UpdateMonitor), ctx, id, opts)
+}
+
+// UpdatePool mocks base method.
+func (m *MockLoadBalancingInterface) UpdatePool(ctx context.Context, id string, opts pools.UpdateOptsBuilder) (*pools.Pool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdatePool", ctx, id, opts)
+	ret0, _ := ret[0].(*pools.Pool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdatePool indicates an expected call of UpdatePool.
+func (mr *MockLoadBalancingInterfaceMockRecorder) UpdatePool(ctx, id, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePool", reflect.TypeOf((*MockLoadBalancingInterface)(nil).UpdatePool), ctx, id, opts)
 }
 
 // MockKeypairInterface is a mock of KeypairInterface interface.
