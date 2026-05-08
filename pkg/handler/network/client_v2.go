@@ -39,6 +39,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
+	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
@@ -396,6 +397,10 @@ func (s *createSaga) Actions() []saga.Action {
 
 func (c *Client) CreateV2(ctx context.Context, request *openapi.NetworkV2Create) (*openapi.NetworkV2Read, error) {
 	if err := rbac.AllowProjectScopeCreate(ctx, c.Identity, "region:networks:v2", identityapi.Create, request.Spec.OrganizationId, request.Spec.ProjectId); err != nil {
+		return nil, err
+	}
+
+	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, request.Spec.RegionId); err != nil {
 		return nil, err
 	}
 

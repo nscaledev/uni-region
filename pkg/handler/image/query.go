@@ -24,12 +24,17 @@ import (
 
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
+	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 )
 
 // QueryImages takes the parameters from an image list request and runs them as a query against the provider.
 func (c *Client) QueryImages(ctx context.Context, regionID string, params openapi.GetApiV2RegionsRegionIDImagesParams) (openapi.Images, error) {
+	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, regionID); err != nil {
+		return nil, err
+	}
+
 	prov, err := c.Providers.LookupCloud(regionID)
 	if err != nil {
 		return nil, err

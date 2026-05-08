@@ -25,9 +25,14 @@ import (
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const (
@@ -40,6 +45,8 @@ const (
 	organizationID2 = "bar"
 	organizationID3 = "baz"
 	organizationID4 = "none"
+
+	testNamespace = "test"
 )
 
 func regionsFixture() *regionv1.RegionList {
@@ -182,4 +189,111 @@ func TestRegionFilteringGlobalScope(t *testing.T) {
 
 	region.FilterRegions(ctx, regions)
 	require.Len(t, regions.Items, 4)
+}
+
+// regionClientFixture creates a region.Client backed by a fake Kubernetes client
+// pre-populated with the given region objects.
+func regionClientFixture(t *testing.T, regions ...regionv1.Region) *region.Client {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("adding client-go scheme: %v", err)
+	}
+
+	if err := regionv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("adding unikorn scheme: %v", err)
+	}
+
+	builder := fake.NewClientBuilder().WithScheme(scheme)
+
+	for i := range regions {
+		regions[i].Namespace = testNamespace
+		builder = builder.WithObjects(&regions[i])
+	}
+
+	return region.NewClient(common.ClientArgs{
+		Client:    builder.Build(),
+		Namespace: testNamespace,
+	})
+}
+
+// TestCheckAccessGlobalRegion verifies any organization can access a region with no
+// security constraints.
+func TestCheckAccessGlobalRegion(t *testing.T) {
+	t.Parallel()
+
+	c := regionClientFixture(t, regionv1.Region{
+		ObjectMeta: metav1.ObjectMeta{Name: globalRegionName},
+	})
+
+	require.NoError(t, c.CheckAccess(aclFixture(t, organizationID4), globalRegionName))
+}
+
+// TestCheckAccessAllowedOrg verifies an organization in the allowed list can access
+// a restricted region.
+func TestCheckAccessAllowedOrg(t *testing.T) {
+	t.Parallel()
+
+	c := regionClientFixture(t, regionv1.Region{
+		ObjectMeta: metav1.ObjectMeta{Name: privateRegionName1},
+		Spec: regionv1.RegionSpec{
+			Security: &regionv1.RegionSecuritySpec{
+				Organizations: []regionv1.RegionSecurityOrganizationSpec{
+					{ID: organizationID1},
+					{ID: organizationID2},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, c.CheckAccess(aclFixture(t, organizationID1), privateRegionName1))
+}
+
+// TestCheckAccessDeniedOrg verifies an organization not in the allowed list receives
+// HTTPNotFound rather than HTTPForbidden.
+func TestCheckAccessDeniedOrg(t *testing.T) {
+	t.Parallel()
+
+	c := regionClientFixture(t, regionv1.Region{
+		ObjectMeta: metav1.ObjectMeta{Name: privateRegionName1},
+		Spec: regionv1.RegionSpec{
+			Security: &regionv1.RegionSecuritySpec{
+				Organizations: []regionv1.RegionSecurityOrganizationSpec{
+					{ID: organizationID1},
+				},
+			},
+		},
+	})
+
+	require.Error(t, c.CheckAccess(aclFixture(t, organizationID4), privateRegionName1))
+}
+
+// TestCheckAccessGlobalScope verifies platform admins and services with global scope
+// can access any region including restricted ones.
+func TestCheckAccessGlobalScope(t *testing.T) {
+	t.Parallel()
+
+	c := regionClientFixture(t, regionv1.Region{
+		ObjectMeta: metav1.ObjectMeta{Name: privateRegionName1},
+		Spec: regionv1.RegionSpec{
+			Security: &regionv1.RegionSecuritySpec{
+				Organizations: []regionv1.RegionSecurityOrganizationSpec{
+					{ID: organizationID1},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, c.CheckAccess(globalACLFixture(t), privateRegionName1))
+}
+
+// TestCheckAccessMissingRegion verifies a non-existent region ID returns an error.
+func TestCheckAccessMissingRegion(t *testing.T) {
+	t.Parallel()
+
+	c := regionClientFixture(t)
+
+	require.Error(t, c.CheckAccess(aclFixture(t, organizationID1), "does-not-exist"))
 }

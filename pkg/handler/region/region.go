@@ -57,29 +57,53 @@ func NewClient(clientArgs common.ClientArgs) *Client {
 	}
 }
 
+// checkAccess applies the region ACL to an already-fetched region object.
+// It returns HTTPNotFound rather than HTTPForbidden to avoid leaking information
+// about the existence of regions the caller cannot see.
+func checkAccess(ctx context.Context, resource *unikornv1.Region) error {
+	// Regions without security constraints are free to use.
+	if resource.Spec.Security == nil || resource.Spec.Security.Organizations == nil {
+		return nil
+	}
+
+	// Anyone with super cow powers can access everything (platform admin, services).
+	if rbac.AllowGlobalScope(ctx, "region:regions", identityapi.Read) == nil {
+		return nil
+	}
+
+	// Under impersonation the ACL is scoped to the user's organizations, so
+	// OrganizationIDs returns only what the user can see.
+	organizationIDs := rbac.OrganizationIDs(ctx)
+
+	for _, organization := range resource.Spec.Security.Organizations {
+		if slices.Contains(organizationIDs, organization.ID) {
+			return nil
+		}
+	}
+
+	return errors.HTTPNotFound()
+}
+
+// CheckAccess fetches the region by ID and verifies the caller's organization is
+// allowed to use it.  Returns HTTPNotFound for both missing and inaccessible regions
+// to avoid confirming region existence to unauthorized callers.
+func (c *Client) CheckAccess(ctx context.Context, regionID string) error {
+	resource := &unikornv1.Region{}
+
+	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: regionID}, resource); err != nil {
+		if kerrors.IsNotFound(err) {
+			return errors.HTTPNotFound().WithError(err)
+		}
+
+		return fmt.Errorf("%w: unable to lookup region", err)
+	}
+
+	return checkAccess(ctx, resource)
+}
+
 func FilterRegions(ctx context.Context, regions *unikornv1.RegionList) {
 	regions.Items = slices.DeleteFunc(regions.Items, func(region unikornv1.Region) bool {
-		// Regions without security constraints are free to use.
-		if region.Spec.Security == nil || region.Spec.Security.Organizations == nil {
-			return false
-		}
-
-		// Anyone with super cow powers can see everything (platform admin, services).
-		if rbac.AllowGlobalScope(ctx, "region:regions", identityapi.Read) == nil {
-			return false
-		}
-
-		// Under impersonation the ACL is scoped to the user's organizations, so
-		// OrganizationIDs returns only what the user can see.
-		organizationIDs := rbac.OrganizationIDs(ctx)
-
-		for _, organization := range region.Spec.Security.Organizations {
-			if slices.Contains(organizationIDs, organization.ID) {
-				return false
-			}
-		}
-
-		return true
+		return checkAccess(ctx, &region) != nil
 	})
 }
 
@@ -106,10 +130,18 @@ func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.Regio
 		return nil, fmt.Errorf("%w: unable to lookup region", err)
 	}
 
+	if err := checkAccess(ctx, result); err != nil {
+		return nil, err
+	}
+
 	return c.convertDetail(ctx, result)
 }
 
 func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID string) (openapi.Flavors, error) {
+	if err := c.CheckAccess(ctx, regionID); err != nil {
+		return nil, err
+	}
+
 	provider, err := c.Providers.LookupCommon(regionID)
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
@@ -157,6 +189,10 @@ func convertExternalNetworks(in types.ExternalNetworks) openapi.ExternalNetworks
 }
 
 func (c *Client) ListExternalNetworks(ctx context.Context, regionID string) (openapi.ExternalNetworks, error) {
+	if err := c.CheckAccess(ctx, regionID); err != nil {
+		return nil, err
+	}
+
 	provider, err := c.Providers.LookupCloud(regionID)
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
