@@ -24,6 +24,9 @@ normal CRUD-over-CRD pattern used by many other handlers.
 
 ## Invariants And Guard Rails
 
+- Region access is enforced via `region.CheckAccess` for all image operations
+  (`v1` list/create/delete and `v2` query), preventing access to regions the
+  caller cannot see.
 - Image visibility is provider-mediated, not inferred from CRD ancestry.
 - Imported images are tagged to distinguish provenance and organization
   ownership.

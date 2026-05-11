@@ -160,7 +160,7 @@ func (s *createSaga) validateRegion(ctx context.Context, regionID string) error 
 			return err
 		}
 
-		return errors.HTTPUnprocessableContent("region does not exist or is not accessible").WithError(err)
+		return errors.HTTPUnprocessableContent("region does not exist").WithError(err)
 	}
 
 	return nil

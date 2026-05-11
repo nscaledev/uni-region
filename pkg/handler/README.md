@@ -42,7 +42,9 @@ So this package should be understood primarily in `v2` terms:
 
 Most handler clients follow the same broad pattern:
 
-1. resolve logical scope and visibility
+1. resolve logical scope and visibility — including region ACL enforcement via
+   `region.CheckAccess` for any operation that accepts a user-supplied region ID
+   (path parameter, query parameter, or request body field)
 2. load current state where mutation is involved
 3. convert API request shape into required stored or provider-facing shape
 4. merge system-owned metadata and derived context
@@ -52,7 +54,8 @@ Most handler clients follow the same broad pattern:
 This is not a blind REST-to-CRD translation layer. The handler layer is allowed
 to enforce cross-resource invariants, repair missing operational context, manage
 best-effort consistency across multiple objects, and reject requests that would
-create obviously broken relationships.
+create obviously broken relationships — including ACL-mediated region access
+control.
 
 ## `v2` First
 

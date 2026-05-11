@@ -32,6 +32,8 @@ accounting meet.
 ## Invariants And Guard Rails
 
 - Storage is a `v2` resource and follows the flatter direct-lookup model.
+- Region access is enforced via `region.CheckAccess` during request validation,
+  preventing callers from creating storage in regions they cannot see.
 - Quota allocation changes are part of the storage lifecycle contract, not an
   optional side effect.
 - Attachments must reference visible, provisioned networks in the same project.

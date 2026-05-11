@@ -38,6 +38,8 @@ service-principal root.
 - `Network v2` resources are labeled with `ResourceAPIVersionLabel=2`, and
   direct object access paths are gated accordingly.
 - `v2` lists prefilter by organization/project/region before per-item RBAC.
+- Region access is enforced via `region.CheckAccess` before network creation,
+  preventing callers from creating networks in regions they cannot see.
 - A `Network v2` is the visible coordination point for a resource subtree whose
   real ownership root is the hidden service principal created for it.
 - Delete must respect both ownership cascade and explicit external references.
