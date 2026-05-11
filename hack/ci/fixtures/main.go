@@ -60,6 +60,12 @@ const (
 
 	publicRegion  = "sim-public"
 	privateRegion = "sim-private"
+
+	internalAPICertificateName = "ci-region-api-tests"
+	internalAPISystemAccountCN = "unikorn-compute"
+	internalAPICertFilename    = "internal-api-client.crt"
+	internalAPIKeyFilename     = "internal-api-client.key"
+	internalCertDuration       = time.Hour
 )
 
 var (
@@ -595,6 +601,13 @@ type options struct {
 	fixtureCertDuration time.Duration
 	regionProvider      string
 	testRegionID        string
+	internalCertDir     string
+}
+
+type internalAPICredentials struct {
+	certPath string
+	keyPath  string
+	cn       string
 }
 
 func parseOptions() options {
@@ -607,11 +620,15 @@ func parseOptions() options {
 	fixtureCertDuration := flag.String("fixture-cert-duration", envOrDefault("FIXTURE_CERT_DURATION", defaultFixtureCertDuration.String()), "Duration for generated mTLS fixture certificates")
 	regionProvider := flag.String("region-provider", envDefault("REGION_PROVIDER", string(regionv1.ProviderSimulated)), "Region provider fixture mode: simulated or openstack")
 	testRegionID := flag.String("test-region-id", firstEnv("TEST_REGION_ID", "OPENSTACK_REGION_ID"), "Existing region ID to use for tests when --region-provider=openstack")
-
+	internalCertDir := flag.String("internal-cert-dir", os.Getenv("INTERNAL_API_CERT_DIR"), "Directory for generated internal API client certificate files")
 	flag.Parse()
 
 	if *baseURL == "" || *identityNamespace == "" || *regionNamespace == "" || *regionBaseURL == "" || *caCertPath == "" {
-		fmt.Fprintln(os.Stderr, "Usage: fixtures --base-url URL --identity-namespace NS --region-namespace NS --region-base-url URL --ca-cert PATH [--region-ca-cert PATH] [--fixture-cert-duration DURATION] [--region-provider simulated|openstack] [--test-region-id ID]")
+		fmt.Fprintln(os.Stderr, `Usage: fixtures --base-url URL --identity-namespace NS
+			--region-namespace NS --region-base-url URL --ca-cert PATH
+			[--region-ca-cert PATH] [--fixture-cert-duration DURATION]
+			[--internal-cert-dir DIR]
+			[--region-provider simulated|openstack] [--test-region-id ID]`)
 		os.Exit(1)
 	}
 
@@ -624,6 +641,11 @@ func parseOptions() options {
 		fatalf("--fixture-cert-duration must be positive")
 	}
 
+	internalCertDirValue := *internalCertDir
+	if internalCertDirValue == "" {
+		internalCertDirValue = "test"
+	}
+
 	return options{
 		baseURL:             *baseURL,
 		identityNamespace:   *identityNamespace,
@@ -634,6 +656,7 @@ func parseOptions() options {
 		fixtureCertDuration: duration,
 		regionProvider:      *regionProvider,
 		testRegionID:        *testRegionID,
+		internalCertDir:     internalCertDirValue,
 	}
 }
 
@@ -693,6 +716,13 @@ func resolveCertPaths(opts options) options {
 
 	opts.regionCACertPath = absRegionCACertPath
 
+	absInternalCertDir, err := filepath.Abs(opts.internalCertDir)
+	if err != nil {
+		fatalf("failed to resolve internal API cert dir: %v", err)
+	}
+
+	opts.internalCertDir = absInternalCertDir
+
 	return opts
 }
 
@@ -720,7 +750,30 @@ func newKubernetesClient() client.Client {
 	return k8s
 }
 
-func emitEnv(opts options, primary primaryFixture, secondaryOrgID, secondaryToken, testRegionID string) {
+func writeInternalAPICredentials(opts options, certPEM, keyPEM []byte) internalAPICredentials {
+	if err := os.MkdirAll(opts.internalCertDir, 0700); err != nil {
+		fatalf("failed to create internal API cert dir: %v", err)
+	}
+
+	certPath := filepath.Join(opts.internalCertDir, internalAPICertFilename)
+	keyPath := filepath.Join(opts.internalCertDir, internalAPIKeyFilename)
+
+	if err := os.WriteFile(certPath, certPEM, 0600); err != nil {
+		fatalf("failed to write internal API client certificate: %v", err)
+	}
+
+	if err := os.WriteFile(keyPath, keyPEM, 0600); err != nil {
+		fatalf("failed to write internal API client key: %v", err)
+	}
+
+	return internalAPICredentials{
+		certPath: certPath,
+		keyPath:  keyPath,
+		cn:       internalAPISystemAccountCN,
+	}
+}
+
+func emitEnv(opts options, primary primaryFixture, secondaryOrgID, secondaryToken string, testRegionID string, internalAPI internalAPICredentials) {
 	fmt.Printf("API_BASE_URL=%s\n", opts.regionBaseURL)
 	fmt.Printf("REGION_BASE_URL=%s\n", opts.regionBaseURL)
 	fmt.Printf("REGION_CA_CERT=%s\n", opts.regionCACertPath)
@@ -739,6 +792,10 @@ func emitEnv(opts options, primary primaryFixture, secondaryOrgID, secondaryToke
 	fmt.Printf("TEST_PRIVATE_REGION_ID=%s\n", privateRegion)
 	fmt.Printf("TEST_SECONDARY_ORG_ID=%s\n", secondaryOrgID)
 	fmt.Printf("TEST_SECONDARY_AUTH_TOKEN=%s\n", secondaryToken)
+	fmt.Printf("INTERNAL_API_CLIENT_CERT=%s\n", internalAPI.certPath)
+	fmt.Printf("INTERNAL_API_CLIENT_KEY=%s\n", internalAPI.keyPath)
+	fmt.Printf("INTERNAL_API_CN=%s\n", internalAPI.cn)
+	fmt.Printf("INTERNAL_API_ACTOR=%s\n", primary.adminSAID)
 }
 
 func run(opts options) {
@@ -771,6 +828,10 @@ func run(opts options) {
 
 	secondaryOrgID, secondaryToken := createSecondaryFixtures(ctx, identityClient, k8s, opts.identityNamespace)
 
+	logf("Issuing internal Region API client certificate for %s...", internalAPISystemAccountCN)
+	internalCertPEM, internalKeyPEM := issueCert(ctx, k8s, opts.identityNamespace, internalAPICertificateName, internalAPISystemAccountCN, internalCertDuration)
+	internalAPI := writeInternalAPICredentials(opts, internalCertPEM, internalKeyPEM)
+
 	if provider == regionv1.ProviderSimulated {
 		logf("Creating simulated public region fixture in namespace %s...", opts.regionNamespace)
 		upsertRegion(ctx, k8s, opts.regionNamespace, publicRegion, nil)
@@ -778,5 +839,6 @@ func run(opts options) {
 
 	logf("Creating simulated private region fixture in namespace %s...", opts.regionNamespace)
 	upsertRegion(ctx, k8s, opts.regionNamespace, privateRegion, []string{primary.orgID})
-	emitEnv(opts, primary, secondaryOrgID, secondaryToken, testRegionID)
+
+	emitEnv(opts, primary, secondaryOrgID, secondaryToken, testRegionID, internalAPI)
 }
