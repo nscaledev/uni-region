@@ -20,6 +20,9 @@ spec:
         args:
         - --namespace={{ .Release.Namespace }}
         {{- include "unikorn.otlp.flags" . | nindent 8 }}
+        env:
+        - name: OTEL_SERVICE_NAME
+          value: {{ .Release.Name }}-monitor
         resources:
           {{- .Values.monitor.resources | toYaml | nindent 10 }}
         securityContext:
