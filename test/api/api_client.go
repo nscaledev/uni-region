@@ -21,14 +21,22 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 
 	"github.com/onsi/ginkgo/v2"
 
 	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
+	identityopenapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	"github.com/unikorn-cloud/identity/pkg/principal"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 )
 
@@ -39,13 +47,17 @@ func (g *GinkgoLogger) Printf(format string, args ...interface{}) {
 	ginkgo.GinkgoWriter.Printf(format, args...)
 }
 
+// ErrInternalAPIConfigMissing is returned when local-only internal credentials are absent.
+var ErrInternalAPIConfigMissing = errors.New("internal API credentials are not configured")
+
 // APIClient wraps the core API client with region-specific methods.
 // Add methods here as you write tests for specific endpoints.
 type APIClient struct {
 	*coreclient.APIClient
-	regionClient *coreclient.APIClient // separate client for region-specific endpoints
-	config       *TestConfig
-	endpoints    *Endpoints
+	regionClient             *coreclient.APIClient // separate client for region-specific endpoints
+	internalRegionHTTPClient *http.Client
+	config                   *TestConfig
+	endpoints                *Endpoints
 }
 
 // GetListRegionsPath returns the path for listing regions.
@@ -63,6 +75,126 @@ func (c *APIClient) GetEndpoints() *Endpoints {
 // Use this for direct API calls that need to hit the region API.
 func (c *APIClient) DoRegionRequest(ctx context.Context, method, path string, body io.Reader, expectedStatus int) (*http.Response, []byte, error) {
 	return c.regionClient.DoRequest(ctx, method, path, body, expectedStatus)
+}
+
+// InternalAPIConfigured reports whether local internal API mTLS credentials are present.
+func (c *APIClient) InternalAPIConfigured() bool {
+	return c.config.RegionBaseURL != "" && c.config.HasInternalAPIConfig()
+}
+
+func (c *APIClient) internalRegionClient() (*http.Client, error) {
+	if c.internalRegionHTTPClient != nil {
+		return c.internalRegionHTTPClient, nil
+	}
+
+	if !c.InternalAPIConfigured() {
+		return nil, ErrInternalAPIConfigMissing
+	}
+
+	cert, err := tls.LoadX509KeyPair(c.config.InternalAPICert, c.config.InternalAPIKey)
+	if err != nil {
+		return nil, fmt.Errorf("loading internal API client certificate: %w", err)
+	}
+
+	tlsConfig := &tls.Config{
+		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{cert},
+	}
+
+	if c.config.RegionCACertPath != "" {
+		caBytes, err := os.ReadFile(c.config.RegionCACertPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading region CA bundle: %w", err)
+		}
+
+		caPool := x509.NewCertPool()
+		if !caPool.AppendCertsFromPEM(caBytes) {
+			return nil, errors.New("parsing region CA bundle")
+		}
+
+		tlsConfig.RootCAs = caPool
+	}
+
+	c.internalRegionHTTPClient = &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+		},
+		Timeout: c.config.RequestTimeout,
+	}
+
+	return c.internalRegionHTTPClient, nil
+}
+
+func (c *APIClient) addInternalRequestHeaders(req *http.Request) error {
+	req.Header.Set("Traceparent", coreclient.CreateTraceParent())
+	req.Header.Set("Tracestate", "test-automation=true")
+
+	organizationIDs := []string{}
+	if c.config.OrgID != "" {
+		organizationIDs = []string{c.config.OrgID}
+	}
+
+	actor := c.config.InternalAPIActor
+	if actor == "" {
+		actor = "api-tests"
+	}
+
+	principalInfo := &principal.Principal{
+		OrganizationID:  c.config.OrgID,
+		OrganizationIDs: organizationIDs,
+		ProjectID:       c.config.ProjectID,
+		Type:            identityopenapi.Service,
+		Actor:           actor,
+	}
+
+	data, err := json.Marshal(principalInfo)
+	if err != nil {
+		return fmt.Errorf("marshaling internal API principal: %w", err)
+	}
+
+	req.Header.Set(principal.Header, base64.RawURLEncoding.EncodeToString(data))
+
+	return nil
+}
+
+// DoInternalRegionRequest performs a local-only internal Region API request over mTLS.
+func (c *APIClient) DoInternalRegionRequest(ctx context.Context, method, path string, body io.Reader, expectedStatus int) (*http.Response, []byte, error) {
+	httpClient, err := c.internalRegionClient()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	fullURL := strings.TrimSuffix(c.config.RegionBaseURL, "/") + path
+
+	req, err := http.NewRequestWithContext(ctx, method, fullURL, body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating internal API request: %w", err)
+	}
+
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	if err := c.addInternalRequestHeaders(req); err != nil {
+		return nil, nil, err
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("executing internal API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp, nil, fmt.Errorf("reading internal API response: %w", err)
+	}
+
+	if expectedStatus != 0 && resp.StatusCode != expectedStatus {
+		return resp, respBody, fmt.Errorf("internal API status %d, expected %d: %w", resp.StatusCode, expectedStatus, coreclient.ErrUnexpectedStatus)
+	}
+
+	return resp, respBody, nil
 }
 
 // NewAPIClient creates a new Region API client.

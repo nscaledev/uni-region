@@ -143,6 +143,12 @@ make integration-fixtures
 ingress hosts, and the local CA bundle. `make integration-fixtures` creates the
 identity fixtures and writes `test/.env`.
 
+
+Internal API tests are local-only by default. The integration fixture setup
+can generate short-lived mTLS client certificate files and write
+`INTERNAL_API_CLIENT_CERT` and `INTERNAL_API_CLIENT_KEY` into `test/.env`.
+Do not store those system-account credentials as shared workflow secrets.
+
 To run API tests against an OpenStack-backed region, generate `test/.env.install`
 first, then register or reference the region. In OpenStack mode the public test
 region is the existing Region CR identified by `TEST_REGION_ID`; the simulated
