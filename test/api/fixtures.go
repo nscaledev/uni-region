@@ -31,6 +31,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
+	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 
 	"k8s.io/utils/ptr"
@@ -165,8 +166,10 @@ type LoadBalancerPayloadBuilder struct {
 	lb regionopenapi.LoadBalancerV2Create
 }
 
-// NewLoadBalancerPayload creates a builder with a single TCP listener and empty
-// pool members, wired to the given network.
+// NewLoadBalancerPayload creates a builder with a single TCP listener and one
+// pool member, wired to the given network. The default member ensures the
+// payload is ready to provision against the OpenStack provider, which yields
+// indefinitely while the pool has no effective members.
 func NewLoadBalancerPayload(networkID string) *LoadBalancerPayloadBuilder {
 	return &LoadBalancerPayloadBuilder{
 		lb: regionopenapi.LoadBalancerV2Create{
@@ -178,10 +181,12 @@ func NewLoadBalancerPayload(networkID string) *LoadBalancerPayloadBuilder {
 				Listeners: []regionopenapi.LoadBalancerListenerV2{
 					{
 						Name:     "http",
-						Protocol: regionopenapi.LoadBalancerListenerProtocolV2("tcp"),
+						Protocol: regionopenapi.LoadBalancerListenerProtocolV2Tcp,
 						Port:     80,
 						Pool: regionopenapi.LoadBalancerPoolV2{
-							Members: []regionopenapi.LoadBalancerMemberV2{},
+							Members: []regionopenapi.LoadBalancerMemberV2{
+								{Address: "10.0.1.10", Port: 8080},
+							},
 						},
 					},
 				},
@@ -282,4 +287,32 @@ func WaitForImageReady(c *APIClient, ctx context.Context, config *TestConfig, im
 
 		return false
 	}).WithTimeout(time.Hour).WithPolling(15 * time.Second).Should(BeTrue())
+}
+
+// WaitForLoadBalancerProvisioned polls until the load balancer reaches Provisioned.
+func WaitForLoadBalancerProvisioned(c *APIClient, ctx context.Context, lbID string) {
+	GinkgoWriter.Printf("Waiting for load balancer %s to be provisioned\n", lbID)
+
+	Eventually(func() coreapi.ResourceProvisioningStatus {
+		lb, err := c.GetLoadBalancer(ctx, lbID)
+		if err != nil {
+			GinkgoWriter.Printf("Error retrieving load balancer %s: %v\n", lbID, err)
+			return ""
+		}
+
+		return lb.Metadata.ProvisioningStatus
+	}).WithTimeout(5*time.Minute).WithPolling(10*time.Second).
+		Should(Equal(coreapi.ResourceProvisioningStatusProvisioned),
+			"load balancer should eventually be provisioned")
+}
+
+// WaitForLoadBalancerGone polls until GET for the load balancer returns the
+// expected not-found error.
+func WaitForLoadBalancerGone(c *APIClient, ctx context.Context, lbID string) {
+	Eventually(func() error {
+		_, err := c.GetLoadBalancer(ctx, lbID)
+		return err
+	}).WithTimeout(2*time.Minute).WithPolling(2*time.Second).
+		Should(And(HaveOccurred(), MatchError(coreclient.ErrUnexpectedStatusCode)),
+			"load balancer should eventually be deleted")
 }

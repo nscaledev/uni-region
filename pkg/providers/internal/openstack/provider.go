@@ -34,6 +34,10 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/listeners"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/loadbalancers"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/monitors"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/pools"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/rules"
@@ -44,6 +48,7 @@ import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/provisioners"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -328,6 +333,21 @@ func (p *Provider) privilegedNetworkFromServicePrincipal(ctx context.Context, id
 	region, _ := p.openstack.regionSnapshot()
 
 	client, err := NewNetworkClient(ctx, provider, region.Spec.Openstack.Network)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
+// loadBalancerFromServicePrincipal gets a load balancer client scoped to the service principal.
+func (p *Provider) loadBalancerFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (LoadBalancingInterface, error) {
+	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := NewLoadBalancerClient(ctx, provider)
 	if err != nil {
 		return nil, err
 	}
@@ -2197,6 +2217,65 @@ func (p *Provider) reconcileFloatingIP(ctx context.Context, client FloatingIPInt
 	return nil
 }
 
+// reconcileLoadBalancerFloatingIP converges the floating IP attached to the
+// Octavia VIP port to match loadBalancer.Spec.PublicIP. The VIP port is
+// owned by Octavia, not a Neutron port we created ourselves.
+func (p *Provider) reconcileLoadBalancerFloatingIP(ctx context.Context, client FloatingIPInterface, loadBalancer *unikornv1.LoadBalancer, vipPortID string) error {
+	log := log.FromContext(ctx)
+
+	enabled := loadBalancer.Spec.PublicIP
+
+	loadBalancer.Status.PublicIP = nil
+
+	floatingip, err := client.GetFloatingIP(ctx, vipPortID)
+	if err == nil {
+		if enabled {
+			log.V(1).Info("floating ip already exists")
+
+			addr, err := parseIPv4Address(floatingip.FloatingIP)
+			if err != nil {
+				return fmt.Errorf("load balancer %s public IP: %w", loadBalancer.Name, err)
+			}
+
+			loadBalancer.Status.PublicIP = addr
+
+			return nil
+		}
+
+		log.V(1).Info("deleting floating ip")
+
+		if err := client.DeleteFloatingIP(ctx, floatingip.ID); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	if !errors.Is(err, coreerrors.ErrResourceNotFound) {
+		return err
+	}
+
+	if !enabled {
+		return nil
+	}
+
+	log.V(1).Info("creating floating ip")
+
+	floatingip, err = client.CreateFloatingIP(ctx, vipPortID)
+	if err != nil {
+		return err
+	}
+
+	addr, err := parseIPv4Address(floatingip.FloatingIP)
+	if err != nil {
+		return fmt.Errorf("load balancer %s public IP: %w", loadBalancer.Name, err)
+	}
+
+	loadBalancer.Status.PublicIP = addr
+
+	return nil
+}
+
 func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
 	log := log.FromContext(ctx)
 
@@ -2623,4 +2702,807 @@ func interpretGophercloudError(err error) error {
 	}
 
 	return err
+}
+
+// loadBalancerNetwork resolves the Network CRD referenced by the load balancer's
+// constants.NetworkLabel.
+func (p *Provider) loadBalancerNetwork(ctx context.Context, loadBalancer *unikornv1.LoadBalancer) (*unikornv1.Network, error) {
+	networkID, ok := loadBalancer.Labels[constants.NetworkLabel]
+	if !ok || networkID == "" {
+		return nil, fmt.Errorf("%w: load balancer %s missing network label", coreerrors.ErrConsistency, loadBalancer.Name)
+	}
+
+	network := &unikornv1.Network{}
+	if err := p.client.Get(ctx, client.ObjectKey{Namespace: loadBalancer.Namespace, Name: networkID}, network); err != nil {
+		return nil, fmt.Errorf("%w: get network %s for load balancer %s: %w", coreerrors.ErrConsistency, networkID, loadBalancer.Name, err)
+	}
+
+	return network, nil
+}
+
+// classifyOctaviaStatus maps an Octavia ProvisioningStatus to a reconcile
+// outcome:
+//   - "ACTIVE": nil (proceed)
+//   - "PENDING_*": provisioners.ErrYield (transient; requeue)
+//   - anything else (incl. ""): wrapped coreerrors.ErrConsistency (terminal)
+func classifyOctaviaStatus(kind, name, status string) error {
+	switch status {
+	case "ACTIVE":
+		return nil
+	case "PENDING_CREATE", "PENDING_UPDATE", "PENDING_DELETE":
+		return provisioners.ErrYield
+	default:
+		return fmt.Errorf("%w: octavia %s %q in unexpected state %q", coreerrors.ErrConsistency, kind, name, status)
+	}
+}
+
+// parseIPv4Address parses a non-empty OpenStack-returned address string into
+// an IPv4Address. Empty, malformed, and IPv6 inputs return ErrConsistency —
+// callers wrap with their own context. Callers that want to tolerate an
+// empty input (e.g. pre-ACTIVE Octavia states) must guard with `if s != ""`
+// before calling.
+func parseIPv4Address(s string) (*unikornv1core.IPv4Address, error) {
+	ip := net.ParseIP(s).To4()
+	if ip == nil {
+		return nil, fmt.Errorf("%w: %q is not a valid IPv4 address", coreerrors.ErrConsistency, s)
+	}
+
+	return &unikornv1core.IPv4Address{IP: ip}, nil
+}
+
+// octaviaListenerProtocol maps a CRD listener protocol to Octavia's listener
+// protocol enum.
+func octaviaListenerProtocol(protocol unikornv1.LoadBalancerListenerProtocol) listeners.Protocol {
+	if protocol == unikornv1.LoadBalancerListenerProtocolUDP {
+		return listeners.ProtocolUDP
+	}
+
+	return listeners.ProtocolTCP
+}
+
+// octaviaPoolProtocol maps a CRD listener protocol (and ProxyProtocolV2 flag)
+// to Octavia's pool protocol enum.
+func octaviaPoolProtocol(protocol unikornv1.LoadBalancerListenerProtocol, proxyProtocolV2 bool) pools.Protocol {
+	if protocol == unikornv1.LoadBalancerListenerProtocolUDP {
+		return pools.ProtocolUDP
+	}
+
+	if proxyProtocolV2 {
+		return pools.ProtocolPROXYV2
+	}
+
+	return pools.ProtocolTCP
+}
+
+// octaviaMonitorType maps a CRD listener protocol to Octavia's health monitor
+// type.
+func octaviaMonitorType(protocol unikornv1.LoadBalancerListenerProtocol) string {
+	if protocol == unikornv1.LoadBalancerListenerProtocolUDP {
+		return monitors.TypeUDPConnect
+	}
+
+	return monitors.TypeTCP
+}
+
+// desiredListenerCIDRs returns the listener's AllowedCIDRs as a slice of
+// stringified CIDRs, or nil when none are set.
+func desiredListenerCIDRs(listener *unikornv1.LoadBalancerListener) []string {
+	if len(listener.AllowedCIDRs) == 0 {
+		return nil
+	}
+
+	out := make([]string, len(listener.AllowedCIDRs))
+	for i := range listener.AllowedCIDRs {
+		out[i] = listener.AllowedCIDRs[i].String()
+	}
+
+	return out
+}
+
+// idleTimeoutMillis converts a CRD IdleTimeoutSeconds (nil-able) into the
+// milliseconds form used by Octavia, or nil when the spec field is unset.
+func idleTimeoutMillis(seconds *int) *int {
+	if seconds == nil {
+		return nil
+	}
+
+	return ptr.To(*seconds * 1000)
+}
+
+// buildMemberOpts builds the BatchUpdateMembers payload for a listener's pool.
+func buildMemberOpts(listener *unikornv1.LoadBalancerListener) []pools.BatchUpdateMemberOpts {
+	out := make([]pools.BatchUpdateMemberOpts, len(listener.Pool.Members))
+
+	for i := range listener.Pool.Members {
+		out[i] = pools.BatchUpdateMemberOpts{
+			Address:      listener.Pool.Members[i].Address.String(),
+			ProtocolPort: listener.Pool.Members[i].Port,
+		}
+	}
+
+	return out
+}
+
+// buildMonitorCreateOpts builds the monitor CreateOpts for a listener's pool.
+func buildMonitorCreateOpts(loadBalancer *unikornv1.LoadBalancer, listener *unikornv1.LoadBalancerListener, poolID string) monitors.CreateOpts {
+	hc := listener.Pool.HealthCheck
+
+	return monitors.CreateOpts{
+		PoolID:         poolID,
+		Name:           loadBalancerMonitorName(loadBalancer, listener),
+		Type:           octaviaMonitorType(listener.Protocol),
+		Delay:          hc.IntervalSeconds,
+		Timeout:        hc.TimeoutSeconds,
+		MaxRetries:     hc.HealthyThreshold,
+		MaxRetriesDown: hc.UnhealthyThreshold,
+	}
+}
+
+// buildPoolCreateOpts builds a standalone pool CreateOpts (used for both the
+// nested single-call create payload and the post-create per-resource path).
+// The returned opts do not include LoadbalancerID/ListenerID — the caller sets
+// those depending on the path.
+func buildPoolCreateOpts(loadBalancer *unikornv1.LoadBalancer, listener *unikornv1.LoadBalancerListener) pools.CreateOpts {
+	return pools.CreateOpts{
+		Name:     loadBalancerPoolName(loadBalancer, listener),
+		LBMethod: pools.LBMethodRoundRobin,
+		Protocol: octaviaPoolProtocol(listener.Protocol, listener.Pool.ProxyProtocolV2),
+	}
+}
+
+// buildListenerCreateOpts builds the listener CreateOpts for the per-resource
+// create path. The pool is created first and attached via DefaultPoolID.
+func buildListenerCreateOpts(loadBalancer *unikornv1.LoadBalancer, listener *unikornv1.LoadBalancerListener, loadBalancerID, defaultPoolID string) listeners.CreateOpts {
+	return listeners.CreateOpts{
+		LoadbalancerID:    loadBalancerID,
+		Name:              loadBalancerListenerName(loadBalancer, listener),
+		Protocol:          octaviaListenerProtocol(listener.Protocol),
+		ProtocolPort:      listener.Port,
+		DefaultPoolID:     defaultPoolID,
+		AllowedCIDRs:      desiredListenerCIDRs(listener),
+		TimeoutClientData: idleTimeoutMillis(listener.IdleTimeoutSeconds),
+		TimeoutMemberData: idleTimeoutMillis(listener.IdleTimeoutSeconds),
+	}
+}
+
+// buildLoadBalancerCreateOpts builds the fully-populated nested CreateOpts tree
+// used when the load balancer does not yet exist.
+func buildLoadBalancerCreateOpts(loadBalancer *unikornv1.LoadBalancer, subnetID string) loadbalancers.CreateOpts {
+	opts := loadbalancers.CreateOpts{
+		Name:        loadBalancerName(loadBalancer),
+		VipSubnetID: subnetID,
+	}
+
+	if loadBalancer.Spec.RequestedVIPAddress != nil {
+		opts.VipAddress = loadBalancer.Spec.RequestedVIPAddress.String()
+	}
+
+	opts.Listeners = make([]listeners.CreateOpts, len(loadBalancer.Spec.Listeners))
+
+	for i := range loadBalancer.Spec.Listeners {
+		listener := &loadBalancer.Spec.Listeners[i]
+
+		poolOpts := buildPoolCreateOpts(loadBalancer, listener)
+
+		members := make([]pools.CreateMemberOpts, len(listener.Pool.Members))
+		for j := range listener.Pool.Members {
+			members[j] = pools.CreateMemberOpts{
+				Address:      listener.Pool.Members[j].Address.String(),
+				ProtocolPort: listener.Pool.Members[j].Port,
+			}
+		}
+
+		poolOpts.Members = members
+
+		if listener.Pool.HealthCheck != nil {
+			monitorOpts := buildMonitorCreateOpts(loadBalancer, listener, "")
+			poolOpts.Monitor = monitorOpts
+		}
+
+		opts.Listeners[i] = listeners.CreateOpts{
+			Name:              loadBalancerListenerName(loadBalancer, listener),
+			Protocol:          octaviaListenerProtocol(listener.Protocol),
+			ProtocolPort:      listener.Port,
+			AllowedCIDRs:      desiredListenerCIDRs(listener),
+			TimeoutClientData: idleTimeoutMillis(listener.IdleTimeoutSeconds),
+			TimeoutMemberData: idleTimeoutMillis(listener.IdleTimeoutSeconds),
+			DefaultPool:       &poolOpts,
+		}
+	}
+
+	return opts
+}
+
+// reconcileLoadBalancer ensures the Octavia load balancer (and on first create
+// its full nested tree) exists, returning the live resource. It never returns
+// ErrYield — the orchestrator decides whether to yield based on
+// ProvisioningStatus.
+func (p *Provider) reconcileLoadBalancer(ctx context.Context, lbClient LoadBalancingInterface, loadBalancer *unikornv1.LoadBalancer, subnetID string) (*loadbalancers.LoadBalancer, error) {
+	log := log.FromContext(ctx)
+
+	osLB, err := lbClient.GetLoadBalancer(ctx, loadBalancer)
+	if err != nil {
+		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
+			return nil, err
+		}
+
+		log.V(1).Info("creating load balancer")
+
+		opts := buildLoadBalancerCreateOpts(loadBalancer, subnetID)
+
+		osLB, err = lbClient.CreateLoadBalancer(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if osLB.VipAddress != "" {
+		addr, err := parseIPv4Address(osLB.VipAddress)
+		if err != nil {
+			return nil, fmt.Errorf("load balancer %s VIP: %w", loadBalancer.Name, err)
+		}
+
+		loadBalancer.Status.VIPAddress = addr
+	}
+
+	if loadBalancer.Spec.RequestedVIPAddress != nil && osLB.VipAddress != "" && osLB.VipAddress != loadBalancer.Spec.RequestedVIPAddress.String() {
+		return nil, fmt.Errorf("%w: load balancer %s VIP %s does not match requested %s", coreerrors.ErrConsistency, loadBalancer.Name, osLB.VipAddress, loadBalancer.Spec.RequestedVIPAddress.String())
+	}
+
+	return osLB, nil
+}
+
+// reconcilePool ensures the Octavia pool for a listener exists, and that its
+// mutable fields (LBMethod) match the desired state. Protocol drift cannot be
+// reconciled here — Octavia rejects protocol mutation; the handler-layer
+// immutability check blocks user-driven drift before it reaches the provider.
+func (p *Provider) reconcilePool(ctx context.Context, lbClient LoadBalancingInterface, loadBalancer *unikornv1.LoadBalancer, listener *unikornv1.LoadBalancerListener, loadBalancerID string) (*pools.Pool, error) {
+	log := log.FromContext(ctx)
+
+	pool, err := lbClient.GetPool(ctx, loadBalancerID, loadBalancer, listener)
+	if err != nil {
+		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
+			return nil, err
+		}
+
+		log.V(1).Info("creating pool", "listener", listener.Name)
+
+		opts := buildPoolCreateOpts(loadBalancer, listener)
+		opts.LoadbalancerID = loadBalancerID
+
+		return lbClient.CreatePool(ctx, opts)
+	}
+
+	desiredLBMethod := pools.LBMethodRoundRobin
+	if pool.LBMethod != string(desiredLBMethod) {
+		log.V(1).Info("updating pool lb method", "listener", listener.Name)
+
+		return lbClient.UpdatePool(ctx, pool.ID, pools.UpdateOpts{LBMethod: desiredLBMethod})
+	}
+
+	return pool, nil
+}
+
+// reconcileListener ensures the Octavia listener for a spec listener exists
+// and that its mutable fields (AllowedCIDRs, idle timeouts) match the desired
+// state. Returns the live listener.
+func (p *Provider) reconcileListener(ctx context.Context, lbClient LoadBalancingInterface, loadBalancer *unikornv1.LoadBalancer, listener *unikornv1.LoadBalancerListener, loadBalancerID, defaultPoolID string) (*listeners.Listener, error) {
+	log := log.FromContext(ctx)
+
+	live, err := lbClient.GetListener(ctx, loadBalancerID, loadBalancer, listener)
+	if err != nil {
+		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
+			return nil, err
+		}
+
+		log.V(1).Info("creating listener", "listener", listener.Name)
+
+		opts := buildListenerCreateOpts(loadBalancer, listener, loadBalancerID, defaultPoolID)
+
+		return lbClient.CreateListener(ctx, opts)
+	}
+
+	updateOpts := listeners.UpdateOpts{}
+	dirty := false
+
+	desiredCIDRs := desiredListenerCIDRs(listener)
+	if !cidrSetsEqual(live.AllowedCIDRs, desiredCIDRs) {
+		cidrs := desiredCIDRs
+		if cidrs == nil {
+			cidrs = []string{}
+		}
+
+		updateOpts.AllowedCIDRs = &cidrs
+		dirty = true
+	}
+
+	if live.DefaultPoolID != defaultPoolID {
+		updateOpts.DefaultPoolID = ptr.To(defaultPoolID)
+		dirty = true
+	}
+
+	if desiredTimeout := idleTimeoutMillis(listener.IdleTimeoutSeconds); desiredTimeout != nil {
+		if live.TimeoutClientData != *desiredTimeout || live.TimeoutMemberData != *desiredTimeout {
+			updateOpts.TimeoutClientData = desiredTimeout
+			updateOpts.TimeoutMemberData = desiredTimeout
+			dirty = true
+		}
+	}
+
+	if !dirty {
+		return live, nil
+	}
+
+	log.V(1).Info("updating listener", "listener", listener.Name)
+
+	return lbClient.UpdateListener(ctx, live.ID, updateOpts)
+}
+
+// reconcileMembers ensures the Octavia pool membership matches the spec set.
+// It compares (Address, Port) sets, only invoking BatchUpdateMembers when they
+// differ. Returns a mutated flag so the caller can yield after the LB enters
+// PENDING_UPDATE.
+func (p *Provider) reconcileMembers(ctx context.Context, lbClient LoadBalancingInterface, loadBalancer *unikornv1.LoadBalancer, listener *unikornv1.LoadBalancerListener, poolID string) (bool, error) {
+	log := log.FromContext(ctx)
+
+	live, err := lbClient.ListMembers(ctx, poolID)
+	if err != nil {
+		return false, err
+	}
+
+	desired := buildMemberOpts(listener)
+
+	if memberSetsEqual(live, desired) {
+		return false, nil
+	}
+
+	log.V(1).Info("updating pool members", "loadbalancer", loadBalancer.Name, "listener", listener.Name)
+
+	if err := lbClient.BatchUpdateMembers(ctx, poolID, desired); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// reconcileMonitor ensures the Octavia health monitor for a listener's pool
+// exists and that its mutable threshold fields match the desired state.
+func (p *Provider) reconcileMonitor(ctx context.Context, lbClient LoadBalancingInterface, loadBalancer *unikornv1.LoadBalancer, listener *unikornv1.LoadBalancerListener, poolID string) (*monitors.Monitor, error) {
+	log := log.FromContext(ctx)
+
+	hc := listener.Pool.HealthCheck
+
+	live, err := lbClient.GetMonitor(ctx, poolID, loadBalancer, listener)
+	if err != nil {
+		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
+			return nil, err
+		}
+
+		log.V(1).Info("creating health monitor", "listener", listener.Name)
+
+		opts := buildMonitorCreateOpts(loadBalancer, listener, poolID)
+
+		return lbClient.CreateMonitor(ctx, opts)
+	}
+
+	updateOpts := monitors.UpdateOpts{}
+	dirty := false
+
+	if live.Delay != hc.IntervalSeconds {
+		updateOpts.Delay = hc.IntervalSeconds
+		dirty = true
+	}
+
+	if live.Timeout != hc.TimeoutSeconds {
+		updateOpts.Timeout = hc.TimeoutSeconds
+		dirty = true
+	}
+
+	if live.MaxRetries != hc.HealthyThreshold {
+		updateOpts.MaxRetries = hc.HealthyThreshold
+		dirty = true
+	}
+
+	if live.MaxRetriesDown != hc.UnhealthyThreshold {
+		updateOpts.MaxRetriesDown = hc.UnhealthyThreshold
+		dirty = true
+	}
+
+	if !dirty {
+		return live, nil
+	}
+
+	log.V(1).Info("updating health monitor", "listener", listener.Name)
+
+	return lbClient.UpdateMonitor(ctx, live.ID, updateOpts)
+}
+
+// desiredNameSets bundles the listener/pool/monitor name sets a load balancer
+// spec implies, so callers can pick out only the sets they need.
+type desiredNameSets struct {
+	listeners, pools, monitors map[string]struct{}
+}
+
+// desiredLoadBalancerNames returns the listener/pool/monitor names a load
+// balancer spec implies.
+func desiredLoadBalancerNames(loadBalancer *unikornv1.LoadBalancer) desiredNameSets {
+	sets := desiredNameSets{
+		listeners: make(map[string]struct{}, len(loadBalancer.Spec.Listeners)),
+		pools:     make(map[string]struct{}, len(loadBalancer.Spec.Listeners)),
+		monitors:  make(map[string]struct{}, len(loadBalancer.Spec.Listeners)),
+	}
+
+	for i := range loadBalancer.Spec.Listeners {
+		listener := &loadBalancer.Spec.Listeners[i]
+		sets.listeners[loadBalancerListenerName(loadBalancer, listener)] = struct{}{}
+		sets.pools[loadBalancerPoolName(loadBalancer, listener)] = struct{}{}
+
+		if listener.Pool.HealthCheck != nil {
+			sets.monitors[loadBalancerMonitorName(loadBalancer, listener)] = struct{}{}
+		}
+	}
+
+	return sets
+}
+
+// pruneOrphanedListener deletes the first listener whose name has the LB
+// prefix and is not in the desired set, returning whether work was done.
+func pruneOrphanedListener(ctx context.Context, lbClient LoadBalancingInterface, loadBalancerID, prefix string, desired map[string]struct{}) (bool, error) {
+	log := log.FromContext(ctx)
+
+	list, err := lbClient.ListListeners(ctx, loadBalancerID, "")
+	if err != nil {
+		return false, err
+	}
+
+	for i := range list {
+		listener := &list[i]
+		if !strings.HasPrefix(listener.Name, prefix) {
+			continue
+		}
+
+		if _, ok := desired[listener.Name]; ok {
+			continue
+		}
+
+		log.V(1).Info("deleting orphaned listener", "name", listener.Name)
+
+		return true, lbClient.DeleteListener(ctx, listener.ID)
+	}
+
+	return false, nil
+}
+
+// pruneOrphanedPoolOrMonitor deletes either an orphaned pool or an orphaned
+// monitor (in that order), returning whether work was done.
+func pruneOrphanedPoolOrMonitor(ctx context.Context, lbClient LoadBalancingInterface, loadBalancerID, prefix string, desiredPools, desiredMonitors map[string]struct{}) (bool, error) {
+	log := log.FromContext(ctx)
+
+	poolList, err := lbClient.ListPools(ctx, loadBalancerID, "")
+	if err != nil {
+		return false, err
+	}
+
+	for i := range poolList {
+		pool := &poolList[i]
+		if !strings.HasPrefix(pool.Name, prefix) {
+			continue
+		}
+
+		if _, ok := desiredPools[pool.Name]; ok {
+			continue
+		}
+
+		log.V(1).Info("deleting orphaned pool", "name", pool.Name)
+
+		return true, lbClient.DeletePool(ctx, pool.ID)
+	}
+
+	for i := range poolList {
+		pool := &poolList[i]
+		if !strings.HasPrefix(pool.Name, prefix) {
+			continue
+		}
+
+		done, err := pruneOrphanedMonitor(ctx, lbClient, pool.ID, prefix, desiredMonitors)
+		if err != nil || done {
+			return done, err
+		}
+	}
+
+	return false, nil
+}
+
+// pruneOrphanedMonitor deletes the first monitor on the given pool whose name
+// has the LB prefix and is not in the desired set.
+func pruneOrphanedMonitor(ctx context.Context, lbClient LoadBalancingInterface, poolID, prefix string, desired map[string]struct{}) (bool, error) {
+	log := log.FromContext(ctx)
+
+	list, err := lbClient.ListMonitors(ctx, poolID, "")
+	if err != nil {
+		return false, err
+	}
+
+	for i := range list {
+		monitor := &list[i]
+		if !strings.HasPrefix(monitor.Name, prefix) {
+			continue
+		}
+
+		if _, ok := desired[monitor.Name]; ok {
+			continue
+		}
+
+		log.V(1).Info("deleting orphaned health monitor", "name", monitor.Name)
+
+		return true, lbClient.DeleteMonitor(ctx, monitor.ID)
+	}
+
+	return false, nil
+}
+
+// pruneOrphanedListenersOnce deletes a single orphaned listener (one whose
+// name has the LB prefix but is not in the desired set), returning whether it
+// mutated state. The caller must yield on a true result so the LB
+// PENDING_UPDATE can settle before the next reconcile pass.
+//
+// Listener pruning runs *before* the desired listener loop so that a rename
+// preserving (protocol, port) — e.g. http→api on TCP/80 — frees the port
+// before the create attempt would otherwise be rejected as a duplicate.
+func (p *Provider) pruneOrphanedListenersOnce(ctx context.Context, lbClient LoadBalancingInterface, loadBalancer *unikornv1.LoadBalancer, loadBalancerID string) (bool, error) {
+	desired := desiredLoadBalancerNames(loadBalancer)
+	prefix := loadBalancerName(loadBalancer) + "-"
+
+	return pruneOrphanedListener(ctx, lbClient, loadBalancerID, prefix, desired.listeners)
+}
+
+// pruneOrphanedPoolsAndMonitorsOnce deletes a single orphaned pool or monitor,
+// returning whether it mutated state. Runs after the desired listener loop so
+// that pools no longer referenced by any listener can be safely removed.
+func (p *Provider) pruneOrphanedPoolsAndMonitorsOnce(ctx context.Context, lbClient LoadBalancingInterface, loadBalancer *unikornv1.LoadBalancer, loadBalancerID string) (bool, error) {
+	desired := desiredLoadBalancerNames(loadBalancer)
+	prefix := loadBalancerName(loadBalancer) + "-"
+
+	return pruneOrphanedPoolOrMonitor(ctx, lbClient, loadBalancerID, prefix, desired.pools, desired.monitors)
+}
+
+// cidrSetsEqual compares two CIDR string lists as sorted sets.
+func cidrSetsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	aa := append([]string(nil), a...)
+	slices.Sort(aa)
+
+	bb := append([]string(nil), b...)
+	slices.Sort(bb)
+
+	return slices.Equal(aa, bb)
+}
+
+// memberSetsEqual reports whether the live members and desired BatchUpdate
+// payload describe the same (Address, Port) set.
+func memberSetsEqual(live []pools.Member, desired []pools.BatchUpdateMemberOpts) bool {
+	if len(live) != len(desired) {
+		return false
+	}
+
+	type key struct {
+		address string
+		port    int
+	}
+
+	set := make(map[key]struct{}, len(live))
+	for i := range live {
+		set[key{address: live[i].Address, port: live[i].ProtocolPort}] = struct{}{}
+	}
+
+	for i := range desired {
+		if _, ok := set[key{address: desired[i].Address, port: desired[i].ProtocolPort}]; !ok {
+			return false
+		}
+	}
+
+	return true
+}
+
+// CreateLoadBalancer reconciles the full Octavia topology — load balancer,
+// listeners, pools, members, and health monitors — for the given spec. It
+// yields between PENDING transitions and surfaces VIP mismatches and other
+// terminal Octavia states as ErrConsistency.
+func (p *Provider) CreateLoadBalancer(ctx context.Context, identity *unikornv1.Identity, loadBalancer *unikornv1.LoadBalancer) error {
+	network, err := p.loadBalancerNetwork(ctx, loadBalancer)
+	if err != nil {
+		return err
+	}
+
+	if network.Status.Openstack == nil || network.Status.Openstack.SubnetID == nil {
+		return fmt.Errorf("%w: network %s missing subnet ID", coreerrors.ErrConsistency, network.Name)
+	}
+
+	subnetID := *network.Status.Openstack.SubnetID
+
+	lbClient, err := p.loadBalancerFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	networking, err := p.networkFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	return p.createLoadBalancer(ctx, lbClient, networking, loadBalancer, subnetID)
+}
+
+// createLoadBalancer drives the reconcile-up flow against a resolved load
+// balancing client. Split from CreateLoadBalancer so unit tests can inject a
+// mock without standing up a service principal.
+//
+//nolint:cyclop
+func (p *Provider) createLoadBalancer(ctx context.Context, lbClient LoadBalancingInterface, fipClient FloatingIPInterface, loadBalancer *unikornv1.LoadBalancer, subnetID string) error {
+	osLB, err := p.reconcileLoadBalancer(ctx, lbClient, loadBalancer, subnetID)
+	if err != nil {
+		return err
+	}
+
+	if err := classifyOctaviaStatus("loadbalancer", osLB.Name, osLB.ProvisioningStatus); err != nil {
+		return err
+	}
+
+	if osLB.VipAddress == "" {
+		return fmt.Errorf("%w: load balancer %s is ACTIVE but has no VIP address",
+			coreerrors.ErrConsistency, loadBalancer.Name)
+	}
+
+	if osLB.VipPortID == "" {
+		return fmt.Errorf("%w: load balancer %s has VIP %s but no VIP port", coreerrors.ErrConsistency, loadBalancer.Name, osLB.VipAddress)
+	}
+
+	if err := p.reconcileLoadBalancerFloatingIP(ctx, fipClient, loadBalancer, osLB.VipPortID); err != nil {
+		return err
+	}
+
+	mutated, err := p.pruneOrphanedListenersOnce(ctx, lbClient, loadBalancer, osLB.ID)
+	if err != nil {
+		return err
+	}
+
+	if mutated {
+		return provisioners.ErrYield
+	}
+
+	for i := range loadBalancer.Spec.Listeners {
+		listener := &loadBalancer.Spec.Listeners[i]
+
+		pool, err := p.reconcilePool(ctx, lbClient, loadBalancer, listener, osLB.ID)
+		if err != nil {
+			return err
+		}
+
+		if err := classifyOctaviaStatus("pool", pool.Name, pool.ProvisioningStatus); err != nil {
+			return err
+		}
+
+		osListener, err := p.reconcileListener(ctx, lbClient, loadBalancer, listener, osLB.ID, pool.ID)
+		if err != nil {
+			return err
+		}
+
+		if err := classifyOctaviaStatus("listener", osListener.Name, osListener.ProvisioningStatus); err != nil {
+			return err
+		}
+
+		mutated, err := p.reconcileMembers(ctx, lbClient, loadBalancer, listener, pool.ID)
+		if err != nil {
+			return err
+		}
+
+		if mutated {
+			return provisioners.ErrYield
+		}
+
+		if listener.Pool.HealthCheck != nil {
+			osMonitor, err := p.reconcileMonitor(ctx, lbClient, loadBalancer, listener, pool.ID)
+			if err != nil {
+				return err
+			}
+
+			if err := classifyOctaviaStatus("monitor", osMonitor.Name, osMonitor.ProvisioningStatus); err != nil {
+				return err
+			}
+		}
+	}
+
+	mutated, err = p.pruneOrphanedPoolsAndMonitorsOnce(ctx, lbClient, loadBalancer, osLB.ID)
+	if err != nil {
+		return err
+	}
+
+	if mutated {
+		return provisioners.ErrYield
+	}
+
+	return nil
+}
+
+// DeleteLoadBalancer removes the Octavia topology and any attached floating
+// IP idempotently. It yields while Octavia is in any PENDING_* state and
+// after issuing a cascade delete so the next reconcile can confirm completion.
+func (p *Provider) DeleteLoadBalancer(ctx context.Context, identity *unikornv1.Identity, loadBalancer *unikornv1.LoadBalancer) error {
+	lbClient, err := p.loadBalancerFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	networking, err := p.networkFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	return p.deleteLoadBalancer(ctx, lbClient, networking, loadBalancer)
+}
+
+// deleteLoadBalancer drives the delete flow against resolved clients. Split
+// from DeleteLoadBalancer so unit tests can inject mocks without standing up a
+// service principal. Cleanup order: floating IP first (the cascade kills the
+// VIP port, after which the FIP would leak), then cascade-delete the load
+// balancer. Already-absent resources are success.
+//
+//nolint:cyclop
+func (p *Provider) deleteLoadBalancer(ctx context.Context, lbClient LoadBalancingInterface, fipClient FloatingIPInterface, loadBalancer *unikornv1.LoadBalancer) error {
+	log := log.FromContext(ctx)
+
+	osLB, err := lbClient.GetLoadBalancer(ctx, loadBalancer)
+	if err != nil {
+		if errors.Is(err, coreerrors.ErrResourceNotFound) {
+			loadBalancer.Status.PublicIP = nil
+			loadBalancer.Status.VIPAddress = nil
+
+			return nil
+		}
+
+		return err
+	}
+
+	if osLB.ProvisioningStatus == "PENDING_CREATE" ||
+		osLB.ProvisioningStatus == "PENDING_UPDATE" ||
+		osLB.ProvisioningStatus == "PENDING_DELETE" {
+		return provisioners.ErrYield
+	}
+
+	// FIP first — cascade kills the VIP port, after which the FIP would leak.
+	if osLB.VipPortID != "" {
+		floatingip, err := fipClient.GetFloatingIP(ctx, osLB.VipPortID)
+		if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
+			return err
+		}
+
+		if floatingip != nil {
+			log.V(1).Info("deleting floating ip")
+
+			if err := fipClient.DeleteFloatingIP(ctx, floatingip.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+				return err
+			}
+		}
+	}
+
+	// PublicIP cleared eagerly: the FIP is gone (deleted above or never existed).
+	// VIPAddress stays until GetLoadBalancer returns NotFound — the LB still exists.
+	loadBalancer.Status.PublicIP = nil
+
+	log.V(1).Info("deleting load balancer")
+
+	if err := lbClient.DeleteLoadBalancer(ctx, osLB.ID, true); err != nil {
+		if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return err
+		}
+
+		loadBalancer.Status.VIPAddress = nil
+
+		return nil
+	}
+
+	return provisioners.ErrYield
 }

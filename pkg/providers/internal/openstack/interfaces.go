@@ -26,6 +26,10 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/remoteconsoles"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/listeners"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/loadbalancers"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/monitors"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/pools"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/floatingips"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
@@ -95,6 +99,51 @@ type NetworkingInterface interface {
 	SecurityGroupInterface
 	FloatingIPInterface
 	PortInterface
+}
+
+type LoadBalancerInterface interface {
+	ListLoadBalancers(ctx context.Context, name string) ([]loadbalancers.LoadBalancer, error)
+	GetLoadBalancer(ctx context.Context, loadBalancer *unikornv1.LoadBalancer) (*loadbalancers.LoadBalancer, error)
+	CreateLoadBalancer(ctx context.Context, opts loadbalancers.CreateOptsBuilder) (*loadbalancers.LoadBalancer, error)
+	UpdateLoadBalancer(ctx context.Context, id string, opts loadbalancers.UpdateOptsBuilder) (*loadbalancers.LoadBalancer, error)
+	DeleteLoadBalancer(ctx context.Context, id string, cascade bool) error
+}
+
+type LoadBalancerListenerInterface interface {
+	ListListeners(ctx context.Context, loadBalancerID, name string) ([]listeners.Listener, error)
+	GetListener(ctx context.Context, loadBalancerID string, loadBalancer *unikornv1.LoadBalancer, listener *unikornv1.LoadBalancerListener) (*listeners.Listener, error)
+	CreateListener(ctx context.Context, opts listeners.CreateOptsBuilder) (*listeners.Listener, error)
+	UpdateListener(ctx context.Context, id string, opts listeners.UpdateOptsBuilder) (*listeners.Listener, error)
+	DeleteListener(ctx context.Context, id string) error
+}
+
+type LoadBalancerPoolInterface interface {
+	ListPools(ctx context.Context, loadBalancerID, name string) ([]pools.Pool, error)
+	GetPool(ctx context.Context, loadBalancerID string, loadBalancer *unikornv1.LoadBalancer, listener *unikornv1.LoadBalancerListener) (*pools.Pool, error)
+	CreatePool(ctx context.Context, opts pools.CreateOptsBuilder) (*pools.Pool, error)
+	UpdatePool(ctx context.Context, id string, opts pools.UpdateOptsBuilder) (*pools.Pool, error)
+	DeletePool(ctx context.Context, id string) error
+}
+
+type LoadBalancerMemberInterface interface {
+	ListMembers(ctx context.Context, poolID string) ([]pools.Member, error)
+	BatchUpdateMembers(ctx context.Context, poolID string, opts []pools.BatchUpdateMemberOpts) error
+}
+
+type LoadBalancerMonitorInterface interface {
+	ListMonitors(ctx context.Context, poolID, name string) ([]monitors.Monitor, error)
+	GetMonitor(ctx context.Context, poolID string, loadBalancer *unikornv1.LoadBalancer, listener *unikornv1.LoadBalancerListener) (*monitors.Monitor, error)
+	CreateMonitor(ctx context.Context, opts monitors.CreateOptsBuilder) (*monitors.Monitor, error)
+	UpdateMonitor(ctx context.Context, id string, opts monitors.UpdateOptsBuilder) (*monitors.Monitor, error)
+	DeleteMonitor(ctx context.Context, id string) error
+}
+
+type LoadBalancingInterface interface {
+	LoadBalancerInterface
+	LoadBalancerListenerInterface
+	LoadBalancerPoolInterface
+	LoadBalancerMemberInterface
+	LoadBalancerMonitorInterface
 }
 
 type KeypairInterface interface {

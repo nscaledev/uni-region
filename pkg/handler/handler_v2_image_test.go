@@ -28,6 +28,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/unikorn-cloud/core/pkg/util/cache"
+	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	imagemock "github.com/unikorn-cloud/region/pkg/handler/image/mock"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -35,6 +36,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	mockprovider "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
 
@@ -138,7 +140,14 @@ func Test_Imagev2_List(t *testing.T) {
 				setupQuery(querier)
 			}
 
-			c := fakeClientWithSchema(t)
+			testRegion := &regionv1.Region{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      regionID,
+					Namespace: namespace,
+				},
+			}
+
+			c := fakeClientWithSchema(t, testRegion)
 
 			clientArgs := common.ClientArgs{
 				Namespace: namespace,

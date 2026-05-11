@@ -32,6 +32,7 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
+	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
@@ -112,6 +113,10 @@ func (c *Client) convertList(ctx context.Context, in unikornv1.IdentityList) ope
 
 // generate a new resource from a request.
 func (c *Client) generate(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*unikornv1.Identity, error) {
+	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, request.Spec.RegionId); err != nil {
+		return nil, err
+	}
+
 	provider, err := c.Providers.LookupCloud(request.Spec.RegionId)
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)

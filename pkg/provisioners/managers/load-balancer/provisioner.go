@@ -18,20 +18,23 @@ package loadbalancer
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/spf13/pflag"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
+	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Options allows access to CLI options in the provisioner.
@@ -92,16 +95,59 @@ func (p *Provisioner) identityClient(ctx context.Context) (identityapi.ClientWit
 	return identityclient.New(client, p.options.identityOptions, &p.options.clientOptions).ControllerClient(ctx, p.loadbalancer)
 }
 
+// network resolves the Network referenced by constants.NetworkLabel.
+func (p *Provisioner) network(ctx context.Context) (*unikornv1.Network, error) {
+	cli, err := coreclient.FromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	networkID, ok := p.loadbalancer.Labels[constants.NetworkLabel]
+	if !ok || networkID == "" {
+		return nil, fmt.Errorf("%w: load balancer %s missing network label", coreerrors.ErrConsistency, p.loadbalancer.Name)
+	}
+
+	network := &unikornv1.Network{}
+	if err := cli.Get(ctx, client.ObjectKey{Namespace: p.loadbalancer.Namespace, Name: networkID}, network); err != nil {
+		return nil, err
+	}
+
+	return network, nil
+}
+
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
-	log.FromContext(ctx).Info("load balancer provision (scaffold, no-op)", "name", p.loadbalancer.Name, "namespace", p.loadbalancer.Namespace)
+	provider, identity, err := p.ProviderAndIdentity(ctx, p.loadbalancer)
+	if err != nil {
+		return err
+	}
 
-	return provisioners.ErrYield
+	network, err := p.network(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := manager.ResourceReady(ctx, network); err != nil {
+		return err
+	}
+
+	if err := manager.ResourceReady(ctx, identity); err != nil {
+		return err
+	}
+
+	return provider.CreateLoadBalancer(ctx, identity, p.loadbalancer)
 }
 
 // Deprovision implements the Provision interface.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
-	log.FromContext(ctx).Info("load balancer deprovision (release quota allocation)", "name", p.loadbalancer.Name, "namespace", p.loadbalancer.Namespace)
+	provider, identity, err := p.ProviderAndIdentity(ctx, p.loadbalancer)
+	if err != nil {
+		return err
+	}
+
+	if err := provider.DeleteLoadBalancer(ctx, identity, p.loadbalancer); err != nil {
+		return err
+	}
 
 	cli, err := coreclient.FromContext(ctx)
 	if err != nil {
@@ -113,9 +159,5 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
-	if err := identityclient.NewAllocations(cli, api).Delete(ctx, p.loadbalancer); err != nil {
-		return err
-	}
-
-	return nil
+	return identityclient.NewAllocations(cli, api).Delete(ctx, p.loadbalancer)
 }

@@ -4,12 +4,12 @@ description: A Helm chart for deploying Unikorn's Region Controller
 
 type: application
 
-version: 1.16.4
-appVersion: 1.16.4
+version: 1.16.6
+appVersion: 1.16.6
 
 icon: https://raw.githubusercontent.com/unikorn-cloud/assets/main/images/logos/dark-on-light/icon.png
 
 dependencies:
 - name: unikorn-common
-  version: 0.1.16
+  version: 0.1.17
   repository: https://nscaledev.github.io/uni-helm-common
