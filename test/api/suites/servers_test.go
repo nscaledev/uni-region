@@ -52,6 +52,12 @@ func skipUnlessOpenStackRegion() {
 	Skip("server lifecycle tests require TEST_REGION_ID to be visible")
 }
 
+func skipUnlessInternalAPIConfigured() {
+	if !regionClient.InternalAPIConfigured() {
+		Skip("server lifecycle tests require local internal API mTLS credentials")
+	}
+}
+
 func testFlavorID() string {
 	if config.ServerFlavorID != "" {
 		return config.ServerFlavorID
@@ -114,6 +120,7 @@ var _ = Describe("Server Management", func() {
 
 		BeforeAll(func() {
 			skipUnlessOpenStackRegion()
+			skipUnlessInternalAPIConfigured()
 
 			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
 			network, err := regionClient.CreateNetwork(ctx, networkReq)
@@ -156,6 +163,8 @@ var _ = Describe("Server Management", func() {
 				Expect(created.Metadata.Name).To(Equal(createReq.Metadata.Name))
 				Expect(created.Metadata.OrganizationId).To(Equal(config.OrgID))
 				Expect(created.Metadata.ProjectId).To(Equal(config.ProjectID))
+				Expect(created.Metadata.CreatedBy).NotTo(BeNil())
+				Expect(*created.Metadata.CreatedBy).To(Equal(config.InternalAPICN))
 				Expect(created.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusPending))
 				Expect(created.Spec.FlavorId).To(Equal(createReq.Spec.FlavorId))
 				Expect(created.Spec.ImageId).To(Equal(createReq.Spec.ImageId))

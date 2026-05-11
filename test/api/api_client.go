@@ -893,16 +893,18 @@ func (c *APIClient) DeleteSSHCertificateAuthority(ctx context.Context, sshCAID s
 func (c *APIClient) ListServers(ctx context.Context, orgID, projectID, regionID, networkID string) (regionopenapi.ServersV2Read, error) {
 	path := c.endpoints.ListServers(orgID, projectID, regionID, networkID)
 
-	return coreclient.ListResource[regionopenapi.ServerV2Read](
-		ctx,
-		c.regionClient,
-		path,
-		coreclient.ResponseHandlerConfig{
-			ResourceType:   "servers",
-			ResourceID:     projectID,
-			ResourceIDType: "project",
-		},
-	)
+	//nolint:bodyclose // DoInternalRegionRequest handles response body closing internally
+	_, respBody, err := c.DoInternalRegionRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	if err != nil {
+		return nil, fmt.Errorf("listing servers: %w", err)
+	}
+
+	var servers regionopenapi.ServersV2Read
+	if err := json.Unmarshal(respBody, &servers); err != nil {
+		return nil, fmt.Errorf("unmarshaling servers: %w", err)
+	}
+
+	return servers, nil
 }
 
 // CreateServer creates a new server.
@@ -914,8 +916,8 @@ func (c *APIClient) CreateServer(ctx context.Context, request regionopenapi.Serv
 		return nil, fmt.Errorf("marshaling server request: %w", err)
 	}
 
-	//nolint:bodyclose // DoRequest handles response body closing internally
-	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusCreated)
+	//nolint:bodyclose // DoInternalRegionRequest handles response body closing internally
+	_, respBody, err := c.DoInternalRegionRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusCreated)
 	if err != nil {
 		return nil, fmt.Errorf("creating server: %w", err)
 	}
@@ -932,8 +934,8 @@ func (c *APIClient) CreateServer(ctx context.Context, request regionopenapi.Serv
 func (c *APIClient) GetServer(ctx context.Context, serverID string) (*regionopenapi.ServerV2Read, error) {
 	path := c.endpoints.GetServer(serverID)
 
-	//nolint:bodyclose // DoRequest handles response body closing internally
-	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	//nolint:bodyclose // DoInternalRegionRequest handles response body closing internally
+	_, respBody, err := c.DoInternalRegionRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
 	if err != nil {
 		return nil, fmt.Errorf("getting server: %w", err)
 	}
@@ -950,8 +952,8 @@ func (c *APIClient) GetServer(ctx context.Context, serverID string) (*regionopen
 func (c *APIClient) DeleteServer(ctx context.Context, serverID string) error {
 	path := c.endpoints.DeleteServer(serverID)
 
-	//nolint:bodyclose // DoRequest handles response body closing internally
-	resp, _, err := c.regionClient.DoRequest(ctx, http.MethodDelete, path, nil, 0)
+	//nolint:bodyclose // DoInternalRegionRequest handles response body closing internally
+	resp, _, err := c.DoInternalRegionRequest(ctx, http.MethodDelete, path, nil, 0)
 	if err != nil {
 		return fmt.Errorf("deleting server: %w", err)
 	}
