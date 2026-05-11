@@ -20,6 +20,9 @@ spec:
         args:
         {{- include "unikorn.core.flags" . | nindent 8 }}
         {{- include "unikorn.otlp.flags" . | nindent 8 }}
+        env:
+        - name: OTEL_SERVICE_NAME
+          value: {{ .Release.Name }}-server-controller
         ports:
         - name: http
           containerPort: 6080
