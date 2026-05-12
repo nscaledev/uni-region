@@ -115,7 +115,7 @@ monitor:
   # Allow override of the controller image.
   image: ~
   # Poll period for the monitor reconciliation loop.
-  pollPeriod: 10s
+  pollPeriod: 30s
   # Allows resource limits to be set.
   resources:
     limits:
