@@ -34,8 +34,6 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers"
 	providertypes "github.com/unikorn-cloud/region/pkg/providers/types"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -93,19 +91,21 @@ func (c *Checker) onPhaseTransition(ctx context.Context, server, updated *unikor
 		return
 	}
 
-	// Read from server (pre-patch state): the annotation was stamped in a prior poll cycle.
-	entryTimeStr, ok := server.GetAnnotations()[constants.ServerPendingEntryTimeAnnotation]
-	if !ok {
+	if updated.Status.LaunchedAt == nil {
 		return
 	}
 
-	t, err := time.Parse(time.RFC3339, entryTimeStr)
-	if err != nil {
-		log.FromContext(ctx).Error(err, "skipping provision duration: invalid pending-entry-time annotation")
+	duration := updated.Status.LaunchedAt.Sub(server.CreationTimestamp.Time)
+	if duration < 0 {
+		serverLogger(ctx, server).Info("skipping provision duration: negative duration (clock skew?)",
+			"launched_at", updated.Status.LaunchedAt.Time,
+			"created_at", server.CreationTimestamp.Time,
+		)
+
 		return
 	}
 
-	c.metrics.RecordProvision(ctx, time.Since(t), regionID, regionName, flavorID, flavorName)
+	c.metrics.RecordProvision(ctx, duration, regionID, regionName, flavorID, flavorName)
 }
 
 // logStateTransition emits a structured log entry when the server's ConditionHealthy
@@ -139,39 +139,6 @@ func (c *Checker) logStateTransition(ctx context.Context, server, updated *uniko
 		"to_state", string(newCondition.Reason),
 		"duration_ms", newCondition.LastTransitionTime.Sub(durationSource).Milliseconds(),
 	)
-}
-
-// managePendingAnnotation stamps the phase-entry time annotation when a server enters
-// the Pending phase, and removes it when the server leaves Pending. Removing on exit
-// bounds measurement error to at most one poll period across stop/start cycles and
-// partial patch failures.
-//
-// Note: a stop/start cycle that completes entirely between two polls is not detected —
-// the stale timestamp persists until Running is observed. Acceptable given histogram
-// granularity.
-func (c *Checker) managePendingAnnotation(ctx context.Context, updated *unikornv1.Server) error {
-	_, hasAnnot := updated.GetAnnotations()[constants.ServerPendingEntryTimeAnnotation]
-
-	if updated.Status.Phase != unikornv1.InstanceLifecyclePhasePending {
-		if !hasAnnot {
-			return nil
-		}
-
-		patch := updated.DeepCopy()
-		delete(patch.Annotations, constants.ServerPendingEntryTimeAnnotation)
-
-		return c.client.Patch(ctx, patch, client.MergeFromWithOptions(updated, &client.MergeFromWithOptimisticLock{}))
-	}
-
-	if hasAnnot {
-		return nil
-	}
-
-	// Server just entered Pending: stamp the current time.
-	patch := updated.DeepCopy()
-	metav1.SetMetaDataAnnotation(&patch.ObjectMeta, constants.ServerPendingEntryTimeAnnotation, time.Now().UTC().Format(time.RFC3339))
-
-	return c.client.Patch(ctx, patch, client.MergeFromWithOptions(updated, &client.MergeFromWithOptimisticLock{}))
 }
 
 // resolveRegionName returns the display name for a region from the provider,
@@ -234,15 +201,6 @@ func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server, pro
 
 	c.onPhaseTransition(ctx, server, updated, regionID, regionName, flavorID, flavorName)
 	c.logStateTransition(ctx, server, updated)
-
-	// managePendingAnnotation must run after Status().Patch: controller-runtime rewrites
-	// updated (including ResourceVersion) from the server response, so the optimistic-lock
-	// base for the annotation patch is always fresh. Reordering this call is a bug.
-	if err := c.managePendingAnnotation(ctx, updated); err != nil {
-		// Annotation patch failures are non-fatal: the next poll will re-attempt.
-		// Aborting the loop here would block all subsequent servers for a transient error.
-		serverLogger(ctx, server).Error(err, "failed to patch pending-entry annotation")
-	}
 
 	return &checkedServer{server: updated, regionID: regionID, regionName: regionName, flavorID: flavorID, flavorName: flavorName}, nil
 }

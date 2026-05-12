@@ -208,6 +208,12 @@ spec:
                   - type
                   type: object
                 type: array
+              launchedAt:
+                description: |-
+                  LaunchedAt is the time Nova booted the VM, sourced from OS-SRV-USG:launched_at.
+                  Nil until the server has been observed Running at least once.
+                format: date-time
+                type: string
               macAddress:
                 description: MACAddress is the MAC address of the server's primary
                   network interface.

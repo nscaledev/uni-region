@@ -2063,6 +2063,11 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 		// No state information available. We will keep the phase as it is.
 	case servers.RUNNING:
 		server.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+
+		if !openstackserver.LaunchedAt.IsZero() {
+			t := metav1.NewTime(openstackserver.LaunchedAt)
+			server.Status.LaunchedAt = &t
+		}
 	case servers.SHUTDOWN:
 		server.Status.Phase = unikornv1.InstanceLifecyclePhaseStopped
 	case servers.CRASHED:

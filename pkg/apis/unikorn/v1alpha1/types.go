@@ -916,6 +916,9 @@ type ServerStatus struct {
 	PublicIP *string `json:"publicIP,omitempty"`
 	// MACAddress is the MAC address of the server's primary network interface.
 	MACAddress *string `json:"macAddress,omitempty"`
+	// LaunchedAt is the time Nova booted the VM, sourced from OS-SRV-USG:launched_at.
+	// Nil until the server has been observed Running at least once.
+	LaunchedAt *metav1.Time `json:"launchedAt,omitempty"`
 }
 
 // OpenstackServerList is a typed list of servers.

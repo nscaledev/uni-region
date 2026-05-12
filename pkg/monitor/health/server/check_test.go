@@ -221,14 +221,6 @@ func runCheck(t *testing.T, srv *unikornv1.Server, updateFn func(*unikornv1.Serv
 	return sink, err
 }
 
-func runCheckWithClient(t *testing.T, srv *unikornv1.Server, updateFn func(*unikornv1.Server)) (client.Client, error) {
-	t.Helper()
-
-	k8sClient, _, err := runCheckFull(t, srv, updateFn)
-
-	return k8sClient, err
-}
-
 // TestCheckServerLogsOnPhaseChange verifies that a phase transition log is emitted when
 // the server's lifecycle phase changes, and that it contains the required fields.
 func TestCheckServerLogsOnPhaseChange(t *testing.T) {
@@ -370,114 +362,11 @@ func TestCheckServerLogsBothOnCombinedChange(t *testing.T) {
 	require.Len(t, sink.entriesWithMsg("instance state transition"), 1)
 }
 
-// TestStampPendingAnnotationFreshEntry verifies that the phase-entry time annotation is
-// written when a server transitions into Pending for the first time.
-func TestStampPendingAnnotationFreshEntry(t *testing.T) {
-	t.Parallel()
-
-	srv := serverFixture(unikornv1.InstanceLifecyclePhaseRunning)
-
-	before := time.Now().Truncate(time.Second)
-
-	k8sClient, err := runCheckWithClient(t, srv, func(s *unikornv1.Server) {
-		s.Status.Phase = unikornv1.InstanceLifecyclePhasePending
-	})
-
-	require.NoError(t, err)
-
-	result := &unikornv1.Server{}
-	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, result))
-
-	entryTimeStr, ok := result.Annotations[constants.ServerPendingEntryTimeAnnotation]
-	require.True(t, ok, "phase-entry-time annotation should be present")
-
-	entryTime, err := time.Parse(time.RFC3339, entryTimeStr)
-	require.NoError(t, err)
-	require.False(t, entryTime.Before(before), "annotation timestamp should not predate the check")
-}
-
-// TestStampPendingAnnotationNoOverwrite verifies that the annotation is not overwritten
-// when the server remains in Pending and the annotation already exists.
-func TestStampPendingAnnotationNoOverwrite(t *testing.T) {
-	t.Parallel()
-
-	original := time.Now().Add(-5 * time.Minute).Truncate(time.Second)
-
-	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
-	srv.Annotations = map[string]string{
-		constants.ServerPendingEntryTimeAnnotation: original.UTC().Format(time.RFC3339),
-	}
-
-	k8sClient, err := runCheckWithClient(t, srv, func(s *unikornv1.Server) {
-		s.Status.Phase = unikornv1.InstanceLifecyclePhasePending
-	})
-
-	require.NoError(t, err)
-
-	result := &unikornv1.Server{}
-	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, result))
-
-	require.Equal(t, original.UTC().Format(time.RFC3339), result.Annotations[constants.ServerPendingEntryTimeAnnotation],
-		"annotation should not be overwritten while server remains in Pending")
-}
-
-// TestAnnotationRemovedOnLeavingPending verifies that the phase-entry time annotation is
-// deleted when a server leaves the Pending phase, preventing stale timestamps from being
-// used if the server re-enters Pending between polls.
-func TestAnnotationRemovedOnLeavingPending(t *testing.T) {
-	t.Parallel()
-
-	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
-	srv.Annotations = map[string]string{
-		constants.ServerPendingEntryTimeAnnotation: time.Now().Add(-2 * time.Minute).UTC().Format(time.RFC3339),
-	}
-
-	k8sClient, err := runCheckWithClient(t, srv, func(s *unikornv1.Server) {
-		s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
-	})
-
-	require.NoError(t, err)
-
-	result := &unikornv1.Server{}
-	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, result))
-
-	_, ok := result.Annotations[constants.ServerPendingEntryTimeAnnotation]
-	require.False(t, ok, "phase-entry-time annotation should be removed when server leaves Pending")
-}
-
-// TestStampPendingAnnotationRewriteOnReentry verifies that the annotation is stamped with
-// the current time when a server re-enters Pending (e.g. after a stop/start cycle).
-// Because the annotation is cleaned up on exit, re-entry always gets a fresh timestamp.
-func TestStampPendingAnnotationRewriteOnReentry(t *testing.T) {
-	t.Parallel()
-
-	// Server is currently Running in k8s with no annotation (cleaned up when it left Pending).
-	srv := serverFixture(unikornv1.InstanceLifecyclePhaseRunning)
-
-	before := time.Now().Truncate(time.Second)
-
-	k8sClient, err := runCheckWithClient(t, srv, func(s *unikornv1.Server) {
-		s.Status.Phase = unikornv1.InstanceLifecyclePhasePending
-	})
-
-	require.NoError(t, err)
-
-	result := &unikornv1.Server{}
-	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, result))
-
-	entryTimeStr, ok := result.Annotations[constants.ServerPendingEntryTimeAnnotation]
-	require.True(t, ok, "phase-entry-time annotation should be present on re-entry into Pending")
-
-	entryTime, err := time.Parse(time.RFC3339, entryTimeStr)
-	require.NoError(t, err)
-	require.False(t, entryTime.Before(before), "annotation should be stamped with current time")
-}
-
-// TestCheckServerNoHistogramWhenAnnotationMissing verifies that no histogram observation
-// is recorded when a server transitions Pending → Running without a pending-entry-time
-// annotation. This can happen if the server was already Pending when the monitor was
-// first deployed, or if a previous annotation patch failed.
-func TestCheckServerNoHistogramWhenAnnotationMissing(t *testing.T) {
+// TestCheckServerNoHistogramWhenLaunchedAtNil verifies that no histogram observation is
+// recorded when a server transitions Pending → Running but LaunchedAt is not set. This
+// can happen for servers that booted before this field was introduced, or on providers
+// that do not populate OS-SRV-USG:launched_at.
+func TestCheckServerNoHistogramWhenLaunchedAtNil(t *testing.T) {
 	t.Parallel()
 
 	meter, reader := newTestMeter(t)
@@ -485,7 +374,7 @@ func TestCheckServerNoHistogramWhenAnnotationMissing(t *testing.T) {
 	m, err := healthserver.NewMetrics(meter)
 	require.NoError(t, err)
 
-	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending) // no annotation
+	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
 
 	ctrl := gomock.NewController(t)
 
@@ -494,6 +383,7 @@ func TestCheckServerNoHistogramWhenAnnotationMissing(t *testing.T) {
 		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
 			s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+			// LaunchedAt intentionally not set
 			return nil
 		})
 	mockProvider.EXPECT().
@@ -516,9 +406,9 @@ func TestCheckServerNoHistogramWhenAnnotationMissing(t *testing.T) {
 	require.Empty(t, points)
 }
 
-// TestCheckServerRecordsProvisionDurationOnPendingToRunning verifies that a server with a
-// pre-stamped pending-entry annotation that transitions Pending → Running results in a
-// histogram observation with the correct duration and region attribute.
+// TestCheckServerRecordsProvisionDurationOnPendingToRunning verifies that a Pending →
+// Running transition with LaunchedAt set produces a histogram observation whose duration
+// equals LaunchedAt − CreationTimestamp.
 func TestCheckServerRecordsProvisionDurationOnPendingToRunning(t *testing.T) {
 	t.Parallel()
 
@@ -527,12 +417,11 @@ func TestCheckServerRecordsProvisionDurationOnPendingToRunning(t *testing.T) {
 	m, err := healthserver.NewMetrics(meter)
 	require.NoError(t, err)
 
-	entryTime := time.Now().Add(-2 * time.Minute).Truncate(time.Second)
+	createdAt := time.Now().Add(-2 * time.Minute).Truncate(time.Second)
+	launchedAt := createdAt.Add(2 * time.Minute)
 
 	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
-	srv.Annotations = map[string]string{
-		constants.ServerPendingEntryTimeAnnotation: entryTime.UTC().Format(time.RFC3339),
-	}
+	srv.CreationTimestamp = metav1.NewTime(createdAt)
 
 	ctrl := gomock.NewController(t)
 
@@ -541,6 +430,9 @@ func TestCheckServerRecordsProvisionDurationOnPendingToRunning(t *testing.T) {
 		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
 			s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+			t := metav1.NewTime(launchedAt)
+			s.Status.LaunchedAt = &t
+
 			return nil
 		})
 	mockProvider.EXPECT().
@@ -570,8 +462,8 @@ func TestCheckServerRecordsProvisionDurationOnPendingToRunning(t *testing.T) {
 }
 
 // runFallbackCheck builds a Checker with the given provider mocks and runs Check
-// against a Pending server that has a pending-entry-time annotation, transitioning
-// to Running. Asserts the histogram recorded exactly one point and returns its
+// against a Pending server that transitions to Running with LaunchedAt set.
+// Asserts the histogram recorded exactly one point and returns its
 // region_id, region_name, flavor_id, flavor_name attribute values.
 func runFallbackCheck(t *testing.T, setupRegion, setupFlavor func(*mocktypes.MockProvider)) (string, string, string, string) {
 	t.Helper()
@@ -581,12 +473,11 @@ func runFallbackCheck(t *testing.T, setupRegion, setupFlavor func(*mocktypes.Moc
 	m, err := healthserver.NewMetrics(meter)
 	require.NoError(t, err)
 
-	entryTime := time.Now().Add(-time.Minute).Truncate(time.Second)
+	createdAt := time.Now().Add(-time.Minute).Truncate(time.Second)
+	launchedAt := createdAt.Add(time.Minute)
 
 	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
-	srv.Annotations = map[string]string{
-		constants.ServerPendingEntryTimeAnnotation: entryTime.UTC().Format(time.RFC3339),
-	}
+	srv.CreationTimestamp = metav1.NewTime(createdAt)
 
 	ctrl := gomock.NewController(t)
 
@@ -595,6 +486,9 @@ func runFallbackCheck(t *testing.T, setupRegion, setupFlavor func(*mocktypes.Moc
 		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
 			s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+			t := metav1.NewTime(launchedAt)
+			s.Status.LaunchedAt = &t
+
 			return nil
 		})
 	setupRegion(mockProvider)
