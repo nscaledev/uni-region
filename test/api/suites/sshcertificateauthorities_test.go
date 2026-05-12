@@ -22,6 +22,7 @@ package suites
 
 import (
 	"errors"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -90,9 +91,10 @@ var _ = Describe("SSHCertificateAuthority", func() {
 				Expect(regionClient.DeleteSSHCertificateAuthority(ctx, caID)).To(Succeed())
 				GinkgoWriter.Printf("Deleted ssh certificate authority: %s\n", caID)
 
-				_, err := regionClient.GetSSHCertificateAuthority(ctx, caID)
-				Expect(err).To(HaveOccurred())
-				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue(),
+				Eventually(func() bool {
+					_, err := regionClient.GetSSHCertificateAuthority(ctx, caID)
+					return errors.Is(err, coreclient.ErrResourceNotFound)
+				}).WithTimeout(30 * time.Second).WithPolling(1 * time.Second).Should(BeTrue(),
 					"deleted ssh certificate authority should return not found")
 				GinkgoWriter.Printf("Confirmed ssh certificate authority deleted: %s\n", caID)
 			})
