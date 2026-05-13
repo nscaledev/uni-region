@@ -36,6 +36,7 @@ import (
 	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
 	coreutil "github.com/unikorn-cloud/core/pkg/testing/util"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/test/api"
 )
 
 var _ = Describe("File Storage Management", func() {
@@ -52,7 +53,7 @@ var _ = Describe("File Storage Management", func() {
 					Skip(fmt.Sprintf("No storage classes allocated to region %s", config.RegionID))
 				}
 
-				testStorageName = coreutil.GenerateRandomName("test-list-storage")
+				testStorageName = coreutil.GenerateRandomName(api.TestResourceNamePrefix + "-storage-list")
 				request := regionopenapi.StorageV2CreateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{
 						Name:        testStorageName,
@@ -162,7 +163,7 @@ var _ = Describe("File Storage Management", func() {
 					storageClasses[0].Metadata.Name,
 					storageClassID)
 
-				storageName := coreutil.GenerateRandomName("test-storage")
+				storageName := coreutil.GenerateRandomName(api.TestResourceNamePrefix + "-storage")
 
 				request := regionopenapi.StorageV2CreateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{
@@ -333,7 +334,7 @@ var _ = Describe("File Storage Management", func() {
 
 		Describe("Given a network and file storage resource", func() {
 			It("should create a network for attachment", func() {
-				networkName = coreutil.GenerateRandomName("test-attach-network")
+				networkName = coreutil.GenerateRandomName(api.TestResourceNamePrefix + "-network-attach")
 				networkRequest := regionopenapi.NetworkV2CreateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{
 						Name:        networkName,
@@ -385,7 +386,7 @@ var _ = Describe("File Storage Management", func() {
 				}
 
 				storageClassID = storageClasses[0].Metadata.Id
-				filestorageName = coreutil.GenerateRandomName("test-attach-storage")
+				filestorageName = coreutil.GenerateRandomName(api.TestResourceNamePrefix + "-storage-attach")
 
 				request := regionopenapi.StorageV2CreateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{

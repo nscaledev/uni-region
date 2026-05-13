@@ -37,8 +37,10 @@ import (
 	"k8s.io/utils/ptr"
 )
 
+const TestResourceNamePrefix = "e2e-uni-region"
+
 func uniqueName(prefix string) string {
-	return fmt.Sprintf("ginkgo-test-%s-%s", prefix, uuid.NewString()[:8])
+	return fmt.Sprintf("%s-%s-%s", TestResourceNamePrefix, prefix, uuid.NewString()[:8])
 }
 
 // ImagePayloadBuilder builds ImageCreate payloads for testing.

@@ -149,6 +149,12 @@ Regions define cloud instances to expose to clients.
    make test-api-focus FOCUS="should return all available"   # Run focused tests
    ```
 
+The API suite checks for leftover test resources that are older than one hour
+and whose names start with `e2e-uni-region-` before running specs. It requests
+deletion for matching load balancers, file storage resources, SSH certificate
+authorities, images, and networks, and logs GitHub Actions `::error::`
+annotations without failing the suite.
+
 **Note:** The `.env`, `.env.dev`, and `.env.uat` files are gitignored and contain sensitive credentials. They should never be committed to the repository.
 
 ### GitHub Actions

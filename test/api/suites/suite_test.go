@@ -35,8 +35,8 @@ var (
 	client          *api.APIClient
 	secondaryClient *api.APIClient // client for secondary org, used to test region visibility isolation
 	regionClient    *api.APIClient
-	ctx          context.Context
-	config       *api.TestConfig
+	ctx             context.Context
+	config          *api.TestConfig
 )
 
 var _ = BeforeSuite(func() {
@@ -47,6 +47,8 @@ var _ = BeforeSuite(func() {
 	client = api.NewAPIClientWithConfig(config)
 	regionClient = api.NewAPIClientWithConfig(config)
 	ctx = context.Background()
+
+	api.CleanupStaleTestResources(ctx, regionClient, config.OrgID, config.ProjectID, config.RegionID, api.TestResourceNamePrefix+"-")
 
 	if config.SecondaryOrgID != "" && config.SecondaryAuthToken != "" {
 		secondaryConfig := *config
