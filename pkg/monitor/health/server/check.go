@@ -34,6 +34,8 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers"
 	providertypes "github.com/unikorn-cloud/region/pkg/providers/types"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -70,8 +72,30 @@ func serverLogger(ctx context.Context, s *unikornv1.Server) logr.Logger {
 	)
 }
 
-// onPhaseTransition logs the phase change and records a provisioning histogram
-// observation on Pending → Running.
+// recordDurationIfFirstObservation records a histogram observation for a duration
+// measured from creationTime to timestamp. It only fires when the timestamp is
+// newly populated (was nil before, non-nil now), ensuring each server produces at
+// most one observation across stop/restart cycles.
+func (c *Checker) recordDurationIfFirstObservation(ctx context.Context, server *unikornv1.Server, logKey string, previous, current *metav1.Time, record func(time.Duration)) {
+	if previous != nil || current == nil {
+		return
+	}
+
+	duration := current.Sub(server.CreationTimestamp.Time)
+	if duration < 0 {
+		serverLogger(ctx, server).Info("skipping duration metric: negative duration (clock skew?)",
+			logKey, current.Time,
+			"created_at", server.CreationTimestamp.Time,
+		)
+
+		return
+	}
+
+	record(duration)
+}
+
+// onPhaseTransition logs the phase change and records provisioning histogram
+// observations on the first Pending → Running transition.
 // Precondition: region label validated by Check; identity label validated by checkServer.
 func (c *Checker) onPhaseTransition(ctx context.Context, server, updated *unikornv1.Server, regionID, regionName, flavorID, flavorName string) {
 	if server.Status.Phase == updated.Status.Phase {
@@ -91,21 +115,11 @@ func (c *Checker) onPhaseTransition(ctx context.Context, server, updated *unikor
 		return
 	}
 
-	if updated.Status.LaunchedAt == nil {
-		return
-	}
+	c.recordDurationIfFirstObservation(ctx, server, "launched_at", server.Status.LaunchedAt, updated.Status.LaunchedAt,
+		func(d time.Duration) { c.metrics.RecordProvision(ctx, d, regionID, regionName, flavorID, flavorName) })
 
-	duration := updated.Status.LaunchedAt.Sub(server.CreationTimestamp.Time)
-	if duration < 0 {
-		serverLogger(ctx, server).Info("skipping provision duration: negative duration (clock skew?)",
-			"launched_at", updated.Status.LaunchedAt.Time,
-			"created_at", server.CreationTimestamp.Time,
-		)
-
-		return
-	}
-
-	c.metrics.RecordProvision(ctx, duration, regionID, regionName, flavorID, flavorName)
+	c.recordDurationIfFirstObservation(ctx, server, "scheduled_at", server.Status.ScheduledAt, updated.Status.ScheduledAt,
+		func(d time.Duration) { c.metrics.RecordScheduling(ctx, d, regionID, regionName, flavorID, flavorName) })
 }
 
 // logStateTransition emits a structured log entry when the server's ConditionHealthy

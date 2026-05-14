@@ -76,11 +76,9 @@ func collectGauge(t *testing.T, reader *sdkmetric.ManualReader) []metricdata.Dat
 	return nil
 }
 
-// collectHistogram returns all data points for unikorn_region_server_provision_duration_seconds.
-func collectHistogram(t *testing.T, reader *sdkmetric.ManualReader) []metricdata.HistogramDataPoint[float64] {
+// collectNamedHistogram returns all data points for the named histogram metric.
+func collectNamedHistogram(t *testing.T, reader *sdkmetric.ManualReader, name string) []metricdata.HistogramDataPoint[float64] {
 	t.Helper()
-
-	const name = "unikorn_region_server_provision_duration_seconds"
 
 	var rm metricdata.ResourceMetrics
 
@@ -98,6 +96,20 @@ func collectHistogram(t *testing.T, reader *sdkmetric.ManualReader) []metricdata
 	}
 
 	return nil
+}
+
+// collectHistogram returns all data points for unikorn_region_server_provision_duration_seconds.
+func collectHistogram(t *testing.T, reader *sdkmetric.ManualReader) []metricdata.HistogramDataPoint[float64] {
+	t.Helper()
+
+	return collectNamedHistogram(t, reader, "unikorn_region_server_provision_duration_seconds")
+}
+
+// collectSchedulingHistogram returns all data points for unikorn_region_server_scheduling_duration_seconds.
+func collectSchedulingHistogram(t *testing.T, reader *sdkmetric.ManualReader) []metricdata.HistogramDataPoint[float64] {
+	t.Helper()
+
+	return collectNamedHistogram(t, reader, "unikorn_region_server_scheduling_duration_seconds")
 }
 
 func TestSetStateCountsReplacesMap(t *testing.T) {
@@ -154,23 +166,55 @@ func TestCollectStateCountsEmitsCorrectObservations(t *testing.T) {
 	assert.Equal(t, int64(2), counts["stopped"])
 }
 
-func TestRecordProvisionRecordsWithCorrectAttributes(t *testing.T) {
+func TestRecordDurationMetricsRecordWithCorrectAttributes(t *testing.T) {
 	t.Parallel()
 
-	meter, reader := newTestMeter(t)
+	cases := []struct {
+		name     string
+		duration time.Duration
+		record   func(*testing.T, *healthserver.Metrics, time.Duration)
+		collect  func(*testing.T, *sdkmetric.ManualReader) []metricdata.HistogramDataPoint[float64]
+	}{
+		{
+			name:     "provision",
+			duration: 90 * time.Second,
+			record: func(t *testing.T, m *healthserver.Metrics, d time.Duration) {
+				t.Helper()
+				m.RecordProvision(t.Context(), d, "region-1", "Test Region", "flavor-1", "m1.small")
+			},
+			collect: collectHistogram,
+		},
+		{
+			name:     "scheduling",
+			duration: 15 * time.Second,
+			record: func(t *testing.T, m *healthserver.Metrics, d time.Duration) {
+				t.Helper()
+				m.RecordScheduling(t.Context(), d, "region-1", "Test Region", "flavor-1", "m1.small")
+			},
+			collect: collectSchedulingHistogram,
+		},
+	}
 
-	m, err := healthserver.NewMetrics(meter)
-	require.NoError(t, err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	m.RecordProvision(t.Context(), 90*time.Second, "region-1", "Test Region", "flavor-1", "m1.small")
+			meter, reader := newTestMeter(t)
 
-	points := collectHistogram(t, reader)
-	require.Len(t, points, 1)
+			m, err := healthserver.NewMetrics(meter)
+			require.NoError(t, err)
 
-	assert.Equal(t, uint64(1), points[0].Count)
-	assert.InDelta(t, 90.0, points[0].Sum, 0.001)
-	assert.Equal(t, "region-1", attrValue(points[0].Attributes, "region_id"))
-	assert.Equal(t, "Test Region", attrValue(points[0].Attributes, "region_name"))
-	assert.Equal(t, "flavor-1", attrValue(points[0].Attributes, "flavor_id"))
-	assert.Equal(t, "m1.small", attrValue(points[0].Attributes, "flavor_name"))
+			tc.record(t, m, tc.duration)
+
+			points := tc.collect(t, reader)
+			require.Len(t, points, 1)
+
+			assert.Equal(t, uint64(1), points[0].Count)
+			assert.InDelta(t, tc.duration.Seconds(), points[0].Sum, 0.001)
+			assert.Equal(t, "region-1", attrValue(points[0].Attributes, "region_id"))
+			assert.Equal(t, "Test Region", attrValue(points[0].Attributes, "region_name"))
+			assert.Equal(t, "flavor-1", attrValue(points[0].Attributes, "flavor_id"))
+			assert.Equal(t, "m1.small", attrValue(points[0].Attributes, "flavor_name"))
+		})
+	}
 }
