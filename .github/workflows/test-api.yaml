@@ -28,6 +28,10 @@ on:
         description: 'Override TEST_REGION_ID (leave empty to use default)'
         type: string
         required: false
+      uat_tag:
+        description: 'Override UAT tag (e.g. v1.16.1) — skips constellation lookup'
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -111,12 +115,18 @@ jobs:
   find-staging-constellation:
     name: Find staging constellation
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event.inputs.run_uat == 'true'
+    if: github.event_name == 'schedule' || github.event.inputs.run_uat == 'true' || inputs.uat_tag != ''
     outputs:
-      tag: ${{ steps.find.outputs.tag }}
+      tag: ${{ steps.override.outputs.tag || steps.find.outputs.tag }}
     steps:
+    - name: Use override tag
+      id: override
+      if: inputs.uat_tag != ''
+      run: echo "tag=${{ inputs.uat_tag }}" >> $GITHUB_OUTPUT
+
     - uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@main
       id: find
+      if: inputs.uat_tag == ''
       with:
         service: uni-region
         releases-read-token: ${{ secrets.RELEASES_READ_TOKEN }}
