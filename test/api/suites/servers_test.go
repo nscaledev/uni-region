@@ -58,36 +58,18 @@ func skipUnlessInternalAPIConfigured() {
 	}
 }
 
+func skipUnlessServerFixtureConfigured() {
+	if config.ServerFlavorID == "" || config.ServerImageID == "" {
+		Skip("server lifecycle tests require TEST_SERVER_FLAVOR_ID and TEST_SERVER_IMAGE_ID")
+	}
+}
+
 func testFlavorID() string {
-	if config.ServerFlavorID != "" {
-		return config.ServerFlavorID
-	}
-
-	flavors, err := regionClient.ListFlavors(ctx, config.OrgID, config.RegionID)
-	Expect(err).NotTo(HaveOccurred())
-	if len(flavors) == 0 {
-		Skip("server lifecycle tests require at least one available flavor")
-	}
-
-	return flavors[0].Metadata.Id
+	return config.ServerFlavorID
 }
 
 func testImageID() string {
-	if config.ServerImageID != "" {
-		return config.ServerImageID
-	}
-
-	images, err := regionClient.ListImages(ctx, config.OrgID, config.RegionID)
-	Expect(err).NotTo(HaveOccurred())
-
-	for _, image := range images {
-		if image.Status.State == regionopenapi.ImageStateReady {
-			return image.Metadata.Id
-		}
-	}
-
-	Skip("server lifecycle tests require at least one ready image")
-	return ""
+	return config.ServerImageID
 }
 
 func waitForNetworkProvisioned(networkID string) {
@@ -121,6 +103,7 @@ var _ = Describe("Server Management", func() {
 		BeforeAll(func() {
 			skipUnlessOpenStackRegion()
 			skipUnlessInternalAPIConfigured()
+			skipUnlessServerFixtureConfigured()
 
 			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
 			network, err := regionClient.CreateNetwork(ctx, networkReq)

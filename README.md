@@ -149,6 +149,11 @@ can generate short-lived mTLS client certificate files and write
 `INTERNAL_API_CLIENT_CERT` and `INTERNAL_API_CLIENT_KEY` into `test/.env`.
 Do not store those system-account credentials as shared workflow secrets.
 
+Server lifecycle tests also require `TEST_SERVER_FLAVOR_ID` and
+`TEST_SERVER_IMAGE_ID` to identify a known-compatible flavor/image pair in the
+target region. The tests skip rather than selecting arbitrary inventory when
+those values are absent.
+
 To run API tests against an OpenStack-backed region, generate `test/.env.install`
 first, then register or reference the region. In OpenStack mode the public test
 region is the existing Region CR identified by `TEST_REGION_ID`; the simulated
