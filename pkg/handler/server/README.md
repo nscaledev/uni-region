@@ -22,7 +22,9 @@ related dependencies rather than from nested path scope.
 - `v1` servers are nested more explicitly under identity paths
 - `v2` servers are network-linked resources with direct ID-based access
 - create/update validate referenced image existence through the provider layer
-- create/update can validate and bind an SSH certificate authority
+- create/update can validate and bind an SSH certificate authority; update can
+  move the control-plane reference to a replacement CA without treating the
+  original CA as permanently locked to the Server record
 - snapshot creation bridges server lifecycle into image provenance semantics
 - snapshot creation is also a cross-resource permission bridge: the caller must
   already be able to see the server and also be allowed to create images in the
@@ -44,6 +46,9 @@ related dependencies rather than from nested path scope.
 - A `Server v2` is owned by its network for cascading deletion.
 - User data and SSH certificate authority combinations are validated together to
   avoid unsupported managed-userdata states.
+- Omitting `sshCertificateAuthorityId` on update preserves the current CA for
+  backwards compatibility; providing a different value validates and stores that
+  replacement.
 - Power-operation errors are translated carefully from provider conflict/not-found
   states into user-facing API semantics.
 

@@ -94,7 +94,7 @@ var _ = Describe("SSHCertificateAuthority", func() {
 				Eventually(func() bool {
 					_, err := regionClient.GetSSHCertificateAuthority(ctx, caID)
 					return errors.Is(err, coreclient.ErrResourceNotFound)
-				}).WithTimeout(30 * time.Second).WithPolling(1 * time.Second).Should(BeTrue(),
+				}).WithTimeout(30*time.Second).WithPolling(1*time.Second).Should(BeTrue(),
 					"deleted ssh certificate authority should return not found")
 				GinkgoWriter.Printf("Confirmed ssh certificate authority deleted: %s\n", caID)
 			})

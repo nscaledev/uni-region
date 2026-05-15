@@ -147,10 +147,11 @@ func convertV2(in *regionv1.Server) *openapi.ServerV2Read {
 	out := &openapi.ServerV2Read{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.ServerV2Spec{
-			FlavorId:   in.Spec.FlavorID,
-			ImageId:    in.Spec.Image.ID,
-			Networking: convertNetworkingV2(in),
-			UserData:   convertUserData(in.Spec.UserData),
+			FlavorId:                  in.Spec.FlavorID,
+			ImageId:                   in.Spec.Image.ID,
+			Networking:                convertNetworkingV2(in),
+			SshCertificateAuthorityId: in.Spec.SSHCertificateAuthorityID,
+			UserData:                  convertUserData(in.Spec.UserData),
 		},
 		Status: openapi.ServerV2Status{
 			RegionId:                  in.Labels[constants.RegionLabel],
@@ -525,15 +526,27 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *opena
 		return nil, errors.OAuth2InvalidRequest("server is being deleted")
 	}
 
+	sshCertificateAuthorityID := current.Spec.SSHCertificateAuthorityID
+
+	if request.Spec.SshCertificateAuthorityId != nil {
+		if err := c.validateSSHCertificateAuthorityReference(ctx, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel], request.Spec.SshCertificateAuthorityId); err != nil {
+			return nil, err
+		}
+
+		sshCertificateAuthorityID = request.Spec.SshCertificateAuthorityId
+	}
+
 	// Get the network, required for generation.
 	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, current.Spec.Networks[0].ID)
 	if err != nil {
 		return nil, err
 	}
 
-	// User data is only consumed during initial server bootstrap. Updates preserve it for
-	// completeness and future rebuild support, but they do not re-run cloud-init validation.
-	required, err := c.generateV2(ctx, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel], request, network, current.Spec.SSHCertificateAuthorityID)
+	if err := validateUserDataForSSHCertificateAuthority(sshCertificateAuthorityID, request.Spec.UserData); err != nil {
+		return nil, err
+	}
+
+	required, err := c.generateV2(ctx, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel], request, network, sshCertificateAuthorityID)
 	if err != nil {
 		return nil, err
 	}

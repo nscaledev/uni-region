@@ -141,6 +141,10 @@ func aclWithSrvUpdate(orgID string) *identityapi.Acl {
 						Name:       "region:servers",
 						Operations: identityapi.AclOperations{identityapi.Read, identityapi.Update},
 					},
+					{
+						Name:       "region:sshcertificateauthorities:v2",
+						Operations: identityapi.AclOperations{identityapi.Read},
+					},
 				},
 			},
 		},
@@ -505,6 +509,50 @@ func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 	updated, err := c.GetV2Raw(ctx, resource.Name)
 	require.NoError(t, err)
 	require.Equal(t, resource.Spec.SSHCertificateAuthorityID, updated.Spec.SSHCertificateAuthorityID)
+}
+
+func TestServerUpdateV2ChangesSSHCertificateAuthority(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, "server-1", "ca-1")
+	replacementCA := testSSHCertificateAuthorityWithProject(srvProjectID, "ca-2")
+
+	k8sClient := newSrvFakeClient(t, network, resource, replacementCA).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate(srvOrganizationID)))
+
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId:                  resource.Spec.FlavorID,
+			ImageId:                   resource.Spec.Image.ID,
+			SshCertificateAuthorityId: ptr.To(replacementCA.Name),
+			UserData:                  ptr.To([]byte("#cloud-config\nusers: []\n")),
+		},
+	}
+
+	result, err := c.UpdateV2(ctx, resource.Name, request)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Status.SshCertificateAuthorityId)
+	require.Equal(t, replacementCA.Name, *result.Status.SshCertificateAuthorityId)
+
+	updated, err := c.GetV2Raw(ctx, resource.Name)
+	require.NoError(t, err)
+	require.NotNil(t, updated.Spec.SSHCertificateAuthorityID)
+	require.Equal(t, replacementCA.Name, *updated.Spec.SSHCertificateAuthorityID)
 }
 
 func TestServerGetV2ReturnsMACAddress(t *testing.T) {
