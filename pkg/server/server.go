@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/pprof"
+	"time"
 
 	chi "github.com/go-chi/chi/v5"
 	"github.com/spf13/pflag"
@@ -37,6 +38,7 @@ import (
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/middleware/audit"
 	openapimiddleware "github.com/unikorn-cloud/identity/pkg/middleware/openapi"
+	openapimiddlewarepassport "github.com/unikorn-cloud/identity/pkg/middleware/openapi/passport"
 	openapimiddlewareremote "github.com/unikorn-cloud/identity/pkg/middleware/openapi/remote"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler"
@@ -68,6 +70,15 @@ type Server struct {
 
 	// OpenAPIOptions are for OpenAPI processing.
 	OpenAPIOptions openapimiddleware.Options
+
+	// newUniAuthorizer allows base authorizer construction to be overridden in tests.
+	newUniAuthorizer func(cli client.Client, identityOptions *identityclient.Options, clientOptions *coreclient.HTTPClientOptions) (openapimiddleware.Authorizer, error)
+
+	// newIdentityHTTPClient allows HTTP client construction to be overridden in tests.
+	newIdentityHTTPClient func(cli client.Client, identityOptions *identityclient.Options, clientOptions *coreclient.HTTPClientOptions) (*http.Client, error)
+
+	// newAuthorizer allows passport authorizer construction to be overridden in tests.
+	newAuthorizer func(verifier *openapimiddlewarepassport.Verifier, uniAuthorizer openapimiddleware.Authorizer, tokenExchange openapimiddlewarepassport.TokenExchange) (openapimiddleware.Authorizer, error)
 }
 
 func (s *Server) AddFlags(flags *pflag.FlagSet) {
@@ -93,6 +104,60 @@ func (s *Server) SetupLogging() {
 // TODO: move config into an otel specific options struct.
 func (s *Server) SetupOpenTelemetry(ctx context.Context) error {
 	return s.CoreOptions.SetupOpenTelemetry(ctx)
+}
+
+// authorizer builds the API authorizer by composing passport middleware around
+// the existing remote uni authorizer.
+func (s *Server) authorizer(kubeClient client.Client) (openapimiddleware.Authorizer, error) {
+	newUniAuthorizer := s.newUniAuthorizer
+	if newUniAuthorizer == nil {
+		newUniAuthorizer = func(kubeClient client.Client, identityOptions *identityclient.Options, httpClientOptions *coreclient.HTTPClientOptions) (openapimiddleware.Authorizer, error) {
+			return openapimiddlewareremote.NewAuthorizer(kubeClient, identityOptions, httpClientOptions)
+		}
+	}
+
+	uniAuthorizer, err := newUniAuthorizer(kubeClient, s.IdentityOptions, &s.ClientOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize uni authorizer: %w", err)
+	}
+
+	newIdentityHTTPClient := s.newIdentityHTTPClient
+	if newIdentityHTTPClient == nil {
+		newIdentityHTTPClient = func(kubeClient client.Client, identityOptions *identityclient.Options, httpClientOptions *coreclient.HTTPClientOptions) (*http.Client, error) {
+			return identityclient.New(kubeClient, identityOptions, httpClientOptions).HTTPClient(context.Background())
+		}
+	}
+
+	httpClient, err := newIdentityHTTPClient(kubeClient, s.IdentityOptions, &s.ClientOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize identity HTTP client: %w", err)
+	}
+
+	var (
+		identityHost     = s.IdentityOptions.Host()
+		jwksURL          = openapimiddlewarepassport.JWKSURL(identityHost)
+		tokenExchangeURL = openapimiddlewarepassport.TokenExchangeURL(identityHost)
+		keySource        = openapimiddlewarepassport.NewCachedHTTPKeySource(httpClient, jwksURL, time.Minute)
+		verifier         = openapimiddlewarepassport.NewVerifier(keySource)
+		tokenExchange    = openapimiddlewarepassport.NewHTTPTokenExchange(httpClient, tokenExchangeURL)
+	)
+
+	newAuthorizer := s.newAuthorizer
+	if newAuthorizer == nil {
+		newAuthorizer = func(verifier *openapimiddlewarepassport.Verifier, uniAuthorizer openapimiddleware.Authorizer, tokenExchange openapimiddlewarepassport.TokenExchange) (openapimiddleware.Authorizer, error) {
+			// Passport handles passport verification/token exchange and uses the
+			// uni authorizer for ACL lookups and fallback authorization when
+			// exchange is unavailable for non-passport tokens.
+			return openapimiddlewarepassport.NewAuthorizer(verifier, uniAuthorizer, tokenExchange)
+		}
+	}
+
+	authorizer, err := newAuthorizer(verifier, uniAuthorizer, tokenExchange)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize passport authorizer: %w", err)
+	}
+
+	return authorizer, nil
 }
 
 func (s *Server) GetServer(ctx context.Context, client client.Client) (*http.Server, error) {
@@ -144,7 +209,7 @@ func (s *Server) GetServer(ctx context.Context, client client.Client) (*http.Ser
 	router.NotFound(http.HandlerFunc(handler.NotFound))
 	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
 
-	authorizer, err := openapimiddlewareremote.NewAuthorizer(client, s.IdentityOptions, &s.ClientOptions)
+	authorizer, err := s.authorizer(client)
 	if err != nil {
 		return nil, err
 	}
