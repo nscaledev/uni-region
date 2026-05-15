@@ -131,6 +131,32 @@ func (e *Endpoints) DeleteNetwork(networkID string) string {
 		url.PathEscape(networkID))
 }
 
+// ListSecurityGroups returns the endpoint for listing security groups filtered by org, project and region.
+func (e *Endpoints) ListSecurityGroups(orgID, projectID, regionID string) string {
+	return fmt.Sprintf("/api/v2/securitygroups?organizationID=%s&projectID=%s&regionID=%s",
+		url.QueryEscape(orgID), url.QueryEscape(projectID), url.QueryEscape(regionID))
+}
+
+// CreateSecurityGroup returns the endpoint for creating a security group.
+func (e *Endpoints) CreateSecurityGroup() string {
+	return "/api/v2/securitygroups"
+}
+
+// GetSecurityGroup returns the endpoint for getting a specific security group.
+func (e *Endpoints) GetSecurityGroup(securityGroupID string) string {
+	return fmt.Sprintf("/api/v2/securitygroups/%s", url.PathEscape(securityGroupID))
+}
+
+// UpdateSecurityGroup returns the endpoint for updating a specific security group.
+func (e *Endpoints) UpdateSecurityGroup(securityGroupID string) string {
+	return fmt.Sprintf("/api/v2/securitygroups/%s", url.PathEscape(securityGroupID))
+}
+
+// DeleteSecurityGroup returns the endpoint for deleting a specific security group.
+func (e *Endpoints) DeleteSecurityGroup(securityGroupID string) string {
+	return fmt.Sprintf("/api/v2/securitygroups/%s", url.PathEscape(securityGroupID))
+}
+
 // ListLoadBalancers returns the endpoint for listing load balancers in a project.
 func (e *Endpoints) ListLoadBalancers(orgID, projectID, regionID string) string {
 	return fmt.Sprintf("/api/v2/loadbalancers?organizationID=%s&projectID=%s&regionID=%s",
