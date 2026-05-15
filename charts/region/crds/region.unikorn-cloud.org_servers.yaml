@@ -208,6 +208,12 @@ spec:
                   - type
                   type: object
                 type: array
+              launchedAt:
+                description: |-
+                  LaunchedAt is the time the provider booted the VM. Nil until the server has
+                  been observed Running at least once.
+                format: date-time
+                type: string
               macAddress:
                 description: MACAddress is the MAC address of the server's primary
                   network interface.
@@ -225,6 +231,12 @@ spec:
                 type: string
               publicIP:
                 description: PublicIP is the public IP address of the server.
+                type: string
+              scheduledAt:
+                description: |-
+                  ScheduledAt is the time the provider accepted and processed the creation request.
+                  Nil until the server has been observed in the provider at least once.
+                format: date-time
                 type: string
             type: object
         required:

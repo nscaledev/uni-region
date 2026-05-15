@@ -2513,6 +2513,14 @@ func (in *ServerStatus) DeepCopyInto(out *ServerStatus) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.LaunchedAt != nil {
+		in, out := &in.LaunchedAt, &out.LaunchedAt
+		*out = (*in).DeepCopy()
+	}
+	if in.ScheduledAt != nil {
+		in, out := &in.ScheduledAt, &out.ScheduledAt
+		*out = (*in).DeepCopy()
+	}
 	return
 }
 

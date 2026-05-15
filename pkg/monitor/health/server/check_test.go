@@ -221,14 +221,6 @@ func runCheck(t *testing.T, srv *unikornv1.Server, updateFn func(*unikornv1.Serv
 	return sink, err
 }
 
-func runCheckWithClient(t *testing.T, srv *unikornv1.Server, updateFn func(*unikornv1.Server)) (client.Client, error) {
-	t.Helper()
-
-	k8sClient, _, err := runCheckFull(t, srv, updateFn)
-
-	return k8sClient, err
-}
-
 // TestCheckServerLogsOnPhaseChange verifies that a phase transition log is emitted when
 // the server's lifecycle phase changes, and that it contains the required fields.
 func TestCheckServerLogsOnPhaseChange(t *testing.T) {
@@ -370,114 +362,9 @@ func TestCheckServerLogsBothOnCombinedChange(t *testing.T) {
 	require.Len(t, sink.entriesWithMsg("instance state transition"), 1)
 }
 
-// TestStampPendingAnnotationFreshEntry verifies that the phase-entry time annotation is
-// written when a server transitions into Pending for the first time.
-func TestStampPendingAnnotationFreshEntry(t *testing.T) {
-	t.Parallel()
-
-	srv := serverFixture(unikornv1.InstanceLifecyclePhaseRunning)
-
-	before := time.Now().Truncate(time.Second)
-
-	k8sClient, err := runCheckWithClient(t, srv, func(s *unikornv1.Server) {
-		s.Status.Phase = unikornv1.InstanceLifecyclePhasePending
-	})
-
-	require.NoError(t, err)
-
-	result := &unikornv1.Server{}
-	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, result))
-
-	entryTimeStr, ok := result.Annotations[constants.ServerPendingEntryTimeAnnotation]
-	require.True(t, ok, "phase-entry-time annotation should be present")
-
-	entryTime, err := time.Parse(time.RFC3339, entryTimeStr)
-	require.NoError(t, err)
-	require.False(t, entryTime.Before(before), "annotation timestamp should not predate the check")
-}
-
-// TestStampPendingAnnotationNoOverwrite verifies that the annotation is not overwritten
-// when the server remains in Pending and the annotation already exists.
-func TestStampPendingAnnotationNoOverwrite(t *testing.T) {
-	t.Parallel()
-
-	original := time.Now().Add(-5 * time.Minute).Truncate(time.Second)
-
-	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
-	srv.Annotations = map[string]string{
-		constants.ServerPendingEntryTimeAnnotation: original.UTC().Format(time.RFC3339),
-	}
-
-	k8sClient, err := runCheckWithClient(t, srv, func(s *unikornv1.Server) {
-		s.Status.Phase = unikornv1.InstanceLifecyclePhasePending
-	})
-
-	require.NoError(t, err)
-
-	result := &unikornv1.Server{}
-	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, result))
-
-	require.Equal(t, original.UTC().Format(time.RFC3339), result.Annotations[constants.ServerPendingEntryTimeAnnotation],
-		"annotation should not be overwritten while server remains in Pending")
-}
-
-// TestAnnotationRemovedOnLeavingPending verifies that the phase-entry time annotation is
-// deleted when a server leaves the Pending phase, preventing stale timestamps from being
-// used if the server re-enters Pending between polls.
-func TestAnnotationRemovedOnLeavingPending(t *testing.T) {
-	t.Parallel()
-
-	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
-	srv.Annotations = map[string]string{
-		constants.ServerPendingEntryTimeAnnotation: time.Now().Add(-2 * time.Minute).UTC().Format(time.RFC3339),
-	}
-
-	k8sClient, err := runCheckWithClient(t, srv, func(s *unikornv1.Server) {
-		s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
-	})
-
-	require.NoError(t, err)
-
-	result := &unikornv1.Server{}
-	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, result))
-
-	_, ok := result.Annotations[constants.ServerPendingEntryTimeAnnotation]
-	require.False(t, ok, "phase-entry-time annotation should be removed when server leaves Pending")
-}
-
-// TestStampPendingAnnotationRewriteOnReentry verifies that the annotation is stamped with
-// the current time when a server re-enters Pending (e.g. after a stop/start cycle).
-// Because the annotation is cleaned up on exit, re-entry always gets a fresh timestamp.
-func TestStampPendingAnnotationRewriteOnReentry(t *testing.T) {
-	t.Parallel()
-
-	// Server is currently Running in k8s with no annotation (cleaned up when it left Pending).
-	srv := serverFixture(unikornv1.InstanceLifecyclePhaseRunning)
-
-	before := time.Now().Truncate(time.Second)
-
-	k8sClient, err := runCheckWithClient(t, srv, func(s *unikornv1.Server) {
-		s.Status.Phase = unikornv1.InstanceLifecyclePhasePending
-	})
-
-	require.NoError(t, err)
-
-	result := &unikornv1.Server{}
-	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, result))
-
-	entryTimeStr, ok := result.Annotations[constants.ServerPendingEntryTimeAnnotation]
-	require.True(t, ok, "phase-entry-time annotation should be present on re-entry into Pending")
-
-	entryTime, err := time.Parse(time.RFC3339, entryTimeStr)
-	require.NoError(t, err)
-	require.False(t, entryTime.Before(before), "annotation should be stamped with current time")
-}
-
-// TestCheckServerNoHistogramWhenAnnotationMissing verifies that no histogram observation
-// is recorded when a server transitions Pending → Running without a pending-entry-time
-// annotation. This can happen if the server was already Pending when the monitor was
-// first deployed, or if a previous annotation patch failed.
-func TestCheckServerNoHistogramWhenAnnotationMissing(t *testing.T) {
+// TestCheckServerNoHistogramOnClockSkew verifies that no histogram observation is recorded
+// when a timestamp precedes CreationTimestamp (clock skew between Uni and Nova).
+func TestCheckServerNoHistogramOnClockSkew(t *testing.T) {
 	t.Parallel()
 
 	meter, reader := newTestMeter(t)
@@ -485,7 +372,12 @@ func TestCheckServerNoHistogramWhenAnnotationMissing(t *testing.T) {
 	m, err := healthserver.NewMetrics(meter)
 	require.NoError(t, err)
 
-	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending) // no annotation
+	createdAt := time.Now().Truncate(time.Second)
+	// launchedAt is before createdAt — simulates clock skew.
+	launchedAt := metav1.NewTime(createdAt.Add(-30 * time.Second))
+
+	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
+	srv.CreationTimestamp = metav1.NewTime(createdAt)
 
 	ctrl := gomock.NewController(t)
 
@@ -494,6 +386,53 @@ func TestCheckServerNoHistogramWhenAnnotationMissing(t *testing.T) {
 		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
 			s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+			s.Status.LaunchedAt = &launchedAt
+
+			return nil
+		})
+	mockProvider.EXPECT().
+		Region(gomock.Any()).
+		Return(regionFixture(), nil).
+		AnyTimes()
+	mockProvider.EXPECT().
+		Flavors(gomock.Any()).
+		Return(providerTypes.FlavorList{{ID: flavorID, Name: flavorName}}, nil).
+		AnyTimes()
+
+	mockProviders := mockproviders.NewMockProviders(ctrl)
+	mockProviders.EXPECT().LookupCloud(regionID).Return(mockProvider, nil).AnyTimes()
+
+	sink := newCaptureSink()
+	ctx := logr.NewContext(t.Context(), logr.New(sink))
+	checker := healthserver.New(newFakeClient(t, identityFixture(), srv), namespace, mockProviders, m)
+	require.NoError(t, checker.Check(ctx))
+
+	require.Empty(t, collectHistogram(t, reader))
+	require.NotEmpty(t, sink.entriesWithMsg("skipping duration metric: negative duration (clock skew?)"))
+}
+
+// TestCheckServerNoHistogramWhenTimestampsNil verifies that no histogram observations are
+// recorded when a server transitions Pending → Running but neither LaunchedAt nor
+// ScheduledAt is set. This can happen for servers that booted before these fields were
+// introduced, or on providers that do not populate the relevant Nova fields.
+func TestCheckServerNoHistogramWhenTimestampsNil(t *testing.T) {
+	t.Parallel()
+
+	meter, reader := newTestMeter(t)
+
+	m, err := healthserver.NewMetrics(meter)
+	require.NoError(t, err)
+
+	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
+
+	ctrl := gomock.NewController(t)
+
+	mockProvider := mocktypes.NewMockProvider(ctrl)
+	mockProvider.EXPECT().
+		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
+			s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+			// LaunchedAt and ScheduledAt intentionally not set
 			return nil
 		})
 	mockProvider.EXPECT().
@@ -512,13 +451,13 @@ func TestCheckServerNoHistogramWhenAnnotationMissing(t *testing.T) {
 	checker := healthserver.New(newFakeClient(t, identityFixture(), srv), namespace, mockProviders, m)
 	require.NoError(t, checker.Check(ctx))
 
-	points := collectHistogram(t, reader)
-	require.Empty(t, points)
+	require.Empty(t, collectHistogram(t, reader))
+	require.Empty(t, collectSchedulingHistogram(t, reader))
 }
 
-// TestCheckServerRecordsProvisionDurationOnPendingToRunning verifies that a server with a
-// pre-stamped pending-entry annotation that transitions Pending → Running results in a
-// histogram observation with the correct duration and region attribute.
+// TestCheckServerRecordsProvisionDurationOnPendingToRunning verifies that a Pending →
+// Running transition with LaunchedAt set produces a histogram observation whose duration
+// equals LaunchedAt − CreationTimestamp.
 func TestCheckServerRecordsProvisionDurationOnPendingToRunning(t *testing.T) {
 	t.Parallel()
 
@@ -527,12 +466,11 @@ func TestCheckServerRecordsProvisionDurationOnPendingToRunning(t *testing.T) {
 	m, err := healthserver.NewMetrics(meter)
 	require.NoError(t, err)
 
-	entryTime := time.Now().Add(-2 * time.Minute).Truncate(time.Second)
+	createdAt := time.Now().Add(-2 * time.Minute).Truncate(time.Second)
+	launchedAt := createdAt.Add(2 * time.Minute)
 
 	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
-	srv.Annotations = map[string]string{
-		constants.ServerPendingEntryTimeAnnotation: entryTime.UTC().Format(time.RFC3339),
-	}
+	srv.CreationTimestamp = metav1.NewTime(createdAt)
 
 	ctrl := gomock.NewController(t)
 
@@ -541,6 +479,9 @@ func TestCheckServerRecordsProvisionDurationOnPendingToRunning(t *testing.T) {
 		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
 			s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+			t := metav1.NewTime(launchedAt)
+			s.Status.LaunchedAt = &t
+
 			return nil
 		})
 	mockProvider.EXPECT().
@@ -562,16 +503,125 @@ func TestCheckServerRecordsProvisionDurationOnPendingToRunning(t *testing.T) {
 	points := collectHistogram(t, reader)
 	require.Len(t, points, 1)
 	assert.Equal(t, uint64(1), points[0].Count)
-	assert.GreaterOrEqual(t, points[0].Sum, (2 * time.Minute).Seconds())
+	assert.InDelta(t, (2 * time.Minute).Seconds(), points[0].Sum, 0.001)
 	assert.Equal(t, regionID, attrValue(points[0].Attributes, "region_id"))
 	assert.Equal(t, regionName, attrValue(points[0].Attributes, "region_name"))
 	assert.Equal(t, flavorID, attrValue(points[0].Attributes, "flavor_id"))
 	assert.Equal(t, flavorName, attrValue(points[0].Attributes, "flavor_name"))
 }
 
+// TestCheckServerRecordsSchedulingDurationOnPendingToRunning verifies that a Pending →
+// Running transition with ScheduledAt set produces a scheduling histogram observation
+// whose duration equals ScheduledAt − CreationTimestamp.
+func TestCheckServerRecordsSchedulingDurationOnPendingToRunning(t *testing.T) {
+	t.Parallel()
+
+	meter, reader := newTestMeter(t)
+
+	m, err := healthserver.NewMetrics(meter)
+	require.NoError(t, err)
+
+	createdAt := time.Now().Add(-2 * time.Minute).Truncate(time.Second)
+	scheduledAt := createdAt.Add(10 * time.Second)
+
+	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
+	srv.CreationTimestamp = metav1.NewTime(createdAt)
+
+	ctrl := gomock.NewController(t)
+
+	mockProvider := mocktypes.NewMockProvider(ctrl)
+	mockProvider.EXPECT().
+		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
+			s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+			t := metav1.NewTime(scheduledAt)
+			s.Status.ScheduledAt = &t
+
+			return nil
+		})
+	mockProvider.EXPECT().
+		Region(gomock.Any()).
+		Return(regionFixture(), nil).
+		AnyTimes()
+	mockProvider.EXPECT().
+		Flavors(gomock.Any()).
+		Return(providerTypes.FlavorList{{ID: flavorID, Name: flavorName}}, nil).
+		AnyTimes()
+
+	mockProviders := mockproviders.NewMockProviders(ctrl)
+	mockProviders.EXPECT().LookupCloud(regionID).Return(mockProvider, nil).AnyTimes()
+
+	ctx := logr.NewContext(t.Context(), logr.Discard())
+	checker := healthserver.New(newFakeClient(t, identityFixture(), srv), namespace, mockProviders, m)
+	require.NoError(t, checker.Check(ctx))
+
+	points := collectSchedulingHistogram(t, reader)
+	require.Len(t, points, 1)
+	assert.Equal(t, uint64(1), points[0].Count)
+	assert.InDelta(t, (10 * time.Second).Seconds(), points[0].Sum, 0.001)
+	assert.Equal(t, regionID, attrValue(points[0].Attributes, "region_id"))
+	assert.Equal(t, regionName, attrValue(points[0].Attributes, "region_name"))
+	assert.Equal(t, flavorID, attrValue(points[0].Attributes, "flavor_id"))
+	assert.Equal(t, flavorName, attrValue(points[0].Attributes, "flavor_name"))
+
+	// Provision histogram must be empty: LaunchedAt was not set.
+	require.Empty(t, collectHistogram(t, reader))
+}
+
+// TestCheckServerNoHistogramOnRestartAfterFirstBoot verifies that neither histogram
+// fires on a second Pending → Running transition when LaunchedAt and ScheduledAt are
+// already set from the first boot.
+func TestCheckServerNoHistogramOnRestartAfterFirstBoot(t *testing.T) {
+	t.Parallel()
+
+	meter, reader := newTestMeter(t)
+
+	m, err := healthserver.NewMetrics(meter)
+	require.NoError(t, err)
+
+	launchedAt := metav1.NewTime(time.Now().Add(-time.Minute))
+	scheduledAt := metav1.NewTime(time.Now().Add(-2 * time.Minute))
+
+	// Server already has both timestamps from its first boot.
+	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
+	srv.Status.LaunchedAt = &launchedAt
+	srv.Status.ScheduledAt = &scheduledAt
+
+	ctrl := gomock.NewController(t)
+
+	mockProvider := mocktypes.NewMockProvider(ctrl)
+	mockProvider.EXPECT().
+		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
+			s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+			s.Status.LaunchedAt = &launchedAt
+			s.Status.ScheduledAt = &scheduledAt
+
+			return nil
+		})
+	mockProvider.EXPECT().
+		Region(gomock.Any()).
+		Return(regionFixture(), nil).
+		AnyTimes()
+	mockProvider.EXPECT().
+		Flavors(gomock.Any()).
+		Return(providerTypes.FlavorList{{ID: flavorID, Name: flavorName}}, nil).
+		AnyTimes()
+
+	mockProviders := mockproviders.NewMockProviders(ctrl)
+	mockProviders.EXPECT().LookupCloud(regionID).Return(mockProvider, nil).AnyTimes()
+
+	ctx := logr.NewContext(t.Context(), logr.Discard())
+	checker := healthserver.New(newFakeClient(t, identityFixture(), srv), namespace, mockProviders, m)
+	require.NoError(t, checker.Check(ctx))
+
+	require.Empty(t, collectHistogram(t, reader))
+	require.Empty(t, collectSchedulingHistogram(t, reader))
+}
+
 // runFallbackCheck builds a Checker with the given provider mocks and runs Check
-// against a Pending server that has a pending-entry-time annotation, transitioning
-// to Running. Asserts the histogram recorded exactly one point and returns its
+// against a Pending server that transitions to Running with LaunchedAt set.
+// Asserts the histogram recorded exactly one point and returns its
 // region_id, region_name, flavor_id, flavor_name attribute values.
 func runFallbackCheck(t *testing.T, setupRegion, setupFlavor func(*mocktypes.MockProvider)) (string, string, string, string) {
 	t.Helper()
@@ -581,12 +631,11 @@ func runFallbackCheck(t *testing.T, setupRegion, setupFlavor func(*mocktypes.Moc
 	m, err := healthserver.NewMetrics(meter)
 	require.NoError(t, err)
 
-	entryTime := time.Now().Add(-time.Minute).Truncate(time.Second)
+	createdAt := time.Now().Add(-time.Minute).Truncate(time.Second)
+	launchedAt := createdAt.Add(time.Minute)
 
 	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
-	srv.Annotations = map[string]string{
-		constants.ServerPendingEntryTimeAnnotation: entryTime.UTC().Format(time.RFC3339),
-	}
+	srv.CreationTimestamp = metav1.NewTime(createdAt)
 
 	ctrl := gomock.NewController(t)
 
@@ -595,6 +644,9 @@ func runFallbackCheck(t *testing.T, setupRegion, setupFlavor func(*mocktypes.Moc
 		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
 			s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+			t := metav1.NewTime(launchedAt)
+			s.Status.LaunchedAt = &t
+
 			return nil
 		})
 	setupRegion(mockProvider)

@@ -47,8 +47,9 @@ type Metrics struct {
 	mu          sync.RWMutex
 	stateCounts map[StateMetricsKey]int64
 
-	stateGauge    metric.Int64ObservableGauge
-	provisionHist metric.Float64Histogram
+	stateGauge     metric.Int64ObservableGauge
+	provisionHist  metric.Float64Histogram
+	schedulingHist metric.Float64Histogram
 }
 
 // NewMetrics creates and registers OTel instruments on the given meter.
@@ -63,17 +64,27 @@ func NewMetrics(meter metric.Meter) (*Metrics, error) {
 
 	provisionHist, err := meter.Float64Histogram(
 		"unikorn_region_server_provision_duration_seconds",
-		metric.WithDescription("Duration of the Pending phase, observed on Pending to Running transition."),
+		metric.WithDescription("Duration from Uni Server CR creation to Nova booting the VM (OS-SRV-USG:launched_at), observed on first Pending to Running transition. For VMs this is close to guest-ready time (<1 min gap); for baremetal the guest OS may need ~15 more minutes to boot."),
 		metric.WithExplicitBucketBoundaries(5, 15, 30, 60, 120, 300, 600, 900, 1800, 3600),
 	)
 	if err != nil {
 		return nil, err
 	}
 
+	schedulingHist, err := meter.Float64Histogram(
+		"unikorn_region_server_scheduling_duration_seconds",
+		metric.WithDescription("Duration from Uni Server CR creation to Nova creating the server (created timestamp), observed on first Pending to Running transition."),
+		metric.WithExplicitBucketBoundaries(1, 5, 10, 30, 60, 120, 300),
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	m := &Metrics{
-		stateCounts:   make(map[StateMetricsKey]int64),
-		stateGauge:    stateGauge,
-		provisionHist: provisionHist,
+		stateCounts:    make(map[StateMetricsKey]int64),
+		stateGauge:     stateGauge,
+		provisionHist:  provisionHist,
+		schedulingHist: schedulingHist,
 	}
 
 	if _, err := meter.RegisterCallback(m.collectStateCounts, m.stateGauge); err != nil {
@@ -118,6 +129,19 @@ func (m *Metrics) SetStateCounts(counts map[StateMetricsKey]int64) {
 // RecordProvision observes a Pending → Running provisioning duration.
 func (m *Metrics) RecordProvision(ctx context.Context, d time.Duration, regionID, regionName, flavorID, flavorName string) {
 	m.provisionHist.Record(ctx, d.Seconds(),
+		metric.WithAttributes(
+			attribute.String(attrRegionID, regionID),
+			attribute.String(attrRegionName, regionName),
+			attribute.String(attrFlavorID, flavorID),
+			attribute.String(attrFlavorName, flavorName),
+		),
+	)
+}
+
+// RecordScheduling observes the duration from Uni Server CR creation to Nova accepting
+// the request, measured on the Pending → Running transition.
+func (m *Metrics) RecordScheduling(ctx context.Context, d time.Duration, regionID, regionName, flavorID, flavorName string) {
+	m.schedulingHist.Record(ctx, d.Seconds(),
 		metric.WithAttributes(
 			attribute.String(attrRegionID, regionID),
 			attribute.String(attrRegionName, regionName),

@@ -2058,6 +2058,19 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 		return
 	}
 
+	// Both timestamps are set unconditionally (not gated on power state): Nova
+	// populates created and launched_at on every server response once set, and
+	// neither value changes after the server's first boot.
+	if !openstackserver.Created.IsZero() {
+		t := metav1.NewTime(openstackserver.Created)
+		server.Status.ScheduledAt = &t
+	}
+
+	if !openstackserver.LaunchedAt.IsZero() {
+		t := metav1.NewTime(openstackserver.LaunchedAt)
+		server.Status.LaunchedAt = &t
+	}
+
 	switch openstackserver.PowerState {
 	case servers.NOSTATE:
 		// No state information available. We will keep the phase as it is.
