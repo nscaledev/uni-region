@@ -437,8 +437,37 @@ func (p *Provider) DeleteLoadBalancer(_ context.Context, _ *unikornv1.Identity, 
 	return nil
 }
 
-func (p *Provider) CreateServer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ *types.ServerCreateOptions) error {
-	return unsupported("CreateServer")
+func (p *Provider) CreateServer(ctx context.Context, _ *unikornv1.Identity, server *unikornv1.Server, _ *types.ServerCreateOptions) error {
+	server.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+
+	if len(server.Spec.Networks) > 0 && p.client != nil {
+		network := &unikornv1.Network{}
+		if err := p.client.Get(ctx, client.ObjectKey{Namespace: server.Namespace, Name: server.Spec.Networks[0].ID}, network); err != nil {
+			return err
+		}
+
+		if network.Spec.Prefix != nil {
+			privateIP, err := deterministicIPv4Address(network.Spec.Prefix.IPNet, fmt.Sprintf("simulated-server-privateip/%s/%s", network.Spec.Prefix.String(), server.Name))
+			if err != nil {
+				return err
+			}
+
+			server.Status.PrivateIP = ptr(privateIP.String())
+		}
+	}
+
+	if server.Spec.PublicIPAllocation != nil && server.Spec.PublicIPAllocation.Enabled {
+		publicIP, err := deterministicIPv4Address(documentationPublicIPPrefix(), fmt.Sprintf("simulated-server-publicip/%s", server.Name))
+		if err != nil {
+			return err
+		}
+
+		server.Status.PublicIP = ptr(publicIP.String())
+	} else {
+		server.Status.PublicIP = nil
+	}
+
+	return nil
 }
 
 func (p *Provider) RebootServer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ bool) error {
@@ -454,11 +483,15 @@ func (p *Provider) StopServer(_ context.Context, _ *unikornv1.Identity, _ *uniko
 }
 
 func (p *Provider) DeleteServer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server) error {
-	return unsupported("DeleteServer")
+	return nil
 }
 
-func (p *Provider) UpdateServerState(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server) error {
-	return unsupported("UpdateServerState")
+func (p *Provider) UpdateServerState(_ context.Context, _ *unikornv1.Identity, server *unikornv1.Server) error {
+	if server.Status.Phase == "" || server.Status.Phase == unikornv1.InstanceLifecyclePhasePending {
+		server.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+	}
+
+	return nil
 }
 
 func (p *Provider) CreateConsoleSession(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server) (string, error) {

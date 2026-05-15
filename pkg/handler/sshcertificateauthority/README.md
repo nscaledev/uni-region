@@ -16,7 +16,9 @@ Its distinctive concerns are:
 
 - public keys are normalized and validated as OpenSSH authorized keys
 - unsupported key options and unsupported key types are rejected
-- deletion is blocked if explicit resource references still exist
+- deletion is blocked while explicit references still exist; the Server
+  provisioner holds the currently associated SSH-CA reference and moves that
+  reference when a Server is updated to a replacement CA
 - a `ResourceAPIVersionLabel` is still written even though there is no active
   `v1 -> v2` migration concern for this resource; it is there as future-proofing
   rather than because the handler is carrying old API baggage
@@ -39,7 +41,9 @@ Its distinctive concerns are:
 - The package is intentionally narrow; most of the interesting architectural
   context sits in the handler roll-up and in the server package that references
   SSH certificate authorities.
-- Deletion safety depends on callers correctly maintaining references.
+- SSH CA deletion is blocked while any Server still references it; deleting an
+  unused SSH CA prevents new Servers from selecting it, but does not revoke CA
+  trust that has already been written into existing guests.
 
 ## TODO
 
@@ -51,5 +55,7 @@ Its distinctive concerns are:
 
 - [../server](../server/README.md) documents the main consumer of SSH
   certificate authorities
+- [../../provisioners/managers/server](../../provisioners/managers/server/README.md)
+  documents the consuming controller that owns the CA reference lifecycle
 - [../README.md](../README.md) documents the explicit-reference deletion model
   used here instead of pure ownership cascade

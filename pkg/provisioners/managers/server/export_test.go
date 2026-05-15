@@ -32,3 +32,27 @@ func ServerCreateOptionsForTest(ctx context.Context, server *unikornv1.Server, c
 
 	return provisioner.serverCreateOptions(ctx, cli)
 }
+
+func AddConsumedResourceReferencesForTest(ctx context.Context, server *unikornv1.Server, cli client.Client, reference string) error {
+	provisioner := &Provisioner{
+		server: server,
+	}
+
+	return provisioner.addConsumedResourceReferences(ctx, cli, reference)
+}
+
+func RemoveConsumedResourceReferencesForTest(ctx context.Context, server *unikornv1.Server, cli client.Client, reference string) error {
+	provisioner := &Provisioner{
+		server: server,
+	}
+
+	return provisioner.removeConsumedResourceReferences(ctx, cli, reference)
+}
+
+func ClearConsumedResourceReferencesForTest(ctx context.Context, server *unikornv1.Server, cli client.Client, reference string) error {
+	provisioner := &Provisioner{
+		server: server,
+	}
+
+	return provisioner.clearConsumedResourceReferences(ctx, cli, reference)
+}

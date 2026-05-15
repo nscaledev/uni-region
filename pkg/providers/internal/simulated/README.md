@@ -34,6 +34,11 @@ development, while keeping behaviour deterministic and cheap to run.
 - Some mutable operations intentionally act by mutating service-side resource
   status deterministically, for example network status and load balancer VIP or
   public IP assignment.
+- Server create/delete/state operations are deliberately shallow but successful:
+  create marks the Server running and derives deterministic addresses when the
+  referenced network information is available. This exists to exercise
+  higher-layer server workflows in integration tests without requiring a real
+  cloud.
 - The simulated provider is particularly useful for stressing strongly
   consistent higher-layer workflows such as quota, reference, and coordination
   paths, because those higher layers can be exercised against a cheap

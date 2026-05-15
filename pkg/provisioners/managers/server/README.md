@@ -12,7 +12,12 @@ Distinctive behaviour:
 
 This is the clearest controller-side expression of the lifecycle DAG model:
 
-- network/security-group/SSH-CA edges are explicit and blocking
+- network, security-group, and SSH-CA references are held while the Server's
+  current desired spec consumes them; the optional SSH-CA reference is released
+  during Deprovision so deletion of an in-use CA remains blocked
+- when a Server is updated to a replacement SSH CA, the provisioner adds the
+  new reference and removes the same Server reference from stale CAs in the
+  project so the previous CA can be deleted once unused
 - provider-side server lifecycle is delegated
 - cloud-init augmentation translates higher-level SSH CA semantics into machine
   bootstrap material
@@ -21,6 +26,9 @@ This is the clearest controller-side expression of the lifecycle DAG model:
 
 - Reference maintenance here is easy to underappreciate, but it is central to
   keeping server deletion and dependent-resource blocking semantics correct.
+- SSH CA deletion is blocked while any Server still references it; once unused,
+  deleting the CA removes the control-plane record for future use but does not
+  revoke trust already written into guests by cloud-init.
 - The provisioner currently trusts the API not to supply repeated network or
   security-group IDs, even though the code still carries explicit TODOs to
   reject duplicates.

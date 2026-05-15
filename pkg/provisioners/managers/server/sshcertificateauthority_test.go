@@ -193,3 +193,66 @@ func TestServerCreateOptions(t *testing.T) {
 		require.Contains(t, string(parts[1].Content), "test-ca")
 	})
 }
+
+func TestSSHCAReferenceIsHeldWhileServerReferencesCA(t *testing.T) {
+	t.Parallel()
+
+	ca := testSSHCertificateAuthority()
+	srv := testServer(withTestSSHCertificateAuthority(ca))
+	cli := testClient(t, []client.Object{ca, srv})
+	reference := "servers.region.unikorn-cloud.org/" + srv.Name
+
+	require.NoError(t, serverprovisioner.AddConsumedResourceReferencesForTest(t.Context(), srv, cli, reference))
+
+	updated := &regionv1.SSHCertificateAuthority{}
+	require.NoError(t, cli.Get(t.Context(), client.ObjectKey{Namespace: ca.Namespace, Name: ca.Name}, updated))
+	require.Contains(t, updated.Finalizers, reference)
+
+	require.NoError(t, serverprovisioner.RemoveConsumedResourceReferencesForTest(t.Context(), srv, cli, reference))
+
+	require.NoError(t, cli.Get(t.Context(), client.ObjectKey{Namespace: ca.Namespace, Name: ca.Name}, updated))
+	require.Contains(t, updated.Finalizers, reference)
+
+	require.NoError(t, serverprovisioner.ClearConsumedResourceReferencesForTest(t.Context(), srv, cli, reference))
+
+	require.NoError(t, cli.Get(t.Context(), client.ObjectKey{Namespace: ca.Namespace, Name: ca.Name}, updated))
+	require.NotContains(t, updated.Finalizers, reference)
+}
+
+func TestSSHCAReferenceMovesWhenServerCAChanges(t *testing.T) {
+	t.Parallel()
+
+	oldCA := testSSHCertificateAuthority()
+	newCA := testSSHCertificateAuthority()
+	srv := testServer(withTestSSHCertificateAuthority(oldCA))
+	cli := testClient(t, []client.Object{oldCA, newCA, srv})
+	reference := "servers.region.unikorn-cloud.org/" + srv.Name
+
+	require.NoError(t, serverprovisioner.AddConsumedResourceReferencesForTest(t.Context(), srv, cli, reference))
+
+	updatedOldCA := &regionv1.SSHCertificateAuthority{}
+	require.NoError(t, cli.Get(t.Context(), client.ObjectKey{Namespace: oldCA.Namespace, Name: oldCA.Name}, updatedOldCA))
+	require.Contains(t, updatedOldCA.Finalizers, reference)
+
+	srv.Spec.SSHCertificateAuthorityID = ptr.To(newCA.Name)
+	require.NoError(t, serverprovisioner.AddConsumedResourceReferencesForTest(t.Context(), srv, cli, reference))
+	require.NoError(t, serverprovisioner.RemoveConsumedResourceReferencesForTest(t.Context(), srv, cli, reference))
+
+	require.NoError(t, cli.Get(t.Context(), client.ObjectKey{Namespace: oldCA.Namespace, Name: oldCA.Name}, updatedOldCA))
+	require.NotContains(t, updatedOldCA.Finalizers, reference)
+
+	updatedNewCA := &regionv1.SSHCertificateAuthority{}
+	require.NoError(t, cli.Get(t.Context(), client.ObjectKey{Namespace: newCA.Namespace, Name: newCA.Name}, updatedNewCA))
+	require.Contains(t, updatedNewCA.Finalizers, reference)
+}
+
+func TestSSHCAReferenceClearHandlesAbsentCA(t *testing.T) {
+	t.Parallel()
+
+	ca := testSSHCertificateAuthority()
+	srv := testServer(withTestSSHCertificateAuthority(ca))
+	cli := testClient(t, []client.Object{srv})
+	reference := "servers.region.unikorn-cloud.org/" + srv.Name
+
+	require.NoError(t, serverprovisioner.ClearConsumedResourceReferencesForTest(t.Context(), srv, cli, reference))
+}

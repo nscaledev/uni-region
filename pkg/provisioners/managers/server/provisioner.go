@@ -23,6 +23,7 @@ import (
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
+	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -84,6 +85,14 @@ func (p *Provisioner) securityGroupIDs() []string {
 	return ids
 }
 
+func (p *Provisioner) sshCertificateAuthorityIDs() []string {
+	if p.server.Spec.SSHCertificateAuthorityID == nil {
+		return nil
+	}
+
+	return []string{*p.server.Spec.SSHCertificateAuthorityID}
+}
+
 func (p *Provisioner) sshCertificateAuthorityKey() *client.ObjectKey {
 	if p.server.Spec.SSHCertificateAuthorityID == nil {
 		return nil
@@ -102,15 +111,6 @@ func (p *Provisioner) addSSHCertificateAuthorityReference(ctx context.Context, c
 	}
 
 	return manager.AddResourceReference(ctx, cli, &unikornv1.SSHCertificateAuthority{}, *key, reference)
-}
-
-func (p *Provisioner) removeSSHCertificateAuthorityReference(ctx context.Context, cli client.Client, reference string) error {
-	key := p.sshCertificateAuthorityKey()
-	if key == nil {
-		return nil
-	}
-
-	return manager.RemoveResourceReference(ctx, cli, &unikornv1.SSHCertificateAuthority{}, *key, reference)
 }
 
 func (p *Provisioner) addConsumedResourceReferences(ctx context.Context, cli client.Client, reference string) error {
@@ -138,8 +138,12 @@ func (p *Provisioner) removeConsumedResourceReferences(ctx context.Context, cli 
 		return fmt.Errorf("%w: failed to remove security group references", err)
 	}
 
-	if err := p.removeSSHCertificateAuthorityReference(ctx, cli, reference); err != nil {
-		return fmt.Errorf("%w: failed to remove SSH certificate authority reference", err)
+	// The SSH CA is a desired-spec hold: keep the reference on the CA the
+	// Server currently names, and remove this Server's reference from any stale
+	// CA in the project. This lets a rebuild pick up a replacement CA without
+	// leaving the old CA deletion-blocked forever.
+	if err := manager.RemoveResourceReferences(ctx, cli, &unikornv1.SSHCertificateAuthorityList{}, p.projectListOptions(), reference, p.sshCertificateAuthorityIDs()); err != nil {
+		return fmt.Errorf("%w: failed to remove stale SSH certificate authority references", err)
 	}
 
 	return nil
@@ -154,11 +158,29 @@ func (p *Provisioner) clearConsumedResourceReferences(ctx context.Context, cli c
 		return fmt.Errorf("%w: failed to clear security group references", err)
 	}
 
-	if err := p.removeSSHCertificateAuthorityReference(ctx, cli, reference); err != nil {
+	if err := manager.ClearResourceReferences(ctx, cli, &unikornv1.SSHCertificateAuthorityList{}, p.projectListOptions(), reference); err != nil {
 		return fmt.Errorf("%w: failed to clear SSH certificate authority reference", err)
 	}
 
 	return nil
+}
+
+// projectListOptions lists project-scoped resources associated with a server.
+func (p *Provisioner) projectListOptions() *client.ListOptions {
+	selector := map[string]string{}
+
+	if organizationID := p.server.Labels[coreconstants.OrganizationLabel]; organizationID != "" {
+		selector[coreconstants.OrganizationLabel] = organizationID
+	}
+
+	if projectID := p.server.Labels[coreconstants.ProjectLabel]; projectID != "" {
+		selector[coreconstants.ProjectLabel] = projectID
+	}
+
+	return &client.ListOptions{
+		Namespace:     p.server.Namespace,
+		LabelSelector: labels.SelectorFromSet(selector),
+	}
 }
 
 // identityListOptions lists all resources associated with an identity.

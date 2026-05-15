@@ -148,6 +148,7 @@ Examples:
 - `v2` `SecurityGroup`, `LoadBalancer`, and `Server` are generally owned by a
   `Network`
 - `SSHCertificateAuthority v2` blocks deletion through explicit reference checks
+  while any Server currently references the CA
 - `Network v2` supports external references that block deletion
 
 So the lifecycle invariant is:

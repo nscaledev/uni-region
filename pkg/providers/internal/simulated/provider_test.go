@@ -275,6 +275,18 @@ func TestDeleteLoadBalancerIdempotent(t *testing.T) {
 	require.Equal(t, "198.51.100.60", loadBalancer.Status.PublicIP.String())
 }
 
+func TestCreateServer(t *testing.T) {
+	t.Parallel()
+
+	provider := newProvider(t)
+	server := &unikornv1.Server{}
+
+	require.NoError(t, provider.CreateServer(t.Context(), &unikornv1.Identity{}, server, &types.ServerCreateOptions{}))
+	require.Equal(t, unikornv1.InstanceLifecyclePhaseRunning, server.Status.Phase)
+	require.NoError(t, provider.UpdateServerState(t.Context(), &unikornv1.Identity{}, server))
+	require.NoError(t, provider.DeleteServer(t.Context(), &unikornv1.Identity{}, server))
+}
+
 func TestCreateLoadBalancerFailsWhenNetworkMissing(t *testing.T) {
 	t.Parallel()
 
