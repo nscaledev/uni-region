@@ -1,0 +1,425 @@
+#!/usr/bin/env bash
+# Configure a generic OpenStack cloud for the Region OpenStack provider.
+set -euo pipefail
+
+OPENSTACK_CLI="${OPENSTACK_CLI:-openstack}"
+OPENRC_FILE=""
+OUTPUT_FILE=""
+MODE="${UNIKORN_OPENSTACK_CONFIGURE_MODE:-create}"
+PREFIX_OVERRIDE=""
+DOMAIN_NAME_OVERRIDE=""
+PROJECT_NAME_OVERRIDE=""
+USER_NAME_OVERRIDE=""
+PASSWORD_OVERRIDE=""
+ROTATE_PASSWORD="${UNIKORN_OPENSTACK_ROTATE_PASSWORD:-false}"
+USER_ID=""
+
+log() {
+  echo "==> $*" >&2
+}
+
+fatal() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
+
+require() {
+  command -v "$1" >/dev/null 2>&1 || fatal "$1 is required"
+}
+
+shell_quote() {
+  local value="$1"
+
+  printf "'"
+  printf "%s" "${value}" | sed "s/'/'\\\\''/g"
+  printf "'"
+}
+
+emit_env() {
+  printf "%s=%s\n" "$1" "$(shell_quote "$2")"
+}
+
+usage() {
+  cat >&2 <<EOF
+Usage: $0 [--openrc FILE] [--output FILE] [--mode create|existing] [--rotate-password]
+
+Configures an existing OpenStack cloud for the Region OpenStack provider and
+emits a shell-compatible provider env file.
+
+Inputs:
+  Standard OpenStack CLI auth environment, OS_CLOUD, or --openrc FILE.
+
+Common environment overrides:
+  UNIKORN_OPENSTACK_PREFIX
+  UNIKORN_OPENSTACK_DOMAIN_NAME
+  UNIKORN_OPENSTACK_PROJECT_NAME
+  UNIKORN_OPENSTACK_USER_NAME
+  UNIKORN_OPENSTACK_PASSWORD
+  UNIKORN_OPENSTACK_DOMAIN_ROLES
+  UNIKORN_OPENSTACK_PROJECT_ROLES
+  UNIKORN_OPENSTACK_INCLUDE_LEGACY_MEMBER_ROLE=true
+  UNIKORN_OPENSTACK_ROTATE_PASSWORD=true
+
+Modes:
+  create    Create or update the domain, project, user, and role grants.
+  existing  Re-emit an already supplied UNIKORN_OPENSTACK_* provider env.
+
+By default, an existing provider user's password is never changed. Set
+UNIKORN_OPENSTACK_ROTATE_PASSWORD=true or pass --rotate-password to reset it.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --openrc)
+      OPENRC_FILE="$2"
+      shift 2
+      ;;
+    --output)
+      OUTPUT_FILE="$2"
+      shift 2
+      ;;
+    --mode)
+      MODE="$2"
+      shift 2
+      ;;
+    --prefix)
+      PREFIX_OVERRIDE="$2"
+      shift 2
+      ;;
+    --domain-name)
+      DOMAIN_NAME_OVERRIDE="$2"
+      shift 2
+      ;;
+    --project-name)
+      PROJECT_NAME_OVERRIDE="$2"
+      shift 2
+      ;;
+    --user-name)
+      USER_NAME_OVERRIDE="$2"
+      shift 2
+      ;;
+    --password)
+      PASSWORD_OVERRIDE="$2"
+      shift 2
+      ;;
+    --rotate-password)
+      ROTATE_PASSWORD="true"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      fatal "unknown argument: $1"
+      ;;
+  esac
+done
+
+case "${MODE}" in
+  create|existing)
+    ;;
+  *)
+    fatal "--mode must be create or existing"
+    ;;
+esac
+
+if [[ -n "${OPENRC_FILE}" ]]; then
+  [[ -f "${OPENRC_FILE}" ]] || fatal "openrc file not found: ${OPENRC_FILE}"
+  # shellcheck disable=SC1090
+  . "${OPENRC_FILE}"
+fi
+
+PREFIX="${PREFIX_OVERRIDE:-${UNIKORN_OPENSTACK_PREFIX:-unikorn-openstack}}"
+DOMAIN_NAME="${DOMAIN_NAME_OVERRIDE:-${UNIKORN_OPENSTACK_DOMAIN_NAME:-${PREFIX}}}"
+PROJECT_NAME="${PROJECT_NAME_OVERRIDE:-${UNIKORN_OPENSTACK_PROJECT_NAME:-${PREFIX}-provider}}"
+USER_NAME="${USER_NAME_OVERRIDE:-${UNIKORN_OPENSTACK_USER_NAME:-${PREFIX}-provider}}"
+PASSWORD="${PASSWORD_OVERRIDE:-${UNIKORN_OPENSTACK_PASSWORD:-}}"
+DOMAIN_ROLES="${UNIKORN_OPENSTACK_DOMAIN_ROLES:-member load-balancer_member manager}"
+PROJECT_ROLES="${UNIKORN_OPENSTACK_PROJECT_ROLES:-member manager}"
+CREATE_MISSING_ROLES="${UNIKORN_OPENSTACK_CREATE_MISSING_ROLES:-true}"
+DISCOVER_EXTERNAL_NETWORK="${UNIKORN_OPENSTACK_DISCOVER_EXTERNAL_NETWORK:-true}"
+
+if [[ "${UNIKORN_OPENSTACK_INCLUDE_LEGACY_MEMBER_ROLE:-false}" == "true" ]]; then
+  DOMAIN_ROLES="${DOMAIN_ROLES} _member_"
+  PROJECT_ROLES="${PROJECT_ROLES} _member_"
+fi
+
+auth_url() {
+  local value="${UNIKORN_OPENSTACK_AUTH_URL:-${OS_AUTH_URL:-}}"
+
+  if [[ -z "${value}" ]] && command -v "${OPENSTACK_CLI}" >/dev/null 2>&1; then
+    value="$("${OPENSTACK_CLI}" configuration show -f value -c auth.auth_url 2>/dev/null | awk 'NF { print; exit }' || true)"
+  fi
+
+  [[ -n "${value}" ]] || fatal "UNIKORN_OPENSTACK_AUTH_URL, OS_AUTH_URL, or a resolvable OS_CLOUD is required"
+  echo "${value}"
+}
+
+generate_password() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 18
+    return
+  fi
+
+  printf "unikorn%s\n" "$(date +%s)"
+}
+
+role_exists() {
+  local role="$1"
+
+  "${OPENSTACK_CLI}" role show "${role}" >/dev/null 2>&1
+}
+
+ensure_role() {
+  local role="$1"
+
+  if role_exists "${role}"; then
+    return 0
+  fi
+
+  if [[ "${CREATE_MISSING_ROLES}" != "true" ]]; then
+    log "Skipping missing OpenStack role ${role}; UNIKORN_OPENSTACK_CREATE_MISSING_ROLES=false."
+    return 1
+  fi
+
+  log "Creating role ${role}..."
+  "${OPENSTACK_CLI}" role create "${role}" >/dev/null
+}
+
+ensure_domain() {
+  local domain="$1"
+  local id
+
+  if [[ -n "${UNIKORN_OPENSTACK_DOMAIN_ID:-}" ]]; then
+    echo "${UNIKORN_OPENSTACK_DOMAIN_ID}"
+    return
+  fi
+
+  if id="$("${OPENSTACK_CLI}" domain show "${domain}" -f value -c id 2>/dev/null)"; then
+    "${OPENSTACK_CLI}" domain set --enable "${id}" >/dev/null
+    echo "${id}"
+    return
+  fi
+
+  log "Creating domain ${domain}..."
+  "${OPENSTACK_CLI}" domain create "${domain}" --enable -f value -c id
+}
+
+ensure_project() {
+  local domain_id="$1"
+  local project="$2"
+  local id
+
+  if [[ -n "${UNIKORN_OPENSTACK_PROJECT_ID:-}" ]]; then
+    echo "${UNIKORN_OPENSTACK_PROJECT_ID}"
+    return
+  fi
+
+  if id="$("${OPENSTACK_CLI}" project show "${project}" --domain "${domain_id}" -f value -c id 2>/dev/null)"; then
+    echo "${id}"
+    return
+  fi
+
+  log "Creating project ${project}..."
+  "${OPENSTACK_CLI}" project create "${project}" --domain "${domain_id}" -f value -c id
+}
+
+ensure_user() {
+  local domain_id="$1"
+  local user="$2"
+  local id
+
+  if [[ -n "${UNIKORN_OPENSTACK_USER_ID:-}" ]]; then
+    if [[ -z "${PASSWORD}" ]]; then
+      if [[ "${ROTATE_PASSWORD}" == "true" ]]; then
+        PASSWORD="$(generate_password)"
+      else
+        fatal "--password or UNIKORN_OPENSTACK_PASSWORD is required when UNIKORN_OPENSTACK_USER_ID is supplied"
+      fi
+    fi
+
+    if [[ "${ROTATE_PASSWORD}" == "true" ]]; then
+      log "Resetting password for existing user ${UNIKORN_OPENSTACK_USER_ID}..."
+      "${OPENSTACK_CLI}" user set --enable --password "${PASSWORD}" "${UNIKORN_OPENSTACK_USER_ID}" >/dev/null
+    fi
+
+    USER_ID="${UNIKORN_OPENSTACK_USER_ID}"
+    return
+  fi
+
+  if id="$("${OPENSTACK_CLI}" user show "${user}" --domain "${domain_id}" -f value -c id 2>/dev/null)"; then
+    if [[ -z "${PASSWORD}" ]]; then
+      if [[ "${ROTATE_PASSWORD}" == "true" ]]; then
+        PASSWORD="$(generate_password)"
+      else
+        fatal "provider user ${user} already exists; supply --password or UNIKORN_OPENSTACK_PASSWORD, or pass --rotate-password to reset it"
+      fi
+    fi
+
+    if [[ "${ROTATE_PASSWORD}" == "true" ]]; then
+      log "Resetting password for existing user ${user}..."
+      "${OPENSTACK_CLI}" user set --enable --password "${PASSWORD}" "${id}" >/dev/null
+    else
+      "${OPENSTACK_CLI}" user set --enable "${id}" >/dev/null
+    fi
+
+    USER_ID="${id}"
+    return
+  fi
+
+  if [[ -z "${PASSWORD}" ]]; then
+    PASSWORD="$(generate_password)"
+  fi
+
+  log "Creating user ${user}..."
+  USER_ID="$("${OPENSTACK_CLI}" user create "${user}" --domain "${domain_id}" --password "${PASSWORD}" --enable -f value -c id)"
+}
+
+assign_role_to_domain() {
+  local role="$1"
+  local user_id="$2"
+  local domain_id="$3"
+  local output
+
+  if output="$("${OPENSTACK_CLI}" role add --user "${user_id}" --domain "${domain_id}" "${role}" 2>&1)"; then
+    return
+  fi
+
+  if grep -qiE 'already|conflict|duplicate' <<<"${output}"; then
+    return
+  fi
+
+  echo "${output}" >&2
+  return 1
+}
+
+assign_role_to_project() {
+  local role="$1"
+  local user_id="$2"
+  local project_id="$3"
+  local output
+
+  if output="$("${OPENSTACK_CLI}" role add --user "${user_id}" --project "${project_id}" "${role}" 2>&1)"; then
+    return
+  fi
+
+  if grep -qiE 'already|conflict|duplicate' <<<"${output}"; then
+    return
+  fi
+
+  echo "${output}" >&2
+  return 1
+}
+
+first_external_network_id() {
+  "${OPENSTACK_CLI}" network list --external -f value -c ID 2>/dev/null | awk 'NR == 1 { print; exit }' || true
+}
+
+emit_provider_env() {
+  local auth_url_value="$1"
+  local domain_id="$2"
+  local project_id="$3"
+  local user_id="$4"
+  local password="$5"
+  local external_network_id="$6"
+
+  emit_env UNIKORN_OPENSTACK_AUTH_URL "${auth_url_value}"
+  emit_env UNIKORN_OPENSTACK_DOMAIN_ID "${domain_id}"
+  emit_env UNIKORN_OPENSTACK_PROJECT_ID "${project_id}"
+  emit_env UNIKORN_OPENSTACK_USER_ID "${user_id}"
+  emit_env UNIKORN_OPENSTACK_PASSWORD "${password}"
+  emit_env UNIKORN_OPENSTACK_DOMAIN_NAME "${DOMAIN_NAME}"
+  emit_env UNIKORN_OPENSTACK_PROJECT_NAME "${PROJECT_NAME}"
+  emit_env UNIKORN_OPENSTACK_USER_NAME "${USER_NAME}"
+
+  if [[ -n "${external_network_id}" ]]; then
+    emit_env UNIKORN_OPENSTACK_EXTERNAL_NETWORK_ID "${external_network_id}"
+  fi
+
+  if [[ -n "${UNIKORN_OPENSTACK_FLAVOR_ID:-}" ]]; then
+    emit_env UNIKORN_OPENSTACK_FLAVOR_ID "${UNIKORN_OPENSTACK_FLAVOR_ID}"
+  fi
+
+  if [[ -n "${UNIKORN_OPENSTACK_IMAGE_ID:-}" ]]; then
+    emit_env UNIKORN_OPENSTACK_IMAGE_ID "${UNIKORN_OPENSTACK_IMAGE_ID}"
+  fi
+}
+
+configure_existing() {
+  local external_network_id="${UNIKORN_OPENSTACK_EXTERNAL_NETWORK_ID:-}"
+
+  [[ -n "${UNIKORN_OPENSTACK_DOMAIN_ID:-}" ]] || fatal "UNIKORN_OPENSTACK_DOMAIN_ID is required in existing mode"
+  [[ -n "${UNIKORN_OPENSTACK_PROJECT_ID:-}" ]] || fatal "UNIKORN_OPENSTACK_PROJECT_ID is required in existing mode"
+  [[ -n "${UNIKORN_OPENSTACK_USER_ID:-}" ]] || fatal "UNIKORN_OPENSTACK_USER_ID is required in existing mode"
+  [[ -n "${PASSWORD}" ]] || fatal "UNIKORN_OPENSTACK_PASSWORD is required in existing mode"
+
+  if [[ -z "${external_network_id}" && "${DISCOVER_EXTERNAL_NETWORK}" == "true" ]] && command -v "${OPENSTACK_CLI}" >/dev/null 2>&1; then
+    external_network_id="$(first_external_network_id)"
+  fi
+
+  emit_provider_env "$(auth_url)" "${UNIKORN_OPENSTACK_DOMAIN_ID}" "${UNIKORN_OPENSTACK_PROJECT_ID}" "${UNIKORN_OPENSTACK_USER_ID}" "${PASSWORD}" "${external_network_id}"
+}
+
+configure_created() {
+  local domain_id
+  local project_id
+  local user_id
+  local external_network_id="${UNIKORN_OPENSTACK_EXTERNAL_NETWORK_ID:-}"
+  local role
+
+  require "${OPENSTACK_CLI}"
+
+  log "Checking OpenStack credentials..."
+  "${OPENSTACK_CLI}" token issue >/dev/null
+
+  domain_id="$(ensure_domain "${DOMAIN_NAME}")"
+  project_id="$(ensure_project "${domain_id}" "${PROJECT_NAME}")"
+  ensure_user "${domain_id}" "${USER_NAME}"
+  user_id="${USER_ID}"
+
+  for role in ${DOMAIN_ROLES}; do
+    if ensure_role "${role}"; then
+      assign_role_to_domain "${role}" "${user_id}" "${domain_id}"
+    fi
+  done
+
+  for role in ${PROJECT_ROLES}; do
+    if ensure_role "${role}"; then
+      assign_role_to_project "${role}" "${user_id}" "${project_id}"
+    fi
+  done
+
+  if [[ -z "${external_network_id}" && "${DISCOVER_EXTERNAL_NETWORK}" == "true" ]]; then
+    external_network_id="$(first_external_network_id)"
+  fi
+
+  emit_provider_env "$(auth_url)" "${domain_id}" "${project_id}" "${user_id}" "${PASSWORD}" "${external_network_id}"
+}
+
+emit_output() {
+  if [[ "${MODE}" == "existing" ]]; then
+    configure_existing
+    return
+  fi
+
+  configure_created
+}
+
+if [[ -n "${OUTPUT_FILE}" ]]; then
+  tmp_output=""
+
+  mkdir -p "$(dirname "${OUTPUT_FILE}")"
+
+  tmp_output="$(mktemp "${OUTPUT_FILE}.XXXXXX")"
+
+  if emit_output > "${tmp_output}" && mv "${tmp_output}" "${OUTPUT_FILE}"; then
+    log "OpenStack provider configuration written to ${OUTPUT_FILE}."
+  else
+    rm -f "${tmp_output}"
+    exit 1
+  fi
+else
+  emit_output
+fi
