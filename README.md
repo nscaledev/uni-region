@@ -160,7 +160,10 @@ Trigger the workflow manually from the Actions tab:
    - **Run Dev tests** (checked by default)
    - **Run UAT tests** (unchecked by default)
    - Can run one, both, or neither
-4. View results in the workflow run and download test artifacts
+4. Leave **use_staging_constellation** enabled to test UAT from the staged
+   constellation tag. Disable it to test UAT from the branch or tag selected in
+   GitHub's manual workflow picker.
+5. View results in the workflow run and download test artifacts
 
 ## Contract Testing
 
