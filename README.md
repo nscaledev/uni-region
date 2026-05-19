@@ -163,7 +163,9 @@ Trigger the workflow manually from the Actions tab:
 4. Leave **use_staging_constellation** enabled to test UAT from the staged
    constellation tag. Disable it to test UAT from the branch or tag selected in
    GitHub's manual workflow picker.
-5. View results in the workflow run and download test artifacts
+5. Set **skip_slack_notifications** to `true` to suppress Slack messages for the
+   run.
+6. View results in the workflow run and download test artifacts
 
 ## Contract Testing
 

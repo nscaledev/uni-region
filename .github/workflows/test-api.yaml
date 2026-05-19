@@ -16,6 +16,10 @@ on:
         description: 'Use the staged constellation tag for UAT checkout'
         type: boolean
         default: true
+      skip_slack_notifications:
+        description: 'Skip Slack notifications'
+        type: boolean
+        default: false
       focus:
         description: 'Test suite to run'
         required: false
@@ -104,7 +108,7 @@ jobs:
 
     - name: Send Slack Notification
       uses: nscaledev/quality-tooling/.github/actions/slack-test-notifications@main
-      if: ${{ !cancelled() }}
+      if: ${{ !cancelled() && github.event.inputs.skip_slack_notifications != 'true' }}
       with:
         test-results-path: test-results.json
         workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -198,7 +202,7 @@ jobs:
 
     - name: Send Slack Notification
       uses: nscaledev/quality-tooling/.github/actions/slack-test-notifications@main
-      if: ${{ !cancelled() }}
+      if: ${{ !cancelled() && github.event.inputs.skip_slack_notifications != 'true' }}
       with:
         test-results-path: test-results.json
         workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
