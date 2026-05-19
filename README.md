@@ -151,6 +151,15 @@ Regions define cloud instances to expose to clients.
 
 **Note:** The `.env`, `.env.dev`, and `.env.uat` files are gitignored and contain sensitive credentials. They should never be committed to the repository.
 
+### Integration Fixtures
+
+`make integration-fixtures` creates the mTLS bootstrap certificate used to
+seed test data through the API. The fixture generator reuses an existing
+certificate Secret only when the certificate and key parse correctly, the
+certificate Common Name matches `ci-fixtures`, and the certificate is currently
+valid with at least 15 minutes remaining. Otherwise it removes the stale Secret
+so cert-manager issues a replacement before writing `test/.env`.
+
 ### GitHub Actions
 
 Trigger the workflow manually from the Actions tab:
