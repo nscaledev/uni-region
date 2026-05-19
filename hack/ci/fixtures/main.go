@@ -53,8 +53,9 @@ import (
 const (
 	fixtureActor = "ci-fixtures"
 
-	fixtureCertClockSkew   = 2 * time.Minute
-	fixtureCertRenewBefore = 15 * time.Minute
+	defaultFixtureCertDuration = time.Hour
+	fixtureCertClockSkew       = 2 * time.Minute
+	maxFixtureCertRenewBefore  = 15 * time.Minute
 
 	publicRegion  = "sim-public"
 	privateRegion = "sim-private"
@@ -69,7 +70,25 @@ func logf(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "==> "+format+"\n", args...)
 }
 
-func buildCertificate(namespace, name, cn string) *unstructured.Unstructured {
+func envOrDefault(name, fallback string) string {
+	value := os.Getenv(name)
+	if value == "" {
+		return fallback
+	}
+
+	return value
+}
+
+func fixtureCertRenewBefore(duration time.Duration) time.Duration {
+	renewBefore := duration / 4
+	if renewBefore > maxFixtureCertRenewBefore {
+		return maxFixtureCertRenewBefore
+	}
+
+	return renewBefore
+}
+
+func buildCertificate(namespace, name, cn string, duration time.Duration) *unstructured.Unstructured {
 	cert := &unstructured.Unstructured{}
 	cert.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "cert-manager.io",
@@ -81,7 +100,7 @@ func buildCertificate(namespace, name, cn string) *unstructured.Unstructured {
 	cert.Object["spec"] = map[string]interface{}{
 		"secretName": name + "-tls",
 		"commonName": cn,
-		"duration":   "1h",
+		"duration":   duration.String(),
 		"issuerRef": map[string]interface{}{
 			"name":  "unikorn-client-issuer",
 			"kind":  "ClusterIssuer",
@@ -142,48 +161,68 @@ func waitForCertificateReady(ctx context.Context, k8s client.Client, cert *unstr
 	}
 }
 
-func validateCertificateSecret(secret *corev1.Secret, cn string) ([]byte, []byte, string) {
+type certificateMaterial struct {
+	certPEM []byte
+	keyPEM  []byte
+	cert    *x509.Certificate
+}
+
+func readCertificateMaterial(secret *corev1.Secret) (certificateMaterial, string) {
 	certPEM, ok := secret.Data["tls.crt"]
 	if !ok || len(certPEM) == 0 {
-		return nil, nil, "missing tls.crt"
+		return certificateMaterial{}, "missing tls.crt"
 	}
 
 	keyPEM, ok := secret.Data["tls.key"]
 	if !ok || len(keyPEM) == 0 {
-		return nil, nil, "missing tls.key"
+		return certificateMaterial{}, "missing tls.key"
 	}
 
 	keyPair, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
-		return nil, nil, fmt.Sprintf("invalid key pair: %v", err)
+		return certificateMaterial{}, fmt.Sprintf("invalid key pair: %v", err)
 	}
 
 	if len(keyPair.Certificate) == 0 {
-		return nil, nil, "missing leaf certificate"
+		return certificateMaterial{}, "missing leaf certificate"
 	}
 
 	cert, err := x509.ParseCertificate(keyPair.Certificate[0])
 	if err != nil {
-		return nil, nil, fmt.Sprintf("invalid leaf certificate: %v", err)
+		return certificateMaterial{}, fmt.Sprintf("invalid leaf certificate: %v", err)
 	}
 
-	if cert.Subject.CommonName != cn {
-		return nil, nil, fmt.Sprintf("common name %q does not match %q", cert.Subject.CommonName, cn)
+	return certificateMaterial{certPEM: certPEM, keyPEM: keyPEM, cert: cert}, ""
+}
+
+func validateCertificateSecret(secret *corev1.Secret, cn string, duration, renewBefore time.Duration) ([]byte, []byte, string) {
+	material, reason := readCertificateMaterial(secret)
+	if reason != "" {
+		return nil, nil, reason
+	}
+
+	if material.cert.Subject.CommonName != cn {
+		return nil, nil, fmt.Sprintf("common name %q does not match %q", material.cert.Subject.CommonName, cn)
+	}
+
+	lifetime := material.cert.NotAfter.Sub(material.cert.NotBefore)
+	if lifetime+fixtureCertClockSkew < duration {
+		return nil, nil, fmt.Sprintf("certificate lifetime %s is shorter than requested duration %s", lifetime, duration)
 	}
 
 	now := time.Now()
-	if now.Add(fixtureCertClockSkew).Before(cert.NotBefore) {
-		return nil, nil, fmt.Sprintf("certificate is not valid before %s", cert.NotBefore.Format(time.RFC3339))
+	if now.Add(fixtureCertClockSkew).Before(material.cert.NotBefore) {
+		return nil, nil, fmt.Sprintf("certificate is not valid before %s", material.cert.NotBefore.Format(time.RFC3339))
 	}
 
-	if now.Add(fixtureCertRenewBefore).After(cert.NotAfter) {
-		return nil, nil, fmt.Sprintf("certificate expires at %s", cert.NotAfter.Format(time.RFC3339))
+	if now.Add(renewBefore).After(material.cert.NotAfter) {
+		return nil, nil, fmt.Sprintf("certificate expires at %s", material.cert.NotAfter.Format(time.RFC3339))
 	}
 
-	return certPEM, keyPEM, ""
+	return material.certPEM, material.keyPEM, ""
 }
 
-func readValidCertificateSecret(ctx context.Context, k8s client.Client, key types.NamespacedName, cn string) ([]byte, []byte, bool) {
+func readValidCertificateSecret(ctx context.Context, k8s client.Client, key types.NamespacedName, cn string, duration, renewBefore time.Duration) ([]byte, []byte, bool) {
 	secret := &corev1.Secret{}
 	if err := k8s.Get(ctx, key, secret); err != nil {
 		if client.IgnoreNotFound(err) == nil {
@@ -193,7 +232,7 @@ func readValidCertificateSecret(ctx context.Context, k8s client.Client, key type
 		fatalf("failed to read Secret %s/%s: %v", key.Namespace, key.Name, err)
 	}
 
-	certPEM, keyPEM, reason := validateCertificateSecret(secret, cn)
+	certPEM, keyPEM, reason := validateCertificateSecret(secret, cn, duration, renewBefore)
 	if reason == "" {
 		return certPEM, keyPEM, true
 	}
@@ -207,9 +246,12 @@ func readValidCertificateSecret(ctx context.Context, k8s client.Client, key type
 	return nil, nil, false
 }
 
-func waitForValidCertificateSecret(ctx context.Context, k8s client.Client, key types.NamespacedName, cn string) ([]byte, []byte) {
-	var certPEM []byte
-	var keyPEM []byte
+func waitForValidCertificateSecret(ctx context.Context, k8s client.Client, key types.NamespacedName, cn string, duration, renewBefore time.Duration) ([]byte, []byte) {
+	var (
+		certPEM []byte
+		keyPEM  []byte
+	)
+
 	lastReason := "secret has not been created"
 
 	if err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 60*time.Second, true, func(ctx context.Context) (bool, error) {
@@ -224,7 +266,7 @@ func waitForValidCertificateSecret(ctx context.Context, k8s client.Client, key t
 			return false, err
 		}
 
-		certPEM, keyPEM, lastReason = validateCertificateSecret(secret, cn)
+		certPEM, keyPEM, lastReason = validateCertificateSecret(secret, cn, duration, renewBefore)
 
 		return lastReason == "", nil
 	}); err != nil {
@@ -234,20 +276,21 @@ func waitForValidCertificateSecret(ctx context.Context, k8s client.Client, key t
 	return certPEM, keyPEM
 }
 
-func issueCert(ctx context.Context, k8s client.Client, namespace, name, cn string) ([]byte, []byte) {
+func issueCert(ctx context.Context, k8s client.Client, namespace, name, cn string, duration time.Duration) ([]byte, []byte) {
 	secretKey := types.NamespacedName{Namespace: namespace, Name: name + "-tls"}
+	renewBefore := fixtureCertRenewBefore(duration)
 
-	if certPEM, keyPEM, ok := readValidCertificateSecret(ctx, k8s, secretKey, cn); ok {
-		logf("Reusing mTLS client certificate for %s; it remains valid for at least %s.", cn, fixtureCertRenewBefore)
+	if certPEM, keyPEM, ok := readValidCertificateSecret(ctx, k8s, secretKey, cn, duration, renewBefore); ok {
+		logf("Reusing mTLS client certificate for %s; it remains valid for at least %s.", cn, renewBefore)
 
 		return certPEM, keyPEM
 	}
 
-	cert := buildCertificate(namespace, name, cn)
+	cert := buildCertificate(namespace, name, cn, duration)
 	ensureCertificate(ctx, k8s, cert)
 	waitForCertificateReady(ctx, k8s, cert)
 
-	return waitForValidCertificateSecret(ctx, k8s, secretKey, cn)
+	return waitForValidCertificateSecret(ctx, k8s, secretKey, cn, duration, renewBefore)
 }
 
 func newIdentityClient(baseURL, caCertPath string, certPEM, keyPEM []byte) *identityopenapi.ClientWithResponses {
@@ -521,12 +564,13 @@ func main() {
 }
 
 type options struct {
-	baseURL           string
-	identityNamespace string
-	regionNamespace   string
-	regionBaseURL     string
-	caCertPath        string
-	regionCACertPath  string
+	baseURL             string
+	identityNamespace   string
+	regionNamespace     string
+	regionBaseURL       string
+	caCertPath          string
+	regionCACertPath    string
+	fixtureCertDuration time.Duration
 }
 
 func parseOptions() options {
@@ -536,20 +580,31 @@ func parseOptions() options {
 	regionBaseURL := flag.String("region-base-url", os.Getenv("REGION_BASE_URL"), "Region service base URL")
 	caCertPath := flag.String("ca-cert", os.Getenv("IDENTITY_CA_CERT"), "Path to CA certificate bundle")
 	regionCACertPath := flag.String("region-ca-cert", os.Getenv("REGION_CA_CERT"), "Path to region CA certificate bundle")
+	fixtureCertDuration := flag.String("fixture-cert-duration", envOrDefault("FIXTURE_CERT_DURATION", defaultFixtureCertDuration.String()), "Duration for generated mTLS fixture certificates")
 	flag.Parse()
 
 	if *baseURL == "" || *identityNamespace == "" || *regionNamespace == "" || *regionBaseURL == "" || *caCertPath == "" {
-		fmt.Fprintln(os.Stderr, "Usage: fixtures --base-url URL --identity-namespace NS --region-namespace NS --region-base-url URL --ca-cert PATH [--region-ca-cert PATH]")
+		fmt.Fprintln(os.Stderr, "Usage: fixtures --base-url URL --identity-namespace NS --region-namespace NS --region-base-url URL --ca-cert PATH [--region-ca-cert PATH] [--fixture-cert-duration DURATION]")
 		os.Exit(1)
 	}
 
+	duration, err := time.ParseDuration(*fixtureCertDuration)
+	if err != nil {
+		fatalf("invalid --fixture-cert-duration %q: %v", *fixtureCertDuration, err)
+	}
+
+	if duration <= 0 {
+		fatalf("--fixture-cert-duration must be positive")
+	}
+
 	return options{
-		baseURL:           *baseURL,
-		identityNamespace: *identityNamespace,
-		regionNamespace:   *regionNamespace,
-		regionBaseURL:     *regionBaseURL,
-		caCertPath:        *caCertPath,
-		regionCACertPath:  *regionCACertPath,
+		baseURL:             *baseURL,
+		identityNamespace:   *identityNamespace,
+		regionNamespace:     *regionNamespace,
+		regionBaseURL:       *regionBaseURL,
+		caCertPath:          *caCertPath,
+		regionCACertPath:    *regionCACertPath,
+		fixtureCertDuration: duration,
 	}
 }
 
@@ -626,7 +681,7 @@ func run(opts options) {
 	k8s := newKubernetesClient()
 
 	logf("Issuing mTLS client certificate for %s...", fixtureActor)
-	certPEM, keyPEM := issueCert(ctx, k8s, opts.identityNamespace, fixtureActor, fixtureActor)
+	certPEM, keyPEM := issueCert(ctx, k8s, opts.identityNamespace, fixtureActor, fixtureActor, opts.fixtureCertDuration)
 	identityClient := newIdentityClient(opts.baseURL, opts.caCertPath, certPEM, keyPEM)
 
 	logf("Creating primary identity fixtures...")
