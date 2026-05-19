@@ -84,7 +84,12 @@ var _ = Describe("Image Management", Ordered, func() {
 				return
 			}
 			GinkgoWriter.Printf("Cleaning up image %s\n", customImageID)
-			Expect(regionClient.DeleteImage(ctx, config.OrgID, config.RegionID, customImageID)).To(Succeed())
+			// Tolerate not-found: the delete tests below may have already removed the image.
+			err := regionClient.DeleteImage(ctx, config.OrgID, config.RegionID, customImageID)
+			if errors.Is(err, coreclient.ErrResourceNotFound) {
+				return
+			}
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("should create a custom image and return its ID", func() {
@@ -118,7 +123,6 @@ var _ = Describe("Image Management", Ordered, func() {
 			err := regionClient.DeleteImage(ctx, config.OrgID, config.RegionID, customImageID)
 			Expect(err).NotTo(HaveOccurred())
 			GinkgoWriter.Printf("Deleted image %s\n", customImageID)
-			customImageID = ""
 		})
 
 		It("should return not found when deleting the already-deleted image", func() {
