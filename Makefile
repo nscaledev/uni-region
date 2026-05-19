@@ -524,6 +524,7 @@ KIND_NAMESPACE ?= unikorn-region-$(KIND_SUFFIX)
 KIND_RELEASE   ?= region-$(KIND_SUFFIX)
 IDENTITY_NAMESPACE ?= unikorn-identity
 IDENTITY_RELEASE   ?= identity
+FIXTURE_CERT_DURATION ?= 1h
 
 .PHONY: kind-cluster
 kind-cluster:  ## Create KinD cluster (skips if KIND_CLUSTER already exists)
@@ -555,6 +556,7 @@ integration-fixtures:  ## Create integration fixtures and write test/.env
 	  --ca-cert "$$IDENTITY_CA_CERT" \
 	  --region-base-url "$$REGION_BASE_URL" \
 	  --region-ca-cert "$$REGION_CA_CERT" \
+	  --fixture-cert-duration "$(FIXTURE_CERT_DURATION)" \
 	  > test/.env
 
 .PHONY: integration-test
