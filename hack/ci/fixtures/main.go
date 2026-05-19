@@ -51,7 +51,11 @@ import (
 )
 
 const (
-	fixtureActor  = "ci-fixtures"
+	fixtureActor = "ci-fixtures"
+
+	fixtureCertClockSkew   = 2 * time.Minute
+	fixtureCertRenewBefore = 15 * time.Minute
+
 	publicRegion  = "sim-public"
 	privateRegion = "sim-private"
 )
@@ -65,7 +69,7 @@ func logf(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "==> "+format+"\n", args...)
 }
 
-func issueCert(ctx context.Context, k8s client.Client, namespace, name, cn string) ([]byte, []byte) {
+func buildCertificate(namespace, name, cn string) *unstructured.Unstructured {
 	cert := &unstructured.Unstructured{}
 	cert.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "cert-manager.io",
@@ -85,15 +89,38 @@ func issueCert(ctx context.Context, k8s client.Client, namespace, name, cn strin
 		},
 	}
 
-	if err := k8s.Create(ctx, cert); client.IgnoreAlreadyExists(err) != nil {
-		fatalf("failed to create Certificate %s: %v", name, err)
+	return cert
+}
+
+func ensureCertificate(ctx context.Context, k8s client.Client, cert *unstructured.Unstructured) {
+	if err := k8s.Create(ctx, cert); err == nil {
+		return
+	} else if client.IgnoreAlreadyExists(err) != nil {
+		fatalf("failed to create Certificate %s/%s: %v", cert.GetNamespace(), cert.GetName(), err)
 	}
 
+	current := &unstructured.Unstructured{}
+	current.SetGroupVersionKind(cert.GroupVersionKind())
+
+	key := types.NamespacedName{Namespace: cert.GetNamespace(), Name: cert.GetName()}
+	if err := k8s.Get(ctx, key, current); err != nil {
+		fatalf("failed to read Certificate %s/%s: %v", key.Namespace, key.Name, err)
+	}
+
+	before := current.DeepCopy()
+	current.Object["spec"] = cert.Object["spec"]
+
+	if err := k8s.Patch(ctx, current, client.MergeFrom(before)); err != nil {
+		fatalf("failed to update Certificate %s/%s: %v", key.Namespace, key.Name, err)
+	}
+}
+
+func waitForCertificateReady(ctx context.Context, k8s client.Client, cert *unstructured.Unstructured) {
 	if err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 60*time.Second, true, func(ctx context.Context) (bool, error) {
 		current := &unstructured.Unstructured{}
 		current.SetGroupVersionKind(cert.GroupVersionKind())
 
-		if err := k8s.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, current); err != nil {
+		if err := k8s.Get(ctx, types.NamespacedName{Namespace: cert.GetNamespace(), Name: cert.GetName()}, current); err != nil {
 			return false, nil //nolint:nilerr
 		}
 
@@ -111,15 +138,116 @@ func issueCert(ctx context.Context, k8s client.Client, namespace, name, cn strin
 
 		return false, nil
 	}); err != nil {
-		fatalf("Certificate %s/%s not ready: %v", namespace, name, err)
+		fatalf("Certificate %s/%s not ready: %v", cert.GetNamespace(), cert.GetName(), err)
+	}
+}
+
+func validateCertificateSecret(secret *corev1.Secret, cn string) ([]byte, []byte, string) {
+	certPEM, ok := secret.Data["tls.crt"]
+	if !ok || len(certPEM) == 0 {
+		return nil, nil, "missing tls.crt"
 	}
 
+	keyPEM, ok := secret.Data["tls.key"]
+	if !ok || len(keyPEM) == 0 {
+		return nil, nil, "missing tls.key"
+	}
+
+	keyPair, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return nil, nil, fmt.Sprintf("invalid key pair: %v", err)
+	}
+
+	if len(keyPair.Certificate) == 0 {
+		return nil, nil, "missing leaf certificate"
+	}
+
+	cert, err := x509.ParseCertificate(keyPair.Certificate[0])
+	if err != nil {
+		return nil, nil, fmt.Sprintf("invalid leaf certificate: %v", err)
+	}
+
+	if cert.Subject.CommonName != cn {
+		return nil, nil, fmt.Sprintf("common name %q does not match %q", cert.Subject.CommonName, cn)
+	}
+
+	now := time.Now()
+	if now.Add(fixtureCertClockSkew).Before(cert.NotBefore) {
+		return nil, nil, fmt.Sprintf("certificate is not valid before %s", cert.NotBefore.Format(time.RFC3339))
+	}
+
+	if now.Add(fixtureCertRenewBefore).After(cert.NotAfter) {
+		return nil, nil, fmt.Sprintf("certificate expires at %s", cert.NotAfter.Format(time.RFC3339))
+	}
+
+	return certPEM, keyPEM, ""
+}
+
+func readValidCertificateSecret(ctx context.Context, k8s client.Client, key types.NamespacedName, cn string) ([]byte, []byte, bool) {
 	secret := &corev1.Secret{}
-	if err := k8s.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name + "-tls"}, secret); err != nil {
-		fatalf("failed to read Secret %s-tls: %v", name, err)
+	if err := k8s.Get(ctx, key, secret); err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			return nil, nil, false
+		}
+
+		fatalf("failed to read Secret %s/%s: %v", key.Namespace, key.Name, err)
 	}
 
-	return secret.Data["tls.crt"], secret.Data["tls.key"]
+	certPEM, keyPEM, reason := validateCertificateSecret(secret, cn)
+	if reason == "" {
+		return certPEM, keyPEM, true
+	}
+
+	logf("Existing Secret %s/%s cannot be reused: %s", key.Namespace, key.Name, reason)
+
+	if err := k8s.Delete(ctx, secret); client.IgnoreNotFound(err) != nil {
+		fatalf("failed to delete stale Secret %s/%s: %v", key.Namespace, key.Name, err)
+	}
+
+	return nil, nil, false
+}
+
+func waitForValidCertificateSecret(ctx context.Context, k8s client.Client, key types.NamespacedName, cn string) ([]byte, []byte) {
+	var certPEM []byte
+	var keyPEM []byte
+	lastReason := "secret has not been created"
+
+	if err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 60*time.Second, true, func(ctx context.Context) (bool, error) {
+		secret := &corev1.Secret{}
+		if err := k8s.Get(ctx, key, secret); err != nil {
+			if client.IgnoreNotFound(err) == nil {
+				lastReason = "secret has not been created"
+
+				return false, nil
+			}
+
+			return false, err
+		}
+
+		certPEM, keyPEM, lastReason = validateCertificateSecret(secret, cn)
+
+		return lastReason == "", nil
+	}); err != nil {
+		fatalf("Certificate Secret %s/%s not usable: %s: %v", key.Namespace, key.Name, lastReason, err)
+	}
+
+	return certPEM, keyPEM
+}
+
+func issueCert(ctx context.Context, k8s client.Client, namespace, name, cn string) ([]byte, []byte) {
+	secretKey := types.NamespacedName{Namespace: namespace, Name: name + "-tls"}
+
+	if certPEM, keyPEM, ok := readValidCertificateSecret(ctx, k8s, secretKey, cn); ok {
+		logf("Reusing mTLS client certificate for %s; it remains valid for at least %s.", cn, fixtureCertRenewBefore)
+
+		return certPEM, keyPEM
+	}
+
+	cert := buildCertificate(namespace, name, cn)
+	ensureCertificate(ctx, k8s, cert)
+	waitForCertificateReady(ctx, k8s, cert)
+
+	return waitForValidCertificateSecret(ctx, k8s, secretKey, cn)
 }
 
 func newIdentityClient(baseURL, caCertPath string, certPEM, keyPEM []byte) *identityopenapi.ClientWithResponses {
