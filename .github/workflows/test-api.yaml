@@ -59,6 +59,27 @@ jobs:
       TEST_SECONDARY_AUTH_TOKEN: ${{ secrets.DEV_TEST_SECONDARY_AUTH_TOKEN }}
 
     steps:
+    - name: Log workflow inputs
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        RUN_DEV: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_dev || 'true' }}
+        RUN_UAT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_uat || 'false' }}
+        USE_STAGING_CONSTELLATION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.use_staging_constellation || 'true' }}
+        SKIP_SLACK_NOTIFICATIONS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.skip_slack_notifications || 'false' }}
+        FOCUS: ${{ github.event.inputs.focus || 'All' }}
+        REGION_ID_OVERRIDE: ${{ inputs.region_id || '<default>' }}
+      run: |
+        cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+        ### Workflow Input Parameters
+        - **Event:** \`$EVENT_NAME\`
+        - **Run Dev:** \`$RUN_DEV\`
+        - **Run UAT:** \`$RUN_UAT\`
+        - **Use Staging Constellation:** \`$USE_STAGING_CONSTELLATION\`
+        - **Skip Slack Notifications:** \`$SKIP_SLACK_NOTIFICATIONS\`
+        - **Focus:** \`$FOCUS\`
+        - **Region ID Override:** \`$REGION_ID_OVERRIDE\`
+        EOF
+
     - name: Checkout
       uses: actions/checkout@v4
 
@@ -155,6 +176,29 @@ jobs:
       TEST_SECONDARY_AUTH_TOKEN: ${{ secrets.UAT_TEST_SECONDARY_AUTH_TOKEN }}
 
     steps:
+    - name: Log workflow inputs
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        RUN_DEV: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_dev || 'true' }}
+        RUN_UAT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_uat || 'false' }}
+        USE_STAGING_CONSTELLATION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.use_staging_constellation || 'true' }}
+        SKIP_SLACK_NOTIFICATIONS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.skip_slack_notifications || 'false' }}
+        FOCUS: ${{ github.event.inputs.focus || 'All' }}
+        REGION_ID_OVERRIDE: ${{ inputs.region_id || '<default>' }}
+        UAT_CHECKOUT_REF: ${{ needs.find-staging-constellation.outputs.ref }}
+      run: |
+        cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+        ### Workflow Input Parameters
+        - **Event:** \`$EVENT_NAME\`
+        - **Run Dev:** \`$RUN_DEV\`
+        - **Run UAT:** \`$RUN_UAT\`
+        - **Use Staging Constellation:** \`$USE_STAGING_CONSTELLATION\`
+        - **Skip Slack Notifications:** \`$SKIP_SLACK_NOTIFICATIONS\`
+        - **Focus:** \`$FOCUS\`
+        - **Region ID Override:** \`$REGION_ID_OVERRIDE\`
+        - **UAT Checkout Ref:** \`$UAT_CHECKOUT_REF\`
+        EOF
+
     - name: Checkout
       uses: actions/checkout@v4
       with:
