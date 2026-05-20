@@ -116,6 +116,26 @@ func aclWithOrgScopeServerCreate() *identityapi.Acl {
 	}
 }
 
+func aclWithOrgScopeServerCreateRead() *identityapi.Acl {
+	return &identityapi.Acl{
+		Organizations: &identityapi.AclOrganizationList{
+			{
+				Id: srvOrganizationID,
+				Endpoints: &identityapi.AclEndpoints{
+					{
+						Name:       "region:networks:v2",
+						Operations: identityapi.AclOperations{identityapi.Read},
+					},
+					{
+						Name:       "region:servers",
+						Operations: identityapi.AclOperations{identityapi.Create, identityapi.Read},
+					},
+				},
+			},
+		},
+	}
+}
+
 // aclWithSrvNetworkReadOnly grants network:read at organization scope but no
 // server:create, so the server RBAC check returns forbidden.
 func aclWithSrvNetworkReadOnly(orgID string) *identityapi.Acl {
@@ -351,6 +371,46 @@ func TestCreateV2RejectsInvalidImage(t *testing.T) {
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+}
+
+func TestCreateV2UserDataRoundTrips(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	k8sClient := newSrvFakeClient(t, network).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	mockIdentity.EXPECT().
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
+		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+		}, nil)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+		Providers: expectValidServerImageProvider(t, ctrl),
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreateRead()))
+
+	expectedUserData := []byte("#cloud-config\nusers: []\n")
+	request := minimalServerV2CreateRequest()
+	request.Spec.UserData = ptr.To(expectedUserData)
+
+	created, err := c.CreateV2(ctx, request)
+	require.NoError(t, err)
+	require.NotNil(t, created)
+
+	read, err := c.GetV2(ctx, created.Metadata.Id)
+	require.NoError(t, err)
+	require.NotNil(t, read)
+	require.NotNil(t, read.Spec.UserData)
+	require.Equal(t, expectedUserData, *read.Spec.UserData)
 }
 
 func TestServerCreateV2SSHCertificateAuthorityNotFound(t *testing.T) {
