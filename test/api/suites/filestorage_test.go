@@ -582,6 +582,7 @@ var _ = Describe("File Storage Management", func() {
 						"Storage should be deleted")
 
 				GinkgoWriter.Printf("Confirmed file storage deleted: %s\n", filestorageID)
+				filestorageID = "" // suppress AfterAll cleanup; storage has been confirmed deleted
 			})
 
 			It("should delete the network resource", func() {
@@ -620,18 +621,18 @@ var _ = Describe("File Storage Management", func() {
 			if filestorageID != "" {
 				GinkgoWriter.Printf("Cleaning up test filestorage: %s\n", filestorageID)
 				Expect(regionClient.DeleteFileStorage(ctx, filestorageID)).To(Succeed())
-			}
 
-			if networkID != "" {
-				GinkgoWriter.Printf("Waiting for storage detachment before network cleanup...\n")
+				GinkgoWriter.Printf("Waiting for storage cleanup: %s\n", filestorageID)
 				Eventually(func() error {
 					_, err := regionClient.GetFileStorage(ctx, filestorageID)
 					return err
 				}).WithTimeout(2*time.Minute).
 					WithPolling(5*time.Second).
 					Should(And(HaveOccurred(), MatchError(coreclient.ErrUnexpectedStatusCode)),
-						"Storage should be deleted before network cleanup")
+						"Storage should be deleted during cleanup")
+			}
 
+			if networkID != "" {
 				GinkgoWriter.Printf("Cleaning up test network: %s\n", networkID)
 				Expect(regionClient.DeleteNetwork(ctx, networkID)).To(Succeed())
 			}
