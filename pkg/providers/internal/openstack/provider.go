@@ -2141,6 +2141,8 @@ func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, 
 		return corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server is in an error state"
 	case "UNKNOWN":
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
+	case "REBUILD":
+		return corev1.ConditionFalse, unikornv1core.ConditionReasonProvisioning, "server is rebuilding"
 	default:
 		return corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "server is in state " + server.Status
 	}
@@ -2172,7 +2174,7 @@ func buildPhase(ironicNode *nodes.Node) unikornv1.InstanceLifecyclePhase {
 //
 // BUILD-window branch. Breaking it up further would scatter Phase derivation.
 //
-//nolint:cyclop // Fan-out matches OpenStack's PowerState enum surface plus the BUILD branch that consults Ironic via buildPhase; collapsing it would scatter Phase derivation across helpers.
+//nolint:cyclop // Fan-out matches OpenStack's PowerState enum surface plus the BUILD branch that consults Ironic via buildPhase and the REBUILD branch that maps in-place rebuilds to Building; collapsing it would scatter Phase derivation across helpers.
 func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserver *servers.Server, ironicNode *nodes.Node) {
 	// Default to `Pending` if the phase is not already set. This should only happen to old servers created before we had phases.
 	if server.Status.Phase == "" {
@@ -2214,6 +2216,17 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 	// state to pick Queued vs Building.
 	if openstackserver.Status == "BUILD" {
 		server.Status.Phase = buildPhase(ironicNode)
+
+		return
+	}
+
+	// REBUILD is the in-place image rebuild window driven by reconcileServerImage.
+	// PowerState reads RUNNING throughout (the instance keeps its old state until
+	// the rebuild completes), so without this branch a rebuilding server would
+	// report Running. Map it to Building. Unlike BUILD this never consults Ironic:
+	// reconcileServerImage passes ironicNode==nil deliberately.
+	if openstackserver.Status == "REBUILD" {
+		server.Status.Phase = unikornv1.InstanceLifecyclePhaseBuilding
 
 		return
 	}

@@ -104,6 +104,19 @@ func TestSetServerPhaseBuildVMBuilding(t *testing.T) {
 	require.Equal(t, unikornv1.InstanceLifecyclePhaseBuilding, server.Status.Phase)
 }
 
+// TestSetServerPhaseRebuildBuilding proves an in-place image rebuild reports
+// Building rather than Running. Nova keeps PowerState RUNNING throughout REBUILD,
+// so the REBUILD branch must short-circuit the PowerState switch.
+func TestSetServerPhaseRebuildBuilding(t *testing.T) {
+	t.Parallel()
+
+	server := &unikornv1.Server{}
+
+	setServerPhase(t.Context(), server, &servers.Server{Status: "REBUILD", PowerState: servers.RUNNING}, nil)
+
+	require.Equal(t, unikornv1.InstanceLifecyclePhaseBuilding, server.Status.Phase)
+}
+
 func TestSetServerPhaseBuildBaremetalQueued(t *testing.T) {
 	t.Parallel()
 
