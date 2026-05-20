@@ -100,6 +100,9 @@ var MetadataKey = metadataKey
 //nolint:gochecknoglobals
 var ServerForCreate = serverForCreate
 
+//nolint:gochecknoglobals
+var ConvertServerHealthStatus = convertServerHealthStatus
+
 func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {
 	return &Provider{
 		client: client,

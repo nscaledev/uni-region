@@ -2035,6 +2035,8 @@ func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, 
 		return corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server is in an error state"
 	case "UNKNOWN":
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
+	case "REBUILD":
+		return corev1.ConditionFalse, unikornv1core.ConditionReasonProvisioning, "server is rebuilding"
 	default:
 		return corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "server is in state " + server.Status
 	}
