@@ -2116,6 +2116,21 @@ func (mr *MockServerInterfaceMockRecorder) RebootServer(ctx, id, hard any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RebootServer", reflect.TypeOf((*MockServerInterface)(nil).RebootServer), ctx, id, hard)
 }
 
+// RebuildServer mocks base method.
+func (m *MockServerInterface) RebuildServer(ctx context.Context, id, imageRef string) (*servers.Server, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RebuildServer", ctx, id, imageRef)
+	ret0, _ := ret[0].(*servers.Server)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RebuildServer indicates an expected call of RebuildServer.
+func (mr *MockServerInterfaceMockRecorder) RebuildServer(ctx, id, imageRef any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RebuildServer", reflect.TypeOf((*MockServerInterface)(nil).RebuildServer), ctx, id, imageRef)
+}
+
 // ShowConsoleOutput mocks base method.
 func (m *MockServerInterface) ShowConsoleOutput(ctx context.Context, id string, length *int) (string, error) {
 	m.ctrl.T.Helper()
@@ -2340,6 +2355,21 @@ func (m *MockComputeInterface) RebootServer(ctx context.Context, id string, hard
 func (mr *MockComputeInterfaceMockRecorder) RebootServer(ctx, id, hard any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RebootServer", reflect.TypeOf((*MockComputeInterface)(nil).RebootServer), ctx, id, hard)
+}
+
+// RebuildServer mocks base method.
+func (m *MockComputeInterface) RebuildServer(ctx context.Context, id, imageRef string) (*servers.Server, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RebuildServer", ctx, id, imageRef)
+	ret0, _ := ret[0].(*servers.Server)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RebuildServer indicates an expected call of RebuildServer.
+func (mr *MockComputeInterfaceMockRecorder) RebuildServer(ctx, id, imageRef any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RebuildServer", reflect.TypeOf((*MockComputeInterface)(nil).RebuildServer), ctx, id, imageRef)
 }
 
 // ShowConsoleOutput mocks base method.

@@ -334,6 +334,22 @@ func (c *ComputeClient) RebootServer(ctx context.Context, id string, hard bool) 
 	return servers.Reboot(ctx, c.client, id, opts).ExtractErr()
 }
 
+func (c *ComputeClient) RebuildServer(ctx context.Context, id, imageRef string) (*servers.Server, error) {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", id),
+		attribute.String("compute.server.action", "rebuild"),
+	)
+
+	_, span := traceStart(ctx, "POST /compute/v2/servers/{id}/action", spanAttributes)
+	defer span.End()
+
+	opts := servers.RebuildOpts{
+		ImageRef: imageRef,
+	}
+
+	return servers.Rebuild(ctx, c.client, id, opts).Extract()
+}
+
 func (c *ComputeClient) StartServer(ctx context.Context, id string) error {
 	spanAttributes := trace.WithAttributes(
 		attribute.String("compute.server.id", id),
