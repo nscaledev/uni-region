@@ -119,12 +119,12 @@ jobs:
   find-staging-constellation:
     name: Resolve UAT test ref
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event.inputs.run_uat == 'true'
+    if: github.event_name == 'schedule' || github.event.inputs.run_uat == 'true' || github.event.inputs.use_staging_constellation == 'false'
     outputs:
       ref: ${{ steps.find.outputs.ref }}
     steps:
     - name: Resolve UAT checkout ref
-      uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@codex/uni-find-staging-ref-override
+      uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@main
       id: find
       with:
         service: uni-region
@@ -135,8 +135,8 @@ jobs:
     name: API Tests (uat)
     needs: find-staging-constellation
     runs-on: ubuntu-latest
-    # Runs only when UAT was requested and the resolver produced a checkout ref.
-    if: (github.event_name == 'schedule' || github.event.inputs.run_uat == 'true') && needs.find-staging-constellation.outputs.ref != ''
+    # Runs only when the resolver produced a UAT checkout ref.
+    if: needs.find-staging-constellation.outputs.ref != ''
     env:
       ENVIRONMENT: uat
       API_BASE_URL: ${{ vars.UAT_API_BASE_URL }}
@@ -208,3 +208,4 @@ jobs:
         workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
         environment: uat
+        title: 'Region API Test Results - ${{ needs.find-staging-constellation.outputs.ref }}'
