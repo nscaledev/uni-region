@@ -114,6 +114,9 @@ func NewTestComputeClient(endpoint string) *ComputeClient {
 	}
 }
 
+//nolint:gochecknoglobals
+var ConvertServerHealthStatus = convertServerHealthStatus
+
 func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {
 	return &Provider{
 		client: client,
