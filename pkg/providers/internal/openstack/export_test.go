@@ -277,6 +277,10 @@ func ReconcileServerWithPreflight(ctx context.Context, p *Provider, client Serve
 	return p.reconcileServer(ctx, client, server, port, keyName, serverCreatePreflight(preflight))
 }
 
+func ReconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
+	return reconcileServerImage(ctx, client, server, openstackServer)
+}
+
 func ResolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {
 	return resolveServerKeyName(server, identity)
 }
