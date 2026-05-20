@@ -220,6 +220,10 @@ func ReconcileServer(ctx context.Context, p *Provider, client ServerInterface, s
 	return p.reconcileServer(ctx, client, server, port, keyName)
 }
 
+func ReconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
+	return reconcileServerImage(ctx, client, server, openstackServer)
+}
+
 func ResolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {
 	return resolveServerKeyName(server, identity)
 }
