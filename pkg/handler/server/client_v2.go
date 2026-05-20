@@ -529,6 +529,14 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *opena
 		return nil, err
 	}
 
+	// Validate the image the same way create does, but only when it actually
+	// changes — the region controller turns an image change into a rebuild.
+	if current.Spec.Image.ID != request.Spec.ImageId {
+		if err := c.validateImage(ctx, network, request.Spec.ImageId, request.Spec.FlavorId); err != nil {
+			return nil, err
+		}
+	}
+
 	// User data is only consumed during initial server bootstrap. Updates preserve it for
 	// completeness and future rebuild support, but they do not re-run cloud-init validation.
 	required, err := c.generateV2(ctx, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel], request, network, current.Spec.SSHCertificateAuthorityID, current.Spec.InfrastructureRef)
