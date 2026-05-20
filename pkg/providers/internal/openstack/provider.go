@@ -2291,15 +2291,64 @@ func (p *Provider) reconcileLoadBalancerFloatingIP(ctx context.Context, client F
 	return nil
 }
 
-func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
+// reconcileServerImage triggers an in-place Nova rebuild when an existing
+// server's running image differs from the desired image. It is called only for
+// servers that already exist.
+func reconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
 	log := log.FromContext(ctx)
 
-	openstackServer, err := client.GetServer(ctx, server)
-	if err == nil {
-		log.V(1).Info("server already exists")
+	// A rebuild is already running; wait for it to settle. Nova updates the
+	// server's image reference as soon as it accepts a rebuild, so an
+	// image-equality check alone cannot detect an in-progress rebuild.
+	if openstackServer.Status == "REBUILD" {
+		log.V(1).Info("server rebuild in progress")
 
+		setServerHealthStatus(server, openstackServer)
+		setServerPhase(ctx, server, openstackServer)
+
+		return openstackServer, provisioners.ErrYield
+	}
+
+	// A server with no desired image (e.g. boot-from-volume) has nothing to rebuild.
+	if server.Spec.Image == nil {
 		return openstackServer, nil
 	}
+
+	// Image is a map for an image-backed server and nil for a boot-from-volume
+	// server. Indexing a nil map is safe and yields the zero value.
+	currentImageID, ok := openstackServer.Image["id"].(string)
+	if !ok || currentImageID == "" {
+		return openstackServer, nil
+	}
+
+	if currentImageID == server.Spec.Image.ID {
+		return openstackServer, nil
+	}
+
+	log.Info("server image changed, rebuilding", "current", currentImageID, "desired", server.Spec.Image.ID)
+
+	if _, err := client.RebuildServer(ctx, openstackServer.ID, server.Spec.Image.ID); err != nil {
+		// The server is not in a state Nova permits a rebuild from; retry later.
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return openstackServer, provisioners.ErrYield
+		}
+
+		return nil, err
+	}
+
+	setServerHealthStatus(server, openstackServer)
+	setServerPhase(ctx, server, openstackServer)
+
+	return openstackServer, provisioners.ErrYield
+}
+
+func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
+	openstackServer, err := client.GetServer(ctx, server)
+	if err == nil {
+		return reconcileServerImage(ctx, client, server, openstackServer)
+	}
+
+	log := log.FromContext(ctx)
 
 	networks := []servers.Network{
 		{
