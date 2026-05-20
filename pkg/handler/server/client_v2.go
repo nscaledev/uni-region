@@ -76,6 +76,17 @@ func (c *ClientV2) getProvider(regionID string) (types.Provider, error) {
 	return provider, nil
 }
 
+// validateImage resolves the region provider and runs the shared image and
+// flavor validation for a server in the given network.
+func (c *ClientV2) validateImage(ctx context.Context, network *regionv1.Network, imageID, flavorID string) error {
+	provider, err := c.getProvider(network.Labels[constants.RegionLabel])
+	if err != nil {
+		return err
+	}
+
+	return validateServerImage(ctx, provider, network.Labels[coreconstants.OrganizationLabel], imageID, flavorID)
+}
+
 func convertSecurityGroupsV2(in []regionv1.ServerSecurityGroupSpec) *openapi.ServerV2SecurityGroupIDList {
 	if len(in) == 0 {
 		return nil
@@ -416,6 +427,10 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 	projectID := network.Labels[coreconstants.ProjectLabel]
 
 	if err := rbac.AllowProjectScopeCreate(ctx, c.Identity, "region:servers", identityapi.Create, organizationID, projectID); err != nil {
+		return nil, err
+	}
+
+	if err := c.validateImage(ctx, network, request.Spec.ImageId, request.Spec.FlavorId); err != nil {
 		return nil, err
 	}
 
