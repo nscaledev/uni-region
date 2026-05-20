@@ -21,7 +21,10 @@ related dependencies rather than from nested path scope.
 
 - `v1` servers are nested more explicitly under identity paths
 - `v2` servers are network-linked resources with direct ID-based access
-- create/update validate referenced image existence through the provider layer
+- v2 create and update validate the referenced image and flavor through the
+  provider layer: image exists and is visible to the organization, image is
+  ready, flavor exists, flavor disk is large enough, and image virtualization
+  is compatible with the flavor. Update validates only when the image changes.
 - create/update can validate and bind an SSH certificate authority
 - snapshot creation bridges server lifecycle into image provenance semantics
 - snapshot creation is also a cross-resource permission bridge: the caller must
