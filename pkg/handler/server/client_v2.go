@@ -74,6 +74,17 @@ func (c *ClientV2) getProvider(regionID string) (types.Provider, error) {
 	return provider, nil
 }
 
+// validateImage resolves the region provider and runs the shared image and
+// flavor validation for a server in the given network.
+func (c *ClientV2) validateImage(ctx context.Context, network *regionv1.Network, imageID, flavorID string) error {
+	provider, err := c.getProvider(network.Labels[constants.RegionLabel])
+	if err != nil {
+		return err
+	}
+
+	return validateServerImage(ctx, provider, network.Labels[coreconstants.OrganizationLabel], imageID, flavorID)
+}
+
 func convertSecurityGroupsV2(in []regionv1.ServerSecurityGroupSpec) *openapi.ServerV2SecurityGroupIDList {
 	if len(in) == 0 {
 		return nil
@@ -440,6 +451,10 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 		return nil, err
 	}
 
+	if err := c.validateImage(ctx, network, request.Spec.ImageId, request.Spec.FlavorId); err != nil {
+		return nil, err
+	}
+
 	if err := c.isServerNameInUse(ctx, organizationID, projectID, request.Spec.NetworkId, request.Metadata.Name); err != nil {
 		return nil, err
 	}
@@ -529,6 +544,14 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *opena
 	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, current.Spec.Networks[0].ID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Validate the image the same way create does, but only when it actually
+	// changes — the region controller turns an image change into a rebuild.
+	if current.Spec.Image.ID != request.Spec.ImageId {
+		if err := c.validateImage(ctx, network, request.Spec.ImageId, request.Spec.FlavorId); err != nil {
+			return nil, err
+		}
 	}
 
 	// User data is only consumed during initial server bootstrap. Updates preserve it for
