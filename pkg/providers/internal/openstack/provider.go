@@ -2326,6 +2326,7 @@ func (p *Provider) reconcileLoadBalancerFloatingIP(ctx context.Context, client F
 // servers that already exist.
 func reconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
 	log := log.FromContext(ctx)
+	log.V(1).Info("server already exists")
 
 	// A rebuild is already running; wait for it to settle. Nova updates the
 	// server's image reference as soon as it accepts a rebuild, so an
