@@ -36,10 +36,9 @@ related dependencies rather than from nested path scope.
 - server-name uniqueness is enforced per network to avoid aliasing cloud-side
   host identity; the Kubernetes resource name is derived deterministically from
   `(networkID, serverName)` so a duplicate create collides at the Kubernetes
-  layer and is rejected with HTTP 409 without a read-before-write; uniqueness
-  is anchored to the name at creation time (the actual VM hostname, which
-  OpenStack does not change) rather than to the mutable display label, so
-  renaming a server does not free its original hostname slot
+  layer and is rejected with HTTP 409 without a read-before-write
+- server names are immutable after creation; update requests that supply a
+  different name are rejected with HTTP 422
 
 ## Invariants And Guard Rails
 
@@ -52,11 +51,9 @@ related dependencies rather than from nested path scope.
 - Power-operation errors are translated carefully from provider conflict/not-found
   states into user-facing API semantics.
 - The Kubernetes resource name for a `v2` server is a deterministic UUID v5
-  derived from `(networkID, serverName)` where `serverName` is the name
-  supplied at creation time. Renaming a server via update does not change
-  the Kubernetes resource name, so the original hostname slot remains
-  permanently occupied — consistent with OpenStack not changing a VM's
-  hostname after boot.
+  derived from `(networkID, serverName)` at creation time, making the name
+  immutable for the lifetime of the resource — consistent with OpenStack not
+  changing a VM's hostname after boot.
 - Servers provisioned before this mechanism was introduced have random-UUID
   names and are not covered by it; deduplication applies only to resources
   created after deployment.
