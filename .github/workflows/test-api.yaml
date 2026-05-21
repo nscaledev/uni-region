@@ -41,6 +41,31 @@ permissions:
   contents: read
 
 jobs:
+  workflow-inputs-summary:
+    name: Workflow input summary
+    runs-on: ubuntu-latest
+    steps:
+    - name: Log workflow inputs
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        RUN_DEV: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_dev || 'true' }}
+        RUN_UAT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_uat || 'false' }}
+        USE_STAGING_CONSTELLATION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.use_staging_constellation || 'true' }}
+        SKIP_SLACK_NOTIFICATIONS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.skip_slack_notifications || 'false' }}
+        FOCUS: ${{ github.event.inputs.focus || 'All' }}
+        REGION_ID_OVERRIDE: ${{ inputs.region_id || '<default>' }}
+      run: |
+        cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+        ### Workflow Input Parameters
+        - **Event:** \`$EVENT_NAME\`
+        - **Run Dev:** \`$RUN_DEV\`
+        - **Run UAT:** \`$RUN_UAT\`
+        - **Use Staging Constellation:** \`$USE_STAGING_CONSTELLATION\`
+        - **Skip Slack Notifications:** \`$SKIP_SLACK_NOTIFICATIONS\`
+        - **Focus:** \`$FOCUS\`
+        - **Region ID Override:** \`$REGION_ID_OVERRIDE\`
+        EOF
+
   API-Tests-Dev:
     name: API Tests (dev)
     runs-on: ubuntu-latest
@@ -106,20 +131,24 @@ jobs:
         linear-priority: '3'
         max-failures: '5'
 
-    - name: Send Slack Notification
-      uses: nscaledev/quality-tooling/.github/actions/slack-test-notifications@main
-      if: ${{ !cancelled() && github.event.inputs.skip_slack_notifications != 'true' }}
+    - name: Report API Test Results
+      uses: nscaledev/quality-tooling/.github/actions/test-results-report@main
+      if: ${{ !cancelled() }}
       with:
         test-results-path: test-results.json
+        format: ginkgo-json
         workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        send-slack: ${{ github.event.inputs.skip_slack_notifications != 'true' && 'true' || 'false' }}
         environment: dev
         title: 'Region API Test Results'
+        enable-ai-analysis: 'true'
+        claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
   find-staging-constellation:
     name: Resolve UAT test ref
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event.inputs.run_uat == 'true' || github.event.inputs.use_staging_constellation == 'false'
+    if: github.event_name == 'schedule' || github.event.inputs.run_uat == 'true'
     outputs:
       ref: ${{ steps.find.outputs.ref }}
     steps:
@@ -136,7 +165,7 @@ jobs:
     needs: find-staging-constellation
     runs-on: ubuntu-latest
     # Runs only when the resolver produced a UAT checkout ref.
-    if: needs.find-staging-constellation.outputs.ref != ''
+    if: (github.event_name == 'schedule' || github.event.inputs.run_uat == 'true') && needs.find-staging-constellation.outputs.ref != ''
     env:
       ENVIRONMENT: uat
       API_BASE_URL: ${{ vars.UAT_API_BASE_URL }}
@@ -200,12 +229,16 @@ jobs:
         linear-priority: '3'
         max-failures: '5'
 
-    - name: Send Slack Notification
-      uses: nscaledev/quality-tooling/.github/actions/slack-test-notifications@main
-      if: ${{ !cancelled() && github.event.inputs.skip_slack_notifications != 'true' }}
+    - name: Report API Test Results
+      uses: nscaledev/quality-tooling/.github/actions/test-results-report@main
+      if: ${{ !cancelled() }}
       with:
         test-results-path: test-results.json
+        format: ginkgo-json
         workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        send-slack: ${{ github.event.inputs.skip_slack_notifications != 'true' && 'true' || 'false' }}
         environment: uat
-        title: 'Region API Test Results - ${{ needs.find-staging-constellation.outputs.ref }}'
+        title: 'Region API Test Results'
+        enable-ai-analysis: 'true'
+        claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
