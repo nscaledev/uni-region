@@ -304,9 +304,14 @@ func (c *ClientV2) generateV2(ctx context.Context, organizationID, projectID str
 		return nil, err
 	}
 
+	networkNamespace, err := uuid.Parse(network.Name)
+	if err != nil {
+		return nil, fmt.Errorf("%w: network ID is not a valid UUID", err)
+	}
+
 	out := &regionv1.Server{
 		ObjectMeta: conversion.NewDeterministicObjectMetadata(&in.Metadata, c.Namespace,
-			uuid.MustParse(network.Name), in.Metadata.Name).
+			networkNamespace, in.Metadata.Name).
 			WithOrganization(organizationID).
 			WithProject(projectID).
 			WithLabel(constants.RegionLabel, network.Labels[constants.RegionLabel]).
