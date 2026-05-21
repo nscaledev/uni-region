@@ -49,7 +49,7 @@ const (
 	srvOrganizationID = "foo"
 	srvProjectID      = "bar"
 	srvNamespace      = "test-namespace"
-	srvNetworkID      = "test-network"
+	srvNetworkID      = "aaaabbbb-1234-5678-9abc-def012345678"
 )
 
 // newSrvFakeClient builds a fake k8s client pre-populated with the given objects.
@@ -536,4 +536,106 @@ func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 	require.Equal(t, resource.Status.PrivateIP, result.Status.PrivateIP)
 	require.Equal(t, resource.Status.PublicIP, result.Status.PublicIP)
 	require.Equal(t, resource.Status.MACAddress, result.Status.MacAddress)
+}
+
+// TestServerCreateV2DeterministicID verifies that two creates with the same
+// network ID and server name produce identical Kubernetes resource names and that
+// changing either component yields a different name.
+func TestServerCreateV2DeterministicID(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	mockIdentity.EXPECT().
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
+		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+		}, nil).
+		AnyTimes()
+
+	k8sClient := newSrvFakeClient(t, network).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	first, err := c.CreateV2(ctx, minimalServerV2CreateRequest())
+	require.NoError(t, err)
+	require.NotNil(t, first)
+
+	firstID := first.Metadata.Id
+
+	// Same (networkID, name) must produce the same Kubernetes resource name.
+	// The second create hits the AlreadyExists path and we verify the ID is stable.
+	k8sClientFresh := newSrvFakeClient(t, network).Build()
+	c2 := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClientFresh,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx2 := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	second, err := c2.CreateV2(ctx2, minimalServerV2CreateRequest())
+	require.NoError(t, err)
+	require.Equal(t, firstID, second.Metadata.Id, "same (networkID, name) must yield the same resource ID")
+
+	// Different name must produce a different ID.
+	diffReq := minimalServerV2CreateRequest()
+	diffReq.Metadata.Name = "other-server"
+
+	k8sClientDiff := newSrvFakeClient(t, network).Build()
+	c3 := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClientDiff,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx3 := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	diff, err := c3.CreateV2(ctx3, diffReq)
+	require.NoError(t, err)
+	require.NotEqual(t, firstID, diff.Metadata.Id, "different server name must yield a different resource ID")
+}
+
+// TestServerCreateV2ConflictOnDuplicateName verifies that a second create with the
+// same name on the same network is rejected with HTTP 409 Conflict.
+func TestServerCreateV2ConflictOnDuplicateName(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	mockIdentity.EXPECT().
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
+		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+		}, nil).
+		AnyTimes()
+
+	k8sClient := newSrvFakeClient(t, network).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	_, err := c.CreateV2(ctx, minimalServerV2CreateRequest())
+	require.NoError(t, err, "first create must succeed")
+
+	ctx2 := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	_, err = c.CreateV2(ctx2, minimalServerV2CreateRequest())
+	require.Error(t, err)
+	require.True(t, coreerrors.IsConflict(err), "duplicate name on same network must return 409 Conflict, got: %v", err)
 }
