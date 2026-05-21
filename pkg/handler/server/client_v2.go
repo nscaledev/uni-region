@@ -26,6 +26,8 @@ import (
 	"reflect"
 	"slices"
 
+	"github.com/google/uuid"
+
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
@@ -303,7 +305,8 @@ func (c *ClientV2) generateV2(ctx context.Context, organizationID, projectID str
 	}
 
 	out := &regionv1.Server{
-		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, c.Namespace).
+		ObjectMeta: conversion.NewDeterministicObjectMetadata(&in.Metadata, c.Namespace,
+			uuid.MustParse(network.Name), in.Metadata.Name).
 			WithOrganization(organizationID).
 			WithProject(projectID).
 			WithLabel(constants.RegionLabel, network.Labels[constants.RegionLabel]).
@@ -396,37 +399,6 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 	return convertV2List(result), nil
 }
 
-// isServerNameInUse does a best effort attempt to ensure the server name
-// does not already exist on the same network as that would lead to aliasing issues
-// of cloud resources and servers having the same hostname.
-func (c *Client) isServerNameInUse(ctx context.Context, organizationID, projectID, networkID, name string) error {
-	selector := labels.Set{
-		coreconstants.OrganizationLabel: organizationID,
-		coreconstants.ProjectLabel:      projectID,
-		constants.NetworkLabel:          networkID,
-	}
-
-	options := &client.ListOptions{
-		Namespace:     c.Namespace,
-		LabelSelector: labels.SelectorFromSet(selector),
-	}
-
-	servers := &regionv1.ServerList{}
-
-	if err := c.Client.List(ctx, servers, options); err != nil {
-		return err
-	}
-
-	for i := range servers.Items {
-		if servers.Items[i].Labels[coreconstants.NameLabel] == name {
-			// TODO: we can be more verbose here, update the interface in core.
-			return errors.HTTPConflict()
-		}
-	}
-
-	return nil
-}
-
 func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create) (*openapi.ServerV2Read, error) {
 	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId)
 	if err != nil {
@@ -437,10 +409,6 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 	projectID := network.Labels[coreconstants.ProjectLabel]
 
 	if err := rbac.AllowProjectScopeCreate(ctx, c.Identity, "region:servers", identityapi.Create, organizationID, projectID); err != nil {
-		return nil, err
-	}
-
-	if err := c.isServerNameInUse(ctx, organizationID, projectID, request.Spec.NetworkId, request.Metadata.Name); err != nil {
 		return nil, err
 	}
 
@@ -463,6 +431,10 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 	}
 
 	if err := c.Client.Client.Create(ctx, resource); err != nil {
+		if kerrors.IsAlreadyExists(err) {
+			return nil, errors.HTTPConflict()
+		}
+
 		return nil, fmt.Errorf("%w: unable to create server", err)
 	}
 
