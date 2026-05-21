@@ -38,6 +38,8 @@ import (
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 )
 
+// INST-926 tracks Dev environment setup for file storage classes. Until Dev exposes
+// a usable class for the configured test region, storage-class-dependent specs skip.
 var _ = Describe("File Storage Management", func() {
 	Context("When listing file storage resources", func() {
 		Describe("Given valid project access", func() {
