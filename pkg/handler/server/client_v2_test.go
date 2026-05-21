@@ -586,7 +586,7 @@ func TestServerCreateV2DeterministicID(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, firstID, second.Metadata.Id, "same (networkID, name) must yield the same resource ID")
 
-	// Different name must produce a different ID.
+	// Different name on the same network must produce a different ID.
 	diffReq := minimalServerV2CreateRequest()
 	diffReq.Metadata.Name = "other-server"
 
@@ -602,6 +602,36 @@ func TestServerCreateV2DeterministicID(t *testing.T) {
 	diff, err := c3.CreateV2(ctx3, diffReq)
 	require.NoError(t, err)
 	require.NotEqual(t, firstID, diff.Metadata.Id, "different server name must yield a different resource ID")
+
+	// Same name on a different network must produce a different ID (namespace dimension).
+	otherNetworkID := "bbbbcccc-1234-5678-9abc-def012345678"
+	otherNetwork := &regionv1.Network{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      otherNetworkID,
+			Namespace: srvNamespace,
+			Labels: map[string]string{
+				coreconstants.OrganizationLabel:   srvOrganizationID,
+				coreconstants.ProjectLabel:        srvProjectID,
+				constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
+			},
+		},
+	}
+
+	sameNameOtherNetReq := minimalServerV2CreateRequest()
+	sameNameOtherNetReq.Spec.NetworkId = otherNetworkID
+
+	k8sClientOtherNet := newSrvFakeClient(t, otherNetwork).Build()
+	c4 := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClientOtherNet,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx4 := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	sameNameOtherNet, err := c4.CreateV2(ctx4, sameNameOtherNetReq)
+	require.NoError(t, err)
+	require.NotEqual(t, firstID, sameNameOtherNet.Metadata.Id, "same server name on a different network must yield a different resource ID")
 }
 
 // TestServerCreateV2ConflictOnDuplicateName verifies that a second create with the
