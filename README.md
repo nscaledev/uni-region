@@ -170,6 +170,15 @@ Trigger the workflow manually from the Actions tab:
    run.
 6. View results in the workflow run and download test artifacts
 
+The workflow maps GitHub environment variables and secrets into the test suite configuration. The
+primary API test tokens for both Dev and UAT/QA are owned by the shared test account
+`qa-testaccount02@nscale.com`.
+
+| Environment | Primary token secret | Test account |
+|---|---|---|
+| Dev | `DEV_API_AUTH_TOKEN` | `qa-testaccount02@nscale.com` |
+| UAT/QA | `UAT_API_AUTH_TOKEN` | `qa-testaccount02@nscale.com` |
+
 ## Contract Testing
 
 Contract tests verify that the provider service meets consumer expectations defined in the Pact Broker.
