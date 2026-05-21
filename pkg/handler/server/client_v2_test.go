@@ -193,6 +193,7 @@ func testServerWithSSHCertificateAuthority(orgID, projID, serverID, caID string)
 			Labels: map[string]string{
 				coreconstants.OrganizationLabel:   orgID,
 				coreconstants.ProjectLabel:        projID,
+				coreconstants.NameLabel:           serverID,
 				constants.RegionLabel:             "test-region",
 				constants.IdentityLabel:           "test-identity",
 				constants.NetworkLabel:            srvNetworkID,
@@ -668,4 +669,38 @@ func TestServerCreateV2ConflictOnDuplicateName(t *testing.T) {
 	_, err = c.CreateV2(ctx2, minimalServerV2CreateRequest())
 	require.Error(t, err)
 	require.True(t, coreerrors.IsConflict(err), "duplicate name on same network must return 409 Conflict, got: %v", err)
+}
+
+// TestServerUpdateV2RejectsRename verifies that an update request supplying a
+// different name than the current server name is rejected with HTTP 422.
+func TestServerUpdateV2RejectsRename(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, "server-1", "ca-1")
+
+	k8sClient := newSrvFakeClient(t, network, resource).Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate(srvOrganizationID)))
+
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: "renamed-server"},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+		},
+	}
+
+	_, err := c.UpdateV2(ctx, resource.Name, request)
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "rename attempt must return 422 Unprocessable Content, got: %v", err)
 }

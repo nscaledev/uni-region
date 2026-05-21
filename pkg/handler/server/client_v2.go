@@ -502,6 +502,10 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *opena
 		return nil, errors.OAuth2InvalidRequest("server is being deleted")
 	}
 
+	if request.Metadata.Name != current.Labels[coreconstants.NameLabel] {
+		return nil, errors.HTTPUnprocessableContent("server names are immutable")
+	}
+
 	// Get the network, required for generation.
 	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, current.Spec.Networks[0].ID)
 	if err != nil {
