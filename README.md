@@ -160,7 +160,15 @@ Trigger the workflow manually from the Actions tab:
    - **Run Dev tests** (checked by default)
    - **Run UAT tests** (unchecked by default)
    - Can run one, both, or neither
-4. View results in the workflow run and download test artifacts
+4. Scheduled UAT runs check out the staged constellation tag resolved by the
+   workflow. Manual UAT runs use the same staged constellation lookup by default.
+   To run UAT against the branch or tag selected in GitHub's manual workflow
+   picker instead, set **use_staging_constellation** to `false`. Disabling
+   **use_staging_constellation** is enough to trigger the UAT job for that
+   selected ref.
+5. Set **skip_slack_notifications** to `true` to suppress Slack messages for the
+   run.
+6. View results in the workflow run and download test artifacts
 
 The workflow maps GitHub environment variables and secrets into the test suite configuration. The
 primary API test tokens for both Dev and UAT/QA are owned by the shared test account

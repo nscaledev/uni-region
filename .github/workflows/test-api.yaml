@@ -12,6 +12,14 @@ on:
         description: 'Run UAT tests'
         type: boolean
         default: false
+      use_staging_constellation:
+        description: 'Use the staged constellation tag for UAT checkout'
+        type: boolean
+        default: true
+      skip_slack_notifications:
+        description: 'Skip Slack notifications'
+        type: boolean
+        default: false
       focus:
         description: 'Test suite to run'
         required: false
@@ -101,7 +109,7 @@ jobs:
 
     - name: Send Slack Notification
       uses: nscaledev/quality-tooling/.github/actions/slack-test-notifications@main
-      if: ${{ !cancelled() }}
+      if: ${{ !cancelled() && github.event.inputs.skip_slack_notifications != 'true' }}
       with:
         test-results-path: test-results.json
         workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -110,24 +118,26 @@ jobs:
         title: 'Region API Test Results'
 
   find-staging-constellation:
-    name: Find staging constellation
+    name: Resolve UAT test ref
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event.inputs.run_uat == 'true'
+    if: github.event_name == 'schedule' || github.event.inputs.run_uat == 'true' || github.event.inputs.use_staging_constellation == 'false'
     outputs:
-      tag: ${{ steps.find.outputs.tag }}
+      ref: ${{ steps.find.outputs.ref }}
     steps:
-    - uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@main
+    - name: Resolve UAT checkout ref
+      uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@main
       id: find
       with:
         service: uni-region
         releases-read-token: ${{ secrets.RELEASES_READ_TOKEN }}
+        use-staging-constellation: ${{ github.event_name == 'schedule' || github.event.inputs.use_staging_constellation != 'false' }}
 
   API-Tests-UAT:
     name: API Tests (uat)
     needs: find-staging-constellation
     runs-on: ubuntu-latest
-    # Runs only when find-staging-constellation resolved a tag.
-    if: needs.find-staging-constellation.outputs.tag != ''
+    # Runs only when the resolver produced a UAT checkout ref.
+    if: needs.find-staging-constellation.outputs.ref != ''
     env:
       ENVIRONMENT: uat
       API_BASE_URL: ${{ vars.UAT_API_BASE_URL }}
@@ -146,7 +156,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
       with:
-        ref: ${{ needs.find-staging-constellation.outputs.tag }}
+        ref: ${{ needs.find-staging-constellation.outputs.ref }}
 
     - name: Setup Go
       uses: actions/setup-go@v3
@@ -194,9 +204,10 @@ jobs:
 
     - name: Send Slack Notification
       uses: nscaledev/quality-tooling/.github/actions/slack-test-notifications@main
-      if: ${{ !cancelled() }}
+      if: ${{ !cancelled() && github.event.inputs.skip_slack_notifications != 'true' }}
       with:
         test-results-path: test-results.json
         workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
         environment: uat
+        title: 'Region API Test Results - ${{ needs.find-staging-constellation.outputs.ref }}'
