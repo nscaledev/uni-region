@@ -88,6 +88,34 @@ func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 	return p.network
 }
 
+func identityReady(identity *unikornv1.Identity) bool {
+	condition, err := identity.StatusConditionRead(unikornv1core.ConditionAvailable)
+	if err != nil {
+		return false
+	}
+
+	return condition.Reason == unikornv1core.ConditionReasonProvisioned
+}
+
+func providerResourceIDsRecorded(network *unikornv1.Network) bool {
+	if network.Status.Openstack == nil {
+		return false
+	}
+
+	return network.Status.Openstack.NetworkID != nil ||
+		network.Status.Openstack.SubnetID != nil ||
+		network.Status.Openstack.VlanID != nil
+}
+
+func needsProviderDelete(identity *unikornv1.Identity, network *unikornv1.Network) bool {
+	// A v2 network can be deleted after the API has created its identity-side
+	// allocation but before provisioning has waited for Identity readiness and
+	// recorded provider resource IDs. In that window there is nothing for the
+	// provider to delete, and waiting for Identity readiness would leak the
+	// allocation.
+	return identityReady(identity) || providerResourceIDsRecorded(network)
+}
+
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
 	provider, identity, err := p.ProviderAndIdentity(ctx, p.network)
@@ -115,8 +143,10 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
-	if err := provider.DeleteNetwork(ctx, identity, p.network); err != nil {
-		return err
+	if needsProviderDelete(identity, p.network) {
+		if err := provider.DeleteNetwork(ctx, identity, p.network); err != nil {
+			return err
+		}
 	}
 
 	// Temporary hack, V1 networks don't have a discrete network allocation,
