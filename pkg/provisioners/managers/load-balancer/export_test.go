@@ -27,8 +27,10 @@ import (
 func NewForTest(loadbalancer *unikornv1.LoadBalancer, providers providers.Providers) *Provisioner {
 	return &Provisioner{
 		loadbalancer: loadbalancer,
-		Base: base.Base{
-			Providers: providers,
+		WithIdentity: base.WithIdentity{
+			Base: base.Base{
+				Providers: providers,
+			},
 		},
 	}
 }
