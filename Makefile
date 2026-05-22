@@ -142,6 +142,10 @@ test-unit:
 	go test -coverpkg ./... -coverprofile cover.out ./...
 	go tool cover -html cover.out -o cover.html
 
+.PHONY: test-devstack
+test-devstack:
+	go test -tags=devstack -count=1 ./pkg/providers/internal/openstack/...
+
 # Build a binary and install it.
 $(PREFIX)/%: $(BINDIR)/%
 	install -m 750 $< $@

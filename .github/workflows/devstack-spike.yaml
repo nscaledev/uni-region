@@ -1,0 +1,39 @@
+name: DevStack Spike
+on:
+  push:
+    branches:
+    - 'devstack/**'
+
+permissions:
+  contents: read
+
+jobs:
+  DevStack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: go.mod
+
+    - name: Provision DevStack
+      id: devstack
+      uses: nscaledev/uni-devstack@reusable-devstack-action
+
+    - name: Run DevStack smoke tests
+      run: |
+        set -a
+        . "${{ steps.devstack.outputs.openrc_host }}"
+        set +a
+        make test-devstack
+
+    - name: Upload DevStack logs
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: devstack-logs
+        path: ${{ steps.devstack.outputs.workdir }}/logs
