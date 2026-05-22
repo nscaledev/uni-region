@@ -128,11 +128,11 @@ func aclWithSrvNetworkReadOnly(orgID string) *identityapi.Acl {
 	}
 }
 
-func aclWithSrvUpdate(orgID string) *identityapi.Acl {
+func aclWithSrvUpdate() *identityapi.Acl {
 	return &identityapi.Acl{
 		Organizations: &identityapi.AclOrganizationList{
 			{
-				Id: orgID,
+				Id: srvOrganizationID,
 				Endpoints: &identityapi.AclEndpoints{
 					{
 						Name:       "region:networks:v2",
@@ -487,7 +487,7 @@ func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 		Identity:  mockIdentity,
 	})
 
-	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate(srvOrganizationID)))
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
 
 	request := &openapi.ServerV2Update{
 		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
@@ -529,7 +529,7 @@ func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 		Identity:  mockIdentity,
 	})
 
-	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate(srvOrganizationID))
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
 
 	result, err := c.GetV2(ctx, resource.Name)
 
@@ -577,7 +577,7 @@ func TestServerGetV2Raw_NotFound(t *testing.T) {
 		Identity:  mockIdentity,
 	})
 
-	_, err := c.GetV2Raw(rbac.NewContext(t.Context(), aclWithSrvUpdate(srvOrganizationID)), "nonexistent-server")
+	_, err := c.GetV2Raw(rbac.NewContext(t.Context(), aclWithSrvUpdate()), "nonexistent-server")
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -612,7 +612,7 @@ func TestServerGetV2Raw_MissingAPIVersionLabel(t *testing.T) {
 		Identity:  mockIdentity,
 	})
 
-	_, err := c.GetV2Raw(rbac.NewContext(t.Context(), aclWithSrvUpdate(srvOrganizationID)), resource.Name)
+	_, err := c.GetV2Raw(rbac.NewContext(t.Context(), aclWithSrvUpdate()), resource.Name)
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -648,7 +648,7 @@ func TestServerGetV2Raw_WrongAPIVersion(t *testing.T) {
 		Identity:  mockIdentity,
 	})
 
-	_, err := c.GetV2Raw(rbac.NewContext(t.Context(), aclWithSrvUpdate(srvOrganizationID)), resource.Name)
+	_, err := c.GetV2Raw(rbac.NewContext(t.Context(), aclWithSrvUpdate()), resource.Name)
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -729,7 +729,7 @@ func TestServerUpdateV2_NotFound(t *testing.T) {
 		Identity:  mockIdentity,
 	})
 
-	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate(srvOrganizationID))
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
 
 	request := &openapi.ServerV2Update{
 		Metadata: coreapi.ResourceWriteMetadata{Name: "nonexistent-server"},
@@ -790,7 +790,7 @@ func TestServerUpdateV2_ServerBeingDeleted(t *testing.T) {
 		Identity:  mockIdentity,
 	})
 
-	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate(srvOrganizationID)))
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
 
 	request := &openapi.ServerV2Update{
 		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
@@ -820,7 +820,7 @@ func TestServerUpdateV2_NetworkGone(t *testing.T) {
 		Identity:  mockIdentity,
 	})
 
-	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate(srvOrganizationID)))
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
 
 	request := &openapi.ServerV2Update{
 		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
@@ -847,7 +847,7 @@ func TestServerDeleteV2_NotFound(t *testing.T) {
 		Identity:  mockIdentity,
 	})
 
-	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate(srvOrganizationID))
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
 
 	err := c.DeleteV2(ctx, "nonexistent-server")
 
@@ -893,7 +893,7 @@ func TestServerStartV2_NotFound(t *testing.T) {
 		Identity:  mockIdentity,
 	})
 
-	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate(srvOrganizationID))
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
 
 	err := c.StartV2(ctx, "nonexistent-server")
 
@@ -1052,7 +1052,7 @@ func TestServerUpdateV2RejectsRename(t *testing.T) {
 		Identity:  mockIdentity,
 	})
 
-	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate(srvOrganizationID)))
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
 
 	request := &openapi.ServerV2Update{
 		Metadata: coreapi.ResourceWriteMetadata{Name: "renamed-server"},
