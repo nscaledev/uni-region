@@ -60,7 +60,7 @@ var _ = Describe("LoadBalancer", func() {
 					}
 					api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
 				}
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil {
+				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
 					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
 				}
 			})
@@ -70,6 +70,8 @@ var _ = Describe("LoadBalancer", func() {
 			members := []regionopenapi.LoadBalancerMemberV2{
 				{Address: "10.0.1.10", Port: 8080},
 			}
+			var originalVIP *regionopenapi.Ipv4Address
+			var deletedLBID string
 
 			It("creates a load balancer in Pending state", func() {
 				createReq = api.NewLoadBalancerPayload(networkID).
@@ -171,10 +173,10 @@ var _ = Describe("LoadBalancer", func() {
 				Expect(roundTrip.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
 			})
 
-			It("eventually clears status.publicIP when publicIP is toggled to false", func() {
+			It("accepts an update toggling publicIP to false", func() {
 				current, err := regionClient.GetLoadBalancer(ctx, lbID)
 				Expect(err).NotTo(HaveOccurred())
-				originalVIP := current.Status.VipAddress
+				originalVIP = current.Status.VipAddress
 
 				spec := current.Spec
 				spec.PublicIP = ptr.To(false)
@@ -186,7 +188,9 @@ var _ = Describe("LoadBalancer", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(putResp.Spec.PublicIP).NotTo(BeNil())
 				Expect(*putResp.Spec.PublicIP).To(BeFalse())
+			})
 
+			It("eventually clears status.publicIP and preserves the VIP after publicIP is toggled", func() {
 				Eventually(func(g Gomega) *regionopenapi.Ipv4Address {
 					got, err := regionClient.GetLoadBalancer(ctx, lbID)
 					g.Expect(err).NotTo(HaveOccurred())
@@ -198,16 +202,18 @@ var _ = Describe("LoadBalancer", func() {
 				Expect(final.Status.VipAddress).To(Equal(originalVIP), "VIP must be preserved across publicIP toggle")
 			})
 
-			It("deletes the load balancer and confirms it disappears", func() {
+			It("deletes the load balancer", func() {
+				deletedLBID = lbID
 				Expect(regionClient.DeleteLoadBalancer(ctx, lbID)).To(Succeed())
 				api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
+				lbID = "" // suppress cleanup re-delete
+			})
 
-				path := regionClient.GetEndpoints().GetLoadBalancer(lbID)
+			It("is no longer accessible after deletion", func() {
+				path := regionClient.GetEndpoints().GetLoadBalancer(deletedLBID)
 				resp, _, err := regionClient.DoRegionRequest(ctx, http.MethodGet, path, nil, 0)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp.StatusCode).NotTo(Equal(http.StatusOK))
-
-				lbID = "" // suppress cleanup re-delete
 			})
 		})
 	})
@@ -233,7 +239,7 @@ var _ = Describe("LoadBalancer", func() {
 					}
 					api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
 				}
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil {
+				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
 					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
 				}
 			})
@@ -294,7 +300,7 @@ var _ = Describe("LoadBalancer", func() {
 					}
 					api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
 				}
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil {
+				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
 					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
 				}
 			})

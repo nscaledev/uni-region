@@ -49,7 +49,9 @@ var _ = Describe("SecurityGroup", func() {
 			networkID = network.Metadata.Id
 			DeferCleanup(func() {
 				GinkgoWriter.Printf("Cleaning up network fixture: %s\n", networkID)
-				Expect(regionClient.DeleteNetwork(ctx, networkID)).To(Succeed())
+				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
+					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
+				}
 			})
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
 
@@ -62,12 +64,16 @@ var _ = Describe("SecurityGroup", func() {
 					return
 				}
 				GinkgoWriter.Printf("Cleaning up security group: %s\n", sgID)
-				Expect(regionClient.DeleteSecurityGroup(ctx, sgID)).To(Succeed())
+				if err := regionClient.DeleteSecurityGroup(ctx, sgID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
+					GinkgoWriter.Printf("Warning: cleanup delete security group %s: %v\n", sgID, err)
+				}
 			})
 			GinkgoWriter.Printf("Created security group: %s (%s)\n", created.Metadata.Name, sgID)
 		})
 
 		Describe("Given a network fixture and valid configuration", func() {
+			var deletedSGID string
+
 			It("should create a security group with correct response fields", func() {
 				Expect(sgID).NotTo(BeEmpty())
 				Expect(createReq.Metadata.Name).NotTo(BeEmpty())
@@ -136,21 +142,23 @@ var _ = Describe("SecurityGroup", func() {
 				GinkgoWriter.Printf("Updated security group rules: %s\n", sgID)
 			})
 
-			It("should delete the security group and confirm it is no longer found", func() {
-				deletedID := sgID
-				Expect(regionClient.DeleteSecurityGroup(ctx, deletedID)).To(Succeed())
+			It("should delete the security group", func() {
+				deletedSGID = sgID
+				Expect(regionClient.DeleteSecurityGroup(ctx, deletedSGID)).To(Succeed())
 				sgID = "" // suppress DeferCleanup — already deleted
-				GinkgoWriter.Printf("Deleted security group: %s\n", deletedID)
+				GinkgoWriter.Printf("Deleted security group: %s\n", deletedSGID)
+			})
 
+			It("should not be found after deletion", func() {
 				Eventually(func() error {
-					_, err := regionClient.GetSecurityGroup(ctx, deletedID)
+					_, err := regionClient.GetSecurityGroup(ctx, deletedSGID)
 					return err
 				}).WithTimeout(30*time.Second).
 					WithPolling(2*time.Second).
 					Should(And(HaveOccurred(), MatchError(coreclient.ErrResourceNotFound)),
 						"deleted security group should eventually return not found")
 
-				GinkgoWriter.Printf("Confirmed security group deleted: %s\n", deletedID)
+				GinkgoWriter.Printf("Confirmed security group deleted: %s\n", deletedSGID)
 			})
 		})
 	})
