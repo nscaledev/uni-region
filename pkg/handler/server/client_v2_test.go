@@ -20,6 +20,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -127,11 +128,11 @@ func aclWithSrvNetworkReadOnly(orgID string) *identityapi.Acl {
 	}
 }
 
-func aclWithSrvUpdate(orgID string) *identityapi.Acl {
+func aclWithSrvUpdate() *identityapi.Acl {
 	return &identityapi.Acl{
 		Organizations: &identityapi.AclOrganizationList{
 			{
-				Id: orgID,
+				Id: srvOrganizationID,
 				Endpoints: &identityapi.AclEndpoints{
 					{
 						Name:       "region:networks:v2",
@@ -486,7 +487,7 @@ func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 		Identity:  mockIdentity,
 	})
 
-	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate(srvOrganizationID)))
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
 
 	request := &openapi.ServerV2Update{
 		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
@@ -528,7 +529,7 @@ func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 		Identity:  mockIdentity,
 	})
 
-	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate(srvOrganizationID))
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
 
 	result, err := c.GetV2(ctx, resource.Name)
 
@@ -537,6 +538,367 @@ func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 	require.Equal(t, resource.Status.PrivateIP, result.Status.PrivateIP)
 	require.Equal(t, resource.Status.PublicIP, result.Status.PublicIP)
 	require.Equal(t, resource.Status.MACAddress, result.Status.MacAddress)
+}
+
+func testServerV2(serverID string) *regionv1.Server {
+	return &regionv1.Server{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      serverID,
+			Namespace: srvNamespace,
+			Labels: map[string]string{
+				coreconstants.OrganizationLabel:   srvOrganizationID,
+				coreconstants.ProjectLabel:        srvProjectID,
+				coreconstants.NameLabel:           serverID,
+				constants.RegionLabel:             "test-region",
+				constants.IdentityLabel:           "test-identity",
+				constants.NetworkLabel:            srvNetworkID,
+				constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
+			},
+		},
+		Spec: regionv1.ServerSpec{
+			FlavorID: "flavor-1",
+			Image:    &regionv1.ServerImage{ID: "image-1"},
+			Networks: []regionv1.ServerNetworkSpec{{ID: srvNetworkID}},
+		},
+	}
+}
+
+func TestServerGetV2Raw_NotFound(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	k8sClient := newSrvFakeClient(t).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	_, err := c.GetV2Raw(rbac.NewContext(t.Context(), aclWithSrvUpdate()), "nonexistent-server")
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+}
+
+func TestServerGetV2Raw_MissingAPIVersionLabel(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	resource := &regionv1.Server{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "server-no-version",
+			Namespace: srvNamespace,
+			Labels: map[string]string{
+				coreconstants.OrganizationLabel: srvOrganizationID,
+				coreconstants.ProjectLabel:      srvProjectID,
+			},
+		},
+		Spec: regionv1.ServerSpec{
+			Image:    &regionv1.ServerImage{ID: "image-1"},
+			Networks: []regionv1.ServerNetworkSpec{{ID: srvNetworkID}},
+		},
+	}
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	_, err := c.GetV2Raw(rbac.NewContext(t.Context(), aclWithSrvUpdate()), resource.Name)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+}
+
+func TestServerGetV2Raw_WrongAPIVersion(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	resource := &regionv1.Server{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "server-v1",
+			Namespace: srvNamespace,
+			Labels: map[string]string{
+				coreconstants.OrganizationLabel:   srvOrganizationID,
+				coreconstants.ProjectLabel:        srvProjectID,
+				constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(1),
+			},
+		},
+		Spec: regionv1.ServerSpec{
+			Image:    &regionv1.ServerImage{ID: "image-1"},
+			Networks: []regionv1.ServerNetworkSpec{{ID: srvNetworkID}},
+		},
+	}
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	_, err := c.GetV2Raw(rbac.NewContext(t.Context(), aclWithSrvUpdate()), resource.Name)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+}
+
+func TestServerGetV2Raw_NoReadPermission(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	resource := testServerV2("server-no-read")
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	// org present in ACL but no endpoints — read is denied
+	ctx := rbac.NewContext(t.Context(), &identityapi.Acl{
+		Organizations: &identityapi.AclOrganizationList{{Id: srvOrganizationID}},
+	})
+
+	_, err := c.GetV2Raw(ctx, resource.Name)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
+}
+
+func aclWithSrvReadOnly(orgID string) *identityapi.Acl {
+	return &identityapi.Acl{
+		Organizations: &identityapi.AclOrganizationList{{
+			Id: orgID,
+			Endpoints: &identityapi.AclEndpoints{{
+				Name:       "region:servers",
+				Operations: identityapi.AclOperations{identityapi.Read},
+			}},
+		}},
+	}
+}
+
+func TestServerCreateV2_NetworkNotFound(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	k8sClient := newSrvFakeClient(t).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate())
+
+	_, err := c.CreateV2(ctx, minimalServerV2CreateRequest())
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+}
+
+func TestServerUpdateV2_NotFound(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	k8sClient := newSrvFakeClient(t).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
+
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: "nonexistent-server"},
+		Spec:     openapi.ServerV2Spec{FlavorId: "flavor-1", ImageId: "image-1"},
+	}
+
+	_, err := c.UpdateV2(ctx, "nonexistent-server", request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+}
+
+func TestServerUpdateV2_NoUpdatePermission(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	resource := testServerV2("server-1")
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvReadOnly(srvOrganizationID))
+
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec:     openapi.ServerV2Spec{FlavorId: resource.Spec.FlavorID, ImageId: resource.Spec.Image.ID},
+	}
+
+	_, err := c.UpdateV2(ctx, resource.Name, request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
+}
+
+func TestServerUpdateV2_ServerBeingDeleted(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	resource := testServerV2("server-1")
+	now := metav1.NewTime(time.Now())
+	resource.DeletionTimestamp = &now
+	resource.Finalizers = []string{"servers.region.unikorn-cloud.org/test"}
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
+
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec:     openapi.ServerV2Spec{FlavorId: resource.Spec.FlavorID, ImageId: resource.Spec.Image.ID},
+	}
+
+	_, err := c.UpdateV2(ctx, resource.Name, request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsBadRequest(err), "expected bad request (server being deleted), got: %v", err)
+}
+
+func TestServerUpdateV2_NetworkGone(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	// server exists but its network has been deleted
+	resource := testServerV2("server-1")
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
+
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec:     openapi.ServerV2Spec{FlavorId: resource.Spec.FlavorID, ImageId: resource.Spec.Image.ID},
+	}
+
+	_, err := c.UpdateV2(ctx, resource.Name, request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found (network gone), got: %v", err)
+}
+
+func TestServerDeleteV2_NotFound(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	k8sClient := newSrvFakeClient(t).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
+
+	err := c.DeleteV2(ctx, "nonexistent-server")
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+}
+
+func TestServerDeleteV2_NoDeletePermission(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	resource := testServerV2("server-1")
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvReadOnly(srvOrganizationID))
+
+	err := c.DeleteV2(ctx, resource.Name)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
+}
+
+func TestServerStartV2_NotFound(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	k8sClient := newSrvFakeClient(t).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
+
+	err := c.StartV2(ctx, "nonexistent-server")
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
 }
 
 // TestServerCreateV2DeterministicID verifies that two creates with the same
@@ -690,7 +1052,7 @@ func TestServerUpdateV2RejectsRename(t *testing.T) {
 		Identity:  mockIdentity,
 	})
 
-	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate(srvOrganizationID)))
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
 
 	request := &openapi.ServerV2Update{
 		Metadata: coreapi.ResourceWriteMetadata{Name: "renamed-server"},
