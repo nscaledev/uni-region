@@ -21,6 +21,7 @@ limitations under the License.
 package suites
 
 import (
+	"bytes"
 	"errors"
 	"net/http"
 	"time"
@@ -336,6 +337,33 @@ var _ = Describe("LoadBalancer", func() {
 
 				api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
 				lbID = "" // suppress cleanup re-delete
+			})
+		})
+	})
+
+	Context("When accessing a load balancer that does not exist", func() {
+		Describe("Given a non-existent load balancer ID", func() {
+			It("should return not found on GET", func() {
+				_, err := regionClient.GetLoadBalancer(ctx, "00000000-0000-0000-0000-000000000000")
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
+			})
+
+			It("should return not found on DELETE", func() {
+				err := regionClient.DeleteLoadBalancer(ctx, "00000000-0000-0000-0000-000000000000")
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
+			})
+		})
+	})
+
+	Context("When creating a load balancer with an invalid request body", func() {
+		Describe("Given an empty request body", func() {
+			It("should reject the request", func() {
+				path := regionClient.GetEndpoints().CreateLoadBalancer()
+				resp, _, err := regionClient.DoRegionRequest(ctx, http.MethodPost, path, bytes.NewReader([]byte("")), 0)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(BeNumerically(">=", http.StatusBadRequest))
 			})
 		})
 	})

@@ -21,7 +21,9 @@ limitations under the License.
 package suites
 
 import (
+	"bytes"
 	"errors"
+	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -159,6 +161,17 @@ var _ = Describe("SecurityGroup", func() {
 				_, err := regionClient.GetSecurityGroup(ctx, "00000000-0000-0000-0000-000000000000")
 				Expect(err).To(HaveOccurred())
 				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
+			})
+		})
+	})
+
+	Context("When creating a security group with an invalid request body", func() {
+		Describe("Given an empty request body", func() {
+			It("should reject the request", func() {
+				path := regionClient.GetEndpoints().CreateSecurityGroup()
+				resp, _, err := regionClient.DoRegionRequest(ctx, http.MethodPost, path, bytes.NewReader([]byte("")), 0)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(BeNumerically(">=", http.StatusBadRequest))
 			})
 		})
 	})

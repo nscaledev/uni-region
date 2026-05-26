@@ -494,21 +494,29 @@ func (c *APIClient) CreateNetwork(ctx context.Context, request regionopenapi.Net
 }
 
 // GetNetwork gets a specific network by ID.
+// Returns ErrResourceNotFound if the network does not exist.
 func (c *APIClient) GetNetwork(ctx context.Context, networkID string) (*regionopenapi.NetworkV2Read, error) {
 	path := c.endpoints.GetNetwork(networkID)
 
 	//nolint:bodyclose // DoRequest handles response body closing internally
-	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	resp, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, 0)
 	if err != nil {
 		return nil, fmt.Errorf("getting network: %w", err)
 	}
 
-	var network regionopenapi.NetworkV2Read
-	if err := json.Unmarshal(respBody, &network); err != nil {
-		return nil, fmt.Errorf("unmarshaling network: %w", err)
-	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var network regionopenapi.NetworkV2Read
+		if err := json.Unmarshal(respBody, &network); err != nil {
+			return nil, fmt.Errorf("unmarshaling network: %w", err)
+		}
 
-	return &network, nil
+		return &network, nil
+	case http.StatusNotFound:
+		return nil, fmt.Errorf("network '%s': %w", networkID, coreclient.ErrResourceNotFound)
+	default:
+		return nil, fmt.Errorf("getting network: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
 }
 
 // UpdateNetwork updates a network resource.
@@ -535,16 +543,24 @@ func (c *APIClient) UpdateNetwork(ctx context.Context, networkID string, request
 }
 
 // DeleteNetwork deletes a network resource.
+// Returns ErrResourceNotFound if the network does not exist.
 func (c *APIClient) DeleteNetwork(ctx context.Context, networkID string) error {
 	path := c.endpoints.DeleteNetwork(networkID)
 
 	//nolint:bodyclose // DoRequest handles response body closing internally
-	_, _, err := c.regionClient.DoRequest(ctx, http.MethodDelete, path, nil, http.StatusAccepted)
+	resp, _, err := c.regionClient.DoRequest(ctx, http.MethodDelete, path, nil, 0)
 	if err != nil {
 		return fmt.Errorf("deleting network: %w", err)
 	}
 
-	return nil
+	switch resp.StatusCode {
+	case http.StatusAccepted:
+		return nil
+	case http.StatusNotFound:
+		return fmt.Errorf("network '%s': %w", networkID, coreclient.ErrResourceNotFound)
+	default:
+		return fmt.Errorf("deleting network: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
 }
 
 // ListLoadBalancers lists all load balancers for a project in a region.
@@ -587,21 +603,29 @@ func (c *APIClient) CreateLoadBalancer(ctx context.Context, request regionopenap
 }
 
 // GetLoadBalancer gets a specific load balancer by ID.
+// Returns ErrResourceNotFound if the load balancer does not exist.
 func (c *APIClient) GetLoadBalancer(ctx context.Context, loadBalancerID string) (*regionopenapi.LoadBalancerV2Read, error) {
 	path := c.endpoints.GetLoadBalancer(loadBalancerID)
 
 	//nolint:bodyclose // DoRequest handles response body closing internally
-	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	resp, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, 0)
 	if err != nil {
 		return nil, fmt.Errorf("getting loadbalancer: %w", err)
 	}
 
-	var lb regionopenapi.LoadBalancerV2Read
-	if err := json.Unmarshal(respBody, &lb); err != nil {
-		return nil, fmt.Errorf("unmarshaling loadbalancer: %w", err)
-	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var lb regionopenapi.LoadBalancerV2Read
+		if err := json.Unmarshal(respBody, &lb); err != nil {
+			return nil, fmt.Errorf("unmarshaling loadbalancer: %w", err)
+		}
 
-	return &lb, nil
+		return &lb, nil
+	case http.StatusNotFound:
+		return nil, fmt.Errorf("load balancer '%s': %w", loadBalancerID, coreclient.ErrResourceNotFound)
+	default:
+		return nil, fmt.Errorf("getting loadbalancer: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
 }
 
 // UpdateLoadBalancer updates a load balancer.
@@ -628,16 +652,24 @@ func (c *APIClient) UpdateLoadBalancer(ctx context.Context, loadBalancerID strin
 }
 
 // DeleteLoadBalancer deletes a load balancer.
+// Returns ErrResourceNotFound if the load balancer does not exist.
 func (c *APIClient) DeleteLoadBalancer(ctx context.Context, loadBalancerID string) error {
 	path := c.endpoints.DeleteLoadBalancer(loadBalancerID)
 
 	//nolint:bodyclose // DoRequest handles response body closing internally
-	_, _, err := c.regionClient.DoRequest(ctx, http.MethodDelete, path, nil, http.StatusAccepted)
+	resp, _, err := c.regionClient.DoRequest(ctx, http.MethodDelete, path, nil, 0)
 	if err != nil {
 		return fmt.Errorf("deleting loadbalancer: %w", err)
 	}
 
-	return nil
+	switch resp.StatusCode {
+	case http.StatusAccepted:
+		return nil
+	case http.StatusNotFound:
+		return fmt.Errorf("load balancer '%s': %w", loadBalancerID, coreclient.ErrResourceNotFound)
+	default:
+		return fmt.Errorf("deleting loadbalancer: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
 }
 
 // ListSSHCertificateAuthorities lists SSH certificate authorities for an org and project.

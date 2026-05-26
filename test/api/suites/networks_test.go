@@ -21,6 +21,8 @@ limitations under the License.
 package suites
 
 import (
+	"bytes"
+	"errors"
 	"net/http"
 	"time"
 
@@ -30,6 +32,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
+	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/test/api"
 )
@@ -187,6 +190,65 @@ var _ = Describe("Network Management", func() {
 				GinkgoWriter.Printf("Cleaning up network: %s\n", networkID)
 				Expect(regionClient.DeleteNetwork(ctx, networkID)).To(Succeed())
 			}
+		})
+	})
+
+	Context("When accessing a network that does not exist", func() {
+		Describe("Given a non-existent network ID", func() {
+			It("should return not found on GET", func() {
+				_, err := regionClient.GetNetwork(ctx, "00000000-0000-0000-0000-000000000000")
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
+			})
+
+			It("should return not found on DELETE", func() {
+				err := regionClient.DeleteNetwork(ctx, "00000000-0000-0000-0000-000000000000")
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
+			})
+		})
+	})
+
+	Context("When creating a network with an invalid request body", func() {
+		Describe("Given an empty request body", func() {
+			It("should reject the request", func() {
+				path := regionClient.GetEndpoints().CreateNetwork()
+				resp, _, err := regionClient.DoRegionRequest(ctx, http.MethodPost, path, bytes.NewReader([]byte("")), 0)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(BeNumerically(">=", http.StatusBadRequest))
+			})
+		})
+	})
+
+	Context("When a secondary organization attempts to access a network by ID", Ordered, func() {
+		var networkID string
+
+		BeforeAll(func() {
+			if secondaryClient == nil {
+				Skip("TEST_SECONDARY_ORG_ID and TEST_SECONDARY_AUTH_TOKEN not configured")
+			}
+
+			created, err := regionClient.CreateNetwork(ctx, api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build())
+			Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
+			networkID = created.Metadata.Id
+			DeferCleanup(func() {
+				GinkgoWriter.Printf("Cleaning up cross-org isolation network fixture: %s\n", networkID)
+				_ = regionClient.DeleteNetwork(ctx, networkID)
+			})
+			GinkgoWriter.Printf("Created network fixture for cross-org isolation test: %s\n", networkID)
+		})
+
+		Describe("Given a network owned by the primary organization", func() {
+			It("should not be accessible via GET by the secondary organization", func() {
+				path := secondaryClient.GetEndpoints().GetNetwork(networkID)
+				resp, _, err := secondaryClient.DoRegionRequest(ctx, http.MethodGet, path, nil, 0)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Or(
+					Equal(http.StatusNotFound),
+					Equal(http.StatusForbidden),
+				))
+				GinkgoWriter.Printf("Cross-org GET network %s returned %d as expected\n", networkID, resp.StatusCode)
+			})
 		})
 	})
 })
