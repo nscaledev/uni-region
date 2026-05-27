@@ -149,6 +149,7 @@ var _ = Describe("File Storage Management", func() {
 		var filestorageID string
 		var filestorageName string
 		var storageClassID string
+		var filestorageDeleted bool
 
 		Describe("Given valid storage class and configuration", func() {
 			It("should create a file storage resource", func() {
@@ -296,11 +297,11 @@ var _ = Describe("File Storage Management", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				GinkgoWriter.Printf("Deleted file storage: %s\n", filestorageID)
-				filestorageID = "" // suppress cleanup — already deleted
+				filestorageDeleted = true
 			})
 
 			It("should not find the deleted file storage resource", func() {
-				if filestorageID == "" {
+				if !filestorageDeleted {
 					Skip("No filestorage ID available - create test may have been skipped or failed")
 				}
 
@@ -317,7 +318,7 @@ var _ = Describe("File Storage Management", func() {
 		})
 
 		AfterAll(func() {
-			if filestorageID != "" {
+			if filestorageID != "" && !filestorageDeleted {
 				GinkgoWriter.Printf("Cleaning up test filestorage: %s\n", filestorageID)
 				Expect(regionClient.DeleteFileStorage(ctx, filestorageID)).To(Succeed())
 			}
