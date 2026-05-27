@@ -588,6 +588,33 @@ func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 	require.Equal(t, resource.Status.MACAddress, result.Status.MacAddress)
 }
 
+func TestServerGetV2ReturnsProviderProvisioningStatus(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	queued := coreapi.ResourceProvisioningStatusQueued
+	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, "server-1", "ca-1")
+	resource.Status.ProviderProvisioningStatus = &queued
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
+
+	result, err := c.GetV2(ctx, resource.Name)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, coreapi.ResourceProvisioningStatusQueued, result.Metadata.ProvisioningStatus)
+}
+
 func testServerV2(serverID string) *regionv1.Server {
 	return &regionv1.Server{
 		ObjectMeta: metav1.ObjectMeta{
