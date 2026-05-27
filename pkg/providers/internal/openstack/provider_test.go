@@ -18,8 +18,13 @@ limitations under the License.
 package openstack_test
 
 import (
+	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gophercloud/gophercloud/v2"
@@ -52,6 +57,8 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
+	k8sv1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/utils/ptr"
@@ -230,6 +237,101 @@ func networkMatcher(network *regionv1.Network) gomock.Matcher {
 	return gomock.Cond(func(x *regionv1.Network) bool {
 		return x.Name == network.Name
 	})
+}
+
+func identityFixture() *regionv1.Identity {
+	return &regionv1.Identity{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      identityID,
+			Namespace: "default",
+		},
+	}
+}
+
+func openstackIdentityFixture(identity *regionv1.Identity) *regionv1.OpenstackIdentity {
+	return &regionv1.OpenstackIdentity{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      identity.Name,
+			Namespace: identity.Namespace,
+		},
+		Spec: regionv1.OpenstackIdentitySpec{
+			UserID:    ptr.To("user-id"),
+			Password:  ptr.To("password"),
+			ProjectID: ptr.To("project-id"),
+		},
+	}
+}
+
+func newIdentityDeleteOpenStack(t *testing.T, serviceUserID, serviceProjectID string, deletedUser, deletedProject *atomic.Bool) *httptest.Server {
+	t.Helper()
+
+	var server *httptest.Server
+
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+
+				return
+			}
+
+			if strings.Contains(string(body), fmt.Sprintf("%q", serviceUserID)) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				fmt.Fprint(w, `{"error":{"code":401,"message":"The request you have made requires authentication.","title":"Unauthorized"}}`)
+
+				return
+			}
+
+			w.Header().Set("X-Subject-Token", "test-token")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			fmt.Fprintf(w, `{"token":{"catalog":[
+				{"type":"identity","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]},
+				{"type":"compute","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]},
+				{"type":"image","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]},
+				{"type":"network","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]}
+				],"expires_at":"2099-01-01T00:00:00.000000Z"}}`,
+				server.URL)
+
+			return
+		}
+
+		if r.URL.Path == "/" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w,
+				`{"versions":{"values":[
+					{"id":"v2.1","status":"CURRENT","links":[{"href":%q,"rel":"self"}]},
+					{"id":"v3","status":"current","links":[{"href":%q,"rel":"self"}]}
+					]}}`,
+				server.URL+"/v2.1/", server.URL+"/v3/")
+
+			return
+		}
+
+		if r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/users/"+serviceUserID) {
+			deletedUser.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+
+			return
+		}
+
+		if r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/projects/"+serviceProjectID) {
+			deletedProject.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"flavors":[{"id":"f1","name":"m1.small","vcpus":1,"ram":1024,"disk":10,"swap":""}]}`)
+	}))
+	t.Cleanup(server.Close)
+
+	return server
 }
 
 func openstackNetworkFixture(network *regionv1.Network) *openstack.NetworkExt {
@@ -1693,6 +1795,63 @@ func TestResolveServerKeyName(t *testing.T) {
 
 		require.Empty(t, openstack.ResolveServerKeyName(server, identity))
 	})
+}
+
+func TestDeleteIdentitySkipsUnauthorizedComputeCleanup(t *testing.T) {
+	t.Parallel()
+
+	identity := identityFixture()
+	openstackIdentity := openstackIdentityFixture(identity)
+	openstackIdentity.Spec.UserID = ptr.To("service-user-id")
+	openstackIdentity.Spec.ProjectID = ptr.To("service-project-id")
+	openstackIdentity.Spec.SSHKeyName = ptr.To("unikorn-openstack-provider")
+	openstackIdentity.Spec.ServerGroupID = ptr.To("server-group-id")
+
+	var deletedUser atomic.Bool
+	var deletedProject atomic.Bool
+
+	server := newIdentityDeleteOpenStack(t, *openstackIdentity.Spec.UserID, *openstackIdentity.Spec.ProjectID, &deletedUser, &deletedProject)
+
+	region := &regionv1.Region{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-region",
+			Namespace: "default",
+		},
+		Spec: regionv1.RegionSpec{
+			Openstack: &regionv1.RegionOpenstackSpec{
+				Endpoint: server.URL,
+				ServiceAccountSecret: &regionv1.NamespacedObject{
+					Name:      "test-secret",
+					Namespace: "default",
+				},
+			},
+		},
+	}
+
+	secret := &k8sv1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-secret",
+			Namespace: "default",
+		},
+		Data: map[string][]byte{
+			"domain-id":  []byte("admin-domain-id"),
+			"user-id":    []byte("admin-user-id"),
+			"password":   []byte("admin-password"),
+			"project-id": []byte("admin-project-id"),
+		},
+	}
+
+	kubeClient := newRaceTestClient(t, region, secret, openstackIdentity)
+	provider, err := openstack.New(t.Context(), kubeClient, kubeClient, region, openstack.Options{})
+	require.NoError(t, err)
+
+	require.NoError(t, provider.DeleteIdentity(t.Context(), identity))
+
+	var result regionv1.OpenstackIdentity
+	err = kubeClient.Get(t.Context(), client.ObjectKeyFromObject(openstackIdentity), &result)
+	require.True(t, kerrors.IsNotFound(err))
+	require.True(t, deletedUser.Load())
+	require.True(t, deletedProject.Load())
 }
 
 func TestServerForCreate(t *testing.T) {
@@ -3424,5 +3583,161 @@ func TestDeleteLoadBalancerRaces(t *testing.T) {
 		require.NoError(t, err)
 		require.Nil(t, lb.Status.PublicIP)
 		require.Nil(t, lb.Status.VIPAddress)
+	})
+}
+
+func TestDeleteLoadBalancerMissingEndpoint(t *testing.T) {
+	t.Parallel()
+
+	t.Run("UnprovisionedNoOp", func(t *testing.T) {
+		t.Parallel()
+
+		ks := newFakeOpenstack(t)
+		identity := identityFixture()
+		openstackIdentity := openstackIdentityFixture(identity)
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+
+		region := regionFixture()
+		region.Spec.Openstack.Endpoint = ks.ts.URL
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{openstackIdentity}), region)
+
+		require.NoError(t, p.DeleteLoadBalancer(t.Context(), identity, lb))
+	})
+
+	t.Run("ProvisionedPropagates", func(t *testing.T) {
+		t.Parallel()
+
+		ks := newFakeOpenstack(t)
+		identity := identityFixture()
+		openstackIdentity := openstackIdentityFixture(identity)
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Status.VIPAddress = &corev1.IPv4Address{IP: net.ParseIP("10.0.0.42").To4()}
+
+		region := regionFixture()
+		region.Spec.Openstack.Endpoint = ks.ts.URL
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{openstackIdentity}), region)
+
+		err := p.DeleteLoadBalancer(t.Context(), identity, lb)
+		require.Error(t, err)
+
+		var endpointNotFound *gophercloud.ErrEndpointNotFound
+		require.ErrorAs(t, err, &endpointNotFound)
+	})
+}
+
+func TestDeleteLoadBalancerUnauthorized(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(server.Close)
+
+	t.Run("UnprovisionedNoOp", func(t *testing.T) {
+		t.Parallel()
+
+		identity := identityFixture()
+		openstackIdentity := openstackIdentityFixture(identity)
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+
+		region := regionFixture()
+		region.Spec.Openstack.Endpoint = server.URL
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{openstackIdentity}), region)
+
+		require.NoError(t, p.DeleteLoadBalancer(t.Context(), identity, lb))
+	})
+
+	t.Run("ProvisionedPropagates", func(t *testing.T) {
+		t.Parallel()
+
+		identity := identityFixture()
+		openstackIdentity := openstackIdentityFixture(identity)
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Status.VIPAddress = &corev1.IPv4Address{IP: net.ParseIP("10.0.0.42").To4()}
+
+		region := regionFixture()
+		region.Spec.Openstack.Endpoint = server.URL
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{openstackIdentity}), region)
+
+		err := p.DeleteLoadBalancer(t.Context(), identity, lb)
+		require.Error(t, err)
+		require.True(t, gophercloud.ResponseCodeIs(err, http.StatusUnauthorized))
+	})
+}
+
+func TestDeleteNetworkWithoutProviderState(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ClientSetupErrorNoOp", func(t *testing.T) {
+		t.Parallel()
+
+		identity := identityFixture()
+		openstackIdentity := openstackIdentityFixture(identity)
+		openstackIdentity.Spec.ProjectID = nil
+
+		network := networkFixture()
+		network.Namespace = identity.Namespace
+		network.Status.Openstack = nil
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{openstackIdentity}), regionFixture())
+
+		require.NoError(t, p.DeleteNetwork(t.Context(), identity, network))
+	})
+
+	t.Run("RecordedProviderStatePropagates", func(t *testing.T) {
+		t.Parallel()
+
+		identity := identityFixture()
+		openstackIdentity := openstackIdentityFixture(identity)
+		openstackIdentity.Spec.ProjectID = nil
+
+		network := networkFixture()
+		network.Namespace = identity.Namespace
+		network.Status.Openstack = &regionv1.NetworkStatusOpenstack{
+			NetworkID: ptr.To("network-id"),
+		}
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{openstackIdentity}), regionFixture())
+
+		err := p.DeleteNetwork(t.Context(), identity, network)
+		require.ErrorIs(t, err, errors.ErrConsistency)
+	})
+}
+
+func TestDeleteSecurityGroupWithoutProviderState(t *testing.T) {
+	t.Parallel()
+
+	t.Run("MissingOpenstackIdentityNoOp", func(t *testing.T) {
+		t.Parallel()
+
+		identity := identityFixture()
+		securityGroup := securityGroupFixture()
+		securityGroup.Namespace = identity.Namespace
+
+		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+		require.NoError(t, p.DeleteSecurityGroup(t.Context(), identity, securityGroup))
+	})
+
+	t.Run("MissingProjectNoOp", func(t *testing.T) {
+		t.Parallel()
+
+		identity := identityFixture()
+		openstackIdentity := openstackIdentityFixture(identity)
+		openstackIdentity.Spec.ProjectID = nil
+		securityGroup := securityGroupFixture()
+		securityGroup.Namespace = identity.Namespace
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{openstackIdentity}), regionFixture())
+
+		require.NoError(t, p.DeleteSecurityGroup(t.Context(), identity, securityGroup))
 	})
 }
