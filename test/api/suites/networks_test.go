@@ -21,6 +21,8 @@ limitations under the License.
 package suites
 
 import (
+	"bytes"
+	"errors"
 	"net/http"
 	"time"
 
@@ -30,6 +32,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
+	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/test/api"
 )
@@ -150,43 +153,106 @@ var _ = Describe("Network Management", func() {
 			})
 		})
 
-		Describe("Given the network is deleted", func() {
-			It("should succeed", func() {
-				if networkID == "" {
-					Skip("No network ID available - create step may have been skipped or failed")
-				}
+		Context("When the network is deleted", func() {
+			Describe("Given a provisioned network", func() {
+				It("should succeed", func() {
+					if networkID == "" {
+						Skip("No network ID available - create step may have been skipped or failed")
+					}
 
-				Expect(regionClient.DeleteNetwork(ctx, networkID)).To(Succeed())
+					Expect(regionClient.DeleteNetwork(ctx, networkID)).To(Succeed())
 
-				GinkgoWriter.Printf("Deleted network: %s\n", networkID)
-				deletedNetworkID = networkID
-				networkID = "" // suppress AfterAll cleanup — already deleted
-			})
+					GinkgoWriter.Printf("Deleted network: %s\n", networkID)
+					deletedNetworkID = networkID
+					networkID = "" // suppress AfterAll cleanup — already deleted
+				})
 
-			It("should return 404 on subsequent reads", func() {
-				if deletedNetworkID == "" {
-					Skip("No deleted network ID available - delete step may have been skipped or failed")
-				}
+				It("should return 404 on subsequent reads", func() {
+					if deletedNetworkID == "" {
+						Skip("No deleted network ID available - delete step may have been skipped or failed")
+					}
 
-				Eventually(func() bool {
-					_, err := regionClient.GetNetwork(ctx, deletedNetworkID)
-					return err != nil
-				}).WithTimeout(30 * time.Second).WithPolling(1 * time.Second).Should(BeTrue())
+					Eventually(func() bool {
+						_, err := regionClient.GetNetwork(ctx, deletedNetworkID)
+						return err != nil
+					}).WithTimeout(30 * time.Second).WithPolling(1 * time.Second).Should(BeTrue())
 
-				path := regionClient.GetEndpoints().GetNetwork(deletedNetworkID)
-				resp, _, err := regionClient.DoRegionRequest(ctx, http.MethodGet, path, nil, 0)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
+					path := regionClient.GetEndpoints().GetNetwork(deletedNetworkID)
+					resp, _, err := regionClient.DoRegionRequest(ctx, http.MethodGet, path, nil, 0)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
 
-				GinkgoWriter.Printf("Confirmed network deleted: %s\n", deletedNetworkID)
+					GinkgoWriter.Printf("Confirmed network deleted: %s\n", deletedNetworkID)
+				})
 			})
 		})
 
 		AfterAll(func() {
 			if networkID != "" {
 				GinkgoWriter.Printf("Cleaning up network: %s\n", networkID)
-				Expect(regionClient.DeleteNetwork(ctx, networkID)).To(Succeed())
+				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
+					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
+				}
 			}
+		})
+	})
+
+	Context("When accessing a network that does not exist", func() {
+		Describe("Given a non-existent network ID", func() {
+			It("should return not found on GET", func() {
+				_, err := regionClient.GetNetwork(ctx, "00000000-0000-0000-0000-000000000000")
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
+			})
+
+			It("should return not found on DELETE", func() {
+				err := regionClient.DeleteNetwork(ctx, "00000000-0000-0000-0000-000000000000")
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
+			})
+		})
+	})
+
+	Context("When creating a network with an invalid request body", func() {
+		Describe("Given an empty request body", func() {
+			It("should reject the request", func() {
+				path := regionClient.GetEndpoints().CreateNetwork()
+				resp, _, err := regionClient.DoRegionRequest(ctx, http.MethodPost, path, bytes.NewReader([]byte("")), 0)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(BeNumerically(">=", http.StatusBadRequest))
+			})
+		})
+	})
+
+	Context("When testing cross-organization resource isolation", Ordered, func() {
+		var networkID string
+
+		BeforeAll(func() {
+			if secondaryClient == nil {
+				Skip("TEST_SECONDARY_ORG_ID and TEST_SECONDARY_AUTH_TOKEN not configured")
+			}
+
+			created, err := regionClient.CreateNetwork(ctx, api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build())
+			Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
+			networkID = created.Metadata.Id
+			DeferCleanup(func() {
+				GinkgoWriter.Printf("Cleaning up cross-org isolation network fixture: %s\n", networkID)
+				_ = regionClient.DeleteNetwork(ctx, networkID)
+			})
+			GinkgoWriter.Printf("Created network fixture for cross-org isolation test: %s\n", networkID)
+		})
+
+		Describe("Given a network owned by the primary organization", func() {
+			It("should not be accessible via GET by the secondary organization", func() {
+				path := secondaryClient.GetEndpoints().GetNetwork(networkID)
+				resp, _, err := secondaryClient.DoRegionRequest(ctx, http.MethodGet, path, nil, 0)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Or(
+					Equal(http.StatusNotFound),
+					Equal(http.StatusForbidden),
+				))
+				GinkgoWriter.Printf("Cross-org GET network %s returned %d as expected\n", networkID, resp.StatusCode)
+			})
 		})
 	})
 })

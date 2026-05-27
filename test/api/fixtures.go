@@ -358,6 +358,6 @@ func WaitForLoadBalancerGone(c *APIClient, ctx context.Context, lbID string) {
 		_, err := c.GetLoadBalancer(ctx, lbID)
 		return err
 	}).WithTimeout(2*time.Minute).WithPolling(2*time.Second).
-		Should(And(HaveOccurred(), MatchError(coreclient.ErrUnexpectedStatusCode)),
+		Should(And(HaveOccurred(), MatchError(coreclient.ErrResourceNotFound)),
 			"load balancer should eventually be deleted")
 }
