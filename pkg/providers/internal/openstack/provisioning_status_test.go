@@ -17,6 +17,8 @@ limitations under the License.
 package openstack
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
@@ -24,6 +26,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
+	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+
+	"github.com/go-logr/logr"
 )
 
 func TestBaremetalBuildProvisioningStatus(t *testing.T) {
@@ -74,4 +79,100 @@ func TestDeriveProviderProvisioningStatusSkipsNonBaremetalBuild(t *testing.T) {
 
 	require.Nil(t, got)
 	require.False(t, callIronic)
+}
+
+func TestUpdateServerProviderProvisioningStatusBaremetalBuildNoNodeQueued(t *testing.T) {
+	t.Parallel()
+
+	server := &unikornv1.Server{}
+	novaServer := &servers.Server{ID: "nova-id", Status: "BUILD"}
+
+	updateServerProviderProvisioningStatus(context.Background(), logr.Discard(), server, novaServer, true,
+		func(context.Context, string) (*nodes.Node, error) { return nil, nil })
+
+	require.NotNil(t, server.Status.ProviderProvisioningStatus)
+	require.Equal(t, coreapi.ResourceProvisioningStatusQueued, *server.Status.ProviderProvisioningStatus)
+}
+
+func TestUpdateServerProviderProvisioningStatusBaremetalBuildDeployingProvisioning(t *testing.T) {
+	t.Parallel()
+
+	server := &unikornv1.Server{}
+	novaServer := &servers.Server{ID: "nova-id", Status: "BUILD"}
+
+	updateServerProviderProvisioningStatus(context.Background(), logr.Discard(), server, novaServer, true,
+		func(context.Context, string) (*nodes.Node, error) {
+			return &nodes.Node{ProvisionState: "deploying"}, nil
+		})
+
+	require.NotNil(t, server.Status.ProviderProvisioningStatus)
+	require.Equal(t, coreapi.ResourceProvisioningStatusProvisioning, *server.Status.ProviderProvisioningStatus)
+}
+
+func TestUpdateServerProviderProvisioningStatusVMBuildSkipsIronic(t *testing.T) {
+	t.Parallel()
+
+	server := &unikornv1.Server{}
+	novaServer := &servers.Server{ID: "nova-id", Status: "BUILD"}
+	called := false
+
+	updateServerProviderProvisioningStatus(context.Background(), logr.Discard(), server, novaServer, false,
+		func(context.Context, string) (*nodes.Node, error) {
+			called = true
+			return nil, nil
+		})
+
+	require.False(t, called)
+	require.Nil(t, server.Status.ProviderProvisioningStatus)
+}
+
+func TestUpdateServerProviderProvisioningStatusIronicErrorLeavesOverrideUnset(t *testing.T) {
+	t.Parallel()
+
+	server := &unikornv1.Server{}
+	novaServer := &servers.Server{ID: "nova-id", Status: "BUILD"}
+
+	updateServerProviderProvisioningStatus(context.Background(), logr.Discard(), server, novaServer, true,
+		func(context.Context, string) (*nodes.Node, error) {
+			return nil, errors.New("ironic unavailable")
+		})
+
+	require.Nil(t, server.Status.ProviderProvisioningStatus)
+}
+
+func TestUpdateServerProviderProvisioningStatusActiveClearsOverride(t *testing.T) {
+	t.Parallel()
+
+	queued := coreapi.ResourceProvisioningStatusQueued
+	server := &unikornv1.Server{Status: unikornv1.ServerStatus{ProviderProvisioningStatus: &queued}}
+	novaServer := &servers.Server{ID: "nova-id", Status: "ACTIVE"}
+
+	updateServerProviderProvisioningStatus(context.Background(), logr.Discard(), server, novaServer, true,
+		func(context.Context, string) (*nodes.Node, error) { return nil, nil })
+
+	require.Nil(t, server.Status.ProviderProvisioningStatus)
+}
+
+func TestIsBaremetalFlavor(t *testing.T) {
+	t.Parallel()
+
+	region := &unikornv1.Region{
+		Spec: unikornv1.RegionSpec{
+			Openstack: &unikornv1.RegionOpenstackSpec{
+				Compute: &unikornv1.RegionOpenstackComputeSpec{
+					Flavors: &unikornv1.OpenstackFlavorsSpec{
+						Metadata: []unikornv1.FlavorMetadata{
+							{ID: "vm", Baremetal: false},
+							{ID: "metal", Baremetal: true},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	require.True(t, isBaremetalFlavor(region, "metal"))
+	require.False(t, isBaremetalFlavor(region, "vm"))
+	require.False(t, isBaremetalFlavor(region, "missing"))
+	require.False(t, isBaremetalFlavor(nil, "metal"))
 }

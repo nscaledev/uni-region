@@ -17,10 +17,14 @@ limitations under the License.
 package openstack
 
 import (
+	"context"
+
+	"github.com/go-logr/logr"
 	"github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
+	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 )
 
 func baremetalBuildProvisioningStatus(node *nodes.Node) coreapi.ResourceProvisioningStatus {
@@ -40,16 +44,61 @@ func baremetalBuildProvisioningStatus(node *nodes.Node) coreapi.ResourceProvisio
 }
 
 func deriveProviderProvisioningStatusInput(server servers.Server, baremetal bool) (*coreapi.ResourceProvisioningStatus, bool) {
-	switch server.Status {
-	case "ACTIVE":
-		status := coreapi.ResourceProvisioningStatusProvisioned
-		return &status, false
-	case "ERROR":
-		status := coreapi.ResourceProvisioningStatusError
-		return &status, false
-	case "BUILD":
+	if server.Status == "BUILD" {
 		return nil, baremetal
-	default:
-		return nil, false
 	}
+
+	return nil, false
+}
+
+func isBaremetalFlavor(region *unikornv1.Region, flavorID string) bool {
+	if region == nil || region.Spec.Openstack == nil || region.Spec.Openstack.Compute == nil || region.Spec.Openstack.Compute.Flavors == nil {
+		return false
+	}
+
+	for i := range region.Spec.Openstack.Compute.Flavors.Metadata {
+		metadata := &region.Spec.Openstack.Compute.Flavors.Metadata[i]
+		if metadata.ID == flavorID {
+			return metadata.Baremetal
+		}
+	}
+
+	return false
+}
+
+type ironicNodeLookup func(ctx context.Context, instanceUUID string) (*nodes.Node, error)
+
+func updateServerProviderProvisioningStatus(
+	ctx context.Context,
+	log logr.Logger,
+	server *unikornv1.Server,
+	openstackServer *servers.Server,
+	baremetal bool,
+	lookup ironicNodeLookup,
+) {
+	server.Status.ProviderProvisioningStatus = nil
+
+	status, callIronic := deriveProviderProvisioningStatusInput(*openstackServer, baremetal)
+	if status != nil {
+		server.Status.ProviderProvisioningStatus = status
+		return
+	}
+
+	if !callIronic {
+		return
+	}
+
+	if lookup == nil {
+		log.Info("skipping baremetal provisioning status lookup because ironic client is unavailable", "instance_uuid", openstackServer.ID)
+		return
+	}
+
+	node, err := lookup(ctx, openstackServer.ID)
+	if err != nil {
+		log.Error(err, "failed to get ironic node for server", "instance_uuid", openstackServer.ID)
+		return
+	}
+
+	derivedStatus := baremetalBuildProvisioningStatus(node)
+	server.Status.ProviderProvisioningStatus = &derivedStatus
 }

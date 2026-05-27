@@ -296,6 +296,20 @@ func (p *Provider) computeForServerCreate(ctx context.Context, identity *unikorn
 	return client, nil
 }
 
+func (p *Provider) baremetalFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (BaremetalInterface, error) {
+	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := NewBaremetalClient(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
 // imageFromServicePrincipal gets a compute client scoped to the service principal data.
 func (p *Provider) imageFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (*ImageClient, error) {
 	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
@@ -2591,6 +2605,21 @@ func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Id
 
 	setServerHealthStatus(server, openstackServer)
 	setServerPhase(ctx, server, openstackServer)
+
+	region, _ := p.openstack.regionSnapshot()
+	baremetal := isBaremetalFlavor(region, server.Spec.FlavorID)
+
+	var lookup ironicNodeLookup
+	if openstackServer.Status == "BUILD" && baremetal {
+		baremetalClient, err := p.baremetalFromServicePrincipal(ctx, identity)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to create ironic client for server provisioning status", "server", server.Name, "flavor", server.Spec.FlavorID, "instance_uuid", openstackServer.ID)
+		} else {
+			lookup = baremetalClient.GetNodeByInstanceUUID
+		}
+	}
+
+	updateServerProviderProvisioningStatus(ctx, log.FromContext(ctx), server, openstackServer, baremetal, lookup)
 
 	return nil
 }
