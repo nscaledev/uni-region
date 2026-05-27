@@ -17,6 +17,7 @@ status/telemetry model.
 
 - resolves provider and flavor context per region and caches it for a poll cycle
 - updates server status through provider `UpdateServerState(...)`
+- projects provider-observed provisioning metadata when the provider can distinguish lifecycle sub-states; OpenStack baremetal servers in Nova `BUILD` use Ironic node state to report `queued` versus active `provisioning`
 - logs phase and health-condition transitions
 - rebuilds gauge counts from the effective server set each cycle
 
@@ -26,6 +27,10 @@ status/telemetry model.
   per-server/provider failures are logged and skipped.
 - Servers skipped because region/provider resolution fails are absent from the
   gauge for that cycle rather than misreported as a fake state.
+- Provider-specific progress refinement must be best effort. For example,
+  OpenStack Ironic lookup failures leave provider provisioning metadata unset so
+  API responses fall back to the generic condition-derived lifecycle instead of
+  failing status refresh.
 
 ## Caveats
 

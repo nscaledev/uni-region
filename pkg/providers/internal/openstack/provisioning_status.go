@@ -43,12 +43,8 @@ func baremetalBuildProvisioningStatus(node *nodes.Node) coreapi.ResourceProvisio
 	}
 }
 
-func deriveProviderProvisioningStatusInput(server servers.Server, baremetal bool) (*coreapi.ResourceProvisioningStatus, bool) {
-	if server.Status == "BUILD" {
-		return nil, baremetal
-	}
-
-	return nil, false
+func shouldCallIronicForProvisioningStatus(server servers.Server, baremetal bool) bool {
+	return server.Status == "BUILD" && baremetal
 }
 
 func isBaremetalFlavor(region *unikornv1.Region, flavorID string) bool {
@@ -78,13 +74,7 @@ func updateServerProviderProvisioningStatus(
 ) {
 	server.Status.ProviderProvisioningStatus = nil
 
-	status, callIronic := deriveProviderProvisioningStatusInput(*openstackServer, baremetal)
-	if status != nil {
-		server.Status.ProviderProvisioningStatus = status
-		return
-	}
-
-	if !callIronic {
+	if !shouldCallIronicForProvisioningStatus(*openstackServer, baremetal) {
 		return
 	}
 

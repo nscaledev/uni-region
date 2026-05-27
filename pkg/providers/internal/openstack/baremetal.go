@@ -18,12 +18,15 @@ package openstack
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack"
 	"github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
 )
+
+var ErrMultipleIronicNodes = errors.New("multiple ironic nodes found")
 
 type BaremetalClient struct {
 	client *gophercloud.ServiceClient
@@ -56,10 +59,11 @@ func (c *BaremetalClient) GetNodeByInstanceUUID(ctx context.Context, instanceUUI
 
 	switch len(result) {
 	case 0:
+		//nolint:nilnil // A missing Ironic node is a valid queued state, not an error.
 		return nil, nil
 	case 1:
 		return &result[0], nil
 	default:
-		return nil, fmt.Errorf("multiple ironic nodes found for instance_uuid %q", instanceUUID)
+		return nil, fmt.Errorf("%w for instance_uuid %q", ErrMultipleIronicNodes, instanceUUID)
 	}
 }

@@ -2610,6 +2610,7 @@ func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Id
 	baremetal := isBaremetalFlavor(region, server.Spec.FlavorID)
 
 	var lookup ironicNodeLookup
+
 	if openstackServer.Status == "BUILD" && baremetal {
 		baremetalClient, err := p.baremetalFromServicePrincipal(ctx, identity)
 		if err != nil {

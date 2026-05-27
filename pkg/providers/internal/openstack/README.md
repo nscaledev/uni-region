@@ -104,7 +104,11 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     compatibility while newer namespaced keys provide the upgrade path
 - Flavor export is a hybrid model: OpenStack discovers the flavor inventory, but
   region configuration can enrich or override user-facing flavor metadata such
-  as architecture, baremetal status, and GPU semantics.
+  as architecture, baremetal status, and GPU semantics. The baremetal flag is
+  also operationally meaningful for server health monitoring: a Nova `BUILD`
+  server with a baremetal flavor is disambiguated through Ironic so API
+  metadata can report whether the server is still queued or actively
+  provisioning.
 - Image handling is a first-class contract surface here:
   - OpenStack image properties are validated against a schema
   - public images can additionally be signature-verified
@@ -119,6 +123,11 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
 - Network, security group, and server resources are re-found in OpenStack by
   deterministic lookup rather than relying on mirrored `OpenstackNetwork`,
   `OpenstackSecurityGroup`, or `OpenstackServer` CRDs as authoritative state.
+- Baremetal server progress uses Ironic as an additional provider truth source
+  only while Nova reports `BUILD` for a flavor marked baremetal in region
+  configuration. The lookup is filtered by `instance_uuid`; failures to reach
+  Ironic are logged and degrade to the existing Nova/condition-derived
+  provisioning metadata rather than failing the monitor path.
 - Some OpenStack list APIs are not safe to treat as exact lookup, notably
   server, network, and Octavia load-balancer `name` filters:
   - `name` filters behave like prefix or regular-expression matches rather than

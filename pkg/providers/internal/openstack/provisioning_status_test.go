@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+//nolint:testpackage
 package openstack
 
 import (
@@ -21,15 +22,21 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/go-logr/logr"
 	"github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/stretchr/testify/require"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-
-	"github.com/go-logr/logr"
 )
+
+var errIronicUnavailable = errors.New("ironic unavailable")
+
+func noIronicNode(context.Context, string) (*nodes.Node, error) {
+	//nolint:nilnil // A missing Ironic node is a valid queued state, not an error.
+	return nil, nil
+}
 
 func TestBaremetalBuildProvisioningStatus(t *testing.T) {
 	t.Parallel()
@@ -72,12 +79,11 @@ func TestBaremetalBuildProvisioningStatus(t *testing.T) {
 	}
 }
 
-func TestDeriveProviderProvisioningStatusSkipsNonBaremetalBuild(t *testing.T) {
+func TestShouldCallIronicForProvisioningStatusSkipsNonBaremetalBuild(t *testing.T) {
 	t.Parallel()
 
-	got, callIronic := deriveProviderProvisioningStatusInput(servers.Server{Status: "BUILD"}, false)
+	callIronic := shouldCallIronicForProvisioningStatus(servers.Server{Status: "BUILD"}, false)
 
-	require.Nil(t, got)
 	require.False(t, callIronic)
 }
 
@@ -87,8 +93,7 @@ func TestUpdateServerProviderProvisioningStatusBaremetalBuildNoNodeQueued(t *tes
 	server := &unikornv1.Server{}
 	novaServer := &servers.Server{ID: "nova-id", Status: "BUILD"}
 
-	updateServerProviderProvisioningStatus(context.Background(), logr.Discard(), server, novaServer, true,
-		func(context.Context, string) (*nodes.Node, error) { return nil, nil })
+	updateServerProviderProvisioningStatus(t.Context(), logr.Discard(), server, novaServer, true, noIronicNode)
 
 	require.NotNil(t, server.Status.ProviderProvisioningStatus)
 	require.Equal(t, coreapi.ResourceProvisioningStatusQueued, *server.Status.ProviderProvisioningStatus)
@@ -100,7 +105,7 @@ func TestUpdateServerProviderProvisioningStatusBaremetalBuildDeployingProvisioni
 	server := &unikornv1.Server{}
 	novaServer := &servers.Server{ID: "nova-id", Status: "BUILD"}
 
-	updateServerProviderProvisioningStatus(context.Background(), logr.Discard(), server, novaServer, true,
+	updateServerProviderProvisioningStatus(t.Context(), logr.Discard(), server, novaServer, true,
 		func(context.Context, string) (*nodes.Node, error) {
 			return &nodes.Node{ProvisionState: "deploying"}, nil
 		})
@@ -116,10 +121,11 @@ func TestUpdateServerProviderProvisioningStatusVMBuildSkipsIronic(t *testing.T) 
 	novaServer := &servers.Server{ID: "nova-id", Status: "BUILD"}
 	called := false
 
-	updateServerProviderProvisioningStatus(context.Background(), logr.Discard(), server, novaServer, false,
-		func(context.Context, string) (*nodes.Node, error) {
+	updateServerProviderProvisioningStatus(t.Context(), logr.Discard(), server, novaServer, false,
+		func(ctx context.Context, _ string) (*nodes.Node, error) {
 			called = true
-			return nil, nil
+
+			return noIronicNode(ctx, "")
 		})
 
 	require.False(t, called)
@@ -132,9 +138,9 @@ func TestUpdateServerProviderProvisioningStatusIronicErrorLeavesOverrideUnset(t 
 	server := &unikornv1.Server{}
 	novaServer := &servers.Server{ID: "nova-id", Status: "BUILD"}
 
-	updateServerProviderProvisioningStatus(context.Background(), logr.Discard(), server, novaServer, true,
+	updateServerProviderProvisioningStatus(t.Context(), logr.Discard(), server, novaServer, true,
 		func(context.Context, string) (*nodes.Node, error) {
-			return nil, errors.New("ironic unavailable")
+			return nil, errIronicUnavailable
 		})
 
 	require.Nil(t, server.Status.ProviderProvisioningStatus)
@@ -147,8 +153,7 @@ func TestUpdateServerProviderProvisioningStatusActiveClearsOverride(t *testing.T
 	server := &unikornv1.Server{Status: unikornv1.ServerStatus{ProviderProvisioningStatus: &queued}}
 	novaServer := &servers.Server{ID: "nova-id", Status: "ACTIVE"}
 
-	updateServerProviderProvisioningStatus(context.Background(), logr.Discard(), server, novaServer, true,
-		func(context.Context, string) (*nodes.Node, error) { return nil, nil })
+	updateServerProviderProvisioningStatus(t.Context(), logr.Discard(), server, novaServer, true, noIronicNode)
 
 	require.Nil(t, server.Status.ProviderProvisioningStatus)
 }
