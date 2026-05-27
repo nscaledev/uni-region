@@ -28,6 +28,8 @@ import (
 
 var ErrMultipleIronicNodes = errors.New("multiple ironic nodes found")
 
+// Need at least 1.82 so Ironic node ListDetail responses include provision_state;
+// INST-921 maps Nova BUILD baremetal servers from Ironic node ProvisionState.
 const baremetalAPIMicroversion = "1.82"
 
 type BaremetalClient struct {
