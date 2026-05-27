@@ -27,8 +27,13 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/stretchr/testify/require"
 
+	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 var errIronicUnavailable = errors.New("ironic unavailable")
@@ -156,6 +161,59 @@ func TestUpdateServerProviderProvisioningStatusActiveClearsOverride(t *testing.T
 	updateServerProviderProvisioningStatus(t.Context(), logr.Discard(), server, novaServer, true, noIronicNode)
 
 	require.Nil(t, server.Status.ProviderProvisioningStatus)
+}
+
+func TestBaremetalProvisioningStatusProviderUsesPrivilegedCredentials(t *testing.T) {
+	t.Parallel()
+
+	scheme, err := coreclient.NewScheme(unikornv1.AddToScheme)
+	require.NoError(t, err)
+
+	servicePrincipalUserID := "service-principal-user"
+	servicePrincipalPassword := "service-principal-password"
+	projectID := "project-id"
+
+	identity := &unikornv1.Identity{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "identity",
+		},
+	}
+	openstackIdentity := &unikornv1.OpenstackIdentity{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: identity.Namespace,
+			Name:      identity.Name,
+		},
+		Spec: unikornv1.OpenstackIdentitySpec{
+			UserID:    &servicePrincipalUserID,
+			Password:  &servicePrincipalPassword,
+			ProjectID: &projectID,
+		},
+	}
+
+	provider := &Provider{
+		client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(openstackIdentity).Build(),
+		openstack: &openStackClients{
+			_region: &unikornv1.Region{
+				Spec: unikornv1.RegionSpec{
+					Openstack: &unikornv1.RegionOpenstackSpec{Endpoint: "https://keystone.example.com"},
+				},
+			},
+			_credentials: &providerCredentials{
+				userID:   "provider-user",
+				password: "provider-password",
+			},
+		},
+	}
+
+	credentialProvider, err := provider.baremetalProvisioningStatusProvider(t.Context(), identity)
+	require.NoError(t, err)
+
+	passwordProvider, ok := credentialProvider.(*PasswordProvider)
+	require.True(t, ok)
+	require.Equal(t, "provider-user", passwordProvider.userID)
+	require.Equal(t, "provider-password", passwordProvider.password)
+	require.Equal(t, projectID, passwordProvider.projectID)
 }
 
 func TestIsBaremetalFlavor(t *testing.T) {

@@ -310,6 +310,28 @@ func (p *Provider) baremetalFromServicePrincipal(ctx context.Context, identity *
 	return client, nil
 }
 
+// baremetalProvisioningStatusProvider returns the credential provider used for Ironic
+// provisioning-status lookups. Node-to-instance mapping is provider infrastructure
+// state, so use the top-level Region credentials scoped to the service principal's
+// project rather than the tenant service-principal credentials.
+func (p *Provider) baremetalProvisioningStatusProvider(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
+	return p.getPrivilegedProviderFromServicePrincipal(ctx, identity)
+}
+
+func (p *Provider) baremetalForProvisioningStatus(ctx context.Context, identity *unikornv1.Identity) (BaremetalInterface, error) {
+	provider, err := p.baremetalProvisioningStatusProvider(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := NewBaremetalClient(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
 // imageFromServicePrincipal gets a compute client scoped to the service principal data.
 func (p *Provider) imageFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (*ImageClient, error) {
 	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
@@ -2612,7 +2634,7 @@ func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Id
 	var lookup ironicNodeLookup
 
 	if openstackServer.Status == "BUILD" && baremetal {
-		baremetalClient, err := p.baremetalFromServicePrincipal(ctx, identity)
+		baremetalClient, err := p.baremetalForProvisioningStatus(ctx, identity)
 		if err != nil {
 			log.FromContext(ctx).Error(err, "failed to create ironic client for server provisioning status", "server", server.Name, "flavor", server.Spec.FlavorID, "instance_uuid", openstackServer.ID)
 		} else {
