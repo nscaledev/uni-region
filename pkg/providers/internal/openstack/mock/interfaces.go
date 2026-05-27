@@ -12,6 +12,7 @@ import (
 	context "context"
 	reflect "reflect"
 
+	nodes "github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
 	flavors "github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	remoteconsoles "github.com/gophercloud/gophercloud/v2/openstack/compute/v2/remoteconsoles"
 	servergroups "github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
@@ -2396,4 +2397,42 @@ func (m *MockComputeInterface) UpdateQuotas(ctx context.Context, projectID strin
 func (mr *MockComputeInterfaceMockRecorder) UpdateQuotas(ctx, projectID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateQuotas", reflect.TypeOf((*MockComputeInterface)(nil).UpdateQuotas), ctx, projectID)
+}
+
+// MockBaremetalInterface is a mock of BaremetalInterface interface.
+type MockBaremetalInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockBaremetalInterfaceMockRecorder
+}
+
+// MockBaremetalInterfaceMockRecorder is the mock recorder for MockBaremetalInterface.
+type MockBaremetalInterfaceMockRecorder struct {
+	mock *MockBaremetalInterface
+}
+
+// NewMockBaremetalInterface creates a new mock instance.
+func NewMockBaremetalInterface(ctrl *gomock.Controller) *MockBaremetalInterface {
+	mock := &MockBaremetalInterface{ctrl: ctrl}
+	mock.recorder = &MockBaremetalInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockBaremetalInterface) EXPECT() *MockBaremetalInterfaceMockRecorder {
+	return m.recorder
+}
+
+// GetNodeByInstanceUUID mocks base method.
+func (m *MockBaremetalInterface) GetNodeByInstanceUUID(ctx context.Context, instanceUUID string) (*nodes.Node, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNodeByInstanceUUID", ctx, instanceUUID)
+	ret0, _ := ret[0].(*nodes.Node)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetNodeByInstanceUUID indicates an expected call of GetNodeByInstanceUUID.
+func (mr *MockBaremetalInterfaceMockRecorder) GetNodeByInstanceUUID(ctx, instanceUUID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeByInstanceUUID", reflect.TypeOf((*MockBaremetalInterface)(nil).GetNodeByInstanceUUID), ctx, instanceUUID)
 }
