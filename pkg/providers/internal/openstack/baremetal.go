@@ -28,6 +28,8 @@ import (
 
 var ErrMultipleIronicNodes = errors.New("multiple ironic nodes found")
 
+const baremetalAPIMicroversion = "1.82"
+
 type BaremetalClient struct {
 	client *gophercloud.ServiceClient
 }
@@ -43,7 +45,13 @@ func NewBaremetalClient(ctx context.Context, provider CredentialProvider) (*Bare
 		return nil, err
 	}
 
+	configureBaremetalClient(client)
+
 	return &BaremetalClient{client: client}, nil
+}
+
+func configureBaremetalClient(client *gophercloud.ServiceClient) {
+	client.Microversion = baremetalAPIMicroversion
 }
 
 func (c *BaremetalClient) GetNodeByInstanceUUID(ctx context.Context, instanceUUID string) (*nodes.Node, error) {
