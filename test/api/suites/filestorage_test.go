@@ -330,6 +330,7 @@ var _ = Describe("File Storage Management", func() {
 		var filestorageID string
 		var filestorageName string
 		var storageClassID string
+		var filestorageDeleteRequested bool
 		var networkID string
 		var networkName string
 
@@ -570,6 +571,7 @@ var _ = Describe("File Storage Management", func() {
 
 				err := regionClient.DeleteFileStorage(ctx, filestorageID)
 				Expect(err).NotTo(HaveOccurred())
+				filestorageDeleteRequested = true
 
 				GinkgoWriter.Printf("Deleted file storage: %s\n", filestorageID)
 
@@ -619,8 +621,11 @@ var _ = Describe("File Storage Management", func() {
 		AfterAll(func() {
 			// Delete storage first to detach from network
 			if filestorageID != "" {
-				GinkgoWriter.Printf("Cleaning up test filestorage: %s\n", filestorageID)
-				Expect(regionClient.DeleteFileStorage(ctx, filestorageID)).To(Succeed())
+				if !filestorageDeleteRequested {
+					GinkgoWriter.Printf("Cleaning up test filestorage: %s\n", filestorageID)
+					Expect(regionClient.DeleteFileStorage(ctx, filestorageID)).To(Succeed())
+					filestorageDeleteRequested = true
+				}
 
 				GinkgoWriter.Printf("Waiting for storage cleanup: %s\n", filestorageID)
 				Eventually(func() error {

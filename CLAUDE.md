@@ -30,7 +30,8 @@ make test-unit
 
 ## Test Writing
 
-All new tests must follow the patterns established in `test/api/`:
+Unit tests in `pkg/` use standard Go test functions (`func TestX(t *testing.T)`). The patterns
+below apply to integration and e2e tests in `test/api/`:
 
 - **BDD structure**: Use `Describe > Context > Describe > It` nesting.
   `Describe` names the resource or component. `Context` describes the scenario
