@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
@@ -39,6 +40,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/server"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -538,6 +540,38 @@ func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 	require.Equal(t, resource.Status.PrivateIP, result.Status.PrivateIP)
 	require.Equal(t, resource.Status.PublicIP, result.Status.PublicIP)
 	require.Equal(t, resource.Status.MACAddress, result.Status.MacAddress)
+}
+
+func TestServerGetV2CopiesHealthConditionDetails(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	resource := testServerV2("server-1")
+	resource.StatusConditionWrite(
+		unikornv1core.ConditionHealthy,
+		corev1.ConditionFalse,
+		unikornv1core.ConditionReasonErrored,
+		"server is in an error state: OpenStack fault 500: No valid host was found",
+	)
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	result, err := c.GetV2(rbac.NewContext(t.Context(), aclWithSrvUpdate()), resource.Name)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Status.HealthReason)
+	require.NotNil(t, result.Status.HealthMessage)
+	require.Equal(t, string(unikornv1core.ConditionReasonErrored), *result.Status.HealthReason)
+	require.Equal(t, "server is in an error state: OpenStack fault 500: No valid host was found", *result.Status.HealthMessage)
 }
 
 func testServerV2(serverID string) *regionv1.Server {

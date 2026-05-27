@@ -18,6 +18,9 @@ status/telemetry model.
 - resolves provider and flavor context per region and caches it for a poll cycle
 - updates server status through provider `UpdateServerState(...)`
 - logs phase and health-condition transitions
+- preserves provider health condition messages, including OpenStack fault
+  messages for servers observed in `ERROR`, so the API can expose actionable
+  failure context to upstream services
 - rebuilds gauge counts from the effective server set each cycle
 
 ## Invariants And Guard Rails

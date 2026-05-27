@@ -3170,6 +3170,12 @@ components:
         sshCertificateAuthorityId:
           description: The SSH certificate authority configured when the server was created.
           $ref: '#/components/schemas/sshCertificateAuthorityID'
+        healthReason:
+          description: The current server health condition reason.
+          type: string
+        healthMessage:
+          description: Human-readable details for the current server health condition.
+          type: string
         powerState:
           $ref: '#/components/schemas/instanceLifecyclePhase'
         privateIP:
