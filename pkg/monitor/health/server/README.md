@@ -30,7 +30,10 @@ status/telemetry model.
 - Provider-specific progress refinement must be best effort. For example,
   OpenStack Ironic lookup failures leave provider provisioning metadata unset so
   API responses fall back to the generic condition-derived lifecycle instead of
-  failing status refresh.
+  failing status refresh. Baremetal progress refinement depends on the Region
+  provider credential having Ironic node visibility by instance UUID; if local or
+  production policy withholds that visibility, the monitor intentionally behaves
+  like the pre-Ironic Nova-only path.
 
 ## Caveats
 

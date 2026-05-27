@@ -125,8 +125,17 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   `OpenstackSecurityGroup`, or `OpenstackServer` CRDs as authoritative state.
 - Baremetal server progress uses Ironic as an additional provider truth source
   only while Nova reports `BUILD` for a flavor marked baremetal in region
-  configuration. The lookup is filtered by `instance_uuid`; failures to reach
-  Ironic are logged and degrade to the existing Nova/condition-derived
+  configuration. The lookup is filtered by `instance_uuid`. Because Ironic node
+  ownership and visibility are provider infrastructure concerns rather than
+  tenant workload operations, this lookup uses the Region top-level provider
+  credentials scoped to the service principal's project, matching the package's
+  other privileged client patterns. Deployments must grant those credentials
+  enough Ironic policy visibility to list/detail nodes by instance UUID, for
+  example through a narrow `bm-mapper`-style role or equivalent admin, service,
+  or system-reader policy that permits `baremetal:node:list_all`/node-detail
+  visibility. If the privileged client cannot be created or Ironic rejects or
+  fails the lookup, the monitor logs the failure and leaves provider provisioning
+  metadata unset so API responses degrade to the existing Nova/condition-derived
   provisioning metadata rather than failing the monitor path.
 - Some OpenStack list APIs are not safe to treat as exact lookup, notably
   server, network, and Octavia load-balancer `name` filters:

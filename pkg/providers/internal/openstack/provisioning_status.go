@@ -32,11 +32,11 @@ func baremetalBuildProvisioningStatus(node *nodes.Node) coreapi.ResourceProvisio
 		return coreapi.ResourceProvisioningStatusQueued
 	}
 
-	switch node.ProvisionState {
-	case "available", "manageable", "enroll", "cleaning", "clean wait", "verifying", "inspecting", "inspect wait", "adopting",
-		"clean failed", "clean hold", "inspect failed", "adopt failed":
+	switch nodes.ProvisionState(node.ProvisionState) {
+	case nodes.Available, nodes.Manageable, nodes.Enroll, nodes.Cleaning, nodes.CleanWait, nodes.Verifying, nodes.Inspecting,
+		nodes.InspectWait, nodes.Adopting, nodes.CleanFail, nodes.CleanHold, nodes.InspectFail, nodes.AdoptFail:
 		return coreapi.ResourceProvisioningStatusQueued
-	case "deploying", "wait call-back", "deploy hold", "deploy failed", "active", "error":
+	case nodes.Deploying, nodes.DeployWait, nodes.DeployHold, nodes.DeployFail, nodes.Active, nodes.Error:
 		return coreapi.ResourceProvisioningStatusProvisioning
 	default:
 		return coreapi.ResourceProvisioningStatusQueued

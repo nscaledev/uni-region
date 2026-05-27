@@ -24,6 +24,9 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/remoteconsoles"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/stretchr/testify/require"
 
@@ -52,25 +55,25 @@ func TestBaremetalBuildProvisioningStatus(t *testing.T) {
 		want coreapi.ResourceProvisioningStatus
 	}{
 		{name: "no node", node: nil, want: coreapi.ResourceProvisioningStatusQueued},
-		{name: "available", node: &nodes.Node{ProvisionState: "available"}, want: coreapi.ResourceProvisioningStatusQueued},
-		{name: "manageable", node: &nodes.Node{ProvisionState: "manageable"}, want: coreapi.ResourceProvisioningStatusQueued},
-		{name: "enroll", node: &nodes.Node{ProvisionState: "enroll"}, want: coreapi.ResourceProvisioningStatusQueued},
-		{name: "cleaning", node: &nodes.Node{ProvisionState: "cleaning"}, want: coreapi.ResourceProvisioningStatusQueued},
-		{name: "clean wait", node: &nodes.Node{ProvisionState: "clean wait"}, want: coreapi.ResourceProvisioningStatusQueued},
-		{name: "verifying", node: &nodes.Node{ProvisionState: "verifying"}, want: coreapi.ResourceProvisioningStatusQueued},
-		{name: "inspecting", node: &nodes.Node{ProvisionState: "inspecting"}, want: coreapi.ResourceProvisioningStatusQueued},
-		{name: "inspect wait", node: &nodes.Node{ProvisionState: "inspect wait"}, want: coreapi.ResourceProvisioningStatusQueued},
-		{name: "adopting", node: &nodes.Node{ProvisionState: "adopting"}, want: coreapi.ResourceProvisioningStatusQueued},
-		{name: "clean failed", node: &nodes.Node{ProvisionState: "clean failed"}, want: coreapi.ResourceProvisioningStatusQueued},
-		{name: "clean hold", node: &nodes.Node{ProvisionState: "clean hold"}, want: coreapi.ResourceProvisioningStatusQueued},
-		{name: "inspect failed", node: &nodes.Node{ProvisionState: "inspect failed"}, want: coreapi.ResourceProvisioningStatusQueued},
-		{name: "adopt failed", node: &nodes.Node{ProvisionState: "adopt failed"}, want: coreapi.ResourceProvisioningStatusQueued},
-		{name: "deploying", node: &nodes.Node{ProvisionState: "deploying"}, want: coreapi.ResourceProvisioningStatusProvisioning},
-		{name: "wait callback", node: &nodes.Node{ProvisionState: "wait call-back"}, want: coreapi.ResourceProvisioningStatusProvisioning},
-		{name: "deploy hold", node: &nodes.Node{ProvisionState: "deploy hold"}, want: coreapi.ResourceProvisioningStatusProvisioning},
-		{name: "deploy failed", node: &nodes.Node{ProvisionState: "deploy failed"}, want: coreapi.ResourceProvisioningStatusProvisioning},
-		{name: "active", node: &nodes.Node{ProvisionState: "active"}, want: coreapi.ResourceProvisioningStatusProvisioning},
-		{name: "error", node: &nodes.Node{ProvisionState: "error"}, want: coreapi.ResourceProvisioningStatusProvisioning},
+		{name: "available", node: &nodes.Node{ProvisionState: string(nodes.Available)}, want: coreapi.ResourceProvisioningStatusQueued},
+		{name: "manageable", node: &nodes.Node{ProvisionState: string(nodes.Manageable)}, want: coreapi.ResourceProvisioningStatusQueued},
+		{name: "enroll", node: &nodes.Node{ProvisionState: string(nodes.Enroll)}, want: coreapi.ResourceProvisioningStatusQueued},
+		{name: "cleaning", node: &nodes.Node{ProvisionState: string(nodes.Cleaning)}, want: coreapi.ResourceProvisioningStatusQueued},
+		{name: "clean wait", node: &nodes.Node{ProvisionState: string(nodes.CleanWait)}, want: coreapi.ResourceProvisioningStatusQueued},
+		{name: "verifying", node: &nodes.Node{ProvisionState: string(nodes.Verifying)}, want: coreapi.ResourceProvisioningStatusQueued},
+		{name: "inspecting", node: &nodes.Node{ProvisionState: string(nodes.Inspecting)}, want: coreapi.ResourceProvisioningStatusQueued},
+		{name: "inspect wait", node: &nodes.Node{ProvisionState: string(nodes.InspectWait)}, want: coreapi.ResourceProvisioningStatusQueued},
+		{name: "adopting", node: &nodes.Node{ProvisionState: string(nodes.Adopting)}, want: coreapi.ResourceProvisioningStatusQueued},
+		{name: "clean failed", node: &nodes.Node{ProvisionState: string(nodes.CleanFail)}, want: coreapi.ResourceProvisioningStatusQueued},
+		{name: "clean hold", node: &nodes.Node{ProvisionState: string(nodes.CleanHold)}, want: coreapi.ResourceProvisioningStatusQueued},
+		{name: "inspect failed", node: &nodes.Node{ProvisionState: string(nodes.InspectFail)}, want: coreapi.ResourceProvisioningStatusQueued},
+		{name: "adopt failed", node: &nodes.Node{ProvisionState: string(nodes.AdoptFail)}, want: coreapi.ResourceProvisioningStatusQueued},
+		{name: "deploying", node: &nodes.Node{ProvisionState: string(nodes.Deploying)}, want: coreapi.ResourceProvisioningStatusProvisioning},
+		{name: "wait callback", node: &nodes.Node{ProvisionState: string(nodes.DeployWait)}, want: coreapi.ResourceProvisioningStatusProvisioning},
+		{name: "deploy hold", node: &nodes.Node{ProvisionState: string(nodes.DeployHold)}, want: coreapi.ResourceProvisioningStatusProvisioning},
+		{name: "deploy failed", node: &nodes.Node{ProvisionState: string(nodes.DeployFail)}, want: coreapi.ResourceProvisioningStatusProvisioning},
+		{name: "active", node: &nodes.Node{ProvisionState: string(nodes.Active)}, want: coreapi.ResourceProvisioningStatusProvisioning},
+		{name: "error", node: &nodes.Node{ProvisionState: string(nodes.Error)}, want: coreapi.ResourceProvisioningStatusProvisioning},
 	}
 
 	for _, tt := range tests {
@@ -82,6 +85,91 @@ func TestBaremetalBuildProvisioningStatus(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+type stubComputeClient struct {
+	server          *servers.Server
+	requestedServer *unikornv1.Server
+}
+
+func (c *stubComputeClient) CreateKeypair(context.Context, string, string) error  { return nil }
+func (c *stubComputeClient) DeleteKeypair(context.Context, string) error          { return nil }
+func (c *stubComputeClient) GetFlavors(context.Context) ([]flavors.Flavor, error) { return nil, nil }
+func (c *stubComputeClient) CreateServerGroup(context.Context, string) (*servergroups.ServerGroup, error) {
+	return nil, nil
+}
+func (c *stubComputeClient) DeleteServerGroup(context.Context, string) error { return nil }
+func (c *stubComputeClient) UpdateQuotas(context.Context, string) error      { return nil }
+func (c *stubComputeClient) GetServer(_ context.Context, server *unikornv1.Server) (*servers.Server, error) {
+	c.requestedServer = server
+
+	return c.server, nil
+}
+func (c *stubComputeClient) CreateServer(context.Context, *unikornv1.Server, string, []servers.Network, *string, map[string]string) (*servers.Server, error) {
+	return nil, nil
+}
+func (c *stubComputeClient) DeleteServer(context.Context, string) error       { return nil }
+func (c *stubComputeClient) RebootServer(context.Context, string, bool) error { return nil }
+func (c *stubComputeClient) StartServer(context.Context, string) error        { return nil }
+func (c *stubComputeClient) StopServer(context.Context, string) error         { return nil }
+func (c *stubComputeClient) CreateRemoteConsole(context.Context, string) (*remoteconsoles.RemoteConsole, error) {
+	return nil, nil
+}
+func (c *stubComputeClient) ShowConsoleOutput(context.Context, string, *int) (string, error) {
+	return "", nil
+}
+func (c *stubComputeClient) CreateImageFromServer(context.Context, string, *servers.CreateImageOpts) (string, error) {
+	return "", nil
+}
+
+type recordingBaremetalClient struct {
+	instanceUUID string
+}
+
+func (c *recordingBaremetalClient) GetNodeByInstanceUUID(_ context.Context, instanceUUID string) (*nodes.Node, error) {
+	c.instanceUUID = instanceUUID
+
+	return &nodes.Node{ProvisionState: string(nodes.DeployWait)}, nil
+}
+
+func TestUpdateServerStateWithClientsBaremetalBuildUsesProvisioningStatusIronicLookup(t *testing.T) {
+	t.Parallel()
+
+	compute := &stubComputeClient{server: &servers.Server{ID: "nova-id", Status: "BUILD"}}
+	identity := &unikornv1.Identity{}
+	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{FlavorID: "metal"}}
+	baremetalClient := &recordingBaremetalClient{}
+	factoryCalled := false
+
+	provider := &Provider{
+		openstack: &openStackClients{
+			_region: &unikornv1.Region{
+				Spec: unikornv1.RegionSpec{
+					Openstack: &unikornv1.RegionOpenstackSpec{
+						Compute: &unikornv1.RegionOpenstackComputeSpec{
+							Flavors: &unikornv1.OpenstackFlavorsSpec{
+								Metadata: []unikornv1.FlavorMetadata{{ID: "metal", Baremetal: true}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	err := provider.updateServerStateWithClients(t.Context(), identity, server, compute,
+		func(_ context.Context, gotIdentity *unikornv1.Identity) (BaremetalInterface, error) {
+			require.Same(t, identity, gotIdentity)
+			factoryCalled = true
+
+			return baremetalClient, nil
+		})
+
+	require.NoError(t, err)
+	require.True(t, factoryCalled)
+	require.Equal(t, "nova-id", baremetalClient.instanceUUID)
+	require.NotNil(t, server.Status.ProviderProvisioningStatus)
+	require.Equal(t, coreapi.ResourceProvisioningStatusProvisioning, *server.Status.ProviderProvisioningStatus)
 }
 
 func TestShouldCallIronicForProvisioningStatusSkipsNonBaremetalBuild(t *testing.T) {
