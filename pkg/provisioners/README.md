@@ -27,6 +27,21 @@ The main deviations from a trivial “call provider create/delete” model are:
 - some release or reconcile identity-side quota allocations on deprovision
 - some augment provider create options, especially for server cloud-init / SSH CA integration
 
+## Deprovisioning Partial State
+
+Provisioners must handle deletion from any state a handler or earlier reconcile
+step can leave behind. Teardown should split provider cleanup, reference
+cleanup, and quota/accounting cleanup into separate idempotent steps. Gate each
+step on the minimum recorded state it needs rather than on a broad prerequisite
+such as parent identity readiness.
+
+This matters for partially created resources: an allocation or reference may
+already exist even when the provider resource was never created. Waiting for
+provider prerequisites in that window can block cleanup of the side effects that
+do exist. When a lifecycle edge is subtle, keep the predicate named after the
+state it actually observes and document the partial-state window next to that
+predicate.
+
 ## Cross-Package Context
 
 - [../managers](../managers/README.md) wraps these provisioners in controller factories
