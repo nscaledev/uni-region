@@ -1,0 +1,348 @@
+#!/usr/bin/env bash
+# Delete Region-scoped resources for a local or test OpenStack-backed Region.
+set -euo pipefail
+
+REGION_LABEL="regions.unikorn-cloud.org/region-id"
+
+NAMESPACE_ARG=""
+REGION_ID_ARG=""
+SECRET_NAME_ARG=""
+CONFIRM="false"
+DELETE_REGION="false"
+DELETE_SECRET="false"
+FORCE_FINALIZERS="false"
+WAIT="true"
+DELETE_TIMEOUT="${DELETE_TIMEOUT:-5m}"
+ENV_FILES=()
+
+WORKLOAD_RESOURCES=(
+  "servers.region.unikorn-cloud.org"
+  "loadbalancers.region.unikorn-cloud.org"
+  "filestorages.region.unikorn-cloud.org"
+  "securitygrouprules.region.unikorn-cloud.org"
+  "securitygroups.region.unikorn-cloud.org"
+  "sshcertificateauthorities.region.unikorn-cloud.org"
+  "imagemonitortasks.region.unikorn-cloud.org"
+  "imageuploadtasks.region.unikorn-cloud.org"
+  "networks.region.unikorn-cloud.org"
+  "identities.region.unikorn-cloud.org"
+)
+
+PROVIDER_RESOURCES=(
+  "openstackservers.region.unikorn-cloud.org"
+  "openstacksecuritygrouprules.region.unikorn-cloud.org"
+  "openstacksecuritygroups.region.unikorn-cloud.org"
+  "openstacknetworks.region.unikorn-cloud.org"
+  "openstackidentities.region.unikorn-cloud.org"
+  "vlanallocations.region.unikorn-cloud.org"
+)
+
+REGION_CATALOG_RESOURCES=(
+  "filestorageclasses.region.unikorn-cloud.org"
+  "filestorageprovisioners.region.unikorn-cloud.org"
+)
+
+log() {
+  echo "==> $*" >&2
+}
+
+fatal() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
+
+require() {
+  command -v "$1" >/dev/null 2>&1 || fatal "$1 is required"
+}
+
+usage() {
+  cat >&2 <<EOF
+Usage: $0 --env FILE --env FILE [--region-id ID] [--namespace NS] [--confirm]
+
+Deletes Kubernetes resources labelled with ${REGION_LABEL}=ID. This is intended
+for local DevStack-backed test regions where failed integration tests can leave
+servers, load balancers, networks, identities, or provider resources behind.
+
+The script is a dry run by default. Pass --confirm to delete matched resources.
+Run it while the Region controllers are healthy so finalizers can deprovision
+OpenStack resources before the Kubernetes objects disappear.
+
+Options:
+  --env FILE            Source a shell env file, such as test/.env.install or
+                        test/.env.provider. May be passed more than once.
+  --namespace NS        Kubernetes namespace. Defaults to REGION_NAMESPACE.
+  --region-id ID        Region ID. Defaults to TEST_REGION_ID,
+                        OPENSTACK_REGION_ID, then REGION_ID.
+  --timeout DURATION    kubectl delete timeout. Defaults to DELETE_TIMEOUT or 5m.
+  --wait=false          Do not wait for kubectl deletes to complete.
+  --delete-region       Also delete region catalog resources and the Region CR.
+  --delete-secret       Also delete the OpenStack credential Secret.
+  --secret-name NAME    Secret name for --delete-secret. Defaults to
+                        OPENSTACK_SECRET_NAME or ID-openstack-credentials.
+  --force-finalizers    After a failed delete, remove finalizers from remaining
+                        matched resources. This can orphan OpenStack resources.
+  --confirm             Delete resources. Without this, only print matches.
+  -h, --help            Show this help.
+
+Environment:
+  REGION_NAMESPACE
+  TEST_REGION_ID
+  OPENSTACK_REGION_ID
+  REGION_ID
+  OPENSTACK_SECRET_NAME
+  DELETE_TIMEOUT
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --env)
+      ENV_FILES+=("$2")
+      shift 2
+      ;;
+    --namespace)
+      NAMESPACE_ARG="$2"
+      shift 2
+      ;;
+    --region-id)
+      REGION_ID_ARG="$2"
+      shift 2
+      ;;
+    --timeout)
+      DELETE_TIMEOUT="$2"
+      shift 2
+      ;;
+    --wait=false)
+      WAIT="false"
+      shift
+      ;;
+    --delete-region)
+      DELETE_REGION="true"
+      shift
+      ;;
+    --delete-secret)
+      DELETE_SECRET="true"
+      shift
+      ;;
+    --secret-name)
+      SECRET_NAME_ARG="$2"
+      shift 2
+      ;;
+    --force-finalizers)
+      FORCE_FINALIZERS="true"
+      shift
+      ;;
+    --confirm)
+      CONFIRM="true"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      fatal "unknown argument: $1"
+      ;;
+  esac
+done
+
+for env_file in "${ENV_FILES[@]}"; do
+  [[ -f "${env_file}" ]] || fatal "env file not found: ${env_file}"
+  # shellcheck disable=SC1090
+  . "${env_file}"
+done
+
+NAMESPACE="${NAMESPACE_ARG:-${REGION_NAMESPACE:-}}"
+TARGET_REGION_ID="${REGION_ID_ARG:-${TEST_REGION_ID:-${OPENSTACK_REGION_ID:-${REGION_ID:-}}}}"
+SECRET_NAME="${SECRET_NAME_ARG:-${OPENSTACK_SECRET_NAME:-${TARGET_REGION_ID}-openstack-credentials}}"
+SELECTOR="${REGION_LABEL}=${TARGET_REGION_ID}"
+
+require kubectl
+
+[[ -n "${NAMESPACE}" ]] || fatal "--namespace or REGION_NAMESPACE is required"
+[[ -n "${TARGET_REGION_ID}" ]] || fatal "--region-id, TEST_REGION_ID, OPENSTACK_REGION_ID, or REGION_ID is required"
+
+if [[ "${FORCE_FINALIZERS}" == "true" && "${CONFIRM}" != "true" ]]; then
+  fatal "--force-finalizers requires --confirm"
+fi
+
+API_RESOURCES="$(kubectl api-resources --verbs=list --namespaced -o name)"
+
+resource_exists() {
+  local resource="$1"
+
+  printf "%s\n" "${API_RESOURCES}" | grep -Fxq "${resource}"
+}
+
+resource_names() {
+  local resource="$1"
+
+  resource_exists "${resource}" || return 0
+
+  kubectl get "${resource}" \
+    --namespace "${NAMESPACE}" \
+    --selector "${SELECTOR}" \
+    --ignore-not-found \
+    -o name 2>/dev/null || true
+}
+
+print_matches() {
+  local names="$1"
+
+  printf "%s\n" "${names}" | sed 's/^/  /' >&2
+}
+
+force_finalize_remaining() {
+  local resource="$1"
+  local names
+
+  names="$(resource_names "${resource}")"
+  [[ -n "${names}" ]] || return 0
+
+  log "Removing finalizers from remaining ${resource} resources..."
+  while IFS= read -r name; do
+    [[ -n "${name}" ]] || continue
+
+    kubectl patch "${name}" \
+      --namespace "${NAMESPACE}" \
+      --type=merge \
+      -p '{"metadata":{"finalizers":[]}}' >/dev/null || true
+
+    kubectl delete "${name}" \
+      --namespace "${NAMESPACE}" \
+      --ignore-not-found \
+      --wait=false >/dev/null || true
+  done <<EOF
+${names}
+EOF
+}
+
+delete_kind() {
+  local resource="$1"
+  local names
+  local delete_args
+
+  names="$(resource_names "${resource}")"
+  [[ -n "${names}" ]] || return 0
+
+  log "Matched ${resource}:"
+  print_matches "${names}"
+
+  [[ "${CONFIRM}" == "true" ]] || return 0
+
+  delete_args=(
+    delete "${resource}"
+    --namespace "${NAMESPACE}"
+    --selector "${SELECTOR}"
+    --ignore-not-found
+  )
+
+  if [[ "${WAIT}" == "true" ]]; then
+    delete_args+=(--wait=true "--timeout=${DELETE_TIMEOUT}")
+  else
+    delete_args+=(--wait=false)
+  fi
+
+  if kubectl "${delete_args[@]}"; then
+    return 0
+  fi
+
+  if [[ "${FORCE_FINALIZERS}" == "true" ]]; then
+    force_finalize_remaining "${resource}"
+    return 0
+  fi
+
+  fatal "delete failed for ${resource}; retry after controllers progress or use --force-finalizers only if orphaning cloud resources is acceptable"
+}
+
+delete_kinds() {
+  local title="$1"
+
+  shift
+  log "${title}"
+  for resource in "$@"; do
+    delete_kind "${resource}"
+  done
+}
+
+delete_named() {
+  local resource="$1"
+  local name="$2"
+  local delete_args
+
+  resource_exists "${resource}" || return 0
+
+  if ! kubectl get "${resource}" "${name}" --namespace "${NAMESPACE}" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  log "Matched ${resource}/${name}"
+  [[ "${CONFIRM}" == "true" ]] || return 0
+
+  delete_args=(
+    delete "${resource}" "${name}"
+    --namespace "${NAMESPACE}"
+    --ignore-not-found
+  )
+
+  if [[ "${WAIT}" == "true" ]]; then
+    delete_args+=(--wait=true "--timeout=${DELETE_TIMEOUT}")
+  else
+    delete_args+=(--wait=false)
+  fi
+
+  if kubectl "${delete_args[@]}"; then
+    return 0
+  fi
+
+  if [[ "${FORCE_FINALIZERS}" == "true" ]]; then
+    kubectl patch "${resource}" "${name}" \
+      --namespace "${NAMESPACE}" \
+      --type=merge \
+      -p '{"metadata":{"finalizers":[]}}' >/dev/null || true
+
+    kubectl delete "${resource}" "${name}" \
+      --namespace "${NAMESPACE}" \
+      --ignore-not-found \
+      --wait=false >/dev/null || true
+    return 0
+  fi
+
+  fatal "delete failed for ${resource}/${name}; retry after controllers progress or use --force-finalizers only if orphaning cloud resources is acceptable"
+}
+
+delete_secret() {
+  if ! kubectl get secret "${SECRET_NAME}" --namespace "${NAMESPACE}" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  log "Matched secret/${SECRET_NAME}"
+  [[ "${CONFIRM}" == "true" ]] || return 0
+
+  kubectl delete secret "${SECRET_NAME}" \
+    --namespace "${NAMESPACE}" \
+    --ignore-not-found \
+    --wait=false
+}
+
+log "Namespace: ${NAMESPACE}"
+log "Region ID: ${TARGET_REGION_ID}"
+log "Selector: ${SELECTOR}"
+
+if [[ "${CONFIRM}" == "true" ]]; then
+  log "Deleting matched resources."
+else
+  log "Dry run only; pass --confirm to delete matched resources."
+fi
+
+delete_kinds "Region workload resources" "${WORKLOAD_RESOURCES[@]}"
+delete_kinds "OpenStack provider resources" "${PROVIDER_RESOURCES[@]}"
+
+if [[ "${DELETE_REGION}" == "true" ]]; then
+  delete_kinds "Region catalog resources" "${REGION_CATALOG_RESOURCES[@]}"
+  delete_named "regions.region.unikorn-cloud.org" "${TARGET_REGION_ID}"
+fi
+
+if [[ "${DELETE_SECRET}" == "true" ]]; then
+  delete_secret
+fi
