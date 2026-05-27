@@ -27,7 +27,6 @@ import (
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
-	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers"
@@ -62,8 +61,8 @@ type Provisioner struct {
 	// options are documented for the type.
 	options *Options
 
-	// Base gives us methods for getting identities and providers.
-	base.Base
+	// WithIdentity gives us methods for providers and identity service access.
+	base.WithIdentity
 }
 
 // New returns a new initialized provisioner object.
@@ -73,8 +72,11 @@ func New(options manager.ControllerOptions, providers providers.Providers) provi
 	return &Provisioner{
 		network: &unikornv1.Network{},
 		options: o,
-		Base: base.Base{
-			Providers: providers,
+		WithIdentity: base.WithIdentity{
+			Base: base.Base{
+				Providers: providers,
+			},
+			IdentityClients: base.NewIdentityClientFactory(o.identityOptions, &o.clientOptions),
 		},
 	}
 }
@@ -86,13 +88,32 @@ func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 	return p.network
 }
 
-func (p *Provisioner) identityClient(ctx context.Context) (identityapi.ClientWithResponsesInterface, error) {
-	client, err := coreclient.FromContext(ctx)
+func identityReady(identity *unikornv1.Identity) bool {
+	condition, err := identity.StatusConditionRead(unikornv1core.ConditionAvailable)
 	if err != nil {
-		return nil, err
+		return false
 	}
 
-	return identityclient.New(client, p.options.identityOptions, &p.options.clientOptions).ControllerClient(ctx, p.network)
+	return condition.Reason == unikornv1core.ConditionReasonProvisioned
+}
+
+func providerResourceIDsRecorded(network *unikornv1.Network) bool {
+	if network.Status.Openstack == nil {
+		return false
+	}
+
+	return network.Status.Openstack.NetworkID != nil ||
+		network.Status.Openstack.SubnetID != nil ||
+		network.Status.Openstack.VlanID != nil
+}
+
+func needsProviderDelete(identity *unikornv1.Identity, network *unikornv1.Network) bool {
+	// A v2 network can be deleted after the API has created its identity-side
+	// allocation but before provisioning has waited for Identity readiness and
+	// recorded provider resource IDs. In that window there is nothing for the
+	// provider to delete, and waiting for Identity readiness would leak the
+	// allocation.
+	return identityReady(identity) || providerResourceIDsRecorded(network)
 }
 
 // Provision implements the Provision interface.
@@ -122,8 +143,10 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
-	if err := provider.DeleteNetwork(ctx, identity, p.network); err != nil {
-		return err
+	if needsProviderDelete(identity, p.network) {
+		if err := provider.DeleteNetwork(ctx, identity, p.network); err != nil {
+			return err
+		}
 	}
 
 	// Temporary hack, V1 networks don't have a discrete network allocation,
@@ -133,7 +156,7 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 	}
 
 	if v, ok := p.network.Labels[constants.ResourceAPIVersionLabel]; ok && v == constants.MarshalAPIVersion(2) {
-		api, err := p.identityClient(ctx)
+		api, err := p.IdentityClient(ctx, p.network)
 		if err != nil {
 			return err
 		}

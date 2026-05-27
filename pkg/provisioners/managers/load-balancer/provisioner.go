@@ -28,7 +28,6 @@ import (
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
-	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers"
@@ -62,8 +61,8 @@ type Provisioner struct {
 	// options are documented for the type.
 	options *Options
 
-	// Base gives this type methods for getting identities and providers.
-	base.Base
+	// WithIdentity gives this type methods for providers and identity service access.
+	base.WithIdentity
 }
 
 // New returns a new initialized provisioner object.
@@ -73,8 +72,11 @@ func New(options manager.ControllerOptions, providers providers.Providers) provi
 	return &Provisioner{
 		loadbalancer: &unikornv1.LoadBalancer{},
 		options:      o,
-		Base: base.Base{
-			Providers: providers,
+		WithIdentity: base.WithIdentity{
+			Base: base.Base{
+				Providers: providers,
+			},
+			IdentityClients: base.NewIdentityClientFactory(o.identityOptions, &o.clientOptions),
 		},
 	}
 }
@@ -84,15 +86,6 @@ var _ provisioners.ManagerProvisioner = &Provisioner{}
 
 func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 	return p.loadbalancer
-}
-
-func (p *Provisioner) identityClient(ctx context.Context) (identityapi.ClientWithResponsesInterface, error) {
-	client, err := coreclient.FromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return identityclient.New(client, p.options.identityOptions, &p.options.clientOptions).ControllerClient(ctx, p.loadbalancer)
 }
 
 // network resolves the Network referenced by constants.NetworkLabel.
@@ -154,7 +147,7 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
-	api, err := p.identityClient(ctx)
+	api, err := p.IdentityClient(ctx, p.loadbalancer)
 	if err != nil {
 		return err
 	}
