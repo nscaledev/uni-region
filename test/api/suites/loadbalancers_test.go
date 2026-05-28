@@ -38,7 +38,7 @@ import (
 	"github.com/unikorn-cloud/region/test/api"
 )
 
-const loadBalancerCleanupTimeout = 2 * time.Minute
+const loadBalancerCleanupTimeout = 10 * time.Minute
 
 func waitForLoadBalancerGoneDuringCleanup(c *api.APIClient, lbID string) error {
 	deadline := time.Now().Add(loadBalancerCleanupTimeout)
