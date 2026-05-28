@@ -23,6 +23,7 @@ package suites
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -36,6 +37,64 @@ import (
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/test/api"
 )
+
+const loadBalancerCleanupTimeout = 2 * time.Minute
+
+func waitForLoadBalancerGoneDuringCleanup(c *api.APIClient, lbID string) error {
+	deadline := time.Now().Add(loadBalancerCleanupTimeout)
+	var lastErr error
+
+	for {
+		_, err := c.GetLoadBalancer(ctx, lbID)
+		if errors.Is(err, coreclient.ErrResourceNotFound) {
+			return nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+
+		if time.Now().After(deadline) {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for load balancer %s cleanup: %w", lbID, ctx.Err())
+		case <-time.After(2 * time.Second):
+		}
+	}
+
+	if lastErr != nil {
+		return fmt.Errorf("load balancer %s still not deleted after %s: %w", lbID, loadBalancerCleanupTimeout, lastErr)
+	}
+
+	return fmt.Errorf("load balancer %s still exists after %s", lbID, loadBalancerCleanupTimeout)
+}
+
+func cleanupLoadBalancerFixture(networkID, lbID string) {
+	var cleanupErrs []error
+
+	if lbID != "" {
+		if err := regionClient.DeleteLoadBalancer(ctx, lbID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
+			GinkgoWriter.Printf("Warning: cleanup delete load balancer %s: %v\n", lbID, err)
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete load balancer %s: %w", lbID, err))
+		}
+
+		if err := waitForLoadBalancerGoneDuringCleanup(regionClient, lbID); err != nil {
+			GinkgoWriter.Printf("Warning: cleanup wait load balancer %s: %v\n", lbID, err)
+			cleanupErrs = append(cleanupErrs, err)
+		}
+	}
+
+	if networkID != "" {
+		if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
+			GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete network %s: %w", networkID, err))
+		}
+	}
+
+	Expect(errors.Join(cleanupErrs...)).NotTo(HaveOccurred(), "fixture cleanup should complete")
+}
 
 var _ = Describe("LoadBalancer", func() {
 	Context("When managing load balancer lifecycle", Ordered, func() {
@@ -54,15 +113,7 @@ var _ = Describe("LoadBalancer", func() {
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
 
 			DeferCleanup(func() {
-				if lbID != "" {
-					if err := regionClient.DeleteLoadBalancer(ctx, lbID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-						GinkgoWriter.Printf("Warning: cleanup delete load balancer %s: %v\n", lbID, err)
-					}
-					api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
-				}
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
-				}
+				cleanupLoadBalancerFixture(networkID, lbID)
 			})
 		})
 
@@ -233,15 +284,7 @@ var _ = Describe("LoadBalancer", func() {
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
 
 			DeferCleanup(func() {
-				if lbID != "" {
-					if err := regionClient.DeleteLoadBalancer(ctx, lbID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-						GinkgoWriter.Printf("Warning: cleanup delete load balancer %s: %v\n", lbID, err)
-					}
-					api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
-				}
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
-				}
+				cleanupLoadBalancerFixture(networkID, lbID)
 			})
 		})
 
@@ -294,15 +337,7 @@ var _ = Describe("LoadBalancer", func() {
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
 
 			DeferCleanup(func() {
-				if lbID != "" {
-					if err := regionClient.DeleteLoadBalancer(ctx, lbID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-						GinkgoWriter.Printf("Warning: cleanup delete load balancer %s: %v\n", lbID, err)
-					}
-					api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
-				}
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
-				}
+				cleanupLoadBalancerFixture(networkID, lbID)
 			})
 		})
 
