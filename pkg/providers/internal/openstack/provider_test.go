@@ -3466,6 +3466,57 @@ func TestDeleteLoadBalancerCascade(t *testing.T) {
 	c := gomock.NewController(t)
 	t.Cleanup(c.Finish)
 
+	t.Run("LBDeleted_NoOp", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Status.PublicIP = &corev1.IPv4Address{IP: net.ParseIP("12.34.56.78").To4()}
+		lb.Status.VIPAddress = &corev1.IPv4Address{IP: net.ParseIP("10.0.0.42").To4()}
+
+		osLB := openstackLoadBalancerFixture(lb, withProvisioningStatus("DELETED"))
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+
+		networkClient := mock.NewMockNetworkingInterface(c)
+
+		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
+
+		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+		require.NoError(t, err)
+		require.Nil(t, lb.Status.PublicIP)
+		require.Nil(t, lb.Status.VIPAddress)
+	})
+
+	unexpectedStates := []struct {
+		name   string
+		status string
+	}{
+		{"LBUnknownStatus_Consistency", "UNKNOWN"},
+		{"LBEmptyStatus_Consistency", ""},
+	}
+	for _, tc := range unexpectedStates {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			network := loadBalancerNetworkFixture()
+			lb := loadBalancerFixture(network)
+
+			osLB := openstackLoadBalancerFixture(lb, withProvisioningStatus(tc.status))
+
+			lbClient := mock.NewMockLoadBalancingInterface(c)
+			lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+
+			networkClient := mock.NewMockNetworkingInterface(c)
+
+			p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
+
+			err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+			require.ErrorIs(t, err, errors.ErrConsistency)
+		})
+	}
+
 	t.Run("LBError_StillCascades", func(t *testing.T) {
 		t.Parallel()
 
