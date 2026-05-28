@@ -21,6 +21,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -349,6 +350,60 @@ func WaitForLoadBalancerProvisioned(c *APIClient, ctx context.Context, lbID stri
 	}).WithTimeout(5*time.Minute).WithPolling(10*time.Second).
 		Should(Equal(coreapi.ResourceProvisioningStatusProvisioned),
 			"load balancer should eventually be provisioned")
+}
+
+// WaitForLoadBalancerVisible polls until GET can see a newly-created load
+// balancer. This works around the API server's cached Kubernetes read path.
+func WaitForLoadBalancerVisible(c *APIClient, ctx context.Context, lbID string) *regionopenapi.LoadBalancerV2Read {
+	GinkgoWriter.Printf("Waiting for load balancer %s to become visible\n", lbID)
+
+	var lb *regionopenapi.LoadBalancerV2Read
+
+	Eventually(func(g Gomega) bool {
+		var err error
+
+		lb, err = c.GetLoadBalancer(ctx, lbID)
+		if errors.Is(err, coreclient.ErrResourceNotFound) {
+			GinkgoWriter.Printf("Load balancer %s not yet visible by id\n", lbID)
+			return false
+		}
+
+		g.Expect(err).NotTo(HaveOccurred())
+
+		return true
+	}).WithTimeout(30*time.Second).WithPolling(time.Second).
+		Should(BeTrue(), "load balancer should become visible by id")
+
+	return lb
+}
+
+// WaitForLoadBalancerListed polls until LIST can see a newly-created load
+// balancer. This works around the API server's cached Kubernetes read path.
+func WaitForLoadBalancerListed(c *APIClient, ctx context.Context, orgID, projectID, regionID, lbID string) *regionopenapi.LoadBalancerV2Read {
+	GinkgoWriter.Printf("Waiting for load balancer %s to appear in list\n", lbID)
+
+	var found *regionopenapi.LoadBalancerV2Read
+
+	Eventually(func(g Gomega) bool {
+		list, err := c.ListLoadBalancers(ctx, orgID, projectID, regionID)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		found = nil
+
+		for i := range list {
+			if list[i].Metadata.Id == lbID {
+				found = &list[i]
+				return true
+			}
+		}
+
+		GinkgoWriter.Printf("Load balancer %s not yet visible in list\n", lbID)
+
+		return false
+	}).WithTimeout(30*time.Second).WithPolling(time.Second).
+		Should(BeTrue(), "load balancer should become visible in list")
+
+	return found
 }
 
 // WaitForLoadBalancerGone polls until GET for the load balancer returns the

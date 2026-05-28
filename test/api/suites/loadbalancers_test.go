@@ -161,23 +161,12 @@ var _ = Describe("LoadBalancer", func() {
 			})
 
 			It("appears in the load balancer list", func() {
-				list, err := regionClient.ListLoadBalancers(ctx, config.OrgID, config.ProjectID, config.RegionID)
-				Expect(err).NotTo(HaveOccurred())
-
-				var found *regionopenapi.LoadBalancerV2Read
-				for i := range list {
-					if list[i].Metadata.Id == lbID {
-						found = &list[i]
-						break
-					}
-				}
-				Expect(found).NotTo(BeNil(), "created load balancer not found in list")
+				found := api.WaitForLoadBalancerListed(regionClient, ctx, config.OrgID, config.ProjectID, config.RegionID, lbID)
 				Expect(found.Metadata.Name).To(Equal(createReq.Metadata.Name))
 			})
 
 			It("can be retrieved by id", func() {
-				got, err := regionClient.GetLoadBalancer(ctx, lbID)
-				Expect(err).NotTo(HaveOccurred())
+				got := api.WaitForLoadBalancerVisible(regionClient, ctx, lbID)
 				Expect(got.Metadata.Id).To(Equal(lbID))
 				Expect(got.Status.NetworkId).To(Equal(networkID))
 			})
@@ -217,11 +206,13 @@ var _ = Describe("LoadBalancer", func() {
 				Expect(*putResp.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
 				Expect(putResp.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
 
-				roundTrip, err := regionClient.GetLoadBalancer(ctx, lbID)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(roundTrip.Spec.Listeners[0].AllowedCidrs).NotTo(BeNil())
-				Expect(*roundTrip.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
-				Expect(roundTrip.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
+				Eventually(func(g Gomega) {
+					roundTrip, err := regionClient.GetLoadBalancer(ctx, lbID)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(roundTrip.Spec.Listeners[0].AllowedCidrs).NotTo(BeNil())
+					g.Expect(*roundTrip.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
+					g.Expect(roundTrip.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
+				}).WithTimeout(30 * time.Second).WithPolling(time.Second).Should(Succeed())
 			})
 
 			It("accepts an update toggling publicIP to false", func() {
@@ -315,8 +306,7 @@ var _ = Describe("LoadBalancer", func() {
 				Expect(created.Spec.Listeners[0].Port).To(Equal(53))
 				Expect(created.Spec.Listeners[0].IdleTimeoutSeconds).To(BeNil())
 
-				roundTrip, err := regionClient.GetLoadBalancer(ctx, lbID)
-				Expect(err).NotTo(HaveOccurred())
+				roundTrip := api.WaitForLoadBalancerVisible(regionClient, ctx, lbID)
 				Expect(roundTrip.Spec.Listeners[0].IdleTimeoutSeconds).To(BeNil())
 			})
 		})
