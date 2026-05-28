@@ -1335,6 +1335,10 @@ func openstackIdentityHasComputeState(identity *unikornv1.OpenstackIdentity) boo
 	return identity.Spec.SSHKeyName != nil || identity.Spec.ServerGroupID != nil
 }
 
+func openstackIdentityHasIdentityState(identity *unikornv1.OpenstackIdentity) bool {
+	return identity.Spec.UserID != nil || identity.Spec.ProjectID != nil
+}
+
 func canSkipOpenStackIdentityComputeDelete(err error) bool {
 	if gophercloud.ResponseCodeIs(err, http.StatusUnauthorized) {
 		return true
@@ -1343,9 +1347,104 @@ func canSkipOpenStackIdentityComputeDelete(err error) bool {
 	return kerrors.IsNotFound(err) || errors.Is(err, coreerrors.ErrConsistency)
 }
 
+func canIgnoreOpenStackIdentityComputeDelete(err error) bool {
+	return gophercloud.ResponseCodeIs(err, http.StatusNotFound) || canSkipOpenStackIdentityComputeDelete(err)
+}
+
+func deleteOpenStackIdentityKeypair(ctx context.Context, compute ComputeInterface, identity *unikornv1.OpenstackIdentity) error {
+	if identity.Spec.SSHKeyName == nil {
+		return nil
+	}
+
+	err := compute.DeleteKeypair(ctx, keyPairName)
+	if err == nil || canIgnoreOpenStackIdentityComputeDelete(err) {
+		return nil
+	}
+
+	return err
+}
+
+func deleteOpenStackIdentityServerGroup(ctx context.Context, compute ComputeInterface, identity *unikornv1.OpenstackIdentity) error {
+	if identity.Spec.ServerGroupID == nil {
+		return nil
+	}
+
+	err := compute.DeleteServerGroup(ctx, *identity.Spec.ServerGroupID)
+	if err == nil || canIgnoreOpenStackIdentityComputeDelete(err) {
+		return nil
+	}
+
+	return err
+}
+
+func (p *Provider) deleteOpenStackIdentityComputeState(ctx context.Context, identity *unikornv1.Identity, openstackIdentity *unikornv1.OpenstackIdentity) error {
+	if !openstackIdentityHasComputeState(openstackIdentity) {
+		return nil
+	}
+
+	// Rescope to the user/project to delete project-local compute extras. If
+	// the service principal was never fully usable, continue to admin-scoped
+	// identity cleanup instead of pinning the finalizer.
+	compute, err := p.computeFromServicePrincipal(ctx, identity)
+	if err != nil {
+		if canSkipOpenStackIdentityComputeDelete(err) {
+			return nil
+		}
+
+		return err
+	}
+
+	if err := deleteOpenStackIdentityKeypair(ctx, compute, openstackIdentity); err != nil {
+		return err
+	}
+
+	return deleteOpenStackIdentityServerGroup(ctx, compute, openstackIdentity)
+}
+
+func deleteOpenStackUser(ctx context.Context, identityService *IdentityClient, userID *string) error {
+	if userID == nil {
+		return nil
+	}
+
+	err := identityService.DeleteUser(ctx, *userID)
+	if err == nil || gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+		return nil
+	}
+
+	return err
+}
+
+func deleteOpenStackProject(ctx context.Context, identityService *IdentityClient, projectID *string) error {
+	if projectID == nil {
+		return nil
+	}
+
+	err := identityService.DeleteProject(ctx, *projectID)
+	if err == nil || gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+		return nil
+	}
+
+	return err
+}
+
+func (p *Provider) deleteOpenStackIdentityResources(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
+	if !openstackIdentityHasIdentityState(identity) {
+		return nil
+	}
+
+	identityService, err := p.openstack.identity(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := deleteOpenStackUser(ctx, identityService, identity.Spec.UserID); err != nil {
+		return err
+	}
+
+	return deleteOpenStackProject(ctx, identityService, identity.Spec.ProjectID)
+}
+
 // DeleteIdentity cleans up an identity for cloud infrastructure.
-//
-//nolint:cyclop,gocognit
 func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Identity) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
@@ -1356,55 +1455,12 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Ident
 		return nil
 	}
 
-	if openstackIdentityHasComputeState(openstackIdentity) {
-		// Rescope to the user/project to delete project-local compute extras.
-		// If the service principal was never fully usable, continue to
-		// admin-scoped identity cleanup instead of pinning the finalizer.
-		compute, err := p.computeFromServicePrincipal(ctx, identity)
-		if err != nil {
-			if !canSkipOpenStackIdentityComputeDelete(err) {
-				return err
-			}
-		} else {
-			if openstackIdentity.Spec.SSHKeyName != nil {
-				if err := compute.DeleteKeypair(ctx, keyPairName); err != nil {
-					if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) && !canSkipOpenStackIdentityComputeDelete(err) {
-						return err
-					}
-				}
-			}
-
-			if openstackIdentity.Spec.ServerGroupID != nil {
-				if err := compute.DeleteServerGroup(ctx, *openstackIdentity.Spec.ServerGroupID); err != nil {
-					if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) && !canSkipOpenStackIdentityComputeDelete(err) {
-						return err
-					}
-				}
-			}
-		}
+	if err := p.deleteOpenStackIdentityComputeState(ctx, identity, openstackIdentity); err != nil {
+		return err
 	}
 
-	if openstackIdentity.Spec.UserID != nil || openstackIdentity.Spec.ProjectID != nil {
-		identityService, err := p.openstack.identity(ctx)
-		if err != nil {
-			return err
-		}
-
-		if openstackIdentity.Spec.UserID != nil {
-			if err := identityService.DeleteUser(ctx, *openstackIdentity.Spec.UserID); err != nil {
-				if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-					return err
-				}
-			}
-		}
-
-		if openstackIdentity.Spec.ProjectID != nil {
-			if err := identityService.DeleteProject(ctx, *openstackIdentity.Spec.ProjectID); err != nil {
-				if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-					return err
-				}
-			}
-		}
+	if err := p.deleteOpenStackIdentityResources(ctx, openstackIdentity); err != nil {
+		return err
 	}
 
 	if err := p.client.Delete(ctx, openstackIdentity); err != nil {
