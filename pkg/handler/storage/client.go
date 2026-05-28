@@ -341,9 +341,9 @@ func generateAttachment(network *regionv1.Network, parallelism int) (*regionv1.A
 	}, nil
 }
 
-// validateStorageRange checks that the network has a valid IPv4 storage range
-// with enough addresses for the requested parallelism. The range is inclusive
-// on both ends: [Start, End], so Start=10.0.0.1, End=10.0.0.4 yields 4 addresses.
+// validateStorageRange checks that the network has a non-empty IPv4 storage
+// range. The range is inclusive on both ends: [Start, End], so Start=10.0.0.1,
+// End=10.0.0.4 yields 4 addresses.
 func validateStorageRange(network *regionv1.Network, parallelism int) (*regionv1.AttachmentIPRange, error) {
 	if parallelism < 1 {
 		return nil, errors.HTTPUnprocessableContent("requested parallelism must be at least 1")
@@ -372,10 +372,9 @@ func validateStorageRange(network *regionv1.Network, parallelism int) (*regionv1
 		big.NewInt(0).SetBytes(endIP),
 		big.NewInt(0).SetBytes(startIP),
 	)
-	required := big.NewInt(int64(parallelism - 1))
 
-	if available.Cmp(required) < 0 {
-		return nil, errors.HTTPUnprocessableContent("network storage range does not have enough available addresses for the requested parallelism")
+	if available.Sign() < 0 {
+		return nil, errors.HTTPUnprocessableContent("network storage range does not contain any usable addresses")
 	}
 
 	return sr, nil

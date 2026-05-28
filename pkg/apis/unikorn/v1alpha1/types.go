@@ -1109,10 +1109,9 @@ type FileStorageClassSpec struct {
 	Provisioner string `json:"provisioner"`
 	// Protocols specifies the storage protocols (e.g., NFSv3, NFSv4) supported by this class.
 	Protocols []Protocol `json:"protocols,omitempty"`
-	// Parallelism defines the number of IP addresses that are assigned to the storage.
-	// More IP addresses, better performance.  If the value specified overflows
-	// the available address range reserved on the network it will be capped
-	// at the maximum allowed value.
+	// Parallelism defines the target number of IP addresses assigned to storage.
+	// More IP addresses can improve performance. Attachments use
+	// min(parallelism, usable IPs in the network storage range).
 	// +kubebuilder:default=4
 	Parallelism *int `json:"parallelism,omitempty"`
 }
