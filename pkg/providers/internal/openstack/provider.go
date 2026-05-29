@@ -355,11 +355,6 @@ func (p *Provider) loadBalancerFromServicePrincipal(ctx context.Context, identit
 	return client, nil
 }
 
-// Kind returns the provider kind.
-func (p *Provider) Kind() unikornv1.Provider {
-	return unikornv1.ProviderOpenstack
-}
-
 // Region returns the provider's region.
 func (p *Provider) Region(ctx context.Context) (*unikornv1.Region, error) {
 	region, _, err := p.openstack.regionRefresh(ctx)
