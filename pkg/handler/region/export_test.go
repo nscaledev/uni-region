@@ -16,8 +16,19 @@ limitations under the License.
 
 package region
 
+import (
+	"context"
+
+	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/openapi"
+)
+
 //nolint:gochecknoglobals
 var ConvertRegionType = convertRegionType
 
 //nolint:gochecknoglobals
 var Convert = convert
+
+func (c *Client) ConvertDetail(ctx context.Context, in *unikornv1.Region) (*openapi.RegionDetailRead, error) {
+	return c.convertDetail(ctx, in)
+}

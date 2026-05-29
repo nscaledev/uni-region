@@ -69,6 +69,52 @@ func TestConvertRegionType(t *testing.T) {
 	}
 }
 
+// TestConvertDetailPhysicalNetworksFeatureFlag covers the convertDetail path for
+// the Openstack provider, which shares the same nil guard as convert().
+func TestConvertDetailPhysicalNetworksFeatureFlag(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Openstack with nil Openstack spec leaves PhysicalNetworks false", func(t *testing.T) {
+		t.Parallel()
+
+		c := regionClientFixture(t)
+
+		in := &unikornv1.Region{
+			Spec: unikornv1.RegionSpec{
+				Provider:  unikornv1.ProviderOpenstack,
+				Openstack: nil,
+			},
+		}
+
+		out, err := c.ConvertDetail(t.Context(), in)
+		require.NoError(t, err)
+		require.False(t, out.Spec.Features.PhysicalNetworks)
+	})
+
+	t.Run("Openstack with ProviderNetworks sets PhysicalNetworks true", func(t *testing.T) {
+		t.Parallel()
+
+		c := regionClientFixture(t)
+
+		in := &unikornv1.Region{
+			Spec: unikornv1.RegionSpec{
+				Provider: unikornv1.ProviderOpenstack,
+				Openstack: &unikornv1.RegionOpenstackSpec{
+					Network: &unikornv1.RegionOpenstackNetworkSpec{
+						ProviderNetworks: &unikornv1.ProviderNetworks{
+							Network: ptr.To("physnet1"),
+						},
+					},
+				},
+			},
+		}
+
+		out, err := c.ConvertDetail(t.Context(), in)
+		require.NoError(t, err)
+		require.True(t, out.Spec.Features.PhysicalNetworks)
+	})
+}
+
 // TestConvertPhysicalNetworksFeatureFlag verifies that PhysicalNetworks is true
 // only when the region uses Openstack and has ProviderNetworks configured.
 func TestConvertPhysicalNetworksFeatureFlag(t *testing.T) {
