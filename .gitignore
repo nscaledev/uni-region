@@ -15,4 +15,5 @@ test/.env.provider
 test/ca-bundle.pem
 junit.xml
 test-results.json
+test-artifacts/
 hack/ci/ca-bundle.pem

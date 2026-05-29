@@ -83,6 +83,8 @@ jobs:
       TEST_SECONDARY_ORG_ID: ${{ vars.DEV_TEST_SECONDARY_ORG_ID }}
       TEST_SECONDARY_PROJECT_ID: ${{ vars.DEV_TEST_SECONDARY_PROJECT_ID }}
       TEST_SECONDARY_AUTH_TOKEN: ${{ secrets.DEV_TEST_SECONDARY_AUTH_TOKEN }}
+      CAPTURE_NETWORK_LOGS: 'true'
+      NETWORK_LOG_DIR: ${{ github.workspace }}/test-artifacts/network
 
     steps:
     - name: Checkout
@@ -118,6 +120,14 @@ jobs:
       with:
         name: api-test-junit-dev
         path: junit.xml
+
+    - name: Archive API Network Logs
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: api-network-logs-dev
+        path: test-artifacts/network
+        if-no-files-found: ignore
 
     - name: Create Linear Issues for Test Failures
       uses: nscaledev/quality-tooling/.github/actions/linear-test-failures@main
@@ -180,6 +190,8 @@ jobs:
       TEST_SECONDARY_ORG_ID: ${{ vars.UAT_TEST_SECONDARY_ORG_ID }}
       TEST_SECONDARY_PROJECT_ID: ${{ vars.UAT_TEST_SECONDARY_PROJECT_ID }}
       TEST_SECONDARY_AUTH_TOKEN: ${{ secrets.UAT_TEST_SECONDARY_AUTH_TOKEN }}
+      CAPTURE_NETWORK_LOGS: 'true'
+      NETWORK_LOG_DIR: ${{ github.workspace }}/test-artifacts/network
 
     steps:
     - name: Checkout
@@ -217,6 +229,14 @@ jobs:
       with:
         name: api-test-junit-uat
         path: junit.xml
+
+    - name: Archive API Network Logs
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: api-network-logs-uat
+        path: test-artifacts/network
+        if-no-files-found: ignore
 
     - name: Create Linear Issues for Test Failures
       uses: nscaledev/quality-tooling/.github/actions/linear-test-failures@main
