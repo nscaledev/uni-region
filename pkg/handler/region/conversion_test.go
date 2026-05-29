@@ -173,7 +173,7 @@ func TestConvertPhysicalNetworksFeatureFlag(t *testing.T) {
 
 		in := &unikornv1.Region{
 			Spec: unikornv1.RegionSpec{
-				Provider: unikornv1.ProviderOpenstack,
+				Provider:  unikornv1.ProviderOpenstack,
 				Openstack: &unikornv1.RegionOpenstackSpec{},
 			},
 		}

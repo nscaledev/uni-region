@@ -182,8 +182,8 @@ func TestConvertImagePackages(t *testing.T) {
 		t.Parallel()
 
 		pkgs := types.ImagePackages{
-			"cuda":  "v12.3.0",
-			"nccl":  "v2.19.3",
+			"cuda": "v12.3.0",
+			"nccl": "v2.19.3",
 		}
 
 		img := minimalImage()
