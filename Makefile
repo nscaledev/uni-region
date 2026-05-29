@@ -533,6 +533,10 @@ kind-cluster:  ## Create KinD cluster (skips if KIND_CLUSTER already exists)
 	kind get clusters | grep -q '^$(KIND_CLUSTER)$$' || \
 	  kind create cluster --name $(KIND_CLUSTER) --config "$$IDENTITY_KIND_CONFIG"
 
+.PHONY: kind-kubeconfig
+kind-kubeconfig: kind-cluster  ## Refresh the kubeconfig pointed at by $$KUBECONFIG so it includes the kind cluster context
+	@umask 077 && kind export kubeconfig --name $(KIND_CLUSTER) >/dev/null
+
 .PHONY: integration-infra
 integration-infra:  ## Install cluster prerequisites (idempotent, context-aware)
 	hack/ci/setup-infra
@@ -561,3 +565,62 @@ integration-fixtures:  ## Create integration fixtures and write test/.env
 
 .PHONY: integration-test
 integration-test: kind-cluster integration-infra integration-install integration-fixtures test-api-ci  ## Full local integration run
+
+.PHONY: test-devstack-preflight
+test-devstack-preflight:
+	@if [ -z "$$OS_AUTH_URL" ]; then \
+	  echo "error: OS_AUTH_URL is not set. Source an openrc before running make test-devstack." >&2; \
+	  exit 1; \
+	fi; \
+	curl_err=""; \
+	status="$$(curl -s -o /dev/null -m3 -w '%{http_code}' "$$OS_AUTH_URL" 2>/dev/null)" || curl_err="curl exit $$?"; \
+	case "$$status" in 2*|3*|401) ;; *) \
+	  echo "error: DevStack auth URL $$OS_AUTH_URL not reachable (HTTP $$status$${curl_err:+; $$curl_err})." >&2; \
+	  echo "       Check the port-forward, and for HTTPS endpoints with a private CA pass DEVSTACK_POD_AUTH_URL explicitly." >&2; \
+	  exit 1 ;; \
+	esac; \
+	echo "==> Preflight: DevStack reachable at $$OS_AUTH_URL (HTTP $$status)"
+
+export KUBECONFIG
+
+.PHONY: test-devstack
+test-devstack: KUBECONFIG := $(CURDIR)/test/.kubeconfig
+test-devstack: DEVSTACK_REGION_ID ?= devstack
+test-devstack: DEVSTACK_CLUSTER_ROLES ?= member,load-balancer_member,manager
+test-devstack: DEVSTACK_ENV_DIR ?= ../uni-devstack/.devstack
+test-devstack: test-devstack-preflight kind-cluster kind-kubeconfig integration-infra integration-install integration-fixtures  ## Full integration run against a live DevStack
+	@set -e; \
+	for f in flavors.env images.env; do \
+	  if [ -f "$(DEVSTACK_ENV_DIR)/$$f" ]; then \
+	    echo "==> Sourcing $(DEVSTACK_ENV_DIR)/$$f"; \
+	    set -a; . "$(DEVSTACK_ENV_DIR)/$$f"; set +a; \
+	  fi; \
+	done; \
+	if [ -z "$$DEVSTACK_POD_AUTH_URL" ]; then \
+	  if ! docker_inspect="$$(docker network inspect kind 2>&1)"; then \
+	    echo "error: 'docker network inspect kind' failed (is Docker running and the kind network present?):" >&2; \
+	    echo "$$docker_inspect" | sed 's/^/  /' >&2; \
+	    echo "Set DEVSTACK_POD_AUTH_URL explicitly to bypass auto-detection." >&2; \
+	    exit 1; \
+	  fi; \
+	  gw="$$(echo "$$docker_inspect" \
+	    | jq -r '[.[0].IPAM.Config[] | select(.Gateway and (.Gateway | test("^[0-9.]+$$"))) | .Gateway] | first // empty')"; \
+	  if [ -z "$$gw" ]; then \
+	    echo "error: kind docker network has no IPv4 gateway; set DEVSTACK_POD_AUTH_URL explicitly." >&2; \
+	    exit 1; \
+	  fi; \
+	  DEVSTACK_POD_AUTH_URL="$$(echo "$$OS_AUTH_URL" | sed -E "s|://[^/:]+|://$$gw|")"; \
+	fi; \
+	echo "==> Configuring OpenStack provider (UNIKORN_OPENSTACK_AUTH_URL=$$DEVSTACK_POD_AUTH_URL)"; \
+	UNIKORN_OPENSTACK_AUTH_URL="$$DEVSTACK_POD_AUTH_URL" \
+	  hack/openstack/configure --rotate-password --output test/.env.provider; \
+	echo "==> Registering DevStack region"; \
+	. test/.env.install && \
+	  hack/openstack/register-region \
+	    --provider-env test/.env.provider \
+	    --namespace "$$REGION_NAMESPACE" \
+	    --region-id "$(DEVSTACK_REGION_ID)" \
+	    --create-secret \
+	    --cluster-roles "$(DEVSTACK_CLUSTER_ROLES)"; \
+	echo "==> Running API integration suite"; \
+	$(MAKE) test-api
