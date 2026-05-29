@@ -464,7 +464,7 @@ func (c *ClientV2) GetV2Raw(ctx context.Context, serverID string) (*regionv1.Ser
 	// Only allow access to resources created by this API (temporarily).
 	v, ok := result.Labels[constants.ResourceAPIVersionLabel]
 	if !ok {
-		return nil, errors.HTTPNotFound()
+		return nil, errors.HTTPNotFound().WithValues("serverID", serverID)
 	}
 
 	version, err := constants.UnmarshalAPIVersion(v)
