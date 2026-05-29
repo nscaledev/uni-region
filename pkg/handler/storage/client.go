@@ -368,12 +368,15 @@ func validateStorageRange(network *regionv1.Network, parallelism int) (*regionv1
 		return nil, errors.HTTPUnprocessableContent("network storage range is not a valid IPv4 range")
 	}
 
+	// Storage ranges are inclusive, so Start == End means one usable address.
+	// A zero or negative inclusive count means End is before Start.
 	available := big.NewInt(0).Sub(
 		big.NewInt(0).SetBytes(endIP),
 		big.NewInt(0).SetBytes(startIP),
 	)
+	available.Add(available, big.NewInt(1))
 
-	if available.Sign() < 0 {
+	if available.Sign() <= 0 {
 		return nil, errors.HTTPUnprocessableContent("network storage range does not contain any usable addresses")
 	}
 
