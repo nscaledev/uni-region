@@ -54,7 +54,7 @@ func convert(in *unikornv1.Region) *openapi.RegionRead {
 
 	// Calculate any region specific configuration.
 	if in.Spec.Provider == unikornv1.ProviderOpenstack {
-		if in.Spec.Openstack.Network != nil && in.Spec.Openstack.Network.ProviderNetworks != nil {
+		if in.Spec.Openstack != nil && in.Spec.Openstack.Network != nil && in.Spec.Openstack.Network.ProviderNetworks != nil {
 			out.Spec.Features.PhysicalNetworks = true
 		}
 	}
@@ -92,7 +92,7 @@ func (c *Client) convertDetail(ctx context.Context, in *unikornv1.Region) (*open
 			out.Spec.Kubernetes.DomainName = &in.Spec.Kubernetes.DomainName
 		}
 	case unikornv1.ProviderOpenstack:
-		if in.Spec.Openstack.Network != nil && in.Spec.Openstack.Network.ProviderNetworks != nil {
+		if in.Spec.Openstack != nil && in.Spec.Openstack.Network != nil && in.Spec.Openstack.Network.ProviderNetworks != nil {
 			out.Spec.Features.PhysicalNetworks = true
 		}
 	case unikornv1.ProviderSimulated:
