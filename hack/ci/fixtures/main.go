@@ -571,19 +571,15 @@ func upsertRegion(ctx context.Context, k8s client.Client, regionNamespace, name 
 	}
 }
 
-func validateExistingRegion(ctx context.Context, k8s client.Client, regionNamespace, name string, provider regionv1.Provider) error {
+func getExistingRegionProvider(ctx context.Context, k8s client.Client, regionNamespace, name string) (regionv1.Provider, error) {
 	region := &regionv1.Region{}
 	key := types.NamespacedName{Namespace: regionNamespace, Name: name}
 
 	if err := k8s.Get(ctx, key, region); err != nil {
-		return fmt.Errorf("region fixture %q was not found in namespace %q: %w", name, regionNamespace, err)
+		return "", fmt.Errorf("region fixture %q was not found in namespace %q: %w", name, regionNamespace, err)
 	}
 
-	if region.Spec.Provider != provider {
-		return fmt.Errorf("%w: %q in namespace %q has provider %q, want %q", errRegionProviderMismatch, name, regionNamespace, region.Spec.Provider, provider)
-	}
-
-	return nil
+	return region.Spec.Provider, nil
 }
 
 func main() {
@@ -601,6 +597,8 @@ type options struct {
 	fixtureCertDuration time.Duration
 	regionProvider      string
 	testRegionID        string
+	serverFlavorID      string
+	serverImageID       string
 	internalCertDir     string
 }
 
@@ -618,8 +616,10 @@ func parseOptions() options {
 	caCertPath := flag.String("ca-cert", os.Getenv("IDENTITY_CA_CERT"), "Path to CA certificate bundle")
 	regionCACertPath := flag.String("region-ca-cert", os.Getenv("REGION_CA_CERT"), "Path to region CA certificate bundle")
 	fixtureCertDuration := flag.String("fixture-cert-duration", envOrDefault("FIXTURE_CERT_DURATION", defaultFixtureCertDuration.String()), "Duration for generated mTLS fixture certificates")
-	regionProvider := flag.String("region-provider", envDefault("REGION_PROVIDER", string(regionv1.ProviderSimulated)), "Region provider fixture mode: simulated or openstack")
-	testRegionID := flag.String("test-region-id", firstEnv("TEST_REGION_ID", "OPENSTACK_REGION_ID"), "Existing region ID to use for tests when --region-provider=openstack")
+	regionProvider := flag.String("region-provider", os.Getenv("REGION_PROVIDER"), "Expected region provider fixture mode: simulated or openstack")
+	testRegionID := flag.String("test-region-id", firstEnv("TEST_REGION_ID", "OPENSTACK_REGION_ID"), "Existing region ID to use for tests; provider is inferred from the Region CR when set")
+	serverFlavorID := flag.String("server-flavor-id", firstEnv("TEST_SERVER_FLAVOR_ID", "UNIKORN_OPENSTACK_FLAVOR_ID"), "Flavor ID used by OpenStack server lifecycle tests")
+	serverImageID := flag.String("server-image-id", firstEnv("TEST_SERVER_IMAGE_ID", "UNIKORN_OPENSTACK_IMAGE_ID"), "Image ID used by OpenStack server lifecycle tests")
 	internalCertDir := flag.String("internal-cert-dir", os.Getenv("INTERNAL_API_CERT_DIR"), "Directory for generated internal API client certificate files")
 	flag.Parse()
 
@@ -628,6 +628,7 @@ func parseOptions() options {
 			--region-namespace NS --region-base-url URL --ca-cert PATH
 			[--region-ca-cert PATH] [--fixture-cert-duration DURATION]
 			[--internal-cert-dir DIR]
+			[--server-flavor-id ID] [--server-image-id ID]
 			[--region-provider simulated|openstack] [--test-region-id ID]`)
 		os.Exit(1)
 	}
@@ -656,16 +657,10 @@ func parseOptions() options {
 		fixtureCertDuration: duration,
 		regionProvider:      *regionProvider,
 		testRegionID:        *testRegionID,
+		serverFlavorID:      *serverFlavorID,
+		serverImageID:       *serverImageID,
 		internalCertDir:     internalCertDirValue,
 	}
-}
-
-func envDefault(name, defaultValue string) string {
-	if value := os.Getenv(name); value != "" {
-		return value
-	}
-
-	return defaultValue
 }
 
 func firstEnv(names ...string) string {
@@ -678,23 +673,47 @@ func firstEnv(names ...string) string {
 	return ""
 }
 
-func resolveTestRegionID(regionProvider, explicitRegionID string) (regionv1.Provider, string, error) {
-	provider := regionv1.Provider(regionProvider)
-
+func validateSupportedProvider(provider regionv1.Provider) error {
 	switch provider {
-	case regionv1.ProviderSimulated:
-		return provider, publicRegion, nil
-	case regionv1.ProviderOpenstack:
-		if explicitRegionID == "" {
-			return "", "", errOpenstackTestRegionIDRequired
+	case regionv1.ProviderSimulated, regionv1.ProviderOpenstack:
+		return nil
+	case regionv1.ProviderKubernetes:
+		return fmt.Errorf("%w %q", errUnsupportedRegionProvider, provider)
+	default:
+		return fmt.Errorf("%w %q", errUnsupportedRegionProvider, provider)
+	}
+}
+
+func resolveRegionFixture(ctx context.Context, k8s client.Client, regionNamespace, expectedProvider, explicitRegionID string) (regionv1.Provider, string, bool, error) {
+	if expectedProvider != "" {
+		provider := regionv1.Provider(expectedProvider)
+		if err := validateSupportedProvider(provider); err != nil {
+			return "", "", false, err
+		}
+	}
+
+	if explicitRegionID == "" {
+		if regionv1.Provider(expectedProvider) == regionv1.ProviderOpenstack {
+			return "", "", false, errOpenstackTestRegionIDRequired
 		}
 
-		return provider, explicitRegionID, nil
-	case regionv1.ProviderKubernetes:
-		return "", "", fmt.Errorf("%w %q", errUnsupportedRegionProvider, regionProvider)
-	default:
-		return "", "", fmt.Errorf("%w %q", errUnsupportedRegionProvider, regionProvider)
+		return regionv1.ProviderSimulated, publicRegion, false, nil
 	}
+
+	provider, err := getExistingRegionProvider(ctx, k8s, regionNamespace, explicitRegionID)
+	if err != nil {
+		return "", "", false, err
+	}
+
+	if err := validateSupportedProvider(provider); err != nil {
+		return "", "", false, err
+	}
+
+	if expectedProvider != "" && provider != regionv1.Provider(expectedProvider) {
+		return "", "", false, fmt.Errorf("%w: %q in namespace %q has provider %q, want %q", errRegionProviderMismatch, explicitRegionID, regionNamespace, provider, expectedProvider)
+	}
+
+	return provider, explicitRegionID, true, nil
 }
 
 func resolveCertPaths(opts options) options {
@@ -789,6 +808,8 @@ func emitEnv(opts options, primary primaryFixture, secondaryOrgID, secondaryToke
 	fmt.Printf("ADMIN_AUTH_TOKEN=%s\n", primary.adminToken)
 	fmt.Printf("USER_AUTH_TOKEN=%s\n", primary.userToken)
 	fmt.Printf("TEST_REGION_ID=%s\n", testRegionID)
+	fmt.Printf("TEST_SERVER_FLAVOR_ID=%s\n", opts.serverFlavorID)
+	fmt.Printf("TEST_SERVER_IMAGE_ID=%s\n", opts.serverImageID)
 	fmt.Printf("TEST_PRIVATE_REGION_ID=%s\n", privateRegion)
 	fmt.Printf("TEST_SECONDARY_ORG_ID=%s\n", secondaryOrgID)
 	fmt.Printf("TEST_SECONDARY_AUTH_TOKEN=%s\n", secondaryToken)
@@ -803,17 +824,13 @@ func run(opts options) {
 	ctx := context.Background()
 	k8s := newKubernetesClient()
 
-	provider, testRegionID, err := resolveTestRegionID(opts.regionProvider, opts.testRegionID)
+	provider, testRegionID, existingRegion, err := resolveRegionFixture(ctx, k8s, opts.regionNamespace, opts.regionProvider, opts.testRegionID)
 	if err != nil {
 		fatalf("%v", err)
 	}
 
-	if provider == regionv1.ProviderOpenstack {
-		if err := validateExistingRegion(ctx, k8s, opts.regionNamespace, testRegionID, regionv1.ProviderOpenstack); err != nil {
-			fatalf("%v", err)
-		}
-
-		logf("Using existing OpenStack region fixture %s in namespace %s...", testRegionID, opts.regionNamespace)
+	if existingRegion {
+		logf("Using existing %s region fixture %s in namespace %s...", provider, testRegionID, opts.regionNamespace)
 	}
 
 	logf("Issuing mTLS client certificate for %s...", fixtureActor)
@@ -832,7 +849,7 @@ func run(opts options) {
 	internalCertPEM, internalKeyPEM := issueCert(ctx, k8s, opts.identityNamespace, internalAPICertificateName, internalAPISystemAccountCN, internalCertDuration)
 	internalAPI := writeInternalAPICredentials(opts, internalCertPEM, internalKeyPEM)
 
-	if provider == regionv1.ProviderSimulated {
+	if provider == regionv1.ProviderSimulated && !existingRegion {
 		logf("Creating simulated public region fixture in namespace %s...", opts.regionNamespace)
 		upsertRegion(ctx, k8s, opts.regionNamespace, publicRegion, nil)
 	}

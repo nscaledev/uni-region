@@ -105,11 +105,16 @@ regions:
       name: gb-north-1-credentials # See the provider setup section
 ```
 
-The configures the service to be exposed on the specified host using an ingress with TLS and DDNS.
+This configures the service to be exposed on the specified host using an ingress
+with TLS and DDNS.
 
 The OIDC configuration allows token validation at the API.
 
 Regions define cloud instances to expose to clients.
+The `provider` field in the Helm values remains required installation
+configuration. The test fixture provider inference described below only controls
+which existing Region CR `make integration-fixtures` uses for generated test
+data.
 
 ## Running Tests
 
@@ -155,19 +160,23 @@ target region. The tests skip rather than selecting arbitrary inventory when
 those values are absent.
 
 To run API tests against an OpenStack-backed region, generate `test/.env.install`
-first, then register or reference the region. In OpenStack mode the public test
-region is the existing Region CR identified by `TEST_REGION_ID`; the simulated
-private region fixture is still created. `OPENSTACK_REGION_ID` is accepted as a
-fallback alias for the value printed by `register-region`, but `TEST_REGION_ID`
-takes precedence when both are set. `register-region` prints the environment
-entries the fixture setup needs:
+first, then register or reference the region. When `TEST_REGION_ID` points at an
+OpenStack-backed Region CR, the public test region is that existing Region and
+the simulated private region fixture is still created. `OPENSTACK_REGION_ID` is
+accepted as a fallback alias for the value printed by `register-region`, but
+`TEST_REGION_ID` takes precedence when both are set. Register the Region in the
+same Kubernetes namespace that `test/.env.install` records for the Region
+service. `register-region` prints the environment entries the fixture setup
+needs:
 
 ```bash
 provider_env="${TMPDIR:-/tmp}/gb-north-1.openstack.env" # From hack/openstack/configure.
 
+. test/.env.install
+
 hack/openstack/register-region \
     --provider-env "${provider_env}" \
-    --namespace unikorn-region \
+    --namespace "${REGION_NAMESPACE}" \
     --region-id c7e8492f-c320-4278-8201-48cd38fed38b \
     --display-name gb-north-1 \
     --secret-name gb-north-1-openstack-credentials \
@@ -179,6 +188,17 @@ set -a
 set +a
 make integration-fixtures
 ```
+
+The emitted `REGION_PROVIDER=openstack` value is a safeguard. The fixture setup
+infers the provider from `TEST_REGION_ID` and fails if `REGION_PROVIDER`
+disagrees with the Region CR.
+
+If the provider env contains `UNIKORN_OPENSTACK_FLAVOR_ID` and
+`UNIKORN_OPENSTACK_IMAGE_ID`, `register-region` emits the corresponding
+`TEST_SERVER_FLAVOR_ID` and `TEST_SERVER_IMAGE_ID` values and
+`make integration-fixtures` preserves them in `test/.env`. Otherwise export
+those `TEST_SERVER_*` values before running fixtures if you want server
+lifecycle tests to run rather than skip.
 
 For persistent regions, create or sync the OpenStack credential Secret from a
 password manager and omit `--create-secret`; see the OpenStack provider

@@ -47,8 +47,11 @@ func (g *GinkgoLogger) Printf(format string, args ...interface{}) {
 	ginkgo.GinkgoWriter.Printf(format, args...)
 }
 
-// ErrInternalAPIConfigMissing is returned when local-only internal credentials are absent.
-var ErrInternalAPIConfigMissing = errors.New("internal API credentials are not configured")
+var (
+	// ErrInternalAPIConfigMissing is returned when local-only internal credentials are absent.
+	ErrInternalAPIConfigMissing = errors.New("internal API credentials are not configured")
+	errParsingRegionCABundle    = errors.New("parsing region CA bundle")
+)
 
 // APIClient wraps the core API client with region-specific methods.
 // Add methods here as you write tests for specific endpoints.
@@ -109,7 +112,7 @@ func (c *APIClient) internalRegionClient() (*http.Client, error) {
 
 		caPool := x509.NewCertPool()
 		if !caPool.AppendCertsFromPEM(caBytes) {
-			return nil, errors.New("parsing region CA bundle")
+			return nil, errParsingRegionCABundle
 		}
 
 		tlsConfig.RootCAs = caPool

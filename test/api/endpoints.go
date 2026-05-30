@@ -210,12 +210,12 @@ func (e *Endpoints) DeleteSSHCertificateAuthority(sshCAID string) string {
 // ListServers returns the endpoint for listing servers in a project.
 func (e *Endpoints) ListServers(orgID, projectID, regionID, networkID string) string {
 	values := url.Values{}
-	values.Set("organizationId", orgID)
-	values.Set("projectId", projectID)
-	values.Set("regionId", regionID)
+	values.Set("organizationID", orgID)
+	values.Set("projectID", projectID)
+	values.Set("regionID", regionID)
 
 	if networkID != "" {
-		values.Set("networkId", networkID)
+		values.Set("networkID", networkID)
 	}
 
 	return fmt.Sprintf("/api/v2/servers?%s", values.Encode())
