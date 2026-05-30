@@ -26,6 +26,8 @@ accounting meet.
 - storage-class and region compatibility are validated before mutation
 - attachment IP ranges are derived from transitional provider-specific network
   storage-range information
+- attachment parallelism is capped to the usable network storage range; smaller
+  non-empty storage ranges are accepted and used in full
 - attachment status reporting is currently based partly on desired state rather
   than fully observed actual state
 
@@ -37,6 +39,7 @@ accounting meet.
 - Quota allocation changes are part of the storage lifecycle contract, not an
   optional side effect.
 - Attachments must reference visible, provisioned networks in the same project.
+- Attached networks must expose a valid non-empty IPv4 storage range.
 - Update preserves the existing allocation annotation while mutating the storage
   resource.
 
