@@ -145,18 +145,7 @@ func convertPowerStateV2(in regionv1.InstanceLifecyclePhase) *openapi.InstanceLi
 	return nil
 }
 
-func convertHealthConditionV2(in *regionv1.Server) (*string, *string) {
-	condition, err := in.StatusConditionRead(corev1.ConditionHealthy)
-	if err != nil {
-		return nil, nil
-	}
-
-	return ptr.To(string(condition.Reason)), ptr.To(condition.Message)
-}
-
 func convertV2(in *regionv1.Server) *openapi.ServerV2Read {
-	healthReason, healthMessage := convertHealthConditionV2(in)
-
 	out := &openapi.ServerV2Read{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.ServerV2Spec{
@@ -169,8 +158,6 @@ func convertV2(in *regionv1.Server) *openapi.ServerV2Read {
 			RegionId:                  in.Labels[constants.RegionLabel],
 			NetworkId:                 in.Spec.Networks[0].ID,
 			SshCertificateAuthorityId: in.Spec.SSHCertificateAuthorityID,
-			HealthReason:              healthReason,
-			HealthMessage:             healthMessage,
 			PowerState:                convertPowerStateV2(in.Status.Phase),
 			PrivateIP:                 in.Status.PrivateIP,
 			PublicIP:                  in.Status.PublicIP,

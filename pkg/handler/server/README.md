@@ -27,9 +27,6 @@ related dependencies rather than from nested path scope.
 - snapshot creation is also a cross-resource permission bridge: the caller must
   already be able to see the server and also be allowed to create images in the
   owning organization
-- `v2` read status includes the server health condition reason and message so
-  upstream services can correlate failed server builds without reading region
-  storage directly
 - the package exposes operational verbs:
   - start
   - stop

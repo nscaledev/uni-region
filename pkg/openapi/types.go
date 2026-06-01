@@ -1052,12 +1052,6 @@ type ServerV2Spec struct {
 
 // ServerV2Status Read only status information about a server.
 type ServerV2Status struct {
-	// HealthMessage Human-readable details for the current server health condition.
-	HealthMessage *string `json:"healthMessage,omitempty"`
-
-	// HealthReason The current server health condition reason.
-	HealthReason *string `json:"healthReason,omitempty"`
-
 	// MacAddress The MAC address of the server.
 	MacAddress *string `json:"macAddress,omitempty"`
 

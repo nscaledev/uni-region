@@ -52,7 +52,6 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
-	k8scorev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/utils/ptr"
@@ -60,22 +59,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
-
-func TestConvertServerHealthStatusIncludesOpenStackFaultMessage(t *testing.T) {
-	t.Parallel()
-
-	status, reason, message := openstack.ConvertServerHealthStatus(&servers.Server{
-		Status: "ERROR",
-		Fault: servers.Fault{
-			Code:    http.StatusInternalServerError,
-			Message: "No valid host was found",
-		},
-	})
-
-	require.Equal(t, k8scorev1.ConditionFalse, status)
-	require.Equal(t, corev1.ConditionReasonErrored, reason)
-	require.Equal(t, "server is in an error state: OpenStack fault 500: No valid host was found", message)
-}
 
 func mustConvertImage(t *testing.T, in *images.Image) *types.Image {
 	t.Helper()

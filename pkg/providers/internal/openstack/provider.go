@@ -2032,26 +2032,12 @@ func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, 
 	case "ACTIVE":
 		return corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "server is healthy"
 	case "ERROR":
-		return corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, serverErrorMessage(server)
+		return corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server is in an error state"
 	case "UNKNOWN":
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
 	default:
 		return corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "server is in state " + server.Status
 	}
-}
-
-func serverErrorMessage(server *servers.Server) string {
-	const fallback = "server is in an error state"
-
-	if server.Fault.Message == "" {
-		return fallback
-	}
-
-	if server.Fault.Code == 0 {
-		return fallback + ": " + server.Fault.Message
-	}
-
-	return fmt.Sprintf("%s: OpenStack fault %d: %s", fallback, server.Fault.Code, server.Fault.Message)
 }
 
 // SetServerHealthStatus attaches the healt status condition to a server.
