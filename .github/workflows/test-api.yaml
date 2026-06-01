@@ -39,6 +39,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   workflow-inputs-summary:
@@ -133,7 +134,7 @@ jobs:
         max-failures: '5'
 
     - name: Report API Test Results
-      uses: nscaledev/quality-tooling/.github/actions/test-results-report@main
+      uses: nscaledev/quality-tooling/.github/actions/test-results-report@codex/grafana-mcp-test-results-report
       if: ${{ !cancelled() }}
       with:
         test-results-path: test-results.json
@@ -145,6 +146,14 @@ jobs:
         title: 'Region API Test Results'
         enable-ai-analysis: 'true'
         claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        enable-grafana-log-enrichment: 'true'
+        grafana-service-account-token: ${{ secrets.GRAFANA_SERVICE_ACCOUNT_TOKEN }}
+        grafana-app: nks-dev-glo1-grafana
+        grafana-loki-datasource-name: Loki
+        grafana-log-lookback: 2h
+        grafana-log-limit: '20'
+        grafana-log-max-failures: '3'
+        grafana-logql-template: '{namespace="unikorn-region"} |~ "(?i){{log_keywords_regex}}"'
 
   find-staging-constellation:
     name: Resolve UAT test ref
@@ -232,7 +241,7 @@ jobs:
         max-failures: '5'
 
     - name: Report API Test Results
-      uses: nscaledev/quality-tooling/.github/actions/test-results-report@main
+      uses: nscaledev/quality-tooling/.github/actions/test-results-report@codex/grafana-mcp-test-results-report
       if: ${{ !cancelled() }}
       with:
         test-results-path: test-results.json
@@ -244,3 +253,11 @@ jobs:
         title: 'Region API Test Results'
         enable-ai-analysis: 'true'
         claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        enable-grafana-log-enrichment: 'true'
+        grafana-service-account-token: ${{ secrets.GRAFANA_SERVICE_ACCOUNT_TOKEN }}
+        grafana-app: nks-stg-europe-west2-grafana
+        grafana-loki-datasource-name: Loki
+        grafana-log-lookback: 2h
+        grafana-log-limit: '20'
+        grafana-log-max-failures: '3'
+        grafana-logql-template: '{namespace="unikorn-region"} |~ "(?i){{log_keywords_regex}}"'
