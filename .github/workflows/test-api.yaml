@@ -152,6 +152,7 @@ jobs:
         grafana-loki-datasource-name: Loki
         grafana-log-lookback: 2h
         grafana-log-limit: '20'
+        grafana-log-concurrency: '4'
         grafana-log-max-failures: '6'
 
   find-staging-constellation:
@@ -258,4 +259,5 @@ jobs:
         grafana-loki-datasource-name: Loki
         grafana-log-lookback: 2h
         grafana-log-limit: '20'
+        grafana-log-concurrency: '4'
         grafana-log-max-failures: '6'
