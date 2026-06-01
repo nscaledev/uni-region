@@ -218,7 +218,7 @@ func convertSnapshotPolicies(in []regionv1.FileStorageSnapshotPolicy) *openapi.S
 	out := make(openapi.StorageSnapshotPolicyListV2Spec, len(in))
 
 	for i, policy := range in {
-		var dayOfWeek *openapi.StorageSnapshotDayOfWeekV2 = nil
+		var dayOfWeek *openapi.StorageSnapshotDayOfWeekV2
 
 		if policy.Schedule.DayOfWeek != nil {
 			dayOfWeek = ptr.To(openapi.StorageSnapshotDayOfWeekV2(*policy.Schedule.DayOfWeek))
@@ -393,11 +393,12 @@ func generateSnapshotPolicies(in *openapi.StorageSnapshotPolicyListV2Spec) []reg
 	out := make([]regionv1.FileStorageSnapshotPolicy, len(*in))
 
 	for i, policy := range *in {
-		var dayOfWeek *regionv1.FileStorageSnapshotDayOfWeek = nil
+		var dayOfWeek *regionv1.FileStorageSnapshotDayOfWeek
 
 		if policy.Schedule.DayOfWeek != nil {
 			dayOfWeek = ptr.To(regionv1.FileStorageSnapshotDayOfWeek(*policy.Schedule.DayOfWeek))
 		}
+
 		out[i] = regionv1.FileStorageSnapshotPolicy{
 			Name: policy.Name,
 			Schedule: regionv1.FileStorageSnapshotSchedule{
