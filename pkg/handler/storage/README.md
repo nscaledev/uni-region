@@ -30,6 +30,10 @@ accounting meet.
   non-empty storage ranges are accepted and used in full
 - attachment status rows follow desired attachments, then project observed
   attachment provisioning state and API-safe mount options when available
+- inline snapshot policies are optional and stored on the file storage resource
+  as named schedules with `retention.keep`
+- attachment status reporting is currently based partly on desired state rather
+  than fully observed actual state
 
 ## Invariants And Guard Rails
 
@@ -40,6 +44,8 @@ accounting meet.
   optional side effect.
 - Attachments must reference visible, provisioned networks in the same project.
 - Attached networks must expose a valid non-empty IPv4 storage range.
+- Snapshot policy `name` is the stable identity key; omitting
+  `snapshotPolicies` on create stores no policies.
 - Update preserves the existing allocation annotation while mutating the storage
   resource.
 

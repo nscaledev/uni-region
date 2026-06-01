@@ -3303,6 +3303,80 @@ components:
             type: string
         provisioningStatus:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceProvisioningStatus'
+    storageSnapshotPolicyListV2Spec:
+      description: A list of named snapshot policies for storage.
+      type: array
+      maxItems: 4
+      x-kubernetes-list-type: map
+      x-kubernetes-list-map-keys:
+      - name
+      items:
+        $ref: '#/components/schemas/storageSnapshotPolicyV2Spec'
+    storageSnapshotPolicyV2Spec:
+      description: A named snapshot policy for storage.
+      type: object
+      required:
+      - name
+      - schedule
+      - retention
+      properties:
+        name:
+          description: Stable identity key for the snapshot policy.
+          type: string
+          maxLength: 63
+          pattern: '^[a-z]([-a-z0-9]*[a-z0-9])?$'
+        schedule:
+          $ref: '#/components/schemas/storageSnapshotScheduleV2Spec'
+        retention:
+          $ref: '#/components/schemas/storageSnapshotRetentionV2Spec'
+    storageSnapshotScheduleV2Spec:
+      description: Schedule for a storage snapshot policy.
+      type: object
+      required:
+      - interval
+      properties:
+        interval:
+          $ref: '#/components/schemas/storageSnapshotScheduleIntervalV2'
+        timeOfDay:
+          description: UTC time of day in HH:MMZ form.
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]Z$'
+        dayOfWeek:
+          $ref: '#/components/schemas/storageSnapshotDayOfWeekV2'
+        dayOfMonth:
+          description: UTC day of month for monthly snapshot policies.
+          type: integer
+          minimum: 1
+          maximum: 28
+    storageSnapshotScheduleIntervalV2:
+      description: Snapshot policy cadence.
+      type: string
+      enum:
+      - hourly
+      - daily
+      - weekly
+      - monthly
+    storageSnapshotDayOfWeekV2:
+      description: UTC day of week for weekly snapshot policies.
+      type: string
+      enum:
+      - monday
+      - tuesday
+      - wednesday
+      - thursday
+      - friday
+      - saturday
+      - sunday
+    storageSnapshotRetentionV2Spec:
+      description: Retention policy for storage snapshots.
+      type: object
+      required:
+      - keep
+      properties:
+        keep:
+          description: Number of snapshots to retain.
+          type: integer
+          minimum: 1
     storageV2Spec:
       description: A storage's specification.
       type: object
@@ -3318,6 +3392,8 @@ components:
           $ref: '#/components/schemas/storageTypeV2Spec'
         attachments:
           $ref: '#/components/schemas/storageAttachmentV2Spec'
+        snapshotPolicies:
+          $ref: '#/components/schemas/storageSnapshotPolicyListV2Spec'
     storageV2Status:
       description: Read only status about storage
       type: object
