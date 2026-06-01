@@ -61,13 +61,14 @@ var _ = Describe("File Storage Management", func() {
 						Description: ptr.To("Test resource for list operation"),
 					},
 					Spec: struct {
-						Attachments    *regionopenapi.StorageAttachmentV2Spec `json:"attachments,omitempty"`
-						OrganizationId string                                 `json:"organizationId"`
-						ProjectId      string                                 `json:"projectId"`
-						RegionId       string                                 `json:"regionId"`
-						SizeGiB        int64                                  `json:"sizeGiB"`
-						StorageClassId string                                 `json:"storageClassId"`
-						StorageType    regionopenapi.StorageTypeV2Spec        `json:"storageType"`
+						Attachments      *regionopenapi.StorageAttachmentV2Spec         `json:"attachments,omitempty"`
+						OrganizationId   string                                         `json:"organizationId"`
+						ProjectId        string                                         `json:"projectId"`
+						RegionId         string                                         `json:"regionId"`
+						SizeGiB          int64                                          `json:"sizeGiB"`
+						SnapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec `json:"snapshotPolicies,omitempty"`
+						StorageClassId   string                                         `json:"storageClassId"`
+						StorageType      regionopenapi.StorageTypeV2Spec                `json:"storageType"`
 					}{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
@@ -172,13 +173,14 @@ var _ = Describe("File Storage Management", func() {
 						Description: ptr.To("Test lifecycle file storage"),
 					},
 					Spec: struct {
-						Attachments    *regionopenapi.StorageAttachmentV2Spec `json:"attachments,omitempty"`
-						OrganizationId string                                 `json:"organizationId"`
-						ProjectId      string                                 `json:"projectId"`
-						RegionId       string                                 `json:"regionId"`
-						SizeGiB        int64                                  `json:"sizeGiB"`
-						StorageClassId string                                 `json:"storageClassId"`
-						StorageType    regionopenapi.StorageTypeV2Spec        `json:"storageType"`
+						Attachments      *regionopenapi.StorageAttachmentV2Spec         `json:"attachments,omitempty"`
+						OrganizationId   string                                         `json:"organizationId"`
+						ProjectId        string                                         `json:"projectId"`
+						RegionId         string                                         `json:"regionId"`
+						SizeGiB          int64                                          `json:"sizeGiB"`
+						SnapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec `json:"snapshotPolicies,omitempty"`
+						StorageClassId   string                                         `json:"storageClassId"`
+						StorageType      regionopenapi.StorageTypeV2Spec                `json:"storageType"`
 					}{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
@@ -396,13 +398,14 @@ var _ = Describe("File Storage Management", func() {
 						Description: ptr.To("Test file storage for attachment lifecycle"),
 					},
 					Spec: struct {
-						Attachments    *regionopenapi.StorageAttachmentV2Spec `json:"attachments,omitempty"`
-						OrganizationId string                                 `json:"organizationId"`
-						ProjectId      string                                 `json:"projectId"`
-						RegionId       string                                 `json:"regionId"`
-						SizeGiB        int64                                  `json:"sizeGiB"`
-						StorageClassId string                                 `json:"storageClassId"`
-						StorageType    regionopenapi.StorageTypeV2Spec        `json:"storageType"`
+						Attachments      *regionopenapi.StorageAttachmentV2Spec         `json:"attachments,omitempty"`
+						OrganizationId   string                                         `json:"organizationId"`
+						ProjectId        string                                         `json:"projectId"`
+						RegionId         string                                         `json:"regionId"`
+						SizeGiB          int64                                          `json:"sizeGiB"`
+						SnapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec `json:"snapshotPolicies,omitempty"`
+						StorageClassId   string                                         `json:"storageClassId"`
+						StorageType      regionopenapi.StorageTypeV2Spec                `json:"storageType"`
 					}{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
