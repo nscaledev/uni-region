@@ -617,6 +617,187 @@ func TestConvertV2List(t *testing.T) {
 	}
 }
 
+func TestConvertStatusAttachmentList(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input *regionv1.FileStorage
+		want  *openapi.StorageAttachmentListV2Status
+	}{
+		{
+			name: "observed status enriches desired attachment",
+			input: &regionv1.FileStorage{
+				Spec: regionv1.FileStorageSpec{
+					Attachments: []regionv1.Attachment{
+						{
+							NetworkID: "net-1",
+							IPRange: &regionv1.AttachmentIPRange{
+								Start: v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 100)},
+								End:   v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 103)},
+							},
+						},
+					},
+				},
+				Status: regionv1.FileStorageStatus{
+					MountPath: ptr.To("/export/data"),
+					Attachments: []regionv1.FileStorageAttachmentStatus{
+						{
+							NetworkID:          "net-1",
+							ProvisioningStatus: regionv1.AttachmentProvisioned,
+							IPRange: &regionv1.AttachmentIPRange{
+								Start: v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 20, 16)},
+								End:   v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 20, 23)},
+							},
+						},
+					},
+				},
+			},
+			want: &openapi.StorageAttachmentListV2Status{
+				{
+					NetworkId:          "net-1",
+					MountSource:        ptr.To("10.0.0.100:/export/data"),
+					MountOptions:       ptr.To(map[string]string{"remoteports": "192.168.20.16-192.168.20.23"}),
+					ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned,
+				},
+			},
+		},
+		{
+			name: "single observed IP range emits a single remote port",
+			input: &regionv1.FileStorage{
+				Spec: regionv1.FileStorageSpec{
+					Attachments: []regionv1.Attachment{
+						{
+							NetworkID: "net-1",
+						},
+					},
+				},
+				Status: regionv1.FileStorageStatus{
+					Attachments: []regionv1.FileStorageAttachmentStatus{
+						{
+							NetworkID:          "net-1",
+							ProvisioningStatus: regionv1.AttachmentProvisioned,
+							IPRange: &regionv1.AttachmentIPRange{
+								Start: v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 20, 16)},
+								End:   v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 20, 16)},
+							},
+						},
+					},
+				},
+			},
+			want: &openapi.StorageAttachmentListV2Status{
+				{
+					NetworkId:          "net-1",
+					MountOptions:       ptr.To(map[string]string{"remoteports": "192.168.20.16"}),
+					ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned,
+				},
+			},
+		},
+		{
+			name: "desired attachment without observed status remains pending",
+			input: &regionv1.FileStorage{
+				Spec: regionv1.FileStorageSpec{
+					Attachments: []regionv1.Attachment{
+						{
+							NetworkID: "net-1",
+						},
+					},
+				},
+			},
+			want: &openapi.StorageAttachmentListV2Status{
+				{
+					NetworkId:          "net-1",
+					ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
+				},
+			},
+		},
+		{
+			name: "stale observed status is not returned",
+			input: &regionv1.FileStorage{
+				Spec: regionv1.FileStorageSpec{
+					Attachments: []regionv1.Attachment{
+						{
+							NetworkID: "net-1",
+						},
+					},
+				},
+				Status: regionv1.FileStorageStatus{
+					Attachments: []regionv1.FileStorageAttachmentStatus{
+						{
+							NetworkID:          "net-2",
+							ProvisioningStatus: regionv1.AttachmentProvisioned,
+							IPRange: &regionv1.AttachmentIPRange{
+								Start: v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 20, 16)},
+								End:   v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 20, 23)},
+							},
+						},
+					},
+				},
+			},
+			want: &openapi.StorageAttachmentListV2Status{
+				{
+					NetworkId:          "net-1",
+					ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := convertStatusAttachmentList(tt.input)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestConvertAttachmentProvisioningStatus(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input regionv1.AttachmentProvisioningStatus
+		want  corev1.ResourceProvisioningStatus
+	}{
+		{
+			name:  "provisioning",
+			input: regionv1.AttachmentProvisioning,
+			want:  corev1.ResourceProvisioningStatusProvisioning,
+		},
+		{
+			name:  "provisioned",
+			input: regionv1.AttachmentProvisioned,
+			want:  corev1.ResourceProvisioningStatusProvisioned,
+		},
+		{
+			name:  "errored",
+			input: regionv1.AttachmentErrored,
+			want:  corev1.ResourceProvisioningStatusError,
+		},
+		{
+			name:  "deprovisioning",
+			input: regionv1.AttachmentDeprovisioning,
+			want:  corev1.ResourceProvisioningStatusDeprovisioning,
+		},
+		{
+			name:  "unknown",
+			input: regionv1.AttachmentProvisioningStatus(""),
+			want:  corev1.ResourceProvisioningStatusUnknown,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := convertAttachmentProvisioningStatus(tt.input)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestConvertV2(t *testing.T) {
 	t.Parallel()
 
