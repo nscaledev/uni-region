@@ -78,10 +78,10 @@ const (
 	miB = int64(1024 * 1024)
 )
 
-func newTestNetwork(name string) *regionv1.Network {
+func newTestNetwork() *regionv1.Network {
 	return &regionv1.Network{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
+			Name:      "net-1",
 			Namespace: testNamespace,
 			Labels: map[string]string{
 				constants.ResourceAPIVersionLabel: "2",
@@ -383,7 +383,7 @@ func TestGenerateAttachment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			network := newTestNetwork("net-1")
+			network := newTestNetwork()
 			network.Status.Openstack.StorageRange = tt.storageRange
 
 			got, err := generateAttachment(network, tt.parallelism)
@@ -408,7 +408,7 @@ func TestGenerateAttachment(t *testing.T) {
 func TestGenerateAttachmentList(t *testing.T) {
 	t.Parallel()
 
-	network := newTestNetwork("net-1")
+	network := newTestNetwork()
 	client := newFakeClient(t, network)
 
 	clientArgs := common.ClientArgs{
@@ -1248,7 +1248,7 @@ func TestConvertProtocols(t *testing.T) {
 func TestGenerateV2(t *testing.T) {
 	t.Parallel()
 
-	network := newTestNetwork("net-1")
+	network := newTestNetwork()
 
 	k8s := newFakeClient(t, network)
 
@@ -1331,7 +1331,7 @@ func TestGenerateV2RoundTripsInlineHourlySnapshotPolicy(t *testing.T) {
 	}
 
 	input := (&generateV2InputBuilder{}).Default().WithSnapshotPolicies(policyList).Run()
-	client, ctx := newClientAndContext(t, newFakeClient(t, newTestNetwork("net-1")), &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
+	client, ctx := newClientAndContext(t, newFakeClient(t, newTestNetwork()), &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
 
 	generated, err := client.generateV2(ctx, input.organizationID, input.projectID, input.regionID, input.request, input.storageClass)
 	require.NoError(t, err)
@@ -1339,10 +1339,10 @@ func TestGenerateV2RoundTripsInlineHourlySnapshotPolicy(t *testing.T) {
 	require.Equal(t, []regionv1.FileStorageSnapshotPolicy{
 		{
 			Name: "hourly",
-			Schedule: regionv1.FileStorageSnapshotSchedule{
-				Interval: regionv1.FileStorageSnapshotScheduleIntervalHourly,
+			Schedule: regionv1.FileStorageSnapshotPolicySchedule{
+				Interval: regionv1.FileStorageSnapshotPolicyIntervalHourly,
 			},
-			Retention: regionv1.FileStorageSnapshotRetention{
+			Retention: regionv1.FileStorageSnapshotPolicyRetention{
 				Keep: 24,
 			},
 		},
@@ -1357,7 +1357,7 @@ func TestGenerateV2OmittedSnapshotPoliciesStoresNone(t *testing.T) {
 	t.Parallel()
 
 	input := (&generateV2InputBuilder{}).Default().Run()
-	client, ctx := newClientAndContext(t, newFakeClient(t, newTestNetwork("net-1")), &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
+	client, ctx := newClientAndContext(t, newFakeClient(t, newTestNetwork()), &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
 
 	generated, err := client.generateV2(ctx, input.organizationID, input.projectID, input.regionID, input.request, input.storageClass)
 	require.NoError(t, err)
@@ -1392,10 +1392,10 @@ func TestGetRoundTripsStoredSnapshotPolicies(t *testing.T) {
 			SnapshotPolicies: []regionv1.FileStorageSnapshotPolicy{
 				{
 					Name: "hourly",
-					Schedule: regionv1.FileStorageSnapshotSchedule{
-						Interval: regionv1.FileStorageSnapshotScheduleIntervalHourly,
+					Schedule: regionv1.FileStorageSnapshotPolicySchedule{
+						Interval: regionv1.FileStorageSnapshotPolicyIntervalHourly,
 					},
-					Retention: regionv1.FileStorageSnapshotRetention{
+					Retention: regionv1.FileStorageSnapshotPolicyRetention{
 						Keep: 24,
 					},
 				},

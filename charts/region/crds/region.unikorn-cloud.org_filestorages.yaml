@@ -100,38 +100,36 @@ spec:
                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                 x-kubernetes-int-or-string: true
               snapshotPolicies:
-                description: SnapshotPolicies are snapshot schedules for this storage.
+                description: SnapshotPolicies are the named snapshot protection rules
+                  for the storage.
                 items:
-                  description: FileStorageSnapshotPolicy defines a named inline snapshot
-                    policy for a file storage volume.
                   properties:
                     name:
-                      description: Name is the stable identity key for the snapshot
-                        policy.
+                      description: Name is the policy identity key within the file
+                        storage volume.
                       maxLength: 63
-                      pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                       type: string
                     retention:
-                      description: Retention defines how many snapshots to keep.
+                      description: Retention defines how many snapshots are retained.
                       properties:
                         keep:
-                          description: Keep is the number of snapshots to retain for
-                            this policy.
+                          description: Keep is the number of snapshots to retain.
                           minimum: 1
                           type: integer
                       required:
                       - keep
                       type: object
                     schedule:
-                      description: Schedule defines when snapshots are taken.
+                      description: Schedule defines when snapshots run in UTC.
                       properties:
                         dayOfMonth:
-                          description: DayOfMonth is required for monthly schedules.
+                          description: DayOfMonth is the month day for monthly schedules.
                           maximum: 28
                           minimum: 1
                           type: integer
                         dayOfWeek:
-                          description: DayOfWeek is required for weekly schedules.
+                          description: DayOfWeek is the weekday for weekly schedules.
                           enum:
                           - monday
                           - tuesday
@@ -142,7 +140,7 @@ spec:
                           - sunday
                           type: string
                         interval:
-                          description: Interval defines how often snapshots are taken.
+                          description: Interval is the snapshot schedule cadence.
                           enum:
                           - hourly
                           - daily
@@ -150,26 +148,30 @@ spec:
                           - monthly
                           type: string
                         timeOfDay:
-                          description: TimeOfDay is a UTC time in HH:MMZ form.
+                          description: TimeOfDay is the UTC time for daily, weekly,
+                            and monthly schedules.
                           pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]Z$
                           type: string
                       required:
                       - interval
                       type: object
                       x-kubernetes-validations:
-                      - message: hourly schedule must not specify timeOfDay, dayOfWeek,
+                      - message: hourly schedules must not define timeOfDay, dayOfWeek,
                           or dayOfMonth
                         rule: 'self.interval == ''hourly'' ? !has(self.timeOfDay)
                           && !has(self.dayOfWeek) && !has(self.dayOfMonth) : true'
-                      - message: daily schedule requires timeOfDay only
+                      - message: daily schedules require timeOfDay and must not define
+                          dayOfWeek or dayOfMonth
                         rule: 'self.interval == ''daily'' ? has(self.timeOfDay) &&
                           !has(self.dayOfWeek) && !has(self.dayOfMonth) : true'
-                      - message: weekly schedule requires dayOfWeek and timeOfDay
+                      - message: weekly schedules require timeOfDay and dayOfWeek
+                          and must not define dayOfMonth
                         rule: 'self.interval == ''weekly'' ? has(self.timeOfDay) &&
                           has(self.dayOfWeek) && !has(self.dayOfMonth) : true'
-                      - message: monthly schedule requires dayOfMonth and timeOfDay
+                      - message: monthly schedules require timeOfDay and dayOfMonth
+                          and must not define dayOfWeek
                         rule: 'self.interval == ''monthly'' ? has(self.timeOfDay)
-                          && !has(self.dayOfWeek) && has(self.dayOfMonth) : true'
+                          && has(self.dayOfMonth) && !has(self.dayOfWeek) : true'
                   required:
                   - name
                   - retention
@@ -325,6 +327,75 @@ spec:
                   (May differ from spec.size while provisioning/resizing.)
                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                 x-kubernetes-int-or-string: true
+              snapshotPolicies:
+                description: SnapshotPolicies reflects the observed state for each
+                  desired snapshot policy.
+                items:
+                  properties:
+                    conditions:
+                      description: Conditions reflect reconciliation state for this
+                        snapshot policy.
+                      items:
+                        description: |-
+                          Condition is a generic condition type for use across all resource types.
+                          It's generic so that the underlying controller-manager functionality can
+                          be shared across all resources.
+                        properties:
+                          lastTransitionTime:
+                            description: Last time the condition transitioned from
+                              one status to another.
+                            format: date-time
+                            type: string
+                          message:
+                            description: Human-readable message indicating details
+                              about last transition.
+                            type: string
+                          reason:
+                            description: Unique, one-word, CamelCase reason for the
+                              condition's last transition.
+                            enum:
+                            - Provisioning
+                            - Provisioned
+                            - Cancelled
+                            - Errored
+                            - Deprovisioning
+                            - Deprovisioned
+                            - Unknown
+                            - Healthy
+                            - Degraded
+                            type: string
+                          status:
+                            description: |-
+                              Status is the status of the condition.
+                              Can be True, False, Unknown.
+                            type: string
+                          type:
+                            description: Type is the type of the condition.
+                            enum:
+                            - Available
+                            - Healthy
+                            type: string
+                        required:
+                        - lastTransitionTime
+                        - message
+                        - reason
+                        - status
+                        - type
+                        type: object
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - type
+                      x-kubernetes-list-type: map
+                    name:
+                      description: Name is the policy identity key from spec.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               usage:
                 anyOf:
                 - type: integer
