@@ -22,7 +22,7 @@ package suites
 
 import . "github.com/onsi/ginkgo/v2"
 
-var _ = Describe("MCP Verification", func() {
+var _ = Describe("File Storage Management", func() {
 	It("should fail with a backend-shaped error for Grafana MCP validation", func() {
 		Fail("TEMP MCP verification: backend API returned HTTP 500 internal_error for POST /v1/organizations/mcp-verification-org/regions/mcp-verification-region/file-storage; request_id=mcp-verification-request-26761890035; backend=file-storage")
 	})
