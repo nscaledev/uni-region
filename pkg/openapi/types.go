@@ -1172,6 +1172,9 @@ type StorageAttachmentV2Spec struct {
 
 // StorageAttachmentV2Status Describes the network attachment for storage
 type StorageAttachmentV2Status struct {
+	// MountOptions Optional NFS mount options for the attached storage.
+	MountOptions *map[string]string `json:"mountOptions,omitempty"`
+
 	// MountSource The mount source for the attached storage in the format <host>:<path>.
 	MountSource *string `json:"mountSource,omitempty"`
 
