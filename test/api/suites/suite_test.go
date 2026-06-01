@@ -35,8 +35,8 @@ var (
 	client          *api.APIClient
 	secondaryClient *api.APIClient // client for secondary org, used to test region visibility isolation
 	regionClient    *api.APIClient
-	ctx             context.Context
-	config          *api.TestConfig
+	ctx          context.Context
+	config       *api.TestConfig
 )
 
 var _ = BeforeSuite(func() {
@@ -59,11 +59,6 @@ var _ = BeforeEach(func() {
 	// Config and client are already initialized in BeforeSuite
 	// Reset context for each test
 	ctx = context.Background()
-	api.StartNetworkCapture(CurrentSpecReport().FullText())
-})
-
-var _ = AfterEach(func() {
-	api.StopNetworkCapture()
 })
 
 func TestSuites(t *testing.T) {

@@ -33,16 +33,10 @@ import (
 )
 
 // GinkgoLogger implements the Logger interface for Ginkgo tests.
-type GinkgoLogger struct {
-	captureOnly bool
-}
+type GinkgoLogger struct{}
 
 func (g *GinkgoLogger) Printf(format string, args ...interface{}) {
-	if !g.captureOnly {
-		ginkgo.GinkgoWriter.Printf(format, args...)
-	}
-
-	networkCapture.printf(format, args...)
+	ginkgo.GinkgoWriter.Printf(format, args...)
 }
 
 // APIClient wraps the core API client with region-specific methods.
@@ -92,22 +86,16 @@ func NewAPIClientWithConfig(config *TestConfig) *APIClient {
 
 // common constructor logic.
 func newAPIClientWithConfig(config *TestConfig, baseURL string) *APIClient {
-	logRequests := config.LogRequests || NetworkCaptureEnabled()
-	logResponses := config.LogResponses || NetworkCaptureEnabled()
-	logger := &GinkgoLogger{
-		captureOnly: NetworkCaptureEnabled() && !config.LogRequests && !config.LogResponses,
-	}
-
-	coreClient := coreclient.NewAPIClient(baseURL, config.AuthToken, config.RequestTimeout, logger)
-	coreClient.SetLogRequests(logRequests)
-	coreClient.SetLogResponses(logResponses)
+	coreClient := coreclient.NewAPIClient(baseURL, config.AuthToken, config.RequestTimeout, &GinkgoLogger{})
+	coreClient.SetLogRequests(config.LogRequests)
+	coreClient.SetLogResponses(config.LogResponses)
 
 	// Create a separate client for region endpoints
 	var regionClient *coreclient.APIClient
 	if config.RegionBaseURL != "" {
-		regionClient = coreclient.NewAPIClient(config.RegionBaseURL, config.AuthToken, config.RequestTimeout, logger)
-		regionClient.SetLogRequests(logRequests)
-		regionClient.SetLogResponses(logResponses)
+		regionClient = coreclient.NewAPIClient(config.RegionBaseURL, config.AuthToken, config.RequestTimeout, &GinkgoLogger{})
+		regionClient.SetLogRequests(config.LogRequests)
+		regionClient.SetLogResponses(config.LogResponses)
 	}
 
 	return &APIClient{
