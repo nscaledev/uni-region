@@ -56,8 +56,9 @@ stored objects rely on for linkage, migration, and operational coordination.
   also satisfies generic controller contracts. It should not be described as
   schema-only.
 - `FileStorage` carries a more explicit observed-state model than the older
-  resource types. Attachment-level provisioning state, observed size, and usage
-  reporting are part of the stored reconciliation contract.
+  resource types. Attachment-level provisioning state, observed size, usage
+  reporting, and inline snapshot policy are part of the
+  stored reconciliation contract.
 
 ## Caveats
 

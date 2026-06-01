@@ -87,6 +87,25 @@ const (
 	StorageClassProtocolTypeNfsv4 StorageClassProtocolType = "nfsv4"
 )
 
+// Defines values for StorageSnapshotDayOfWeekV2.
+const (
+	StorageSnapshotDayOfWeekV2Friday    StorageSnapshotDayOfWeekV2 = "friday"
+	StorageSnapshotDayOfWeekV2Monday    StorageSnapshotDayOfWeekV2 = "monday"
+	StorageSnapshotDayOfWeekV2Saturday  StorageSnapshotDayOfWeekV2 = "saturday"
+	StorageSnapshotDayOfWeekV2Sunday    StorageSnapshotDayOfWeekV2 = "sunday"
+	StorageSnapshotDayOfWeekV2Thursday  StorageSnapshotDayOfWeekV2 = "thursday"
+	StorageSnapshotDayOfWeekV2Tuesday   StorageSnapshotDayOfWeekV2 = "tuesday"
+	StorageSnapshotDayOfWeekV2Wednesday StorageSnapshotDayOfWeekV2 = "wednesday"
+)
+
+// Defines values for StorageSnapshotScheduleIntervalV2.
+const (
+	StorageSnapshotScheduleIntervalV2Daily   StorageSnapshotScheduleIntervalV2 = "daily"
+	StorageSnapshotScheduleIntervalV2Hourly  StorageSnapshotScheduleIntervalV2 = "hourly"
+	StorageSnapshotScheduleIntervalV2Monthly StorageSnapshotScheduleIntervalV2 = "monthly"
+	StorageSnapshotScheduleIntervalV2Weekly  StorageSnapshotScheduleIntervalV2 = "weekly"
+)
+
 // Defines values for ImageScopeQueryParameter.
 const (
 	ImageScopeQueryParameterAvailable ImageScopeQueryParameter = "available"
@@ -1212,6 +1231,48 @@ type StorageClassV2Spec struct {
 	RegionId string `json:"regionId"`
 }
 
+// StorageSnapshotDayOfWeekV2 UTC day of week for weekly snapshot policies.
+type StorageSnapshotDayOfWeekV2 string
+
+// StorageSnapshotPolicyListV2Spec A list of named snapshot policies for storage.
+type StorageSnapshotPolicyListV2Spec = []StorageSnapshotPolicyV2Spec
+
+// StorageSnapshotPolicyV2Spec A named snapshot policy for storage.
+type StorageSnapshotPolicyV2Spec struct {
+	// Name Stable identity key for the snapshot policy.
+	Name string `json:"name"`
+
+	// Retention Retention policy for storage snapshots.
+	Retention StorageSnapshotRetentionV2Spec `json:"retention"`
+
+	// Schedule Schedule for a storage snapshot policy.
+	Schedule StorageSnapshotScheduleV2Spec `json:"schedule"`
+}
+
+// StorageSnapshotRetentionV2Spec Retention policy for storage snapshots.
+type StorageSnapshotRetentionV2Spec struct {
+	// Keep Number of snapshots to retain.
+	Keep int `json:"keep"`
+}
+
+// StorageSnapshotScheduleIntervalV2 Snapshot policy cadence.
+type StorageSnapshotScheduleIntervalV2 string
+
+// StorageSnapshotScheduleV2Spec Schedule for a storage snapshot policy.
+type StorageSnapshotScheduleV2Spec struct {
+	// DayOfMonth UTC day of month for monthly snapshot policies.
+	DayOfMonth *int `json:"dayOfMonth,omitempty"`
+
+	// DayOfWeek UTC day of week for weekly snapshot policies.
+	DayOfWeek *StorageSnapshotDayOfWeekV2 `json:"dayOfWeek,omitempty"`
+
+	// Interval Snapshot policy cadence.
+	Interval StorageSnapshotScheduleIntervalV2 `json:"interval"`
+
+	// TimeOfDay UTC time of day in HH:MMZ form.
+	TimeOfDay *string `json:"timeOfDay,omitempty"`
+}
+
 // StorageTypeV2Spec A storage's type
 type StorageTypeV2Spec struct {
 	// NFS NFS specific
@@ -1250,6 +1311,9 @@ type StorageV2Create struct {
 		// SizeGiB size in GiB of the storage
 		SizeGiB int64 `json:"sizeGiB"`
 
+		// SnapshotPolicies A list of named snapshot policies for storage.
+		SnapshotPolicies *StorageSnapshotPolicyListV2Spec `json:"snapshotPolicies,omitempty"`
+
 		// StorageClassId The storage class ID to provision the storage into.
 		StorageClassId string `json:"storageClassId"`
 
@@ -1280,6 +1344,9 @@ type StorageV2Spec struct {
 
 	// SizeGiB size in GiB of the storage
 	SizeGiB int64 `json:"sizeGiB"`
+
+	// SnapshotPolicies A list of named snapshot policies for storage.
+	SnapshotPolicies *StorageSnapshotPolicyListV2Spec `json:"snapshotPolicies,omitempty"`
 
 	// StorageType A storage's type
 	StorageType StorageTypeV2Spec `json:"storageType"`

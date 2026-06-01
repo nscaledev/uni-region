@@ -1315,6 +1315,112 @@ func TestGenerateV2(t *testing.T) {
 	}
 }
 
+func TestGenerateV2RoundTripsInlineHourlySnapshotPolicy(t *testing.T) {
+	t.Parallel()
+
+	policyList := openapi.StorageSnapshotPolicyListV2Spec{
+		{
+			Name: "hourly",
+			Schedule: openapi.StorageSnapshotScheduleV2Spec{
+				Interval: openapi.StorageSnapshotScheduleIntervalV2Hourly,
+			},
+			Retention: openapi.StorageSnapshotRetentionV2Spec{
+				Keep: 24,
+			},
+		},
+	}
+
+	input := (&generateV2InputBuilder{}).Default().WithSnapshotPolicies(policyList).Run()
+	client, ctx := newClientAndContext(t, newFakeClient(t, newTestNetwork("net-1")), &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
+
+	generated, err := client.generateV2(ctx, input.organizationID, input.projectID, input.regionID, input.request, input.storageClass)
+	require.NoError(t, err)
+
+	require.Equal(t, []regionv1.FileStorageSnapshotPolicy{
+		{
+			Name: "hourly",
+			Schedule: regionv1.FileStorageSnapshotSchedule{
+				Interval: regionv1.FileStorageSnapshotScheduleIntervalHourly,
+			},
+			Retention: regionv1.FileStorageSnapshotRetention{
+				Keep: 24,
+			},
+		},
+	}, generated.Spec.SnapshotPolicies)
+
+	read := convertV2(generated)
+	require.NotNil(t, read.Spec.SnapshotPolicies)
+	require.Equal(t, policyList, *read.Spec.SnapshotPolicies)
+}
+
+func TestGenerateV2OmittedSnapshotPoliciesStoresNone(t *testing.T) {
+	t.Parallel()
+
+	input := (&generateV2InputBuilder{}).Default().Run()
+	client, ctx := newClientAndContext(t, newFakeClient(t, newTestNetwork("net-1")), &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
+
+	generated, err := client.generateV2(ctx, input.organizationID, input.projectID, input.regionID, input.request, input.storageClass)
+	require.NoError(t, err)
+	require.Nil(t, generated.Spec.SnapshotPolicies)
+
+	read := convertV2(generated)
+	require.Nil(t, read.Spec.SnapshotPolicies)
+}
+
+func TestGetRoundTripsStoredSnapshotPolicies(t *testing.T) {
+	t.Parallel()
+
+	storage := &regionv1.FileStorage{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      "fs-1",
+			Labels: map[string]string{
+				constants.RegionLabel:                    "reg-1",
+				coreconstants.NameLabel:                  "test-filestorage",
+				coreconstants.OrganizationLabel:          "org-1",
+				coreconstants.ProjectLabel:               "proj-1",
+				coreconstants.OrganizationPrincipalLabel: "org-1",
+				coreconstants.ProjectPrincipalLabel:      "proj-1",
+			},
+		},
+		Spec: regionv1.FileStorageSpec{
+			Size:           *resource.NewQuantity(1*giB, resource.BinarySI),
+			StorageClassID: "sc-1",
+			NFS: &regionv1.NFS{
+				RootSquash: true,
+			},
+			SnapshotPolicies: []regionv1.FileStorageSnapshotPolicy{
+				{
+					Name: "hourly",
+					Schedule: regionv1.FileStorageSnapshotSchedule{
+						Interval: regionv1.FileStorageSnapshotScheduleIntervalHourly,
+					},
+					Retention: regionv1.FileStorageSnapshotRetention{
+						Keep: 24,
+					},
+				},
+			},
+		},
+	}
+
+	c, ctx := newClientwithObjectandContext(t, t.Context(), append(defaultFSK8sObjects(), storage)...)
+
+	result, err := c.Get(ctx, storage.Name)
+	require.NoError(t, err)
+	require.NotNil(t, result.Spec.SnapshotPolicies)
+	require.Equal(t, openapi.StorageSnapshotPolicyListV2Spec{
+		{
+			Name: "hourly",
+			Schedule: openapi.StorageSnapshotScheduleV2Spec{
+				Interval: openapi.StorageSnapshotScheduleIntervalV2Hourly,
+			},
+			Retention: openapi.StorageSnapshotRetentionV2Spec{
+				Keep: 24,
+			},
+		},
+	}, *result.Spec.SnapshotPolicies)
+}
+
 func TestGet(t *testing.T) {
 	t.Parallel()
 
@@ -1475,6 +1581,16 @@ func (b *generateV2InputBuilder) WithSize(size int) *generateV2InputBuilder {
 	}
 
 	b.input.request.Spec.SizeGiB = int64(size)
+
+	return b
+}
+
+func (b *generateV2InputBuilder) WithSnapshotPolicies(policies openapi.StorageSnapshotPolicyListV2Spec) *generateV2InputBuilder {
+	if b.input == nil {
+		b.input = newDefaultGenerateV2Input()
+	}
+
+	b.input.request.Spec.SnapshotPolicies = &policies
 
 	return b
 }

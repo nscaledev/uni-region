@@ -76,6 +76,7 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 			Attachments: &openapi.StorageAttachmentV2Spec{
 				NetworkIds: convertAttachmentsList(in.Spec.Attachments),
 			},
+			SnapshotPolicies: convertSnapshotPolicies(in.Spec.SnapshotPolicies),
 			StorageType: openapi.StorageTypeV2Spec{
 				NFS: checkRegionNFS(in.Spec.NFS),
 			},
@@ -209,6 +210,37 @@ func convertAttachmentsList(in []regionv1.Attachment) openapi.NetworkIDList {
 	return out
 }
 
+func convertSnapshotPolicies(in []regionv1.FileStorageSnapshotPolicy) *openapi.StorageSnapshotPolicyListV2Spec {
+	if len(in) == 0 {
+		return nil
+	}
+
+	out := make(openapi.StorageSnapshotPolicyListV2Spec, len(in))
+
+	for i, policy := range in {
+		var dayOfWeek *openapi.StorageSnapshotDayOfWeekV2 = nil
+
+		if policy.Schedule.DayOfWeek != nil {
+			dayOfWeek = ptr.To(openapi.StorageSnapshotDayOfWeekV2(*policy.Schedule.DayOfWeek))
+		}
+
+		out[i] = openapi.StorageSnapshotPolicyV2Spec{
+			Name: policy.Name,
+			Schedule: openapi.StorageSnapshotScheduleV2Spec{
+				Interval:   openapi.StorageSnapshotScheduleIntervalV2(policy.Schedule.Interval),
+				TimeOfDay:  policy.Schedule.TimeOfDay,
+				DayOfWeek:  dayOfWeek,
+				DayOfMonth: policy.Schedule.DayOfMonth,
+			},
+			Retention: openapi.StorageSnapshotRetentionV2Spec{
+				Keep: policy.Retention.Keep,
+			},
+		}
+	}
+
+	return &out
+}
+
 // ListV2 satisfies an http get to return all storage items within a project.
 func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageParams) (openapi.StorageV2List, error) {
 	selector := labels.Everything()
@@ -324,9 +356,10 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 			WithLabel(constants.RegionLabel, regionID).
 			Get(),
 		Spec: regionv1.FileStorageSpec{
-			Tags:        conversion.GenerateTagList(request.Metadata.Tags),
-			Size:        *gibToQuantity(request.Spec.SizeGiB),
-			Attachments: attachments,
+			Tags:             conversion.GenerateTagList(request.Metadata.Tags),
+			Size:             *gibToQuantity(request.Spec.SizeGiB),
+			Attachments:      attachments,
+			SnapshotPolicies: generateSnapshotPolicies(request.Spec.SnapshotPolicies),
 			NFS: &regionv1.NFS{
 				RootSquash: checkRootSquash(request.Spec.StorageType.NFS),
 			},
@@ -350,6 +383,36 @@ func checkRootSquash(nfs *openapi.NFSV2Spec) bool {
 	}
 
 	return true
+}
+
+func generateSnapshotPolicies(in *openapi.StorageSnapshotPolicyListV2Spec) []regionv1.FileStorageSnapshotPolicy {
+	if in == nil || len(*in) == 0 {
+		return nil
+	}
+
+	out := make([]regionv1.FileStorageSnapshotPolicy, len(*in))
+
+	for i, policy := range *in {
+		var dayOfWeek *regionv1.FileStorageSnapshotDayOfWeek = nil
+
+		if policy.Schedule.DayOfWeek != nil {
+			dayOfWeek = ptr.To(regionv1.FileStorageSnapshotDayOfWeek(*policy.Schedule.DayOfWeek))
+		}
+		out[i] = regionv1.FileStorageSnapshotPolicy{
+			Name: policy.Name,
+			Schedule: regionv1.FileStorageSnapshotSchedule{
+				Interval:   regionv1.FileStorageSnapshotScheduleInterval(policy.Schedule.Interval),
+				TimeOfDay:  policy.Schedule.TimeOfDay,
+				DayOfWeek:  dayOfWeek,
+				DayOfMonth: policy.Schedule.DayOfMonth,
+			},
+			Retention: regionv1.FileStorageSnapshotRetention{
+				Keep: policy.Retention.Keep,
+			},
+		}
+	}
+
+	return out
 }
 
 func generateAttachmentList(ctx context.Context, networkClient *network.Client, in *openapi.StorageV2Update, parallelism int) ([]regionv1.Attachment, error) {
