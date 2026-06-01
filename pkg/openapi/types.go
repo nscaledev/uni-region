@@ -1172,6 +1172,9 @@ type StorageAttachmentV2Spec struct {
 
 // StorageAttachmentV2Status Describes the network attachment for storage
 type StorageAttachmentV2Status struct {
+	// MountOptions Optional NFS mount options for the attached storage.
+	MountOptions *map[string]string `json:"mountOptions,omitempty"`
+
 	// MountSource The mount source for the attached storage in the format <host>:<path>.
 	MountSource *string `json:"mountSource,omitempty"`
 
@@ -1199,10 +1202,9 @@ type StorageClassV2Read struct {
 
 // StorageClassV2Spec A storage class's specification.
 type StorageClassV2Spec struct {
-	// Parallelism Defines the number of IP addresses that are assigned to the storage.
-	// More IP addresses, better performance. If the value specified overflows
-	// the available address range reserved on the network it will be capped
-	// at the maximum allowed value.
+	// Parallelism Defines the target number of IP addresses assigned to storage.
+	// More IP addresses can improve performance. Attachments use
+	// min(parallelism, usable IPs in the network storage range).
 	Parallelism int                        `json:"parallelism"`
 	Protocols   []StorageClassProtocolType `json:"protocols"`
 
