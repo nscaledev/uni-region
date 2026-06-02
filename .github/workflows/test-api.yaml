@@ -149,6 +149,9 @@ jobs:
         enable-grafana-log-enrichment: 'true'
         grafana-service-account-token: ${{ secrets.GRAFANA_SERVICE_ACCOUNT_TOKEN }}
         grafana-app: nks-dev-glo1-grafana
+        grafana-loki-datasource-uid: loki
+        grafana-log-lookback: 1h
+        grafana-log-limit: '10'
 
   find-staging-constellation:
     name: Resolve UAT test ref
@@ -251,3 +254,6 @@ jobs:
         enable-grafana-log-enrichment: 'true'
         grafana-service-account-token: ${{ secrets.GRAFANA_SERVICE_ACCOUNT_TOKEN }}
         grafana-app: nks-stg-europe-west2-grafana
+        grafana-loki-datasource-uid: loki
+        grafana-log-lookback: 1h
+        grafana-log-limit: '10'
