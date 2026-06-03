@@ -78,6 +78,15 @@ const (
 )
 
 const (
+	// DefaultNetworkReservationPrefixLength is the default reservation applied
+	// when spec.reservations is omitted.
+	DefaultNetworkReservationPrefixLength = 25
+	// DefaultNetworkProviderReservedPrefixLength is the default provider carve-out
+	// within the reserved space when spec.reservations is omitted.
+	DefaultNetworkProviderReservedPrefixLength = 28
+)
+
+const (
 	ImageTagPrefix = "images.unikorn-cloud.org:"
 
 	ImageSourceTag      = ImageTagPrefix + "source" // for the kind of source, e.g., import
