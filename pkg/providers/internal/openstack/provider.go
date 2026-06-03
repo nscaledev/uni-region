@@ -1491,6 +1491,8 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 	if region.Spec.Openstack.Network.UseProviderNetworks() {
 		v, err := p.vlanAllocator.Allocate(ctx, network.Name)
 		if err != nil {
+			log.Error(err, "failed to allocate VLAN", "networkID", network.Name, "allocation", region.StaticName())
+
 			return nil, err
 		}
 
