@@ -53,6 +53,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/utils/ptr"
 
@@ -226,6 +227,20 @@ func regionFixture() *regionv1.Region {
 	}
 }
 
+func providerNetworkRegionFixture() *regionv1.Region {
+	region := regionFixture()
+	region.Name = "region"
+	region.Namespace = "default"
+	region.Spec.Provider = regionv1.ProviderOpenstack
+	region.Spec.Openstack.Network = &regionv1.RegionOpenstackNetworkSpec{
+		ProviderNetworks: &regionv1.ProviderNetworks{
+			Network: ptr.To("physnet1"),
+		},
+	}
+
+	return region
+}
+
 // networkFixture creates a basic network definition.
 func networkFixture() *regionv1.Network {
 	return &regionv1.Network{
@@ -249,6 +264,76 @@ func networkFixture() *regionv1.Network {
 			Openstack: &regionv1.NetworkStatusOpenstack{},
 		},
 	}
+}
+
+func TestDeleteNetworkFreesRecordedVLANWhenOpenStackNetworkMissing(t *testing.T) {
+	t.Parallel()
+
+	const vlanID = 607
+
+	region := providerNetworkRegionFixture()
+	network := networkFixture()
+	network.Status.Openstack.VlanID = ptr.To(vlanID)
+
+	allocation := &regionv1.VLANAllocation{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: region.Namespace,
+			Name:      region.StaticName(),
+		},
+		Spec: regionv1.VLANAllocationSpec{
+			Allocations: []regionv1.VLANAllocationEntry{
+				{
+					ID:        vlanID,
+					NetworkID: network.Name,
+				},
+			},
+		},
+	}
+
+	client := getClient(t, []client.Object{allocation})
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	networking := mock.NewMockNetworkingInterface(c)
+	networking.EXPECT().GetNetwork(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
+	networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
+	networking.EXPECT().GetRouter(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
+
+	p := openstack.NewTestProvider(client, region)
+
+	require.NoError(t, openstack.DeleteNetworkWithClient(t.Context(), p, networking, network))
+
+	result := &regionv1.VLANAllocation{}
+	require.NoError(t, client.Get(t.Context(), k8stypes.NamespacedName{
+		Namespace: region.Namespace,
+		Name:      region.StaticName(),
+	}, result))
+	require.Empty(t, result.Spec.Allocations)
+}
+
+func TestDeleteNetworkIgnoresMissingVLANAllocation(t *testing.T) {
+	t.Parallel()
+
+	const vlanID = 607
+
+	region := providerNetworkRegionFixture()
+	network := networkFixture()
+	network.Status.Openstack.VlanID = ptr.To(vlanID)
+
+	client := getClient(t, nil)
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	networking := mock.NewMockNetworkingInterface(c)
+	networking.EXPECT().GetNetwork(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
+	networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
+	networking.EXPECT().GetRouter(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
+
+	p := openstack.NewTestProvider(client, region)
+
+	require.NoError(t, openstack.DeleteNetworkWithClient(t.Context(), p, networking, network))
 }
 
 // networkMatcher is used to check mock function call parameters, as the object

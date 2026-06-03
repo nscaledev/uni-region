@@ -1670,11 +1670,7 @@ func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identi
 }
 
 // DeleteNetwork deletes a physical network.
-//
-//nolint:gocognit,cyclop
 func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
-	log := log.FromContext(ctx)
-
 	// NOTE: this is a privileged network client as it needs permissions
 	// from the manager policy in order to see provider networks for VLAN
 	// deallocation.
@@ -1682,6 +1678,13 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 	if err != nil {
 		return err
 	}
+
+	return p.deleteNetwork(ctx, networking, network)
+}
+
+//nolint:gocognit,cyclop
+func (p *Provider) deleteNetwork(ctx context.Context, networking NetworkingInterface, network *unikornv1.Network) error {
+	log := log.FromContext(ctx)
 
 	openstackNetwork, err := networking.GetNetwork(ctx, network)
 	if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
@@ -1728,26 +1731,27 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 		}
 	}
 
-	//nolint:nestif
-	if openstackNetwork != nil {
-		log.V(1).Info("deleting network")
+	region, _ := p.openstack.regionSnapshot()
+	// VLAN deallocation is idempotent. Prefer the VLAN ID recorded in
+	// status because the OpenStack network may already be gone; fall back
+	// to the segmentation ID for older Network statuses.
+	if region.Spec.Openstack != nil && region.Spec.Openstack.Network.UseProviderNetworks() {
+		vlanID, ok, err := networkVLANID(network, openstackNetwork)
+		if err != nil {
+			return err
+		}
 
-		region, _ := p.openstack.regionSnapshot()
-		// VLAN deallocation is idempotent, but requires the network to
-		// exist so we can lookup the segmentation ID, so this has to
-		// occur first.
-		if region.Spec.Openstack.Network.UseProviderNetworks() {
-			log.V(1).Info("freeing vlan", "id", openstackNetwork.SegmentationID)
+		if ok {
+			log.V(1).Info("freeing vlan", "id", vlanID)
 
-			vlanID, err := strconv.Atoi(openstackNetwork.SegmentationID)
-			if err != nil {
-				return fmt.Errorf("%w: segmentation ID not parsable", err)
-			}
-
-			if err := p.vlanAllocator.Free(ctx, vlanID); err != nil {
+			if err := p.vlanAllocator.Free(ctx, vlanID); err != nil && !kerrors.IsNotFound(err) {
 				return fmt.Errorf("%w: failed to free vlan", err)
 			}
 		}
+	}
+
+	if openstackNetwork != nil {
+		log.V(1).Info("deleting network")
 
 		if err := networking.DeleteNetwork(ctx, openstackNetwork.ID); err != nil {
 			return err
@@ -1755,6 +1759,23 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 	}
 
 	return nil
+}
+
+func networkVLANID(network *unikornv1.Network, openstackNetwork *NetworkExt) (int, bool, error) {
+	if network.Status.Openstack != nil && network.Status.Openstack.VlanID != nil {
+		return *network.Status.Openstack.VlanID, true, nil
+	}
+
+	if openstackNetwork == nil {
+		return 0, false, nil
+	}
+
+	parsedVLANID, err := strconv.Atoi(openstackNetwork.SegmentationID)
+	if err != nil {
+		return 0, false, fmt.Errorf("%w: segmentation ID not parsable", err)
+	}
+
+	return parsedVLANID, true, nil
 }
 
 // securityGroupRulePortRange expands a security group port into a start-end range as
