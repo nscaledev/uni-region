@@ -129,7 +129,12 @@ Pass `--organization-id` to restrict the region to a single organization. If it
 is omitted, the region is visible to all organizations.
 
 `register-region` also prints `REGION_PROVIDER`, `OPENSTACK_REGION_ID`, and
-`TEST_REGION_ID` entries for local test environments. Those can be ignored for
+`TEST_REGION_ID` entries for local test environments. The fixture setup infers
+the provider from `TEST_REGION_ID` and uses `REGION_PROVIDER` as a safeguard
+against accidentally targeting the wrong kind of Region. If
+`UNIKORN_OPENSTACK_FLAVOR_ID` or `UNIKORN_OPENSTACK_IMAGE_ID` are present, it
+also prints the matching `TEST_SERVER_FLAVOR_ID` and `TEST_SERVER_IMAGE_ID`
+entries used by the server lifecycle tests. Those entries can be ignored for
 persistent region setup.
 
 For additional configuration options for individual OpenStack services, consult
