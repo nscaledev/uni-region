@@ -32,6 +32,7 @@ import (
 
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/providers/allocation/vlan"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -107,6 +108,7 @@ func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {
 			client:  client,
 			_region: region,
 		},
+		vlanAllocator: vlan.New(client, region),
 	}
 }
 
@@ -124,6 +126,10 @@ func ReconcileRouter(ctx context.Context, p *Provider, client RouterInterface, n
 
 func ReconcileRouterInterface(ctx context.Context, p *Provider, client NetworkingInterface, router *routers.Router, subnet *subnets.Subnet) error {
 	return p.reconcileRouterInterface(ctx, client, router, subnet)
+}
+
+func DeleteNetworkWithClient(ctx context.Context, p *Provider, client NetworkingInterface, network *unikornv1.Network) error {
+	return p.deleteNetwork(ctx, client, network)
 }
 
 func ReconcileSecurityGroup(ctx context.Context, p *Provider, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup) (*groups.SecGroup, error) {
