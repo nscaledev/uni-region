@@ -29,11 +29,23 @@ type TestConfig struct {
 	OrgID              string
 	ProjectID          string
 	RegionBaseURL      string
+	RegionCACertPath   string
 	RegionID           string
 	PrivateRegionID    string
 	SecondaryOrgID     string
 	SecondaryProjectID string
 	SecondaryAuthToken string
+	InternalAPICert    string
+	InternalAPIKey     string
+	InternalAPICN      string
+	InternalAPIActor   string
+	ServerFlavorID     string
+	ServerImageID      string
+}
+
+// HasInternalAPIConfig reports whether local internal API credentials are available.
+func (c *TestConfig) HasInternalAPIConfig() bool {
+	return c.InternalAPICert != "" && c.InternalAPIKey != ""
 }
 
 // LoadTestConfig loads configuration from environment variables and .env files using viper.
@@ -41,12 +53,14 @@ type TestConfig struct {
 func LoadTestConfig() (*TestConfig, error) {
 	// Set up viper with config paths and defaults
 	defaults := map[string]interface{}{
-		"REQUEST_TIMEOUT":  "60s",
-		"TEST_TIMEOUT":     "20m",
-		"SKIP_INTEGRATION": false,
-		"DEBUG_LOGGING":    false,
-		"LOG_REQUESTS":     false,
-		"LOG_RESPONSES":    false,
+		"REQUEST_TIMEOUT":    "60s",
+		"TEST_TIMEOUT":       "20m",
+		"SKIP_INTEGRATION":   false,
+		"DEBUG_LOGGING":      false,
+		"LOG_REQUESTS":       false,
+		"LOG_RESPONSES":      false,
+		"INTERNAL_API_CN":    "unikorn-compute",
+		"INTERNAL_API_ACTOR": "api-tests",
 	}
 
 	// .env is located in test/ directory
@@ -73,6 +87,7 @@ func LoadTestConfig() (*TestConfig, error) {
 			LogResponses:    v.GetBool("LOG_RESPONSES"),
 		},
 		RegionBaseURL:      v.GetString("REGION_BASE_URL"),
+		RegionCACertPath:   v.GetString("REGION_CA_CERT"),
 		OrgID:              v.GetString("TEST_ORG_ID"),
 		ProjectID:          v.GetString("TEST_PROJECT_ID"),
 		RegionID:           v.GetString("TEST_REGION_ID"),
@@ -80,6 +95,12 @@ func LoadTestConfig() (*TestConfig, error) {
 		SecondaryOrgID:     v.GetString("TEST_SECONDARY_ORG_ID"),
 		SecondaryProjectID: v.GetString("TEST_SECONDARY_PROJECT_ID"),
 		SecondaryAuthToken: v.GetString("TEST_SECONDARY_AUTH_TOKEN"),
+		InternalAPICert:    v.GetString("INTERNAL_API_CLIENT_CERT"),
+		InternalAPIKey:     v.GetString("INTERNAL_API_CLIENT_KEY"),
+		InternalAPICN:      v.GetString("INTERNAL_API_CN"),
+		InternalAPIActor:   v.GetString("INTERNAL_API_ACTOR"),
+		ServerFlavorID:     v.GetString("TEST_SERVER_FLAVOR_ID"),
+		ServerImageID:      v.GetString("TEST_SERVER_IMAGE_ID"),
 	}
 
 	// Validate required fields

@@ -31,20 +31,6 @@ import (
 
 const testRegionNamespace = "unikorn-region"
 
-func TestEnvDefault(t *testing.T) {
-	t.Setenv("FIXTURE_TEST_ENV_DEFAULT", "")
-
-	if got := envDefault("FIXTURE_TEST_ENV_DEFAULT", "fallback"); got != "fallback" {
-		t.Fatalf("empty environment value = %q, want fallback", got)
-	}
-
-	t.Setenv("FIXTURE_TEST_ENV_DEFAULT", "configured")
-
-	if got := envDefault("FIXTURE_TEST_ENV_DEFAULT", "fallback"); got != "configured" {
-		t.Fatalf("configured environment value = %q, want configured", got)
-	}
-}
-
 func TestFirstEnv(t *testing.T) {
 	t.Setenv("FIXTURE_TEST_FIRST_EMPTY", "")
 	t.Setenv("FIXTURE_TEST_FIRST_CONFIGURED", "first")
@@ -60,29 +46,40 @@ func TestFirstEnv(t *testing.T) {
 	}
 }
 
-func TestResolveTestRegionID(t *testing.T) {
+func TestResolveRegionFixture(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name         string
 		provider     string
 		explicitID   string
+		objects      []client.Object
 		wantProvider regionv1.Provider
 		wantRegionID string
+		wantExisting bool
 		wantErr      string
 	}{
 		{
-			name:         "simulated",
-			provider:     string(regionv1.ProviderSimulated),
+			name:         "default simulated",
 			wantProvider: regionv1.ProviderSimulated,
 			wantRegionID: publicRegion,
 		},
 		{
-			name:         "openstack",
-			provider:     string(regionv1.ProviderOpenstack),
+			name:         "infer openstack from test region",
 			explicitID:   "gb-north-1",
+			objects:      []client.Object{regionFixture("gb-north-1", regionv1.ProviderOpenstack)},
 			wantProvider: regionv1.ProviderOpenstack,
 			wantRegionID: "gb-north-1",
+			wantExisting: true,
+		},
+		{
+			name:         "openstack safeguard matches",
+			provider:     string(regionv1.ProviderOpenstack),
+			explicitID:   "gb-north-1",
+			objects:      []client.Object{regionFixture("gb-north-1", regionv1.ProviderOpenstack)},
+			wantProvider: regionv1.ProviderOpenstack,
+			wantRegionID: "gb-north-1",
+			wantExisting: true,
 		},
 		{
 			name:     "openstack missing ID",
@@ -90,14 +87,27 @@ func TestResolveTestRegionID(t *testing.T) {
 			wantErr:  "TEST_REGION_ID",
 		},
 		{
-			name:     "kubernetes",
+			name:       "safeguard mismatch",
+			provider:   string(regionv1.ProviderSimulated),
+			explicitID: "gb-north-1",
+			objects:    []client.Object{regionFixture("gb-north-1", regionv1.ProviderOpenstack)},
+			wantErr:    "unexpected provider",
+		},
+		{
+			name:       "explicit region missing",
+			explicitID: "gb-north-1",
+			wantErr:    "was not found",
+		},
+		{
+			name:     "unsupported safeguard",
 			provider: string(regionv1.ProviderKubernetes),
 			wantErr:  "unsupported region provider",
 		},
 		{
-			name:     "unknown",
-			provider: "unknown",
-			wantErr:  "unsupported region provider",
+			name:       "unsupported inferred provider",
+			explicitID: "k8s",
+			objects:    []client.Object{regionFixture("k8s", regionv1.ProviderKubernetes)},
+			wantErr:    "unsupported region provider",
 		},
 	}
 
@@ -105,58 +115,59 @@ func TestResolveTestRegionID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			provider, regionID, err := resolveTestRegionID(tt.provider, tt.explicitID)
+			provider, regionID, existing, err := resolveRegionFixture(
+				t.Context(),
+				fixtureClient(t, tt.objects...),
+				testRegionNamespace,
+				tt.provider,
+				tt.explicitID,
+			)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-					t.Fatalf("resolveTestRegionID() error = %v, want containing %q", err, tt.wantErr)
+					t.Fatalf("resolveRegionFixture() error = %v, want containing %q", err, tt.wantErr)
 				}
 
 				return
 			}
 
 			if err != nil {
-				t.Fatalf("resolveTestRegionID() error = %v", err)
+				t.Fatalf("resolveRegionFixture() error = %v", err)
 			}
 
 			if provider != tt.wantProvider {
-				t.Fatalf("resolveTestRegionID() provider = %q, want %q", provider, tt.wantProvider)
+				t.Fatalf("resolveRegionFixture() provider = %q, want %q", provider, tt.wantProvider)
 			}
 
 			if regionID != tt.wantRegionID {
-				t.Fatalf("resolveTestRegionID() region ID = %q, want %q", regionID, tt.wantRegionID)
+				t.Fatalf("resolveRegionFixture() region ID = %q, want %q", regionID, tt.wantRegionID)
+			}
+
+			if existing != tt.wantExisting {
+				t.Fatalf("resolveRegionFixture() existing = %t, want %t", existing, tt.wantExisting)
 			}
 		})
 	}
 }
 
-func TestValidateExistingRegion(t *testing.T) {
+func TestGetExistingRegionProvider(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		objects  []client.Object
-		provider regionv1.Provider
-		wantErr  string
+		name    string
+		objects []client.Object
+		want    regionv1.Provider
+		wantErr string
 	}{
 		{
 			name: "openstack region exists",
 			objects: []client.Object{
 				regionFixture("gb-north-1", regionv1.ProviderOpenstack),
 			},
-			provider: regionv1.ProviderOpenstack,
+			want: regionv1.ProviderOpenstack,
 		},
 		{
-			name:     "region missing",
-			provider: regionv1.ProviderOpenstack,
-			wantErr:  "was not found",
-		},
-		{
-			name: "provider mismatch",
-			objects: []client.Object{
-				regionFixture("gb-north-1", regionv1.ProviderSimulated),
-			},
-			provider: regionv1.ProviderOpenstack,
-			wantErr:  "has provider",
+			name:    "region missing",
+			wantErr: "was not found",
 		},
 	}
 
@@ -164,23 +175,26 @@ func TestValidateExistingRegion(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := validateExistingRegion(
+			got, err := getExistingRegionProvider(
 				t.Context(),
 				fixtureClient(t, tt.objects...),
 				testRegionNamespace,
 				"gb-north-1",
-				tt.provider,
 			)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-					t.Fatalf("validateExistingRegion() error = %v, want containing %q", err, tt.wantErr)
+					t.Fatalf("getExistingRegionProvider() error = %v, want containing %q", err, tt.wantErr)
 				}
 
 				return
 			}
 
 			if err != nil {
-				t.Fatalf("validateExistingRegion() error = %v", err)
+				t.Fatalf("getExistingRegionProvider() error = %v", err)
+			}
+
+			if got != tt.want {
+				t.Fatalf("getExistingRegionProvider() = %q, want %q", got, tt.want)
 			}
 		})
 	}

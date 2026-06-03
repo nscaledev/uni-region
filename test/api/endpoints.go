@@ -206,3 +206,34 @@ func (e *Endpoints) GetSSHCertificateAuthority(sshCAID string) string {
 func (e *Endpoints) DeleteSSHCertificateAuthority(sshCAID string) string {
 	return fmt.Sprintf("/api/v2/sshcertificateauthorities/%s", url.PathEscape(sshCAID))
 }
+
+// ListServers returns the endpoint for listing servers in a project.
+func (e *Endpoints) ListServers(orgID, projectID, regionID, networkID string) string {
+	values := url.Values{}
+	values.Set("organizationID", orgID)
+	values.Set("projectID", projectID)
+	values.Set("regionID", regionID)
+
+	if networkID != "" {
+		values.Set("networkID", networkID)
+	}
+
+	return fmt.Sprintf("/api/v2/servers?%s", values.Encode())
+}
+
+// CreateServer returns the endpoint for creating a server.
+func (e *Endpoints) CreateServer() string {
+	return "/api/v2/servers"
+}
+
+// GetServer returns the endpoint for getting a specific server.
+func (e *Endpoints) GetServer(serverID string) string {
+	return fmt.Sprintf("/api/v2/servers/%s",
+		url.PathEscape(serverID))
+}
+
+// DeleteServer returns the endpoint for deleting a specific server.
+func (e *Endpoints) DeleteServer(serverID string) string {
+	return fmt.Sprintf("/api/v2/servers/%s",
+		url.PathEscape(serverID))
+}
