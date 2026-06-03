@@ -17,3 +17,7 @@ test/ca-bundle.pem
 junit.xml
 test-results.json
 hack/ci/ca-bundle.pem
+# Local OpenStack/DevStack rc files may carry live credentials; never commit.
+openrc
+openrc.*
+*.openrc

@@ -537,6 +537,10 @@ kind-cluster:  ## Create KinD cluster (skips if KIND_CLUSTER already exists)
 kind-kubeconfig: kind-cluster  ## Refresh the kubeconfig pointed at by $$KUBECONFIG so it includes the kind cluster context
 	@umask 077 && kind export kubeconfig --name $(KIND_CLUSTER) >/dev/null
 
+.PHONY: kind-cloud-provider
+kind-cloud-provider:  ## Pre-start cloud-provider-kind without sudo (workaround for identity setup-infra's sudo path)
+	hack/ci/cloud-provider-kind
+
 .PHONY: integration-infra
 integration-infra:  ## Install cluster prerequisites (idempotent, context-aware)
 	hack/ci/setup-infra
@@ -573,10 +577,11 @@ test-devstack-preflight:
 	  exit 1; \
 	fi; \
 	curl_err=""; \
-	status="$$(curl -s -o /dev/null -m3 -w '%{http_code}' "$$OS_AUTH_URL" 2>/dev/null)" || curl_err="curl exit $$?"; \
+	status="$$(curl -s -o /dev/null --connect-timeout 10 --max-time 30 -w '%{http_code}' "$$OS_AUTH_URL" 2>/dev/null)" || curl_err="curl exit $$?"; \
 	case "$$status" in 2*|3*|401) ;; *) \
 	  echo "error: DevStack auth URL $$OS_AUTH_URL not reachable (HTTP $$status$${curl_err:+; $$curl_err})." >&2; \
-	  echo "       Check the port-forward, and for HTTPS endpoints with a private CA pass DEVSTACK_POD_AUTH_URL explicitly." >&2; \
+	  echo "       For a remote DevStack, check DNS/firewall and that OS_AUTH_URL is the public endpoint." >&2; \
+	  echo "       For a local port-forwarded DevStack, check the forward is up." >&2; \
 	  exit 1 ;; \
 	esac; \
 	echo "==> Preflight: DevStack reachable at $$OS_AUTH_URL (HTTP $$status)"
@@ -588,7 +593,7 @@ test-devstack: KUBECONFIG := $(CURDIR)/test/.kubeconfig
 test-devstack: DEVSTACK_REGION_ID ?= devstack
 test-devstack: DEVSTACK_CLUSTER_ROLES ?= member,load-balancer_member,manager
 test-devstack: DEVSTACK_ENV_DIR ?= ../uni-devstack/.devstack
-test-devstack: test-devstack-preflight kind-cluster kind-kubeconfig integration-infra integration-install integration-fixtures  ## Full integration run against a live DevStack
+test-devstack: test-devstack-preflight kind-cluster kind-kubeconfig kind-cloud-provider integration-infra integration-install integration-fixtures  ## Full integration run against a live DevStack
 	@set -e; \
 	for f in flavors.env images.env; do \
 	  if [ -f "$(DEVSTACK_ENV_DIR)/$$f" ]; then \
@@ -597,19 +602,32 @@ test-devstack: test-devstack-preflight kind-cluster kind-kubeconfig integration-
 	  fi; \
 	done; \
 	if [ -z "$$DEVSTACK_POD_AUTH_URL" ]; then \
-	  if ! docker_inspect="$$(docker network inspect kind 2>&1)"; then \
-	    echo "error: 'docker network inspect kind' failed (is Docker running and the kind network present?):" >&2; \
-	    echo "$$docker_inspect" | sed 's/^/  /' >&2; \
-	    echo "Set DEVSTACK_POD_AUTH_URL explicitly to bypass auto-detection." >&2; \
-	    exit 1; \
+	  os_host="$$(echo "$$OS_AUTH_URL" | sed -E 's|^[a-z]+://([^/:]+).*|\1|')"; \
+	  case "$$os_host" in \
+	    localhost|127.*|10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[0-1].*) \
+	      needs_rewrite=true ;; \
+	    *) \
+	      needs_rewrite=false ;; \
+	  esac; \
+	  if [ "$$needs_rewrite" = false ]; then \
+	    echo "==> OS_AUTH_URL host '$$os_host' is publicly reachable; using it directly from kind pods (no gateway rewrite)."; \
+	    DEVSTACK_POD_AUTH_URL="$$OS_AUTH_URL"; \
+	  else \
+	    echo "==> OS_AUTH_URL host '$$os_host' is local/private; rewriting to the kind docker gateway so pods can reach it."; \
+	    if ! docker_inspect="$$(docker network inspect kind 2>&1)"; then \
+	      echo "error: 'docker network inspect kind' failed (is Docker running and the kind network present?):" >&2; \
+	      echo "$$docker_inspect" | sed 's/^/  /' >&2; \
+	      echo "Set DEVSTACK_POD_AUTH_URL explicitly to bypass auto-detection." >&2; \
+	      exit 1; \
+	    fi; \
+	    gw="$$(echo "$$docker_inspect" \
+	      | jq -r '[.[0].IPAM.Config[] | select(.Gateway and (.Gateway | test("^[0-9.]+$$"))) | .Gateway] | first // empty')"; \
+	    if [ -z "$$gw" ]; then \
+	      echo "error: kind docker network has no IPv4 gateway; set DEVSTACK_POD_AUTH_URL explicitly." >&2; \
+	      exit 1; \
+	    fi; \
+	    DEVSTACK_POD_AUTH_URL="$$(echo "$$OS_AUTH_URL" | sed -E "s|://[^/:]+|://$$gw|")"; \
 	  fi; \
-	  gw="$$(echo "$$docker_inspect" \
-	    | jq -r '[.[0].IPAM.Config[] | select(.Gateway and (.Gateway | test("^[0-9.]+$$"))) | .Gateway] | first // empty')"; \
-	  if [ -z "$$gw" ]; then \
-	    echo "error: kind docker network has no IPv4 gateway; set DEVSTACK_POD_AUTH_URL explicitly." >&2; \
-	    exit 1; \
-	  fi; \
-	  DEVSTACK_POD_AUTH_URL="$$(echo "$$OS_AUTH_URL" | sed -E "s|://[^/:]+|://$$gw|")"; \
 	fi; \
 	echo "==> Configuring OpenStack provider (UNIKORN_OPENSTACK_AUTH_URL=$$DEVSTACK_POD_AUTH_URL)"; \
 	UNIKORN_OPENSTACK_AUTH_URL="$$DEVSTACK_POD_AUTH_URL" \

@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Stage a remote DevStack's env files locally for `make test-devstack`.
+#
+# A remote DevStack (e.g. one reachable at https://devstack.st.ht) writes its
+# generated artefacts into <repo>/.devstack/ on the VM itself:
+#
+#   - openrc       Public openrc; source it to populate OS_* for the host CLI.
+#   - flavors.env  UNIKORN_OPENSTACK_FLAVOR_ID and friends, for the Region CR.
+#   - images.env   UNIKORN_OPENSTACK_IMAGE_ID and friends, for the Region CR.
+#
+# `make test-devstack` reads flavors.env/images.env from DEVSTACK_ENV_DIR
+# (default ../uni-devstack/.devstack) and needs OS_* sourced from openrc in the
+# calling shell. This script fetches all three from the VM into a local
+# directory so the target can run against a remote DevStack with no local
+# DevStack checkout.
+#
+# Usage:
+#   hack/devstack/stage-remote --host user@devstack.st.ht [options]
+#
+# Options:
+#   --host HOST            SSH target, e.g. ubuntu@devstack.st.ht (required).
+#   --remote-dir DIR       Remote .devstack directory
+#                          (default: /opt/uni-devstack/.devstack).
+#   --dest DIR             Local destination directory
+#                          (default: ../uni-devstack/.devstack, i.e. the
+#                          DEVSTACK_ENV_DIR test-devstack reads by default).
+#   --auth-url URL         Public OS_AUTH_URL to rewrite into the staged openrc,
+#                          e.g. https://devstack.st.ht/identity/v3. The openrc
+#                          on the VM usually already points at the public URL;
+#                          use this only if it points somewhere VM-internal.
+#
+# After staging:
+#   set -a; . <dest>/openrc; set +a
+#   make test-devstack
+#
+# Because OS_AUTH_URL is then a public HTTPS endpoint, test-devstack uses it
+# directly from the kind pods (no docker-gateway rewrite) and the Let's Encrypt
+# certificate validates with the system trust store (no CA wrangling needed).
+set -euo pipefail
+
+HOST=""
+REMOTE_DIR="/opt/uni-devstack/.devstack"
+DEST="../uni-devstack/.devstack"
+AUTH_URL=""
+
+log() { echo "==> $*" >&2; }
+fatal() { echo "ERROR: $*" >&2; exit 1; }
+
+usage() {
+  sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
+  exit "${1:-0}"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --host)       HOST="$2"; shift 2 ;;
+    --remote-dir) REMOTE_DIR="$2"; shift 2 ;;
+    --dest)       DEST="$2"; shift 2 ;;
+    --auth-url)   AUTH_URL="$2"; shift 2 ;;
+    -h|--help)    usage 0 ;;
+    *)            fatal "unknown argument: $1" ;;
+  esac
+done
+
+[[ -n "${HOST}" ]] || { usage 1; }
+command -v scp >/dev/null 2>&1 || fatal "scp is required"
+
+mkdir -p "${DEST}"
+
+for f in openrc flavors.env images.env; do
+  log "Fetching ${HOST}:${REMOTE_DIR}/${f} -> ${DEST}/${f}"
+  if ! scp -q "${HOST}:${REMOTE_DIR}/${f}" "${DEST}/${f}"; then
+    if [[ "${f}" == "openrc" ]]; then
+      fatal "failed to fetch ${f}; check --host/--remote-dir and SSH access"
+    fi
+    log "WARNING: ${f} not found on the VM; the Region CR will fall back to whatever DevStack advertises."
+  fi
+done
+
+if [[ -n "${AUTH_URL}" && -f "${DEST}/openrc" ]]; then
+  log "Rewriting OS_AUTH_URL in staged openrc to ${AUTH_URL}"
+  sed -i -E "s#^(export OS_AUTH_URL=).*#\\1'${AUTH_URL}'#" "${DEST}/openrc"
+fi
+
+log "Staged DevStack env into ${DEST}."
+log "Next: 'set -a; . ${DEST}/openrc; set +a' then 'make test-devstack'."
