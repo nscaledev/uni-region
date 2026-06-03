@@ -26,8 +26,10 @@ accounting meet.
 - storage-class and region compatibility are validated before mutation
 - attachment IP ranges are derived from transitional provider-specific network
   storage-range information
-- attachment status reporting is currently based partly on desired state rather
-  than fully observed actual state
+- attachment parallelism is capped to the usable network storage range; smaller
+  non-empty storage ranges are accepted and used in full
+- attachment status rows follow desired attachments, then project observed
+  attachment provisioning state and API-safe mount options when available
 
 ## Invariants And Guard Rails
 
@@ -37,6 +39,7 @@ accounting meet.
 - Quota allocation changes are part of the storage lifecycle contract, not an
   optional side effect.
 - Attachments must reference visible, provisioned networks in the same project.
+- Attached networks must expose a valid non-empty IPv4 storage range.
 - Update preserves the existing allocation annotation while mutating the storage
   resource.
 
@@ -54,8 +57,8 @@ accounting meet.
 
 - Remove the dependency on transitional provider-specific network status once a
   generic storage-range source exists.
-- Tighten attachment status so it reflects observed state rather than mostly
-  desired state where practical.
+- Expand attachment status only when public API consumers need additional
+  API-safe observed fields.
 
 ## Cross-Package Context
 

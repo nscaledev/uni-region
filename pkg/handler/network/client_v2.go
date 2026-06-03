@@ -20,7 +20,6 @@ package network
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"slices"
@@ -49,6 +48,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
+
+func convertReservations(in *regionv1.NetworkReservations) *openapi.NetworkReservations {
+	if in == nil {
+		return nil
+	}
+
+	out := &openapi.NetworkReservations{
+		PrefixLength:                 in.PrefixLength,
+		ProviderReservedPrefixLength: in.ProviderReservedPrefixLength,
+	}
+
+	return out
+}
 
 func convertRoute(in *regionv1.Route) *openapi.Route {
 	return &openapi.Route{
@@ -79,8 +91,9 @@ func convertV2(in *regionv1.Network) *openapi.NetworkV2Read {
 			Routes:         convertRoutes(in.Spec.Routes),
 		},
 		Status: openapi.NetworkV2Status{
-			RegionId: in.Labels[constants.RegionLabel],
-			Prefix:   in.Spec.Prefix.String(),
+			RegionId:     in.Labels[constants.RegionLabel],
+			Prefix:       in.Spec.Prefix.String(),
+			Reservations: convertReservations(in.EffectiveReservations()),
 		},
 	}
 }
@@ -186,19 +199,37 @@ func (c *Client) GetV2(ctx context.Context, networkID string) (*openapi.NetworkV
 	return convertV2(result), nil
 }
 
-// convertCreateToUpdateRequest marshals a create request into an update request
-// that can be used with generate().  Updates are a subset of creates (without the
-// immutable bits).
-func convertCreateToUpdateRequest(in *openapi.NetworkV2Create) (*openapi.NetworkV2Update, error) {
-	t, err := json.Marshal(in)
-	if err != nil {
-		return nil, fmt.Errorf("%w: failed to marshal request", err)
+// convertCreateToUpdateRequest extracts the mutable fields from a create request
+// into an update request for use with generateV2.
+func convertCreateToUpdateRequest(in *openapi.NetworkV2Create) *openapi.NetworkV2Update {
+	return &openapi.NetworkV2Update{
+		Metadata: in.Metadata,
+		Spec: openapi.NetworkV2Spec{
+			DnsNameservers: in.Spec.DnsNameservers,
+			Routes:         in.Spec.Routes,
+		},
+	}
+}
+
+func generateReservations(prefix *net.IPNet, in *openapi.NetworkReservations) (*regionv1.NetworkReservations, error) {
+	if in == nil {
+		//nolint:nilnil
+		return nil, nil
 	}
 
-	out := &openapi.NetworkV2Update{}
+	ones, _ := prefix.Mask.Size()
 
-	if err := json.Unmarshal(t, out); err != nil {
-		return nil, fmt.Errorf("%w: failed to unmarshal request", err)
+	if in.PrefixLength <= ones {
+		return nil, errors.HTTPUnprocessableContent("the address reservation prefix length must be greater than the network prefix length").WithValues("prefix", ones, "reservationPrefix", in.PrefixLength)
+	}
+
+	if in.ProviderReservedPrefixLength != nil && *in.ProviderReservedPrefixLength < in.PrefixLength {
+		return nil, errors.HTTPUnprocessableContent("the provider reserved prefix length must be greater than or equal to the reservation prefix length").WithValues("reservationPrefix", in.PrefixLength, "providerReservedPrefixLength", *in.ProviderReservedPrefixLength)
+	}
+
+	out := &regionv1.NetworkReservations{
+		PrefixLength:                 in.PrefixLength,
+		ProviderReservedPrefixLength: in.ProviderReservedPrefixLength,
 	}
 
 	return out, nil
@@ -229,7 +260,7 @@ func generateRoutes(in *openapi.Routes) ([]regionv1.Route, error) {
 	return out, nil
 }
 
-func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID, identityID string, request *openapi.NetworkV2Update, prefix *net.IPNet) (*regionv1.Network, error) {
+func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID, identityID string, request *openapi.NetworkV2Update, prefix *net.IPNet, reservations *regionv1.NetworkReservations) (*regionv1.Network, error) {
 	dnsNameservers, err := parseIPV4AddressList(request.Spec.DnsNameservers)
 	if err != nil {
 		return nil, err
@@ -251,6 +282,7 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 		Spec: regionv1.NetworkSpec{
 			Tags:           conversion.GenerateTagList(request.Metadata.Tags),
 			Prefix:         generateIPV4Prefix(prefix),
+			Reservations:   reservations,
 			DNSNameservers: generateIPV4AddressList(dnsNameservers),
 			Routes:         routes,
 		},
@@ -271,9 +303,10 @@ type createSaga struct {
 	client  *Client
 	request *openapi.NetworkV2Create
 
-	prefix   *net.IPNet
-	identity *regionv1.Identity
-	network  *regionv1.Network
+	prefix       *net.IPNet
+	identity     *regionv1.Identity
+	network      *regionv1.Network
+	reservations *regionv1.NetworkReservations
 }
 
 func newCreateSaga(client *Client, request *openapi.NetworkV2Create) *createSaga {
@@ -298,6 +331,13 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 	if ones > 24 {
 		return errors.OAuth2InvalidRequest("minimum network prefix size is /24")
 	}
+
+	reservations, err := generateReservations(prefix, s.request.Spec.Reservations)
+	if err != nil {
+		return err
+	}
+
+	s.reservations = reservations
 
 	return nil
 }
@@ -333,12 +373,7 @@ func (s *createSaga) deleteServicePricipal(ctx context.Context) error {
 }
 
 func (s *createSaga) generateNetwork(ctx context.Context) error {
-	updateRequest, err := convertCreateToUpdateRequest(s.request)
-	if err != nil {
-		return err
-	}
-
-	network, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId, s.identity.Name, updateRequest, s.prefix)
+	network, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId, s.identity.Name, convertCreateToUpdateRequest(s.request), s.prefix, s.reservations)
 	if err != nil {
 		return err
 	}
@@ -419,7 +454,7 @@ func (c *Client) Update(ctx context.Context, networkID string, request *openapi.
 		return nil, err
 	}
 
-	if err := rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Delete, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel]); err != nil {
+	if err := rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Update, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel]); err != nil {
 		return nil, err
 	}
 
@@ -432,7 +467,12 @@ func (c *Client) Update(ctx context.Context, networkID string, request *openapi.
 	regionID := current.Labels[constants.RegionLabel]
 	identityID := current.Labels[constants.IdentityLabel]
 
-	required, err := c.generateV2(ctx, organizationID, projectID, regionID, identityID, request, &current.Spec.Prefix.IPNet)
+	var reservations *regionv1.NetworkReservations
+	if current.Spec.Reservations != nil {
+		reservations = current.Spec.Reservations.DeepCopy()
+	}
+
+	required, err := c.generateV2(ctx, organizationID, projectID, regionID, identityID, request, &current.Spec.Prefix.IPNet, reservations)
 	if err != nil {
 		return nil, err
 	}

@@ -142,11 +142,6 @@ func (p *Provider) regionClient(ctx context.Context) (client.Client, error) {
 	return client, nil
 }
 
-// Kind returns the provider kind.
-func (p *Provider) Kind() unikornv1.Provider {
-	return unikornv1.ProviderKubernetes
-}
-
 // Flavors list all available flavors.
 func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	client, err := p.regionClient(ctx)
