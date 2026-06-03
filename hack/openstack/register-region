@@ -9,6 +9,7 @@ SECRET_NAME="${OPENSTACK_SECRET_NAME:-}"
 ORGANIZATION_ID="${REGION_ORGANIZATION_ID:-}"
 PROVIDER_ENV_FILE=""
 CREATE_SECRET="${OPENSTACK_CREATE_SECRET:-false}"
+CLUSTER_ROLES="${REGION_CLUSTER_ROLES:-member,load-balancer_member}"
 
 log() {
   echo "==> $*" >&2
@@ -37,7 +38,15 @@ emit_env() {
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 [--provider-env FILE] --namespace NS [--region-id ID] [--display-name NAME] [--secret-name NAME] [--organization-id ID] [--create-secret]
+Usage: $0 [--provider-env FILE] --namespace NS [--region-id ID] [--display-name NAME] [--secret-name NAME] [--organization-id ID] [--create-secret] [--cluster-roles ROLES]
+
+Options:
+  --cluster-roles ROLES  Comma-separated roles to grant the provider user on
+                         each per-workload project it creates
+                         (default: member,load-balancer_member). On DevStack add
+                         'manager' so quota/network/image operations are
+                         permitted by the Unikorn policy overlay; 'admin' is
+                         only needed on clouds without that overlay.
 
 Environment:
   UNIKORN_OPENSTACK_AUTH_URL
@@ -51,6 +60,7 @@ Environment:
   OPENSTACK_SECRET_NAME
   OPENSTACK_CREATE_SECRET=true
   REGION_ORGANIZATION_ID
+  REGION_CLUSTER_ROLES
 
 By default, this script references an existing Kubernetes Secret. Create or sync
 that Secret from your password manager before registering persistent regions.
@@ -88,6 +98,10 @@ while [[ $# -gt 0 ]]; do
     --create-secret)
       CREATE_SECRET="true"
       shift
+      ;;
+    --cluster-roles)
+      CLUSTER_ROLES="$2"
+      shift 2
       ;;
     -h|--help)
       usage
@@ -166,6 +180,15 @@ EOF
 )
 fi
 
+cluster_roles_block=""
+IFS=',' read -r -a cluster_roles_array <<<"${CLUSTER_ROLES}"
+for role in "${cluster_roles_array[@]}"; do
+  role="$(echo "${role}" | tr -d '[:space:]')"
+  [[ -n "${role}" ]] || continue
+  cluster_roles_block+="      - ${role}"$'\n'
+done
+[[ -n "${cluster_roles_block}" ]] || fatal "--cluster-roles must contain at least one role"
+
 log "Applying OpenStack Region ${NAMESPACE}/${REGION_ID}..."
 cat <<EOF | kubectl apply -f - >&2
 apiVersion: region.unikorn-cloud.org/v1alpha1
@@ -185,8 +208,7 @@ ${security_block}
       name: ${SECRET_NAME}
     identity:
       clusterRoles:
-      - member
-      - load-balancer_member
+${cluster_roles_block%$'\n'}
 ${flavor_block}
 ${network_block}
 EOF
