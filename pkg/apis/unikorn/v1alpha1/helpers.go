@@ -19,9 +19,11 @@ package v1alpha1
 
 import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/constants"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/ptr"
 )
 
 // Paused implements the ReconcilePauser interface.
@@ -72,6 +74,19 @@ func (c *Network) StatusConditionWrite(t unikornv1core.ConditionType, status cor
 func (c *Network) ResourceLabels() (labels.Set, error) {
 	//nolint:nilnil
 	return nil, nil
+}
+
+// EffectiveReservations returns the reservations the provider should use when
+// reconciling a network.  Explicit reservations win; otherwise the defaults apply.
+func (c *Network) EffectiveReservations() *NetworkReservations {
+	if c.Spec.Reservations != nil {
+		return c.Spec.Reservations.DeepCopy()
+	}
+
+	return &NetworkReservations{
+		PrefixLength:                 constants.DefaultNetworkReservationPrefixLength,
+		ProviderReservedPrefixLength: ptr.To(constants.DefaultNetworkProviderReservedPrefixLength),
+	}
 }
 
 // Paused implements the ReconcilePauser interface.
