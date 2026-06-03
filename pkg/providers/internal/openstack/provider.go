@@ -1503,6 +1503,8 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 
 	result, err = client.CreateNetwork(ctx, network, vlanID)
 	if err != nil {
+		log.Error(err, "failed to create OpenStack network", "networkID", network.Name, "vlanID", vlanID)
+
 		if vlanID != nil {
 			if rerr := p.vlanAllocator.Free(ctx, *vlanID); rerr != nil {
 				log.Error(rerr, "failed to free vlan", "id", *vlanID)
