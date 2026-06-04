@@ -160,7 +160,7 @@ jobs:
       ref: ${{ steps.find.outputs.ref }}
     steps:
     - name: Resolve UAT checkout ref
-      uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@main
+      uses: nscaledev/uni-staging-constellation@main
       id: find
       with:
         service: uni-region
