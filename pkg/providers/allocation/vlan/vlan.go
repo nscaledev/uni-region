@@ -139,6 +139,12 @@ func (a *Allocator) Allocate(ctx context.Context, networkID string) (int, error)
 		return -1, err
 	}
 
+	if id, ok, err := vlanIDByNetworkID(allocation, networkID); err != nil {
+		return -1, err
+	} else if ok {
+		return id, nil
+	}
+
 	allocatable := a.allocatable()
 
 	// Do an exhaustive search through all allocatable VLAN IDs...
@@ -181,6 +187,32 @@ func (a *Allocator) Allocate(ctx context.Context, networkID string) (int, error)
 	return -1, fmt.Errorf("%w: vlan ids exhausted", ErrAllocation)
 }
 
+func vlanIDByNetworkID(allocation *unikornv1.VLANAllocation, networkID string) (int, bool, error) {
+	var (
+		count int
+		id    int
+	)
+
+	for _, entry := range allocation.Spec.Allocations {
+		if entry.NetworkID != networkID {
+			continue
+		}
+
+		count++
+		id = entry.ID
+	}
+
+	if count == 0 {
+		return -1, false, nil
+	}
+
+	if count > 1 {
+		return -1, false, fmt.Errorf("%w: network id %s allocated more than once", ErrAllocation, networkID)
+	}
+
+	return id, true, nil
+}
+
 func (a *Allocator) Free(ctx context.Context, id int) error {
 	if !vlanIDValid(id) {
 		return fmt.Errorf("%w: vlan id %d is invalid", ErrAllocation, id)
@@ -210,6 +242,36 @@ func (a *Allocator) Free(ctx context.Context, id int) error {
 	// manually corrupted the allocations table.
 	if delta > 1 {
 		return fmt.Errorf("%w: vlan id %d not allocated exactly once", ErrAllocation, id)
+	}
+
+	if err := a.client.Update(ctx, allocation); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (a *Allocator) FreeByNetworkID(ctx context.Context, networkID string) error {
+	allocation, err := a.getVLANAllocation(ctx)
+	if err != nil {
+		if kerrors.IsNotFound(err) {
+			return nil
+		}
+
+		return err
+	}
+
+	allocationsLength := len(allocation.Spec.Allocations)
+
+	callback := func(allocation unikornv1.VLANAllocationEntry) bool {
+		return allocation.NetworkID == networkID
+	}
+
+	allocation.Spec.Allocations = slices.DeleteFunc(allocation.Spec.Allocations, callback)
+
+	delta := allocationsLength - len(allocation.Spec.Allocations)
+	if delta == 0 {
+		return nil
 	}
 
 	if err := a.client.Update(ctx, allocation); err != nil {
