@@ -31,7 +31,17 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// ReferenceManager records and removes the identity-service project reference
+// for the provisioned resource. *identityclient.References satisfies it; the
+// seam exists so the provisioning lifecycle can be exercised in unit tests.
+type ReferenceManager interface {
+	AddReferenceToProject(ctx context.Context, resource client.Object) error
+	RemoveReferenceFromProject(ctx context.Context, resource client.Object) error
+}
 
 // Options allows access to CLI options in the provisioner.
 type Options struct {
@@ -61,16 +71,18 @@ type Provisioner struct {
 	// identity is the identity we're provisioning.
 	identity *unikornv1.Identity
 
-	// options are CLI options.
-	options *Options
+	// references manages the identity-service project reference for the identity.
+	references ReferenceManager
 }
 
 // New returns a new initialized provisioner object.
 func New(options coremanager.ControllerOptions, providers providers.Providers) provisioners.ManagerProvisioner {
+	//nolint:forcetypeassert
+	o := options.(*Options)
+
 	return &Provisioner{
-		identity: &unikornv1.Identity{},
-		//nolint:forcetypeassert
-		options: options.(*Options),
+		identity:   &unikornv1.Identity{},
+		references: identityclient.NewReferences(constants.ServiceDescriptor(), o.identityOptions, &o.clientOptions),
 		Base: base.Base{
 			Providers: providers,
 		},
@@ -86,7 +98,7 @@ func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
-	if err := identityclient.NewReferences(constants.ServiceDescriptor(), p.options.identityOptions, &p.options.clientOptions).AddReferenceToProject(ctx, p.identity); err != nil {
+	if err := p.references.AddReferenceToProject(ctx, p.identity); err != nil {
 		return err
 	}
 
@@ -113,7 +125,7 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
-	if err := identityclient.NewReferences(constants.ServiceDescriptor(), p.options.identityOptions, &p.options.clientOptions).RemoveReferenceFromProject(ctx, p.identity); err != nil {
+	if err := p.references.RemoveReferenceFromProject(ctx, p.identity); err != nil {
 		return err
 	}
 
