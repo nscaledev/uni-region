@@ -18,8 +18,13 @@ limitations under the License.
 package openstack_test
 
 import (
+	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gophercloud/gophercloud/v2"
@@ -52,6 +57,8 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
+	k8sv1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/utils/ptr"
@@ -217,12 +224,35 @@ const (
 	sshKeyName     = "skeleton"
 )
 
+type regionFixtureOption func(*regionv1.Region)
+
 // regionFixture creates a region definition.
-func regionFixture() *regionv1.Region {
-	return &regionv1.Region{
+func regionFixture(opts ...regionFixtureOption) *regionv1.Region {
+	region := &regionv1.Region{
 		Spec: regionv1.RegionSpec{
 			Openstack: &regionv1.RegionOpenstackSpec{},
 		},
+	}
+
+	for _, opt := range opts {
+		opt(region)
+	}
+
+	return region
+}
+
+func withOpenstackEndpoint(endpoint string) regionFixtureOption {
+	return func(region *regionv1.Region) {
+		region.Spec.Openstack.Endpoint = endpoint
+	}
+}
+
+func withOpenstackServiceAccountSecret(name, namespace string) regionFixtureOption {
+	return func(region *regionv1.Region) {
+		region.Spec.Openstack.ServiceAccountSecret = &regionv1.NamespacedObject{
+			Name:      name,
+			Namespace: namespace,
+		}
 	}
 }
 
@@ -251,12 +281,142 @@ func networkFixture() *regionv1.Network {
 	}
 }
 
+func networkForDeleteFixture(identity *regionv1.Identity, status *regionv1.NetworkStatusOpenstack) *regionv1.Network {
+	network := networkFixture()
+	network.Namespace = identity.Namespace
+	network.Status.Openstack = status
+
+	return network
+}
+
 // networkMatcher is used to check mock function call parameters, as the object
 // may have been copied, and it may have been mutated.
 func networkMatcher(network *regionv1.Network) gomock.Matcher {
 	return gomock.Cond(func(x *regionv1.Network) bool {
 		return x.Name == network.Name
 	})
+}
+
+func identityFixture() *regionv1.Identity {
+	return &regionv1.Identity{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      identityID,
+			Namespace: "default",
+		},
+	}
+}
+
+func openstackIdentityFixture(identity *regionv1.Identity) *regionv1.OpenstackIdentity {
+	return &regionv1.OpenstackIdentity{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      identity.Name,
+			Namespace: identity.Namespace,
+		},
+		Spec: regionv1.OpenstackIdentitySpec{
+			UserID:    ptr.To("user-id"),
+			Password:  ptr.To("password"),
+			ProjectID: ptr.To("project-id"),
+		},
+	}
+}
+
+func openstackServiceAccountSecretFixture(name, namespace string) *k8sv1.Secret {
+	return &k8sv1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Data: map[string][]byte{
+			"domain-id":  []byte("admin-domain-id"),
+			"user-id":    []byte("admin-user-id"),
+			"password":   []byte("admin-password"),
+			"project-id": []byte("admin-project-id"),
+		},
+	}
+}
+
+func writeOpenstackAuthCatalog(w http.ResponseWriter, endpoint string) {
+	w.Header().Set("X-Subject-Token", "test-token")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	fmt.Fprintf(w, `{"token":{"catalog":[
+		{"type":"identity","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]},
+		{"type":"compute","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]},
+		{"type":"image","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]},
+		{"type":"network","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]}
+		],"expires_at":"2099-01-01T00:00:00.000000Z"}}`,
+		endpoint)
+}
+
+func writeOpenstackVersions(w http.ResponseWriter, endpoint string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w,
+		`{"versions":{"values":[
+			{"id":"v2.1","status":"CURRENT","links":[{"href":%q,"rel":"self"}]},
+			{"id":"v3","status":"current","links":[{"href":%q,"rel":"self"}]}
+			]}}`,
+		endpoint+"/v2.1/", endpoint+"/v3/")
+}
+
+func writeOpenstackFlavors(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, `{"flavors":[{"id":"f1","name":"m1.small","vcpus":1,"ram":1024,"disk":10,"swap":""}]}`)
+}
+
+func newIdentityDeleteOpenStack(t *testing.T, serviceUserID, serviceProjectID string, deletedUser, deletedProject *atomic.Bool) *httptest.Server {
+	t.Helper()
+
+	var server *httptest.Server
+
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+
+				return
+			}
+
+			if strings.Contains(string(body), fmt.Sprintf("%q", serviceUserID)) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				fmt.Fprint(w, `{"error":{"code":401,"message":"The request you have made requires authentication.","title":"Unauthorized"}}`)
+
+				return
+			}
+
+			writeOpenstackAuthCatalog(w, server.URL)
+
+			return
+		}
+
+		if r.URL.Path == "/" {
+			writeOpenstackVersions(w, server.URL)
+
+			return
+		}
+
+		if r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/users/"+serviceUserID) {
+			deletedUser.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+
+			return
+		}
+
+		if r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/projects/"+serviceProjectID) {
+			deletedProject.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+
+			return
+		}
+
+		writeOpenstackFlavors(w)
+	}))
+	t.Cleanup(server.Close)
+
+	return server
 }
 
 func openstackNetworkFixture(network *regionv1.Network) *openstack.NetworkExt {
@@ -335,6 +495,13 @@ func securityGroupFixture(rules ...regionv1.SecurityGroupRule) *regionv1.Securit
 			Rules: rules,
 		},
 	}
+}
+
+func securityGroupForDeleteFixture(identity *regionv1.Identity) *regionv1.SecurityGroup {
+	securityGroup := securityGroupFixture()
+	securityGroup.Namespace = identity.Namespace
+
+	return securityGroup
 }
 
 // securityGroupMatcher is used to check mock function call parameters, as the object
@@ -510,6 +677,12 @@ func withPublicIP() func(*regionv1.LoadBalancer) {
 	}
 }
 
+func withLoadBalancerVIPStatus(addr string) func(*regionv1.LoadBalancer) {
+	return func(lb *regionv1.LoadBalancer) {
+		lb.Status.VIPAddress = &corev1.IPv4Address{IP: net.ParseIP(addr).To4()}
+	}
+}
+
 // listenerFixture creates a CRD listener with the given name/protocol/port and
 // applies any per-listener mutators. IdleTimeoutSeconds is preset to 60 for TCP
 // listeners (mirroring the handler default) and left nil for UDP; opts may
@@ -680,6 +853,27 @@ func expectNoFloatingIP(t *testing.T, c *gomock.Controller, vipPortID string) *m
 	return m
 }
 
+func deleteLoadBalancerWithClients(
+	t *testing.T,
+	network *regionv1.Network,
+	lb *regionv1.LoadBalancer,
+	lbClient openstack.LoadBalancingInterface,
+	fipClient openstack.FloatingIPInterface,
+) error {
+	t.Helper()
+
+	p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
+
+	return openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, fipClient, lb)
+}
+
+func requireLoadBalancerIPsCleared(t *testing.T, lb *regionv1.LoadBalancer) {
+	t.Helper()
+
+	require.Nil(t, lb.Status.PublicIP)
+	require.Nil(t, lb.Status.VIPAddress)
+}
+
 // openstackListenerFixture builds an ACTIVE listener live representation. The
 // timeout fields default to the 60s admission default in millis so steady-state
 // tests don't need to repeat them.
@@ -741,6 +935,29 @@ func getClient(t *testing.T, objects []client.Object) client.Client {
 	require.NoError(t, err)
 
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+}
+
+func testProviderFixture(t *testing.T, region *regionv1.Region, objects ...client.Object) *openstack.Provider {
+	t.Helper()
+
+	return openstack.NewTestProvider(getClient(t, objects), region)
+}
+
+func deleteLoadBalancerClientSetupFixture(t *testing.T, endpoint string, provisioned bool) (*openstack.Provider, *regionv1.Identity, *regionv1.LoadBalancer) {
+	t.Helper()
+
+	identity := identityFixture()
+	openstackIdentity := openstackIdentityFixture(identity)
+	network := loadBalancerNetworkFixture()
+	lb := loadBalancerFixture(network)
+
+	if provisioned {
+		withLoadBalancerVIPStatus("10.0.0.42")(lb)
+	}
+
+	provider := testProviderFixture(t, regionFixture(withOpenstackEndpoint(endpoint)), openstackIdentity)
+
+	return provider, identity, lb
 }
 
 // TestReconcileNetwork tests a resource is created when one isn't present.
@@ -1720,6 +1937,47 @@ func TestResolveServerKeyName(t *testing.T) {
 
 		require.Empty(t, openstack.ResolveServerKeyName(server, identity))
 	})
+}
+
+func TestDeleteIdentitySkipsUnauthorizedComputeCleanup(t *testing.T) {
+	t.Parallel()
+
+	identity := identityFixture()
+	openstackIdentity := openstackIdentityFixture(identity)
+	openstackIdentity.Spec.UserID = ptr.To("service-user-id")
+	openstackIdentity.Spec.ProjectID = ptr.To("service-project-id")
+	openstackIdentity.Spec.SSHKeyName = ptr.To("unikorn-openstack-provider")
+	openstackIdentity.Spec.ServerGroupID = ptr.To("server-group-id")
+
+	var (
+		deletedUser    atomic.Bool
+		deletedProject atomic.Bool
+	)
+
+	server := newIdentityDeleteOpenStack(t, *openstackIdentity.Spec.UserID, *openstackIdentity.Spec.ProjectID, &deletedUser, &deletedProject)
+
+	region := regionFixture(
+		withOpenstackEndpoint(server.URL),
+		withOpenstackServiceAccountSecret("test-secret", "default"),
+	)
+	region.ObjectMeta = metav1.ObjectMeta{
+		Name:      "test-region",
+		Namespace: "default",
+	}
+
+	secret := openstackServiceAccountSecretFixture("test-secret", "default")
+
+	kubeClient := newRaceTestClient(t, region, secret, openstackIdentity)
+	provider, err := openstack.New(t.Context(), kubeClient, kubeClient, region, openstack.Options{})
+	require.NoError(t, err)
+
+	require.NoError(t, provider.DeleteIdentity(t.Context(), identity))
+
+	var result regionv1.OpenstackIdentity
+	err = kubeClient.Get(t.Context(), client.ObjectKeyFromObject(openstackIdentity), &result)
+	require.True(t, kerrors.IsNotFound(err))
+	require.True(t, deletedUser.Load())
+	require.True(t, deletedProject.Load())
 }
 
 func TestServerForCreate(t *testing.T) {
@@ -3168,7 +3426,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 	})
 }
 
-func TestDeleteLoadBalancer(t *testing.T) {
+func TestDeleteLoadBalancerAlreadyGone(t *testing.T) {
 	t.Parallel()
 
 	c := gomock.NewController(t)
@@ -3187,6 +3445,69 @@ func TestDeleteLoadBalancer(t *testing.T) {
 
 		networkClient := mock.NewMockNetworkingInterface(c)
 
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
+		require.NoError(t, err)
+		requireLoadBalancerIPsCleared(t, lb)
+	})
+}
+
+func TestDeleteLoadBalancerStatusGuards(t *testing.T) {
+	t.Parallel()
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	tests := []struct {
+		name   string
+		status string
+		err    error
+	}{
+		{"LBPendingCreate_Yields", "PENDING_CREATE", provisioners.ErrYield},
+		{"LBPendingUpdate_Yields", "PENDING_UPDATE", provisioners.ErrYield},
+		{"LBPendingDelete_Yields", "PENDING_DELETE", provisioners.ErrYield},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			network := loadBalancerNetworkFixture()
+			lb := loadBalancerFixture(network)
+
+			osLB := openstackLoadBalancerFixture(lb, withProvisioningStatus(tc.status))
+
+			lbClient := mock.NewMockLoadBalancingInterface(c)
+			lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+
+			networkClient := mock.NewMockNetworkingInterface(c)
+
+			err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
+			require.ErrorIs(t, err, tc.err)
+		})
+	}
+}
+
+func TestDeleteLoadBalancerCascade(t *testing.T) {
+	t.Parallel()
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	t.Run("LBDeleted_NoOp", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Status.PublicIP = &corev1.IPv4Address{IP: net.ParseIP("12.34.56.78").To4()}
+		lb.Status.VIPAddress = &corev1.IPv4Address{IP: net.ParseIP("10.0.0.42").To4()}
+
+		osLB := openstackLoadBalancerFixture(lb, withProvisioningStatus("DELETED"))
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+
+		networkClient := mock.NewMockNetworkingInterface(c)
+
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
 		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
@@ -3195,15 +3516,14 @@ func TestDeleteLoadBalancer(t *testing.T) {
 		require.Nil(t, lb.Status.VIPAddress)
 	})
 
-	pendingStates := []struct {
+	unexpectedStates := []struct {
 		name   string
 		status string
 	}{
-		{"LBPendingCreate_Yields", "PENDING_CREATE"},
-		{"LBPendingUpdate_Yields", "PENDING_UPDATE"},
-		{"LBPendingDelete_Yields", "PENDING_DELETE"},
+		{"LBUnknownStatus_Consistency", "UNKNOWN"},
+		{"LBEmptyStatus_Consistency", ""},
 	}
-	for _, tc := range pendingStates {
+	for _, tc := range unexpectedStates {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -3220,7 +3540,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 			p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
 			err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
-			require.ErrorIs(t, err, provisioners.ErrYield)
+			require.ErrorIs(t, err, errors.ErrConsistency)
 		})
 	}
 
@@ -3238,9 +3558,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 
 		networkClient := expectNoFloatingIP(t, c, osLB.VipPortID)
 
-		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
-
-		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
 		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
 
@@ -3264,9 +3582,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 			lbClient.EXPECT().DeleteLoadBalancer(t.Context(), osLB.ID, true).Return(nil),
 		)
 
-		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
-
-		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
 		require.ErrorIs(t, err, provisioners.ErrYield)
 		require.Nil(t, lb.Status.PublicIP)
 	})
@@ -3285,9 +3601,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 
 		networkClient := expectNoFloatingIP(t, c, osLB.VipPortID)
 
-		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
-
-		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
 		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
 
@@ -3305,11 +3619,16 @@ func TestDeleteLoadBalancer(t *testing.T) {
 
 		networkClient := mock.NewMockNetworkingInterface(c)
 
-		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
-
-		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
 		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
+}
+
+func TestDeleteLoadBalancerErrors(t *testing.T) {
+	t.Parallel()
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
 
 	t.Run("GetFloatingIPConsistency_Propagates", func(t *testing.T) {
 		t.Parallel()
@@ -3325,9 +3644,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 		networkClient := mock.NewMockNetworkingInterface(c)
 		networkClient.EXPECT().GetFloatingIP(t.Context(), osLB.VipPortID).Return(nil, errors.ErrConsistency)
 
-		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
-
-		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
 		require.ErrorIs(t, err, errors.ErrConsistency)
 	})
 
@@ -3342,9 +3659,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 
 		networkClient := mock.NewMockNetworkingInterface(c)
 
-		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
-
-		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
 		require.ErrorIs(t, err, errors.ErrConsistency)
 	})
 
@@ -3357,7 +3672,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 		osLB := openstackLoadBalancerFixture(lb)
 		openstackFloatingIP := openstackFloatingIPFixture(&ports.Port{ID: osLB.VipPortID})
 
-		// FIP delete failure must short-circuit before cascade — no DeleteLoadBalancer expectation.
+		// FIP delete failure must short-circuit before cascade; no DeleteLoadBalancer expectation.
 		lbClient := mock.NewMockLoadBalancingInterface(c)
 		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
 
@@ -3365,9 +3680,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 		networkClient.EXPECT().GetFloatingIP(t.Context(), osLB.VipPortID).Return(openstackFloatingIP, nil)
 		networkClient.EXPECT().DeleteFloatingIP(t.Context(), openstackFloatingIP.ID).Return(assert.AnError)
 
-		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
-
-		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
 		require.ErrorIs(t, err, assert.AnError)
 	})
 
@@ -3385,9 +3698,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 
 		networkClient := expectNoFloatingIP(t, c, osLB.VipPortID)
 
-		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
-
-		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
 		require.ErrorIs(t, err, assert.AnError)
 	})
 }
@@ -3452,4 +3763,141 @@ func TestDeleteLoadBalancerRaces(t *testing.T) {
 		require.Nil(t, lb.Status.PublicIP)
 		require.Nil(t, lb.Status.VIPAddress)
 	})
+}
+
+func TestDeleteLoadBalancerMissingEndpoint(t *testing.T) {
+	t.Parallel()
+
+	t.Run("UnprovisionedNoOp", func(t *testing.T) {
+		t.Parallel()
+
+		ks := newFakeOpenstack(t)
+		p, identity, lb := deleteLoadBalancerClientSetupFixture(t, ks.ts.URL, false)
+
+		require.NoError(t, p.DeleteLoadBalancer(t.Context(), identity, lb))
+	})
+
+	t.Run("ProvisionedPropagates", func(t *testing.T) {
+		t.Parallel()
+
+		ks := newFakeOpenstack(t)
+		p, identity, lb := deleteLoadBalancerClientSetupFixture(t, ks.ts.URL, true)
+
+		err := p.DeleteLoadBalancer(t.Context(), identity, lb)
+		require.Error(t, err)
+
+		var endpointNotFound *gophercloud.ErrEndpointNotFound
+
+		require.ErrorAs(t, err, &endpointNotFound)
+	})
+}
+
+func TestDeleteLoadBalancerUnauthorized(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(server.Close)
+
+	t.Run("UnprovisionedNoOp", func(t *testing.T) {
+		t.Parallel()
+
+		p, identity, lb := deleteLoadBalancerClientSetupFixture(t, server.URL, false)
+
+		require.NoError(t, p.DeleteLoadBalancer(t.Context(), identity, lb))
+	})
+
+	t.Run("ProvisionedPropagates", func(t *testing.T) {
+		t.Parallel()
+
+		p, identity, lb := deleteLoadBalancerClientSetupFixture(t, server.URL, true)
+
+		err := p.DeleteLoadBalancer(t.Context(), identity, lb)
+		require.Error(t, err)
+		require.True(t, gophercloud.ResponseCodeIs(err, http.StatusUnauthorized))
+	})
+}
+
+func TestDeleteNetworkWithoutProviderState(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		status  *regionv1.NetworkStatusOpenstack
+		wantErr error
+	}{
+		{
+			name: "ClientSetupErrorNoOp",
+		},
+		{
+			name: "RecordedProviderStatePropagates",
+			status: &regionv1.NetworkStatusOpenstack{
+				NetworkID: ptr.To("network-id"),
+			},
+			wantErr: errors.ErrConsistency,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			identity := identityFixture()
+			openstackIdentity := openstackIdentityFixture(identity)
+			openstackIdentity.Spec.ProjectID = nil
+
+			network := networkForDeleteFixture(identity, test.status)
+			p := testProviderFixture(t, regionFixture(), openstackIdentity)
+
+			err := p.DeleteNetwork(t.Context(), identity, network)
+			if test.wantErr == nil {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.ErrorIs(t, err, test.wantErr)
+		})
+	}
+}
+
+func TestDeleteSecurityGroupWithoutProviderState(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		objects func(*regionv1.Identity) []client.Object
+	}{
+		{
+			name: "MissingOpenstackIdentityNoOp",
+		},
+		{
+			name: "MissingProjectNoOp",
+			objects: func(identity *regionv1.Identity) []client.Object {
+				openstackIdentity := openstackIdentityFixture(identity)
+				openstackIdentity.Spec.ProjectID = nil
+
+				return []client.Object{openstackIdentity}
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			identity := identityFixture()
+			securityGroup := securityGroupForDeleteFixture(identity)
+
+			var objects []client.Object
+			if test.objects != nil {
+				objects = test.objects(identity)
+			}
+
+			p := testProviderFixture(t, regionFixture(), objects...)
+
+			require.NoError(t, p.DeleteSecurityGroup(t.Context(), identity, securityGroup))
+		})
+	}
 }

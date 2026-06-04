@@ -17,7 +17,6 @@ limitations under the License.
 package openstack_test
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -59,16 +58,7 @@ func newFakeOpenstack(t *testing.T) *fakeOpenstack {
 func (f *fakeOpenstack) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		// Treat all POSTs as Keystone authentication requests.
-		w.Header().Set("X-Subject-Token", "test-token")
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		fmt.Fprintf(w, `{"token":{"catalog":[
-			{"type":"identity","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]},
-			{"type":"compute","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]},
-			{"type":"image","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]},
-			{"type":"network","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]}
-			],"expires_at":"2099-01-01T00:00:00.000000Z"}}`,
-			f.ts.URL)
+		writeOpenstackAuthCatalog(w, f.ts.URL)
 
 		return
 	}
@@ -78,14 +68,7 @@ func (f *fakeOpenstack) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// (expects a version list that includes v2.1 so compute/image/network pass the
 	// endpointSupportsVersion check).  The doubly-enveloped format satisfies both.
 	if r.URL.Path == "/" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w,
-			`{"versions":{"values":[
-				{"id":"v2.1","status":"CURRENT","links":[{"href":%q,"rel":"self"}]},
-				{"id":"v3","status":"current","links":[{"href":%q,"rel":"self"}]}
-				]}}`,
-			f.ts.URL+"/v2.1/", f.ts.URL+"/v3/")
+		writeOpenstackVersions(w, f.ts.URL)
 
 		return
 	}
@@ -95,12 +78,9 @@ func (f *fakeOpenstack) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// serviceClientRefresh, and write p.region — creating the race window.
 	time.Sleep(10 * time.Millisecond)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
 	// A single flavor is enough; more would flood TSan's 4-cell shadow with reads
 	// of p.region and evict the writer's write record before it can be matched.
-	fmt.Fprintf(w, `{"flavors":[{"id":"f1","name":"m1.small","vcpus":1,"ram":1024,"disk":10,"swap":""}]}`)
+	writeOpenstackFlavors(w)
 }
 
 // newRaceTestClient creates a controller-runtime fake client whose scheme covers

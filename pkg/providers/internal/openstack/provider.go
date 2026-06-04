@@ -1326,9 +1326,120 @@ func (p *Provider) CreateIdentity(ctx context.Context, identity *unikornv1.Ident
 	return nil
 }
 
+func openstackIdentityHasComputeState(identity *unikornv1.OpenstackIdentity) bool {
+	return identity.Spec.SSHKeyName != nil || identity.Spec.ServerGroupID != nil
+}
+
+func openstackIdentityHasIdentityState(identity *unikornv1.OpenstackIdentity) bool {
+	return identity.Spec.UserID != nil || identity.Spec.ProjectID != nil
+}
+
+func canSkipOpenStackIdentityComputeDelete(err error) bool {
+	if gophercloud.ResponseCodeIs(err, http.StatusUnauthorized) {
+		return true
+	}
+
+	return kerrors.IsNotFound(err) || errors.Is(err, coreerrors.ErrConsistency)
+}
+
+func canIgnoreOpenStackIdentityComputeDelete(err error) bool {
+	return gophercloud.ResponseCodeIs(err, http.StatusNotFound) || canSkipOpenStackIdentityComputeDelete(err)
+}
+
+func deleteOpenStackIdentityKeypair(ctx context.Context, compute ComputeInterface, identity *unikornv1.OpenstackIdentity) error {
+	if identity.Spec.SSHKeyName == nil {
+		return nil
+	}
+
+	err := compute.DeleteKeypair(ctx, keyPairName)
+	if err == nil || canIgnoreOpenStackIdentityComputeDelete(err) {
+		return nil
+	}
+
+	return err
+}
+
+func deleteOpenStackIdentityServerGroup(ctx context.Context, compute ComputeInterface, identity *unikornv1.OpenstackIdentity) error {
+	if identity.Spec.ServerGroupID == nil {
+		return nil
+	}
+
+	err := compute.DeleteServerGroup(ctx, *identity.Spec.ServerGroupID)
+	if err == nil || canIgnoreOpenStackIdentityComputeDelete(err) {
+		return nil
+	}
+
+	return err
+}
+
+func (p *Provider) deleteOpenStackIdentityComputeState(ctx context.Context, identity *unikornv1.Identity, openstackIdentity *unikornv1.OpenstackIdentity) error {
+	if !openstackIdentityHasComputeState(openstackIdentity) {
+		return nil
+	}
+
+	// Rescope to the user/project to delete project-local compute extras. If
+	// the service principal was never fully usable, continue to admin-scoped
+	// identity cleanup instead of pinning the finalizer.
+	compute, err := p.computeFromServicePrincipal(ctx, identity)
+	if err != nil {
+		if canSkipOpenStackIdentityComputeDelete(err) {
+			return nil
+		}
+
+		return err
+	}
+
+	if err := deleteOpenStackIdentityKeypair(ctx, compute, openstackIdentity); err != nil {
+		return err
+	}
+
+	return deleteOpenStackIdentityServerGroup(ctx, compute, openstackIdentity)
+}
+
+func deleteOpenStackUser(ctx context.Context, identityService *IdentityClient, userID *string) error {
+	if userID == nil {
+		return nil
+	}
+
+	err := identityService.DeleteUser(ctx, *userID)
+	if err == nil || gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+		return nil
+	}
+
+	return err
+}
+
+func deleteOpenStackProject(ctx context.Context, identityService *IdentityClient, projectID *string) error {
+	if projectID == nil {
+		return nil
+	}
+
+	err := identityService.DeleteProject(ctx, *projectID)
+	if err == nil || gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+		return nil
+	}
+
+	return err
+}
+
+func (p *Provider) deleteOpenStackIdentityResources(ctx context.Context, identity *unikornv1.OpenstackIdentity) error {
+	if !openstackIdentityHasIdentityState(identity) {
+		return nil
+	}
+
+	identityService, err := p.openstack.identity(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := deleteOpenStackUser(ctx, identityService, identity.Spec.UserID); err != nil {
+		return err
+	}
+
+	return deleteOpenStackProject(ctx, identityService, identity.Spec.ProjectID)
+}
+
 // DeleteIdentity cleans up an identity for cloud infrastructure.
-//
-//nolint:cyclop,gocognit
 func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Identity) error {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
@@ -1339,52 +1450,12 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Ident
 		return nil
 	}
 
-	// User never even created, so nothing else will have been.
-	if openstackIdentity.Spec.UserID == nil {
-		return nil
-	}
-
-	// Rescope to the user/project...
-	compute, err := p.computeFromServicePrincipal(ctx, identity)
-	if err != nil {
+	if err := p.deleteOpenStackIdentityComputeState(ctx, identity, openstackIdentity); err != nil {
 		return err
 	}
 
-	if openstackIdentity.Spec.SSHKeyName != nil {
-		if err := compute.DeleteKeypair(ctx, keyPairName); err != nil {
-			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-				return err
-			}
-		}
-	}
-
-	if openstackIdentity.Spec.ServerGroupID != nil {
-		if err := compute.DeleteServerGroup(ctx, *openstackIdentity.Spec.ServerGroupID); err != nil {
-			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-				return err
-			}
-		}
-	}
-
-	identityService, err := p.openstack.identity(ctx)
-	if err != nil {
+	if err := p.deleteOpenStackIdentityResources(ctx, openstackIdentity); err != nil {
 		return err
-	}
-
-	if openstackIdentity.Spec.UserID != nil {
-		if err := identityService.DeleteUser(ctx, *openstackIdentity.Spec.UserID); err != nil {
-			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-				return err
-			}
-		}
-	}
-
-	if openstackIdentity.Spec.ProjectID != nil {
-		if err := identityService.DeleteProject(ctx, *openstackIdentity.Spec.ProjectID); err != nil {
-			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-				return err
-			}
-		}
 	}
 
 	if err := p.client.Delete(ctx, openstackIdentity); err != nil {
@@ -1669,6 +1740,10 @@ func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identi
 	return nil
 }
 
+func networkHasOpenStackState(network *unikornv1.Network) bool {
+	return network.Status.Openstack != nil && network.Status.Openstack.NetworkID != nil
+}
+
 // DeleteNetwork deletes a physical network.
 //
 //nolint:gocognit,cyclop
@@ -1680,6 +1755,10 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 	// deallocation.
 	networking, err := p.privilegedNetworkFromServicePrincipal(ctx, identity)
 	if err != nil {
+		if !networkHasOpenStackState(network) {
+			return nil
+		}
+
 		return err
 	}
 
@@ -2002,7 +2081,15 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
+		if kerrors.IsNotFound(err) {
+			return nil
+		}
+
 		return err
+	}
+
+	if openstackIdentity.Spec.ProjectID == nil {
+		return nil
 	}
 
 	region, credentials := p.openstack.regionSnapshot()
@@ -3450,12 +3537,42 @@ func (p *Provider) createLoadBalancer(ctx context.Context, lbClient LoadBalancin
 	return nil
 }
 
+func loadBalancerHasOpenStackState(loadBalancer *unikornv1.LoadBalancer) bool {
+	return loadBalancer.Status.VIPAddress != nil || loadBalancer.Status.PublicIP != nil
+}
+
+func canSkipUnprovisionedLoadBalancerDelete(loadBalancer *unikornv1.LoadBalancer, err error) bool {
+	if loadBalancerHasOpenStackState(loadBalancer) {
+		return false
+	}
+
+	var endpointNotFound *gophercloud.ErrEndpointNotFound
+	if errors.As(err, &endpointNotFound) {
+		return true
+	}
+
+	var serviceNotFound *gophercloud.ErrServiceNotFound
+	if errors.As(err, &serviceNotFound) {
+		return true
+	}
+
+	if gophercloud.ResponseCodeIs(err, http.StatusUnauthorized) {
+		return true
+	}
+
+	return kerrors.IsNotFound(err) || errors.Is(err, coreerrors.ErrConsistency)
+}
+
 // DeleteLoadBalancer removes the Octavia topology and any attached floating
 // IP idempotently. It yields while Octavia is in any PENDING_* state and
 // after issuing a cascade delete so the next reconcile can confirm completion.
 func (p *Provider) DeleteLoadBalancer(ctx context.Context, identity *unikornv1.Identity, loadBalancer *unikornv1.LoadBalancer) error {
 	lbClient, err := p.loadBalancerFromServicePrincipal(ctx, identity)
 	if err != nil {
+		if canSkipUnprovisionedLoadBalancerDelete(loadBalancer, err) {
+			return nil
+		}
+
 		return err
 	}
 
@@ -3489,10 +3606,21 @@ func (p *Provider) deleteLoadBalancer(ctx context.Context, lbClient LoadBalancin
 		return err
 	}
 
-	if osLB.ProvisioningStatus == "PENDING_CREATE" ||
-		osLB.ProvisioningStatus == "PENDING_UPDATE" ||
-		osLB.ProvisioningStatus == "PENDING_DELETE" {
+	switch osLB.ProvisioningStatus {
+	case "PENDING_CREATE", "PENDING_UPDATE", "PENDING_DELETE":
+		// Octavia rejects mutations while any PENDING_* action is in flight.
+		// Wait for the operation to settle before probing the VIP port or
+		// issuing the cascade delete.
 		return provisioners.ErrYield
+	case "ACTIVE", "ERROR":
+		// These are the Octavia states where delete is actionable.
+	case "DELETED":
+		loadBalancer.Status.PublicIP = nil
+		loadBalancer.Status.VIPAddress = nil
+
+		return nil
+	default:
+		return fmt.Errorf("%w: octavia loadbalancer %q in unexpected state %q", coreerrors.ErrConsistency, osLB.Name, osLB.ProvisioningStatus)
 	}
 
 	// FIP first — cascade kills the VIP port, after which the FIP would leak.
