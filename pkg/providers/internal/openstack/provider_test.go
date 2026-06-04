@@ -266,14 +266,13 @@ func networkFixture() *regionv1.Network {
 	}
 }
 
-func TestDeleteNetworkFreesRecordedVLANWhenOpenStackNetworkMissing(t *testing.T) {
+func TestDeleteNetworkFreesVLANByNetworkIDWhenOpenStackNetworkMissing(t *testing.T) {
 	t.Parallel()
 
 	const vlanID = 607
 
 	region := providerNetworkRegionFixture()
 	network := networkFixture()
-	network.Status.Openstack.VlanID = ptr.To(vlanID)
 
 	allocation := &regionv1.VLANAllocation{
 		ObjectMeta: metav1.ObjectMeta{
@@ -315,11 +314,8 @@ func TestDeleteNetworkFreesRecordedVLANWhenOpenStackNetworkMissing(t *testing.T)
 func TestDeleteNetworkIgnoresMissingVLANAllocation(t *testing.T) {
 	t.Parallel()
 
-	const vlanID = 607
-
 	region := providerNetworkRegionFixture()
 	network := networkFixture()
-	network.Status.Openstack.VlanID = ptr.To(vlanID)
 
 	client := getClient(t, nil)
 

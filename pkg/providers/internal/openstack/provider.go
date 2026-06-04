@@ -1505,12 +1505,6 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 	if err != nil {
 		log.Error(err, "failed to create OpenStack network", "networkID", network.Name, "vlanID", vlanID)
 
-		if vlanID != nil {
-			if rerr := p.vlanAllocator.Free(ctx, *vlanID); rerr != nil {
-				log.Error(rerr, "failed to free vlan", "id", *vlanID)
-			}
-		}
-
 		return nil, err
 	}
 
@@ -1686,7 +1680,7 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 	return p.deleteNetwork(ctx, networking, network)
 }
 
-//nolint:gocognit,cyclop
+//nolint:cyclop
 func (p *Provider) deleteNetwork(ctx context.Context, networking NetworkingInterface, network *unikornv1.Network) error {
 	log := log.FromContext(ctx)
 
@@ -1736,21 +1730,13 @@ func (p *Provider) deleteNetwork(ctx context.Context, networking NetworkingInter
 	}
 
 	region, _ := p.openstack.regionSnapshot()
-	// VLAN deallocation is idempotent. Prefer the VLAN ID recorded in
-	// status because the OpenStack network may already be gone; fall back
-	// to the segmentation ID for older Network statuses.
 	if region.Spec.Openstack != nil && region.Spec.Openstack.Network.UseProviderNetworks() {
-		vlanID, ok, err := networkVLANID(network, openstackNetwork)
-		if err != nil {
-			return err
-		}
+		// NetworkID is the allocator source of truth; status and OpenStack
+		// resources can both be missing during delete.
+		log.V(1).Info("freeing vlan", "networkID", network.Name)
 
-		if ok {
-			log.V(1).Info("freeing vlan", "id", vlanID)
-
-			if err := p.vlanAllocator.Free(ctx, vlanID); err != nil && !kerrors.IsNotFound(err) {
-				return fmt.Errorf("%w: failed to free vlan", err)
-			}
+		if err := p.vlanAllocator.FreeByNetworkID(ctx, network.Name); err != nil {
+			return fmt.Errorf("%w: failed to free vlan", err)
 		}
 	}
 
@@ -1763,23 +1749,6 @@ func (p *Provider) deleteNetwork(ctx context.Context, networking NetworkingInter
 	}
 
 	return nil
-}
-
-func networkVLANID(network *unikornv1.Network, openstackNetwork *NetworkExt) (int, bool, error) {
-	if network.Status.Openstack != nil && network.Status.Openstack.VlanID != nil {
-		return *network.Status.Openstack.VlanID, true, nil
-	}
-
-	if openstackNetwork == nil {
-		return 0, false, nil
-	}
-
-	parsedVLANID, err := strconv.Atoi(openstackNetwork.SegmentationID)
-	if err != nil {
-		return 0, false, fmt.Errorf("%w: segmentation ID not parsable", err)
-	}
-
-	return parsedVLANID, true, nil
 }
 
 // securityGroupRulePortRange expands a security group port into a start-end range as
