@@ -165,6 +165,9 @@ jobs:
         claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         enable-grafana-log-enrichment: 'true'
         grafana-service-account-token: ${{ secrets.GRAFANA_SERVICE_ACCOUNT_TOKEN }}
+        enable-unikorn-cr-enrichment: 'true'
+        unikorn-cr-teleport-token: github-unikorn-cr-reader
+        unikorn-cr-kube-cluster: nks-dev-glo1
 
     - name: Add wo11y Grafana test-history link
       if: ${{ !cancelled() }}
@@ -322,6 +325,9 @@ jobs:
         claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         enable-grafana-log-enrichment: 'true'
         grafana-service-account-token: ${{ secrets.GRAFANA_SERVICE_ACCOUNT_TOKEN }}
+        enable-unikorn-cr-enrichment: 'true'
+        unikorn-cr-teleport-token: github-unikorn-cr-reader
+        unikorn-cr-kube-cluster: nks-stg-europe-west2
 
     - name: Add wo11y Grafana test-history link
       if: ${{ !cancelled() }}
