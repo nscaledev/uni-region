@@ -49,44 +49,21 @@ jobs:
       USER_PROMPT: ${{ github.event.inputs.prompt || 'Fetch recent instance failure logs from Loki using Grafana MCP.' }}
 
     steps:
-      - name: Install Teleport clients
+      # Install: fetch the binaries used by the rest of the POC.
+      - name: Install - Teleport clients
         uses: teleport-actions/setup@a820ebbf1bc1a496efca348ad21042d6e8df73a6
         with:
           version: auto
           proxy: nscale.teleport.sh:443
 
-      - name: Open Grafana app tunnel
-        uses: teleport-actions/application-tunnel@bb7a8fbfb67b85d26013554f10d71dd032c1c764
-        with:
-          proxy: nscale.teleport.sh:443
-          token: github-grafana-access
-          app: ${{ env.GRAFANA_APP }}
-          listen: tcp://127.0.0.1:${{ env.GRAFANA_TUNNEL_PORT }}
-          timeout-ms: '60000'
-
-      - name: Verify Grafana tunnel
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          for attempt in {1..30}; do
-            if curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${GRAFANA_TUNNEL_PORT}/api/health"; then
-              echo "Grafana tunnel is reachable"
-              exit 0
-            fi
-            sleep 1
-          done
-
-          echo "::error::Grafana tunnel did not become reachable"
-          exit 1
-
-      - name: Install Grafana MCP server
+      - name: Install - Grafana MCP server
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
+          # Pick the release artifact that matches the GitHub runner CPU.
           case "$(uname -m)" in
             x86_64|amd64) artifact="mcp-grafana_Linux_x86_64.tar.gz" ;;
             aarch64|arm64) artifact="mcp-grafana_Linux_arm64.tar.gz" ;;
@@ -100,7 +77,34 @@ jobs:
           sudo mv "${RUNNER_TEMP}/mcp-grafana" /usr/local/bin/mcp-grafana
           mcp-grafana --help >/dev/null 2>&1
 
-      - name: Start Grafana MCP server
+      # Setup: open the private Grafana app and expose it through MCP.
+      - name: Setup - Open Grafana app tunnel
+        uses: teleport-actions/application-tunnel@bb7a8fbfb67b85d26013554f10d71dd032c1c764
+        with:
+          proxy: nscale.teleport.sh:443
+          token: github-grafana-access
+          app: ${{ env.GRAFANA_APP }}
+          listen: tcp://127.0.0.1:${{ env.GRAFANA_TUNNEL_PORT }}
+          timeout-ms: '60000'
+
+      - name: Setup - Verify Grafana tunnel
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Wait until the local Teleport tunnel can reach Grafana.
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${GRAFANA_TUNNEL_PORT}/api/health"; then
+              echo "Grafana tunnel is reachable"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "::error::Grafana tunnel did not become reachable"
+          exit 1
+
+      - name: Setup - Start Grafana MCP server
         shell: bash
         env:
           GRAFANA_ORG_ID: '1'
@@ -114,6 +118,7 @@ jobs:
           fi
           echo "::add-mask::${GRAFANA_SERVICE_ACCOUNT_TOKEN}"
 
+          # Start MCP in read-only mode with just datasource and Loki tools.
           GRAFANA_URL="http://127.0.0.1:${GRAFANA_TUNNEL_PORT}" \
           GRAFANA_SERVICE_ACCOUNT_TOKEN="${GRAFANA_SERVICE_ACCOUNT_TOKEN}" \
           GRAFANA_ORG_ID="${GRAFANA_ORG_ID}" \
@@ -125,6 +130,7 @@ jobs:
             > "${RUNNER_TEMP}/mcp-grafana.log" 2>&1 &
           echo "$!" > "${RUNNER_TEMP}/mcp-grafana.pid"
 
+          # Wait until Claude can connect to the local MCP HTTP endpoint.
           for attempt in {1..20}; do
             if curl --fail --silent --show-error --max-time 2 "http://127.0.0.1:${GRAFANA_MCP_PORT}/healthz" >/dev/null; then
               echo "mcp-grafana is reachable"
@@ -137,7 +143,34 @@ jobs:
           cat "${RUNNER_TEMP}/mcp-grafana.log" || true
           exit 1
 
-      - name: Ask Claude through Grafana MCP
+      # Config: write the MCP config and prompt that Claude will consume.
+      - name: Config - Write MCP config and prompt
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          end_rfc3339="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          start_rfc3339="$(date -u -d "-${LOOKBACK_MINUTES} minutes" +"%Y-%m-%dT%H:%M:%SZ")"
+          mcp_config="${RUNNER_TEMP}/grafana-mcp-config.json"
+          prompt_path="${RUNNER_TEMP}/grafana-mcp-prompt.txt"
+
+          # Claude Code reads this file to discover the local Grafana MCP server.
+          printf '{"mcpServers":{"grafana":{"type":"http","url":"http://127.0.0.1:%s/mcp"}}}\n' "$GRAFANA_MCP_PORT" > "$mcp_config"
+
+          # Keep the task as plain text so the build shows exactly what was asked.
+          cat > "$prompt_path" <<PROMPT
+          ${USER_PROMPT}
+
+          Use Grafana MCP only. List Loki datasources, prefer datasource UID '${LOKI_DATASOURCE_UID}', and query recent instance, server, VM, or compute failure logs from ${start_rfc3339} to ${end_rfc3339}. Use limit ${LIMIT} and direction backward.
+
+          Print the datasource, row count, a compact Markdown table of fetched rows, and a short analysis. Say clearly if no matching rows are found. Do not print secrets.
+          PROMPT
+
+          echo "Wrote MCP config to ${mcp_config}"
+          echo "Wrote prompt to ${prompt_path}"
+
+      # Prompt: Claude calls the MCP tools and prints the result to console and summary.
+      - name: Prompt - Ask Claude through Grafana MCP
         shell: bash
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -150,26 +183,18 @@ jobs:
           fi
           echo "::add-mask::${CLAUDE_CODE_OAUTH_TOKEN}"
 
-          end_rfc3339="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-          start_rfc3339="$(date -u -d "-${LOOKBACK_MINUTES} minutes" +"%Y-%m-%dT%H:%M:%SZ")"
           mcp_config="${RUNNER_TEMP}/grafana-mcp-config.json"
+          prompt_path="${RUNNER_TEMP}/grafana-mcp-prompt.txt"
           result_path="${RUNNER_TEMP}/grafana-mcp-result.md"
-          printf '{"mcpServers":{"grafana":{"type":"http","url":"http://127.0.0.1:%s/mcp"}}}\n' "$GRAFANA_MCP_PORT" > "$mcp_config"
-
-          prompt="${USER_PROMPT}
-
-          Use Grafana MCP only. List Loki datasources, prefer datasource UID '${LOKI_DATASOURCE_UID}', and query recent instance, server, VM, or compute failure logs from ${start_rfc3339} to ${end_rfc3339}. Use limit ${LIMIT} and direction backward.
-
-          Print the datasource, row count, a compact Markdown table of fetched rows, and a short analysis. Say clearly if no matching rows are found. Do not print secrets."
 
           echo "=== Grafana MCP prompt ==="
-          printf '%s\n' "$prompt"
+          cat "$prompt_path"
           echo
           echo "=== Grafana MCP result ==="
 
           set +e
           npx --yes @anthropic-ai/claude-code \
-            -p "$prompt" \
+            -p "$(cat "$prompt_path")" \
             --mcp-config "$mcp_config" \
             --strict-mcp-config \
             --allowedTools "mcp__grafana__list_datasources,mcp__grafana__query_loki_logs" \
@@ -185,7 +210,7 @@ jobs:
             echo "### Prompt"
             echo
             echo '```text'
-            printf '%s\n' "$prompt"
+            cat "$prompt_path"
             echo '```'
             echo
             echo "### Result"
@@ -195,7 +220,8 @@ jobs:
 
           exit "$claude_status"
 
-      - name: Dump Grafana MCP logs
+      # Clean: always expose MCP server logs and stop the background process.
+      - name: Clean - Print MCP logs and stop server
         if: always()
         shell: bash
         run: |
