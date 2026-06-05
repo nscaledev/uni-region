@@ -153,6 +153,7 @@ jobs:
           end_rfc3339="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           start_rfc3339="$(date -u -d "-${LOOKBACK_MINUTES} minutes" +"%Y-%m-%dT%H:%M:%SZ")"
           mcp_config="${RUNNER_TEMP}/grafana-mcp-config.json"
+          result_path="${RUNNER_TEMP}/grafana-mcp-result.md"
           printf '{"mcpServers":{"grafana":{"type":"http","url":"http://127.0.0.1:%s/mcp"}}}\n' "$GRAFANA_MCP_PORT" > "$mcp_config"
 
           prompt="${USER_PROMPT}
@@ -166,13 +167,33 @@ jobs:
           echo
           echo "=== Grafana MCP result ==="
 
+          set +e
           npx --yes @anthropic-ai/claude-code \
             -p "$prompt" \
             --mcp-config "$mcp_config" \
             --strict-mcp-config \
             --allowedTools "mcp__grafana__list_datasources,mcp__grafana__query_loki_logs" \
             --permission-mode dontAsk \
-            --no-session-persistence
+            --no-session-persistence \
+            2>&1 | tee "$result_path"
+          claude_status=${PIPESTATUS[0]}
+          set -e
+
+          {
+            echo "## Grafana MCP Prompt Result"
+            echo
+            echo "### Prompt"
+            echo
+            echo '```text'
+            printf '%s\n' "$prompt"
+            echo '```'
+            echo
+            echo "### Result"
+            echo
+            cat "$result_path"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit "$claude_status"
 
       - name: Dump Grafana MCP logs
         if: always()
@@ -182,6 +203,17 @@ jobs:
 
           echo "=== mcp-grafana log ==="
           cat "${RUNNER_TEMP}/mcp-grafana.log" 2>/dev/null || true
+          {
+            echo "## mcp-grafana Server Log"
+            echo
+            echo "<details><summary>Last 200 lines</summary>"
+            echo
+            echo '```text'
+            tail -n 200 "${RUNNER_TEMP}/mcp-grafana.log" 2>/dev/null || true
+            echo '```'
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
           if [[ -f "${RUNNER_TEMP}/mcp-grafana.pid" ]]; then
             kill "$(cat "${RUNNER_TEMP}/mcp-grafana.pid")" 2>/dev/null || true
           fi
