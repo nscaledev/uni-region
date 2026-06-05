@@ -21,13 +21,13 @@ on:
         required: false
         default: '60'
       limit:
-        description: Maximum Loki rows to print.
+        description: Maximum important error rows to print.
         required: false
         default: '10'
       prompt:
         description: Natural-language task for Claude through Grafana MCP.
         required: false
-        default: List the last 10 errors by category from Loki using Grafana MCP.
+        default: Summarize the last 10 important error signals by category using Grafana MCP.
 
 permissions:
   contents: read
@@ -46,7 +46,7 @@ jobs:
       LIMIT: ${{ github.event.inputs.limit || '10' }}
       LOKI_DATASOURCE_UID: ${{ github.event.inputs.loki_datasource_uid || '' }}
       LOOKBACK_MINUTES: ${{ github.event.inputs.lookback_minutes || '60' }}
-      USER_PROMPT: ${{ github.event.inputs.prompt || 'List the last 10 errors by category from Loki using Grafana MCP.' }}
+      USER_PROMPT: ${{ github.event.inputs.prompt || 'Summarize the last 10 important error signals by category using Grafana MCP.' }}
 
     steps:
       # Install: fetch the binaries used by the rest of the POC.
@@ -167,7 +167,12 @@ jobs:
 
           Use Grafana MCP only. First list Grafana datasources. Identify every log-capable/Loki datasource, not only a datasource named "loki". Query ${datasource_scope} for recent error, failed, not_found, timeout, exception, and controller/server failure signals from ${start_rfc3339} to ${end_rfc3339}. Find the last ${LIMIT} relevant rows across all queried datasources and group them by category.
 
-          Print the datasources queried, query window, row count, a compact category summary, and a Markdown table with category, timestamp, datasource, namespace, pod or service, severity, and message. Avoid rows that only echo this query or show successful requests. Say clearly if no matching error rows are found. Do not print secrets.
+          Keep the output short and easy to scan. Print only:
+          1. Datasources queried and query window.
+          2. Category summary with count, affected component, and concrete signal.
+          3. Up to ${LIMIT} important data points in a Markdown table: category, timestamp, component, signal, likely meaning, next check.
+
+          Do not print raw log bodies, full labels, LogQL, tool calls, MCP debug output, successful/health-check rows, query-echo rows, or long stack traces. Say clearly if no important error rows are found. Do not print secrets.
 
           Format category findings like:
           - File Storage Management (code/core logic): DELETE /api/v2/filestorage returned 404 not_found; related error/failure signals from unikorn-region-server and uni-storage-filestorage-controller suggest the resource was already absent.
@@ -194,9 +199,8 @@ jobs:
           prompt_path="${RUNNER_TEMP}/grafana-mcp-prompt.txt"
           result_path="${RUNNER_TEMP}/grafana-mcp-result.md"
 
-          echo "=== Grafana MCP prompt ==="
-          cat "$prompt_path"
-          echo
+          echo "=== Grafana MCP task ==="
+          echo "Summarize the last ${LIMIT} important error signals by category across log-capable Grafana datasources."
           echo "=== Grafana MCP result ==="
 
           set +e
@@ -212,15 +216,7 @@ jobs:
           set -e
 
           {
-            echo "## Grafana MCP Prompt Result"
-            echo
-            echo "### Prompt"
-            echo
-            echo '```text'
-            cat "$prompt_path"
-            echo '```'
-            echo
-            echo "### Result"
+            echo "## Grafana MCP Important Error Signals"
             echo
             cat "$result_path"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -234,18 +230,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "=== mcp-grafana log ==="
-          cat "${RUNNER_TEMP}/mcp-grafana.log" 2>/dev/null || true
+          echo "=== mcp-grafana log highlights ==="
+          grep -E 'level=(ERROR|WARN)|Starting Grafana MCP server|connected to proxied MCP servers' "${RUNNER_TEMP}/mcp-grafana.log" 2>/dev/null || true
           {
-            echo "## mcp-grafana Server Log"
+            echo "## mcp-grafana Server Highlights"
             echo
-            echo "<details><summary>Last 200 lines</summary>"
-            echo
-            echo '```text'
-            tail -n 200 "${RUNNER_TEMP}/mcp-grafana.log" 2>/dev/null || true
-            echo '```'
-            echo
-            echo "</details>"
+            grep -E 'level=(ERROR|WARN)|Starting Grafana MCP server|connected to proxied MCP servers' "${RUNNER_TEMP}/mcp-grafana.log" 2>/dev/null || echo "No MCP server warnings or errors were logged."
           } >> "$GITHUB_STEP_SUMMARY"
           if [[ -f "${RUNNER_TEMP}/mcp-grafana.pid" ]]; then
             kill "$(cat "${RUNNER_TEMP}/mcp-grafana.pid")" 2>/dev/null || true
