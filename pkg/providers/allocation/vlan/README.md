@@ -38,8 +38,10 @@ and the `Region` VLAN/provider-network configuration that this allocator uses.
 - `Allocate()` is idempotent by `networkID`; repeated allocation for the same
   network returns the existing VLAN ID.
 - At most one VLAN ID may be allocated to a given `networkID`. `Allocate()`
-  returns an error if duplicate allocations are detected for the same network,
-  while `FreeByNetworkID()` removes all matching entries to heal corruption.
+  prevents new duplicate ownership by returning an error if duplicates are
+  detected for the same network. `FreeByNetworkID()` deliberately removes all
+  matching entries when cleaning up a network so existing duplicate ownership is
+  healed during deletion.
 - `Free()` and `FreeByNetworkID()` are idempotent.
 - If the allocation table contains the same VLAN ID more than once, the package
   treats that as corruption and returns an allocation error rather than trying
