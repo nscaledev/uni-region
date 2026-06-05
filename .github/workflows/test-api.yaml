@@ -32,6 +32,9 @@ on:
           - 'Image Discovery'
           - 'External Network Discovery'
           - 'File Storage Management'
+          - 'Network Management'
+          - 'LoadBalancer'
+          - 'Network Management|File Storage Management|LoadBalancer'
       region_id:
         description: 'Override TEST_REGION_ID (leave empty to use default)'
         type: string
