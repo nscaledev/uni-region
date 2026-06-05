@@ -163,8 +163,7 @@ jobs:
         test-history-spool-artifact-name: test-history-events-dev
         enable-ai-analysis: 'true'
         claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-        enable-grafana-log-enrichment: 'true'
-        grafana-service-account-token: ${{ secrets.GRAFANA_SERVICE_ACCOUNT_TOKEN }}
+        enable-grafana-log-enrichment: 'false'
 
     - name: Add wo11y Grafana test-history link
       if: ${{ !cancelled() }}
@@ -180,7 +179,8 @@ jobs:
         import urllib.parse
 
         env_name = os.environ["TEST_HISTORY_ENV"]
-        expr = '{service_name=~"test-results-report|kubernetes"} |= "test_history"'
+        run_id = os.environ["GITHUB_RUN_ID"]
+        expr = f'{{service_name=~"test-results-report|kubernetes"}} |= "test_history" |= "{run_id}"'
         panes = {
           "uni-region-test-history": {
             "datasource": "logs-all",
@@ -202,7 +202,7 @@ jobs:
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
           summary.write("\n### Test History Logs\n\n")
           summary.write(f"- wo11y Grafana: [open `{env_name}` test-history logs]({url})\n")
-          summary.write(f"- GitHub run id: `{os.environ['GITHUB_RUN_ID']}`\n")
+          summary.write(f"- GitHub run id: `{run_id}`\n")
           summary.write(f"- LogQL: `{expr}`\n")
         PY
 
@@ -319,8 +319,7 @@ jobs:
         test-history-spool-artifact-name: test-history-events-uat
         enable-ai-analysis: 'true'
         claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-        enable-grafana-log-enrichment: 'true'
-        grafana-service-account-token: ${{ secrets.GRAFANA_SERVICE_ACCOUNT_TOKEN }}
+        enable-grafana-log-enrichment: 'false'
 
     - name: Add wo11y Grafana test-history link
       if: ${{ !cancelled() }}
@@ -336,7 +335,8 @@ jobs:
         import urllib.parse
 
         env_name = os.environ["TEST_HISTORY_ENV"]
-        expr = '{service_name=~"test-results-report|kubernetes"} |= "test_history"'
+        run_id = os.environ["GITHUB_RUN_ID"]
+        expr = f'{{service_name=~"test-results-report|kubernetes"}} |= "test_history" |= "{run_id}"'
         panes = {
           "uni-region-test-history": {
             "datasource": "logs-all",
@@ -358,6 +358,6 @@ jobs:
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
           summary.write("\n### Test History Logs\n\n")
           summary.write(f"- wo11y Grafana: [open `{env_name}` test-history logs]({url})\n")
-          summary.write(f"- GitHub run id: `{os.environ['GITHUB_RUN_ID']}`\n")
+          summary.write(f"- GitHub run id: `{run_id}`\n")
           summary.write(f"- LogQL: `{expr}`\n")
         PY
