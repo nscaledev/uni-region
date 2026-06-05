@@ -27,15 +27,15 @@ on:
       prompt:
         description: Natural-language task for Claude through Grafana MCP.
         required: false
-        default: Fetch recent instance failure logs from Loki using Grafana MCP.
+        default: List the last 10 errors by category from Loki using Grafana MCP.
 
 permissions:
   contents: read
   id-token: write
 
 jobs:
-  fetch-instance-failure-logs:
-    name: Fetch recent instance failure logs
+  list-last-errors:
+    name: List last 10 errors by category
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -46,7 +46,7 @@ jobs:
       LIMIT: ${{ github.event.inputs.limit || '10' }}
       LOKI_DATASOURCE_UID: ${{ github.event.inputs.loki_datasource_uid || 'loki' }}
       LOOKBACK_MINUTES: ${{ github.event.inputs.lookback_minutes || '60' }}
-      USER_PROMPT: ${{ github.event.inputs.prompt || 'Fetch recent instance failure logs from Loki using Grafana MCP.' }}
+      USER_PROMPT: ${{ github.event.inputs.prompt || 'List the last 10 errors by category from Loki using Grafana MCP.' }}
 
     steps:
       # Install: fetch the binaries used by the rest of the POC.
@@ -161,9 +161,9 @@ jobs:
           cat > "$prompt_path" <<PROMPT
           ${USER_PROMPT}
 
-          Use Grafana MCP only. List Loki datasources, prefer datasource UID '${LOKI_DATASOURCE_UID}', and query recent instance, server, VM, or compute failure logs from ${start_rfc3339} to ${end_rfc3339}. Use limit ${LIMIT} and direction backward.
+          Use Grafana MCP only. List Loki datasources, prefer datasource UID '${LOKI_DATASOURCE_UID}', and query recent error logs from ${start_rfc3339} to ${end_rfc3339}. Find the last ${LIMIT} error rows and group them by category.
 
-          Print the datasource, row count, a compact Markdown table of fetched rows, and a short analysis. Say clearly if no matching rows are found. Do not print secrets.
+          Print the datasource, query window, row count, a compact category summary, and a Markdown table with category, timestamp, namespace, pod or service, severity, and message. Avoid rows that only echo this query or show successful requests. Say clearly if no matching error rows are found. Do not print secrets.
           PROMPT
 
           echo "Wrote MCP config to ${mcp_config}"
