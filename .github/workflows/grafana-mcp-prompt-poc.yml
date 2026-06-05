@@ -1,0 +1,187 @@
+name: Grafana MCP Prompt POC
+
+run-name: Grafana MCP Prompt POC - ${{ github.event.inputs.grafana_app || 'nks-stg-europe-west2-grafana' }}
+
+on:
+  push:
+    branches:
+      - codex/grafana-mcp-prompt-poc
+  workflow_dispatch:
+    inputs:
+      grafana_app:
+        description: Teleport Grafana app name.
+        required: false
+        default: nks-stg-europe-west2-grafana
+      loki_datasource_uid:
+        description: Preferred Loki datasource UID.
+        required: false
+        default: loki
+      lookback_minutes:
+        description: Query lookback window in minutes.
+        required: false
+        default: '60'
+      limit:
+        description: Maximum Loki rows to print.
+        required: false
+        default: '10'
+      prompt:
+        description: Natural-language task for Claude through Grafana MCP.
+        required: false
+        default: Fetch recent instance failure logs from Loki using Grafana MCP.
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  fetch-instance-failure-logs:
+    name: Fetch recent instance failure logs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GRAFANA_APP: ${{ github.event.inputs.grafana_app || 'nks-stg-europe-west2-grafana' }}
+      GRAFANA_MCP_PORT: '8000'
+      GRAFANA_MCP_VERSION: v0.7.10
+      GRAFANA_TUNNEL_PORT: '3000'
+      LIMIT: ${{ github.event.inputs.limit || '10' }}
+      LOKI_DATASOURCE_UID: ${{ github.event.inputs.loki_datasource_uid || 'loki' }}
+      LOOKBACK_MINUTES: ${{ github.event.inputs.lookback_minutes || '60' }}
+      USER_PROMPT: ${{ github.event.inputs.prompt || 'Fetch recent instance failure logs from Loki using Grafana MCP.' }}
+
+    steps:
+      - name: Install Teleport clients
+        uses: teleport-actions/setup@a820ebbf1bc1a496efca348ad21042d6e8df73a6
+        with:
+          version: auto
+          proxy: nscale.teleport.sh:443
+
+      - name: Open Grafana app tunnel
+        uses: teleport-actions/application-tunnel@bb7a8fbfb67b85d26013554f10d71dd032c1c764
+        with:
+          proxy: nscale.teleport.sh:443
+          token: github-grafana-access
+          app: ${{ env.GRAFANA_APP }}
+          listen: tcp://127.0.0.1:${{ env.GRAFANA_TUNNEL_PORT }}
+          timeout-ms: '60000'
+
+      - name: Verify Grafana tunnel
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${GRAFANA_TUNNEL_PORT}/api/health"; then
+              echo "Grafana tunnel is reachable"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "::error::Grafana tunnel did not become reachable"
+          exit 1
+
+      - name: Install Grafana MCP server
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          case "$(uname -m)" in
+            x86_64|amd64) artifact="mcp-grafana_Linux_x86_64.tar.gz" ;;
+            aarch64|arm64) artifact="mcp-grafana_Linux_arm64.tar.gz" ;;
+            *) echo "::error::Unsupported architecture: $(uname -m)"; exit 1 ;;
+          esac
+
+          gh release download -R grafana/mcp-grafana "$GRAFANA_MCP_VERSION" \
+            --pattern "$artifact" \
+            --output "${RUNNER_TEMP}/mcp-grafana.tar.gz"
+          tar -xzf "${RUNNER_TEMP}/mcp-grafana.tar.gz" -C "${RUNNER_TEMP}"
+          sudo mv "${RUNNER_TEMP}/mcp-grafana" /usr/local/bin/mcp-grafana
+          mcp-grafana --help >/dev/null 2>&1
+
+      - name: Start Grafana MCP server
+        shell: bash
+        env:
+          GRAFANA_ORG_ID: '1'
+          GRAFANA_SERVICE_ACCOUNT_TOKEN: ${{ secrets.GRAFANA_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${GRAFANA_SERVICE_ACCOUNT_TOKEN}" ]]; then
+            echo "::error::GRAFANA_SERVICE_ACCOUNT_TOKEN secret is required"
+            exit 1
+          fi
+          echo "::add-mask::${GRAFANA_SERVICE_ACCOUNT_TOKEN}"
+
+          GRAFANA_URL="http://127.0.0.1:${GRAFANA_TUNNEL_PORT}" \
+          GRAFANA_SERVICE_ACCOUNT_TOKEN="${GRAFANA_SERVICE_ACCOUNT_TOKEN}" \
+          GRAFANA_ORG_ID="${GRAFANA_ORG_ID}" \
+          nohup mcp-grafana \
+            -t streamable-http \
+            --address "127.0.0.1:${GRAFANA_MCP_PORT}" \
+            --enabled-tools datasource,loki \
+            --disable-write \
+            > "${RUNNER_TEMP}/mcp-grafana.log" 2>&1 &
+          echo "$!" > "${RUNNER_TEMP}/mcp-grafana.pid"
+
+          for attempt in {1..20}; do
+            if curl --fail --silent --show-error --max-time 2 "http://127.0.0.1:${GRAFANA_MCP_PORT}/healthz" >/dev/null; then
+              echo "mcp-grafana is reachable"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "::error::mcp-grafana did not become reachable"
+          cat "${RUNNER_TEMP}/mcp-grafana.log" || true
+          exit 1
+
+      - name: Ask Claude through Grafana MCP
+        shell: bash
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN}" ]]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN secret is required"
+            exit 1
+          fi
+          echo "::add-mask::${CLAUDE_CODE_OAUTH_TOKEN}"
+
+          end_rfc3339="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          start_rfc3339="$(date -u -d "-${LOOKBACK_MINUTES} minutes" +"%Y-%m-%dT%H:%M:%SZ")"
+          mcp_config="${RUNNER_TEMP}/grafana-mcp-config.json"
+          printf '{"mcpServers":{"grafana":{"type":"http","url":"http://127.0.0.1:%s/mcp"}}}\n' "$GRAFANA_MCP_PORT" > "$mcp_config"
+
+          prompt="${USER_PROMPT}
+
+          Use Grafana MCP only. List Loki datasources, prefer datasource UID '${LOKI_DATASOURCE_UID}', and query recent instance, server, VM, or compute failure logs from ${start_rfc3339} to ${end_rfc3339}. Use limit ${LIMIT} and direction backward.
+
+          Print the datasource, row count, a compact Markdown table of fetched rows, and a short analysis. Say clearly if no matching rows are found. Do not print secrets."
+
+          echo "=== Grafana MCP prompt ==="
+          printf '%s\n' "$prompt"
+          echo
+          echo "=== Grafana MCP result ==="
+
+          npx --yes @anthropic-ai/claude-code \
+            -p "$prompt" \
+            --mcp-config "$mcp_config" \
+            --strict-mcp-config \
+            --allowedTools "mcp__grafana__list_datasources,mcp__grafana__query_loki_logs" \
+            --permission-mode dontAsk \
+            --no-session-persistence
+
+      - name: Dump Grafana MCP logs
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=== mcp-grafana log ==="
+          cat "${RUNNER_TEMP}/mcp-grafana.log" 2>/dev/null || true
+          if [[ -f "${RUNNER_TEMP}/mcp-grafana.pid" ]]; then
+            kill "$(cat "${RUNNER_TEMP}/mcp-grafana.pid")" 2>/dev/null || true
+          fi
