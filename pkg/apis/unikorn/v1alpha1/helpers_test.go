@@ -24,6 +24,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
 
@@ -53,5 +54,172 @@ func TestEffectiveReservations(t *testing.T) {
 
 		require.Equal(t, 25, network.EffectiveReservations().PrefixLength)
 		require.Equal(t, ptr.To(28), network.EffectiveReservations().ProviderReservedPrefixLength)
+	})
+}
+
+func TestUseProviderNetworks(t *testing.T) {
+	t.Parallel()
+
+	t.Run("FalseWhenReceiverNil", func(t *testing.T) {
+		t.Parallel()
+
+		var spec *regionv1.RegionOpenstackNetworkSpec
+
+		require.False(t, spec.UseProviderNetworks())
+	})
+
+	t.Run("FalseWhenProviderNetworksNil", func(t *testing.T) {
+		t.Parallel()
+
+		spec := &regionv1.RegionOpenstackNetworkSpec{}
+		require.False(t, spec.UseProviderNetworks())
+	})
+
+	t.Run("FalseWhenInnerNetworkNil", func(t *testing.T) {
+		t.Parallel()
+
+		spec := &regionv1.RegionOpenstackNetworkSpec{
+			ProviderNetworks: &regionv1.ProviderNetworks{},
+		}
+		require.False(t, spec.UseProviderNetworks())
+	})
+
+	t.Run("TrueWhenAllFieldsSet", func(t *testing.T) {
+		t.Parallel()
+
+		spec := &regionv1.RegionOpenstackNetworkSpec{
+			ProviderNetworks: &regionv1.ProviderNetworks{
+				Network: ptr.To("physnet1"),
+			},
+		}
+		require.True(t, spec.UseProviderNetworks())
+	})
+}
+
+func TestStaticName(t *testing.T) {
+	t.Parallel()
+
+	t.Run("OpenstackProvider", func(t *testing.T) {
+		t.Parallel()
+
+		region := &regionv1.Region{
+			ObjectMeta: metav1.ObjectMeta{Name: "region-a"},
+			Spec:       regionv1.RegionSpec{Provider: regionv1.ProviderOpenstack},
+		}
+		require.Equal(t, "openstack.region-a", region.StaticName())
+	})
+
+	t.Run("KubernetesProvider", func(t *testing.T) {
+		t.Parallel()
+
+		region := &regionv1.Region{
+			ObjectMeta: metav1.ObjectMeta{Name: "region-a"},
+			Spec:       regionv1.RegionSpec{Provider: regionv1.ProviderKubernetes},
+		}
+		require.Equal(t, "kubernetes.region-a", region.StaticName())
+	})
+
+	t.Run("SimulatedProvider", func(t *testing.T) {
+		t.Parallel()
+
+		region := &regionv1.Region{
+			ObjectMeta: metav1.ObjectMeta{Name: "region-a"},
+			Spec:       regionv1.RegionSpec{Provider: regionv1.ProviderSimulated},
+		}
+		require.Equal(t, "simulated.region-a", region.StaticName())
+	})
+}
+
+func TestVLANSpec(t *testing.T) {
+	t.Parallel()
+
+	t.Run("NilForKubernetesProvider", func(t *testing.T) {
+		t.Parallel()
+
+		region := &regionv1.Region{Spec: regionv1.RegionSpec{Provider: regionv1.ProviderKubernetes}}
+		require.Nil(t, region.VLANSpec())
+	})
+
+	t.Run("NilForSimulatedProvider", func(t *testing.T) {
+		t.Parallel()
+
+		region := &regionv1.Region{Spec: regionv1.RegionSpec{Provider: regionv1.ProviderSimulated}}
+		require.Nil(t, region.VLANSpec())
+	})
+
+	t.Run("NilWhenOpenstackConfigAbsent", func(t *testing.T) {
+		t.Parallel()
+
+		region := &regionv1.Region{Spec: regionv1.RegionSpec{Provider: regionv1.ProviderOpenstack}}
+		require.Nil(t, region.VLANSpec())
+	})
+
+	t.Run("NilWhenNetworkAbsent", func(t *testing.T) {
+		t.Parallel()
+
+		region := &regionv1.Region{
+			Spec: regionv1.RegionSpec{
+				Provider:  regionv1.ProviderOpenstack,
+				Openstack: &regionv1.RegionOpenstackSpec{},
+			},
+		}
+		require.Nil(t, region.VLANSpec())
+	})
+
+	t.Run("NilWhenProviderNetworksAbsent", func(t *testing.T) {
+		t.Parallel()
+
+		region := &regionv1.Region{
+			Spec: regionv1.RegionSpec{
+				Provider: regionv1.ProviderOpenstack,
+				Openstack: &regionv1.RegionOpenstackSpec{
+					Network: &regionv1.RegionOpenstackNetworkSpec{},
+				},
+			},
+		}
+		require.Nil(t, region.VLANSpec())
+	})
+
+	t.Run("NilWhenVLANAbsent", func(t *testing.T) {
+		t.Parallel()
+
+		region := &regionv1.Region{
+			Spec: regionv1.RegionSpec{
+				Provider: regionv1.ProviderOpenstack,
+				Openstack: &regionv1.RegionOpenstackSpec{
+					Network: &regionv1.RegionOpenstackNetworkSpec{
+						ProviderNetworks: &regionv1.ProviderNetworks{},
+					},
+				},
+			},
+		}
+		require.Nil(t, region.VLANSpec())
+	})
+
+	t.Run("ReturnsSpecWhenVLANConfigured", func(t *testing.T) {
+		t.Parallel()
+
+		vlan := &regionv1.VLANSpec{
+			Segments: []regionv1.VLANSegment{
+				{StartID: 1, EndID: 4094},
+			},
+		}
+
+		region := &regionv1.Region{
+			Spec: regionv1.RegionSpec{
+				Provider: regionv1.ProviderOpenstack,
+				Openstack: &regionv1.RegionOpenstackSpec{
+					Network: &regionv1.RegionOpenstackNetworkSpec{
+						ProviderNetworks: &regionv1.ProviderNetworks{
+							VLAN: vlan,
+						},
+					},
+				},
+			},
+		}
+
+		got := region.VLANSpec()
+		require.NotNil(t, got)
+		require.Equal(t, vlan, got)
 	})
 }
