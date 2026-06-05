@@ -13,9 +13,9 @@ on:
         required: false
         default: nks-stg-europe-west2-grafana
       loki_datasource_uid:
-        description: Preferred Loki datasource UID.
+        description: Optional Loki datasource UID filter. Leave empty to query all log-capable datasources.
         required: false
-        default: loki
+        default: ''
       lookback_minutes:
         description: Query lookback window in minutes.
         required: false
@@ -44,7 +44,7 @@ jobs:
       GRAFANA_MCP_VERSION: v0.7.10
       GRAFANA_TUNNEL_PORT: '3000'
       LIMIT: ${{ github.event.inputs.limit || '10' }}
-      LOKI_DATASOURCE_UID: ${{ github.event.inputs.loki_datasource_uid || 'loki' }}
+      LOKI_DATASOURCE_UID: ${{ github.event.inputs.loki_datasource_uid || '' }}
       LOOKBACK_MINUTES: ${{ github.event.inputs.lookback_minutes || '60' }}
       USER_PROMPT: ${{ github.event.inputs.prompt || 'List the last 10 errors by category from Loki using Grafana MCP.' }}
 
@@ -151,6 +151,10 @@ jobs:
 
           end_rfc3339="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           start_rfc3339="$(date -u -d "-${LOOKBACK_MINUTES} minutes" +"%Y-%m-%dT%H:%M:%SZ")"
+          datasource_scope="all log-capable/Loki datasources"
+          if [[ -n "${LOKI_DATASOURCE_UID}" ]]; then
+            datasource_scope="datasource UID '${LOKI_DATASOURCE_UID}' plus any other relevant log datasource"
+          fi
           mcp_config="${RUNNER_TEMP}/grafana-mcp-config.json"
           prompt_path="${RUNNER_TEMP}/grafana-mcp-prompt.txt"
 
@@ -161,9 +165,12 @@ jobs:
           cat > "$prompt_path" <<PROMPT
           ${USER_PROMPT}
 
-          Use Grafana MCP only. List Loki datasources, prefer datasource UID '${LOKI_DATASOURCE_UID}', and query recent error logs from ${start_rfc3339} to ${end_rfc3339}. Find the last ${LIMIT} error rows and group them by category.
+          Use Grafana MCP only. First list Grafana datasources. Identify every log-capable/Loki datasource, not only a datasource named "loki". Query ${datasource_scope} for recent error, failed, not_found, timeout, exception, and controller/server failure signals from ${start_rfc3339} to ${end_rfc3339}. Find the last ${LIMIT} relevant rows across all queried datasources and group them by category.
 
-          Print the datasource, query window, row count, a compact category summary, and a Markdown table with category, timestamp, namespace, pod or service, severity, and message. Avoid rows that only echo this query or show successful requests. Say clearly if no matching error rows are found. Do not print secrets.
+          Print the datasources queried, query window, row count, a compact category summary, and a Markdown table with category, timestamp, datasource, namespace, pod or service, severity, and message. Avoid rows that only echo this query or show successful requests. Say clearly if no matching error rows are found. Do not print secrets.
+
+          Format category findings like:
+          - File Storage Management (code/core logic): DELETE /api/v2/filestorage returned 404 not_found; related error/failure signals from unikorn-region-server and uni-storage-filestorage-controller suggest the resource was already absent.
           PROMPT
 
           echo "Wrote MCP config to ${mcp_config}"
