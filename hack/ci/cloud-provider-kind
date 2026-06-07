@@ -54,7 +54,7 @@ require go
 # setup-infra's `pgrep -f cloud-provider-kind` guard. Only remove them when no
 # live cloud-provider-kind controller is running, so we never disrupt a healthy
 # session.
-if ! pgrep -x cloud-provider-kind >/dev/null 2>&1; then
+if ! pgrep -f bin/cloud-provider-kind >/dev/null 2>&1; then
   orphans="$(docker ps -aq --filter 'name=kindccm-' 2>/dev/null || true)"
   if [[ -n "${orphans}" ]]; then
     log "Removing orphaned kindccm-* containers from a previous run..."
@@ -64,9 +64,14 @@ if ! pgrep -x cloud-provider-kind >/dev/null 2>&1; then
 fi
 
 # ── Already running? ──────────────────────────────────────────────────────────
-# Match the actual binary (pgrep -x) rather than the full command line, so a
-# stale `... cloud-provider-kind ...` argument elsewhere doesn't fool us.
-if pgrep -x cloud-provider-kind >/dev/null 2>&1; then
+# Match the binary path (pgrep -f bin/cloud-provider-kind), NOT the bare process
+# name (pgrep -x cloud-provider-kind). `pgrep -x` compares against the kernel's
+# truncated comm (15 chars), but "cloud-provider-kind" is 19 chars and truncates
+# to "cloud-provider-", so `-x cloud-provider-kind` never matches a real running
+# controller — the guard would wrongly report "not running" and the start poll
+# below would always time out. The `bin/` prefix keeps us from self-matching this
+# helper (hack/ci/cloud-provider-kind) or the `go install ...` invocation.
+if pgrep -f bin/cloud-provider-kind >/dev/null 2>&1; then
   log "cloud-provider-kind already running; nothing to do."
   exit 0
 fi
@@ -87,7 +92,7 @@ log "Starting cloud-provider-kind (no sudo)..."
 "${GOBIN}/cloud-provider-kind" > /tmp/cloud-provider-kind.log 2>&1 &
 
 for _ in $(seq 1 30); do
-  if pgrep -x cloud-provider-kind >/dev/null 2>&1; then
+  if pgrep -f bin/cloud-provider-kind >/dev/null 2>&1; then
     log "cloud-provider-kind started."
     exit 0
   fi
