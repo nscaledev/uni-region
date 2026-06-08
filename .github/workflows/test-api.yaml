@@ -150,17 +150,7 @@ jobs:
         send-slack: ${{ github.event.inputs.skip_slack_notifications != 'true' && 'true' || 'false' }}
         environment: dev
         title: 'Region API Test Results'
-        publish-test-history: 'true'
-        test-history-publish-mode: otlp
         test-history-suite: uni-region-api
-        test-history-framework: ginkgo
-        test-history-env: dev
-        test-history-teleport-token: github-test-history-otlp-writer
-        test-history-kube-cluster: observability-prod-glo1
-        test-history-collector-namespace: telemetry
-        test-history-collector-service: agent-collector
-        test-history-upload-spool: always
-        test-history-spool-artifact-name: test-history-events-dev
         enable-ai-analysis: 'true'
         claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         enable-grafana-log-enrichment: 'true'
@@ -168,47 +158,6 @@ jobs:
         enable-unikorn-cr-enrichment: 'true'
         unikorn-cr-teleport-token: github-unikorn-cr-reader
         unikorn-cr-kube-cluster: nks-dev-glo1
-
-    - name: Add wo11y Grafana test-history link
-      if: ${{ !cancelled() }}
-      shell: bash
-      env:
-        TEST_HISTORY_ENV: dev
-      run: |
-        set -euo pipefail
-
-        python3 <<'PY'
-        import json
-        import os
-        import urllib.parse
-
-        env_name = os.environ["TEST_HISTORY_ENV"]
-        build_id = os.environ["GITHUB_RUN_ID"]
-        expr = f'{{service_name="test-results-report"}} |= "{build_id}"'
-        panes = {
-          "uni-region-test-history": {
-            "datasource": "logs-all",
-            "queries": [{
-              "refId": "A",
-              "expr": expr,
-              "queryType": "range",
-              "datasource": {"type": "loki", "uid": "logs-all"},
-            }],
-            "range": {"from": "now-6h", "to": "now"},
-          },
-        }
-        query = urllib.parse.urlencode({
-          "orgId": "1",
-          "schemaVersion": "1",
-          "panes": json.dumps(panes, separators=(",", ":")),
-        })
-        url = f"https://wo11y-grafana-dev.nscale.teleport.sh/explore?{query}"
-        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-          summary.write("\n### Test History Logs\n\n")
-          summary.write(f"- wo11y Grafana: [open `{env_name}` test-history logs]({url})\n")
-          summary.write(f"- GitHub build id: `{build_id}`\n")
-          summary.write(f"- LogQL: `{expr}`\n")
-        PY
 
   find-staging-constellation:
     name: Resolve UAT test ref
@@ -310,17 +259,7 @@ jobs:
         send-slack: ${{ github.event.inputs.skip_slack_notifications != 'true' && 'true' || 'false' }}
         environment: uat
         title: 'Region API Test Results'
-        publish-test-history: 'true'
-        test-history-publish-mode: otlp
         test-history-suite: uni-region-api
-        test-history-framework: ginkgo
-        test-history-env: uat
-        test-history-teleport-token: github-test-history-otlp-writer
-        test-history-kube-cluster: observability-prod-glo1
-        test-history-collector-namespace: telemetry
-        test-history-collector-service: agent-collector
-        test-history-upload-spool: always
-        test-history-spool-artifact-name: test-history-events-uat
         enable-ai-analysis: 'true'
         claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         enable-grafana-log-enrichment: 'true'
@@ -328,44 +267,3 @@ jobs:
         enable-unikorn-cr-enrichment: 'true'
         unikorn-cr-teleport-token: github-unikorn-cr-reader
         unikorn-cr-kube-cluster: nks-stg-europe-west2
-
-    - name: Add wo11y Grafana test-history link
-      if: ${{ !cancelled() }}
-      shell: bash
-      env:
-        TEST_HISTORY_ENV: uat
-      run: |
-        set -euo pipefail
-
-        python3 <<'PY'
-        import json
-        import os
-        import urllib.parse
-
-        env_name = os.environ["TEST_HISTORY_ENV"]
-        build_id = os.environ["GITHUB_RUN_ID"]
-        expr = f'{{service_name="test-results-report"}} |= "{build_id}"'
-        panes = {
-          "uni-region-test-history": {
-            "datasource": "logs-all",
-            "queries": [{
-              "refId": "A",
-              "expr": expr,
-              "queryType": "range",
-              "datasource": {"type": "loki", "uid": "logs-all"},
-            }],
-            "range": {"from": "now-6h", "to": "now"},
-          },
-        }
-        query = urllib.parse.urlencode({
-          "orgId": "1",
-          "schemaVersion": "1",
-          "panes": json.dumps(panes, separators=(",", ":")),
-        })
-        url = f"https://wo11y-grafana-dev.nscale.teleport.sh/explore?{query}"
-        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-          summary.write("\n### Test History Logs\n\n")
-          summary.write(f"- wo11y Grafana: [open `{env_name}` test-history logs]({url})\n")
-          summary.write(f"- GitHub build id: `{build_id}`\n")
-          summary.write(f"- LogQL: `{expr}`\n")
-        PY
