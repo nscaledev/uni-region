@@ -872,6 +872,7 @@ type Server struct {
 	Status            ServerStatus `json:"status,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.infrastructureRef) == !has(self.infrastructureRef) && (!has(self.infrastructureRef) || self.infrastructureRef == oldSelf.infrastructureRef)",message="infrastructureRef is immutable"
 type ServerSpec struct {
 	// Pause, if true, will inhibit reconciliation.
 	Pause bool `json:"pause,omitempty"`
@@ -894,6 +895,10 @@ type ServerSpec struct {
 	SSHCertificateAuthorityID *string `json:"sshCertificateAuthorityID,omitempty"`
 	// UserData contains configuration information or scripts to use upon launch.
 	UserData []byte `json:"userData,omitempty"`
+	// InfrastructureRef pins the server to a specific physical host. When set,
+	// the provider bypasses its scheduler and provisions directly onto the
+	// identified host.
+	InfrastructureRef *string `json:"infrastructureRef,omitempty"`
 }
 
 type ServerSecurityGroupSpec struct {

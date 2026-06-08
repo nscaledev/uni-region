@@ -345,6 +345,12 @@ func (b *ServerPayloadBuilder) WithNetworking(networking *regionopenapi.ServerV2
 	return b
 }
 
+// WithInfrastructureRef pins the server to a provider-specific host.
+func (b *ServerPayloadBuilder) WithInfrastructureRef(infrastructureRef string) *ServerPayloadBuilder {
+	b.server.Spec.InfrastructureRef = &infrastructureRef
+	return b
+}
+
 // Build returns the typed ServerV2Create struct.
 func (b *ServerPayloadBuilder) Build() regionopenapi.ServerV2Create {
 	return b.server

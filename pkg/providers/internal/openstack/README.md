@@ -88,6 +88,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - per-identity credentials are used for most project-scoped operations
   - some operations deliberately bind privileged credentials to a service
     principal's project when manager-level powers are required
+  - pinned server creation is one of those privileged project-scoped operations:
+    it still targets the identity project, but uses region-level credentials so
+    Nova policy can authorise the requested destination
 - `OpenstackIdentity` is the remaining persisted provider-state anchor. It
   currently stores the secret-bearing user/project/application-credential and
   bootstrap state needed to operate on behalf of a region `Identity`.

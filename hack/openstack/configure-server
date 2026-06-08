@@ -1,0 +1,402 @@
+#!/usr/bin/env bash
+# Configure OpenStack server fixtures for Region API integration tests.
+set -euo pipefail
+
+OPENSTACK_CLI="${OPENSTACK_CLI:-openstack}"
+PROVIDER_ENV_FILE=""
+OUTPUT_FILE=""
+NODE_NAME_ARG=""
+MAC_ADDRESS_ARG=""
+RESOURCE_CLASS_ARG=""
+DRIVER_ARG=""
+TIMEOUT_ARG=""
+BAREMETAL_API_VERSION_ARG=""
+FORCE="false"
+TMP_OUTPUT=""
+
+DEFAULT_NODE_NAME="unikorn-devstack-infrastructure-ref"
+DEFAULT_MAC_ADDRESS="52:54:00:75:6e:69"
+DEFAULT_RESOURCE_CLASS="baremetal"
+DEFAULT_DRIVER="fake-hardware"
+DEFAULT_TIMEOUT="120"
+DEFAULT_BAREMETAL_API_VERSION="1.50"
+
+log() {
+  echo "==> $*" >&2
+}
+
+fatal() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
+
+cleanup_tmp_output() {
+  if [[ -n "${TMP_OUTPUT}" && -f "${TMP_OUTPUT}" ]]; then
+    rm -f "${TMP_OUTPUT}"
+  fi
+}
+
+trap cleanup_tmp_output EXIT
+
+require() {
+  command -v "$1" >/dev/null 2>&1 || fatal "$1 is required"
+}
+
+shell_quote() {
+  local value="$1"
+
+  printf "'"
+  printf "%s" "${value}" | sed "s/'/'\\\\''/g"
+  printf "'"
+}
+
+emit_env() {
+  printf "%s=%s\n" "$1" "$(shell_quote "$2")"
+}
+
+usage() {
+  cat >&2 <<EOF
+Usage: $0 [--provider-env FILE] [--output FILE] [--force]
+
+Creates or reuses the fake Ironic node used by server infrastructureRef API
+tests and emits TEST_SERVER_INFRASTRUCTURE_REF for integration-fixtures.
+
+Options:
+  --provider-env FILE       Source provider env from hack/openstack/configure.
+  --output FILE             Write shell-compatible output to FILE atomically.
+  --node-name NAME          Baremetal node name. Defaults to
+                            UNIKORN_OPENSTACK_SERVER_FIXTURE_NODE_NAME or
+                            ${DEFAULT_NODE_NAME}.
+  --mac-address MAC         Baremetal port MAC. Defaults to
+                            UNIKORN_OPENSTACK_SERVER_FIXTURE_MAC_ADDRESS or
+                            ${DEFAULT_MAC_ADDRESS}.
+  --resource-class CLASS    Node resource class. Defaults to
+                            UNIKORN_OPENSTACK_SERVER_FIXTURE_RESOURCE_CLASS or
+                            ${DEFAULT_RESOURCE_CLASS}.
+  --driver DRIVER           Ironic driver. Defaults to
+                            UNIKORN_OPENSTACK_SERVER_FIXTURE_DRIVER or
+                            ${DEFAULT_DRIVER}.
+  --timeout SECONDS         Provision-state wait timeout. Defaults to
+                            UNIKORN_OPENSTACK_SERVER_FIXTURE_TIMEOUT or
+                            ${DEFAULT_TIMEOUT}.
+  --baremetal-api-version V Baremetal API version. Defaults to
+                            OS_BAREMETAL_API_VERSION,
+                            UNIKORN_OPENSTACK_BAREMETAL_API_VERSION, or
+                            ${DEFAULT_BAREMETAL_API_VERSION}.
+  --force                   Ignore an existing TEST_SERVER_INFRASTRUCTURE_REF
+                            or UNIKORN_OPENSTACK_INFRASTRUCTURE_REF.
+  -h, --help                Show this help.
+
+Environment:
+  OPENSTACK_CLI
+  OS_CLOUD or standard OS_* OpenStack CLI auth variables
+  UNIKORN_OPENSTACK_AUTH_URL
+  UNIKORN_OPENSTACK_PROJECT_ID
+  UNIKORN_OPENSTACK_USER_ID
+  UNIKORN_OPENSTACK_PASSWORD
+  TEST_SERVER_INFRASTRUCTURE_REF
+  UNIKORN_OPENSTACK_INFRASTRUCTURE_REF
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --provider-env)
+      PROVIDER_ENV_FILE="$2"
+      shift 2
+      ;;
+    --output)
+      OUTPUT_FILE="$2"
+      shift 2
+      ;;
+    --node-name)
+      NODE_NAME_ARG="$2"
+      shift 2
+      ;;
+    --mac-address)
+      MAC_ADDRESS_ARG="$2"
+      shift 2
+      ;;
+    --resource-class)
+      RESOURCE_CLASS_ARG="$2"
+      shift 2
+      ;;
+    --driver)
+      DRIVER_ARG="$2"
+      shift 2
+      ;;
+    --timeout)
+      TIMEOUT_ARG="$2"
+      shift 2
+      ;;
+    --baremetal-api-version)
+      BAREMETAL_API_VERSION_ARG="$2"
+      shift 2
+      ;;
+    --force)
+      FORCE="true"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      fatal "unknown argument: $1"
+      ;;
+  esac
+done
+
+if [[ -n "${PROVIDER_ENV_FILE}" ]]; then
+  [[ -f "${PROVIDER_ENV_FILE}" ]] || fatal "provider env file not found: ${PROVIDER_ENV_FILE}"
+  # shellcheck disable=SC1090
+  . "${PROVIDER_ENV_FILE}"
+fi
+
+NODE_NAME="${NODE_NAME_ARG:-${UNIKORN_OPENSTACK_SERVER_FIXTURE_NODE_NAME:-${DEFAULT_NODE_NAME}}}"
+MAC_ADDRESS="${MAC_ADDRESS_ARG:-${UNIKORN_OPENSTACK_SERVER_FIXTURE_MAC_ADDRESS:-${DEFAULT_MAC_ADDRESS}}}"
+RESOURCE_CLASS="${RESOURCE_CLASS_ARG:-${UNIKORN_OPENSTACK_SERVER_FIXTURE_RESOURCE_CLASS:-${DEFAULT_RESOURCE_CLASS}}}"
+DRIVER="${DRIVER_ARG:-${UNIKORN_OPENSTACK_SERVER_FIXTURE_DRIVER:-${DEFAULT_DRIVER}}}"
+STATE_TIMEOUT="${TIMEOUT_ARG:-${UNIKORN_OPENSTACK_SERVER_FIXTURE_TIMEOUT:-${DEFAULT_TIMEOUT}}}"
+BAREMETAL_API_VERSION="${BAREMETAL_API_VERSION_ARG:-${OS_BAREMETAL_API_VERSION:-${UNIKORN_OPENSTACK_BAREMETAL_API_VERSION:-${DEFAULT_BAREMETAL_API_VERSION}}}}"
+
+prepare_openstack_env() {
+  if [[ -n "${UNIKORN_OPENSTACK_AUTH_URL:-}" ]]; then
+    export OS_AUTH_URL="${OS_AUTH_URL:-${UNIKORN_OPENSTACK_AUTH_URL}}"
+  fi
+
+  if [[ -n "${UNIKORN_OPENSTACK_PROJECT_ID:-}" ]]; then
+    export OS_PROJECT_ID="${OS_PROJECT_ID:-${UNIKORN_OPENSTACK_PROJECT_ID}}"
+  fi
+
+  if [[ -n "${UNIKORN_OPENSTACK_USER_ID:-}" ]]; then
+    export OS_USER_ID="${OS_USER_ID:-${UNIKORN_OPENSTACK_USER_ID}}"
+  fi
+
+  if [[ -n "${UNIKORN_OPENSTACK_PASSWORD:-}" ]]; then
+    export OS_PASSWORD="${OS_PASSWORD:-${UNIKORN_OPENSTACK_PASSWORD}}"
+  fi
+
+  export OS_IDENTITY_API_VERSION="${OS_IDENTITY_API_VERSION:-3}"
+  export OS_BAREMETAL_API_VERSION="${OS_BAREMETAL_API_VERSION:-${BAREMETAL_API_VERSION}}"
+
+  if [[ -n "${OS_CLOUD:-}" ]]; then
+    return
+  fi
+
+  [[ -n "${OS_AUTH_URL:-}" ]] || fatal "OS_AUTH_URL, OS_CLOUD, or UNIKORN_OPENSTACK_AUTH_URL is required"
+
+  if [[ -n "${OS_TOKEN:-}" || -n "${OS_APPLICATION_CREDENTIAL_ID:-}" ]]; then
+    return
+  fi
+
+  [[ -n "${OS_PASSWORD:-}" ]] || fatal "OS_PASSWORD or UNIKORN_OPENSTACK_PASSWORD is required"
+
+  if [[ -z "${OS_USER_ID:-}" && -z "${OS_USERNAME:-}" ]]; then
+    fatal "OS_USER_ID, OS_USERNAME, or UNIKORN_OPENSTACK_USER_ID is required"
+  fi
+
+  if [[ -z "${OS_PROJECT_ID:-}" && -z "${OS_PROJECT_NAME:-}" ]]; then
+    fatal "OS_PROJECT_ID, OS_PROJECT_NAME, or UNIKORN_OPENSTACK_PROJECT_ID is required"
+  fi
+}
+
+configured_ref() {
+  printf "%s" "${TEST_SERVER_INFRASTRUCTURE_REF:-${UNIKORN_OPENSTACK_INFRASTRUCTURE_REF:-}}"
+}
+
+emit_ref_env() {
+  local ref="$1"
+
+  emit_env UNIKORN_OPENSTACK_INFRASTRUCTURE_REF "${ref}"
+  emit_env TEST_SERVER_INFRASTRUCTURE_REF "${ref}"
+}
+
+node_uuid() {
+  local uuid
+
+  if uuid="$("${OPENSTACK_CLI}" baremetal node show "${NODE_NAME}" -f value -c uuid 2>/dev/null)"; then
+    printf "%s" "${uuid}"
+  fi
+}
+
+create_node() {
+  "${OPENSTACK_CLI}" baremetal node create \
+    --driver "${DRIVER}" \
+    --name "${NODE_NAME}" \
+    --resource-class "${RESOURCE_CLASS}" \
+    --no-automated-clean \
+    --property cpus=2 \
+    --property memory_mb=2048 \
+    --property local_gb=10 \
+    --property cpu_arch=x86_64 \
+    --property capabilities=boot_option:local \
+    --extra unikorn_fixture=server-infrastructure-ref \
+    -f value \
+    -c uuid
+}
+
+ensure_node() {
+  local uuid
+
+  uuid="$(node_uuid)"
+  if [[ -n "${uuid}" ]]; then
+    log "Reusing fake baremetal node ${NODE_NAME} (${uuid})."
+    printf "%s" "${uuid}"
+
+    return
+  fi
+
+  log "Creating fake baremetal node ${NODE_NAME}..."
+  if ! create_node >/dev/null; then
+    fatal "failed to create baremetal node ${NODE_NAME} with driver ${DRIVER}; check 'openstack baremetal driver list' or pass --driver"
+  fi
+
+  uuid="$(node_uuid)"
+  [[ -n "${uuid}" ]] || fatal "baremetal node create returned an empty UUID"
+
+  printf "%s" "${uuid}"
+}
+
+ensure_driver_supported() {
+  local drivers
+
+  if ! drivers="$("${OPENSTACK_CLI}" baremetal driver list -f value 2>/dev/null)"; then
+    log "Could not list enabled Ironic drivers; continuing to node creation."
+    return
+  fi
+
+  if grep -Fq "${DRIVER}" <<<"${drivers}"; then
+    return
+  fi
+
+  log "Enabled Ironic drivers:"
+  printf "%s\n" "${drivers}" | sed 's/^/  /' >&2
+  fatal "Ironic driver ${DRIVER} is not enabled by any conductor; pass --driver or enable it in DevStack"
+}
+
+ensure_node_port() {
+  local uuid="$1"
+  local ports
+
+  ports="$("${OPENSTACK_CLI}" baremetal port list \
+    --node "${uuid}" \
+    --fields uuid \
+    -f value \
+    -c UUID 2>/dev/null || true)"
+
+  if [[ -n "${ports}" ]]; then
+    return
+  fi
+
+  log "Creating baremetal port ${MAC_ADDRESS} for node ${uuid}..."
+  "${OPENSTACK_CLI}" baremetal port create \
+    --node "${uuid}" \
+    --name "${NODE_NAME}-nic0" \
+    --pxe-enabled true \
+    "${MAC_ADDRESS}" >/dev/null
+}
+
+provision_state() {
+  local uuid="$1"
+
+  "${OPENSTACK_CLI}" baremetal node show "${uuid}" -f value -c provision_state
+}
+
+wait_for_state() {
+  local uuid="$1"
+  local want="$2"
+  local deadline=$((SECONDS + STATE_TIMEOUT))
+  local state
+
+  while true; do
+    state="$(provision_state "${uuid}")"
+
+    if [[ "${state}" == "${want}" ]]; then
+      return
+    fi
+
+    if (( SECONDS >= deadline )); then
+      fatal "baremetal node ${uuid} reached ${state}, not ${want}, before timeout"
+    fi
+
+    sleep 2
+  done
+}
+
+ensure_node_available() {
+  local uuid="$1"
+  local state
+
+  state="$(provision_state "${uuid}")"
+
+  case "${state}" in
+    available)
+      return
+      ;;
+    enroll)
+      log "Moving baremetal node ${uuid} to manageable..."
+      "${OPENSTACK_CLI}" baremetal node manage --wait "${STATE_TIMEOUT}" "${uuid}" >/dev/null
+      log "Moving baremetal node ${uuid} to available..."
+      "${OPENSTACK_CLI}" baremetal node provide --wait "${STATE_TIMEOUT}" "${uuid}" >/dev/null
+      ;;
+    manageable)
+      log "Moving baremetal node ${uuid} to available..."
+      "${OPENSTACK_CLI}" baremetal node provide --wait "${STATE_TIMEOUT}" "${uuid}" >/dev/null
+      ;;
+    verifying)
+      log "Waiting for baremetal node ${uuid} to become manageable..."
+      wait_for_state "${uuid}" manageable
+      log "Moving baremetal node ${uuid} to available..."
+      "${OPENSTACK_CLI}" baremetal node provide --wait "${STATE_TIMEOUT}" "${uuid}" >/dev/null
+      ;;
+    cleaning|"clean wait")
+      log "Waiting for baremetal node ${uuid} to become available..."
+      wait_for_state "${uuid}" available
+      ;;
+    *)
+      fatal "baremetal node ${uuid} is in unsupported provision state ${state}"
+      ;;
+  esac
+}
+
+emit_output() {
+  local existing_ref
+  local uuid
+
+  existing_ref="$(configured_ref)"
+  if [[ -n "${existing_ref}" && "${FORCE}" != "true" ]]; then
+    log "Preserving existing server infrastructure ref ${existing_ref}."
+    emit_ref_env "${existing_ref}"
+
+    return
+  fi
+
+  require "${OPENSTACK_CLI}"
+  prepare_openstack_env
+
+  log "Checking OpenStack credentials..."
+  "${OPENSTACK_CLI}" token issue >/dev/null
+
+  ensure_driver_supported
+  uuid="$(ensure_node)"
+  ensure_node_port "${uuid}"
+  ensure_node_available "${uuid}"
+
+  emit_ref_env "${uuid}"
+}
+
+if [[ -n "${OUTPUT_FILE}" ]]; then
+  mkdir -p "$(dirname "${OUTPUT_FILE}")"
+
+  TMP_OUTPUT="$(mktemp "${OUTPUT_FILE}.XXXXXX")"
+
+  if emit_output > "${TMP_OUTPUT}" && mv "${TMP_OUTPUT}" "${OUTPUT_FILE}"; then
+    TMP_OUTPUT=""
+    log "OpenStack server fixture configuration written to ${OUTPUT_FILE}."
+  else
+    exit 1
+  fi
+else
+  emit_output
+fi
