@@ -29,6 +29,15 @@ _QUERY_PINS = {
     "networkID": "network_id",
 }
 
+# A valid throwaway OpenSSH public key (public keys are not secret). SSH CA
+# `publicKey` must be a cryptographically valid OpenSSH key — a constraint the
+# schema can only type as "string", so positive-data generation produces invalid
+# keys the server correctly rejects (422). Pinning a real key removes that false
+# positive while still fuzzing every other field of the request.
+_VALID_SSH_PUBLIC_KEY = (
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICQnUKsYixby1UFplQSkTTiRsDTaJ5Eu58zXJwR/DjQs fuzz-scaffold"
+)
+
 
 def _value(ctx, attr):
     return getattr(ctx, attr, None)
@@ -60,3 +69,13 @@ def apply_overrides(case, ctx) -> None:
         for key, attr in _SPEC_PARENT_KEYS.items():
             if key in spec and _value(ctx, attr) is not None:
                 spec[key] = _value(ctx, attr)
+        # `vipAddress` (load balancers) carries a semantic constraint the OpenAPI
+        # schema cannot express: it must fall within the selected network's CIDR.
+        # Positive-data generation therefore produces values the server correctly
+        # rejects with 422 — a false positive. The field is optional, so drop it
+        # and let the platform auto-assign a valid VIP.
+        spec.pop("vipAddress", None)
+        # `publicKey` (SSH CAs) is required and must be a valid OpenSSH key — also
+        # unexpressible in the schema. Pin a real key so the request is valid.
+        if "publicKey" in spec:
+            spec["publicKey"] = _VALID_SSH_PUBLIC_KEY

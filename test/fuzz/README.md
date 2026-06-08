@@ -81,6 +81,15 @@ test/fuzz/.venv/bin/python -m pytest test/fuzz -q
    `regionID`/`networkID`/`securityGroupID`, and body `spec.*` parent ids)
    overwritten with the real IDs, so requests route to real resources and reach
    handler logic instead of 404ing. Everything else stays fuzzed.
+
+   Pinning also supplies valid values for a small set of fields whose constraint
+   **cannot be expressed in OpenAPI** — load balancer `vipAddress` (must fall
+   within the network CIDR; dropped, as it is optional) and SSH CA `publicKey`
+   (must be a valid OpenSSH key; pinned to a real key). Without this, positive-
+   data generation produces values the server correctly rejects with 422 — a
+   false positive. This is deliberately *not* done for constraints that **are**
+   expressible in the schema (e.g. CIDR `format` on a network `prefix`): those
+   rejections are genuine spec-looseness findings and must stay visible.
 3. **Checks**: `call_and_validate` runs Schemathesis' default checks — the
    primary signal is `not_a_server_error` (any unhandled 5xx is a bug), plus
    status-code / content-type / response-schema / response-header conformance
