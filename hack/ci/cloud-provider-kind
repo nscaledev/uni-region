@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# Pre-start cloud-provider-kind for KinD integration runs, without sudo.
+#
+# Why this exists (region-side workaround for an identity-module bug):
+#
+# The pinned identity module's hack/ci/setup-infra starts cloud-provider-kind
+# with `sudo`:
+#
+#     sudo "${GOBIN}/cloud-provider-kind" > /tmp/cloud-provider-kind.log 2>&1 &
+#
+# On Linux cloud-provider-kind does NOT need root — it talks to the Docker
+# socket the invoking user already has access to. Worse, `sudo` on a machine
+# without passwordless sudo fails silently in the background subshell, so the
+# ingress-nginx LoadBalancer Service never gets an external IP and the
+# subsequent `helm --wait` / `kubectl wait` in setup-infra dies with
+# "context deadline exceeded".
+#
+# setup-infra guards the start with `pgrep -f cloud-provider-kind`, so if we
+# start it ourselves (without sudo) BEFORE invoking setup-infra, the guard
+# finds it already running and skips its broken sudo path entirely.
+#
+# A second hazard: cloud-provider-kind spawns per-cluster "kindccm-*" envoy
+# containers (the LoadBalancer data path). `kind delete cluster` does NOT
+# remove them, and a leftover container from a prior run keeps a stale
+# `cloud-provider-kind` process pattern matchable by `pgrep` even when no
+# controller is actually running — a false positive that makes setup-infra
+# skip the start when it shouldn't. We clear orphaned kindccm-* containers
+# first so the running state is unambiguous.
+#
+# This is a workaround. The proper fix is in the identity module; see the
+# "DevStack integration" section of the top-level README for the bug writeup
+# to be raised as an identity PR.
+#
+# Idempotent: safe to call multiple times. No-op (beyond orphan cleanup) when a
+# real controller is already running.
+set -euo pipefail
+
+log() {
+  echo "==> $*" >&2
+}
+
+require() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "ERROR: $1 is required" >&2
+    exit 1
+  }
+}
+
+require docker
+require go
+
+# ── Clear orphaned kindccm-* envoy containers ─────────────────────────────────
+# These are left behind by `kind delete cluster` and produce false positives in
+# setup-infra's `pgrep -f cloud-provider-kind` guard. Only remove them when no
+# live cloud-provider-kind controller is running, so we never disrupt a healthy
+# session.
+if ! pgrep -f bin/cloud-provider-kind >/dev/null 2>&1; then
+  orphans="$(docker ps -aq --filter 'name=kindccm-' 2>/dev/null || true)"
+  if [[ -n "${orphans}" ]]; then
+    log "Removing orphaned kindccm-* containers from a previous run..."
+    # shellcheck disable=SC2086
+    docker rm -f ${orphans} >/dev/null 2>&1 || true
+  fi
+fi
+
+# ── Already running? ──────────────────────────────────────────────────────────
+# Match the binary path (pgrep -f bin/cloud-provider-kind), NOT the bare process
+# name (pgrep -x cloud-provider-kind). `pgrep -x` compares against the kernel's
+# truncated comm (15 chars), but "cloud-provider-kind" is 19 chars and truncates
+# to "cloud-provider-", so `-x cloud-provider-kind` never matches a real running
+# controller — the guard would wrongly report "not running" and the start poll
+# below would always time out. The `bin/` prefix keeps us from self-matching this
+# helper (hack/ci/cloud-provider-kind) or the `go install ...` invocation.
+if pgrep -f bin/cloud-provider-kind >/dev/null 2>&1; then
+  log "cloud-provider-kind already running; nothing to do."
+  exit 0
+fi
+
+# ── Install if missing ─────────────────────────────────────────────────────────
+GOBIN="$(go env GOBIN)"
+if [[ -z "${GOBIN}" ]]; then
+  GOBIN="$(go env GOPATH)/bin"
+fi
+
+if [[ ! -x "${GOBIN}/cloud-provider-kind" ]]; then
+  log "Installing cloud-provider-kind..."
+  go install sigs.k8s.io/cloud-provider-kind@latest
+fi
+
+# ── Start without sudo ──────────────────────────────────────────────────────────
+log "Starting cloud-provider-kind (no sudo)..."
+"${GOBIN}/cloud-provider-kind" > /tmp/cloud-provider-kind.log 2>&1 &
+
+for _ in $(seq 1 30); do
+  if pgrep -f bin/cloud-provider-kind >/dev/null 2>&1; then
+    log "cloud-provider-kind started."
+    exit 0
+  fi
+  sleep 1
+done
+
+echo "ERROR: cloud-provider-kind failed to start; see /tmp/cloud-provider-kind.log" >&2
+exit 1

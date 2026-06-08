@@ -183,6 +183,18 @@ hack/openstack/register-region \
     --create-secret \
     > test/.env.openstack
 
+# The provider user needs enough permission on each per-workload project to set
+# Nova/Neutron quotas. The default (member,load-balancer_member) is correct for
+# production clouds whose policy permits non-admin quota updates. On DevStack,
+# add the `manager` role; the Unikorn policy overlay that uni-devstack installs
+# rebinds quota/network/image operations to `manager`, so `admin` is NOT needed:
+#     --cluster-roles member,load-balancer_member,manager
+# (Only fall back to `admin` on a cloud that has no such policy overlay.)
+#
+# For a full automated DevStack run that wires all of this up for you, prefer
+# `make test-devstack` (see "Full DevStack integration" below) over the manual
+# steps here.
+
 set -a
 . test/.env.openstack
 set +a
@@ -231,6 +243,95 @@ override the duration when generating fixtures:
 ```bash
 make integration-fixtures FIXTURE_CERT_DURATION=24h
 ```
+
+### Full DevStack integration (`make test-devstack`)
+
+`make test-devstack` runs the entire Region API integration suite against a
+live DevStack-backed OpenStack cloud. It is a single command that:
+
+1. Creates (or reuses) a KinD cluster, writing only to an isolated
+   `test/.kubeconfig` so your `~/.kube/config` is never touched.
+2. Pre-starts `cloud-provider-kind` (see the note below) and installs
+   cert-manager, ingress-nginx, unikorn-core, identity, and region.
+3. Generates fixtures, configures an OpenStack provider user on DevStack, and
+   registers a `devstack` Region CR.
+4. Runs `make test-api`.
+
+#### Against a remote HTTPS DevStack (recommended)
+
+A remote DevStack reachable over public HTTPS (e.g. `https://devstack.st.ht`)
+is the simplest target: the kind pods reach it directly and its Let's Encrypt
+certificate validates against the system trust store, so there is no
+port-forward and no private-CA wrangling.
+
+From zero:
+
+```bash
+# 1. Stage the VM's openrc + flavors.env + images.env locally.
+hack/devstack/stage-remote --host ubuntu@devstack.st.ht
+
+# 2. Source the public openrc so OS_* are set for the OpenStack CLI.
+set -a; . ../uni-devstack/.devstack/openrc; set +a
+
+# 3. Run the suite.
+make test-devstack
+```
+
+Because `OS_AUTH_URL` is a public host, the target uses it verbatim inside the
+cluster (the docker-gateway rewrite below is skipped automatically).
+
+#### Against a local port-forwarded DevStack
+
+If `OS_AUTH_URL` points at `localhost` or a private/RFC1918 address (the
+typical local port-forward), the target rewrites the host to the KinD docker
+network gateway (e.g. `172.18.0.1`) so pods can reach it. Override with
+`DEVSTACK_POD_AUTH_URL` for unusual topologies (colima, a libvirt VM with no
+docker network on the host, etc.).
+
+```bash
+set -a; . ../uni-devstack/.devstack/openrc; set +a
+make test-devstack
+```
+
+#### Inputs
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OS_AUTH_URL` (+ other `OS_*`) | unset; required | Host-side auth for the `openstack` CLI. Source an openrc first. |
+| `DEVSTACK_POD_AUTH_URL` | auto | Auth URL baked into the Region CR. Public hosts are used as-is; local/private hosts are rewritten to the KinD gateway. Set explicitly to override. |
+| `DEVSTACK_ENV_DIR` | `../uni-devstack/.devstack` | Directory holding `flavors.env`/`images.env`. `hack/devstack/stage-remote` writes here by default. |
+| `DEVSTACK_REGION_ID` | `devstack` | Region CR name. |
+| `DEVSTACK_CLUSTER_ROLES` | `member,load-balancer_member,manager` | Roles granted to the provider user per workload project. `manager` is sufficient on DevStack thanks to the Unikorn policy overlay; `admin` is not required. |
+
+`docker`, `kind`, `kubectl`, `helm`, `jq`, `openstack`, `go`, and `curl` must
+be on `PATH`. Local rc files and credential env files under `test/` (and any
+`openrc*`) are gitignored — never commit them.
+
+#### Note: `cloud-provider-kind` and the identity `sudo` bug
+
+The pinned identity module's `hack/ci/setup-infra` starts `cloud-provider-kind`
+with `sudo`. On Linux this is wrong: the binary talks to the Docker socket the
+invoking user already has access to and does not need root. On a machine
+without passwordless sudo, the backgrounded `sudo` fails silently, the
+ingress-nginx LoadBalancer never gets an external IP, and setup-infra dies with
+`context deadline exceeded` while waiting for it.
+
+`setup-infra` guards the start with `pgrep -f cloud-provider-kind`, so
+`make test-devstack` runs `hack/ci/cloud-provider-kind` (the
+`kind-cloud-provider` target) *before* setup-infra. That script starts the
+controller without sudo, so setup-infra's guard finds it already running and
+skips the broken sudo path. It also clears orphaned `kindccm-*` envoy
+containers, which `kind delete cluster` leaves behind and which otherwise make
+the `pgrep` guard a false positive.
+
+This is a region-side workaround. The proper fix belongs in the identity
+module and should be raised as a separate identity PR:
+
+> **identity `hack/ci/setup-infra`:** do not start `cloud-provider-kind` with
+> `sudo` on Linux — run it as the invoking user. Also tighten the running-check
+> from `pgrep -f cloud-provider-kind` to `pgrep -x cloud-provider-kind` so a
+> leftover `kindccm-*` container (which `kind delete cluster` does not remove)
+> is not mistaken for a live controller.
 
 ### GitHub Actions
 

@@ -105,7 +105,7 @@ var _ = Describe("Network Management", func() {
 						return ""
 					}
 					return got.Metadata.ProvisioningStatus
-				}).WithTimeout(2*time.Minute).
+				}).WithTimeout(5*time.Minute).
 					WithPolling(5*time.Second).
 					Should(Equal(coreapi.ResourceProvisioningStatusProvisioned),
 						"network should reach provisioned state before update")

@@ -12,9 +12,14 @@ test/.env
 test/.env.install
 test/.env.openstack
 test/.env.provider
+test/.kubeconfig
 test/ca-bundle.pem
 test/internal-api-client.crt
 test/internal-api-client.key
 junit.xml
 test-results.json
 hack/ci/ca-bundle.pem
+# Local OpenStack/DevStack rc files may carry live credentials; never commit.
+openrc
+openrc.*
+*.openrc
