@@ -25,6 +25,7 @@ import (
 	"slices"
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -137,7 +138,7 @@ func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.Regio
 	return c.convertDetail(ctx, result)
 }
 
-func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID string) (openapi.Flavors, error) {
+func (c *Client) ListFlavors(ctx context.Context, organizationID identityids.OrganizationID, regionID string) (openapi.Flavors, error) {
 	if err := c.CheckAccess(ctx, regionID); err != nil {
 		return nil, err
 	}

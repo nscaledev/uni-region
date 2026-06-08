@@ -28,6 +28,7 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
@@ -48,10 +49,11 @@ import (
 )
 
 const (
-	srvOrganizationID = "foo"
-	srvProjectID      = "bar"
-	srvNamespace      = "test-namespace"
-	srvNetworkID      = "aaaabbbb-1234-5678-9abc-def012345678"
+	srvOrganizationID     = "11111111-1111-4111-a111-111111111111"
+	srvProjectID          = "22222222-2222-4222-a222-222222222222"
+	srvNonexistentProject = "33333333-3333-4333-a333-333333333333"
+	srvNamespace          = "test-namespace"
+	srvNetworkID          = "aaaabbbb-1234-5678-9abc-def012345678"
 )
 
 // newSrvFakeClient builds a fake k8s client pre-populated with the given objects.
@@ -223,13 +225,13 @@ func TestServerCreateV2RBACOrgScopedProjectNotFound(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 
-	network := testSrvNetworkWithProject("nonexistent-project")
+	network := testSrvNetworkWithProject(srvNonexistentProject)
 
 	k8sClient := newSrvFakeClient(t, network).Build()
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, "nonexistent-project").
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), identityids.MustParseProjectID(srvNonexistentProject)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusNotFound},
 		}, nil)
@@ -288,7 +290,7 @@ func TestServerCreateV2SSHCertificateAuthorityNotFound(t *testing.T) {
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), identityids.MustParseProjectID(srvProjectID)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
 		}, nil)
@@ -322,7 +324,7 @@ func TestServerCreateV2SSHCertificateAuthorityRejectsCrossProjectReference(t *te
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), identityids.MustParseProjectID(srvProjectID)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
 		}, nil)
@@ -356,7 +358,7 @@ func TestServerCreateV2SSHCertificateAuthorityRejectsUnsupportedUserData(t *test
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), identityids.MustParseProjectID(srvProjectID)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
 		}, nil)
@@ -409,7 +411,7 @@ func TestServerCreateV2SSHCertificateAuthorityAcceptsSupportedUserData(t *testin
 
 			mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 			mockIdentity.EXPECT().
-				GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
+				GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), identityids.MustParseProjectID(srvProjectID)).
 				Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 					HTTPResponse: &http.Response{StatusCode: http.StatusOK},
 				}, nil)
@@ -446,7 +448,7 @@ func TestServerCreateV2RejectsInvalidAllowedSourceAddress(t *testing.T) {
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), identityids.MustParseProjectID(srvProjectID)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
 		}, nil)
@@ -1072,7 +1074,7 @@ func TestServerCreateV2DeterministicID(t *testing.T) {
 	network := testSrvNetworkWithProject(srvProjectID)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), identityids.MustParseProjectID(srvProjectID)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
 		}, nil).
@@ -1167,7 +1169,7 @@ func TestServerCreateV2ConflictOnDuplicateName(t *testing.T) {
 	network := testSrvNetworkWithProject(srvProjectID)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), identityids.MustParseProjectID(srvProjectID)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
 		}, nil).

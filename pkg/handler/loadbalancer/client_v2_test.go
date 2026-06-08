@@ -31,6 +31,7 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
@@ -55,14 +56,15 @@ import (
 )
 
 const (
-	lbOrganizationID = "foo"
-	lbProjectID      = "bar"
+	lbOrganizationID = "11111111-1111-4111-a111-111111111111"
+	lbProjectID      = "22222222-2222-4222-a222-222222222222"
+	lbMissingProject = "33333333-3333-4333-a333-333333333333"
 	lbRegionID       = "region-1"
 	lbIdentityID     = "identity-1"
 	lbNamespace      = "test-namespace"
 	lbNetworkID      = "network-1"
 	lbLoadBalancerID = "lb-1"
-	lbAllocationID   = "allocation-1"
+	lbAllocationID   = "44444444-4444-4444-a444-444444444444"
 )
 
 func newLBFakeClientBuilder(t *testing.T, objects ...runtime.Object) *fake.ClientBuilder {
@@ -323,8 +325,8 @@ func expectAllocationCreate(t *testing.T, mockIdentity *identitymock.MockClientW
 	t.Helper()
 
 	mockIdentity.EXPECT().
-		PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsWithResponse(gomock.Any(), lbOrganizationID, lbProjectID, gomock.Any()).
-		DoAndReturn(func(_ context.Context, _, _ string, body identityapi.AllocationWrite, _ ...identityapi.RequestEditorFn) (*identityapi.PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsResponse, error) {
+		PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsWithResponse(gomock.Any(), identityids.MustParseOrganizationID(lbOrganizationID), identityids.MustParseProjectID(lbProjectID), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ identityids.OrganizationID, _ identityids.ProjectID, body identityapi.AllocationWrite, _ ...identityapi.RequestEditorFn) (*identityapi.PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsResponse, error) {
 			require.Equal(t, expected, body.Spec.Allocations)
 
 			return &identityapi.PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsResponse{
@@ -345,8 +347,8 @@ func expectAllocationUpdate(t *testing.T, mockIdentity *identitymock.MockClientW
 	t.Helper()
 
 	mockIdentity.EXPECT().
-		PutApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDWithResponse(gomock.Any(), lbOrganizationID, lbProjectID, lbAllocationID, gomock.Any()).
-		DoAndReturn(func(_ context.Context, _, _, _ string, body identityapi.AllocationWrite, _ ...identityapi.RequestEditorFn) (*identityapi.PutApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDResponse, error) {
+		PutApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(lbOrganizationID), identityids.MustParseProjectID(lbProjectID), identityids.MustParseAllocationID(lbAllocationID), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ identityids.OrganizationID, _ identityids.ProjectID, _ identityids.AllocationID, body identityapi.AllocationWrite, _ ...identityapi.RequestEditorFn) (*identityapi.PutApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDResponse, error) {
 			require.Equal(t, expected, body.Spec.Allocations)
 
 			return &identityapi.PutApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDResponse{
@@ -637,12 +639,12 @@ func TestCreateV2RBACOrgScopedProjectNotFound(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), lbOrganizationID, "missing-project").
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(lbOrganizationID), identityids.MustParseProjectID(lbMissingProject)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusNotFound},
 		}, nil)
 
-	network := testLBNetworkWithProject("missing-project")
+	network := testLBNetworkWithProject(lbMissingProject)
 	cli := newLBFakeClientBuilder(t, network).Build()
 	client := loadbalancer.New(common.ClientArgs{
 		Client:    cli,

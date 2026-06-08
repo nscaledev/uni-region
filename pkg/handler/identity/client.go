@@ -29,6 +29,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
@@ -112,7 +113,7 @@ func (c *Client) convertList(ctx context.Context, in unikornv1.IdentityList) ope
 }
 
 // generate a new resource from a request.
-func (c *Client) generate(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*unikornv1.Identity, error) {
+func (c *Client) generate(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, request *openapi.IdentityWrite) (*unikornv1.Identity, error) {
 	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, request.Spec.RegionId); err != nil {
 		return nil, err
 	}
@@ -128,7 +129,7 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID string,
 	}
 
 	out := &unikornv1.Identity{
-		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.Namespace).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, request.Spec.RegionId).Get(),
+		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.Namespace).WithOrganization(organizationID.String()).WithProject(projectID.String()).WithLabel(constants.RegionLabel, request.Spec.RegionId).Get(),
 		Spec: unikornv1.IdentitySpec{
 			Tags:     conversion.GenerateTagList(request.Metadata.Tags),
 			Provider: region.Spec.Provider,
@@ -143,7 +144,7 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID string,
 }
 
 // GetRaw gives access to the raw Kubernetes resource.
-func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, identityID string) (*unikornv1.Identity, error) {
+func (c *Client) GetRaw(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID string) (*unikornv1.Identity, error) {
 	resource := &unikornv1.Identity{}
 
 	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: identityID}, resource); err != nil {
@@ -154,7 +155,7 @@ func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, identity
 		return nil, fmt.Errorf("%w: unable to lookup identity", err)
 	}
 
-	if err := coreutil.AssertProjectOwnership(resource, organizationID, projectID); err != nil {
+	if err := coreutil.AssertProjectOwnership(resource, organizationID.String(), projectID.String()); err != nil {
 		return nil, err
 	}
 
@@ -162,12 +163,12 @@ func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, identity
 }
 
 // List returns an ordered list of all resources in scope.
-func (c *Client) List(ctx context.Context, organizationID string) (openapi.IdentitiesRead, error) {
+func (c *Client) List(ctx context.Context, organizationID identityids.OrganizationID) (openapi.IdentitiesRead, error) {
 	var result unikornv1.IdentityList
 
 	options := &client.ListOptions{
 		LabelSelector: labels.SelectorFromSet(map[string]string{
-			coreconstants.OrganizationLabel: organizationID,
+			coreconstants.OrganizationLabel: organizationID.String(),
 		}),
 	}
 
@@ -182,7 +183,7 @@ func (c *Client) List(ctx context.Context, organizationID string) (openapi.Ident
 	return c.convertList(ctx, result), nil
 }
 
-func (c *Client) CreateRaw(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*unikornv1.Identity, error) {
+func (c *Client) CreateRaw(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, request *openapi.IdentityWrite) (*unikornv1.Identity, error) {
 	resource, err := c.generate(ctx, organizationID, projectID, request)
 	if err != nil {
 		return nil, err
@@ -196,7 +197,7 @@ func (c *Client) CreateRaw(ctx context.Context, organizationID, projectID string
 }
 
 // Create instantiates a new resource.
-func (c *Client) Create(ctx context.Context, organizationID, projectID string, request *openapi.IdentityWrite) (*openapi.IdentityRead, error) {
+func (c *Client) Create(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, request *openapi.IdentityWrite) (*openapi.IdentityRead, error) {
 	resource, err := c.CreateRaw(ctx, organizationID, projectID, request)
 	if err != nil {
 		return nil, err
@@ -206,7 +207,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID string, r
 }
 
 // Get a resource.
-func (c *Client) Get(ctx context.Context, organizationID, projectID, identityID string) (*openapi.IdentityRead, error) {
+func (c *Client) Get(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID string) (*openapi.IdentityRead, error) {
 	result, err := c.GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
 		return nil, err
@@ -216,7 +217,7 @@ func (c *Client) Get(ctx context.Context, organizationID, projectID, identityID 
 }
 
 // Delete a resource.
-func (c *Client) Delete(ctx context.Context, organizationID, projectID, identityID string) error {
+func (c *Client) Delete(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID string) error {
 	result, err := c.GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
 		return err

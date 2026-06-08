@@ -25,6 +25,7 @@ import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
@@ -163,14 +164,14 @@ func convertInstanceLifecyclePhase(in unikornv1.InstanceLifecyclePhase) *openapi
 type generator struct {
 	common.ClientArgs
 	// organizationID is the unique organization identifier.
-	organizationID string
+	organizationID identityids.OrganizationID
 	// projectID is the unique project identifier.
-	projectID string
+	projectID identityids.ProjectID
 	// identity is the unique identity identifier.
 	identityID string
 }
 
-func newGenerator(clientArgs common.ClientArgs, organizationID, projectID, identityID string) *generator {
+func newGenerator(clientArgs common.ClientArgs, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID string) *generator {
 	return &generator{
 		ClientArgs:     clientArgs,
 		organizationID: organizationID,
@@ -192,7 +193,7 @@ func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*uni
 	}
 
 	out := &unikornv1.Server{
-		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, g.Namespace).WithOrganization(g.organizationID).WithProject(g.projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
+		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, g.Namespace).WithOrganization(g.organizationID.String()).WithProject(g.projectID.String()).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, identity.Name).Get(),
 		Spec: unikornv1.ServerSpec{
 			Tags:     conversion.GenerateTagList(in.Metadata.Tags),

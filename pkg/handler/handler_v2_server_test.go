@@ -136,9 +136,11 @@ func projectScopedLabels(orgID, projectID string, extra labels) labels {
 func knownGoodFixture(t *testing.T, serverName, homeNamespace, orgID string) []client.Object {
 	t.Helper()
 
+	const fixtureProjectID = "22222222-2222-4222-a222-222222222222"
+
 	return []client.Object{
-		withMeta(&regionv1.Identity{}, "id1", homeNamespace, projectScopedLabels(orgID, "project1", labels{})),
-		newServer(t, serverName, homeNamespace, projectScopedLabels(orgID, "project1", labels{
+		withMeta(&regionv1.Identity{}, "id1", homeNamespace, projectScopedLabels(orgID, fixtureProjectID, labels{})),
+		newServer(t, serverName, homeNamespace, projectScopedLabels(orgID, fixtureProjectID, labels{
 			regionconstants.IdentityLabel:           "id1",
 			regionconstants.ResourceAPIVersionLabel: "2",
 		})),
@@ -239,7 +241,7 @@ func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 
 	const (
 		namespace  = "region-test-home"
-		orgID      = "org-not-allowed-permissions"
+		orgID      = "55555555-5555-4555-a555-555555555555"
 		serverName = "server1"
 	)
 
@@ -306,7 +308,7 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 
 	const (
 		namespace  = "region-test-home"
-		orgID      = "org-happy-path"
+		orgID      = "66666666-6666-4666-a666-666666666666"
 		serverName = "server1"
 	)
 

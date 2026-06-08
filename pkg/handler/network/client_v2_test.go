@@ -28,6 +28,7 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityauth "github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
@@ -50,12 +51,13 @@ import (
 )
 
 const (
-	namespace      = "base"
-	organizationID = "foo"
-	projectID      = "bar"
-	networkID      = "baz"
-	reference      = "cat"
-	testNamespace  = "test-namespace"
+	namespace          = "base"
+	organizationID     = "11111111-1111-4111-a111-111111111111"
+	projectID          = "22222222-2222-4222-a222-222222222222"
+	nonexistentProject = "33333333-3333-4333-a333-333333333333"
+	networkID          = "baz"
+	reference          = "cat"
+	testNamespace      = "test-namespace"
 )
 
 // aclWithOrgScopeCreate grants region:networks:v2/Create at organization scope,
@@ -159,7 +161,7 @@ func TestCreateV2RBACOrgScopedProjectNotFound(t *testing.T) {
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), organizationID, "nonexistent-project").
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(organizationID), identityids.MustParseProjectID(nonexistentProject)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusNotFound},
 		}, nil)
@@ -168,7 +170,7 @@ func TestCreateV2RBACOrgScopedProjectNotFound(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), aclWithOrgScopeCreate())
 
-	_, err := c.CreateV2(ctx, minimalNetworkV2CreateRequest(organizationID, "nonexistent-project"))
+	_, err := c.CreateV2(ctx, minimalNetworkV2CreateRequest(organizationID, nonexistentProject))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)

@@ -33,6 +33,7 @@ import (
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -355,7 +356,17 @@ func (s *createSaga) createServicePricipal(ctx context.Context) error {
 		},
 	}
 
-	identity, err := identity.New(s.client.ClientArgs).CreateRaw(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, request)
+	organizationID, err := identityids.ParseOrganizationID(s.request.Spec.OrganizationId)
+	if err != nil {
+		return fmt.Errorf("%w: invalid organization ID", err)
+	}
+
+	projectID, err := identityids.ParseProjectID(s.request.Spec.ProjectId)
+	if err != nil {
+		return fmt.Errorf("%w: invalid project ID", err)
+	}
+
+	identity, err := identity.New(s.client.ClientArgs).CreateRaw(ctx, organizationID, projectID, request)
 	if err != nil {
 		return err
 	}
@@ -369,7 +380,17 @@ func (s *createSaga) createServicePricipal(ctx context.Context) error {
 // NOTE: you must use the shared delete library call to preserve cascading
 // deletion semantics.
 func (s *createSaga) deleteServicePricipal(ctx context.Context) error {
-	return identity.New(s.client.ClientArgs).Delete(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.identity.Name)
+	organizationID, err := identityids.ParseOrganizationID(s.request.Spec.OrganizationId)
+	if err != nil {
+		return fmt.Errorf("%w: invalid organization ID", err)
+	}
+
+	projectID, err := identityids.ParseProjectID(s.request.Spec.ProjectId)
+	if err != nil {
+		return fmt.Errorf("%w: invalid project ID", err)
+	}
+
+	return identity.New(s.client.ClientArgs).Delete(ctx, organizationID, projectID, s.identity.Name)
 }
 
 func (s *createSaga) generateNetwork(ctx context.Context) error {
@@ -501,10 +522,10 @@ func (c *Client) DeleteV2(ctx context.Context, networkID string) error {
 		return err
 	}
 
-	organizationID := resource.Labels[coreconstants.OrganizationLabel]
-	projectID := resource.Labels[coreconstants.ProjectLabel]
+	organizationIDStr := resource.Labels[coreconstants.OrganizationLabel]
+	projectIDStr := resource.Labels[coreconstants.ProjectLabel]
 
-	if err := rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Delete, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Delete, organizationIDStr, projectIDStr); err != nil {
 		return err
 	}
 
@@ -514,6 +535,16 @@ func (c *Client) DeleteV2(ctx context.Context, networkID string) error {
 
 	if len(manager.GetResourceReferences(resource)) > 0 {
 		return errors.HTTPForbidden("network is in use and cannot be deleted")
+	}
+
+	organizationID, err := identityids.ParseOrganizationID(organizationIDStr)
+	if err != nil {
+		return fmt.Errorf("%w: invalid organization ID in network labels", err)
+	}
+
+	projectID, err := identityids.ParseProjectID(projectIDStr)
+	if err != nil {
+		return fmt.Errorf("%w: invalid project ID in network labels", err)
 	}
 
 	// The V2 API doesn't expose service principals, but they are mapped 1:1 to networks, so as the

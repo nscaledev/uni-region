@@ -35,6 +35,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -560,7 +561,17 @@ func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID 
 		return nil, nil, nil, err
 	}
 
-	identity, err := identity.New(c.Client.ClientArgs).GetRaw(ctx, server.Labels[coreconstants.OrganizationLabel], server.Labels[coreconstants.ProjectLabel], server.Labels[constants.IdentityLabel])
+	organizationID, err := identityids.ParseOrganizationID(server.Labels[coreconstants.OrganizationLabel])
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("%w: invalid organization ID in server labels", err)
+	}
+
+	projectID, err := identityids.ParseProjectID(server.Labels[coreconstants.ProjectLabel])
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("%w: invalid project ID in server labels", err)
+	}
+
+	identity, err := identity.New(c.Client.ClientArgs).GetRaw(ctx, organizationID, projectID, server.Labels[constants.IdentityLabel])
 	if err != nil {
 		return nil, nil, nil, err
 	}

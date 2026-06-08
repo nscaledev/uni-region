@@ -36,6 +36,7 @@ import (
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityopenapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 
@@ -411,7 +412,7 @@ func createOrganization(ctx context.Context, ac *identityopenapi.ClientWithRespo
 }
 
 func resolveRoles(ctx context.Context, ac *identityopenapi.ClientWithResponses, orgID string) (string, string) {
-	rolesResp, err := ac.GetApiV1OrganizationsOrganizationIDRolesWithResponse(ctx, orgID)
+	rolesResp, err := ac.GetApiV1OrganizationsOrganizationIDRolesWithResponse(ctx, identityids.MustParseOrganizationID(orgID))
 	if err != nil {
 		fatalf("failed to list roles for org %s: %v", orgID, err)
 	}
@@ -431,7 +432,7 @@ func resolveRoles(ctx context.Context, ac *identityopenapi.ClientWithResponses, 
 }
 
 func createGroup(ctx context.Context, ac *identityopenapi.ClientWithResponses, orgID, name string, roleIDs []string) string {
-	resp, err := ac.PostApiV1OrganizationsOrganizationIDGroupsWithResponse(ctx, orgID, identityopenapi.GroupWrite{
+	resp, err := ac.PostApiV1OrganizationsOrganizationIDGroupsWithResponse(ctx, identityids.MustParseOrganizationID(orgID), identityopenapi.GroupWrite{
 		Metadata: coreopenapi.ResourceWriteMetadata{Name: name},
 		Spec: identityopenapi.GroupSpec{
 			RoleIDs:           roleIDs,
@@ -450,7 +451,7 @@ func createGroup(ctx context.Context, ac *identityopenapi.ClientWithResponses, o
 }
 
 func createProject(ctx context.Context, ac *identityopenapi.ClientWithResponses, orgID, name string, groupIDs []string) string {
-	resp, err := ac.PostApiV1OrganizationsOrganizationIDProjectsWithResponse(ctx, orgID, identityopenapi.ProjectWrite{
+	resp, err := ac.PostApiV1OrganizationsOrganizationIDProjectsWithResponse(ctx, identityids.MustParseOrganizationID(orgID), identityopenapi.ProjectWrite{
 		Metadata: coreopenapi.ResourceWriteMetadata{Name: name},
 		Spec:     identityopenapi.ProjectSpec{GroupIDs: groupIDs},
 	})
@@ -466,7 +467,7 @@ func createProject(ctx context.Context, ac *identityopenapi.ClientWithResponses,
 }
 
 func createServiceAccount(ctx context.Context, ac *identityopenapi.ClientWithResponses, orgID, name string, groupIDs []string) (string, string) {
-	resp, err := ac.PostApiV1OrganizationsOrganizationIDServiceaccountsWithResponse(ctx, orgID, identityopenapi.ServiceAccountWrite{
+	resp, err := ac.PostApiV1OrganizationsOrganizationIDServiceaccountsWithResponse(ctx, identityids.MustParseOrganizationID(orgID), identityopenapi.ServiceAccountWrite{
 		Metadata: coreopenapi.ResourceWriteMetadata{Name: name},
 		Spec:     identityopenapi.ServiceAccountSpec{GroupIDs: groupIDs},
 	})

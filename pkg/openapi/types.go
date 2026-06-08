@@ -7,6 +7,7 @@ import (
 	"time"
 
 	externalRef0 "github.com/unikorn-cloud/core/pkg/openapi"
+	externalRef1 "github.com/unikorn-cloud/identity/pkg/openapi"
 )
 
 const (
@@ -1395,14 +1396,14 @@ type NetworkIDParameter = KubernetesNameParameter
 // NetworkIDQueryParameter defines model for networkIDQueryParameter.
 type NetworkIDQueryParameter = []string
 
-// OrganizationIDParameter defines model for organizationIDParameter.
-type OrganizationIDParameter = string
+// OrganizationIDParameter An organization ID.
+type OrganizationIDParameter = externalRef1.OrganizationId
 
 // OrganizationIDQueryParameter defines model for organizationIDQueryParameter.
 type OrganizationIDQueryParameter = []string
 
-// ProjectIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
-type ProjectIDParameter = KubernetesNameParameter
+// ProjectIDParameter A project ID.
+type ProjectIDParameter = externalRef1.ProjectId
 
 // ProjectIDQueryParameter defines model for projectIDQueryParameter.
 type ProjectIDQueryParameter = []string

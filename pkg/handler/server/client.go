@@ -30,6 +30,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
@@ -57,7 +58,7 @@ func NewClient(clientArgs common.ClientArgs) *Client {
 }
 
 // get gives access to the raw Kubernetes resource.
-func (c *Client) get(ctx context.Context, organizationID, projectID, serverID string) (*unikornv1.Server, error) {
+func (c *Client) get(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, serverID string) (*unikornv1.Server, error) {
 	resource := &unikornv1.Server{}
 
 	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: serverID}, resource); err != nil {
@@ -68,7 +69,7 @@ func (c *Client) get(ctx context.Context, organizationID, projectID, serverID st
 		return nil, fmt.Errorf("%w: unable to get server", err)
 	}
 
-	if err := util.AssertProjectOwnership(resource, organizationID, projectID); err != nil {
+	if err := util.AssertProjectOwnership(resource, organizationID.String(), projectID.String()); err != nil {
 		return nil, err
 	}
 
@@ -76,13 +77,13 @@ func (c *Client) get(ctx context.Context, organizationID, projectID, serverID st
 }
 
 // List returns an ordered list of all resources in scope.
-func (c *Client) List(ctx context.Context, organizationID string, params openapi.GetApiV1OrganizationsOrganizationIDServersParams) (openapi.ServersRead, error) {
+func (c *Client) List(ctx context.Context, organizationID identityids.OrganizationID, params openapi.GetApiV1OrganizationsOrganizationIDServersParams) (openapi.ServersRead, error) {
 	result := &unikornv1.ServerList{}
 
 	options := &client.ListOptions{
 		Namespace: c.Namespace,
 		LabelSelector: labels.SelectorFromSet(map[string]string{
-			coreconstants.OrganizationLabel: organizationID,
+			coreconstants.OrganizationLabel: organizationID.String(),
 		}),
 	}
 
@@ -108,7 +109,7 @@ func (c *Client) List(ctx context.Context, organizationID string, params openapi
 }
 
 // Create instantiates a new resource.
-func (c *Client) Create(ctx context.Context, organizationID, projectID, identityID string, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
+func (c *Client) Create(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID string, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
 	identity, err := identity.New(c.ClientArgs).GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
 		return nil, err
@@ -119,7 +120,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 		return nil, providers.ProviderToServerError(err)
 	}
 
-	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
+	if _, err := provider.GetImage(ctx, organizationID.String(), request.Spec.ImageId); err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
@@ -142,7 +143,7 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 }
 
 // Get a resource.
-func (c *Client) Get(ctx context.Context, organizationID, projectID, serverID string) (*openapi.ServerRead, error) {
+func (c *Client) Get(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, serverID string) (*openapi.ServerRead, error) {
 	resource, err := c.get(ctx, organizationID, projectID, serverID)
 	if err != nil {
 		return nil, err
@@ -152,7 +153,7 @@ func (c *Client) Get(ctx context.Context, organizationID, projectID, serverID st
 }
 
 // Update a resource.
-func (c *Client) Update(ctx context.Context, organizationID, projectID, identityID, serverID string, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
+func (c *Client) Update(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID, serverID string, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
 	identity, err := identity.New(c.ClientArgs).GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
 		return nil, err
@@ -163,7 +164,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 		return nil, providers.ProviderToServerError(err)
 	}
 
-	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
+	if _, err := provider.GetImage(ctx, organizationID.String(), request.Spec.ImageId); err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
@@ -197,7 +198,7 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 	return convert(updated), nil
 }
 
-func (c *Client) getServerIdentityAndProvider(ctx context.Context, organizationID, projectID, identityID, serverID string) (*unikornv1.Server, *unikornv1.Identity, types.Provider, error) {
+func (c *Client) getServerIdentityAndProvider(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID, serverID string) (*unikornv1.Server, *unikornv1.Identity, types.Provider, error) {
 	current, err := c.get(ctx, organizationID, projectID, serverID)
 	if err != nil {
 		return nil, nil, nil, err
@@ -216,7 +217,7 @@ func (c *Client) getServerIdentityAndProvider(ctx context.Context, organizationI
 	return current, identity, provider, nil
 }
 
-func (c *Client) Reboot(ctx context.Context, organizationID, projectID, identityID, serverID string, hard bool) error {
+func (c *Client) Reboot(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID, serverID string, hard bool) error {
 	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, identityID, serverID)
 	if err != nil {
 		return err
@@ -245,7 +246,7 @@ func (c *Client) reboot(ctx context.Context, identity *unikornv1.Identity, serve
 	return nil
 }
 
-func (c *Client) Start(ctx context.Context, organizationID, projectID, identityID, serverID string) error {
+func (c *Client) Start(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID, serverID string) error {
 	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, identityID, serverID)
 	if err != nil {
 		return err
@@ -277,7 +278,7 @@ func (c *Client) start(ctx context.Context, identity *unikornv1.Identity, server
 	return nil
 }
 
-func (c *Client) Stop(ctx context.Context, organizationID, projectID, identityID, serverID string) error {
+func (c *Client) Stop(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID, serverID string) error {
 	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, identityID, serverID)
 	if err != nil {
 		return err
@@ -310,7 +311,7 @@ func (c *Client) stop(ctx context.Context, identity *unikornv1.Identity, server 
 }
 
 // Delete a resource.
-func (c *Client) Delete(ctx context.Context, organizationID, projectID, serverID string) error {
+func (c *Client) Delete(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, serverID string) error {
 	resource, err := c.get(ctx, organizationID, projectID, serverID)
 	if err != nil {
 		return err
@@ -327,7 +328,7 @@ func (c *Client) Delete(ctx context.Context, organizationID, projectID, serverID
 	return nil
 }
 
-func (c *Client) CreateConsoleSession(ctx context.Context, organizationID, projectID, identityID, serverID string) (*openapi.ConsoleSessionResponse, error) {
+func (c *Client) CreateConsoleSession(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID, serverID string) (*openapi.ConsoleSessionResponse, error) {
 	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, identityID, serverID)
 	if err != nil {
 		return nil, err
@@ -357,7 +358,7 @@ func (c *Client) createConsoleSession(ctx context.Context, identity *unikornv1.I
 	return response, nil
 }
 
-func (c *Client) GetConsoleOutput(ctx context.Context, organizationID, projectID, identityID, serverID string, params openapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams) (*openapi.ConsoleOutputResponse, error) {
+func (c *Client) GetConsoleOutput(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID, serverID string, params openapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams) (*openapi.ConsoleOutputResponse, error) {
 	server, identity, provider, err := c.getServerIdentityAndProvider(ctx, organizationID, projectID, identityID, serverID)
 	if err != nil {
 		return nil, err

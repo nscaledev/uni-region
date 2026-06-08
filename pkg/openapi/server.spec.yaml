@@ -1756,7 +1756,7 @@ components:
       description: An organization ID.
       required: true
       schema:
-        type: string
+        $ref: 'https://raw.githubusercontent.com/unikorn-cloud/identity/id_validation/pkg/openapi/server.spec.yaml#/components/schemas/organizationId'
     projectIDParameter:
       name: projectID
       in: path
@@ -1764,7 +1764,7 @@ components:
         The project ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: 'https://raw.githubusercontent.com/unikorn-cloud/identity/id_validation/pkg/openapi/server.spec.yaml#/components/schemas/projectId'
     regionIDParameter:
       name: regionID
       in: path

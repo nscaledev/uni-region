@@ -28,6 +28,7 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
@@ -46,10 +47,11 @@ import (
 )
 
 const (
-	sgOrganizationID = "foo"
-	sgProjectID      = "bar"
-	sgNamespace      = "test-namespace"
-	sgNetworkID      = "test-network"
+	sgOrganizationID     = "11111111-1111-4111-a111-111111111111"
+	sgProjectID          = "22222222-2222-4222-a222-222222222222"
+	sgNonexistentProject = "33333333-3333-4333-a333-333333333333"
+	sgNamespace          = "test-namespace"
+	sgNetworkID          = "test-network"
 )
 
 // newSGFakeClient builds a fake k8s client pre-populated with the given objects.
@@ -141,13 +143,13 @@ func TestSGCreateV2RBACOrgScopedProjectNotFound(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 
-	network := testNetworkWithProject(sgOrganizationID, "nonexistent-project")
+	network := testNetworkWithProject(sgOrganizationID, sgNonexistentProject)
 
 	k8sClient := newSGFakeClient(t, network).Build()
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), sgOrganizationID, "nonexistent-project").
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(sgOrganizationID), identityids.MustParseProjectID(sgNonexistentProject)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusNotFound},
 		}, nil)

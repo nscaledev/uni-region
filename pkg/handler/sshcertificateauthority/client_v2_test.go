@@ -31,6 +31,7 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
@@ -50,9 +51,10 @@ import (
 )
 
 const (
-	organizationID = "foo"
-	projectID      = "bar"
-	namespace      = "test-namespace"
+	organizationID     = "11111111-1111-4111-a111-111111111111"
+	projectID          = "22222222-2222-4222-a222-222222222222"
+	nonexistentProject = "33333333-3333-4333-a333-333333333333"
+	namespace          = "test-namespace"
 )
 
 func newFakeClient(t *testing.T, objects ...runtime.Object) client.Client {
@@ -144,7 +146,7 @@ func TestCreateV2(t *testing.T) {
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), organizationID, projectID).
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(organizationID), identityids.MustParseProjectID(projectID)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
 		}, nil)
@@ -172,7 +174,7 @@ func TestCreateV2InvalidKey(t *testing.T) {
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), organizationID, projectID).
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(organizationID), identityids.MustParseProjectID(projectID)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
 		}, nil)
@@ -197,7 +199,7 @@ func TestCreateV2RBACOrgScopedProjectNotFound(t *testing.T) {
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), organizationID, "nonexistent-project").
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(organizationID), identityids.MustParseProjectID(nonexistentProject)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusNotFound},
 		}, nil)
@@ -210,7 +212,7 @@ func TestCreateV2RBACOrgScopedProjectNotFound(t *testing.T) {
 	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeCreate(organizationID)))
 
 	request := minimalCreateRequest(mustAuthorizedKey(t))
-	request.Spec.ProjectId = "nonexistent-project"
+	request.Spec.ProjectId = nonexistentProject
 
 	_, err := c.CreateV2(ctx, request)
 	require.Error(t, err)
