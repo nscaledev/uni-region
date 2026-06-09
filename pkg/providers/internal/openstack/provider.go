@@ -1533,8 +1533,15 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 		log.Error(err, "failed to create OpenStack network", "networkID", network.Name, "vlanID", vlanID)
 
 		if vlanID != nil {
-			if freeErr := p.vlanAllocator.FreeByNetworkID(ctx, network.Name); freeErr != nil {
-				log.Error(freeErr, "failed to free vlan after network creation failure", "networkID", network.Name)
+			// Only free the VLAN if we can confirm Neutron did not commit the
+			// network. A transport or context error may fire after Neutron has
+			// already created the provider network; freeing in that case would
+			// allow the same VLAN ID to be handed to a different network and
+			// produce VlanIdInUse on the next provision.
+			if _, getErr := client.GetNetwork(ctx, network); errors.Is(getErr, coreerrors.ErrResourceNotFound) {
+				if freeErr := p.vlanAllocator.FreeByNetworkID(ctx, network.Name); freeErr != nil {
+					log.Error(freeErr, "failed to free vlan after network creation failure", "networkID", network.Name)
+				}
 			}
 		}
 
