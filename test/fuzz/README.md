@@ -34,6 +34,22 @@ make integration-install
 make integration-fixtures   # writes test/.env
 ```
 
+On macOS (Docker Desktop), the kind LoadBalancer IP that `test/.env`'s
+`REGION_BASE_URL` points at is only reachable from the host while
+`cloud-provider-kind` is running. Start it in a separate terminal **before** the
+steps above and leave it running, otherwise every request to the Region API
+times out or is refused:
+
+```sh
+sudo cloud-provider-kind
+```
+
+kind clusters do not survive a Docker restart cleanly — container IPs are
+reassigned, which strands the IPs baked into `test/.env`. If the deployment
+becomes unreachable after a restart, delete and recreate the cluster rather than
+reusing it. The fixture credentials are also short-lived (1h); re-run
+`make integration-fixtures` if a run is more than an hour after setup.
+
 The harness reads these keys from `test/.env` (or the environment, if already
 exported):
 

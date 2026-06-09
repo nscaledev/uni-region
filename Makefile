@@ -536,7 +536,8 @@ test-contracts: test-contracts-consumer test-contracts-provider
 # ── Integration testing ───────────────────────────────────────────────────────
 
 KIND_CLUSTER   ?= region-test
-KIND_SUFFIX    ?= $(shell head /dev/urandom | tr -dc a-z0-9 | head -c 8 2>/dev/null || echo local)
+KIND_SUFFIX    ?= $(shell openssl rand -hex 4)
+KIND_SUFFIX    := $(KIND_SUFFIX)
 KIND_NAMESPACE ?= unikorn-region-$(KIND_SUFFIX)
 KIND_RELEASE   ?= region-$(KIND_SUFFIX)
 IDENTITY_NAMESPACE ?= unikorn-identity
