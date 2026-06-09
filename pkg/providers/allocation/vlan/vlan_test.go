@@ -104,6 +104,26 @@ func TestVLANAllocationCreate(t *testing.T) {
 	require.ErrorIs(t, err, vlan.ErrAllocation)
 }
 
+func TestVLANAllocationCreateIsIdempotentByNetworkID(t *testing.T) {
+	t.Parallel()
+
+	client := newClient(t)
+	region := regionFixture(regionID1, defaultSegmentFixture())
+	allocator := vlan.New(client, region)
+
+	id1, err := allocator.Allocate(t.Context(), networkID1)
+	require.NoError(t, err)
+	require.Equal(t, segmentStart, id1)
+
+	id2, err := allocator.Allocate(t.Context(), networkID1)
+	require.NoError(t, err)
+	require.Equal(t, id1, id2)
+
+	id3, err := allocator.Allocate(t.Context(), networkID2)
+	require.NoError(t, err)
+	require.Equal(t, segmentStart+1, id3)
+}
+
 // TestVLANAllocationCreateMultiSegment tests multi segment allocation works.
 func TestVLANAllocationCreateMultiSegment(t *testing.T) {
 	t.Parallel()
@@ -191,6 +211,77 @@ func TestVLANFree(t *testing.T) {
 
 	require.NoError(t, allocator.Free(t.Context(), id))
 	require.NoError(t, allocator.Free(t.Context(), id))
+}
+
+func TestVLANFreeByNetworkID(t *testing.T) {
+	t.Parallel()
+
+	client := newClient(t)
+	region := regionFixture(regionID1, defaultSegmentFixture())
+	allocator := vlan.New(client, region)
+
+	id, err := allocator.Allocate(t.Context(), networkID1)
+	require.NoError(t, err)
+	require.Equal(t, segmentStart, id)
+
+	require.NoError(t, allocator.FreeByNetworkID(t.Context(), networkID1))
+	require.NoError(t, allocator.FreeByNetworkID(t.Context(), networkID1))
+
+	id, err = allocator.Allocate(t.Context(), networkID2)
+	require.NoError(t, err)
+	require.Equal(t, segmentStart, id)
+}
+
+func TestVLANFreeByNetworkIDMissingAllocation(t *testing.T) {
+	t.Parallel()
+
+	client := newClient(t)
+	region := regionFixture(regionID1, defaultSegmentFixture())
+	allocator := vlan.New(client, region)
+
+	require.NoError(t, allocator.FreeByNetworkID(t.Context(), networkID1))
+}
+
+func TestVLANDuplicateNetworkIDRejectedAndFreed(t *testing.T) {
+	t.Parallel()
+
+	k8sClient := newClient(t)
+	region := regionFixture(regionID1, defaultSegmentFixture())
+
+	allocation := &regionv1.VLANAllocation{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: region.Namespace,
+			Name:      region.StaticName(),
+		},
+		Spec: regionv1.VLANAllocationSpec{
+			Allocations: []regionv1.VLANAllocationEntry{
+				{
+					ID:        segmentStart,
+					NetworkID: networkID1,
+				},
+				{
+					ID:        segmentStart + 1,
+					NetworkID: networkID1,
+				},
+			},
+		},
+	}
+
+	require.NoError(t, k8sClient.Create(t.Context(), allocation))
+
+	allocator := vlan.New(k8sClient, region)
+
+	_, err := allocator.Allocate(t.Context(), networkID1)
+	require.ErrorIs(t, err, vlan.ErrAllocation)
+
+	require.NoError(t, allocator.FreeByNetworkID(t.Context(), networkID1))
+
+	result := &regionv1.VLANAllocation{}
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{
+		Namespace: region.Namespace,
+		Name:      region.StaticName(),
+	}, result))
+	require.Empty(t, result.Spec.Allocations)
 }
 
 // TestVLANFreeIllegalID tests illegaly VLAN IDs are caught.

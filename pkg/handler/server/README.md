@@ -23,6 +23,9 @@ related dependencies rather than from nested path scope.
 - `v2` servers are network-linked resources with direct ID-based access
 - create/update validate referenced image existence through the provider layer
 - create/update can validate and bind an SSH certificate authority
+- create can carry an `infrastructureRef` that pins initial placement to a
+  provider-specific physical host; reads expose the value in status so callers
+  can verify the placement request that was persisted
 - snapshot creation bridges server lifecycle into image provenance semantics
 - snapshot creation is also a cross-resource permission bridge: the caller must
   already be able to see the server and also be allowed to create images in the
@@ -50,6 +53,9 @@ related dependencies rather than from nested path scope.
   avoid unsupported managed-userdata states.
 - Power-operation errors are translated carefully from provider conflict/not-found
   states into user-facing API semantics.
+- `infrastructureRef` is create-time placement input. Updates preserve the
+  existing value and the CRD marks it immutable, because moving an existing
+  server to a different physical host is not an in-place server update.
 - The Kubernetes resource name for a `v2` server is a deterministic UUID v5
   derived from `(networkID, serverName)` at creation time, making the name
   immutable for the lifetime of the resource — consistent with OpenStack not

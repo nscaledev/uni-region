@@ -26,21 +26,22 @@ import (
 // TestConfig extends the base config with Region-specific fields.
 type TestConfig struct {
 	coreconfig.BaseConfig
-	OrgID              string
-	ProjectID          string
-	RegionBaseURL      string
-	RegionCACertPath   string
-	RegionID           string
-	PrivateRegionID    string
-	SecondaryOrgID     string
-	SecondaryProjectID string
-	SecondaryAuthToken string
-	InternalAPICert    string
-	InternalAPIKey     string
-	InternalAPICN      string
-	InternalAPIActor   string
-	ServerFlavorID     string
-	ServerImageID      string
+	OrgID                   string
+	ProjectID               string
+	RegionBaseURL           string
+	RegionCACertPath        string
+	RegionID                string
+	PrivateRegionID         string
+	SecondaryOrgID          string
+	SecondaryProjectID      string
+	SecondaryAuthToken      string
+	InternalAPICert         string
+	InternalAPIKey          string
+	InternalAPICN           string
+	InternalAPIActor        string
+	ServerFlavorID          string
+	ServerImageID           string
+	ServerInfrastructureRef string
 }
 
 // HasInternalAPIConfig reports whether local internal API credentials are available.
@@ -86,21 +87,22 @@ func LoadTestConfig() (*TestConfig, error) {
 			LogRequests:     v.GetBool("LOG_REQUESTS"),
 			LogResponses:    v.GetBool("LOG_RESPONSES"),
 		},
-		RegionBaseURL:      v.GetString("REGION_BASE_URL"),
-		RegionCACertPath:   v.GetString("REGION_CA_CERT"),
-		OrgID:              v.GetString("TEST_ORG_ID"),
-		ProjectID:          v.GetString("TEST_PROJECT_ID"),
-		RegionID:           v.GetString("TEST_REGION_ID"),
-		PrivateRegionID:    v.GetString("TEST_PRIVATE_REGION_ID"),
-		SecondaryOrgID:     v.GetString("TEST_SECONDARY_ORG_ID"),
-		SecondaryProjectID: v.GetString("TEST_SECONDARY_PROJECT_ID"),
-		SecondaryAuthToken: v.GetString("TEST_SECONDARY_AUTH_TOKEN"),
-		InternalAPICert:    v.GetString("INTERNAL_API_CLIENT_CERT"),
-		InternalAPIKey:     v.GetString("INTERNAL_API_CLIENT_KEY"),
-		InternalAPICN:      v.GetString("INTERNAL_API_CN"),
-		InternalAPIActor:   v.GetString("INTERNAL_API_ACTOR"),
-		ServerFlavorID:     v.GetString("TEST_SERVER_FLAVOR_ID"),
-		ServerImageID:      v.GetString("TEST_SERVER_IMAGE_ID"),
+		RegionBaseURL:           v.GetString("REGION_BASE_URL"),
+		RegionCACertPath:        v.GetString("REGION_CA_CERT"),
+		OrgID:                   v.GetString("TEST_ORG_ID"),
+		ProjectID:               v.GetString("TEST_PROJECT_ID"),
+		RegionID:                v.GetString("TEST_REGION_ID"),
+		PrivateRegionID:         v.GetString("TEST_PRIVATE_REGION_ID"),
+		SecondaryOrgID:          v.GetString("TEST_SECONDARY_ORG_ID"),
+		SecondaryProjectID:      v.GetString("TEST_SECONDARY_PROJECT_ID"),
+		SecondaryAuthToken:      v.GetString("TEST_SECONDARY_AUTH_TOKEN"),
+		InternalAPICert:         v.GetString("INTERNAL_API_CLIENT_CERT"),
+		InternalAPIKey:          v.GetString("INTERNAL_API_CLIENT_KEY"),
+		InternalAPICN:           v.GetString("INTERNAL_API_CN"),
+		InternalAPIActor:        v.GetString("INTERNAL_API_ACTOR"),
+		ServerFlavorID:          v.GetString("TEST_SERVER_FLAVOR_ID"),
+		ServerImageID:           v.GetString("TEST_SERVER_IMAGE_ID"),
+		ServerInfrastructureRef: v.GetString("TEST_SERVER_INFRASTRUCTURE_REF"),
 	}
 
 	// Validate required fields

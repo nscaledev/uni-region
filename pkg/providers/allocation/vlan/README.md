@@ -35,7 +35,14 @@ and the `Region` VLAN/provider-network configuration that this allocator uses.
   topology-aware.
 - Persistence and concurrency coordination rely on the backing Kubernetes
   `VLANAllocation` object rather than in-memory state.
-- `Free()` is idempotent.
+- `Allocate()` is idempotent by `networkID`; repeated allocation for the same
+  network returns the existing VLAN ID.
+- At most one VLAN ID may be allocated to a given `networkID`. `Allocate()`
+  prevents new duplicate ownership by returning an error if duplicates are
+  detected for the same network. `FreeByNetworkID()` deliberately removes all
+  matching entries when cleaning up a network so existing duplicate ownership is
+  healed during deletion.
+- `Free()` and `FreeByNetworkID()` are idempotent.
 - If the allocation table contains the same VLAN ID more than once, the package
   treats that as corruption and returns an allocation error rather than trying
   to guess how to repair it.
@@ -46,9 +53,12 @@ and the `Region` VLAN/provider-network configuration that this allocator uses.
   for a general platform-wide network allocation abstraction.
 - Allocation is currently an exhaustive search with an admitted `O(n^2)`
   worst-case shape, though the problem space is bounded.
-- Ownership is only recorded as `networkID` in the allocation table, but
-  deallocation is keyed by VLAN ID alone. Correctness therefore depends on
-  higher layers calling `Free()` with the right VLAN ID.
+- Ownership is recorded as `networkID` in the allocation table. Callers can
+  deallocate by VLAN ID using `Free()` or by network ID using
+  `FreeByNetworkID()`.
+- `FreeByNetworkID()` is the preferred cleanup path when a network resource is
+  being deleted because it does not depend on the VLAN ID being present in
+  network status or the OpenStack provider network still existing.
 - If an operator manually corrupts the `VLANAllocation` object, this package can
   detect some bad states but does not provide a repair or reconciliation model.
 - Falling back to the full VLAN range when no explicit segments are configured
