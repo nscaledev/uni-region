@@ -62,10 +62,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-//nolint:gochecknoglobals
 var (
-	errNeutronConflict     = errors.New("409 Conflict: port still attached")
-	errNeutronServerError  = errors.New("500 Internal Server Error")
+	errNeutronConflict    = errors.New("409 Conflict: port still attached")
+	errNeutronServerError = errors.New("500 Internal Server Error")
 )
 
 func mustConvertImage(t *testing.T, in *images.Image) *types.Image {
