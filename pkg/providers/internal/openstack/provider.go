@@ -1531,6 +1531,12 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 	if err != nil {
 		log.Error(err, "failed to create OpenStack network", "networkID", network.Name, "vlanID", vlanID)
 
+		if vlanID != nil {
+			if freeErr := p.vlanAllocator.FreeByNetworkID(ctx, network.Name); freeErr != nil {
+				log.Error(freeErr, "failed to free vlan after network creation failure", "networkID", network.Name)
+			}
+		}
+
 		return nil, err
 	}
 
@@ -1755,22 +1761,25 @@ func (p *Provider) deleteNetwork(ctx context.Context, networking NetworkingInter
 		}
 	}
 
-	region, _ := p.openstack.regionSnapshot()
-	if region.Spec.Openstack != nil && region.Spec.Openstack.Network.UseProviderNetworks() {
-		// NetworkID is the allocator source of truth; status and OpenStack
-		// resources can both be missing during delete.
-		log.V(1).Info("freeing vlan", "networkID", network.Name)
-
-		if err := p.vlanAllocator.FreeByNetworkID(ctx, network.Name); err != nil {
-			return fmt.Errorf("%w: failed to free vlan", err)
-		}
-	}
-
 	if openstackNetwork != nil {
 		log.V(1).Info("deleting network")
 
 		if err := networking.DeleteNetwork(ctx, openstackNetwork.ID); err != nil {
 			return err
+		}
+	}
+
+	region, _ := p.openstack.regionSnapshot()
+	if region.Spec.Openstack != nil && region.Spec.Openstack.Network.UseProviderNetworks() {
+		// NetworkID is the allocator source of truth; status and OpenStack
+		// resources can both be missing during delete.
+		// NOTE: VLAN is freed after the Neutron network is confirmed deleted so
+		// that a failed DeleteNetwork cannot leave the allocator out of sync with
+		// OpenStack (which would cause VlanIdInUse on the next allocation).
+		log.V(1).Info("freeing vlan", "networkID", network.Name)
+
+		if err := p.vlanAllocator.FreeByNetworkID(ctx, network.Name); err != nil {
+			return fmt.Errorf("%w: failed to free vlan", err)
 		}
 	}
 
