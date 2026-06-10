@@ -114,6 +114,9 @@ func NewTestComputeClient(endpoint string) *ComputeClient {
 	}
 }
 
+//nolint:gochecknoglobals
+var ConvertServerHealthStatus = convertServerHealthStatus
+
 func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {
 	return &Provider{
 		client: client,
@@ -215,6 +218,10 @@ func ReconcileLoadBalancerFloatingIP(ctx context.Context, p *Provider, client Fl
 func ReconcileServer(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
 	// Lewis Denham-Parry was here.
 	return p.reconcileServer(ctx, client, server, port, keyName)
+}
+
+func ReconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
+	return reconcileServerImage(ctx, client, server, openstackServer)
 }
 
 func ResolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {
