@@ -270,7 +270,7 @@ test-api-fuzz-setup:
 .PHONY: test-api-fuzz
 test-api-fuzz: test-api-fuzz-setup
 	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
-	$(FUZZ_VENV)/bin/python -m pytest $(FUZZ_DIR) -q --junit-xml=fuzz-results.xml
+	$(FUZZ_VENV)/bin/python -m pytest $(FUZZ_DIR) -q -rN --junit-xml=fuzz-results.xml
 
 # Pact library path configuration (OS-specific defaults)
 UNAME_S := $(shell uname -s)

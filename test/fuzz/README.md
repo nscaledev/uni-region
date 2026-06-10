@@ -132,6 +132,24 @@ failing case. Re-run with the same `FUZZ_SEED` to reproduce. Confirmed defects
 should be distilled into a deterministic Ginkgo case under `test/api/suites/`
 rather than relying on the fuzzer to re-find them.
 
+### Failure presentation
+
+`conftest.py` post-processes failures so the readable Schemathesis block (check
+title, response status + payload, reproduction cURL) is what surfaces, instead
+of the raw ExceptionGroup traceback through hypothesis internals:
+
+- the pytest FAILURES section and the JUnit XML carry the concise block per
+  failing operation;
+- an end-of-run summary lists every failing operation with its checks,
+  `trace_id`s, and cURL reproduction;
+- in CI, the same summary is written to the GitHub step summary (table plus
+  collapsible details per operation) and each failing operation is emitted as a
+  `::error` annotation on the run.
+
+The summary hooks only engage when a Schemathesis `Failure` is present;
+ordinary test errors (fixture failures, connection errors) keep pytest's
+default presentation.
+
 ## Caveats
 
 - POST cases with valid parent refs create real (simulated) resources that are

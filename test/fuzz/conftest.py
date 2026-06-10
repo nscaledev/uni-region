@@ -12,11 +12,14 @@ import collections
 import dataclasses
 import os
 import pathlib
+import re
 import secrets
 import time
 
 import pytest
 import requests
+from schemathesis.core.compat import BaseExceptionGroup
+from schemathesis.core.failures import Failure
 
 # Optional exact request accounting, enabled with FUZZ_REQUEST_STATS=1. Counts
 # every HTTP response observed on the shared session (scaffold + fuzz traffic).
@@ -41,6 +44,161 @@ def pytest_sessionfinish(session, exitstatus):
     print(f"total HTTP responses : {s['total']}")
     print(f"by method            : {dict(s['by_method'])}")
     print(f"by status            : {dict(sorted(s['by_status'].items()))}")
+
+
+# --- Failure reporting -------------------------------------------------------
+#
+# Schemathesis raises a FailureGroup whose *message* is already the readable
+# artifact (check title, response status + payload, reproduction cURL); the
+# surrounding ExceptionGroup traceback through hypothesis internals is noise.
+# The makereport wrapper swaps the report body for that message — so the
+# FAILURES section and the JUnit XML carry the concise block — and records each
+# failure for the end-of-run summary, the GitHub step summary, and GitHub error
+# annotations. The swap has to happen twice: at makereport time, before the
+# junitxml plugin consumes the report, and again at pytest_exception_interact,
+# because Schemathesis' own pytest plugin rewrites longrepr back to a formatted
+# traceback there (conftest hooks run after plugin hooks, so ours wins).
+
+_TRACE_ID_RE = re.compile(r'"trace_id"\s*:\s*"([0-9a-f]+)"')
+
+
+@dataclasses.dataclass(frozen=True)
+class _CheckFailure:
+    title: str
+    severity: str
+    status: str
+
+
+@dataclasses.dataclass(frozen=True)
+class _OperationFailures:
+    operation: str
+    checks: tuple[_CheckFailure, ...]
+    trace_ids: tuple[str, ...]
+    curl: str
+    details: str
+
+
+_FUZZ_FAILURES: dict[str, _OperationFailures] = {}
+
+
+def _iter_failures(exc: BaseException):
+    if isinstance(exc, BaseExceptionGroup):
+        for sub in exc.exceptions:
+            yield from _iter_failures(sub)
+    elif isinstance(exc, Failure):
+        yield exc
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    if call.when != "call" or call.excinfo is None:
+        return
+    exc = call.excinfo.value
+    failures = list(_iter_failures(exc))
+    if not failures:
+        return
+
+    # str() on an exception group appends a " (N sub-exceptions)" suffix; the
+    # raw message is the formatted Schemathesis failure block.
+    details = (exc.message if isinstance(exc, BaseExceptionGroup) else str(exc)).strip()
+    report.longrepr = details
+
+    checks = tuple(
+        _CheckFailure(
+            title=f.title,
+            severity=f.severity.name,
+            status=str(getattr(f, "status_code", "")) or "-",
+        )
+        for f in failures
+    )
+    _FUZZ_FAILURES[item.nodeid] = _OperationFailures(
+        operation=failures[0].operation,
+        checks=checks,
+        trace_ids=tuple(dict.fromkeys(_TRACE_ID_RE.findall(details))),
+        curl=details.partition("Reproduce with:")[2].strip(),
+        details=details,
+    )
+
+
+def pytest_exception_interact(node, call, report):
+    record = _FUZZ_FAILURES.get(node.nodeid)
+    if record is not None:
+        report.longrepr = record.details
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    if not _FUZZ_FAILURES:
+        return
+    records = list(_FUZZ_FAILURES.values())
+    terminalreporter.section(f"API fuzz failure summary ({len(records)} operations)")
+    for record in records:
+        checks = ", ".join(f"{c.title} [{c.status}] {c.severity}" for c in record.checks)
+        terminalreporter.write_line(record.operation)
+        terminalreporter.write_line(f"  {checks}")
+        if record.trace_ids:
+            terminalreporter.write_line(f"  trace_id: {', '.join(record.trace_ids)}")
+        for line in record.curl.splitlines():
+            terminalreporter.write_line(f"  {line.strip()}")
+        terminalreporter.write_line("")
+    _write_github_step_summary(records)
+    _emit_github_annotations(records)
+
+
+def _write_github_step_summary(records: list[_OperationFailures]) -> None:
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path:
+        return
+    lines = [
+        f"## API fuzz failures ({len(records)} operations)",
+        "",
+        "| Operation | Check | Status | Severity | trace_id |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for record in records:
+        trace_ids = ", ".join(record.trace_ids) or "-"
+        for check in record.checks:
+            lines.append(
+                f"| `{record.operation}` | {check.title} | {check.status} "
+                f"| {check.severity} | {trace_ids} |"
+            )
+    lines.append("")
+    for record in records:
+        lines += [
+            "<details>",
+            f"<summary><code>{record.operation}</code></summary>",
+            "",
+            "~~~",
+            record.details,
+            "~~~",
+            "",
+            "</details>",
+            "",
+        ]
+    with open(path, "a") as fh:
+        fh.write("\n".join(lines))
+
+
+def _gha_escape(value: str, *, in_property: bool = False) -> str:
+    value = value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    if in_property:
+        value = value.replace(":", "%3A").replace(",", "%2C")
+    return value
+
+
+def _emit_github_annotations(records: list[_OperationFailures]) -> None:
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    for record in records:
+        checks = ", ".join(f"{c.title} [{c.status}]" for c in record.checks)
+        message = checks
+        if record.trace_ids:
+            message += f"\ntrace_id: {', '.join(record.trace_ids)}"
+        if record.curl:
+            message += f"\nReproduce with:\n{record.curl}"
+        title = _gha_escape(f"API fuzz: {record.operation}", in_property=True)
+        print(f"::error title={title}::{_gha_escape(message)}")
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 DOTENV_PATH = REPO_ROOT / "test" / ".env"
