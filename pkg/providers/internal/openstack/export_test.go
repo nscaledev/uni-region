@@ -19,7 +19,10 @@ package openstack
 
 import (
 	"context"
+	"time"
 
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/listeners"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/loadbalancers"
@@ -101,6 +104,16 @@ var MetadataKey = metadataKey
 //nolint:gochecknoglobals
 var ServerForCreate = serverForCreate
 
+func NewTestComputeClient(endpoint string) *ComputeClient {
+	return &ComputeClient{
+		client: &gophercloud.ServiceClient{
+			ProviderClient: &gophercloud.ProviderClient{},
+			Endpoint:       endpoint,
+		},
+		flavorCache: cache.New[[]flavors.Flavor](time.Hour),
+	}
+}
+
 func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {
 	return &Provider{
 		client: client,
@@ -110,6 +123,53 @@ func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {
 		},
 		vlanAllocator: vlan.New(client, region),
 	}
+}
+
+type TestProviderCredentials struct {
+	UserID    string
+	Password  string
+	ProjectID string
+}
+
+func NewTestProviderWithCredentials(client client.Client, region *unikornv1.Region, credentials TestProviderCredentials) *Provider {
+	return &Provider{
+		client: client,
+		openstack: &openStackClients{
+			client:  client,
+			_region: region,
+			_credentials: &providerCredentials{
+				userID:    credentials.UserID,
+				password:  credentials.Password,
+				projectID: credentials.ProjectID,
+			},
+		},
+		vlanAllocator: vlan.New(client, region),
+	}
+}
+
+type TestPasswordProviderDetails struct {
+	Endpoint  string
+	UserID    string
+	Password  string
+	ProjectID string
+}
+
+func ProviderForServerCreate(ctx context.Context, p *Provider, identity *unikornv1.Identity, server *unikornv1.Server) (CredentialProvider, error) {
+	return p.providerForServerCreate(ctx, identity, server)
+}
+
+func PasswordProviderDetails(provider CredentialProvider) (TestPasswordProviderDetails, bool) {
+	passwordProvider, ok := provider.(*PasswordProvider)
+	if !ok {
+		return TestPasswordProviderDetails{}, false
+	}
+
+	return TestPasswordProviderDetails{
+		Endpoint:  passwordProvider.endpoint,
+		UserID:    passwordProvider.userID,
+		Password:  passwordProvider.password,
+		ProjectID: passwordProvider.projectID,
+	}, true
 }
 
 func ReconcileNetwork(ctx context.Context, p *Provider, client NetworkInterface, network *unikornv1.Network) (*NetworkExt, error) {

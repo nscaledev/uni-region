@@ -571,12 +571,21 @@ func upsertRegion(ctx context.Context, k8s client.Client, regionNamespace, name 
 	}
 }
 
-func getExistingRegionProvider(ctx context.Context, k8s client.Client, regionNamespace, name string) (regionv1.Provider, error) {
+func getExistingRegion(ctx context.Context, k8s client.Client, regionNamespace, name string) (*regionv1.Region, error) {
 	region := &regionv1.Region{}
 	key := types.NamespacedName{Namespace: regionNamespace, Name: name}
 
 	if err := k8s.Get(ctx, key, region); err != nil {
-		return "", fmt.Errorf("region fixture %q was not found in namespace %q: %w", name, regionNamespace, err)
+		return nil, fmt.Errorf("region fixture %q was not found in namespace %q: %w", name, regionNamespace, err)
+	}
+
+	return region, nil
+}
+
+func getExistingRegionProvider(ctx context.Context, k8s client.Client, regionNamespace, name string) (regionv1.Provider, error) {
+	region, err := getExistingRegion(ctx, k8s, regionNamespace, name)
+	if err != nil {
+		return "", err
 	}
 
 	return region.Spec.Provider, nil
@@ -588,18 +597,19 @@ func main() {
 }
 
 type options struct {
-	baseURL             string
-	identityNamespace   string
-	regionNamespace     string
-	regionBaseURL       string
-	caCertPath          string
-	regionCACertPath    string
-	fixtureCertDuration time.Duration
-	regionProvider      string
-	testRegionID        string
-	serverFlavorID      string
-	serverImageID       string
-	internalCertDir     string
+	baseURL                 string
+	identityNamespace       string
+	regionNamespace         string
+	regionBaseURL           string
+	caCertPath              string
+	regionCACertPath        string
+	fixtureCertDuration     time.Duration
+	regionProvider          string
+	testRegionID            string
+	serverFlavorID          string
+	serverImageID           string
+	serverInfrastructureRef string
+	internalCertDir         string
 }
 
 type internalAPICredentials struct {
@@ -620,6 +630,7 @@ func parseOptions() options {
 	testRegionID := flag.String("test-region-id", firstEnv("TEST_REGION_ID", "OPENSTACK_REGION_ID"), "Existing region ID to use for tests; provider is inferred from the Region CR when set")
 	serverFlavorID := flag.String("server-flavor-id", firstEnv("TEST_SERVER_FLAVOR_ID", "UNIKORN_OPENSTACK_FLAVOR_ID"), "Flavor ID used by OpenStack server lifecycle tests")
 	serverImageID := flag.String("server-image-id", firstEnv("TEST_SERVER_IMAGE_ID", "UNIKORN_OPENSTACK_IMAGE_ID"), "Image ID used by OpenStack server lifecycle tests")
+	serverInfrastructureRef := flag.String("server-infrastructure-ref", firstEnv("TEST_SERVER_INFRASTRUCTURE_REF", "UNIKORN_OPENSTACK_INFRASTRUCTURE_REF"), "Provider-specific infrastructure reference used by server placement tests")
 	internalCertDir := flag.String("internal-cert-dir", os.Getenv("INTERNAL_API_CERT_DIR"), "Directory for generated internal API client certificate files")
 	flag.Parse()
 
@@ -629,6 +640,7 @@ func parseOptions() options {
 			[--region-ca-cert PATH] [--fixture-cert-duration DURATION]
 			[--internal-cert-dir DIR]
 			[--server-flavor-id ID] [--server-image-id ID]
+			[--server-infrastructure-ref REF]
 			[--region-provider simulated|openstack] [--test-region-id ID]`)
 		os.Exit(1)
 	}
@@ -648,18 +660,19 @@ func parseOptions() options {
 	}
 
 	return options{
-		baseURL:             *baseURL,
-		identityNamespace:   *identityNamespace,
-		regionNamespace:     *regionNamespace,
-		regionBaseURL:       *regionBaseURL,
-		caCertPath:          *caCertPath,
-		regionCACertPath:    *regionCACertPath,
-		fixtureCertDuration: duration,
-		regionProvider:      *regionProvider,
-		testRegionID:        *testRegionID,
-		serverFlavorID:      *serverFlavorID,
-		serverImageID:       *serverImageID,
-		internalCertDir:     internalCertDirValue,
+		baseURL:                 *baseURL,
+		identityNamespace:       *identityNamespace,
+		regionNamespace:         *regionNamespace,
+		regionBaseURL:           *regionBaseURL,
+		caCertPath:              *caCertPath,
+		regionCACertPath:        *regionCACertPath,
+		fixtureCertDuration:     duration,
+		regionProvider:          *regionProvider,
+		testRegionID:            *testRegionID,
+		serverFlavorID:          *serverFlavorID,
+		serverImageID:           *serverImageID,
+		serverInfrastructureRef: *serverInfrastructureRef,
+		internalCertDir:         internalCertDirValue,
 	}
 }
 
@@ -810,6 +823,7 @@ func emitEnv(opts options, primary primaryFixture, secondaryOrgID, secondaryToke
 	fmt.Printf("TEST_REGION_ID=%s\n", testRegionID)
 	fmt.Printf("TEST_SERVER_FLAVOR_ID=%s\n", opts.serverFlavorID)
 	fmt.Printf("TEST_SERVER_IMAGE_ID=%s\n", opts.serverImageID)
+	fmt.Printf("TEST_SERVER_INFRASTRUCTURE_REF=%s\n", opts.serverInfrastructureRef)
 	fmt.Printf("TEST_PRIVATE_REGION_ID=%s\n", privateRegion)
 	fmt.Printf("TEST_SECONDARY_ORG_ID=%s\n", secondaryOrgID)
 	fmt.Printf("TEST_SECONDARY_AUTH_TOKEN=%s\n", secondaryToken)
