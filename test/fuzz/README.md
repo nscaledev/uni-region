@@ -106,10 +106,21 @@ test/fuzz/.venv/bin/python -m pytest test/fuzz -q
    false positive. This is deliberately *not* done for constraints that **are**
    expressible in the schema (e.g. CIDR `format` on a network `prefix`): those
    rejections are genuine spec-looseness findings and must stay visible.
-3. **Checks**: `call_and_validate` runs Schemathesis' default checks — the
-   primary signal is `not_a_server_error` (any unhandled 5xx is a bug), plus
-   status-code / content-type / response-schema / response-header conformance
-   against the spec.
+3. **Checks**: `call_and_validate` runs Schemathesis' default checks minus
+   three exclusions — the primary signal is `not_a_server_error` (any unhandled
+   5xx is a bug), plus status-code / content-type / response-schema /
+   response-header conformance against the spec. Excluded:
+
+   - `positive_data_acceptance` / `negative_data_rejection` — both reason about
+     whether the *generated* request was schema-valid, but pinning rewrites
+     fields after generation, so that judgement no longer describes the request
+     actually sent. They produce structurally guaranteed false positives here
+     (e.g. a deliberately-invalid `spec.regionId` is pinned back to a real one,
+     the server rightly accepts it, and the check reports a failure).
+   - `unsupported_method` — probes methods like `TRACE`, which the nginx
+     ingress answers itself (405, HTML body); the response never reaches the
+     Region service, so the check measures the ingress, not the code under
+     test.
 
 `DELETE` by-id cases are left with fuzzed (random) IDs so they exercise the
 not-found path without destroying the scaffold mid-run.

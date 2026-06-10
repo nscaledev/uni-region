@@ -20,6 +20,11 @@ import pathlib
 
 import schemathesis
 from schemathesis import Config
+from schemathesis.specs.openapi.checks import (
+    negative_data_rejection,
+    positive_data_acceptance,
+    unsupported_method,
+)
 
 from pinning import apply_overrides
 
@@ -37,6 +42,17 @@ schema = (
 )
 
 
+# Excluded checks, per the harness scope above (server errors + OpenAPI
+# conformance only):
+#   * negative_data_rejection / positive_data_acceptance - incompatible with
+#     pinning: overrides rewrite generated fields after Schemathesis decides
+#     whether the request is schema-valid, so its accept/reject expectation no
+#     longer describes the request actually sent.
+#   * unsupported_method - probes methods like TRACE that the ingress (nginx)
+#     answers itself; the response never reaches the code under test.
+EXCLUDED_CHECKS = [negative_data_rejection, positive_data_acceptance, unsupported_method]
+
+
 @schema.parametrize()
 def test_region_v2_fuzz(case, region_env, region_session, scaffold):
     apply_overrides(case, scaffold)
@@ -45,4 +61,5 @@ def test_region_v2_fuzz(case, region_env, region_session, scaffold):
         session=region_session,
         headers={"Authorization": f"Bearer {region_env.token}"},
         verify=region_env.ca_cert,
+        excluded_checks=EXCLUDED_CHECKS,
     )
