@@ -1371,6 +1371,16 @@ type StorageV2Update struct {
 	Spec StorageV2Spec `json:"spec"`
 }
 
+// VersionRead Build version information for the running service, stamped into the
+// binary at release time.  Developer builds report version 0.0.0.
+type VersionRead struct {
+	// Name The service application name.
+	Name string `json:"name"`
+
+	// Version The service release version, e.g. v1.2.3.
+	Version string `json:"version"`
+}
+
 // FilestorageIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
 type FilestorageIDParameter = KubernetesNameParameter
 
@@ -1517,6 +1527,10 @@ type StorageListV2Response = StorageV2List
 
 // StorageV2Response A storage read only group.
 type StorageV2Response = StorageV2Read
+
+// VersionResponse Build version information for the running service, stamped into the
+// binary at release time.  Developer builds report version 0.0.0.
+type VersionResponse = VersionRead
 
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
