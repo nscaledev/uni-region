@@ -1,9 +1,5 @@
 name: API Fuzz
 on:
-  # TEMPORARY: trigger on push to this branch to validate the fuzz CI job. Revert before merge.
-  push:
-    branches:
-    - jacobthacker/inst-971
   schedule:
   # Nightly, offset from the dev/uat API tests (07:00 UTC) to avoid contention.
   - cron: '0 3 * * *'
