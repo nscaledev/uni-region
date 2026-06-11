@@ -13,6 +13,8 @@ test/.env.install
 test/.env.openstack
 test/.env.provider
 test/ca-bundle.pem
+test/internal-api-client.crt
+test/internal-api-client.key
 junit.xml
 test-results.json
 hack/ci/ca-bundle.pem

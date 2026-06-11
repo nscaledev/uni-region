@@ -21,14 +21,22 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 
 	"github.com/onsi/ginkgo/v2"
 
 	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
+	identityopenapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	"github.com/unikorn-cloud/identity/pkg/principal"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 )
 
@@ -39,13 +47,20 @@ func (g *GinkgoLogger) Printf(format string, args ...interface{}) {
 	ginkgo.GinkgoWriter.Printf(format, args...)
 }
 
+var (
+	// ErrInternalAPIConfigMissing is returned when local-only internal credentials are absent.
+	ErrInternalAPIConfigMissing = errors.New("internal API credentials are not configured")
+	errParsingRegionCABundle    = errors.New("parsing region CA bundle")
+)
+
 // APIClient wraps the core API client with region-specific methods.
 // Add methods here as you write tests for specific endpoints.
 type APIClient struct {
 	*coreclient.APIClient
-	regionClient *coreclient.APIClient // separate client for region-specific endpoints
-	config       *TestConfig
-	endpoints    *Endpoints
+	regionClient             *coreclient.APIClient // separate client for region-specific endpoints
+	internalRegionHTTPClient *http.Client
+	config                   *TestConfig
+	endpoints                *Endpoints
 }
 
 // GetListRegionsPath returns the path for listing regions.
@@ -63,6 +78,126 @@ func (c *APIClient) GetEndpoints() *Endpoints {
 // Use this for direct API calls that need to hit the region API.
 func (c *APIClient) DoRegionRequest(ctx context.Context, method, path string, body io.Reader, expectedStatus int) (*http.Response, []byte, error) {
 	return c.regionClient.DoRequest(ctx, method, path, body, expectedStatus)
+}
+
+// InternalAPIConfigured reports whether local internal API mTLS credentials are present.
+func (c *APIClient) InternalAPIConfigured() bool {
+	return c.config.RegionBaseURL != "" && c.config.HasInternalAPIConfig()
+}
+
+func (c *APIClient) internalRegionClient() (*http.Client, error) {
+	if c.internalRegionHTTPClient != nil {
+		return c.internalRegionHTTPClient, nil
+	}
+
+	if !c.InternalAPIConfigured() {
+		return nil, ErrInternalAPIConfigMissing
+	}
+
+	cert, err := tls.LoadX509KeyPair(c.config.InternalAPICert, c.config.InternalAPIKey)
+	if err != nil {
+		return nil, fmt.Errorf("loading internal API client certificate: %w", err)
+	}
+
+	tlsConfig := &tls.Config{
+		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{cert},
+	}
+
+	if c.config.RegionCACertPath != "" {
+		caBytes, err := os.ReadFile(c.config.RegionCACertPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading region CA bundle: %w", err)
+		}
+
+		caPool := x509.NewCertPool()
+		if !caPool.AppendCertsFromPEM(caBytes) {
+			return nil, errParsingRegionCABundle
+		}
+
+		tlsConfig.RootCAs = caPool
+	}
+
+	c.internalRegionHTTPClient = &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+		},
+		Timeout: c.config.RequestTimeout,
+	}
+
+	return c.internalRegionHTTPClient, nil
+}
+
+func (c *APIClient) addInternalRequestHeaders(req *http.Request) error {
+	req.Header.Set("Traceparent", coreclient.CreateTraceParent())
+	req.Header.Set("Tracestate", "test-automation=true")
+
+	organizationIDs := []string{}
+	if c.config.OrgID != "" {
+		organizationIDs = []string{c.config.OrgID}
+	}
+
+	actor := c.config.InternalAPIActor
+	if actor == "" {
+		actor = "api-tests"
+	}
+
+	principalInfo := &principal.Principal{
+		OrganizationID:  c.config.OrgID,
+		OrganizationIDs: organizationIDs,
+		ProjectID:       c.config.ProjectID,
+		Type:            identityopenapi.Service,
+		Actor:           actor,
+	}
+
+	data, err := json.Marshal(principalInfo)
+	if err != nil {
+		return fmt.Errorf("marshaling internal API principal: %w", err)
+	}
+
+	req.Header.Set(principal.Header, base64.RawURLEncoding.EncodeToString(data))
+
+	return nil
+}
+
+// DoInternalRegionRequest performs a local-only internal Region API request over mTLS.
+func (c *APIClient) DoInternalRegionRequest(ctx context.Context, method, path string, body io.Reader, expectedStatus int) (*http.Response, []byte, error) {
+	httpClient, err := c.internalRegionClient()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	fullURL := strings.TrimSuffix(c.config.RegionBaseURL, "/") + path
+
+	req, err := http.NewRequestWithContext(ctx, method, fullURL, body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating internal API request: %w", err)
+	}
+
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	if err := c.addInternalRequestHeaders(req); err != nil {
+		return nil, nil, err
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("executing internal API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp, nil, fmt.Errorf("reading internal API response: %w", err)
+	}
+
+	if expectedStatus != 0 && resp.StatusCode != expectedStatus {
+		return resp, respBody, fmt.Errorf("internal API status %d, expected %d: %w", resp.StatusCode, expectedStatus, coreclient.ErrUnexpectedStatus)
+	}
+
+	return resp, respBody, nil
 }
 
 // NewAPIClient creates a new Region API client.
@@ -754,5 +889,84 @@ func (c *APIClient) DeleteSSHCertificateAuthority(ctx context.Context, sshCAID s
 		return fmt.Errorf("ssh certificate authority '%s': %w", sshCAID, coreclient.ErrResourceNotFound)
 	default:
 		return fmt.Errorf("deleting ssh certificate authority: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
+}
+
+// ListServers lists all servers for a project in a region.
+func (c *APIClient) ListServers(ctx context.Context, orgID, projectID, regionID, networkID string) (regionopenapi.ServersV2Read, error) {
+	path := c.endpoints.ListServers(orgID, projectID, regionID, networkID)
+
+	//nolint:bodyclose // DoInternalRegionRequest handles response body closing internally
+	_, respBody, err := c.DoInternalRegionRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	if err != nil {
+		return nil, fmt.Errorf("listing servers: %w", err)
+	}
+
+	var servers regionopenapi.ServersV2Read
+	if err := json.Unmarshal(respBody, &servers); err != nil {
+		return nil, fmt.Errorf("unmarshaling servers: %w", err)
+	}
+
+	return servers, nil
+}
+
+// CreateServer creates a new server.
+func (c *APIClient) CreateServer(ctx context.Context, request regionopenapi.ServerV2Create) (*regionopenapi.ServerV2Read, error) {
+	path := c.endpoints.CreateServer()
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling server request: %w", err)
+	}
+
+	//nolint:bodyclose // DoInternalRegionRequest handles response body closing internally
+	_, respBody, err := c.DoInternalRegionRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusCreated)
+	if err != nil {
+		return nil, fmt.Errorf("creating server: %w", err)
+	}
+
+	var server regionopenapi.ServerV2Read
+	if err := json.Unmarshal(respBody, &server); err != nil {
+		return nil, fmt.Errorf("unmarshaling server: %w", err)
+	}
+
+	return &server, nil
+}
+
+// GetServer gets a specific server by ID.
+func (c *APIClient) GetServer(ctx context.Context, serverID string) (*regionopenapi.ServerV2Read, error) {
+	path := c.endpoints.GetServer(serverID)
+
+	//nolint:bodyclose // DoInternalRegionRequest handles response body closing internally
+	_, respBody, err := c.DoInternalRegionRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	if err != nil {
+		return nil, fmt.Errorf("getting server: %w", err)
+	}
+
+	var server regionopenapi.ServerV2Read
+	if err := json.Unmarshal(respBody, &server); err != nil {
+		return nil, fmt.Errorf("unmarshaling server: %w", err)
+	}
+
+	return &server, nil
+}
+
+// DeleteServer deletes a server.
+func (c *APIClient) DeleteServer(ctx context.Context, serverID string) error {
+	path := c.endpoints.DeleteServer(serverID)
+
+	//nolint:bodyclose // DoInternalRegionRequest handles response body closing internally
+	resp, _, err := c.DoInternalRegionRequest(ctx, http.MethodDelete, path, nil, 0)
+	if err != nil {
+		return fmt.Errorf("deleting server: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusAccepted:
+		return nil
+	case http.StatusNotFound:
+		return fmt.Errorf("server '%s': %w", serverID, coreclient.ErrResourceNotFound)
+	default:
+		return fmt.Errorf("deleting server: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
 	}
 }

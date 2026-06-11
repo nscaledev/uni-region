@@ -43,6 +43,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -469,6 +470,47 @@ func TestServerCreateV2RejectsInvalidAllowedSourceAddress(t *testing.T) {
 	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
 }
 
+func TestServerCreateV2SetsInfrastructureRef(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	k8sClient := newSrvFakeClient(t, network).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	mockIdentity.EXPECT().
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
+		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+		}, nil)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	infrastructureRef := "node-uuid-123"
+	request := minimalServerV2CreateRequest()
+	request.Spec.InfrastructureRef = &infrastructureRef
+
+	result, err := c.CreateV2(ctx, request)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Status.InfrastructureRef)
+	require.Equal(t, infrastructureRef, *result.Status.InfrastructureRef)
+
+	created := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: result.Metadata.Id}, created))
+	require.NotNil(t, created.Spec.InfrastructureRef)
+	require.Equal(t, infrastructureRef, *created.Spec.InfrastructureRef)
+}
+
 func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 	t.Parallel()
 
@@ -616,6 +658,7 @@ func TestServerGetV2Raw_MissingAPIVersionLabel(t *testing.T) {
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+	require.NotEmpty(t, err.Error(), "expected non-empty error description in response body")
 }
 
 func TestServerGetV2Raw_WrongAPIVersion(t *testing.T) {
@@ -877,6 +920,123 @@ func TestServerDeleteV2_NoDeletePermission(t *testing.T) {
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
+}
+
+// srvProjectACL grants the given region:servers operations at project scope, which
+// is what ListV2 uses to both build its label selector and filter each result.
+func srvProjectACL(ops ...identityapi.AclOperation) *identityapi.Acl {
+	return &identityapi.Acl{
+		Organizations: &identityapi.AclOrganizationList{
+			{
+				Id: srvOrganizationID,
+				Projects: &identityapi.AclProjectList{
+					{
+						Id: srvProjectID,
+						Endpoints: identityapi.AclEndpoints{
+							{Name: "region:servers", Operations: ops},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// TestServerListV2 verifies ListV2 returns the project's servers, name-sorted, with
+// their status fields populated from the underlying resources.
+func TestServerListV2(t *testing.T) {
+	t.Parallel()
+
+	serverB := testServerV2("server-b")
+	serverA := testServerV2("server-a")
+
+	k8sClient := newSrvFakeClient(t, serverB, serverA).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+	})
+
+	ctx := rbac.NewContext(t.Context(), srvProjectACL(identityapi.Read))
+
+	result, err := c.ListV2(ctx, openapi.GetApiV2ServersParams{})
+
+	require.NoError(t, err)
+	require.Len(t, result, 2)
+	require.Equal(t, "server-a", result[0].Metadata.Id)
+	require.Equal(t, "server-b", result[1].Metadata.Id)
+	require.Equal(t, "test-region", result[0].Status.RegionId)
+	require.Equal(t, srvNetworkID, result[0].Status.NetworkId)
+}
+
+// TestServerListV2ExcludesUnauthorizedProject verifies a server in a project the
+// caller cannot see is omitted from the listing.
+func TestServerListV2ExcludesUnauthorizedProject(t *testing.T) {
+	t.Parallel()
+
+	visible := testServerV2("server-visible")
+
+	hidden := testServerV2("server-hidden")
+	hidden.Labels[coreconstants.ProjectLabel] = "other-project"
+
+	k8sClient := newSrvFakeClient(t, visible, hidden).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+	})
+
+	ctx := rbac.NewContext(t.Context(), srvProjectACL(identityapi.Read))
+
+	result, err := c.ListV2(ctx, openapi.GetApiV2ServersParams{})
+
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	require.Equal(t, "server-visible", result[0].Metadata.Id)
+}
+
+// TestServerListV2FilterByRegion verifies the regionID query parameter restricts the
+// listing to servers labelled with that region.
+func TestServerListV2FilterByRegion(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2("server-1")
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+	})
+
+	ctx := rbac.NewContext(t.Context(), srvProjectACL(identityapi.Read))
+
+	result, err := c.ListV2(ctx, openapi.GetApiV2ServersParams{
+		RegionID: &openapi.RegionIDQueryParameter{"different-region"},
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, result)
+}
+
+// TestServerListV2Empty verifies ListV2 returns no servers when none exist for the
+// caller's scope.
+func TestServerListV2Empty(t *testing.T) {
+	t.Parallel()
+
+	k8sClient := newSrvFakeClient(t).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+	})
+
+	ctx := rbac.NewContext(t.Context(), srvProjectACL(identityapi.Read))
+
+	result, err := c.ListV2(ctx, openapi.GetApiV2ServersParams{})
+
+	require.NoError(t, err)
+	require.Empty(t, result)
 }
 
 func TestServerStartV2_NotFound(t *testing.T) {

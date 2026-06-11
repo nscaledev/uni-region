@@ -785,7 +785,8 @@ paths:
     description: |-
       Manages region scoped layer 3 networks.  Networks by default come with a default route to
       the internet that performs masquerading.  This version of the API requires at least a
-      /24 CIDR range, of which the top /25 is reserved for storage integration.
+      /24 CIDR range.  A portion of the network may be reserved for infrastructure use such as
+      file storage and internal platform requirements as directed by the infrastructure provider.
     get:
       description: List networks.
       summary: List networks
@@ -829,13 +830,16 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/networks/{networkID}:
     description: |-
       Manages region scoped layer 3 networks.  Networks by default come with a default route to
       the internet that performs masquerading.  This version of the API requires at least a
-      /24 CIDR range, of which the top /25 is reserved for storage integration.
+      /24 CIDR range.  A portion of the network may be reserved for infrastructure use such as
+      file storage and internal platform requirements as directed by the infrastructure provider.
     parameters:
     - $ref: '#/components/parameters/networkIDParameter'
     get:
@@ -859,7 +863,7 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
-      description: Update a network.
+      description: Update a network's mutable fields.
       summary: Update network
       tags:
       - Networks
@@ -876,6 +880,10 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '404':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
@@ -2404,6 +2412,44 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/route'
+    networkReservations:
+      description: |-
+        Network reservations carve a prefix from the start of the network CIDR
+        for infrastructure use such as file storage and internal platform
+        services as directed by the infrastructure provider.
+        For example, on a /24 network a reservation prefix length of 25
+        reserves 192.168.0.0/25, leaving 192.168.0.128-192.168.0.254 for DHCP.
+        Reservations are fixed when the network is created and are immutable
+        afterwards.
+      type: object
+      required:
+      - prefixLength
+      properties:
+        prefixLength:
+          description: |-
+            Defines how much of the network to reserve, starting at the
+            beginning of the network CIDR.  For example, on a /24 network a
+            value of 25 reserves the lower half of the network, i.e.
+            192.168.0.0/25.  The network address (.0) and gateway (.1) are
+            platform-reserved within that space, so usable reserved addresses
+            begin at .2.  The reservation prefix length must be greater than
+            the network prefix length.
+          type: integer
+          minimum: 0
+          maximum: 30
+        providerReservedPrefixLength:
+          description: |-
+            Optionally carves a prefix from the start of the reserved space for
+            provider use.
+            For example, on a /24 network with prefixLength=25 and
+            providerReservedPrefixLength=28, 192.168.0.0/28 is reserved for
+            provider use and storage uses the remainder of the reserved space,
+            192.168.0.16-192.168.0.127. If this matches prefixLength, the full
+            reservation is treated as provider-reserved space and no storage range
+            is left.
+          type: integer
+          minimum: 0
+          maximum: 30
     networkV2Spec:
       description: A network's specification.
       type: object
@@ -2440,8 +2486,19 @@ components:
             description: The region a network is to be provisioned in.
             type: string 
           prefix:
-            description: An IPv4 prefix for the network.
+            description: |-
+              An IPv4 prefix for the network.  Dynamic modification of the
+              network prefix is not supported at this time, and doing so
+              would involve adding a route between discrete broadcast domains
+              so ensure this is large enough for your potential requirements
+              during the life time of your infrastructure.
             type: string
+          reservations:
+            description: |-
+              Optional reservations to apply when the network is created.  If
+              omitted, the platform default of a /25 reservation with a /28
+              provider carve-out is applied.
+            $ref: '#/components/schemas/networkReservations'
     networkV2Status:
       description: Read only status about a network.
       type: object
@@ -2455,6 +2512,8 @@ components:
         prefix:
           description: An IPv4 prefix for the network.
           type: string
+        reservations:
+          $ref: '#/components/schemas/networkReservations'
     networkV2Read:
       description: A network.
       type: object
@@ -2486,7 +2545,7 @@ components:
         spec:
           $ref: '#/components/schemas/networkV2CreateSpec'
     networkV2Update:
-      description: A network request.
+      description: A network update request.
       type: object
       required:
       - metadata
@@ -2957,6 +3016,9 @@ components:
     sshCertificateAuthorityID:
       description: The SSH certificate authority ID.
       type: string
+    infrastructureRef:
+      description: A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
+      type: string
     serverSpec:
       description: A server's specification.
       type: object
@@ -3154,6 +3216,8 @@ components:
           sshCertificateAuthorityId:
             description: The SSH certificate authority used to bootstrap login trust when the server is created.
             $ref: '#/components/schemas/sshCertificateAuthorityID'
+          infrastructureRef:
+            $ref: '#/components/schemas/infrastructureRef'
     serverV2Status:
       description: Read only status information about a server.
       type: object
@@ -3170,6 +3234,8 @@ components:
         sshCertificateAuthorityId:
           description: The SSH certificate authority configured when the server was created.
           $ref: '#/components/schemas/sshCertificateAuthorityID'
+        infrastructureRef:
+          $ref: '#/components/schemas/infrastructureRef'
         powerState:
           $ref: '#/components/schemas/instanceLifecyclePhase'
         privateIP:
@@ -3296,6 +3362,11 @@ components:
         mountSource:
           description: The mount source for the attached storage in the format <host>:<path>.
           type: string
+        mountOptions:
+          description: Optional NFS mount options for the attached storage.
+          type: object
+          additionalProperties:
+            type: string
         provisioningStatus:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceProvisioningStatus'
     storageV2Spec:
@@ -3443,10 +3514,9 @@ components:
             $ref: '#/components/schemas/storageClassProtocolType'
         parallelism:
           description: |-
-            Defines the number of IP addresses that are assigned to the storage.
-            More IP addresses, better performance. If the value specified overflows
-            the available address range reserved on the network it will be capped
-            at the maximum allowed value.
+            Defines the target number of IP addresses assigned to storage.
+            More IP addresses can improve performance. Attachments use
+            min(parallelism, usable IPs in the network storage range).
           type: integer
           minimum: 1
     storageClassProtocolType:
@@ -3537,6 +3607,11 @@ components:
               projectId: f113be96-4dd2-4c14-9c0e-e96c500f21e0
               regionId: c7568e2d-f9ab-453d-9a3a-51375f78426b
               prefix: 192.168.0.0/24
+              reservations:
+                prefixLength: 25
+                providerReservedPrefixLength: 28
+              # Reserves 192.168.0.0/25 for infrastructure.
+              # 192.168.0.0/28 is reserved for internal platform use and DHCP starts at 192.168.0.128.
               dnsNameservers:
               - 8.8.8.8
               routes:
@@ -4082,6 +4157,10 @@ components:
             status:
               regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
               prefix: 192.168.0.0/24
+              reservations:
+                prefixLength: 25
+                providerReservedPrefixLength: 28
+              # DHCP uses 192.168.0.128-192.168.0.254.
     networksV2Response:
       description: A list of layer 3 networks.
       content:
@@ -4104,6 +4183,10 @@ components:
             status:
               regionId: d891dbf0-0a01-4efc-ae3a-5d77f6d3424b
               prefix: 192.168.0.0/24
+              reservations:
+                prefixLength: 25
+                providerReservedPrefixLength: 28
+              # DHCP uses 192.168.0.128-192.168.0.254.
     externalNetworksResponse:
       description: A list of valid external networks.
       content:
@@ -4539,6 +4622,8 @@ components:
                 - networkId: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
                   mountSource: 10.0.0.16:/mnt/nfs
                   provisioningStatus: provisioned
+                  mountOptions:
+                    remoteports: 10.0.0.16-10.0.0.19
     storageListV2Response:
       description: A list of storages.
       content:
@@ -4577,6 +4662,8 @@ components:
                 - networkId: 903b5fba-8eb0-4016-a854-b8f716bcd9bb
                   mountSource: 10.0.0.16:/mnt/nfs
                   provisioningStatus: provisioned
+                  mountOptions:
+                    remoteports: 10.0.0.16-10.0.0.19
     storageClassListV2Response:
       description: A list of storage classes.
       content:

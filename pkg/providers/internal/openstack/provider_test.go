@@ -53,6 +53,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/utils/ptr"
 
@@ -150,8 +151,7 @@ func TestGatewayIP(t *testing.T) {
 	require.Equal(t, "192.168.10.1", gateway)
 }
 
-// TestDHCPRange checks that the DHCP range function correctly removes a /25
-// from the start of the provided prefix.
+// TestDHCPRange checks that the DHCP range starts after the reservation.
 func TestDHCPRange(t *testing.T) {
 	t.Parallel()
 
@@ -160,13 +160,16 @@ func TestDHCPRange(t *testing.T) {
 		Mask: net.IPMask{255, 255, 255, 0},
 	}
 
-	start, end := openstack.DHCPRange(prefix)
+	reservations := &regionv1.NetworkReservations{
+		PrefixLength: 25,
+	}
+
+	start, end := openstack.DHCPRange(prefix, reservations)
 	require.Equal(t, "192.168.10.128", start)
 	require.Equal(t, "192.168.10.254", end)
 }
 
-// TestStorageRange checks that the storage range is allocated from the first
-// /25, leaving a few addresses spare for various networking shenanigans.
+// TestStorageRange checks that the storage range is allocated from the reservation.
 func TestStorageRange(t *testing.T) {
 	t.Parallel()
 
@@ -175,10 +178,35 @@ func TestStorageRange(t *testing.T) {
 		Mask: net.IPMask{255, 255, 255, 0},
 	}
 
-	r := openstack.StorageRange(prefix)
+	// /25 starts at .2 and ends at .127.
+	reservations := &regionv1.NetworkReservations{
+		PrefixLength: 25,
+	}
+
+	r := openstack.StorageRange(prefix, reservations)
 	require.NotNil(t, r)
-	require.Equal(t, "192.168.10.16", r.Start.String())
+	require.Equal(t, "192.168.10.2", r.Start.String())
 	require.Equal(t, "192.168.10.127", r.End.String())
+
+	// /25 with a /29 infrastructure pool starts storage at .16 and ends at .127.
+	reservations = &regionv1.NetworkReservations{
+		PrefixLength:                 25,
+		ProviderReservedPrefixLength: ptr.To(29),
+	}
+
+	r = openstack.StorageRange(prefix, reservations)
+	require.NotNil(t, r)
+	require.Equal(t, "192.168.10.8", r.Start.String())
+	require.Equal(t, "192.168.10.127", r.End.String())
+
+	// /29 with a /29 infrastructure pool opts out of storage entirely.
+	reservations = &regionv1.NetworkReservations{
+		PrefixLength:                 29,
+		ProviderReservedPrefixLength: ptr.To(29),
+	}
+
+	r = openstack.StorageRange(prefix, reservations)
+	require.Nil(t, r)
 }
 
 const (
@@ -197,6 +225,20 @@ func regionFixture() *regionv1.Region {
 			Openstack: &regionv1.RegionOpenstackSpec{},
 		},
 	}
+}
+
+func providerNetworkRegionFixture() *regionv1.Region {
+	region := regionFixture()
+	region.Name = "region"
+	region.Namespace = "default"
+	region.Spec.Provider = regionv1.ProviderOpenstack
+	region.Spec.Openstack.Network = &regionv1.RegionOpenstackNetworkSpec{
+		ProviderNetworks: &regionv1.ProviderNetworks{
+			Network: ptr.To("physnet1"),
+		},
+	}
+
+	return region
 }
 
 // networkFixture creates a basic network definition.
@@ -222,6 +264,72 @@ func networkFixture() *regionv1.Network {
 			Openstack: &regionv1.NetworkStatusOpenstack{},
 		},
 	}
+}
+
+func TestDeleteNetworkFreesVLANByNetworkIDWhenOpenStackNetworkMissing(t *testing.T) {
+	t.Parallel()
+
+	const vlanID = 607
+
+	region := providerNetworkRegionFixture()
+	network := networkFixture()
+
+	allocation := &regionv1.VLANAllocation{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: region.Namespace,
+			Name:      region.StaticName(),
+		},
+		Spec: regionv1.VLANAllocationSpec{
+			Allocations: []regionv1.VLANAllocationEntry{
+				{
+					ID:        vlanID,
+					NetworkID: network.Name,
+				},
+			},
+		},
+	}
+
+	client := getClient(t, []client.Object{allocation})
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	networking := mock.NewMockNetworkingInterface(c)
+	networking.EXPECT().GetNetwork(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
+	networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
+	networking.EXPECT().GetRouter(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
+
+	p := openstack.NewTestProvider(client, region)
+
+	require.NoError(t, openstack.DeleteNetworkWithClient(t.Context(), p, networking, network))
+
+	result := &regionv1.VLANAllocation{}
+	require.NoError(t, client.Get(t.Context(), k8stypes.NamespacedName{
+		Namespace: region.Namespace,
+		Name:      region.StaticName(),
+	}, result))
+	require.Empty(t, result.Spec.Allocations)
+}
+
+func TestDeleteNetworkIgnoresMissingVLANAllocation(t *testing.T) {
+	t.Parallel()
+
+	region := providerNetworkRegionFixture()
+	network := networkFixture()
+
+	client := getClient(t, nil)
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	networking := mock.NewMockNetworkingInterface(c)
+	networking.EXPECT().GetNetwork(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
+	networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
+	networking.EXPECT().GetRouter(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
+
+	p := openstack.NewTestProvider(client, region)
+
+	require.NoError(t, openstack.DeleteNetworkWithClient(t.Context(), p, networking, network))
 }
 
 // networkMatcher is used to check mock function call parameters, as the object

@@ -56,8 +56,18 @@ stored objects rely on for linkage, migration, and operational coordination.
   also satisfies generic controller contracts. It should not be described as
   schema-only.
 - `FileStorage` carries a more explicit observed-state model than the older
-  resource types. Attachment-level provisioning state, observed size, and usage
-  reporting are part of the stored reconciliation contract.
+  resource types. Attachment-level provisioning state, observed size, usage
+  reporting, and per-policy snapshot status are part of the stored
+  reconciliation contract.
+- `FileStorage.Spec.SnapshotPolicies` is an optional inline desired-state list
+  keyed by policy `name`. Omitted and empty lists both mean no snapshot
+  protection is desired. The CRD schema bounds the list to four entries and
+  validates the schedule/retention shape so direct CRD writes cannot persist
+  unsupported policy combinations.
+- `FileStorage.Status.SnapshotPolicies` mirrors the embedded child-status
+  pattern: each entry is keyed by `name` and contains only optional generic
+  conditions. Provider identifiers, observed schedule copies, and aggregate
+  snapshot health are intentionally outside this storage model.
 
 ## Caveats
 

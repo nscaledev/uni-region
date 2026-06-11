@@ -312,6 +312,50 @@ func (b *SecurityGroupPayloadBuilder) Build() regionopenapi.SecurityGroupV2Creat
 	return b.sg
 }
 
+// ServerPayloadBuilder builds ServerV2Create payloads for testing.
+type ServerPayloadBuilder struct {
+	server regionopenapi.ServerV2Create
+}
+
+// NewServerPayload creates a builder for a project-scoped v2 server.
+func NewServerPayload(networkID, flavorID, imageID string) *ServerPayloadBuilder {
+	return &ServerPayloadBuilder{
+		server: regionopenapi.ServerV2Create{
+			Metadata: coreapi.ResourceWriteMetadata{
+				Name: uniqueName("server"),
+			},
+			Spec: regionopenapi.ServerV2CreateSpec{
+				NetworkId: networkID,
+				FlavorId:  flavorID,
+				ImageId:   imageID,
+			},
+		},
+	}
+}
+
+// WithName overrides the server name.
+func (b *ServerPayloadBuilder) WithName(name string) *ServerPayloadBuilder {
+	b.server.Metadata.Name = name
+	return b
+}
+
+// WithNetworking overrides the server networking options.
+func (b *ServerPayloadBuilder) WithNetworking(networking *regionopenapi.ServerV2Networking) *ServerPayloadBuilder {
+	b.server.Spec.Networking = networking
+	return b
+}
+
+// WithInfrastructureRef pins the server to a provider-specific host.
+func (b *ServerPayloadBuilder) WithInfrastructureRef(infrastructureRef string) *ServerPayloadBuilder {
+	b.server.Spec.InfrastructureRef = &infrastructureRef
+	return b
+}
+
+// Build returns the typed ServerV2Create struct.
+func (b *ServerPayloadBuilder) Build() regionopenapi.ServerV2Create {
+	return b.server
+}
+
 // WaitForImageReady polls until the image appears in the region with state ready.
 // Uses a 1-hour timeout to accommodate image download and import times.
 func WaitForImageReady(c *APIClient, ctx context.Context, config *TestConfig, imageID string) {

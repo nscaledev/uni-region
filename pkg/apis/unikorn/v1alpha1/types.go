@@ -435,6 +435,7 @@ type Network struct {
 	Status            NetworkStatus `json:"status,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:message="reservation prefix length must be greater than the network prefix length",rule="!has(self.reservations) || (self.reservations.prefixLength > int(self.prefix.split(\"/\")[1]))"
 type NetworkSpec struct {
 	// Pause, if true, will inhibit reconciliation.
 	Pause bool `json:"pause,omitempty"`
@@ -446,10 +447,39 @@ type NetworkSpec struct {
 	Provider Provider `json:"provider,omitempty"`
 	// Prefix is the IPv4 address prefix.
 	Prefix *unikornv1core.IPv4Prefix `json:"prefix"`
+	// Reservations reserve a prefix at the start of the network for
+	// infrastructure use such as file storage and internal platform use
+	// as directed by the infrastructure provider.
+	// For example, on a /24 network a reservation prefix length of 25
+	// reserves 192.168.0.0/25, leaving 192.168.0.128-192.168.0.254 for DHCP.
+	// When omitted, a default /25 reservation with a /28 provider carve-out
+	// applies to all networks.  Explicit reservations always take precedence.
+	Reservations *NetworkReservations `json:"reservations,omitempty"`
 	// DNSNameservers are a set of DNS nameservrs for the network.
 	DNSNameservers []unikornv1core.IPv4Address `json:"dnsNameservers,omitempty"`
 	// Routes to be distributed via DHCP.
 	Routes []Route `json:"routes,omitempty"`
+}
+
+// +kubebuilder:validation:XValidation:message="provider reserved prefix length must be greater than or equal to the reservation prefix length",rule="!has(self.providerReservedPrefixLength) || (self.providerReservedPrefixLength >= self.prefixLength)"
+type NetworkReservations struct {
+	// PrefixLength defines how much of the network to reserve, starting at the
+	// beginning of the network CIDR.  For example, on a /24 network a value of
+	// 25 reserves the lower half of the network, i.e. 192.168.0.0/25.
+	// The network address (.0) and gateway (.1) are platform-reserved within
+	// that space, so usable reserved addresses begin at .2.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=30
+	PrefixLength int `json:"prefixLength"`
+	// ProviderReservedPrefixLength optionally carves a prefix from the start of
+	// the reserved space for provider use.  For example, on a /24 network with
+	// PrefixLength=25 and ProviderReservedPrefixLength=28, 192.168.0.0/28 is
+	// reserved for provider use and storage uses the remainder of the reserved space,
+	// 192.168.0.16-192.168.0.127.  If this matches PrefixLength, the full
+	// reservation is treated as infrastructure space and no storage range is left.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=30
+	ProviderReservedPrefixLength *int `json:"providerReservedPrefixLength,omitempty"`
 }
 
 type Route struct {
@@ -842,6 +872,7 @@ type Server struct {
 	Status            ServerStatus `json:"status,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.infrastructureRef) == !has(self.infrastructureRef) && (!has(self.infrastructureRef) || self.infrastructureRef == oldSelf.infrastructureRef)",message="infrastructureRef is immutable"
 type ServerSpec struct {
 	// Pause, if true, will inhibit reconciliation.
 	Pause bool `json:"pause,omitempty"`
@@ -864,6 +895,10 @@ type ServerSpec struct {
 	SSHCertificateAuthorityID *string `json:"sshCertificateAuthorityID,omitempty"`
 	// UserData contains configuration information or scripts to use upon launch.
 	UserData []byte `json:"userData,omitempty"`
+	// InfrastructureRef pins the server to a specific physical host. When set,
+	// the provider bypasses its scheduler and provisions directly onto the
+	// identified host.
+	InfrastructureRef *string `json:"infrastructureRef,omitempty"`
 }
 
 type ServerSecurityGroupSpec struct {
@@ -989,6 +1024,13 @@ type FileStorageSpec struct {
 	// Attachments are the network attachments for the storage.
 	Attachments []Attachment `json:"attachments,omitempty"`
 
+	// SnapshotPolicies are the named snapshot protection rules for the storage.
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=4
+	// +optional
+	SnapshotPolicies []FileStorageSnapshotPolicy `json:"snapshotPolicies,omitempty"`
+
 	// Tags are an abitrary list of key/value pairs that a client
 	// may populate to store metadata for the resource.
 	// Tags are aribrary user data.
@@ -999,6 +1041,64 @@ type FileStorageSpec struct {
 
 	// NFS is fulfilled when leveraging the NFS storage class.
 	NFS *NFS `json:"nfs,omitempty"`
+}
+
+type FileStorageSnapshotPolicy struct {
+	// Name is the policy identity key within the file storage volume.
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=63
+	Name string `json:"name"`
+	// Schedule defines when snapshots run in UTC.
+	Schedule FileStorageSnapshotPolicySchedule `json:"schedule"`
+	// Retention defines how many snapshots are retained.
+	Retention FileStorageSnapshotPolicyRetention `json:"retention"`
+}
+
+// +kubebuilder:validation:Enum=hourly;daily;weekly;monthly
+type FileStorageSnapshotPolicyInterval string
+
+const (
+	FileStorageSnapshotPolicyIntervalHourly  FileStorageSnapshotPolicyInterval = "hourly"
+	FileStorageSnapshotPolicyIntervalDaily   FileStorageSnapshotPolicyInterval = "daily"
+	FileStorageSnapshotPolicyIntervalWeekly  FileStorageSnapshotPolicyInterval = "weekly"
+	FileStorageSnapshotPolicyIntervalMonthly FileStorageSnapshotPolicyInterval = "monthly"
+)
+
+// +kubebuilder:validation:Enum=monday;tuesday;wednesday;thursday;friday;saturday;sunday
+type FileStorageSnapshotPolicyWeekday string
+
+const (
+	FileStorageSnapshotPolicyWeekdayMonday    FileStorageSnapshotPolicyWeekday = "monday"
+	FileStorageSnapshotPolicyWeekdayTuesday   FileStorageSnapshotPolicyWeekday = "tuesday"
+	FileStorageSnapshotPolicyWeekdayWednesday FileStorageSnapshotPolicyWeekday = "wednesday"
+	FileStorageSnapshotPolicyWeekdayThursday  FileStorageSnapshotPolicyWeekday = "thursday"
+	FileStorageSnapshotPolicyWeekdayFriday    FileStorageSnapshotPolicyWeekday = "friday"
+	FileStorageSnapshotPolicyWeekdaySaturday  FileStorageSnapshotPolicyWeekday = "saturday"
+	FileStorageSnapshotPolicyWeekdaySunday    FileStorageSnapshotPolicyWeekday = "sunday"
+)
+
+// +kubebuilder:validation:XValidation:rule="self.interval == 'hourly' ? !has(self.timeOfDay) && !has(self.dayOfWeek) && !has(self.dayOfMonth) : true",message="hourly schedules must not define timeOfDay, dayOfWeek, or dayOfMonth"
+// +kubebuilder:validation:XValidation:rule="self.interval == 'daily' ? has(self.timeOfDay) && !has(self.dayOfWeek) && !has(self.dayOfMonth) : true",message="daily schedules require timeOfDay and must not define dayOfWeek or dayOfMonth"
+// +kubebuilder:validation:XValidation:rule="self.interval == 'weekly' ? has(self.timeOfDay) && has(self.dayOfWeek) && !has(self.dayOfMonth) : true",message="weekly schedules require timeOfDay and dayOfWeek and must not define dayOfMonth"
+// +kubebuilder:validation:XValidation:rule="self.interval == 'monthly' ? has(self.timeOfDay) && has(self.dayOfMonth) && !has(self.dayOfWeek) : true",message="monthly schedules require timeOfDay and dayOfMonth and must not define dayOfWeek"
+type FileStorageSnapshotPolicySchedule struct {
+	// Interval is the snapshot schedule cadence.
+	Interval FileStorageSnapshotPolicyInterval `json:"interval"`
+	// TimeOfDay is the UTC time for daily, weekly, and monthly schedules.
+	// +kubebuilder:validation:Pattern=`^([01][0-9]|2[0-3]):[0-5][0-9]Z$`
+	TimeOfDay *string `json:"timeOfDay,omitempty"`
+	// DayOfWeek is the weekday for weekly schedules.
+	DayOfWeek *FileStorageSnapshotPolicyWeekday `json:"dayOfWeek,omitempty"`
+	// DayOfMonth is the month day for monthly schedules.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=28
+	DayOfMonth *int `json:"dayOfMonth,omitempty"`
+}
+
+type FileStorageSnapshotPolicyRetention struct {
+	// Keep is the number of snapshots to retain.
+	// +kubebuilder:validation:Minimum=1
+	Keep int `json:"keep"`
 }
 
 // Protocol defines which storage protocol to leverage.
@@ -1027,10 +1127,25 @@ type FileStorageStatus struct {
 	// +patchMergeKey=networkID
 	// +optional
 	Attachments []FileStorageAttachmentStatus `json:"attachments,omitempty"`
+	// SnapshotPolicies reflects the observed state for each desired snapshot policy.
+	// +listType=map
+	// +listMapKey=name
+	// +optional
+	SnapshotPolicies []FileStorageSnapshotPolicyStatus `json:"snapshotPolicies,omitempty"`
 	// Usage is the amount of storage currently in use.
 	Usage *resource.Quantity `json:"usage,omitempty"`
 	// UsageTimestamp is the timestamp when the usage was last updated.
 	UsageTimestamp *metav1.Time `json:"usageTimestamp,omitempty"`
+}
+
+type FileStorageSnapshotPolicyStatus struct {
+	// Name is the policy identity key from spec.
+	Name string `json:"name"`
+	// Conditions reflect reconciliation state for this snapshot policy.
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
 }
 
 // AttachmentProvisioningStatus describes the state of a single attachment.
@@ -1109,10 +1224,9 @@ type FileStorageClassSpec struct {
 	Provisioner string `json:"provisioner"`
 	// Protocols specifies the storage protocols (e.g., NFSv3, NFSv4) supported by this class.
 	Protocols []Protocol `json:"protocols,omitempty"`
-	// Parallelism defines the number of IP addresses that are assigned to the storage.
-	// More IP addresses, better performance.  If the value specified overflows
-	// the available address range reserved on the network it will be capped
-	// at the maximum allowed value.
+	// Parallelism defines the target number of IP addresses assigned to storage.
+	// More IP addresses can improve performance. Attachments use
+	// min(parallelism, usable IPs in the network storage range).
 	// +kubebuilder:default=4
 	Parallelism *int `json:"parallelism,omitempty"`
 }

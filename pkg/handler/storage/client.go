@@ -110,12 +110,16 @@ func convertUsageStatus(in *regionv1.FileStorage) *openapi.StorageUsageV2Status 
 	return out
 }
 
-// NOTE: This returns attachment status based solely on FileStorage.Spec.Attachments (the desired state).
-// Because attachments may be reconciled asynchronously by the controller, this does not accurately reflect the actual state.
-// As a result, provisioning status is pending.
+// Status attachment rows follow desired attachments, then use observed status
+// to enrich matching rows with controller-projected state.
 func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttachmentListV2Status {
 	if len(in.Spec.Attachments) == 0 {
 		return nil
+	}
+
+	observedAttachments := make(map[string]regionv1.FileStorageAttachmentStatus, len(in.Status.Attachments))
+	for _, status := range in.Status.Attachments {
+		observedAttachments[status.NetworkID] = status
 	}
 
 	out := make(openapi.StorageAttachmentListV2Status, len(in.Spec.Attachments))
@@ -128,14 +132,59 @@ func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttac
 			mountSource = ptr.To(fmt.Sprintf("%s:%s", att.IPRange.Start, *in.Status.MountPath))
 		}
 
-		out[i] = openapi.StorageAttachmentV2Status{
+		attachmentStatus := openapi.StorageAttachmentV2Status{
 			NetworkId:          att.NetworkID,
 			MountSource:        mountSource,
 			ProvisioningStatus: coreopenapi.ResourceProvisioningStatusPending,
 		}
+
+		if observed, ok := observedAttachments[att.NetworkID]; ok {
+			attachmentStatus.ProvisioningStatus = convertAttachmentProvisioningStatus(observed.ProvisioningStatus)
+			attachmentStatus.MountOptions = mountOptionsFromAttachmentStatus(observed)
+		}
+
+		out[i] = attachmentStatus
 	}
 
 	return &out
+}
+
+func convertAttachmentProvisioningStatus(in regionv1.AttachmentProvisioningStatus) coreopenapi.ResourceProvisioningStatus {
+	switch in {
+	case regionv1.AttachmentProvisioning:
+		return coreopenapi.ResourceProvisioningStatusProvisioning
+	case regionv1.AttachmentProvisioned:
+		return coreopenapi.ResourceProvisioningStatusProvisioned
+	case regionv1.AttachmentErrored:
+		return coreopenapi.ResourceProvisioningStatusError
+	case regionv1.AttachmentDeprovisioning:
+		return coreopenapi.ResourceProvisioningStatusDeprovisioning
+	default:
+		return coreopenapi.ResourceProvisioningStatusUnknown
+	}
+}
+
+func mountOptionsFromAttachmentStatus(in regionv1.FileStorageAttachmentStatus) *map[string]string {
+	if in.IPRange == nil {
+		return nil
+	}
+
+	options := map[string]string{
+		"remoteports": remotePortsFromIPRange(in.IPRange),
+	}
+
+	return &options
+}
+
+func remotePortsFromIPRange(in *regionv1.AttachmentIPRange) string {
+	start := in.Start.String()
+	end := in.End.String()
+
+	if start == end {
+		return start
+	}
+
+	return fmt.Sprintf("%s-%s", start, end)
 }
 
 func checkRegionNFS(in *regionv1.NFS) *openapi.NFSV2Spec {
@@ -341,9 +390,9 @@ func generateAttachment(network *regionv1.Network, parallelism int) (*regionv1.A
 	}, nil
 }
 
-// validateStorageRange checks that the network has a valid IPv4 storage range
-// with enough addresses for the requested parallelism. The range is inclusive
-// on both ends: [Start, End], so Start=10.0.0.1, End=10.0.0.4 yields 4 addresses.
+// validateStorageRange checks that the network has a non-empty IPv4 storage
+// range. The range is inclusive on both ends: [Start, End], so Start=10.0.0.1,
+// End=10.0.0.4 yields 4 addresses.
 func validateStorageRange(network *regionv1.Network, parallelism int) (*regionv1.AttachmentIPRange, error) {
 	if parallelism < 1 {
 		return nil, errors.HTTPUnprocessableContent("requested parallelism must be at least 1")
@@ -368,14 +417,16 @@ func validateStorageRange(network *regionv1.Network, parallelism int) (*regionv1
 		return nil, errors.HTTPUnprocessableContent("network storage range is not a valid IPv4 range")
 	}
 
+	// Storage ranges are inclusive, so Start == End means one usable address.
+	// A zero or negative inclusive count means End is before Start.
 	available := big.NewInt(0).Sub(
 		big.NewInt(0).SetBytes(endIP),
 		big.NewInt(0).SetBytes(startIP),
 	)
-	required := big.NewInt(int64(parallelism - 1))
+	available.Add(available, big.NewInt(1))
 
-	if available.Cmp(required) < 0 {
-		return nil, errors.HTTPUnprocessableContent("network storage range does not have enough available addresses for the requested parallelism")
+	if available.Sign() <= 0 {
+		return nil, errors.HTTPUnprocessableContent("network storage range does not contain any usable addresses")
 	}
 
 	return sr, nil

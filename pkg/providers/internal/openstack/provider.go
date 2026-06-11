@@ -270,6 +270,32 @@ func (p *Provider) computeFromServicePrincipal(ctx context.Context, identity *un
 	return client, nil
 }
 
+// providerForServerCreate gets the credential provider to use for creating a server.
+func (p *Provider) providerForServerCreate(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) (CredentialProvider, error) {
+	if server.Spec.InfrastructureRef != nil {
+		return p.getPrivilegedProviderFromServicePrincipal(ctx, identity)
+	}
+
+	return p.getProviderFromServicePrincipal(ctx, identity)
+}
+
+// computeForServerCreate gets a compute client for creating a server.
+func (p *Provider) computeForServerCreate(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) (ComputeInterface, error) {
+	provider, err := p.providerForServerCreate(ctx, identity, server)
+	if err != nil {
+		return nil, err
+	}
+
+	region, _ := p.openstack.regionSnapshot()
+
+	client, err := NewComputeClient(ctx, provider, region.Spec.Openstack.Compute)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
 // imageFromServicePrincipal gets a compute client scoped to the service principal data.
 func (p *Provider) imageFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (*ImageClient, error) {
 	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
@@ -353,11 +379,6 @@ func (p *Provider) loadBalancerFromServicePrincipal(ctx context.Context, identit
 	}
 
 	return client, nil
-}
-
-// Kind returns the provider kind.
-func (p *Provider) Kind() unikornv1.Provider {
-	return unikornv1.ProviderOpenstack
 }
 
 // Region returns the provider's region.
@@ -1408,13 +1429,14 @@ func gatewayIP(prefix net.IPNet) string {
 	return ip.String()
 }
 
-// dhcpRange returns a range from the prefix starting at after the first /25
-// and extending to the address before the subnet's broadcast address.
-func dhcpRange(prefix net.IPNet) (string, string) {
+// dhcpRange returns a range from the prefix starting after the reservation.
+func dhcpRange(prefix net.IPNet, reservations *unikornv1.NetworkReservations) (string, string) {
 	ba := big.NewInt(0).SetBytes(prefix.IP)
 
 	// Start.
-	bs := big.NewInt(0).Add(ba, big.NewInt(128))
+	startOffset := int64(1 << (32 - reservations.PrefixLength))
+
+	bs := big.NewInt(0).Add(ba, big.NewInt(startOffset))
 
 	// End.
 	ones, bits := prefix.Mask.Size()
@@ -1428,16 +1450,29 @@ func dhcpRange(prefix net.IPNet) (string, string) {
 	return start.String(), end.String()
 }
 
-// storageRange returns a range from the prefix that comes from the first /25
-// but leaves some spare IPs around for various uses.
-func storageRange(prefix net.IPNet) *unikornv1.AttachmentIPRange {
+// storageRange returns a range from the prefix that comes from the requested
+// reservation less any requested infrastructure-reserved space.
+func storageRange(prefix net.IPNet, reservations *unikornv1.NetworkReservations) *unikornv1.AttachmentIPRange {
+	dotStart := 2
+
+	if reservations.ProviderReservedPrefixLength != nil {
+		// Users can explicitly opt out of storage.
+		if *reservations.ProviderReservedPrefixLength == reservations.PrefixLength {
+			return nil
+		}
+
+		dotStart = 1 << (32 - *reservations.ProviderReservedPrefixLength)
+	}
+
 	ba := big.NewInt(0).SetBytes(prefix.IP)
 
 	// Start.
-	bs := big.NewInt(0).Add(ba, big.NewInt(16))
+	bs := big.NewInt(0).Add(ba, big.NewInt(int64(dotStart)))
 
 	// End.
-	be := big.NewInt(0).Add(ba, big.NewInt(127))
+	dotEnd := 1 << (32 - reservations.PrefixLength)
+
+	be := big.NewInt(0).Add(ba, big.NewInt(int64(dotEnd-1)))
 
 	start := net.IP(bs.Bytes())
 	end := net.IP(be.Bytes())
@@ -1482,6 +1517,8 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 	if region.Spec.Openstack.Network.UseProviderNetworks() {
 		v, err := p.vlanAllocator.Allocate(ctx, network.Name)
 		if err != nil {
+			log.Error(err, "failed to allocate VLAN", "networkID", network.Name, "allocation", region.StaticName())
+
 			return nil, err
 		}
 
@@ -1492,11 +1529,7 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 
 	result, err = client.CreateNetwork(ctx, network, vlanID)
 	if err != nil {
-		if vlanID != nil {
-			if rerr := p.vlanAllocator.Free(ctx, *vlanID); rerr != nil {
-				log.Error(rerr, "failed to free vlan", "id", *vlanID)
-			}
-		}
+		log.Error(err, "failed to create OpenStack network", "networkID", network.Name, "vlanID", vlanID)
 
 		return nil, err
 	}
@@ -1509,6 +1542,7 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 
 func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, network *unikornv1.Network, openstackNetwork *NetworkExt) (*subnets.Subnet, error) {
 	log := log.FromContext(ctx)
+	effectiveReservations := network.EffectiveReservations()
 
 	var dnsNameservers []string
 
@@ -1527,6 +1561,15 @@ func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, 
 		routes[i].NextHop = route.NextHop.String()
 	}
 
+	start, end := dhcpRange(network.Spec.Prefix.IPNet, effectiveReservations)
+
+	allocationPools := []subnets.AllocationPool{
+		{
+			Start: start,
+			End:   end,
+		},
+	}
+
 	result, err := client.GetSubnet(ctx, network)
 	if err != nil {
 		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
@@ -1535,22 +1578,13 @@ func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, 
 
 		log.V(1).Info("creating L3 subnet")
 
-		start, end := dhcpRange(network.Spec.Prefix.IPNet)
-
-		allocationPools := []subnets.AllocationPool{
-			{
-				Start: start,
-				End:   end,
-			},
-		}
-
 		result, err = client.CreateSubnet(ctx, network, openstackNetwork.ID, network.Spec.Prefix.String(), gatewayIP(network.Spec.Prefix.IPNet), dnsNameservers, routes, allocationPools)
 		if err != nil {
 			return nil, err
 		}
 
 		network.Status.Openstack.SubnetID = ptr.To(result.ID)
-		network.Status.Openstack.StorageRange = storageRange(network.Spec.Prefix.IPNet)
+		network.Status.Openstack.StorageRange = storageRange(network.Spec.Prefix.IPNet, effectiveReservations)
 
 		return result, nil
 	}
@@ -1562,7 +1596,7 @@ func (p *Provider) reconcileSubnet(ctx context.Context, client SubnetInterface, 
 	}
 
 	network.Status.Openstack.SubnetID = ptr.To(result.ID)
-	network.Status.Openstack.StorageRange = storageRange(network.Spec.Prefix.IPNet)
+	network.Status.Openstack.StorageRange = storageRange(network.Spec.Prefix.IPNet, effectiveReservations)
 
 	return result, nil
 }
@@ -1660,11 +1694,7 @@ func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identi
 }
 
 // DeleteNetwork deletes a physical network.
-//
-//nolint:gocognit,cyclop
 func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
-	log := log.FromContext(ctx)
-
 	// NOTE: this is a privileged network client as it needs permissions
 	// from the manager policy in order to see provider networks for VLAN
 	// deallocation.
@@ -1672,6 +1702,13 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 	if err != nil {
 		return err
 	}
+
+	return p.deleteNetwork(ctx, networking, network)
+}
+
+//nolint:cyclop
+func (p *Provider) deleteNetwork(ctx context.Context, networking NetworkingInterface, network *unikornv1.Network) error {
+	log := log.FromContext(ctx)
 
 	openstackNetwork, err := networking.GetNetwork(ctx, network)
 	if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
@@ -1718,26 +1755,19 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 		}
 	}
 
-	//nolint:nestif
+	region, _ := p.openstack.regionSnapshot()
+	if region.Spec.Openstack != nil && region.Spec.Openstack.Network.UseProviderNetworks() {
+		// NetworkID is the allocator source of truth; status and OpenStack
+		// resources can both be missing during delete.
+		log.V(1).Info("freeing vlan", "networkID", network.Name)
+
+		if err := p.vlanAllocator.FreeByNetworkID(ctx, network.Name); err != nil {
+			return fmt.Errorf("%w: failed to free vlan", err)
+		}
+	}
+
 	if openstackNetwork != nil {
 		log.V(1).Info("deleting network")
-
-		region, _ := p.openstack.regionSnapshot()
-		// VLAN deallocation is idempotent, but requires the network to
-		// exist so we can lookup the segmentation ID, so this has to
-		// occur first.
-		if region.Spec.Openstack.Network.UseProviderNetworks() {
-			log.V(1).Info("freeing vlan", "id", openstackNetwork.SegmentationID)
-
-			vlanID, err := strconv.Atoi(openstackNetwork.SegmentationID)
-			if err != nil {
-				return fmt.Errorf("%w: segmentation ID not parsable", err)
-			}
-
-			if err := p.vlanAllocator.Free(ctx, vlanID); err != nil {
-				return fmt.Errorf("%w: failed to free vlan", err)
-			}
-		}
 
 		if err := networking.DeleteNetwork(ctx, openstackNetwork.ID); err != nil {
 			return err
@@ -2385,7 +2415,7 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
-	compute, err := p.computeFromServicePrincipal(ctx, identity)
+	compute, err := p.computeForServerCreate(ctx, identity, server)
 	if err != nil {
 		return err
 	}

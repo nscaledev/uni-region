@@ -379,6 +379,9 @@ type ImageVirtualization string
 // Images A list of images that are compatible with this platform.
 type Images = []Image
 
+// InfrastructureRef A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
+type InfrastructureRef = string
+
 // InstanceLifecyclePhase The lifecycle phase of an instance.
 type InstanceLifecyclePhase string
 
@@ -550,6 +553,34 @@ type NetworkReadSpec struct {
 	RegionId string `json:"regionId"`
 }
 
+// NetworkReservations Network reservations carve a prefix from the start of the network CIDR
+// for infrastructure use such as file storage and internal platform
+// services as directed by the infrastructure provider.
+// For example, on a /24 network a reservation prefix length of 25
+// reserves 192.168.0.0/25, leaving 192.168.0.128-192.168.0.254 for DHCP.
+// Reservations are fixed when the network is created and are immutable
+// afterwards.
+type NetworkReservations struct {
+	// PrefixLength Defines how much of the network to reserve, starting at the
+	// beginning of the network CIDR.  For example, on a /24 network a
+	// value of 25 reserves the lower half of the network, i.e.
+	// 192.168.0.0/25.  The network address (.0) and gateway (.1) are
+	// platform-reserved within that space, so usable reserved addresses
+	// begin at .2.  The reservation prefix length must be greater than
+	// the network prefix length.
+	PrefixLength int `json:"prefixLength"`
+
+	// ProviderReservedPrefixLength Optionally carves a prefix from the start of the reserved space for
+	// provider use.
+	// For example, on a /24 network with prefixLength=25 and
+	// providerReservedPrefixLength=28, 192.168.0.0/28 is reserved for
+	// provider use and storage uses the remainder of the reserved space,
+	// 192.168.0.16-192.168.0.127. If this matches prefixLength, the full
+	// reservation is treated as provider-reserved space and no storage range
+	// is left.
+	ProviderReservedPrefixLength *int `json:"providerReservedPrefixLength,omitempty"`
+}
+
 // NetworkSpecOpenstack An openstack network.
 type NetworkSpecOpenstack struct {
 	// NetworkId The openstack network ID.
@@ -582,7 +613,11 @@ type NetworkV2CreateSpec struct {
 	// OrganizationId The organization to provision the resource in.
 	OrganizationId string `json:"organizationId"`
 
-	// Prefix An IPv4 prefix for the network.
+	// Prefix An IPv4 prefix for the network.  Dynamic modification of the
+	// network prefix is not supported at this time, and doing so
+	// would involve adding a route between discrete broadcast domains
+	// so ensure this is large enough for your potential requirements
+	// during the life time of your infrastructure.
 	Prefix string `json:"prefix"`
 
 	// ProjectId The project to provision the resource in.
@@ -590,6 +625,15 @@ type NetworkV2CreateSpec struct {
 
 	// RegionId The region a network is to be provisioned in.
 	RegionId string `json:"regionId"`
+
+	// Reservations Network reservations carve a prefix from the start of the network CIDR
+	// for infrastructure use such as file storage and internal platform
+	// services as directed by the infrastructure provider.
+	// For example, on a /24 network a reservation prefix length of 25
+	// reserves 192.168.0.0/25, leaving 192.168.0.128-192.168.0.254 for DHCP.
+	// Reservations are fixed when the network is created and are immutable
+	// afterwards.
+	Reservations *NetworkReservations `json:"reservations,omitempty"`
 
 	// Routes A list of network routes.
 	Routes *Routes `json:"routes,omitempty"`
@@ -623,9 +667,18 @@ type NetworkV2Status struct {
 
 	// RegionId The region a network is provisioned in.
 	RegionId string `json:"regionId"`
+
+	// Reservations Network reservations carve a prefix from the start of the network CIDR
+	// for infrastructure use such as file storage and internal platform
+	// services as directed by the infrastructure provider.
+	// For example, on a /24 network a reservation prefix length of 25
+	// reserves 192.168.0.0/25, leaving 192.168.0.128-192.168.0.254 for DHCP.
+	// Reservations are fixed when the network is created and are immutable
+	// afterwards.
+	Reservations *NetworkReservations `json:"reservations,omitempty"`
 }
 
-// NetworkV2Update A network request.
+// NetworkV2Update A network update request.
 type NetworkV2Update struct {
 	// Metadata Metadata required for all API resource reads and writes.
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
@@ -988,6 +1041,9 @@ type ServerV2CreateSpec struct {
 	// ImageId The image of the server.
 	ImageId string `json:"imageId"`
 
+	// InfrastructureRef A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
+	InfrastructureRef *InfrastructureRef `json:"infrastructureRef,omitempty"`
+
 	// NetworkId The network ID to attach a server to.
 	NetworkId string `json:"networkId"`
 
@@ -1052,6 +1108,9 @@ type ServerV2Spec struct {
 
 // ServerV2Status Read only status information about a server.
 type ServerV2Status struct {
+	// InfrastructureRef A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
+	InfrastructureRef *InfrastructureRef `json:"infrastructureRef,omitempty"`
+
 	// MacAddress The MAC address of the server.
 	MacAddress *string `json:"macAddress,omitempty"`
 
@@ -1172,6 +1231,9 @@ type StorageAttachmentV2Spec struct {
 
 // StorageAttachmentV2Status Describes the network attachment for storage
 type StorageAttachmentV2Status struct {
+	// MountOptions Optional NFS mount options for the attached storage.
+	MountOptions *map[string]string `json:"mountOptions,omitempty"`
+
 	// MountSource The mount source for the attached storage in the format <host>:<path>.
 	MountSource *string `json:"mountSource,omitempty"`
 
@@ -1199,10 +1261,9 @@ type StorageClassV2Read struct {
 
 // StorageClassV2Spec A storage class's specification.
 type StorageClassV2Spec struct {
-	// Parallelism Defines the number of IP addresses that are assigned to the storage.
-	// More IP addresses, better performance. If the value specified overflows
-	// the available address range reserved on the network it will be capped
-	// at the maximum allowed value.
+	// Parallelism Defines the target number of IP addresses assigned to storage.
+	// More IP addresses can improve performance. Attachments use
+	// min(parallelism, usable IPs in the network storage range).
 	Parallelism int                        `json:"parallelism"`
 	Protocols   []StorageClassProtocolType `json:"protocols"`
 
@@ -1472,7 +1533,7 @@ type NetworkRequest = NetworkWrite
 // NetworkV2CreateRequest A network request.
 type NetworkV2CreateRequest = NetworkV2Create
 
-// NetworkV2UpdateRequest A network request.
+// NetworkV2UpdateRequest A network update request.
 type NetworkV2UpdateRequest = NetworkV2Update
 
 // SecurityGroupRequest A security group request.
