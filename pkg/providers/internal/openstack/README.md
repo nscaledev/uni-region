@@ -107,8 +107,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   as architecture, baremetal status, and GPU semantics. The baremetal flag is
   also operationally meaningful for server health monitoring: a Nova `BUILD`
   server with a baremetal flavor is disambiguated through Ironic so API
-  metadata can report whether the server is still queued or actively
-  provisioning.
+  metadata can report whether the server is still queued, actively
+  provisioning, or failing to deploy.
 - Image handling is a first-class contract surface here:
   - OpenStack image properties are validated against a schema
   - public images can additionally be signature-verified
@@ -125,7 +125,13 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   `OpenstackSecurityGroup`, or `OpenstackServer` CRDs as authoritative state.
 - Baremetal server progress uses Ironic as an additional provider truth source
   only while Nova reports `BUILD` for a flavor marked baremetal in region
-  configuration. The lookup is filtered by `instance_uuid`. Because Ironic node
+  configuration. Node `deploy failed`/`error` states report as `error` rather
+  than silent progress; if Nova reschedules onto another node the
+  `instance_uuid` lookup self-corrects on the next poll. Independently of
+  Ironic and of the baremetal flag, a Nova `ERROR` instance overrides
+  provisioning metadata to `error`, because condition-derived status would
+  otherwise read `provisioned` for an instance that never came up.
+  The lookup is filtered by `instance_uuid`. Because Ironic node
   ownership and visibility are provider infrastructure concerns rather than
   tenant workload operations, this lookup uses the Region top-level provider
   credentials scoped to the service principal's project, matching the package's

@@ -39,8 +39,13 @@ func baremetalBuildProvisioningStatus(node *nodes.Node) coreapi.ResourceProvisio
 	case nodes.Available, nodes.Manageable, nodes.Enroll, nodes.Cleaning, nodes.CleanWait, nodes.Verifying, nodes.Inspecting,
 		nodes.InspectWait, nodes.Adopting, nodes.CleanFail, nodes.CleanHold, nodes.InspectFail, nodes.AdoptFail:
 		return coreapi.ResourceProvisioningStatusQueued
-	case nodes.Deploying, nodes.DeployWait, nodes.DeployHold, nodes.DeployFail, nodes.Active, nodes.Error:
+	case nodes.Deploying, nodes.DeployWait, nodes.DeployHold, nodes.Active:
 		return coreapi.ResourceProvisioningStatusProvisioning
+	// A failed deploy is reported as an error rather than silent progress; if Nova
+	// reschedules onto another node the instance_uuid lookup self-corrects on the
+	// next poll, and if Nova gives up the instance-level ERROR override takes over.
+	case nodes.DeployFail, nodes.Error:
+		return coreapi.ResourceProvisioningStatusError
 	default:
 		return coreapi.ResourceProvisioningStatusQueued
 	}
@@ -76,6 +81,16 @@ func updateServerProviderProvisioningStatus(
 	lookup ironicNodeLookup,
 ) {
 	server.Status.ProviderProvisioningStatus = nil
+
+	// A Nova ERROR instance never reached its Available condition's happy state,
+	// but condition-derived status still reads "provisioned" once the controller's
+	// reconcile has finished. Override with error so the API tells the truth.
+	if openstackServer.Status == "ERROR" {
+		errorStatus := coreapi.ResourceProvisioningStatusError
+		server.Status.ProviderProvisioningStatus = &errorStatus
+
+		return
+	}
 
 	if !shouldCallIronicForProvisioningStatus(*openstackServer, baremetal) {
 		return

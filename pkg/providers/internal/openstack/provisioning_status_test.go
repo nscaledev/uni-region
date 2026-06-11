@@ -71,9 +71,9 @@ func TestBaremetalBuildProvisioningStatus(t *testing.T) {
 		{name: "deploying", node: &nodes.Node{ProvisionState: string(nodes.Deploying)}, want: coreapi.ResourceProvisioningStatusProvisioning},
 		{name: "wait callback", node: &nodes.Node{ProvisionState: string(nodes.DeployWait)}, want: coreapi.ResourceProvisioningStatusProvisioning},
 		{name: "deploy hold", node: &nodes.Node{ProvisionState: string(nodes.DeployHold)}, want: coreapi.ResourceProvisioningStatusProvisioning},
-		{name: "deploy failed", node: &nodes.Node{ProvisionState: string(nodes.DeployFail)}, want: coreapi.ResourceProvisioningStatusProvisioning},
+		{name: "deploy failed", node: &nodes.Node{ProvisionState: string(nodes.DeployFail)}, want: coreapi.ResourceProvisioningStatusError},
 		{name: "active", node: &nodes.Node{ProvisionState: string(nodes.Active)}, want: coreapi.ResourceProvisioningStatusProvisioning},
-		{name: "error", node: &nodes.Node{ProvisionState: string(nodes.Error)}, want: coreapi.ResourceProvisioningStatusProvisioning},
+		{name: "error", node: &nodes.Node{ProvisionState: string(nodes.Error)}, want: coreapi.ResourceProvisioningStatusError},
 	}
 
 	for _, tt := range tests {
@@ -238,6 +238,37 @@ func TestUpdateServerProviderProvisioningStatusIronicErrorLeavesOverrideUnset(t 
 		})
 
 	require.Nil(t, server.Status.ProviderProvisioningStatus)
+}
+
+func TestUpdateServerProviderProvisioningStatusNovaErrorSetsErrorOverride(t *testing.T) {
+	t.Parallel()
+
+	server := &unikornv1.Server{}
+	novaServer := &servers.Server{ID: "nova-id", Status: "ERROR"}
+
+	updateServerProviderProvisioningStatus(t.Context(), logr.Discard(), server, novaServer, false, noIronicNode)
+
+	require.NotNil(t, server.Status.ProviderProvisioningStatus)
+	require.Equal(t, coreapi.ResourceProvisioningStatusError, *server.Status.ProviderProvisioningStatus)
+}
+
+func TestUpdateServerProviderProvisioningStatusNovaErrorSkipsIronic(t *testing.T) {
+	t.Parallel()
+
+	server := &unikornv1.Server{}
+	novaServer := &servers.Server{ID: "nova-id", Status: "ERROR"}
+	called := false
+
+	updateServerProviderProvisioningStatus(t.Context(), logr.Discard(), server, novaServer, true,
+		func(ctx context.Context, _ string) (*nodes.Node, error) {
+			called = true
+
+			return noIronicNode(ctx, "")
+		})
+
+	require.False(t, called)
+	require.NotNil(t, server.Status.ProviderProvisioningStatus)
+	require.Equal(t, coreapi.ResourceProvisioningStatusError, *server.Status.ProviderProvisioningStatus)
 }
 
 func TestUpdateServerProviderProvisioningStatusActiveClearsOverride(t *testing.T) {
