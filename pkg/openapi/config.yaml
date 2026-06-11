@@ -3,3 +3,7 @@ compatibility:
   always-prefix-enum-values: true
 import-mapping:
   https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml: github.com/unikorn-cloud/core/pkg/openapi
+  # TODO(version-endpoint): pinned to the uni-core PR commit so codegen
+  # resolves pre-merge; remove once nscaledev/uni-core#304 lands and the
+  # version response $ref flips to /main/.
+  https://raw.githubusercontent.com/nscaledev/uni-core/88695259cc15ea8a96d1a2a969605e6653c0e079/pkg/openapi/common.spec.yaml: github.com/unikorn-cloud/core/pkg/openapi

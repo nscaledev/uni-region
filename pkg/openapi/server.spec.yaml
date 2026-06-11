@@ -795,7 +795,9 @@ paths:
       - oauth2Authentication: []
       responses:
         '200':
-          $ref: '#/components/responses/versionResponse'
+          # TODO(version-endpoint): pinned to the uni-core PR commit so codegen
+          # resolves pre-merge; flip to /main/ once nscaledev/uni-core#304 lands.
+          $ref: 'https://raw.githubusercontent.com/nscaledev/uni-core/88695259cc15ea8a96d1a2a969605e6653c0e079/pkg/openapi/common.spec.yaml#/components/responses/serviceVersionResponse'
         '401':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
@@ -1913,21 +1915,6 @@ components:
           $ref: '#/components/schemas/imageState'
 
   schemas:
-    versionRead:
-      description: |-
-        Build version information for the running service, stamped into the
-        binary at release time.  Developer builds report version 0.0.0.
-      type: object
-      required:
-      - name
-      - version
-      properties:
-        name:
-          description: The service application name.
-          type: string
-        version:
-          description: The service release version, e.g. v1.2.3.
-          type: string
     kubernetesNameParameter:
       description: A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
       type: string
@@ -3947,15 +3934,6 @@ components:
                 networkIds:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
   responses:
-    versionResponse:
-      description: Build version information for the running service.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/versionRead'
-          example:
-            name: unikorn-region-server
-            version: v1.16.7
     regionsResponse:
       description: A list of regions.
       content:

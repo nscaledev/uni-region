@@ -20,13 +20,13 @@ package handler
 import (
 	"net/http"
 
+	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/util"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/openapi"
 )
 
 func (h *Handler) GetApiV2Version(w http.ResponseWriter, r *http.Request) {
-	result := openapi.VersionRead{
+	result := coreapi.ServiceVersionRead{
 		Name:    constants.Application,
 		Version: constants.Version,
 	}

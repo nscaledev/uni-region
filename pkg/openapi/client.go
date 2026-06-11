@@ -7417,7 +7417,7 @@ func (r GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse) Stat
 type GetApiV2VersionResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *VersionResponse
+	JSON200      *externalRef0.ServiceVersionResponse
 	JSON401      *externalRef0.UnauthorizedResponse
 	JSON403      *externalRef0.ForbiddenResponse
 	JSON500      *externalRef0.InternalServerErrorResponse
@@ -12473,7 +12473,7 @@ func ParseGetApiV2VersionResponse(rsp *http.Response) (*GetApiV2VersionResponse,
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest VersionResponse
+		var dest externalRef0.ServiceVersionResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

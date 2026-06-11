@@ -25,8 +25,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/openapi"
 )
 
 func Test_Version_Get(t *testing.T) {
@@ -42,7 +42,7 @@ func Test_Version_Get(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "no-cache", w.Header().Get("Cache-Control"))
 
-	var result openapi.VersionRead
+	var result coreapi.ServiceVersionRead
 
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
 	require.Equal(t, constants.Application, result.Name)
