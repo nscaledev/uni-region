@@ -90,6 +90,7 @@ class _OperationFailures:
     checks: tuple[_CheckFailure, ...]
     trace_ids: tuple[str, ...]
     curl: str
+    curl_note: str
     details: str
 
 
@@ -129,11 +130,20 @@ def pytest_runtest_makereport(item, call):
         )
         for f in failures
     )
+    # A shrunk reproduction for a write operation often has no -d at all (the
+    # bare request is the minimal trigger); say so, or readers assume the body
+    # was filtered out of the curl.
+    curl = details.partition("Reproduce with:")[2].strip()
+    curl_note = ""
+    if re.match(r"curl -X (POST|PUT|PATCH)\b", curl) and " -d " not in curl:
+        curl_note = "(request deliberately has no body — the bare request is the trigger)"
+
     _FUZZ_FAILURES[item.nodeid] = _OperationFailures(
         operation=failures[0].operation,
         checks=checks,
         trace_ids=tuple(dict.fromkeys(_TRACE_ID_RE.findall(details))),
-        curl=details.partition("Reproduce with:")[2].strip(),
+        curl=curl,
+        curl_note=curl_note,
         details=details,
     )
 
@@ -163,6 +173,8 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
             terminalreporter.write_line(f"  trace_id: {', '.join(record.trace_ids)}")
         for line in record.curl.splitlines():
             terminalreporter.write_line(f"  {line.strip()}")
+        if record.curl_note:
+            terminalreporter.write_line(f"  {record.curl_note}")
         terminalreporter.write_line("")
     _write_github_step_summary(records)
     _emit_github_annotations(records)
@@ -195,9 +207,10 @@ def _write_github_step_summary(records: list[_OperationFailures]) -> None:
             record.details,
             "~~~",
             "",
-            "</details>",
-            "",
         ]
+        if record.curl_note:
+            lines += [record.curl_note, ""]
+        lines += ["</details>", ""]
     with open(path, "a") as fh:
         fh.write("\n".join(lines))
 
@@ -235,6 +248,8 @@ def _emit_github_annotations(records: list[_OperationFailures]) -> None:
             message += f"\ntrace_id: {', '.join(record.trace_ids)}"
         if record.curl:
             message += f"\nReproduce with:\n{record.curl}"
+            if record.curl_note:
+                message += f"\n{record.curl_note}"
         title = _gha_escape(f"API fuzz: {record.operation}", in_property=True)
         print(f"::error title={title}::{_gha_escape(message)}")
     if omitted:
