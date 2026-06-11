@@ -61,12 +61,27 @@ def pytest_sessionfinish(session, exitstatus):
 
 _TRACE_ID_RE = re.compile(r'"trace_id"\s*:\s*"([0-9a-f]+)"')
 
+# What each failure class means the harness was asserting, keyed by the
+# Schemathesis Failure subclass name. Without this, a bare "Server error [500]"
+# in CI does not say what property the fuzzer was testing.
+_CHECK_INTENTS = {
+    "ServerError": "no generated input may cause an unhandled 5xx",
+    "UndefinedStatusCode": "every returned status code must be documented in the operation's OpenAPI responses",
+    "JsonSchemaError": "the response body must conform to the documented response schema",
+    "MalformedJson": "a JSON response body must parse as JSON",
+    "MissingContentType": "the response must carry a Content-Type header",
+    "UndefinedContentType": "the response Content-Type must be documented in the spec",
+    "MalformedMediaType": "the response media type must be well-formed",
+    "MissingHeaders": "documented required response headers must be present",
+}
+
 
 @dataclasses.dataclass(frozen=True)
 class _CheckFailure:
     title: str
     severity: str
     status: str
+    intent: str
 
 
 @dataclasses.dataclass(frozen=True)
@@ -110,6 +125,7 @@ def pytest_runtest_makereport(item, call):
             title=f.title,
             severity=f.severity.name,
             status=str(getattr(f, "status_code", "")) or "-",
+            intent=_CHECK_INTENTS.get(type(f).__name__, ""),
         )
         for f in failures
     )
@@ -137,9 +153,12 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     records = list(_FUZZ_FAILURES.values())
     terminalreporter.section(f"API fuzz failure summary ({len(records)} operations)")
     for record in records:
-        checks = ", ".join(f"{c.title} [{c.status}] {c.severity}" for c in record.checks)
         terminalreporter.write_line(record.operation)
-        terminalreporter.write_line(f"  {checks}")
+        for c in record.checks:
+            line = f"  {c.title} [{c.status}] {c.severity}"
+            if c.intent:
+                line += f" — asserts {c.intent}"
+            terminalreporter.write_line(line)
         if record.trace_ids:
             terminalreporter.write_line(f"  trace_id: {', '.join(record.trace_ids)}")
         for line in record.curl.splitlines():
@@ -156,15 +175,15 @@ def _write_github_step_summary(records: list[_OperationFailures]) -> None:
     lines = [
         f"## API fuzz failures ({len(records)} operations)",
         "",
-        "| Operation | Check | Status | Severity | trace_id |",
-        "| --- | --- | --- | --- | --- |",
+        "| Operation | Check | Asserts | Status | Severity | trace_id |",
+        "| --- | --- | --- | --- | --- | --- |",
     ]
     for record in records:
         trace_ids = ", ".join(record.trace_ids) or "-"
         for check in record.checks:
             lines.append(
-                f"| `{record.operation}` | {check.title} | {check.status} "
-                f"| {check.severity} | {trace_ids} |"
+                f"| `{record.operation}` | {check.title} | {check.intent or '-'} "
+                f"| {check.status} | {check.severity} | {trace_ids} |"
             )
     lines.append("")
     for record in records:
@@ -205,8 +224,13 @@ def _emit_github_annotations(records: list[_OperationFailures]) -> None:
     else:
         shown, omitted = records, []
     for record in shown:
-        checks = ", ".join(f"{c.title} [{c.status}]" for c in record.checks)
-        message = checks
+        check_lines = []
+        for c in record.checks:
+            line = f"{c.title} [{c.status}]"
+            if c.intent:
+                line += f" — asserts {c.intent}"
+            check_lines.append(line)
+        message = "\n".join(check_lines)
         if record.trace_ids:
             message += f"\ntrace_id: {', '.join(record.trace_ids)}"
         if record.curl:

@@ -140,8 +140,9 @@ of the raw ExceptionGroup traceback through hypothesis internals:
 
 - the pytest FAILURES section and the JUnit XML carry the concise block per
   failing operation;
-- an end-of-run summary lists every failing operation with its checks,
-  `trace_id`s, and cURL reproduction;
+- an end-of-run summary lists every failing operation with its checks (each
+  annotated with the property the check asserts, so the failure is not just a
+  bare status code), `trace_id`s, and cURL reproduction;
 - in CI, the same summary is written to the GitHub step summary (table plus
   collapsible details per operation) and each failing operation is emitted as a
   `::error` annotation on the run.
