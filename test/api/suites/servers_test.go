@@ -64,6 +64,12 @@ func skipUnlessServerFixtureConfigured() {
 	}
 }
 
+func skipUnlessServerInfrastructureRefConfigured() {
+	if config.ServerInfrastructureRef == "" {
+		Skip("infrastructureRef server tests require TEST_SERVER_INFRASTRUCTURE_REF")
+	}
+}
+
 func testFlavorID() string {
 	return config.ServerFlavorID
 }
@@ -94,6 +100,12 @@ func waitForServerGone(serverID string) {
 	}).WithTimeout(5*time.Minute).
 		WithPolling(5*time.Second).
 		Should(BeTrue(), "server should disappear after deletion")
+}
+
+func expectServerInfrastructureRef(server *regionopenapi.ServerV2Read, infrastructureRef string) {
+	Expect(server).NotTo(BeNil())
+	Expect(server.Status.InfrastructureRef).NotTo(BeNil())
+	Expect(*server.Status.InfrastructureRef).To(Equal(infrastructureRef))
 }
 
 var _ = Describe("Server Management", func() {
@@ -174,6 +186,80 @@ var _ = Describe("Server Management", func() {
 				Expect(got.Spec.FlavorId).To(Equal(createReq.Spec.FlavorId))
 				Expect(got.Spec.ImageId).To(Equal(createReq.Spec.ImageId))
 				Expect(got.Status.NetworkId).To(Equal(networkID))
+			})
+		})
+	})
+
+	Context("When creating a server pinned to provider infrastructure", Ordered, func() {
+		var networkID string
+
+		BeforeAll(func() {
+			skipUnlessOpenStackRegion()
+			skipUnlessInternalAPIConfigured()
+			skipUnlessServerFixtureConfigured()
+			skipUnlessServerInfrastructureRefConfigured()
+
+			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
+			network, err := regionClient.CreateNetwork(ctx, networkReq)
+			Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
+			Expect(network).NotTo(BeNil())
+
+			networkID = network.Metadata.Id
+
+			DeferCleanup(func() {
+				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil {
+					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
+				}
+			})
+
+			waitForNetworkProvisioned(networkID)
+		})
+
+		Describe("Given an infrastructure reference", func() {
+			It("should preserve the requested infrastructure reference", func() {
+				infrastructureRef := config.ServerInfrastructureRef
+				createReq := api.NewServerPayload(networkID, testFlavorID(), testImageID()).
+					WithInfrastructureRef(infrastructureRef).
+					Build()
+
+				created, err := regionClient.CreateServer(ctx, createReq)
+				Expect(err).NotTo(HaveOccurred(), "failed to create pinned server")
+				Expect(created).NotTo(BeNil())
+				Expect(created.Metadata.Id).NotTo(BeEmpty())
+
+				serverID := created.Metadata.Id
+				DeferCleanup(func() {
+					err := regionClient.DeleteServer(ctx, serverID)
+					if errors.Is(err, coreclient.ErrResourceNotFound) {
+						return
+					}
+					if err != nil {
+						GinkgoWriter.Printf("Warning: cleanup delete pinned server %s: %v\n", serverID, err)
+						return
+					}
+					waitForServerGone(serverID)
+				})
+
+				expectServerInfrastructureRef(created, infrastructureRef)
+
+				list, err := regionClient.ListServers(ctx, config.OrgID, config.ProjectID, config.RegionID, networkID)
+				Expect(err).NotTo(HaveOccurred())
+
+				var found *regionopenapi.ServerV2Read
+				for i := range list {
+					if list[i].Metadata.Id == serverID {
+						found = &list[i]
+						break
+					}
+				}
+
+				Expect(found).NotTo(BeNil(), "created pinned server not found in list")
+				expectServerInfrastructureRef(found, infrastructureRef)
+
+				got, err := regionClient.GetServer(ctx, serverID)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(got.Metadata.Id).To(Equal(serverID))
+				expectServerInfrastructureRef(got, infrastructureRef)
 			})
 		})
 	})

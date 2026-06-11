@@ -18,16 +18,20 @@ package region_test
 
 import (
 	"context"
+	"encoding/base64"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
+	"github.com/unikorn-cloud/region/pkg/openapi"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -296,4 +300,228 @@ func TestCheckAccessMissingRegion(t *testing.T) {
 	c := regionClientFixture(t)
 
 	require.Error(t, c.CheckAccess(aclFixture(t, organizationID1), "does-not-exist"))
+}
+
+// regionClientWithObjects creates a region.Client backed by a fake Kubernetes client
+// pre-populated with arbitrary objects (e.g. Regions alongside the Secret a Kubernetes
+// region's detail view dereferences). Callers must set each object's namespace.
+func regionClientWithObjects(t *testing.T, objects ...runtime.Object) *region.Client {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, regionv1.AddToScheme(scheme))
+
+	builder := fake.NewClientBuilder().WithScheme(scheme)
+
+	for _, o := range objects {
+		builder = builder.WithRuntimeObjects(o)
+	}
+
+	return region.NewClient(common.ClientArgs{
+		Client:    builder.Build(),
+		Namespace: testNamespace,
+	})
+}
+
+func simulatedRegion(name string, organizationIDs ...string) regionv1.Region {
+	resource := regionv1.Region{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
+		Spec:       regionv1.RegionSpec{Provider: regionv1.ProviderSimulated},
+	}
+
+	if len(organizationIDs) > 0 {
+		orgs := make([]regionv1.RegionSecurityOrganizationSpec, len(organizationIDs))
+		for i, id := range organizationIDs {
+			orgs[i] = regionv1.RegionSecurityOrganizationSpec{ID: id}
+		}
+
+		resource.Spec.Security = &regionv1.RegionSecuritySpec{Organizations: orgs}
+	}
+
+	return resource
+}
+
+// regionIDs collects the resource IDs from a list of region reads so assertions can
+// be order-independent (List does not impose an ordering guarantee).
+func regionIDs(in openapi.Regions) []string {
+	out := make([]string, len(in))
+	for i := range in {
+		out[i] = in[i].Metadata.Id
+	}
+
+	return out
+}
+
+// TestListIncludesAccessibleprivate verifies List returns public regions plus the
+// private regions the caller's organization is permitted to see.
+func TestListIncludesAccessiblePrivate(t *testing.T) {
+	t.Parallel()
+
+	c := regionClientFixture(t,
+		simulatedRegion(globalRegionName),
+		simulatedRegion(privateRegionName1, organizationID1, organizationID2),
+		simulatedRegion(privateRegionName3, organizationID3),
+	)
+
+	result, err := c.List(aclFixture(t, organizationID1))
+
+	require.NoError(t, err)
+	require.Len(t, result, 2)
+	require.ElementsMatch(t, []string{globalRegionName, privateRegionName1}, regionIDs(result))
+}
+
+// TestListExcludesInaccessiblePrivate verifies a caller whose organization matches no
+// private region sees only the public ones.
+func TestListExcludesInaccessiblePrivate(t *testing.T) {
+	t.Parallel()
+
+	c := regionClientFixture(t,
+		simulatedRegion(globalRegionName),
+		simulatedRegion(privateRegionName1, organizationID1),
+	)
+
+	result, err := c.List(aclFixture(t, organizationID4))
+
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	require.Equal(t, globalRegionName, result[0].Metadata.Id)
+	require.Equal(t, openapi.RegionTypeSimulated, result[0].Spec.Type)
+}
+
+// TestListGlobalScope verifies a platform admin or service with global scope sees
+// every region regardless of its security constraints.
+func TestListGlobalScope(t *testing.T) {
+	t.Parallel()
+
+	c := regionClientFixture(t,
+		simulatedRegion(globalRegionName),
+		simulatedRegion(privateRegionName1, organizationID1),
+		simulatedRegion(privateRegionName2, organizationID2),
+	)
+
+	result, err := c.List(globalACLFixture(t))
+
+	require.NoError(t, err)
+	require.Len(t, result, 3)
+}
+
+// TestGetDetailSimulated verifies GetDetail returns the region detail for an
+// accessible region without provider-specific configuration.
+func TestGetDetailSimulated(t *testing.T) {
+	t.Parallel()
+
+	c := regionClientFixture(t, simulatedRegion(globalRegionName))
+
+	result, err := c.GetDetail(aclFixture(t, organizationID1), globalRegionName)
+
+	require.NoError(t, err)
+	require.Equal(t, globalRegionName, result.Metadata.Id)
+	require.Equal(t, openapi.RegionTypeSimulated, result.Spec.Type)
+	require.Nil(t, result.Spec.Kubernetes)
+}
+
+// TestGetDetailKubernetesEmbedsKubeconfig verifies GetDetail resolves the referenced
+// kubeconfig secret and returns its contents base64 encoded.
+func TestGetDetailKubernetesEmbedsKubeconfig(t *testing.T) {
+	t.Parallel()
+
+	const (
+		regionName    = "k8s-region"
+		kubeconfigRef = "k8s-region-kubeconfig"
+	)
+
+	kubeconfig := []byte("apiVersion: v1\nkind: Config\n")
+
+	resource := regionv1.Region{
+		ObjectMeta: metav1.ObjectMeta{Name: regionName, Namespace: testNamespace},
+		Spec: regionv1.RegionSpec{
+			Provider: regionv1.ProviderKubernetes,
+			Kubernetes: &regionv1.RegionKubernetesSpec{
+				KubeconfigSecret: &regionv1.NamespacedObject{
+					Namespace: testNamespace,
+					Name:      kubeconfigRef,
+				},
+				DomainName: "example.com",
+			},
+		},
+	}
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: kubeconfigRef, Namespace: testNamespace},
+		Data:       map[string][]byte{"kubeconfig": kubeconfig},
+	}
+
+	c := regionClientWithObjects(t, &resource, secret)
+
+	result, err := c.GetDetail(aclFixture(t, organizationID1), regionName)
+
+	require.NoError(t, err)
+	require.Equal(t, openapi.RegionTypeKubernetes, result.Spec.Type)
+	require.NotNil(t, result.Spec.Kubernetes)
+	require.Equal(t, base64.RawURLEncoding.EncodeToString(kubeconfig), result.Spec.Kubernetes.Kubeconfig)
+	require.NotNil(t, result.Spec.Kubernetes.DomainName)
+	require.Equal(t, "example.com", *result.Spec.Kubernetes.DomainName)
+}
+
+// TestGetDetailKubernetesMissingKubeconfigKey verifies GetDetail surfaces an error
+// when the referenced secret exists but lacks the kubeconfig key.
+func TestGetDetailKubernetesMissingKubeconfigKey(t *testing.T) {
+	t.Parallel()
+
+	const (
+		regionName    = "k8s-region"
+		kubeconfigRef = "k8s-region-kubeconfig"
+	)
+
+	resource := regionv1.Region{
+		ObjectMeta: metav1.ObjectMeta{Name: regionName, Namespace: testNamespace},
+		Spec: regionv1.RegionSpec{
+			Provider: regionv1.ProviderKubernetes,
+			Kubernetes: &regionv1.RegionKubernetesSpec{
+				KubeconfigSecret: &regionv1.NamespacedObject{
+					Namespace: testNamespace,
+					Name:      kubeconfigRef,
+				},
+			},
+		},
+	}
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: kubeconfigRef, Namespace: testNamespace},
+		Data:       map[string][]byte{"not-kubeconfig": []byte("data")},
+	}
+
+	c := regionClientWithObjects(t, &resource, secret)
+
+	_, err := c.GetDetail(aclFixture(t, organizationID1), regionName)
+
+	require.Error(t, err)
+}
+
+// TestGetDetailNotFound verifies GetDetail returns a not-found error for a region
+// that does not exist.
+func TestGetDetailNotFound(t *testing.T) {
+	t.Parallel()
+
+	c := regionClientFixture(t)
+
+	_, err := c.GetDetail(aclFixture(t, organizationID1), "does-not-exist")
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+}
+
+// TestGetDetailAccessDenied verifies GetDetail returns a not-found error (not a
+// forbidden error) when the caller's organization cannot see a restricted region,
+// so existence is not leaked.
+func TestGetDetailAccessDenied(t *testing.T) {
+	t.Parallel()
+
+	c := regionClientFixture(t, simulatedRegion(privateRegionName1, organizationID1))
+
+	_, err := c.GetDetail(aclFixture(t, organizationID4), privateRegionName1)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
 }

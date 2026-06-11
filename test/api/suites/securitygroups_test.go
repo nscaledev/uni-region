@@ -135,10 +135,14 @@ var _ = Describe("SecurityGroup", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(updated.Spec.Rules).To(HaveLen(2))
 
-				roundTrip, err := regionClient.GetSecurityGroup(ctx, sgID)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(roundTrip.Spec.Rules).To(HaveLen(2))
-				Expect(roundTrip.Spec.Rules[0].Port).To(Equal(ptr.To(443)))
+				Eventually(func(g Gomega) {
+					roundTrip, err := regionClient.GetSecurityGroup(ctx, sgID)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(roundTrip.Spec.Rules).To(HaveLen(2))
+					g.Expect(roundTrip.Spec.Rules[0].Port).To(Equal(ptr.To(443)))
+				}).WithTimeout(30 * time.Second).
+					WithPolling(1 * time.Second).
+					Should(Succeed())
 				GinkgoWriter.Printf("Updated security group rules: %s\n", sgID)
 			})
 
