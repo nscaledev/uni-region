@@ -122,6 +122,9 @@ def pytest_runtest_makereport(item, call):
     )
 
 
+# trylast pins this after the Schemathesis plugin's hook (which rewrites
+# longrepr to a formatted traceback) instead of relying on registration order.
+@pytest.hookimpl(trylast=True)
 def pytest_exception_interact(node, call, report):
     record = _FUZZ_FAILURES.get(node.nodeid)
     if record is not None:
@@ -187,10 +190,21 @@ def _gha_escape(value: str, *, in_property: bool = False) -> str:
     return value
 
 
+# GitHub drops ::error annotations beyond 10 per step without any indication,
+# so cap explicitly and spend the last slot saying what was cut.
+_MAX_ANNOTATIONS = 10
+
+
 def _emit_github_annotations(records: list[_OperationFailures]) -> None:
     if os.environ.get("GITHUB_ACTIONS") != "true":
         return
-    for record in records:
+    overflow = len(records) - _MAX_ANNOTATIONS
+    if overflow > 0:
+        shown = records[: _MAX_ANNOTATIONS - 1]
+        omitted = records[_MAX_ANNOTATIONS - 1 :]
+    else:
+        shown, omitted = records, []
+    for record in shown:
         checks = ", ".join(f"{c.title} [{c.status}]" for c in record.checks)
         message = checks
         if record.trace_ids:
@@ -199,6 +213,11 @@ def _emit_github_annotations(records: list[_OperationFailures]) -> None:
             message += f"\nReproduce with:\n{record.curl}"
         title = _gha_escape(f"API fuzz: {record.operation}", in_property=True)
         print(f"::error title={title}::{_gha_escape(message)}")
+    if omitted:
+        operations = ", ".join(r.operation for r in omitted)
+        title = _gha_escape(f"API fuzz: {len(omitted)} more failing operations", in_property=True)
+        message = _gha_escape(f"Not annotated (10-per-step limit), see the step summary: {operations}")
+        print(f"::error title={title}::{message}")
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 DOTENV_PATH = REPO_ROOT / "test" / ".env"
