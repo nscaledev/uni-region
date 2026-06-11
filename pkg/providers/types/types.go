@@ -66,6 +66,8 @@ type Flavor struct {
 	GPU *GPU
 	// Baremetal is a bare-metal flavor.
 	Baremetal bool
+	// PinnedOnly requires an InfrastructureRef to be set when creating a server with this flavor.
+	PinnedOnly bool
 }
 
 type GPU struct {
