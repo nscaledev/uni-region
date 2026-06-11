@@ -28,9 +28,12 @@ import (
 
 var ErrMultipleIronicNodes = errors.New("multiple ironic nodes found")
 
-// Need at least 1.82 so Ironic node ListDetail responses include provision_state;
-// INST-921 maps Nova BUILD baremetal servers from Ironic node ProvisionState.
-const baremetalAPIMicroversion = "1.82"
+// Pin the microversion explicitly: gophercloud sends no version header by default
+// and Ironic then assumes its minimum, which hides provision_state entirely
+// (verified live: 1.1 returns provision_state=null, 1.2+ returns the real state).
+// 1.11 is the floor where the modern state machine (enroll onwards) is fully
+// visible, and is ancient enough (Mitaka, 2016) not to exclude real clouds.
+const baremetalAPIMicroversion = "1.11"
 
 type BaremetalClient struct {
 	client *gophercloud.ServiceClient

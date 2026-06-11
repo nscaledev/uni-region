@@ -96,7 +96,7 @@ func (c *stubComputeClient) CreateKeypair(context.Context, string, string) error
 func (c *stubComputeClient) DeleteKeypair(context.Context, string) error          { return nil }
 func (c *stubComputeClient) GetFlavors(context.Context) ([]flavors.Flavor, error) { return nil, nil }
 func (c *stubComputeClient) CreateServerGroup(context.Context, string) (*servergroups.ServerGroup, error) {
-	return nil, nil
+	return nil, nil //nolint:nilnil // unused stub method
 }
 func (c *stubComputeClient) DeleteServerGroup(context.Context, string) error { return nil }
 func (c *stubComputeClient) UpdateQuotas(context.Context, string) error      { return nil }
@@ -106,14 +106,14 @@ func (c *stubComputeClient) GetServer(_ context.Context, server *unikornv1.Serve
 	return c.server, nil
 }
 func (c *stubComputeClient) CreateServer(context.Context, *unikornv1.Server, string, []servers.Network, *string, map[string]string) (*servers.Server, error) {
-	return nil, nil
+	return nil, nil //nolint:nilnil // unused stub method
 }
 func (c *stubComputeClient) DeleteServer(context.Context, string) error       { return nil }
 func (c *stubComputeClient) RebootServer(context.Context, string, bool) error { return nil }
 func (c *stubComputeClient) StartServer(context.Context, string) error        { return nil }
 func (c *stubComputeClient) StopServer(context.Context, string) error         { return nil }
 func (c *stubComputeClient) CreateRemoteConsole(context.Context, string) (*remoteconsoles.RemoteConsole, error) {
-	return nil, nil
+	return nil, nil //nolint:nilnil // unused stub method
 }
 func (c *stubComputeClient) ShowConsoleOutput(context.Context, string, *int) (string, error) {
 	return "", nil
@@ -160,6 +160,7 @@ func TestUpdateServerStateWithClientsBaremetalBuildUsesProvisioningStatusIronicL
 	err := provider.updateServerStateWithClients(t.Context(), identity, server, compute,
 		func(_ context.Context, gotIdentity *unikornv1.Identity) (BaremetalInterface, error) {
 			require.Same(t, identity, gotIdentity)
+
 			factoryCalled = true
 
 			return baremetalClient, nil

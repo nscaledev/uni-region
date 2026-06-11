@@ -32,6 +32,9 @@ func baremetalBuildProvisioningStatus(node *nodes.Node) coreapi.ResourceProvisio
 		return coreapi.ResourceProvisioningStatusQueued
 	}
 
+	// Any state not listed deliberately falls through to the conservative
+	// queued default rather than claiming deploy progress that isn't real.
+	//nolint:exhaustive
 	switch nodes.ProvisionState(node.ProvisionState) {
 	case nodes.Available, nodes.Manageable, nodes.Enroll, nodes.Cleaning, nodes.CleanWait, nodes.Verifying, nodes.Inspecting,
 		nodes.InspectWait, nodes.Adopting, nodes.CleanFail, nodes.CleanHold, nodes.InspectFail, nodes.AdoptFail:

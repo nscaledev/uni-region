@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -73,6 +74,30 @@ func TestConvertInstanceLifecyclePhase(t *testing.T) {
 			require.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// TestConvertReturnsProviderProvisioningStatus verifies the provider-observed
+// provisioning status on the resource overrides the condition-derived status in
+// the v1 API metadata, mirroring the v2 coverage.
+func TestConvertReturnsProviderProvisioningStatus(t *testing.T) {
+	t.Parallel()
+
+	queued := coreapi.ResourceProvisioningStatusQueued
+
+	in := &unikornv1.Server{
+		Spec: unikornv1.ServerSpec{
+			FlavorID: "flavor-1",
+			Image:    &unikornv1.ServerImage{ID: "image-1"},
+		},
+		Status: unikornv1.ServerStatus{
+			ProviderProvisioningStatus: &queued,
+		},
+	}
+
+	out := server.Convert(in)
+
+	require.NotNil(t, out)
+	require.Equal(t, coreapi.ResourceProvisioningStatusQueued, out.Metadata.ProvisioningStatus)
 }
 
 // TestConvertPublicIPAllocation verifies nil input returns nil and a populated

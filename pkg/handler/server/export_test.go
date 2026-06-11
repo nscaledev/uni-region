@@ -22,6 +22,9 @@ import (
 )
 
 //nolint:gochecknoglobals
+var Convert = convert
+
+//nolint:gochecknoglobals
 var ConvertInstanceLifecyclePhase = convertInstanceLifecyclePhase
 
 //nolint:gochecknoglobals

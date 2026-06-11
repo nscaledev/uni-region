@@ -39,6 +39,14 @@ status/telemetry model.
 
 - This package is intentionally eventual and observational; it does not make
   provider state changes happen, it notices and projects them.
+- Provider provisioning metadata is only cleared by a successful poll pass, yet
+  it takes precedence over condition-derived status in API responses. If the
+  monitor stops running, or a server is persistently skipped before the status
+  patch (region resolution, identity, or Nova lookup failures), a stale
+  `queued`/`provisioning` override can mask a newer condition-derived state.
+  In healthy operation staleness is bounded by one poll period; a prolonged
+  mismatch between `metadata.provisioningStatus` and the server's conditions
+  is a signal that this monitor is unhealthy.
 - `unikorn_region_server_provision_duration_seconds` measures
   `CreationTimestamp → OS-SRV-USG:launched_at`. `launched_at` is when the
   hypervisor boots the instance, not when the guest OS finishes booting. For

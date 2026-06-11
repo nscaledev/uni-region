@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+//nolint:testpackage
 package openstack
 
 import (
@@ -31,5 +32,4 @@ func TestConfigureBaremetalClientSetsExplicitMicroversion(t *testing.T) {
 	configureBaremetalClient(client)
 
 	require.Equal(t, baremetalAPIMicroversion, client.Microversion)
-	require.Equal(t, "1.82", client.Microversion)
 }
