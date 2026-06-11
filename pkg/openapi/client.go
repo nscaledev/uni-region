@@ -6763,6 +6763,7 @@ type GetApiV2RegionsRegionIDImagesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *ImagesResponse
+	JSON400      *externalRef0.BadRequestResponse
 	JSON401      *externalRef0.UnauthorizedResponse
 	JSON403      *externalRef0.ForbiddenResponse
 	JSON404      *externalRef0.NotFoundResponse
@@ -11073,6 +11074,13 @@ func ParseGetApiV2RegionsRegionIDImagesResponse(rsp *http.Response) (*GetApiV2Re
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest externalRef0.UnauthorizedResponse

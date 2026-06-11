@@ -255,6 +255,23 @@ test-api-setup:
 test-api-clean:
 	@rm -f test/api/suites/test-results.json test/api/suites/junit.xml
 
+# Layer-1 API fuzzing harness (Schemathesis) against the simulated provider.
+# Reuses the test/.env produced by `make integration-fixtures`.
+PYTHON ?= python3
+FUZZ_DIR = test/fuzz
+FUZZ_VENV = $(FUZZ_DIR)/.venv
+
+.PHONY: test-api-fuzz-setup
+test-api-fuzz-setup:
+	@test -d $(FUZZ_VENV) || $(PYTHON) -m venv $(FUZZ_VENV)
+	@$(FUZZ_VENV)/bin/pip install --quiet --upgrade pip
+	@$(FUZZ_VENV)/bin/pip install --quiet -r $(FUZZ_DIR)/requirements.txt
+
+.PHONY: test-api-fuzz
+test-api-fuzz: test-api-fuzz-setup
+	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
+	$(FUZZ_VENV)/bin/python -m pytest $(FUZZ_DIR) -q -rN --junit-xml=fuzz-results.xml
+
 # Pact library path configuration (OS-specific defaults)
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
@@ -519,7 +536,8 @@ test-contracts: test-contracts-consumer test-contracts-provider
 # ── Integration testing ───────────────────────────────────────────────────────
 
 KIND_CLUSTER   ?= region-test
-KIND_SUFFIX    ?= $(shell head /dev/urandom | tr -dc a-z0-9 | head -c 8 2>/dev/null || echo local)
+KIND_SUFFIX    ?= $(shell openssl rand -hex 4)
+KIND_SUFFIX    := $(KIND_SUFFIX)
 KIND_NAMESPACE ?= unikorn-region-$(KIND_SUFFIX)
 KIND_RELEASE   ?= region-$(KIND_SUFFIX)
 IDENTITY_NAMESPACE ?= unikorn-identity
