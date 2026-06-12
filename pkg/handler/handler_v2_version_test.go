@@ -14,8 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//nolint:revive
-package handler
+package handler_test
 
 import (
 	"encoding/json"
@@ -27,12 +26,13 @@ import (
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler"
 )
 
 func Test_Version_Get(t *testing.T) {
 	t.Parallel()
 
-	h := &Handler{}
+	h := &handler.Handler{}
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v2/version", nil)
