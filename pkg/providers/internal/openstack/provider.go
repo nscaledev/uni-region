@@ -296,6 +296,28 @@ func (p *Provider) computeForServerCreate(ctx context.Context, identity *unikorn
 	return client, nil
 }
 
+// baremetalProvisioningStatusProvider returns the credential provider used for Ironic
+// provisioning-status lookups. Node-to-instance mapping is provider infrastructure
+// state, so use the top-level Region credentials scoped to the service principal's
+// project rather than the tenant service-principal credentials.
+func (p *Provider) baremetalProvisioningStatusProvider(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
+	return p.getPrivilegedProviderFromServicePrincipal(ctx, identity)
+}
+
+func (p *Provider) baremetalForProvisioningStatus(ctx context.Context, identity *unikornv1.Identity) (BaremetalInterface, error) {
+	provider, err := p.baremetalProvisioningStatusProvider(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := NewBaremetalClient(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
 // imageFromServicePrincipal gets a compute client scoped to the service principal data.
 func (p *Provider) imageFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (*ImageClient, error) {
 	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
@@ -2584,6 +2606,16 @@ func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Id
 		return err
 	}
 
+	return p.updateServerStateWithClients(ctx, identity, server, compute, p.baremetalForProvisioningStatus)
+}
+
+func (p *Provider) updateServerStateWithClients(
+	ctx context.Context,
+	identity *unikornv1.Identity,
+	server *unikornv1.Server,
+	compute ComputeInterface,
+	baremetalForProvisioningStatus func(context.Context, *unikornv1.Identity) (BaremetalInterface, error),
+) error {
 	openstackServer, err := compute.GetServer(ctx, server)
 	if err != nil {
 		return err
@@ -2591,6 +2623,22 @@ func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Id
 
 	setServerHealthStatus(server, openstackServer)
 	setServerPhase(ctx, server, openstackServer)
+
+	region, _ := p.openstack.regionSnapshot()
+	baremetal := isBaremetalFlavor(region, server.Spec.FlavorID)
+
+	var lookup ironicNodeLookup
+
+	if openstackServer.Status == "BUILD" && baremetal {
+		baremetalClient, err := baremetalForProvisioningStatus(ctx, identity)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to create ironic client for server provisioning status", "server", server.Name, "flavor", server.Spec.FlavorID, "instance_uuid", openstackServer.ID)
+		} else {
+			lookup = baremetalClient.GetNodeByInstanceUUID
+		}
+	}
+
+	updateServerProviderProvisioningStatus(ctx, log.FromContext(ctx), server, openstackServer, baremetal, lookup)
 
 	return nil
 }

@@ -21,6 +21,7 @@ package v1alpha1
 
 import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
+	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -947,6 +948,11 @@ const (
 type ServerStatus struct {
 	// Current service state of a cluster manager.
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	// ProviderProvisioningStatus is a provider-observed override for API metadata.provisioningStatus.
+	// When unset, API metadata falls back to the generic condition-derived provisioning status.
+	// +kubebuilder:validation:Enum=unknown;pending;queued;provisioning;provisioned;deprovisioning;error
+	// +optional
+	ProviderProvisioningStatus *coreapi.ResourceProvisioningStatus `json:"providerProvisioningStatus,omitempty"`
 	// Phase is the current lifecycle phase of the server.
 	Phase InstanceLifecyclePhase `json:"phase,omitempty"`
 	// PrivateIP is the private IP address of the server.

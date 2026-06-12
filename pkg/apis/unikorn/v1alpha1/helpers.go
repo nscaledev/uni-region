@@ -19,6 +19,7 @@ package v1alpha1
 
 import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
+	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/constants"
 
 	corev1 "k8s.io/api/core/v1"
@@ -148,6 +149,10 @@ func (c *Server) Paused() bool {
 // matches.
 func (c *Server) StatusConditionRead(t unikornv1core.ConditionType) (*unikornv1core.Condition, error) {
 	return unikornv1core.GetCondition(c.Status.Conditions, t)
+}
+
+func (c *Server) ProviderProvisioningStatusRead() *coreapi.ResourceProvisioningStatus {
+	return c.Status.ProviderProvisioningStatus
 }
 
 // StatusConditionWrite either adds or updates a condition in the cluster manager status.

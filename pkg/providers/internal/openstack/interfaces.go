@@ -22,6 +22,7 @@ package openstack
 import (
 	"context"
 
+	"github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/remoteconsoles"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
@@ -182,4 +183,8 @@ type ComputeInterface interface {
 	ServerGroupInterface
 	ComputeQuotaInterface
 	ServerInterface
+}
+
+type BaremetalInterface interface {
+	GetNodeByInstanceUUID(ctx context.Context, instanceUUID string) (*nodes.Node, error)
 }

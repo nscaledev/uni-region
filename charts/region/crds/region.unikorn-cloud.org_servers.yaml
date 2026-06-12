@@ -239,6 +239,19 @@ spec:
               privateIP:
                 description: PrivateIP is the private IP address of the server.
                 type: string
+              providerProvisioningStatus:
+                description: |-
+                  ProviderProvisioningStatus is a provider-observed override for API metadata.provisioningStatus.
+                  When unset, API metadata falls back to the generic condition-derived provisioning status.
+                enum:
+                - unknown
+                - pending
+                - queued
+                - provisioning
+                - provisioned
+                - deprovisioning
+                - error
+                type: string
               publicIP:
                 description: PublicIP is the public IP address of the server.
                 type: string

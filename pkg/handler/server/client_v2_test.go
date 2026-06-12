@@ -207,14 +207,16 @@ func testSSHCertificateAuthorityWithProject(projID, caID string) *regionv1.SSHCe
 	}
 }
 
-func testServerWithSSHCertificateAuthority(orgID, projID, serverID, caID string) *regionv1.Server {
+func testServerWithSSHCertificateAuthority() *regionv1.Server {
+	const serverID = "server-1"
+
 	return &regionv1.Server{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serverID,
 			Namespace: srvNamespace,
 			Labels: map[string]string{
-				coreconstants.OrganizationLabel:   orgID,
-				coreconstants.ProjectLabel:        projID,
+				coreconstants.OrganizationLabel:   srvOrganizationID,
+				coreconstants.ProjectLabel:        srvProjectID,
 				coreconstants.NameLabel:           serverID,
 				constants.RegionLabel:             "test-region",
 				constants.IdentityLabel:           "test-identity",
@@ -230,7 +232,7 @@ func testServerWithSSHCertificateAuthority(orgID, projID, serverID, caID string)
 			Networks: []regionv1.ServerNetworkSpec{{
 				ID: srvNetworkID,
 			}},
-			SSHCertificateAuthorityID: ptr.To(caID),
+			SSHCertificateAuthorityID: ptr.To("ca-1"),
 		},
 	}
 }
@@ -523,7 +525,7 @@ func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	network := testSrvNetworkWithProject(srvProjectID)
-	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, "server-1", "ca-1")
+	resource := testServerWithSSHCertificateAuthority()
 
 	k8sClient := newSrvFakeClient(t, network, resource).Build()
 
@@ -562,7 +564,7 @@ func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 
-	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, "server-1", "ca-1")
+	resource := testServerWithSSHCertificateAuthority()
 	resource.Status.Phase = regionv1.InstanceLifecyclePhaseRunning
 	resource.Status.PrivateIP = ptr.To("192.168.0.42")
 	resource.Status.PublicIP = ptr.To("203.0.113.10")
@@ -586,6 +588,33 @@ func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 	require.Equal(t, resource.Status.PrivateIP, result.Status.PrivateIP)
 	require.Equal(t, resource.Status.PublicIP, result.Status.PublicIP)
 	require.Equal(t, resource.Status.MACAddress, result.Status.MacAddress)
+}
+
+func TestServerGetV2ReturnsProviderProvisioningStatus(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	queued := coreapi.ResourceProvisioningStatusQueued
+	resource := testServerWithSSHCertificateAuthority()
+	resource.Status.ProviderProvisioningStatus = &queued
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
+
+	result, err := c.GetV2(ctx, resource.Name)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, coreapi.ResourceProvisioningStatusQueued, result.Metadata.ProvisioningStatus)
 }
 
 func testServerV2(serverID string) *regionv1.Server {
@@ -1208,7 +1237,7 @@ func TestServerUpdateV2RejectsRename(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	network := testSrvNetworkWithProject(srvProjectID)
-	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, "server-1", "ca-1")
+	resource := testServerWithSSHCertificateAuthority()
 
 	k8sClient := newSrvFakeClient(t, network, resource).Build()
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)

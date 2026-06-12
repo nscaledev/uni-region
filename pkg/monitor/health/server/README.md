@@ -17,6 +17,7 @@ status/telemetry model.
 
 - resolves provider and flavor context per region and caches it for a poll cycle
 - updates server status through provider `UpdateServerState(...)`
+- projects provider-observed provisioning metadata when the provider can distinguish lifecycle sub-states; OpenStack baremetal servers in Nova `BUILD` use Ironic node state to report `queued`, active `provisioning`, or deploy `error`, and any Nova `ERROR` instance reports `error` rather than the condition-derived `provisioned`
 - logs phase and health-condition transitions
 - rebuilds gauge counts from the effective server set each cycle
 
@@ -26,11 +27,26 @@ status/telemetry model.
   per-server/provider failures are logged and skipped.
 - Servers skipped because region/provider resolution fails are absent from the
   gauge for that cycle rather than misreported as a fake state.
+- Provider-specific progress refinement must be best effort. For example,
+  OpenStack Ironic lookup failures leave provider provisioning metadata unset so
+  API responses fall back to the generic condition-derived lifecycle instead of
+  failing status refresh. Baremetal progress refinement depends on the Region
+  provider credential having Ironic node visibility by instance UUID; if local or
+  production policy withholds that visibility, the monitor intentionally behaves
+  like the pre-Ironic Nova-only path.
 
 ## Caveats
 
 - This package is intentionally eventual and observational; it does not make
   provider state changes happen, it notices and projects them.
+- Provider provisioning metadata is only cleared by a successful poll pass, yet
+  it takes precedence over condition-derived status in API responses. If the
+  monitor stops running, or a server is persistently skipped before the status
+  patch (region resolution, identity, or Nova lookup failures), a stale
+  `queued`/`provisioning` override can mask a newer condition-derived state.
+  In healthy operation staleness is bounded by one poll period; a prolonged
+  mismatch between `metadata.provisioningStatus` and the server's conditions
+  is a signal that this monitor is unhealthy.
 - `unikorn_region_server_provision_duration_seconds` measures
   `CreationTimestamp → OS-SRV-USG:launched_at`. `launched_at` is when the
   hypervisor boots the instance, not when the guest OS finishes booting. For

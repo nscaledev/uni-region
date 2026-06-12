@@ -23,6 +23,7 @@ package v1alpha1
 
 import (
 	unikornv1alpha1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
+	openapi "github.com/unikorn-cloud/core/pkg/openapi"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -2630,6 +2631,11 @@ func (in *ServerStatus) DeepCopyInto(out *ServerStatus) {
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
+	}
+	if in.ProviderProvisioningStatus != nil {
+		in, out := &in.ProviderProvisioningStatus, &out.ProviderProvisioningStatus
+		*out = new(openapi.ResourceProvisioningStatus)
+		**out = **in
 	}
 	if in.PrivateIP != nil {
 		in, out := &in.PrivateIP, &out.PrivateIP
