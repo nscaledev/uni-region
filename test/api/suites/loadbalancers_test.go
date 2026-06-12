@@ -369,7 +369,7 @@ var _ = Describe("LoadBalancer", func() {
 				path := regionClient.GetEndpoints().CreateLoadBalancer()
 				resp, _, err := regionClient.DoRegionRequest(ctx, http.MethodPost, path, bytes.NewReader([]byte("")), 0)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(resp.StatusCode).To(BeNumerically(">=", http.StatusBadRequest))
+				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 			})
 		})
 	})

@@ -183,7 +183,7 @@ var _ = Describe("SecurityGroup", func() {
 				path := regionClient.GetEndpoints().CreateSecurityGroup()
 				resp, _, err := regionClient.DoRegionRequest(ctx, http.MethodPost, path, bytes.NewReader([]byte("")), 0)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(resp.StatusCode).To(BeNumerically(">=", http.StatusBadRequest))
+				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 			})
 		})
 	})
