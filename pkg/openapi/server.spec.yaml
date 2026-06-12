@@ -795,9 +795,7 @@ paths:
       - oauth2Authentication: []
       responses:
         '200':
-          # TODO(version-endpoint): pinned to the uni-core PR commit so codegen
-          # resolves pre-merge; flip to /main/ once nscaledev/uni-core#304 lands.
-          $ref: 'https://raw.githubusercontent.com/nscaledev/uni-core/88695259cc15ea8a96d1a2a969605e6653c0e079/pkg/openapi/common.spec.yaml#/components/responses/serviceVersionResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/serviceVersionResponse'
         '401':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':

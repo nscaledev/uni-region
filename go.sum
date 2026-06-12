@@ -153,8 +153,6 @@ github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 h1:RWengNIwukTxcDr9
 github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826/go.mod h1:TaXosZuwdSHYgviHp1DAtfrULt5eUgsSMsZf+YrPgl8=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
-github.com/nscaledev/uni-core v1.17.1-0.20260611161034-88695259cc15 h1:rXY2HA0E8dZn2vUElhE46J8A6Cpx2gTG0cib1WBKpkA=
-github.com/nscaledev/uni-core v1.17.1-0.20260611161034-88695259cc15/go.mod h1:t91+Hw7YbNt5nOtp93Ij826iQfYDcz6Og0KAi2xq+B8=
 github.com/oapi-codegen/runtime v1.1.1 h1:EXLHh0DXIJnWhdRPN2w4MXAzFyE4CskzhNLUmtpMYro=
 github.com/oapi-codegen/runtime v1.1.1/go.mod h1:SK9X900oXmPWilYR5/WKPzt3Kqxn/uS/+lbpREv+eCg=
 github.com/oasdiff/yaml v0.0.0-20250309154309-f31be36b4037 h1:G7ERwszslrBzRxj//JalHPu/3yz+De2J+4aLtSRlHiY=
@@ -224,6 +222,8 @@ github.com/test-go/testify v1.1.4 h1:Tf9lntrKUMHiXQ07qBScBTSA0dhYQlu83hswqelv1iE
 github.com/test-go/testify v1.1.4/go.mod h1:rH7cfJo/47vWGdi4GPj16x3/t1xGOj2YxzmNQzk2ghU=
 github.com/ugorji/go/codec v1.2.12 h1:9LC83zGrHhuUA9l16C9AHXAqEV/2wBQ4nkvumAE65EE=
 github.com/ugorji/go/codec v1.2.12/go.mod h1:UNopzCgEMSXjBc6AOMqYvWC1ktqTAfzJZUZgYf6w6lg=
+github.com/unikorn-cloud/core v1.17.1-0.20260612112435-4f6418b1367d h1:e0rAiNb0/XXvO1RpeHouypo9gXILHasbnQeKnCzECAo=
+github.com/unikorn-cloud/core v1.17.1-0.20260612112435-4f6418b1367d/go.mod h1:t91+Hw7YbNt5nOtp93Ij826iQfYDcz6Og0KAi2xq+B8=
 github.com/unikorn-cloud/identity v1.17.1 h1:bFYfe7IGBJb1EdaiDTZPmv+E3B814PUNkiPtnHLWVBw=
 github.com/unikorn-cloud/identity v1.17.1/go.mod h1:N5F9BXYWcv5VKNgKo/NRWII+A4x+KGiDlU7o1c/rU54=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=

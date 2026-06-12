@@ -15,7 +15,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/spjmurray/go-util v0.1.3
 	github.com/stretchr/testify v1.11.1
-	github.com/unikorn-cloud/core v1.16.2-0.20260521095345-d5bfecbc9403
+	github.com/unikorn-cloud/core v1.17.1-0.20260612112435-4f6418b1367d
 	github.com/unikorn-cloud/identity v1.17.1
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/sdk/metric v1.43.0
@@ -145,7 +145,3 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.7.0 // indirect
 )
-
-// TODO(version-endpoint): drop this replace and bump the core require once
-// nscaledev/uni-core#304 merges (schema is pinned to that PR commit).
-replace github.com/unikorn-cloud/core => github.com/nscaledev/uni-core v1.17.1-0.20260611161034-88695259cc15
