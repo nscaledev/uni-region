@@ -207,6 +207,11 @@ func (e *Endpoints) DeleteSSHCertificateAuthority(sshCAID string) string {
 	return fmt.Sprintf("/api/v2/sshcertificateauthorities/%s", url.PathEscape(sshCAID))
 }
 
+// Version returns the endpoint for reading the deployed service version.
+func (e *Endpoints) Version() string {
+	return "/api/v2/version"
+}
+
 // ListServers returns the endpoint for listing servers in a project.
 func (e *Endpoints) ListServers(orgID, projectID, regionID, networkID string) string {
 	values := url.Values{}
