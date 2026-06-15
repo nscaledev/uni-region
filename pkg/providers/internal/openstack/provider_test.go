@@ -391,10 +391,10 @@ func TestDeleteNetworkPreservesVLANWhenDeleteNetworkFails(t *testing.T) {
 	assert.Equal(t, vlanID, result.Spec.Allocations[0].ID)
 }
 
-// TestReconcileNetworkFreesVLANWhenCreateNetworkFailsAndNetworkAbsent verifies
-// that when CreateNetwork fails and a subsequent GetNetwork confirms the network
-// was not created, the allocated VLAN is released so the pool does not leak.
-func TestReconcileNetworkFreesVLANWhenCreateNetworkFailsAndNetworkAbsent(t *testing.T) {
+// TestReconcileNetworkPreservesVLANWhenCreateNetworkFails verifies that a VLAN
+// allocated to a Network stays assigned to that Network when CreateNetwork
+// fails. It is freed only when the Network is deleted.
+func TestReconcileNetworkPreservesVLANWhenCreateNetworkFails(t *testing.T) {
 	t.Parallel()
 
 	region := providerNetworkRegionFixture()
@@ -408,62 +408,19 @@ func TestReconcileNetworkFreesVLANWhenCreateNetworkFailsAndNetworkAbsent(t *test
 	networking := mock.NewMockNetworkInterface(c)
 	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(nil, coreerrors.ErrResourceNotFound)
 	networking.EXPECT().CreateNetwork(t.Context(), networkMatcher(network), gomock.Any()).Return(nil, errNeutronServerError)
-	// GetNetwork is called a second time to confirm the network was not committed.
-	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(nil, coreerrors.ErrResourceNotFound)
 
 	p := openstack.NewTestProvider(k8sClient, region)
 
 	_, err := openstack.ReconcileNetwork(t.Context(), p, networking, network)
 	require.Error(t, err)
 
-	// VLAN must be freed — Neutron confirmed the network does not exist.
-	result := &regionv1.VLANAllocation{}
-	getErr := k8sClient.Get(t.Context(), k8stypes.NamespacedName{
-		Namespace: region.Namespace,
-		Name:      region.StaticName(),
-	}, result)
-
-	if getErr == nil {
-		assert.Empty(t, result.Spec.Allocations, "VLAN must be freed when network was not created")
-	}
-}
-
-// TestReconcileNetworkPreservesVLANWhenCreateNetworkFailsButNetworkExists verifies
-// that when CreateNetwork returns a transport error but the network was actually
-// committed by Neutron, the VLAN allocation is preserved. Freeing it in this
-// case would allow the same VLAN to be handed to another network, producing
-// VlanIdInUse on the next provision.
-func TestReconcileNetworkPreservesVLANWhenCreateNetworkFailsButNetworkExists(t *testing.T) {
-	t.Parallel()
-
-	region := providerNetworkRegionFixture()
-	network := networkFixture()
-
-	k8sClient := getClient(t, nil)
-
-	c := gomock.NewController(t)
-	t.Cleanup(c.Finish)
-
-	openstackNetwork := openstackNetworkFixture(network)
-
-	networking := mock.NewMockNetworkInterface(c)
-	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(nil, coreerrors.ErrResourceNotFound)
-	networking.EXPECT().CreateNetwork(t.Context(), networkMatcher(network), gomock.Any()).Return(nil, errNeutronServerError)
-	// GetNetwork confirms Neutron committed the network despite the error.
-	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
-
-	p := openstack.NewTestProvider(k8sClient, region)
-
-	_, err := openstack.ReconcileNetwork(t.Context(), p, networking, network)
-	require.Error(t, err)
-
-	// VLAN must remain allocated — the network exists on OpenStack.
 	result := &regionv1.VLANAllocation{}
 	require.NoError(t, k8sClient.Get(t.Context(), k8stypes.NamespacedName{
 		Namespace: region.Namespace,
 		Name:      region.StaticName(),
 	}, result))
 	assert.Len(t, result.Spec.Allocations, 1)
+	assert.Equal(t, network.Name, result.Spec.Allocations[0].NetworkID)
 }
 
 // TestDeleteNetworkFreesVLANAfterSuccessfulDeleteNetwork is the positive
@@ -582,13 +539,11 @@ func TestDeleteNetworkSkipsVLANFreeWithoutProviderNetworks(t *testing.T) {
 	assert.Equal(t, network.Name, result.Spec.Allocations[0].NetworkID)
 }
 
-// TestReconcileNetworkSkipsVLANFreeWhenCreateFailsWithoutProviderNetworks
+// TestReconcileNetworkSkipsVLANBookkeepingWhenCreateFailsWithoutProviderNetworks
 // verifies that when no VLAN was allocated (region does not use provider
-// networks), a CreateNetwork failure does not trigger the confirmation
-// GetNetwork or any free. This exercises the vlanID == nil short-circuit in
-// tryFreeVLANOnCreateFailure. The strict mock — a single GetNetwork expectation —
-// fails the test if a second confirmation GetNetwork is issued.
-func TestReconcileNetworkSkipsVLANFreeWhenCreateFailsWithoutProviderNetworks(t *testing.T) {
+// networks), a CreateNetwork failure does not trigger any extra VLAN-related
+// lookups or cleanup. The strict mock fails if a second GetNetwork is issued.
+func TestReconcileNetworkSkipsVLANBookkeepingWhenCreateFailsWithoutProviderNetworks(t *testing.T) {
 	t.Parallel()
 
 	region := regionFixture()
@@ -600,9 +555,8 @@ func TestReconcileNetworkSkipsVLANFreeWhenCreateFailsWithoutProviderNetworks(t *
 	t.Cleanup(c.Finish)
 
 	// Arrange: network does not exist, and CreateNetwork fails. Because the region
-	// uses no provider networks, vlanID is nil, so tryFreeVLANOnCreateFailure must
-	// short-circuit before issuing a confirmation GetNetwork. Only ONE GetNetwork
-	// is expected — a second call would be an unexpected mock call and fail.
+	// uses no provider networks, vlanID is nil and only ONE GetNetwork is expected.
+	// A second call would be an unexpected mock call and fail.
 	networking := mock.NewMockNetworkInterface(c)
 	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(nil, coreerrors.ErrResourceNotFound)
 	networking.EXPECT().CreateNetwork(t.Context(), networkMatcher(network), nil).Return(nil, errNeutronServerError)
@@ -612,45 +566,6 @@ func TestReconcileNetworkSkipsVLANFreeWhenCreateFailsWithoutProviderNetworks(t *
 	// Act + assert: create fails and no VLAN bookkeeping is attempted.
 	_, err := openstack.ReconcileNetwork(t.Context(), p, networking, network)
 	require.Error(t, err)
-}
-
-// TestReconcileNetworkPreservesVLANWhenCreateFailsAndConfirmationErrors verifies
-// the conservative branch of tryFreeVLANOnCreateFailure: if the confirmation
-// GetNetwork returns an error other than ErrResourceNotFound, we cannot prove the
-// network was not committed, so the VLAN is kept. Freeing on an ambiguous result
-// risks handing the same VLAN to another network and producing VlanIdInUse.
-func TestReconcileNetworkPreservesVLANWhenCreateFailsAndConfirmationErrors(t *testing.T) {
-	t.Parallel()
-
-	region := providerNetworkRegionFixture()
-	network := networkFixture()
-
-	k8sClient := getClient(t, nil)
-
-	c := gomock.NewController(t)
-	t.Cleanup(c.Finish)
-
-	// Arrange: network is absent, a VLAN is allocated, then CreateNetwork fails.
-	networking := mock.NewMockNetworkInterface(c)
-	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(nil, coreerrors.ErrResourceNotFound)
-	networking.EXPECT().CreateNetwork(t.Context(), networkMatcher(network), gomock.Any()).Return(nil, errNeutronServerError)
-	// Confirmation GetNetwork fails with a non-NotFound error: we cannot prove the
-	// network was not committed, so the helper must take the conservative branch.
-	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(nil, errNeutronServerError)
-
-	p := openstack.NewTestProvider(k8sClient, region)
-
-	// Act: reconcile fails on the create.
-	_, err := openstack.ReconcileNetwork(t.Context(), p, networking, network)
-	require.Error(t, err)
-
-	// Assert: VLAN must remain allocated — we could not confirm the network is absent.
-	result := &regionv1.VLANAllocation{}
-	require.NoError(t, k8sClient.Get(t.Context(), k8stypes.NamespacedName{
-		Namespace: region.Namespace,
-		Name:      region.StaticName(),
-	}, result))
-	assert.Len(t, result.Spec.Allocations, 1)
 }
 
 // networkMatcher is used to check mock function call parameters, as the object
