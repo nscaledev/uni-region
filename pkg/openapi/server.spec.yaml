@@ -18,7 +18,7 @@ paths:
         Reads the OIDC discovery page identifying authorization servers.
       responses:
         '200':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/openidProtectedResourceResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/openidProtectedResourceResponse'
   /api/v1/organizations/{organizationID}/regions:
     description: |-
       Regions define a cloud.  This may be geographical or any logical partition.
@@ -39,11 +39,11 @@ paths:
         '200':
           $ref: '#/components/responses/regionsResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/regions/{regionID}/detail:
     description: |-
       Retrieves admin-level region details.
@@ -62,13 +62,13 @@ paths:
         '200':
           $ref: '#/components/responses/regionDetailResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/regions/{regionID}/flavors:
     description: Compute flavor services.
     parameters:
@@ -84,15 +84,15 @@ paths:
         '200':
           $ref: '#/components/responses/flavorsResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/regions/{regionID}/images:
     description: Compute image services.
     parameters:
@@ -108,17 +108,17 @@ paths:
         '200':
           $ref: '#/components/responses/imagesResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '422':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     post:
       summary: Create a compute image from a disk image URL.
       tags:
@@ -134,15 +134,15 @@ paths:
         '200':
           $ref: '#/components/responses/imageResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '422':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/regions/{regionID}/images/{imageID}:
     description: Compute image services.
     parameters:
@@ -157,17 +157,17 @@ paths:
       - oauth2Authentication: []
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/regions/{regionID}/externalnetworks:
     description: |-
       Allows access to "external networks" for providers that support them.
@@ -186,13 +186,13 @@ paths:
         '200':
           $ref: '#/components/responses/externalNetworksResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/identities:
     description: |-
       Identities are a limited scope set of credentials that can be used to provision
@@ -211,13 +211,13 @@ paths:
         '200':
           $ref: '#/components/responses/identitiesResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/projects/{projectID}/identities:
     description: |-
       Identities are a limited scope set of credentials that can be used to provision
@@ -239,13 +239,13 @@ paths:
         '201':
           $ref: '#/components/responses/identityResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}:
     description: |-
       Identities are a limited scope set of credentials that can be used to provision
@@ -266,15 +266,15 @@ paths:
         '200':
           $ref: '#/components/responses/identityResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       x-hidden: true
       description: Delete an identity and any resources associated with it.
@@ -282,17 +282,17 @@ paths:
       - oauth2Authentication: []
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/networks:
     description: |-
       Manages networks.  Networks may be required for baremetal node provisioning e.g. a VLAN.
@@ -309,13 +309,13 @@ paths:
         '200':
           $ref: '#/components/responses/networksResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/networks:
     description: |-
       Manages networks.  Networks may be required for baremetal node provisioning e.g. a VLAN.
@@ -336,15 +336,15 @@ paths:
         '201':
           $ref: '#/components/responses/networkResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/networks/{networkID}:
     description: |-
       Manages networks.  Networks may be required for baremetal node provisioning e.g. a VLAN.
@@ -364,15 +364,15 @@ paths:
         '200':
           $ref: '#/components/responses/networkResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       x-hidden: true
       description: Delete a new network.
@@ -380,24 +380,24 @@ paths:
       - oauth2Authentication: []
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/securitygroups:
     description: |-
       Manages security groups. Security group acts as a virtual firewall for instances to control 
       inbound and outbound traffic.
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
-    - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+    - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
     get:
       x-hidden: true
       description: List security groups.
@@ -407,13 +407,13 @@ paths:
         '200':
           $ref: '#/components/responses/securityGroupsResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/securitygroups:
     description: |-
       Manages security groups. Security group acts as a virtual firewall for instances to control 
@@ -433,15 +433,15 @@ paths:
         '201':
           $ref: '#/components/responses/securityGroupResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/securitygroups/{securityGroupID}:
     description: |-
       Manages security groups. Security group acts as a virtual firewall for instances to control 
@@ -460,15 +460,15 @@ paths:
         '200':
           $ref: '#/components/responses/securityGroupResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
       x-hidden: true
       description: Updates a security group.
@@ -480,15 +480,15 @@ paths:
         '202':
           $ref: '#/components/responses/securityGroupResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       x-hidden: true
       description: Delete a security group.
@@ -496,23 +496,23 @@ paths:
       - oauth2Authentication: []
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/servers:
     description: |-
       Manages servers.
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
-    - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+    - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
     get:
       x-hidden: true
       description: List servers.
@@ -522,13 +522,13 @@ paths:
         '200':
           $ref: '#/components/responses/serversResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers:
     description: |-
       Manages servers.
@@ -547,15 +547,15 @@ paths:
         '201':
           $ref: '#/components/responses/serverResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}:
     description: |-
       Manages servers.
@@ -573,15 +573,15 @@ paths:
         '200':
           $ref: '#/components/responses/serverResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
       x-hidden: true
       description: Update a server.
@@ -593,15 +593,15 @@ paths:
         '202':
           $ref: '#/components/responses/serverResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       x-hidden: true
       description: Delete a server.
@@ -609,17 +609,17 @@ paths:
       - oauth2Authentication: []
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/start:
     description: |-
       Manages servers.
@@ -636,17 +636,17 @@ paths:
       - oauth2Authentication: []
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/stop:
     description: |-
       Manages servers.
@@ -663,17 +663,17 @@ paths:
       - oauth2Authentication: []
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/softreboot:
     description: |-
       Manages servers.
@@ -690,17 +690,17 @@ paths:
       - oauth2Authentication: [ ]
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/hardreboot:
     description: |-
       Manages servers.
@@ -717,17 +717,17 @@ paths:
       - oauth2Authentication: []
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/consolesessions:
     description: |-
       Manages servers.
@@ -745,15 +745,15 @@ paths:
         '200':
           $ref: '#/components/responses/consoleSessionResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/consoleoutput:
     description: |-
       Manages servers.
@@ -772,15 +772,15 @@ paths:
         '200':
           $ref: '#/components/responses/consoleOutputResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/networks:
     description: |-
       Manages region scoped layer 3 networks.  Networks by default come with a default route to
@@ -795,7 +795,7 @@ paths:
       security:
       - oauth2Authentication: []
       parameters:
-      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
       - $ref: '#/components/parameters/organizationIDQueryParameter'
       - $ref: '#/components/parameters/projectIDQueryParameter'
       - $ref: '#/components/parameters/regionIDQueryParameter'
@@ -803,13 +803,13 @@ paths:
         '200':
           $ref: '#/components/responses/networksV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     post:
       description: Create a new network.
       summary: Create network
@@ -823,17 +823,17 @@ paths:
         '201':
           $ref: '#/components/responses/networkV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '422':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/networks/{networkID}:
     description: |-
       Manages region scoped layer 3 networks.  Networks by default come with a default route to
@@ -853,15 +853,15 @@ paths:
         '200':
           $ref: '#/components/responses/networkV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
       description: Update a network's mutable fields.
       summary: Update network
@@ -875,19 +875,19 @@ paths:
         '202':
           $ref: '#/components/responses/networkV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '409':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
         '422':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       description: Delete a network.
       summary: Delete network
@@ -897,17 +897,17 @@ paths:
       - oauth2Authentication: []
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/networks/{networkID}/references/{reference}:
     description: |-
       Implements reference management on resources.  Resources from another service
@@ -927,15 +927,15 @@ paths:
         '201':
           description: Reference successfully added.
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       x-hidden: true
       description: |
@@ -946,13 +946,13 @@ paths:
         '204':
           description: Reference successfully removed.
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/securitygroups:
     description: |-
       Manages network scoped security groups.  By default, security groups allow
@@ -965,7 +965,7 @@ paths:
       security:
       - oauth2Authentication: []
       parameters:
-      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
       - $ref: '#/components/parameters/organizationIDQueryParameter'
       - $ref: '#/components/parameters/projectIDQueryParameter'
       - $ref: '#/components/parameters/regionIDQueryParameter'
@@ -974,13 +974,13 @@ paths:
         '200':
           $ref: '#/components/responses/securityGroupsV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     post:
       description: Create a new security group.
       summary: Create security group
@@ -994,13 +994,13 @@ paths:
         '201':
           $ref: '#/components/responses/securityGroupV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/securitygroups/{securityGroupID}:
     description: |-
       Manages network scoped security groups.  By default, security groups allow
@@ -1018,15 +1018,15 @@ paths:
         '200':
           $ref: '#/components/responses/securityGroupV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
       description: Update a security group.
       summary: Update security group
@@ -1040,15 +1040,15 @@ paths:
         '202':
           $ref: '#/components/responses/securityGroupV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       description: Delete a security groups.
       summary: Delete security group
@@ -1058,17 +1058,17 @@ paths:
       - oauth2Authentication: []
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 
   /api/v2/loadbalancers:
     description: Manages network scoped layer 4 load balancers.
@@ -1080,7 +1080,7 @@ paths:
       security:
       - oauth2Authentication: []
       parameters:
-      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
       - $ref: '#/components/parameters/organizationIDQueryParameter'
       - $ref: '#/components/parameters/projectIDQueryParameter'
       - $ref: '#/components/parameters/regionIDQueryParameter'
@@ -1089,13 +1089,13 @@ paths:
         '200':
           $ref: '#/components/responses/loadBalancersV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     post:
       description: Create a new load balancer.
       summary: Create load balancer
@@ -1109,17 +1109,17 @@ paths:
         '201':
           $ref: '#/components/responses/loadBalancerV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '422':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/loadbalancers/{loadBalancerID}:
     description: Manages network scoped layer 4 load balancers.
     parameters:
@@ -1135,15 +1135,15 @@ paths:
         '200':
           $ref: '#/components/responses/loadBalancerV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
       description: Update a load balancer.
       summary: Update load balancer
@@ -1157,19 +1157,19 @@ paths:
         '202':
           $ref: '#/components/responses/loadBalancerV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '409':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
         '422':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       description: Delete a load balancer.
       summary: Delete load balancer
@@ -1179,17 +1179,17 @@ paths:
       - oauth2Authentication: []
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 
   /api/v2/sshcertificateauthorities:
     description: Manages project scoped OpenSSH user certificate authorities.
@@ -1201,20 +1201,20 @@ paths:
       security:
       - oauth2Authentication: []
       parameters:
-      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
       - $ref: '#/components/parameters/organizationIDQueryParameter'
       - $ref: '#/components/parameters/projectIDQueryParameter'
       responses:
         '200':
           $ref: '#/components/responses/sshCertificateAuthoritiesV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     post:
       description: Create a new SSH certificate authority.
       summary: Create SSH certificate authority
@@ -1228,15 +1228,15 @@ paths:
         '201':
           $ref: '#/components/responses/sshCertificateAuthorityV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '422':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 
   /api/v2/sshcertificateauthorities/{sshCertificateAuthorityID}:
     description: Manages project scoped OpenSSH user certificate authorities.
@@ -1253,15 +1253,15 @@ paths:
         '200':
           $ref: '#/components/responses/sshCertificateAuthorityV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       description: Delete an SSH certificate authority.
       summary: Delete SSH certificate authority
@@ -1271,17 +1271,17 @@ paths:
       - oauth2Authentication: []
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 
   /api/v2/regions/{regionID}/images:
     description: Manage compute disk images
@@ -1300,13 +1300,13 @@ paths:
         '200':
           $ref: '#/components/responses/imagesResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404': # region not found
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 
   /api/v2/servers:
     description: |-
@@ -1317,7 +1317,7 @@ paths:
       security:
       - oauth2Authentication: []
       parameters:
-      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
       - $ref: '#/components/parameters/organizationIDQueryParameter'
       - $ref: '#/components/parameters/projectIDQueryParameter'
       - $ref: '#/components/parameters/regionIDQueryParameter'
@@ -1326,13 +1326,13 @@ paths:
         '200':
           $ref: '#/components/responses/serversV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     post:
       x-hidden: true
       description: Create a new server.
@@ -1344,15 +1344,15 @@ paths:
         '201':
           $ref: '#/components/responses/serverV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '409':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/servers/{serverID}:
     description: |-
       Manages servers.
@@ -1367,15 +1367,15 @@ paths:
         '200':
           $ref: '#/components/responses/serverV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
       x-hidden: true
       description: Update a server.
@@ -1387,17 +1387,17 @@ paths:
         '202':
           $ref: '#/components/responses/serverV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '422':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       x-hidden: true
       description: Delete a server.
@@ -1405,17 +1405,17 @@ paths:
       - oauth2Authentication: []
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/servers/{serverID}/sshkey:
     description: |-
       Manages servers.
@@ -1430,15 +1430,15 @@ paths:
         '200':
           $ref: '#/components/responses/sshKeyResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/servers/{serverID}/start:
     description: |-
       Manages servers.
@@ -1452,17 +1452,17 @@ paths:
       - oauth2Authentication: []
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/servers/{serverID}/stop:
     description: |-
       Manages servers.
@@ -1476,17 +1476,17 @@ paths:
       - oauth2Authentication: []
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/servers/{serverID}/softreboot:
     description: |-
       Manages servers.
@@ -1500,17 +1500,17 @@ paths:
       - oauth2Authentication: [ ]
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/servers/{serverID}/hardreboot:
     description: |-
       Manages servers.
@@ -1524,17 +1524,17 @@ paths:
       - oauth2Authentication: []
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/servers/{serverID}/consolesessions:
     description: |-
       Manages servers.
@@ -1549,15 +1549,15 @@ paths:
         '200':
           $ref: '#/components/responses/consoleSessionResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/servers/{serverID}/consoleoutput:
     description: |-
       Manages servers.
@@ -1573,15 +1573,15 @@ paths:
         '200':
           $ref: '#/components/responses/consoleOutputResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/servers/{serverID}/snapshot:
     description: |-
       Snapshot a server to create a compute image.
@@ -1598,15 +1598,15 @@ paths:
         '201':
           $ref: '#/components/responses/imageResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 
   /api/v2/filestorage:
     description: |-
@@ -1619,7 +1619,7 @@ paths:
       security:
       - oauth2Authentication: []
       parameters:
-      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
       - $ref: '#/components/parameters/organizationIDQueryParameter'
       - $ref: '#/components/parameters/projectIDQueryParameter'
       - $ref: '#/components/parameters/regionIDQueryParameter'
@@ -1627,13 +1627,13 @@ paths:
         '200':
           $ref: '#/components/responses/storageListV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     post:
       description: Create a new storage.
       summary: Create file storage
@@ -1647,15 +1647,15 @@ paths:
         '201':
           $ref: '#/components/responses/storageV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '422':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/filestorage/{filestorageID}:
     description: |-
       Manages project scoped storage. 
@@ -1672,15 +1672,15 @@ paths:
         '200':
           $ref: '#/components/responses/storageV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
       description: Update this storage.
       summary: Update file storage
@@ -1694,17 +1694,17 @@ paths:
         '202':
           $ref: '#/components/responses/storageV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '422':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
       description: Delete a storage.
       summary: Delete file storage
@@ -1714,17 +1714,17 @@ paths:
       - oauth2Authentication: []
       responses:
         '202':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/filestorageclasses:
     description: |-
       Lists all available storage classes, detailing supported protocols, capacity limits, and service characteristics. Enables users to discover storage options suitable for their workloads.
@@ -1741,13 +1741,13 @@ paths:
         '200':
           $ref: '#/components/responses/storageClassListV2Response'
         '400':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 components:
   parameters:
     organizationIDParameter:
@@ -1961,7 +1961,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceReadMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceReadMetadata'
         spec:
           $ref: '#/components/schemas/regionSpec'
     regionDetailRead:
@@ -1972,7 +1972,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceReadMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceReadMetadata'
         spec:
           $ref: '#/components/schemas/regionDetailSpec'
     regions:
@@ -1991,7 +1991,7 @@ components:
       description: Image preinstalled version version metadata.
       type: object
       additionalProperties:
-        $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/semver'
+        $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/semver'
     gpuVendor:
       description: The GPU vendor.
       type: string
@@ -2108,7 +2108,7 @@ components:
       - status
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/staticResourceMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/staticResourceMetadata'
         spec:
           $ref: '#/components/schemas/imageSpec'
         status:
@@ -2149,7 +2149,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/imageCreateSpec'
 
@@ -2167,7 +2167,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/snapshotCreateSpec'
 
@@ -2234,7 +2234,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/staticResourceMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/staticResourceMetadata'
         spec:
           $ref: '#/components/schemas/flavorSpec'
     flavors:
@@ -2259,7 +2259,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/identityWriteSpec'
     identitySpecOpenStack:
@@ -2309,7 +2309,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
           $ref: '#/components/schemas/identitySpec'
     identitiesRead:
@@ -2378,7 +2378,7 @@ components:
       - metadata
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/networkWriteSpec'
     networkRead:
@@ -2389,7 +2389,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
           $ref: '#/components/schemas/networkReadSpec'
     networksRead:
@@ -2526,7 +2526,7 @@ components:
       - status
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
           $ref: '#/components/schemas/networkV2Spec'
         status:
@@ -2544,7 +2544,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/networkV2CreateSpec'
     networkV2Update:
@@ -2555,7 +2555,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/networkV2Spec'
     externalNetwork:
@@ -2689,7 +2689,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/securityGroupSpec'
     securityGroupRead:
@@ -2700,7 +2700,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
           $ref: '#/components/schemas/securityGroupSpec'
     securityGroupsRead:
@@ -2749,7 +2749,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/securityGroupV2CreateSpec'
     securityGroupV2Update:
@@ -2760,7 +2760,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/securityGroupV2Spec'
     securityGroupV2Read:
@@ -2772,7 +2772,7 @@ components:
       - status
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
           $ref: '#/components/schemas/securityGroupV2Spec'
         status:
@@ -2931,7 +2931,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/loadBalancerV2CreateSpec'
     loadBalancerV2Update:
@@ -2942,7 +2942,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/loadBalancerV2Spec'
     loadBalancerV2Read:
@@ -2954,7 +2954,7 @@ components:
       - status
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
           $ref: '#/components/schemas/loadBalancerV2Spec'
         status:
@@ -2997,7 +2997,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/sshCertificateAuthorityV2CreateSpec'
     sshCertificateAuthorityV2Read:
@@ -3008,7 +3008,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
           $ref: '#/components/schemas/sshCertificateAuthorityV2Spec'
     sshCertificateAuthoritiesV2Read:
@@ -3134,7 +3134,7 @@ components:
       - status
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
           $ref: '#/components/schemas/serverSpec'
         status:
@@ -3147,7 +3147,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/serverSpec'
     serversRead:
@@ -3259,7 +3259,7 @@ components:
       - status
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
           $ref: '#/components/schemas/serverV2Spec'
         status:
@@ -3277,7 +3277,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/serverV2CreateSpec'
     serverV2Update:
@@ -3288,7 +3288,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/serverV2Spec'
     consoleSession:
@@ -3371,7 +3371,7 @@ components:
           additionalProperties:
             type: string
         provisioningStatus:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceProvisioningStatus'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceProvisioningStatus'
     storageV2Spec:
       description: A storage's specification.
       type: object
@@ -3430,7 +3430,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           allOf:
           - type: object
@@ -3462,7 +3462,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/storageV2Spec'
     storageV2Read:
@@ -3474,7 +3474,7 @@ components:
       - status
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
         spec:
           $ref: '#/components/schemas/storageV2Spec'
         status:
@@ -3497,7 +3497,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/main/pkg/openapi/common.spec.yaml#/components/schemas/resourceReadMetadata'
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceReadMetadata'
         spec:
           $ref: '#/components/schemas/storageClassV2Spec'
     storageClassV2Spec:
