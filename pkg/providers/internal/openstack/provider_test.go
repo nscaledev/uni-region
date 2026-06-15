@@ -18,6 +18,7 @@ limitations under the License.
 package openstack_test
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"testing"
@@ -43,7 +44,7 @@ import (
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
-	"github.com/unikorn-cloud/core/pkg/errors"
+	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -59,6 +60,11 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+)
+
+var (
+	errNeutronConflict    = errors.New("409 Conflict: port still attached")
+	errNeutronServerError = errors.New("500 Internal Server Error")
 )
 
 func mustConvertImage(t *testing.T, in *images.Image) *types.Image {
@@ -295,9 +301,9 @@ func TestDeleteNetworkFreesVLANByNetworkIDWhenOpenStackNetworkMissing(t *testing
 	t.Cleanup(c.Finish)
 
 	networking := mock.NewMockNetworkingInterface(c)
-	networking.EXPECT().GetNetwork(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
-	networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
-	networking.EXPECT().GetRouter(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
+	networking.EXPECT().GetNetwork(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
+	networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
+	networking.EXPECT().GetRouter(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
 
 	p := openstack.NewTestProvider(client, region)
 
@@ -323,13 +329,243 @@ func TestDeleteNetworkIgnoresMissingVLANAllocation(t *testing.T) {
 	t.Cleanup(c.Finish)
 
 	networking := mock.NewMockNetworkingInterface(c)
-	networking.EXPECT().GetNetwork(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
-	networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
-	networking.EXPECT().GetRouter(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
+	networking.EXPECT().GetNetwork(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
+	networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
+	networking.EXPECT().GetRouter(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
 
 	p := openstack.NewTestProvider(client, region)
 
 	require.NoError(t, openstack.DeleteNetworkWithClient(t.Context(), p, networking, network))
+}
+
+// TestDeleteNetworkPreservesVLANWhenDeleteNetworkFails verifies that a VLAN
+// allocation is NOT freed if the Neutron network deletion fails. This prevents
+// the allocator from handing out a VLAN that is still in use on OpenStack,
+// which would cause VlanIdInUse on the next provision attempt.
+func TestDeleteNetworkPreservesVLANWhenDeleteNetworkFails(t *testing.T) {
+	t.Parallel()
+
+	const vlanID = 1101
+
+	region := providerNetworkRegionFixture()
+	network := networkFixture()
+
+	allocation := &regionv1.VLANAllocation{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: region.Namespace,
+			Name:      region.StaticName(),
+		},
+		Spec: regionv1.VLANAllocationSpec{
+			Allocations: []regionv1.VLANAllocationEntry{
+				{
+					ID:        vlanID,
+					NetworkID: network.Name,
+				},
+			},
+		},
+	}
+
+	k8sClient := getClient(t, []client.Object{allocation})
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	openstackNetwork := openstackNetworkFixture(network)
+	networking := mock.NewMockNetworkingInterface(c)
+	networking.EXPECT().GetNetwork(t.Context(), network).Return(openstackNetwork, nil)
+	networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
+	networking.EXPECT().GetRouter(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
+	networking.EXPECT().DeleteNetwork(t.Context(), openstackNetwork.ID).Return(errNeutronConflict)
+
+	p := openstack.NewTestProvider(k8sClient, region)
+
+	require.Error(t, openstack.DeleteNetworkWithClient(t.Context(), p, networking, network))
+
+	// VLAN must still be allocated — the Neutron network is still alive.
+	result := &regionv1.VLANAllocation{}
+	require.NoError(t, k8sClient.Get(t.Context(), k8stypes.NamespacedName{
+		Namespace: region.Namespace,
+		Name:      region.StaticName(),
+	}, result))
+	require.Len(t, result.Spec.Allocations, 1)
+	assert.Equal(t, vlanID, result.Spec.Allocations[0].ID)
+}
+
+// TestReconcileNetworkPreservesVLANWhenCreateNetworkFails verifies that a VLAN
+// allocated to a Network stays assigned to that Network when CreateNetwork
+// fails. It is freed only when the Network is deleted.
+func TestReconcileNetworkPreservesVLANWhenCreateNetworkFails(t *testing.T) {
+	t.Parallel()
+
+	region := providerNetworkRegionFixture()
+	network := networkFixture()
+
+	k8sClient := getClient(t, nil)
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	networking := mock.NewMockNetworkInterface(c)
+	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(nil, coreerrors.ErrResourceNotFound)
+	networking.EXPECT().CreateNetwork(t.Context(), networkMatcher(network), gomock.Any()).Return(nil, errNeutronServerError)
+
+	p := openstack.NewTestProvider(k8sClient, region)
+
+	_, err := openstack.ReconcileNetwork(t.Context(), p, networking, network)
+	require.Error(t, err)
+
+	result := &regionv1.VLANAllocation{}
+	require.NoError(t, k8sClient.Get(t.Context(), k8stypes.NamespacedName{
+		Namespace: region.Namespace,
+		Name:      region.StaticName(),
+	}, result))
+	assert.Len(t, result.Spec.Allocations, 1)
+	assert.Equal(t, network.Name, result.Spec.Allocations[0].NetworkID)
+}
+
+// TestDeleteNetworkFreesVLANAfterSuccessfulDeleteNetwork is the positive
+// counterpart to TestDeleteNetworkPreservesVLANWhenDeleteNetworkFails: when the
+// Neutron network exists and DeleteNetwork succeeds, the VLAN must be freed. This
+// pins the post-#559 ordering (delete Neutron network first, free VLAN second) so
+// a future refactor cannot silently regress to freeing while the network lingers.
+func TestDeleteNetworkFreesVLANAfterSuccessfulDeleteNetwork(t *testing.T) {
+	t.Parallel()
+
+	const vlanID = 1101
+
+	region := providerNetworkRegionFixture()
+	network := networkFixture()
+
+	allocation := &regionv1.VLANAllocation{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: region.Namespace,
+			Name:      region.StaticName(),
+		},
+		Spec: regionv1.VLANAllocationSpec{
+			Allocations: []regionv1.VLANAllocationEntry{
+				{
+					ID:        vlanID,
+					NetworkID: network.Name,
+				},
+			},
+		},
+	}
+
+	k8sClient := getClient(t, []client.Object{allocation})
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	// Arrange: the Neutron network exists and DeleteNetwork will succeed.
+	openstackNetwork := openstackNetworkFixture(network)
+	networking := mock.NewMockNetworkingInterface(c)
+	networking.EXPECT().GetNetwork(t.Context(), network).Return(openstackNetwork, nil)
+	networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
+	networking.EXPECT().GetRouter(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
+	// The network is deleted from Neutron first; the VLAN is only freed afterwards.
+	networking.EXPECT().DeleteNetwork(t.Context(), openstackNetwork.ID).Return(nil)
+
+	p := openstack.NewTestProvider(k8sClient, region)
+
+	// Act: delete succeeds end to end.
+	require.NoError(t, openstack.DeleteNetworkWithClient(t.Context(), p, networking, network))
+
+	// Assert: VLAN must be freed — Neutron confirmed the network is gone.
+	result := &regionv1.VLANAllocation{}
+	require.NoError(t, k8sClient.Get(t.Context(), k8stypes.NamespacedName{
+		Namespace: region.Namespace,
+		Name:      region.StaticName(),
+	}, result))
+	assert.Empty(t, result.Spec.Allocations)
+}
+
+// TestDeleteNetworkSkipsVLANFreeWithoutProviderNetworks verifies that for a
+// region that does not use provider networks, deletion still removes the Neutron
+// network but never touches the VLAN allocator. This exercises the
+// region.Spec.Openstack != nil && UseProviderNetworks() guard on the delete path.
+func TestDeleteNetworkSkipsVLANFreeWithoutProviderNetworks(t *testing.T) {
+	t.Parallel()
+
+	region := regionFixture()
+	region.Name = "region"
+	region.Namespace = "default"
+	network := networkFixture()
+
+	// Seed an allocation under the same name; a non-provider-network delete must
+	// leave it untouched (FreeByNetworkID must not be called).
+	allocation := &regionv1.VLANAllocation{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: region.Namespace,
+			Name:      region.StaticName(),
+		},
+		Spec: regionv1.VLANAllocationSpec{
+			Allocations: []regionv1.VLANAllocationEntry{
+				{
+					ID:        1101,
+					NetworkID: network.Name,
+				},
+			},
+		},
+	}
+
+	k8sClient := getClient(t, []client.Object{allocation})
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	// Arrange: the network exists and is deleted, but the region has no provider
+	// networks, so the VLAN-free branch must be skipped entirely. No allocator
+	// call is mocked because none should occur.
+	openstackNetwork := openstackNetworkFixture(network)
+	networking := mock.NewMockNetworkingInterface(c)
+	networking.EXPECT().GetNetwork(t.Context(), network).Return(openstackNetwork, nil)
+	networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
+	networking.EXPECT().GetRouter(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
+	networking.EXPECT().DeleteNetwork(t.Context(), openstackNetwork.ID).Return(nil)
+
+	p := openstack.NewTestProvider(k8sClient, region)
+
+	// Act: delete the network on a non-provider-network region.
+	require.NoError(t, openstack.DeleteNetworkWithClient(t.Context(), p, networking, network))
+
+	// Assert: the seeded allocation must be left exactly as it was — FreeByNetworkID
+	// was never called.
+	result := &regionv1.VLANAllocation{}
+	require.NoError(t, k8sClient.Get(t.Context(), k8stypes.NamespacedName{
+		Namespace: region.Namespace,
+		Name:      region.StaticName(),
+	}, result))
+	require.Len(t, result.Spec.Allocations, 1)
+	assert.Equal(t, network.Name, result.Spec.Allocations[0].NetworkID)
+}
+
+// TestReconcileNetworkSkipsVLANBookkeepingWhenCreateFailsWithoutProviderNetworks
+// verifies that when no VLAN was allocated (region does not use provider
+// networks), a CreateNetwork failure does not trigger any extra VLAN-related
+// lookups or cleanup. The strict mock fails if a second GetNetwork is issued.
+func TestReconcileNetworkSkipsVLANBookkeepingWhenCreateFailsWithoutProviderNetworks(t *testing.T) {
+	t.Parallel()
+
+	region := regionFixture()
+	network := networkFixture()
+
+	k8sClient := getClient(t, nil)
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	// Arrange: network does not exist, and CreateNetwork fails. Because the region
+	// uses no provider networks, vlanID is nil and only ONE GetNetwork is expected.
+	// A second call would be an unexpected mock call and fail.
+	networking := mock.NewMockNetworkInterface(c)
+	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(nil, coreerrors.ErrResourceNotFound)
+	networking.EXPECT().CreateNetwork(t.Context(), networkMatcher(network), nil).Return(nil, errNeutronServerError)
+
+	p := openstack.NewTestProvider(k8sClient, region)
+
+	// Act + assert: create fails and no VLAN bookkeeping is attempted.
+	_, err := openstack.ReconcileNetwork(t.Context(), p, networking, network)
+	require.Error(t, err)
 }
 
 // networkMatcher is used to check mock function call parameters, as the object
@@ -756,7 +992,7 @@ func expectNoFloatingIP(t *testing.T, c *gomock.Controller, vipPortID string) *m
 	t.Helper()
 
 	m := mock.NewMockNetworkingInterface(c)
-	m.EXPECT().GetFloatingIP(t.Context(), vipPortID).Return(nil, errors.ErrResourceNotFound)
+	m.EXPECT().GetFloatingIP(t.Context(), vipPortID).Return(nil, coreerrors.ErrResourceNotFound)
 
 	return m
 }
@@ -841,7 +1077,7 @@ func TestReconcileNetwork(t *testing.T) {
 		t.Parallel()
 
 		networking := mock.NewMockNetworkInterface(c)
-		networking.EXPECT().GetNetwork(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
+		networking.EXPECT().GetNetwork(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
 		networking.EXPECT().CreateNetwork(t.Context(), network, nil).Return(openStackNetwork, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -892,7 +1128,7 @@ func TestReconcileSubnet(t *testing.T) {
 		t.Parallel()
 
 		networking := mock.NewMockSubnetInterface(c)
-		networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
+		networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
 		networking.EXPECT().CreateSubnet(t.Context(), network, openstackNetwork.ID, "192.168.0.0/24", gomock.Any(), []string{"8.8.4.4"}, []subnets.HostRoute{}, allocationPools).Return(openstackSubnet, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -955,7 +1191,7 @@ func TestReconcileRouter(t *testing.T) {
 		t.Parallel()
 
 		networking := mock.NewMockRouterInterface(c)
-		networking.EXPECT().GetRouter(t.Context(), network).Return(nil, errors.ErrResourceNotFound)
+		networking.EXPECT().GetRouter(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
 		networking.EXPECT().CreateRouter(t.Context(), network).Return(openstackRouter, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -1036,7 +1272,7 @@ func TestReconcileSecurityGroup(t *testing.T) {
 		t.Parallel()
 
 		networking := mock.NewMockSecurityGroupInterface(c)
-		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroup).Return(nil, errors.ErrResourceNotFound)
+		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroup).Return(nil, coreerrors.ErrResourceNotFound)
 		networking.EXPECT().CreateSecurityGroup(t.Context(), securityGroup).Return(openstackSecurityGroup, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -1184,7 +1420,7 @@ func TestReconcileServerPort(t *testing.T) {
 		networking := mock.NewMockNetworkingInterface(c)
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
-		networking.EXPECT().GetServerPort(t.Context(), server).Return(nil, errors.ErrResourceNotFound)
+		networking.EXPECT().GetServerPort(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
 		networking.EXPECT().CreateServerPort(t.Context(), server, openstackNetwork.ID, []string{openstackSecurityGroup.ID}, []ports.AddressPair{}).Return(openstackServerPort, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -1265,7 +1501,7 @@ func TestReconcileFloatingIP(t *testing.T) {
 		server := server.DeepCopy()
 
 		networking := mock.NewMockFloatingIPInterface(c)
-		networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(nil, errors.ErrResourceNotFound)
+		networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(nil, coreerrors.ErrResourceNotFound)
 		networking.EXPECT().CreateFloatingIP(t.Context(), openstackServerPort.ID).Return(openstackFloatingIP, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -1328,7 +1564,7 @@ func TestReconcileLoadBalancerFloatingIP(t *testing.T) {
 		lb := lb.DeepCopy()
 
 		networking := mock.NewMockFloatingIPInterface(c)
-		networking.EXPECT().GetFloatingIP(t.Context(), vipPortID).Return(nil, errors.ErrResourceNotFound)
+		networking.EXPECT().GetFloatingIP(t.Context(), vipPortID).Return(nil, coreerrors.ErrResourceNotFound)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
@@ -1343,7 +1579,7 @@ func TestReconcileLoadBalancerFloatingIP(t *testing.T) {
 		lb.Spec.PublicIP = true
 
 		networking := mock.NewMockFloatingIPInterface(c)
-		networking.EXPECT().GetFloatingIP(t.Context(), vipPortID).Return(nil, errors.ErrResourceNotFound)
+		networking.EXPECT().GetFloatingIP(t.Context(), vipPortID).Return(nil, coreerrors.ErrResourceNotFound)
 		networking.EXPECT().CreateFloatingIP(t.Context(), vipPortID).Return(openstackFloatingIP, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -1392,12 +1628,12 @@ func TestReconcileLoadBalancerFloatingIP(t *testing.T) {
 		lb.Spec.PublicIP = true
 
 		networking := mock.NewMockFloatingIPInterface(c)
-		networking.EXPECT().GetFloatingIP(t.Context(), vipPortID).Return(nil, errors.ErrConsistency)
+		networking.EXPECT().GetFloatingIP(t.Context(), vipPortID).Return(nil, coreerrors.ErrConsistency)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
 		err := openstack.ReconcileLoadBalancerFloatingIP(t.Context(), p, networking, lb, vipPortID)
-		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.ErrorIs(t, err, coreerrors.ErrConsistency)
 		require.Nil(t, lb.Status.PublicIP)
 	})
 
@@ -1413,7 +1649,7 @@ func TestReconcileLoadBalancerFloatingIP(t *testing.T) {
 		p := openstack.NewTestProvider(client, regionFixture())
 
 		err := openstack.ReconcileLoadBalancerFloatingIP(t.Context(), p, networking, lb, vipPortID)
-		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.ErrorIs(t, err, coreerrors.ErrConsistency)
 		require.Nil(t, lb.Status.PublicIP)
 	})
 
@@ -1429,7 +1665,7 @@ func TestReconcileLoadBalancerFloatingIP(t *testing.T) {
 		p := openstack.NewTestProvider(client, regionFixture())
 
 		err := openstack.ReconcileLoadBalancerFloatingIP(t.Context(), p, networking, lb, vipPortID)
-		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.ErrorIs(t, err, coreerrors.ErrConsistency)
 		require.Nil(t, lb.Status.PublicIP)
 	})
 
@@ -1445,7 +1681,7 @@ func TestReconcileLoadBalancerFloatingIP(t *testing.T) {
 		p := openstack.NewTestProvider(client, regionFixture())
 
 		err := openstack.ReconcileLoadBalancerFloatingIP(t.Context(), p, networking, lb, vipPortID)
-		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.ErrorIs(t, err, coreerrors.ErrConsistency)
 		require.Nil(t, lb.Status.PublicIP)
 	})
 }
@@ -1491,7 +1727,7 @@ func TestReconcileServer(t *testing.T) {
 		t.Parallel()
 
 		compute := mock.NewMockServerInterface(c)
-		compute.EXPECT().GetServer(t.Context(), server).Return(nil, errors.ErrResourceNotFound)
+		compute.EXPECT().GetServer(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
 		compute.EXPECT().CreateServer(t.Context(), server, sshKeyName, openstackNetworks, nil, metadata).Return(openstackServer, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -1721,7 +1957,7 @@ func TestReconcileServerTags(t *testing.T) {
 		}
 
 		compute := mock.NewMockServerInterface(c)
-		compute.EXPECT().GetServer(t.Context(), server).Return(nil, errors.ErrResourceNotFound)
+		compute.EXPECT().GetServer(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
 		compute.EXPECT().CreateServer(t.Context(), server, sshKeyName, openstackNetworks, nil, expectedMetadata).Return(openstackServer, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -1762,7 +1998,7 @@ func TestReconcileServerTags(t *testing.T) {
 		}
 
 		compute := mock.NewMockServerInterface(c)
-		compute.EXPECT().GetServer(t.Context(), server).Return(nil, errors.ErrResourceNotFound)
+		compute.EXPECT().GetServer(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
 		compute.EXPECT().CreateServer(t.Context(), server, sshKeyName, openstackNetworks, nil, expectedMetadata).Return(openstackServer, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -1855,7 +2091,7 @@ func TestLoadBalancerNetwork(t *testing.T) {
 		p := openstack.NewTestProvider(c, regionFixture())
 
 		_, err := openstack.LoadBalancerNetwork(t.Context(), p, lb)
-		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.ErrorIs(t, err, coreerrors.ErrConsistency)
 	})
 
 	t.Run("ItReferencesMissingNetwork", func(t *testing.T) {
@@ -1868,7 +2104,7 @@ func TestLoadBalancerNetwork(t *testing.T) {
 		p := openstack.NewTestProvider(c, regionFixture())
 
 		_, err := openstack.LoadBalancerNetwork(t.Context(), p, lb)
-		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.ErrorIs(t, err, coreerrors.ErrConsistency)
 	})
 
 	t.Run("ItFindsTheNetwork", func(t *testing.T) {
@@ -1906,7 +2142,7 @@ func TestReconcileLoadBalancer(t *testing.T) {
 		expectedOpts := openstack.BuildLoadBalancerCreateOpts(lb, *network.Status.Openstack.SubnetID)
 
 		lbClient := mock.NewMockLoadBalancingInterface(c)
-		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(nil, errors.ErrResourceNotFound)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(nil, coreerrors.ErrResourceNotFound)
 		lbClient.EXPECT().CreateLoadBalancer(t.Context(), expectedOpts).Return(osLB, nil)
 
 		client := getClient(t, []client.Object{network})
@@ -1977,7 +2213,7 @@ func TestReconcileLoadBalancer(t *testing.T) {
 		p := openstack.NewTestProvider(client, regionFixture())
 
 		_, err := openstack.ReconcileLoadBalancer(t.Context(), p, lbClient, lb, *network.Status.Openstack.SubnetID)
-		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.ErrorIs(t, err, coreerrors.ErrConsistency)
 		require.NotNil(t, lb.Status.VIPAddress)
 		require.Equal(t, "10.0.0.7", lb.Status.VIPAddress.String())
 	})
@@ -2153,7 +2389,7 @@ func TestReconcileListener(t *testing.T) {
 		expectedOpts := openstack.BuildListenerCreateOpts(lb, listener, osLB.ID, osPool.ID)
 
 		lbClient := mock.NewMockLoadBalancingInterface(c)
-		lbClient.EXPECT().GetListener(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(nil, errors.ErrResourceNotFound)
+		lbClient.EXPECT().GetListener(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(nil, coreerrors.ErrResourceNotFound)
 		lbClient.EXPECT().CreateListener(t.Context(), expectedOpts).Return(osListener, nil)
 
 		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
@@ -2356,7 +2592,7 @@ func TestReconcilePool(t *testing.T) {
 		expectedOpts.LoadbalancerID = osLB.ID
 
 		lbClient := mock.NewMockLoadBalancingInterface(c)
-		lbClient.EXPECT().GetPool(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(nil, errors.ErrResourceNotFound)
+		lbClient.EXPECT().GetPool(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(nil, coreerrors.ErrResourceNotFound)
 		lbClient.EXPECT().CreatePool(t.Context(), expectedOpts).Return(osPool, nil)
 
 		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
@@ -2387,7 +2623,7 @@ func TestReconcilePool(t *testing.T) {
 		require.Equal(t, pools.ProtocolPROXYV2, expectedOpts.Protocol)
 
 		lbClient := mock.NewMockLoadBalancingInterface(c)
-		lbClient.EXPECT().GetPool(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("proxy")).Return(nil, errors.ErrResourceNotFound)
+		lbClient.EXPECT().GetPool(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("proxy")).Return(nil, coreerrors.ErrResourceNotFound)
 		lbClient.EXPECT().CreatePool(t.Context(), expectedOpts).Return(osPool, nil)
 
 		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
@@ -2416,7 +2652,7 @@ func TestReconcilePool(t *testing.T) {
 		require.Equal(t, pools.ProtocolUDP, expectedOpts.Protocol)
 
 		lbClient := mock.NewMockLoadBalancingInterface(c)
-		lbClient.EXPECT().GetPool(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("dns")).Return(nil, errors.ErrResourceNotFound)
+		lbClient.EXPECT().GetPool(t.Context(), osLB.ID, loadBalancerMatcher(lb), listenerCRDMatcher("dns")).Return(nil, coreerrors.ErrResourceNotFound)
 		lbClient.EXPECT().CreatePool(t.Context(), expectedOpts).Return(osPool, nil)
 
 		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
@@ -2591,7 +2827,7 @@ func TestReconcileMonitor(t *testing.T) {
 		expectedOpts := openstack.BuildMonitorCreateOpts(lb, listener, osPool.ID)
 
 		lbClient := mock.NewMockLoadBalancingInterface(c)
-		lbClient.EXPECT().GetMonitor(t.Context(), osPool.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(nil, errors.ErrResourceNotFound)
+		lbClient.EXPECT().GetMonitor(t.Context(), osPool.ID, loadBalancerMatcher(lb), listenerCRDMatcher("http")).Return(nil, coreerrors.ErrResourceNotFound)
 		lbClient.EXPECT().CreateMonitor(t.Context(), expectedOpts).Return(osMonitor, nil)
 
 		p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
@@ -2883,7 +3119,7 @@ func TestClassifyOctaviaStatus(t *testing.T) {
 			t.Parallel()
 
 			err := openstack.ClassifyOctaviaStatus("listener", "name", status)
-			require.ErrorIs(t, err, errors.ErrConsistency)
+			require.ErrorIs(t, err, coreerrors.ErrConsistency)
 		})
 	}
 }
@@ -2909,7 +3145,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
 		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, nil, lb, *network.Status.Openstack.SubnetID)
-		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.ErrorIs(t, err, coreerrors.ErrConsistency)
 	})
 
 	t.Run("MalformedVIP_Errors", func(t *testing.T) {
@@ -2926,7 +3162,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
 		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, nil, lb, *network.Status.Openstack.SubnetID)
-		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.ErrorIs(t, err, coreerrors.ErrConsistency)
 	})
 
 	t.Run("LBPending_Yields", func(t *testing.T) {
@@ -2960,7 +3196,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
 		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, nil, lb, *network.Status.Openstack.SubnetID)
-		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.ErrorIs(t, err, coreerrors.ErrConsistency)
 	})
 
 	t.Run("ZeroMembers_Provisioned", func(t *testing.T) {
@@ -3220,7 +3456,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 		lbClient.EXPECT().ListMonitors(t.Context(), osPool.ID, "").Return(nil, nil)
 
 		networkClient := mock.NewMockNetworkingInterface(c)
-		networkClient.EXPECT().GetFloatingIP(t.Context(), osLB.VipPortID).Return(nil, errors.ErrResourceNotFound)
+		networkClient.EXPECT().GetFloatingIP(t.Context(), osLB.VipPortID).Return(nil, coreerrors.ErrResourceNotFound)
 		networkClient.EXPECT().CreateFloatingIP(t.Context(), osLB.VipPortID).Return(openstackFloatingIP, nil)
 
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
@@ -3245,7 +3481,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
 		err := openstack.CreateLoadBalancerWithClient(t.Context(), p, lbClient, nil, lb, *network.Status.Openstack.SubnetID)
-		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.ErrorIs(t, err, coreerrors.ErrConsistency)
 	})
 }
 
@@ -3264,7 +3500,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 		lb.Status.VIPAddress = &corev1.IPv4Address{IP: net.ParseIP("10.0.0.42").To4()}
 
 		lbClient := mock.NewMockLoadBalancingInterface(c)
-		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(nil, errors.ErrResourceNotFound)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(nil, coreerrors.ErrResourceNotFound)
 
 		networkClient := mock.NewMockNetworkingInterface(c)
 
@@ -3404,12 +3640,12 @@ func TestDeleteLoadBalancer(t *testing.T) {
 		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
 
 		networkClient := mock.NewMockNetworkingInterface(c)
-		networkClient.EXPECT().GetFloatingIP(t.Context(), osLB.VipPortID).Return(nil, errors.ErrConsistency)
+		networkClient.EXPECT().GetFloatingIP(t.Context(), osLB.VipPortID).Return(nil, coreerrors.ErrConsistency)
 
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
 		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
-		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.ErrorIs(t, err, coreerrors.ErrConsistency)
 	})
 
 	t.Run("GetLoadBalancerConsistency_Propagates", func(t *testing.T) {
@@ -3419,14 +3655,14 @@ func TestDeleteLoadBalancer(t *testing.T) {
 		lb := loadBalancerFixture(network)
 
 		lbClient := mock.NewMockLoadBalancingInterface(c)
-		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(nil, errors.ErrConsistency)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(nil, coreerrors.ErrConsistency)
 
 		networkClient := mock.NewMockNetworkingInterface(c)
 
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
 		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
-		require.ErrorIs(t, err, errors.ErrConsistency)
+		require.ErrorIs(t, err, coreerrors.ErrConsistency)
 	})
 
 	t.Run("DeleteFloatingIPError_Propagates", func(t *testing.T) {
