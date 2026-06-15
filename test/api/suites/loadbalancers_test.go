@@ -166,11 +166,15 @@ var _ = Describe("LoadBalancer", func() {
 				Expect(*putResp.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
 				Expect(putResp.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
 
-				roundTrip, err := regionClient.GetLoadBalancer(ctx, lbID)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(roundTrip.Spec.Listeners[0].AllowedCidrs).NotTo(BeNil())
-				Expect(*roundTrip.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
-				Expect(roundTrip.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
+				// The API server reads single-resource GETs through the controller-runtime cache,
+				// so an immediate GET after PUT can briefly observe the pre-update object.
+				Eventually(func(g Gomega) {
+					roundTrip, err := regionClient.GetLoadBalancer(ctx, lbID)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(roundTrip.Spec.Listeners[0].AllowedCidrs).NotTo(BeNil())
+					g.Expect(*roundTrip.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
+					g.Expect(roundTrip.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
+				}).WithTimeout(5 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
 			})
 
 			It("accepts an update toggling publicIP to false", func() {
