@@ -38,6 +38,8 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
+	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -147,6 +149,24 @@ func aclWithSrvUpdate() *identityapi.Acl {
 			},
 		},
 	}
+}
+
+func expectProjectFound(mockIdentity *identitymock.MockClientWithResponsesInterface) *gomock.Call {
+	return mockIdentity.EXPECT().
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
+		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+		}, nil)
+}
+
+func newMockProvidersWithNoFlavors(ctrl *gomock.Controller) *mockproviders.MockProviders {
+	mockProvider := mocktypes.NewMockProvider(ctrl)
+	mockProvider.EXPECT().Flavors(gomock.Any()).Return(nil, nil).AnyTimes()
+
+	mockProviders := mockproviders.NewMockProviders(ctrl)
+	mockProviders.EXPECT().LookupCloud(gomock.Any()).Return(mockProvider, nil).AnyTimes()
+
+	return mockProviders
 }
 
 func minimalServerV2CreateRequest() *openapi.ServerV2Create {
@@ -287,11 +307,7 @@ func TestServerCreateV2SSHCertificateAuthorityNotFound(t *testing.T) {
 	k8sClient := newSrvFakeClient(t, network).Build()
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
-		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
-			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
-		}, nil)
+	expectProjectFound(mockIdentity)
 
 	c := server.NewClientV2(common.ClientArgs{
 		Client:    k8sClient,
@@ -321,11 +337,7 @@ func TestServerCreateV2SSHCertificateAuthorityRejectsCrossProjectReference(t *te
 	k8sClient := newSrvFakeClient(t, network, ca).Build()
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
-		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
-			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
-		}, nil)
+	expectProjectFound(mockIdentity)
 
 	c := server.NewClientV2(common.ClientArgs{
 		Client:    k8sClient,
@@ -355,11 +367,7 @@ func TestServerCreateV2SSHCertificateAuthorityRejectsUnsupportedUserData(t *test
 	k8sClient := newSrvFakeClient(t, network, ca).Build()
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
-		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
-			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
-		}, nil)
+	expectProjectFound(mockIdentity)
 
 	c := server.NewClientV2(common.ClientArgs{
 		Client:    k8sClient,
@@ -408,16 +416,15 @@ func TestServerCreateV2SSHCertificateAuthorityAcceptsSupportedUserData(t *testin
 			k8sClient := newSrvFakeClient(t, network, ca).Build()
 
 			mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-			mockIdentity.EXPECT().
-				GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
-				Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
-					HTTPResponse: &http.Response{StatusCode: http.StatusOK},
-				}, nil)
+			expectProjectFound(mockIdentity)
+
+			mockProviders := newMockProvidersWithNoFlavors(ctrl)
 
 			c := server.NewClientV2(common.ClientArgs{
 				Client:    k8sClient,
 				Namespace: srvNamespace,
 				Identity:  mockIdentity,
+				Providers: mockProviders,
 			})
 
 			ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
@@ -445,16 +452,15 @@ func TestServerCreateV2RejectsInvalidAllowedSourceAddress(t *testing.T) {
 	k8sClient := newSrvFakeClient(t, network).Build()
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
-		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
-			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
-		}, nil)
+	expectProjectFound(mockIdentity)
+
+	mockProviders := newMockProvidersWithNoFlavors(ctrl)
 
 	c := server.NewClientV2(common.ClientArgs{
 		Client:    k8sClient,
 		Namespace: srvNamespace,
 		Identity:  mockIdentity,
+		Providers: mockProviders,
 	})
 
 	ctx := rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate())
@@ -1071,18 +1077,16 @@ func TestServerCreateV2DeterministicID(t *testing.T) {
 
 	network := testSrvNetworkWithProject(srvProjectID)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
-		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
-			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
-		}, nil).
-		AnyTimes()
+	expectProjectFound(mockIdentity).AnyTimes()
+
+	providers := newMockProvidersWithNoFlavors(ctrl)
 
 	k8sClient := newSrvFakeClient(t, network).Build()
 
 	c := server.NewClientV2(common.ClientArgs{
 		Client:    k8sClient,
 		Namespace: srvNamespace,
+		Providers: providers,
 		Identity:  mockIdentity,
 	})
 
@@ -1097,9 +1101,11 @@ func TestServerCreateV2DeterministicID(t *testing.T) {
 	// Same (networkID, name) must produce the same Kubernetes resource name.
 	// The second create hits the AlreadyExists path and we verify the ID is stable.
 	k8sClientFresh := newSrvFakeClient(t, network).Build()
+
 	c2 := server.NewClientV2(common.ClientArgs{
 		Client:    k8sClientFresh,
 		Namespace: srvNamespace,
+		Providers: providers,
 		Identity:  mockIdentity,
 	})
 
@@ -1114,9 +1120,11 @@ func TestServerCreateV2DeterministicID(t *testing.T) {
 	diffReq.Metadata.Name = "other-server"
 
 	k8sClientDiff := newSrvFakeClient(t, network).Build()
+
 	c3 := server.NewClientV2(common.ClientArgs{
 		Client:    k8sClientDiff,
 		Namespace: srvNamespace,
+		Providers: providers,
 		Identity:  mockIdentity,
 	})
 
@@ -1147,6 +1155,7 @@ func TestServerCreateV2DeterministicID(t *testing.T) {
 	c4 := server.NewClientV2(common.ClientArgs{
 		Client:    k8sClientOtherNet,
 		Namespace: srvNamespace,
+		Providers: providers,
 		Identity:  mockIdentity,
 	})
 
@@ -1166,18 +1175,16 @@ func TestServerCreateV2ConflictOnDuplicateName(t *testing.T) {
 
 	network := testSrvNetworkWithProject(srvProjectID)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
-		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
-			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
-		}, nil).
-		AnyTimes()
+	providers := newMockProvidersWithNoFlavors(ctrl)
+
+	expectProjectFound(mockIdentity).AnyTimes()
 
 	k8sClient := newSrvFakeClient(t, network).Build()
 
 	c := server.NewClientV2(common.ClientArgs{
 		Client:    k8sClient,
 		Namespace: srvNamespace,
+		Providers: providers,
 		Identity:  mockIdentity,
 	})
 
