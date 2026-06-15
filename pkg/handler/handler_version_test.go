@@ -35,9 +35,9 @@ func Test_Version_Get(t *testing.T) {
 	h := &handler.Handler{}
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/api/v2/version", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/version", nil)
 
-	h.GetApiV2Version(w, r)
+	h.GetApiVersion(w, r)
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "no-cache", w.Header().Get("Cache-Control"))

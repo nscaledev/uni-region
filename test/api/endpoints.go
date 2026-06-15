@@ -209,7 +209,7 @@ func (e *Endpoints) DeleteSSHCertificateAuthority(sshCAID string) string {
 
 // Version returns the endpoint for reading the deployed service version.
 func (e *Endpoints) Version() string {
-	return "/api/v2/version"
+	return "/api/version"
 }
 
 // ListServers returns the endpoint for listing servers in a project.

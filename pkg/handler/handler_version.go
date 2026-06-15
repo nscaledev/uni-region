@@ -25,7 +25,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 )
 
-func (h *Handler) GetApiV2Version(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) GetApiVersion(w http.ResponseWriter, r *http.Request) {
 	result := coreapi.ServiceVersionRead{
 		Name:    constants.Application,
 		Version: constants.Version,
