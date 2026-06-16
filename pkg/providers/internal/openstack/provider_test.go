@@ -539,6 +539,106 @@ func TestDeleteNetworkSkipsVLANFreeWithoutProviderNetworks(t *testing.T) {
 	assert.Equal(t, network.Name, result.Spec.Allocations[0].NetworkID)
 }
 
+// identityFixture builds an abstract identity whose namespace/name key the
+// lookup of the backing OpenstackIdentity.
+func identityFixture() *regionv1.Identity {
+	return &regionv1.Identity{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test-identity",
+		},
+	}
+}
+
+// unrealizedOpenstackIdentityFixture builds a backing OpenstackIdentity for the
+// given identity that has no project allocated yet, modelling a service
+// principal that has not finished provisioning.
+func unrealizedOpenstackIdentityFixture(identity *regionv1.Identity) *regionv1.OpenstackIdentity {
+	return &regionv1.OpenstackIdentity{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: identity.Namespace,
+			Name:      identity.Name,
+		},
+	}
+}
+
+// TestDeleteNetworkNoopsWhenIdentityAbsent verifies the delete is a clean no-op
+// when the backing OpenstackIdentity does not exist: nothing could have been
+// created provider-side, so cleanup must not error or block.
+func TestDeleteNetworkNoopsWhenIdentityAbsent(t *testing.T) {
+	t.Parallel()
+
+	region := providerNetworkRegionFixture()
+	identity := identityFixture()
+	network := networkFixture()
+
+	p := openstack.NewTestProvider(getClient(t, nil), region)
+
+	require.NoError(t, p.DeleteNetwork(t.Context(), identity, network))
+}
+
+// TestDeleteNetworkNoopsWhenIdentityUnrealized verifies the delete is a clean
+// no-op when the backing OpenstackIdentity exists but has no project allocated
+// yet (still provisioning).
+func TestDeleteNetworkNoopsWhenIdentityUnrealized(t *testing.T) {
+	t.Parallel()
+
+	region := providerNetworkRegionFixture()
+	identity := identityFixture()
+	network := networkFixture()
+
+	k8sClient := getClient(t, []client.Object{unrealizedOpenstackIdentityFixture(identity)})
+	p := openstack.NewTestProvider(k8sClient, region)
+
+	require.NoError(t, p.DeleteNetwork(t.Context(), identity, network))
+}
+
+// TestDeleteSecurityGroupNoopsWhenIdentityUnrealized is a regression guard: the
+// delete previously dereferenced a nil project ID and panicked. An unrealized
+// identity must be a clean no-op.
+func TestDeleteSecurityGroupNoopsWhenIdentityUnrealized(t *testing.T) {
+	t.Parallel()
+
+	region := providerNetworkRegionFixture()
+	identity := identityFixture()
+	securityGroup := securityGroupFixture()
+
+	k8sClient := getClient(t, []client.Object{unrealizedOpenstackIdentityFixture(identity)})
+	p := openstack.NewTestProvider(k8sClient, region)
+
+	require.NoError(t, p.DeleteSecurityGroup(t.Context(), identity, securityGroup))
+}
+
+// TestDeleteServerNoopsWhenIdentityUnrealized verifies the delete is a clean
+// no-op when the backing identity has no project allocated yet.
+func TestDeleteServerNoopsWhenIdentityUnrealized(t *testing.T) {
+	t.Parallel()
+
+	region := providerNetworkRegionFixture()
+	identity := identityFixture()
+	server := serverFixture()
+
+	k8sClient := getClient(t, []client.Object{unrealizedOpenstackIdentityFixture(identity)})
+	p := openstack.NewTestProvider(k8sClient, region)
+
+	require.NoError(t, p.DeleteServer(t.Context(), identity, server))
+}
+
+// TestDeleteLoadBalancerNoopsWhenIdentityUnrealized verifies the delete is a
+// clean no-op when the backing identity has no project allocated yet.
+func TestDeleteLoadBalancerNoopsWhenIdentityUnrealized(t *testing.T) {
+	t.Parallel()
+
+	region := providerNetworkRegionFixture()
+	identity := identityFixture()
+	loadBalancer := loadBalancerFixture(loadBalancerNetworkFixture())
+
+	k8sClient := getClient(t, []client.Object{unrealizedOpenstackIdentityFixture(identity)})
+	p := openstack.NewTestProvider(k8sClient, region)
+
+	require.NoError(t, p.DeleteLoadBalancer(t.Context(), identity, loadBalancer))
+}
+
 // TestReconcileNetworkSkipsVLANBookkeepingWhenCreateFailsWithoutProviderNetworks
 // verifies that when no VLAN was allocated (region does not use provider
 // networks), a CreateNetwork failure does not trigger any extra VLAN-related

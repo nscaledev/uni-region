@@ -186,6 +186,9 @@ func TestDeprovision_UnreadyIdentityDeletesAllocation(t *testing.T) {
 	region := testRegion()
 	provider := mocktypes.NewMockProvider(ctrl)
 	provider.EXPECT().Region(gomock.Any()).Return(region, nil)
+	// Deprovision now always delegates to the provider; the provider is
+	// responsible for no-opping when the identity was never realized.
+	provider.EXPECT().DeleteNetwork(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	providers := mockproviders.NewMockProviders(ctrl)
 	providers.EXPECT().LookupCloud(testRegionID).Return(provider, nil).Times(2)

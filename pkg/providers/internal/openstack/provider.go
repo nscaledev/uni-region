@@ -1697,8 +1697,44 @@ func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identi
 	return nil
 }
 
+// openstackIdentityProvisioned reports whether the service principal has been
+// realized far enough to build a project-scoped client. Finalizer ordering
+// keeps the identity alive until its consumers are gone, so on delete paths a
+// not-yet-provisioned identity (absent, or no project allocated) means nothing
+// provider-side was ever created and the delete is a no-op. Never use this to
+// gate create paths: there the missing project must surface as an error so the
+// manager requeues.
+//
+// The project is the deliberate watermark: it is allocated before any provider
+// resource (a VLAN, Neutron or Octavia object) can be created, so its absence
+// is sufficient to prove nothing exists to delete. Later identity fields (user,
+// password) gate specific clients and still surface their own errors past this
+// point, which is correct: those deletes are idempotent and the manager
+// requeues.
+func (p *Provider) openstackIdentityProvisioned(ctx context.Context, identity *unikornv1.Identity) (bool, error) {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		if kerrors.IsNotFound(err) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	return openstackIdentity.Spec.ProjectID != nil, nil
+}
+
 // DeleteNetwork deletes a physical network.
 func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
+	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	if !provisioned {
+		return nil
+	}
+
 	// NOTE: this is a privileged network client as it needs permissions
 	// from the manager policy in order to see provider networks for VLAN
 	// deallocation.
@@ -2026,6 +2062,15 @@ func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.
 // DeleteSecurityGroup deletes a security group.
 func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
 	log := log.FromContext(ctx)
+
+	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	if !provisioned {
+		return nil
+	}
 
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
@@ -2451,6 +2496,15 @@ func resolveServerKeyName(server *unikornv1.Server, identity *unikornv1.Openstac
 //nolint:cyclop
 func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	log := log.FromContext(ctx)
+
+	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	if !provisioned {
+		return nil
+	}
 
 	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
@@ -3481,6 +3535,15 @@ func (p *Provider) createLoadBalancer(ctx context.Context, lbClient LoadBalancin
 // IP idempotently. It yields while Octavia is in any PENDING_* state and
 // after issuing a cascade delete so the next reconcile can confirm completion.
 func (p *Provider) DeleteLoadBalancer(ctx context.Context, identity *unikornv1.Identity, loadBalancer *unikornv1.LoadBalancer) error {
+	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	if !provisioned {
+		return nil
+	}
+
 	lbClient, err := p.loadBalancerFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
