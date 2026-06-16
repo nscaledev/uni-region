@@ -934,11 +934,23 @@ type ServerPublicIPAllocationSpec struct {
 	Enabled bool `json:"enabled,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=Pending;Running;Stopping;Stopped
+// +kubebuilder:validation:Enum=Pending;Queued;Building;Running;Stopping;Stopped
 type InstanceLifecyclePhase string
 
 const (
-	InstanceLifecyclePhasePending  InstanceLifecyclePhase = "Pending"
+	// InstanceLifecyclePhasePending is the initial phase before the provider has
+	// been observed reporting on the server.
+	InstanceLifecyclePhasePending InstanceLifecyclePhase = "Pending"
+	// InstanceLifecyclePhaseQueued means the provider has accepted the create
+	// request but the underlying hardware has not yet started work. Used for
+	// baremetal servers Nova has admitted while Ironic has not yet entered a
+	// deploy state. From the user's perspective: "you're in line, this is expected".
+	InstanceLifecyclePhaseQueued InstanceLifecyclePhase = "Queued"
+	// InstanceLifecyclePhaseBuilding means the provider is actively provisioning
+	// the server: Nova reports BUILD with no Ironic pre-deploy gating (for VMs
+	// always, for baremetal once Ironic has entered a deploy state). Distinct
+	// from Queued so users know forward progress is happening.
+	InstanceLifecyclePhaseBuilding InstanceLifecyclePhase = "Building"
 	InstanceLifecyclePhaseRunning  InstanceLifecyclePhase = "Running"
 	InstanceLifecyclePhaseStopping InstanceLifecyclePhase = "Stopping"
 	InstanceLifecyclePhaseStopped  InstanceLifecyclePhase = "Stopped"

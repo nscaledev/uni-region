@@ -232,6 +232,8 @@ spec:
                 description: Phase is the current lifecycle phase of the server.
                 enum:
                 - Pending
+                - Queued
+                - Building
                 - Running
                 - Stopping
                 - Stopped
