@@ -34,6 +34,7 @@ import (
 
 	"github.com/onsi/ginkgo/v2"
 
+	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
 	identityopenapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/principal"
@@ -78,6 +79,24 @@ func (c *APIClient) GetEndpoints() *Endpoints {
 // Use this for direct API calls that need to hit the region API.
 func (c *APIClient) DoRegionRequest(ctx context.Context, method, path string, body io.Reader, expectedStatus int) (*http.Response, []byte, error) {
 	return c.regionClient.DoRequest(ctx, method, path, body, expectedStatus)
+}
+
+// GetVersion gets the deployed region service version.
+func (c *APIClient) GetVersion(ctx context.Context) (*coreapi.ServiceVersionRead, error) {
+	path := c.endpoints.Version()
+
+	//nolint:bodyclose // DoRegionRequest handles response body closing internally
+	_, respBody, err := c.DoRegionRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	if err != nil {
+		return nil, fmt.Errorf("getting service version: %w", err)
+	}
+
+	var version coreapi.ServiceVersionRead
+	if err := json.Unmarshal(respBody, &version); err != nil {
+		return nil, fmt.Errorf("unmarshaling service version: %w", err)
+	}
+
+	return &version, nil
 }
 
 // InternalAPIConfigured reports whether local internal API mTLS credentials are present.
