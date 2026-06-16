@@ -42,7 +42,9 @@ const (
 
 // Defines values for InstanceLifecyclePhase.
 const (
+	InstanceLifecyclePhaseBuilding InstanceLifecyclePhase = "Building"
 	InstanceLifecyclePhasePending  InstanceLifecyclePhase = "Pending"
+	InstanceLifecyclePhaseQueued   InstanceLifecyclePhase = "Queued"
 	InstanceLifecyclePhaseRunning  InstanceLifecyclePhase = "Running"
 	InstanceLifecyclePhaseStopped  InstanceLifecyclePhase = "Stopped"
 	InstanceLifecyclePhaseStopping InstanceLifecyclePhase = "Stopping"
@@ -385,7 +387,12 @@ type Images = []Image
 // InfrastructureRef A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
 type InfrastructureRef = string
 
-// InstanceLifecyclePhase The lifecycle phase of an instance.
+// InstanceLifecyclePhase The lifecycle phase of an instance. Once provisioning_status reaches
+// provisioned, this becomes the live readiness signal: API consumers
+// should treat Running (not provisioned) as the "ready to use" state.
+// Queued and Building are observed during create — Queued for
+// baremetal servers waiting on hardware, Building for servers the
+// provider is actively bringing up.
 type InstanceLifecyclePhase string
 
 // Ipv4Address An IPv4 address.
@@ -1017,7 +1024,12 @@ type ServerSpec struct {
 
 // ServerStatus A server's status.
 type ServerStatus struct {
-	// Phase The lifecycle phase of an instance.
+	// Phase The lifecycle phase of an instance. Once provisioning_status reaches
+	// provisioned, this becomes the live readiness signal: API consumers
+	// should treat Running (not provisioned) as the "ready to use" state.
+	// Queued and Building are observed during create — Queued for
+	// baremetal servers waiting on hardware, Building for servers the
+	// provider is actively bringing up.
 	Phase *InstanceLifecyclePhase `json:"phase,omitempty"`
 
 	// PrivateIP The private IP address of the server.
@@ -1120,7 +1132,12 @@ type ServerV2Status struct {
 	// NetworkId The network a security group belongs to.
 	NetworkId string `json:"networkId"`
 
-	// PowerState The lifecycle phase of an instance.
+	// PowerState The lifecycle phase of an instance. Once provisioning_status reaches
+	// provisioned, this becomes the live readiness signal: API consumers
+	// should treat Running (not provisioned) as the "ready to use" state.
+	// Queued and Building are observed during create — Queued for
+	// baremetal servers waiting on hardware, Building for servers the
+	// provider is actively bringing up.
 	PowerState *InstanceLifecyclePhase `json:"powerState,omitempty"`
 
 	// PrivateIP The private IP address of the server.

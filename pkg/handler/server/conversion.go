@@ -149,6 +149,10 @@ func convertInstanceLifecyclePhase(in unikornv1.InstanceLifecyclePhase) *openapi
 	switch in {
 	case unikornv1.InstanceLifecyclePhasePending:
 		return ptr.To(openapi.InstanceLifecyclePhasePending)
+	case unikornv1.InstanceLifecyclePhaseQueued:
+		return ptr.To(openapi.InstanceLifecyclePhaseQueued)
+	case unikornv1.InstanceLifecyclePhaseBuilding:
+		return ptr.To(openapi.InstanceLifecyclePhaseBuilding)
 	case unikornv1.InstanceLifecyclePhaseRunning:
 		return ptr.To(openapi.InstanceLifecyclePhaseRunning)
 	case unikornv1.InstanceLifecyclePhaseStopping:

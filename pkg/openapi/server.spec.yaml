@@ -3126,10 +3126,18 @@ components:
           description: The security group ID.
           type: string
     instanceLifecyclePhase:
-      description: The lifecycle phase of an instance.
+      description: |
+        The lifecycle phase of an instance. Once provisioning_status reaches
+        provisioned, this becomes the live readiness signal: API consumers
+        should treat Running (not provisioned) as the "ready to use" state.
+        Queued and Building are observed during create — Queued for
+        baremetal servers waiting on hardware, Building for servers the
+        provider is actively bringing up.
       type: string
       enum:
       - Pending
+      - Queued
+      - Building
       - Running
       - Stopping
       - Stopped
