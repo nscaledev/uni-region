@@ -2172,7 +2172,7 @@ func buildPhase(ironicNode *nodes.Node) unikornv1.InstanceLifecyclePhase {
 //
 // BUILD-window branch. Breaking it up further would scatter Phase derivation.
 //
-//nolint:cyclop // Fan-out matches OpenStack's PowerState enum surface plus the
+//nolint:cyclop // Fan-out matches OpenStack's PowerState enum surface plus the BUILD branch that consults Ironic via buildPhase; collapsing it would scatter Phase derivation across helpers.
 func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserver *servers.Server, ironicNode *nodes.Node) {
 	// Default to `Pending` if the phase is not already set. This should only happen to old servers created before we had phases.
 	if server.Status.Phase == "" {
@@ -2212,6 +2212,14 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 	case servers.RUNNING:
 		server.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
 	case servers.SHUTDOWN:
+		// TODO: Stopping is only ever written by the handler in response to a
+		// user-initiated stop. If a monitor poll lands while OpenStack is
+		// already reporting SHUTOFF/SHUTDOWN (e.g. the user stopped via the
+		// OpenStack dashboard rather than the platform API, or the platform
+		// missed the transient Stopping window), this flips Stopping → Stopped
+		// without ever observing the in-flight state on Phase. Pre-existing
+		// behaviour, follow-up work in a later PR; leaving the mapping as-is
+		// here to keep the INST-921 stack scoped.
 		server.Status.Phase = unikornv1.InstanceLifecyclePhaseStopped
 	case servers.CRASHED:
 		// REVIEW_ME: What should we do when the server crashes?

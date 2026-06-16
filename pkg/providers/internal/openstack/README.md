@@ -127,22 +127,26 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   only while Nova reports `BUILD` for a flavor marked baremetal in region
   configuration. The result feeds `setServerPhase`, which writes `Queued`
   (pre-deploy Ironic states: not yet picked up, cleaning, inspecting, etc.)
-  or `Building` (Ironic actively deploying — including transient `*Fail`
-  states, on the principle that the node is still in the build pipeline and
-  the failure signal belongs on the `Healthy` condition rather than on
-  Phase). Provisioning status itself is provisioner-owned and the monitor
-  never writes it. The lookup is filtered by `instance_uuid`. Because Ironic
-  node ownership and visibility are provider infrastructure concerns rather than
-  tenant workload operations, this lookup uses the Region top-level provider
-  credentials scoped to the service principal's project, matching the package's
-  other privileged client patterns. Deployments must grant those credentials
-  enough Ironic policy visibility to list/detail nodes by instance UUID, for
-  example through a narrow `bm-mapper`-style role or equivalent admin, service,
-  or system-reader policy that permits `baremetal:node:list_all`/node-detail
-  visibility. If the privileged client cannot be created or Ironic rejects or
-  fails the lookup, the monitor logs the failure and leaves provider provisioning
-  metadata unset so API responses degrade to the existing Nova/condition-derived
-  provisioning metadata rather than failing the monitor path.
+  or `Building` (Ironic actively deploying — including the post-deploy `Error`
+  state and the transient `*Fail` states, on the principle that the node is
+  still in the build pipeline as far as the platform is concerned and the
+  failure signal belongs on the `Healthy` condition rather than on Phase.
+  The node lifecycle eventually terminates via delete; splitting "in the
+  pipeline" from "in the pipeline but unhappy" across both Phase and Healthy
+  would just duplicate one concept across two axes). Provisioning status
+  itself is provisioner-owned and the monitor never writes it. The lookup is
+  filtered by `instance_uuid`. Because Ironic node ownership and visibility
+  are provider infrastructure concerns rather than tenant workload operations,
+  this lookup uses the Region top-level provider credentials scoped to the
+  service principal's project, matching the package's other privileged client
+  patterns. Deployments must grant those credentials enough Ironic policy
+  visibility to list/detail nodes by instance UUID, for example through a
+  narrow `bm-mapper`-style role or equivalent admin, service, or system-reader
+  policy that permits `baremetal:node:list_all`/node-detail visibility. If the
+  privileged client cannot be created or Ironic rejects or fails the lookup,
+  the monitor logs the failure and falls back to the VM default `Building`
+  Phase so API responses still see a coherent live signal rather than failing
+  the monitor path.
 - Some OpenStack list APIs are not safe to treat as exact lookup, notably
   server, network, and Octavia load-balancer `name` filters:
   - `name` filters behave like prefix or regular-expression matches rather than
