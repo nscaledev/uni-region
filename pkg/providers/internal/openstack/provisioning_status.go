@@ -31,11 +31,18 @@ import (
 //   - pre-deploy (node not yet picked up / cleaning / inspecting / adopting) → Queued
 //   - deploy (Ironic actively writing the node, including failure states) → Building
 //
-// Failures (CleanFail / InspectFail / AdoptFail / DeployFail / Error) are
-// reported as Building rather than a distinct error phase: operationally the
-// node is still in the build pipeline, and the failure signal lives on the
-// Healthy condition (written by setServerHealthStatus from Nova state). Adding
-// an explicit error phase would split a single concept across two axes.
+// Failures (CleanFail / InspectFail / AdoptFail / DeployFail) and the sticky
+// post-deploy Error state are reported as Building rather than a distinct
+// error phase. Error is acknowledged to be sticky — a node that hits Error
+// without operator intervention will keep reporting Building until it is
+// deleted — but the alternative (a separate phase, or returning to Queued/
+// Pending) duplicates one concept across two axes. The failure signal lives
+// on the Healthy condition (written by setServerHealthStatus from Nova
+// state), which is the right axis for "is this node broken"; Phase is the
+// right axis for "where is this node in its build pipeline", and a node in
+// Error is still operationally in that pipeline until it is torn down. If we
+// ever introduce an explicit terminal-failure phase, Error is the
+// motivating case to revisit.
 func baremetalBuildPhase(node *nodes.Node) unikornv1.InstanceLifecyclePhase {
 	if node == nil {
 		return unikornv1.InstanceLifecyclePhaseQueued

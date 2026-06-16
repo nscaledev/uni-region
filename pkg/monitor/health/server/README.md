@@ -28,25 +28,22 @@ status/telemetry model.
 - Servers skipped because region/provider resolution fails are absent from the
   gauge for that cycle rather than misreported as a fake state.
 - Provider-specific progress refinement must be best effort. For example,
-  OpenStack Ironic lookup failures leave provider provisioning metadata unset so
-  API responses fall back to the generic condition-derived lifecycle instead of
-  failing status refresh. Baremetal progress refinement depends on the Region
-  provider credential having Ironic node visibility by instance UUID; if local or
-  production policy withholds that visibility, the monitor intentionally behaves
-  like the pre-Ironic Nova-only path.
+  OpenStack Ironic lookup failures degrade baremetal Phase derivation to the
+  VM default (Building) so API responses still get a coherent live signal
+  instead of failing status refresh. Baremetal progress refinement depends on
+  the Region provider credential having Ironic node visibility by instance
+  UUID; if local or production policy withholds that visibility, the monitor
+  intentionally behaves like the pre-Ironic Nova-only path.
 
 ## Caveats
 
 - This package is intentionally eventual and observational; it does not make
   provider state changes happen, it notices and projects them.
-- Provider provisioning metadata is only cleared by a successful poll pass, yet
-  it takes precedence over condition-derived status in API responses. If the
-  monitor stops running, or a server is persistently skipped before the status
-  patch (region resolution, identity, or Nova lookup failures), a stale
-  `queued`/`provisioning` override can mask a newer condition-derived state.
-  In healthy operation staleness is bounded by one poll period; a prolonged
-  mismatch between `metadata.provisioningStatus` and the server's conditions
-  is a signal that this monitor is unhealthy.
+- Phase is a live readiness signal once provisioning status reaches
+  `provisioned`. If the monitor stops running, or a server is persistently
+  skipped before the status patch (region resolution, identity, or Nova lookup
+  failures), Phase can lag observed reality by an unbounded amount. In healthy
+  operation staleness is bounded by one poll period.
 - `unikorn_region_server_provision_duration_seconds` measures
   `CreationTimestamp → OS-SRV-USG:launched_at`. `launched_at` is when the
   hypervisor boots the instance, not when the guest OS finishes booting. For
@@ -57,7 +54,10 @@ status/telemetry model.
   `CreationTimestamp → Nova created_at` (when Nova accepted the request).
   Together the two histograms decompose pre-boot latency into scheduling
   overhead and Nova allocation time.
-- Both duration metrics fire only once per server, on the first
-  Pending → Running transition where the relevant Nova timestamp is non-nil.
-  Negative durations (clock skew between the Uni controller and Nova) are
-  logged and skipped rather than recorded.
+- Both duration metrics fire only once per server, on the first transition
+  into Running where the relevant Nova timestamp is non-nil. The intermediate
+  Phase path (Pending → Building → Running for VMs, Pending → Queued →
+  Building → Running for baremetal) is transparent to the histograms: they
+  trigger on the move into Running regardless of which earlier phase the
+  server was last observed in. Negative durations (clock skew between the Uni
+  controller and Nova) are logged and skipped rather than recorded.

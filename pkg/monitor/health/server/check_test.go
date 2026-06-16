@@ -797,3 +797,125 @@ func TestCheckGaugeEmitsLowercaseStateLabels(t *testing.T) {
 	assert.Equal(t, int64(2), counts["pending"])
 	assert.Equal(t, int64(1), counts["running"])
 }
+
+// assertProvisionDurationRecorded runs Check on a server transitioning from
+// startPhase to Running with LaunchedAt set and asserts the provision histogram
+// recorded exactly one observation with the expected duration. The Phase path
+// is now Pending → Building → Running for VMs and Pending → Queued →
+// Building → Running for baremetal, so the histogram has to fire from any
+// pre-Running phase, not just Pending.
+func assertProvisionDurationRecorded(t *testing.T, startPhase unikornv1.InstanceLifecyclePhase) {
+	t.Helper()
+
+	meter, reader := newTestMeter(t)
+
+	m, err := healthserver.NewMetrics(meter)
+	require.NoError(t, err)
+
+	createdAt := time.Now().Add(-2 * time.Minute).Truncate(time.Second)
+	launchedAt := createdAt.Add(2 * time.Minute)
+
+	srv := serverFixture(startPhase)
+	srv.CreationTimestamp = metav1.NewTime(createdAt)
+
+	ctrl := gomock.NewController(t)
+
+	mockProvider := mocktypes.NewMockProvider(ctrl)
+	mockProvider.EXPECT().
+		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
+			s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+			t := metav1.NewTime(launchedAt)
+			s.Status.LaunchedAt = &t
+
+			return nil
+		})
+	mockProvider.EXPECT().
+		Region(gomock.Any()).
+		Return(regionFixture(), nil).
+		AnyTimes()
+	mockProvider.EXPECT().
+		Flavors(gomock.Any()).
+		Return(providerTypes.FlavorList{{ID: flavorID, Name: flavorName}}, nil).
+		AnyTimes()
+
+	mockProviders := mockproviders.NewMockProviders(ctrl)
+	mockProviders.EXPECT().LookupCloud(regionID).Return(mockProvider, nil).AnyTimes()
+
+	ctx := logr.NewContext(t.Context(), logr.Discard())
+	checker := healthserver.New(newFakeClient(t, identityFixture(), srv), namespace, mockProviders, m)
+	require.NoError(t, checker.Check(ctx))
+
+	points := collectHistogram(t, reader)
+	require.Len(t, points, 1)
+	assert.Equal(t, uint64(1), points[0].Count)
+	assert.InDelta(t, (2 * time.Minute).Seconds(), points[0].Sum, 0.001)
+}
+
+// TestCheckServerRecordsProvisionDurationOnBuildingToRunning verifies that a
+// Building → Running transition still records the provision histogram. The Phase
+// path now goes Pending → Building → Running for VMs, so without this the
+// histogram would silently stop firing.
+func TestCheckServerRecordsProvisionDurationOnBuildingToRunning(t *testing.T) {
+	t.Parallel()
+
+	assertProvisionDurationRecorded(t, unikornv1.InstanceLifecyclePhaseBuilding)
+}
+
+// TestCheckServerRecordsProvisionDurationOnQueuedToRunning covers the baremetal
+// path where the server's last observed Phase before Running may be Queued (for
+// example, if Building was skipped between poll cycles).
+func TestCheckServerRecordsProvisionDurationOnQueuedToRunning(t *testing.T) {
+	t.Parallel()
+
+	assertProvisionDurationRecorded(t, unikornv1.InstanceLifecyclePhaseQueued)
+}
+
+// TestCheckServerNoHistogramOnIntermediatePhaseTransition verifies that
+// transitions that are not into Running (e.g. Pending → Building) do not
+// produce a histogram observation; the histograms must only fire on the
+// first reach of Running.
+func TestCheckServerNoHistogramOnIntermediatePhaseTransition(t *testing.T) {
+	t.Parallel()
+
+	meter, reader := newTestMeter(t)
+
+	m, err := healthserver.NewMetrics(meter)
+	require.NoError(t, err)
+
+	createdAt := time.Now().Add(-time.Minute).Truncate(time.Second)
+	launchedAt := metav1.NewTime(createdAt.Add(30 * time.Second))
+
+	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
+	srv.CreationTimestamp = metav1.NewTime(createdAt)
+
+	ctrl := gomock.NewController(t)
+
+	mockProvider := mocktypes.NewMockProvider(ctrl)
+	mockProvider.EXPECT().
+		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
+			s.Status.Phase = unikornv1.InstanceLifecyclePhaseBuilding
+			s.Status.LaunchedAt = &launchedAt
+
+			return nil
+		})
+	mockProvider.EXPECT().
+		Region(gomock.Any()).
+		Return(regionFixture(), nil).
+		AnyTimes()
+	mockProvider.EXPECT().
+		Flavors(gomock.Any()).
+		Return(providerTypes.FlavorList{{ID: flavorID, Name: flavorName}}, nil).
+		AnyTimes()
+
+	mockProviders := mockproviders.NewMockProviders(ctrl)
+	mockProviders.EXPECT().LookupCloud(regionID).Return(mockProvider, nil).AnyTimes()
+
+	ctx := logr.NewContext(t.Context(), logr.Discard())
+	checker := healthserver.New(newFakeClient(t, identityFixture(), srv), namespace, mockProviders, m)
+	require.NoError(t, checker.Check(ctx))
+
+	require.Empty(t, collectHistogram(t, reader))
+	require.Empty(t, collectSchedulingHistogram(t, reader))
+}
