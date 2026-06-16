@@ -166,12 +166,16 @@ jobs:
       ref: ${{ steps.find.outputs.ref }}
     steps:
     - name: Resolve UAT checkout ref
-      uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@main
+      uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@feature/uni-version-api-ref
       id: find
       with:
         service: uni-region
         releases-read-token: ${{ secrets.RELEASES_READ_TOKEN }}
         use-staging-constellation: ${{ github.event_name == 'schedule' || github.event.inputs.use_staging_constellation != 'false' }}
+        use-version-api: true
+        version-api-url: ${{ vars.UAT_REGION_BASE_URL }}/api/version
+        version-api-token: ${{ secrets.UAT_API_AUTH_TOKEN }}
+        fallback-to-constellation: false
 
   API-Tests-UAT:
     name: API Tests (uat)
