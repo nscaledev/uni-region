@@ -139,7 +139,7 @@ jobs:
         max-failures: '5'
 
     - name: Report API Test Results
-      uses: nscaledev/quality-tooling/.github/actions/test-results-report@main
+      uses: nscaledev/quality-tooling/.github/actions/test-results-report@feat/component-version-reporting
       if: ${{ !cancelled() }}
       with:
         test-results-path: test-results.json
@@ -150,6 +150,10 @@ jobs:
         environment: dev
         title: 'Region API Test Results'
         test-history-suite: uni-region-api
+        component-name: uni-region
+        component-repo: nscaledev/uni-region
+        component-version-url: ${{ env.REGION_BASE_URL }}/api/version
+        component-version-token: ${{ env.API_AUTH_TOKEN }}
         enable-ai-analysis: 'true'
         claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         enable-grafana-log-enrichment: 'true'
@@ -164,6 +168,7 @@ jobs:
     if: github.event_name == 'schedule' || github.event.inputs.run_uat == 'true'
     outputs:
       ref: ${{ steps.find.outputs.ref }}
+      tag: ${{ steps.find.outputs.tag }}
     steps:
     - name: Resolve UAT checkout ref
       uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@main
@@ -248,7 +253,7 @@ jobs:
         max-failures: '5'
 
     - name: Report API Test Results
-      uses: nscaledev/quality-tooling/.github/actions/test-results-report@main
+      uses: nscaledev/quality-tooling/.github/actions/test-results-report@feat/component-version-reporting
       if: ${{ !cancelled() }}
       with:
         test-results-path: test-results.json
@@ -259,6 +264,11 @@ jobs:
         environment: uat
         title: 'Region API Test Results'
         test-history-suite: uni-region-api
+        component-name: uni-region
+        component-repo: nscaledev/uni-region
+        component-ref: ${{ needs.find-staging-constellation.outputs.ref }}
+        component-version-url: ${{ env.REGION_BASE_URL }}/api/version
+        component-version-token: ${{ env.API_AUTH_TOKEN }}
         enable-ai-analysis: 'true'
         claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         enable-grafana-log-enrichment: 'true'
