@@ -18,9 +18,6 @@ limitations under the License.
 package util
 
 import (
-	"context"
-
-	"github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -68,20 +65,4 @@ func AddNetworkIDQuery(selector labels.Selector, query *openapi.NetworkIDQueryPa
 	}
 
 	return rbac.AddQuery(selector, constants.NetworkLabel, *query)
-}
-
-// InjectUserPrincipal updates the principal information from either the resource request
-// or the existing resource.
-func InjectUserPrincipal(ctx context.Context, organizationID, projectID string) error {
-	principal, err := principal.FromContext(ctx)
-	if err != nil {
-		return err
-	}
-
-	if principal.OrganizationID == "" {
-		principal.OrganizationID = organizationID
-		principal.ProjectID = projectID
-	}
-
-	return nil
 }

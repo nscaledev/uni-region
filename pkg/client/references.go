@@ -25,6 +25,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/util"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -50,7 +51,19 @@ func (r *References) httpClient(ctx context.Context, client client.Client, resou
 	return New(client, r.serverOptions, r.clientOptions).ControllerClient(ctx, resource)
 }
 
+// AddReferenceToNetwork is the backwards-compatible string variant of
+// AddReferenceToNetworkID, retained for callers that hold an untyped network
+// ID. Prefer AddReferenceToNetworkID where a typed ID is already in hand.
 func (r *References) AddReferenceToNetwork(ctx context.Context, networkID string, resource client.Object) error {
+	id, err := regionids.ParseNetworkID(networkID)
+	if err != nil {
+		return err
+	}
+
+	return r.AddReferenceToNetworkID(ctx, id, resource)
+}
+
+func (r *References) AddReferenceToNetworkID(ctx context.Context, networkID regionids.NetworkID, resource client.Object) error {
 	client, err := coreclient.FromContext(ctx)
 	if err != nil {
 		return err
@@ -78,7 +91,20 @@ func (r *References) AddReferenceToNetwork(ctx context.Context, networkID string
 	return nil
 }
 
+// RemoveReferenceFromNetwork is the backwards-compatible string variant of
+// RemoveReferenceFromNetworkID, retained for callers that hold an untyped
+// network ID. Prefer RemoveReferenceFromNetworkID where a typed ID is already
+// in hand.
 func (r *References) RemoveReferenceFromNetwork(ctx context.Context, networkID string, resource client.Object) error {
+	id, err := regionids.ParseNetworkID(networkID)
+	if err != nil {
+		return err
+	}
+
+	return r.RemoveReferenceFromNetworkID(ctx, id, resource)
+}
+
+func (r *References) RemoveReferenceFromNetworkID(ctx context.Context, networkID regionids.NetworkID, resource client.Object) error {
 	client, err := coreclient.FromContext(ctx)
 	if err != nil {
 		return err

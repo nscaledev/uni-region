@@ -47,7 +47,7 @@ func (h *ImageHandler) imageClient() *image.Client {
 }
 
 func (h *ImageHandler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
-	if err := rbac.AllowOrganizationScope(r.Context(), "region:images", identityapi.Read, organizationID); err != nil {
+	if err := rbac.AllowOrganizationScopeID(r.Context(), "region:images", identityapi.Read, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -63,7 +63,7 @@ func (h *ImageHandler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(
 }
 
 func (h *ImageHandler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
-	if err := rbac.AllowOrganizationScope(r.Context(), "region:images", identityapi.Create, organizationID); err != nil {
+	if err := rbac.AllowOrganizationScopeID(r.Context(), "region:images", identityapi.Create, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -84,7 +84,7 @@ func (h *ImageHandler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages
 }
 
 func (h *ImageHandler) DeleteApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter, imageID openapi.ImageIDParameter) {
-	if err := rbac.AllowOrganizationScope(r.Context(), "region:images", identityapi.Delete, organizationID); err != nil {
+	if err := rbac.AllowOrganizationScopeID(r.Context(), "region:images", identityapi.Delete, organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}

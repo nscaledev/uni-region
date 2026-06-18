@@ -57,6 +57,26 @@ best-effort consistency across multiple objects, and reject requests that would
 create obviously broken relationships — including ACL-mediated region access
 control.
 
+## Typed Identifiers at the Boundary
+
+Resource identifiers reach the handler already typed. The OpenAPI layer binds
+path parameters and create-body ID fields to the `regionids.*ID` types from
+[`../ids`](../ids/README.md), so a non-UUID is rejected with a 400 at the router
+before any handler runs — which is also what makes `region.CheckAccess` safe to
+treat its region ID as well-formed. Handlers carry those typed IDs through their
+per-resource client methods and convert to plain strings only at the genuine
+sinks: Kubernetes object names and labels, CRD spec fields, and provider/region
+calls, all of which remain string-typed. The by-name lookup primitives
+(`GetRaw`/`GetV2Raw`) stay string-keyed and do that conversion at the `ObjectKey`.
+
+Tenancy, RBAC, and principal attribution are not re-derived here. Handlers
+consume the identity service's scope-reader surface (the RBAC reader variants,
+`ids.OwnedByProject`, and the principal enrichment helpers) as a black box.
+
+This is a deliberate seam, not a dead end: the CRD and provider layers behind the
+string sinks can be given typed IDs in a later pass without disturbing the handler
+surface.
+
 ## `v2` First
 
 `v2` is not just a flatter URL scheme. It changes how the handler layer works.

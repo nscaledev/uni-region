@@ -29,6 +29,7 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -51,9 +52,9 @@ const (
 	testIdentityID   = "identity-1"
 	testNetworkID    = "network-1"
 	testLBName       = "lb-1"
-	testOrganization = "organization-1"
-	testProject      = "project-1"
-	testAllocationID = "allocation-1"
+	testOrganization = "00000000-0000-0000-0000-000000000001"
+	testProject      = "00000000-0000-0000-0000-000000000002"
+	testAllocationID = "00000000-0000-0000-0000-000000000003"
 )
 
 // errProviderDeleteSentinel is a static sentinel used to verify that Deprovision
@@ -286,7 +287,7 @@ func TestDeprovision_DeletesAllocation(t *testing.T) {
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDWithResponse(gomock.Any(), testOrganization, testProject, testAllocationID).
+		DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(testOrganization), identityids.MustParseProjectID(testProject), identityids.MustParseAllocationID(testAllocationID)).
 		Return(&identityapi.DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusAccepted},
 		}, nil)
@@ -313,7 +314,7 @@ func TestDeprovision_AllocationAlreadyGone(t *testing.T) {
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDWithResponse(gomock.Any(), testOrganization, testProject, testAllocationID).
+		DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(testOrganization), identityids.MustParseProjectID(testProject), identityids.MustParseAllocationID(testAllocationID)).
 		Return(&identityapi.DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusNotFound},
 		}, nil)
