@@ -25,11 +25,13 @@ import (
 	"slices"
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/conversion"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -87,10 +89,10 @@ func checkAccess(ctx context.Context, resource *unikornv1.Region) error {
 // CheckAccess fetches the region by ID and verifies the caller's organization is
 // allowed to use it.  Returns HTTPNotFound for both missing and inaccessible regions
 // to avoid confirming region existence to unauthorized callers.
-func (c *Client) CheckAccess(ctx context.Context, regionID string) error {
+func (c *Client) CheckAccess(ctx context.Context, regionID regionids.RegionID) error {
 	resource := &unikornv1.Region{}
 
-	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: regionID}, resource); err != nil {
+	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: regionID.String()}, resource); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
 		}
@@ -119,10 +121,10 @@ func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
 	return convertList(regions), nil
 }
 
-func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.RegionDetailRead, error) {
+func (c *Client) GetDetail(ctx context.Context, regionID regionids.RegionID) (*openapi.RegionDetailRead, error) {
 	result := &unikornv1.Region{}
 
-	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: regionID}, result); err != nil {
+	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: regionID.String()}, result); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
@@ -137,12 +139,12 @@ func (c *Client) GetDetail(ctx context.Context, regionID string) (*openapi.Regio
 	return c.convertDetail(ctx, result)
 }
 
-func (c *Client) ListFlavors(ctx context.Context, organizationID, regionID string) (openapi.Flavors, error) {
+func (c *Client) ListFlavors(ctx context.Context, organizationID identityids.OrganizationID, regionID regionids.RegionID) (openapi.Flavors, error) {
 	if err := c.CheckAccess(ctx, regionID); err != nil {
 		return nil, err
 	}
 
-	provider, err := c.Providers.LookupCommon(regionID)
+	provider, err := c.Providers.LookupCommon(regionID.String())
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
 	}
@@ -188,12 +190,12 @@ func convertExternalNetworks(in types.ExternalNetworks) openapi.ExternalNetworks
 	return out
 }
 
-func (c *Client) ListExternalNetworks(ctx context.Context, regionID string) (openapi.ExternalNetworks, error) {
+func (c *Client) ListExternalNetworks(ctx context.Context, regionID regionids.RegionID) (openapi.ExternalNetworks, error) {
 	if err := c.CheckAccess(ctx, regionID); err != nil {
 		return nil, err
 	}
 
-	provider, err := c.Providers.LookupCloud(regionID)
+	provider, err := c.Providers.LookupCloud(regionID.String())
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
 	}

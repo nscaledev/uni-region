@@ -25,6 +25,7 @@ import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
@@ -38,23 +39,38 @@ import (
 )
 
 // convertList converts from a custom resource list into the API definition.
-func convertList(in *unikornv1.ServerList) openapi.ServersRead {
+func convertList(in *unikornv1.ServerList) (openapi.ServersRead, error) {
 	out := make(openapi.ServersRead, len(in.Items))
 
 	for i := range in.Items {
-		out[i] = *convert(&in.Items[i])
+		server, err := convert(&in.Items[i])
+		if err != nil {
+			return nil, err
+		}
+
+		out[i] = *server
 	}
 
-	return out
+	return out, nil
 }
 
 // convert converts from a custom resource into the API definition.
-func convert(in *unikornv1.Server) *openapi.ServerRead {
+func convert(in *unikornv1.Server) (*openapi.ServerRead, error) {
+	flavorID, err := in.FlavorID()
+	if err != nil {
+		return nil, err
+	}
+
+	imageID, err := in.ImageID()
+	if err != nil {
+		return nil, err
+	}
+
 	out := &openapi.ServerRead{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.ServerSpec{
-			FlavorId:           in.Spec.FlavorID,
-			ImageId:            in.Spec.Image.ID,
+			FlavorId:           flavorID,
+			ImageId:            imageID,
 			Networks:           convertNetworks(in.Spec.Networks),
 			PublicIPAllocation: convertPublicIPAllocation(in.Spec.PublicIPAllocation),
 			SecurityGroups:     convertSecurityGroups(in.Spec.SecurityGroups),
@@ -67,7 +83,7 @@ func convert(in *unikornv1.Server) *openapi.ServerRead {
 		},
 	}
 
-	return out
+	return out, nil
 }
 
 func convertNetworks(in []unikornv1.ServerNetworkSpec) openapi.ServerNetworkList {
@@ -167,14 +183,14 @@ func convertInstanceLifecyclePhase(in unikornv1.InstanceLifecyclePhase) *openapi
 type generator struct {
 	common.ClientArgs
 	// organizationID is the unique organization identifier.
-	organizationID string
+	organizationID identityids.OrganizationID
 	// projectID is the unique project identifier.
-	projectID string
+	projectID identityids.ProjectID
 	// identity is the unique identity identifier.
 	identityID string
 }
 
-func newGenerator(clientArgs common.ClientArgs, organizationID, projectID, identityID string) *generator {
+func newGenerator(clientArgs common.ClientArgs, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID string) *generator {
 	return &generator{
 		ClientArgs:     clientArgs,
 		organizationID: organizationID,
@@ -196,14 +212,14 @@ func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*uni
 	}
 
 	out := &unikornv1.Server{
-		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, g.Namespace).WithOrganization(g.organizationID).WithProject(g.projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
+		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, g.Namespace).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, identity.Name).Get(),
 		Spec: unikornv1.ServerSpec{
 			Tags:     conversion.GenerateTagList(in.Metadata.Tags),
 			Provider: identity.Spec.Provider,
-			FlavorID: in.Spec.FlavorId,
+			FlavorID: in.Spec.FlavorId.String(),
 			Image: &unikornv1.ServerImage{
-				ID: in.Spec.ImageId,
+				ID: in.Spec.ImageId.String(),
 			},
 			PublicIPAllocation: g.generatePublicIPAllocation(in.Spec.PublicIPAllocation),
 			SecurityGroups:     g.generateSecurityGroups(in.Spec.SecurityGroups),
@@ -212,7 +228,7 @@ func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*uni
 		},
 	}
 
-	if err := identitycommon.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
+	if err := identitycommon.SetIdentityMetadataProjectScope(ctx, &out.ObjectMeta, g.organizationID, g.projectID); err != nil {
 		return nil, fmt.Errorf("%w: failed to set identity metadata", err)
 	}
 

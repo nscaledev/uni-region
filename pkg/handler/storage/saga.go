@@ -30,18 +30,20 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/saga"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type NetworkGetter interface {
-	GetV2(ctx context.Context, id string) (*openapi.NetworkV2Read, error)
+	GetV2(ctx context.Context, networkID regionids.NetworkID) (*openapi.NetworkV2Read, error)
 }
 
 var ErrAllocation = fmt.Errorf("allocation error")
@@ -65,6 +67,9 @@ type createSaga struct {
 	client  *Client
 	request *openapi.StorageV2Create
 
+	organizationID identityids.OrganizationID
+	projectID      identityids.ProjectID
+
 	filestorage  *regionv1.FileStorage
 	storageClass *openapi.StorageClassV2Read
 }
@@ -77,11 +82,23 @@ func (s *createSaga) Actions() []saga.Action {
 	}
 }
 
-func newCreateSaga(client *Client, request *openapi.StorageV2Create) *createSaga {
-	return &createSaga{
-		client:  client,
-		request: request,
+func newCreateSaga(client *Client, request *openapi.StorageV2Create) (*createSaga, error) {
+	organizationID, err := identityids.ParseOrganizationID(request.Spec.OrganizationId)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid organization ID", err)
 	}
+
+	projectID, err := identityids.ParseProjectID(request.Spec.ProjectId)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid project ID", err)
+	}
+
+	return &createSaga{
+		client:         client,
+		request:        request,
+		organizationID: organizationID,
+		projectID:      projectID,
+	}, nil
 }
 
 func (c *Client) generateAllocation(size int64) identityapi.ResourceAllocationList {
@@ -144,7 +161,7 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 		return err
 	}
 
-	filestorage, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId, updateRequest, s.storageClass)
+	filestorage, err := s.client.generateV2(ctx, s.organizationID, s.projectID, s.request.Spec.RegionId.String(), updateRequest, s.storageClass)
 	if err != nil {
 		return err
 	}
@@ -154,7 +171,7 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 	return nil
 }
 
-func (s *createSaga) validateRegion(ctx context.Context, regionID string) error {
+func (s *createSaga) validateRegion(ctx context.Context, regionID regionids.RegionID) error {
 	if err := region.NewClient(s.client.ClientArgs).CheckAccess(ctx, regionID); err != nil {
 		if !errors.IsHTTPNotFound(err) {
 			return err
@@ -172,9 +189,9 @@ func (s *createSaga) validateStorageClass(ctx context.Context, storageClassID st
 		return err
 	}
 
-	if sc.Spec.RegionId != s.request.Spec.RegionId {
+	if sc.Spec.RegionId != s.request.Spec.RegionId.String() {
 		return errors.HTTPUnprocessableContent("storage class not available in region").
-			WithValues("storageClassID", sc.Metadata.Name, "storageClassRegionID", sc.Spec.RegionId, "requestedRegionID", s.request.Spec.RegionId)
+			WithValues("storageClassID", sc.Metadata.Name, "storageClassRegionID", sc.Spec.RegionId, "requestedRegionID", s.request.Spec.RegionId.String())
 	}
 
 	s.storageClass = sc
@@ -212,8 +229,11 @@ func (s *updateSaga) validateRequest(ctx context.Context) error {
 }
 
 func (s *updateSaga) generate(ctx context.Context) error {
-	organizationID := s.current.Labels[coreconstants.OrganizationLabel]
-	projectID := s.current.Labels[coreconstants.ProjectLabel]
+	organizationID, projectID, err := s.current.OrganizationAndProjectID()
+	if err != nil {
+		return err
+	}
+
 	regionID := s.current.Labels[constants.RegionLabel]
 
 	required, err := s.client.generateV2(ctx, organizationID, projectID, regionID, s.request, s.storageClass)
@@ -281,7 +301,12 @@ func validateAttachments(ctx context.Context, networkClient NetworkGetter, attac
 	}
 
 	for _, id := range attachments.NetworkIds {
-		net, err := networkClient.GetV2(ctx, id)
+		networkID, err := regionids.ParseNetworkID(id)
+		if err != nil {
+			return errors.HTTPUnprocessableContent("invalid network ID").WithError(err)
+		}
+
+		net, err := networkClient.GetV2(ctx, networkID)
 		if err != nil {
 			if !errors.IsHTTPNotFound(err) {
 				return err

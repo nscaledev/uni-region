@@ -28,9 +28,11 @@ import (
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -51,12 +53,12 @@ func NewClient(clientArgs common.ClientArgs) *Client {
 var ErrFailedImageFetch = goerrors.New("image fetch failed")
 var ErrProviderResource = goerrors.New("conflict with resource at provider")
 
-func (c *Client) ListImages(ctx context.Context, organizationID, regionID string) (openapi.Images, error) {
+func (c *Client) ListImages(ctx context.Context, organizationID identityids.OrganizationID, regionID regionids.RegionID) (openapi.Images, error) {
 	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, regionID); err != nil {
 		return nil, err
 	}
 
-	provider, err := c.Providers.LookupCloud(regionID)
+	provider, err := c.Providers.LookupCloud(regionID.String())
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
 	}
@@ -67,7 +69,7 @@ func (c *Client) ListImages(ctx context.Context, organizationID, regionID string
 	}
 
 	result, err := query.
-		AvailableToOrganization(organizationID).
+		AvailableToOrganization(organizationID.String()).
 		StatusIn(types.ImageStatusReady).
 		List(ctx)
 
@@ -146,12 +148,12 @@ func validateImage(ctx context.Context, uri string) error {
 	return nil
 }
 
-func (c *Client) CreateImage(ctx context.Context, organizationID, regionID string, request *openapi.ImageCreateRequest) (*openapi.ImageResponse, error) {
+func (c *Client) CreateImage(ctx context.Context, organizationID identityids.OrganizationID, regionID regionids.RegionID, request *openapi.ImageCreateRequest) (*openapi.ImageResponse, error) {
 	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, regionID); err != nil {
 		return nil, err
 	}
 
-	provider, err := c.Providers.LookupCloud(regionID)
+	provider, err := c.Providers.LookupCloud(regionID.String())
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
 	}
@@ -176,13 +178,13 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 	// Get all the user-supplied tags, and set our own tags for the provenance and ownership.
 	tags := GenerateTags(request.Metadata.Tags, map[string]string{
 		constants.ImageSourceTag:         constants.ImageSourceImport,
-		constants.ImageOrganizationIDTag: organizationID,
+		constants.ImageOrganizationIDTag: organizationID.String(),
 	})
 
 	image := &types.Image{
 		Name:           request.Metadata.Name,
 		Tags:           tags,
-		OrganizationID: ptr.To(organizationID),
+		OrganizationID: ptr.To(organizationID.String()),
 		Architecture:   generateArchitecture(request.Spec.Architecture),
 		Virtualization: generateImageVirtualization(request.Spec.Virtualization),
 		GPU:            gpu,
@@ -198,17 +200,17 @@ func (c *Client) CreateImage(ctx context.Context, organizationID, regionID strin
 	return convertImage(result), nil
 }
 
-func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imageID string) error {
+func (c *Client) DeleteImage(ctx context.Context, organizationID identityids.OrganizationID, regionID regionids.RegionID, imageID regionids.ImageID) error {
 	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, regionID); err != nil {
 		return err
 	}
 
-	provider, err := c.Providers.LookupCloud(regionID)
+	provider, err := c.Providers.LookupCloud(regionID.String())
 	if err != nil {
 		return providers.ProviderToServerError(err)
 	}
 
-	image, err := provider.GetImage(ctx, organizationID, imageID)
+	image, err := provider.GetImage(ctx, organizationID.String(), imageID.String())
 	if err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return errors.HTTPNotFound().WithError(err)
@@ -217,11 +219,11 @@ func (c *Client) DeleteImage(ctx context.Context, organizationID, regionID, imag
 		return fmt.Errorf("%w: failed to get image", err)
 	}
 
-	if image.OrganizationID == nil || *image.OrganizationID != organizationID {
+	if image.OrganizationID == nil || *image.OrganizationID != organizationID.String() {
 		return errors.HTTPNotFound()
 	}
 
-	if err = provider.DeleteImage(ctx, imageID); err != nil {
+	if err = provider.DeleteImage(ctx, imageID.String()); err != nil {
 		// Most deletion APIs ignore not found errors, but our other delete APIs return 404. To maintain consistency, we do the same here.
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return errors.HTTPNotFound().WithError(err)

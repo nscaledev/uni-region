@@ -31,6 +31,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	imagemock "github.com/unikorn-cloud/region/pkg/handler/image/mock"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -45,8 +46,8 @@ func Test_Imagev2_List(t *testing.T) {
 
 	const (
 		namespace = "test-org-images"
-		regionID  = "region-1"
-		orgID     = "cats"
+		regionID  = "aaaa0000-0000-4000-a000-000000000001"
+		orgID     = "c0000000-0000-4000-a000-000000000001"
 	)
 
 	// All the test cases assume the caller will have permissions for the org identified by `orgID`.
@@ -161,7 +162,7 @@ func Test_Imagev2_List(t *testing.T) {
 			request := httptest.NewRequestWithContext(ctx, http.MethodGet, path, nil)
 			response := httptest.NewRecorder()
 
-			handler.GetApiV2RegionsRegionIDImages(response, request, regionID, tc.params)
+			handler.GetApiV2RegionsRegionIDImages(response, request, regionids.MustParseRegionID(regionID), tc.params)
 
 			require.Equal(t, http.StatusOK, response.Result().StatusCode)
 		})

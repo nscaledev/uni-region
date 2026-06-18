@@ -22,20 +22,22 @@ import (
 	"context"
 	"slices"
 
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 )
 
 // QueryImages takes the parameters from an image list request and runs them as a query against the provider.
-func (c *Client) QueryImages(ctx context.Context, regionID string, params openapi.GetApiV2RegionsRegionIDImagesParams) (openapi.Images, error) {
+func (c *Client) QueryImages(ctx context.Context, regionID regionids.RegionID, params openapi.GetApiV2RegionsRegionIDImagesParams) (openapi.Images, error) {
 	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, regionID); err != nil {
 		return nil, err
 	}
 
-	prov, err := c.Providers.LookupCloud(regionID)
+	prov, err := c.Providers.LookupCloud(regionID.String())
 	if err != nil {
 		return nil, err
 	}
@@ -86,16 +88,30 @@ func (c *Client) QueryImages(ctx context.Context, regionID string, params openap
 // `scope=available` (or missing): include images either owned by the organization(s) identified, or globally available.
 // `scope=owned`: restrict results to images that belong to the organization(s) identified.
 
+// allowedOrganizations returns the subset of the requested organization IDs the
+// caller is permitted to read images for. Each ID is untrusted query input, so
+// parsing it is the validation step and an invalid or unauthorized value is
+// simply dropped.
+func allowedOrganizations(ctx context.Context, orgIDs []string) []string {
+	var allowed []string
+
+	for _, orgID := range orgIDs {
+		organizationID, err := identityids.ParseOrganizationID(orgID)
+		if err != nil {
+			continue
+		}
+
+		if err := rbac.AllowOrganizationScopeID(ctx, "region:images", identityapi.Read, organizationID); err == nil {
+			allowed = append(allowed, orgID)
+		}
+	}
+
+	return allowed
+}
+
 func filterByOrganizationAndScope(ctx context.Context, query types.ImageQuery, params openapi.GetApiV2RegionsRegionIDImagesParams) types.ImageQuery {
 	if orgIDs := params.OrganizationID; orgIDs != nil {
-		var allowedOrgs []string
-
-		for _, orgID := range *orgIDs {
-			err := rbac.AllowOrganizationScope(ctx, "region:images", identityapi.Read, orgID)
-			if err == nil {
-				allowedOrgs = append(allowedOrgs, orgID)
-			}
-		}
+		allowedOrgs := allowedOrganizations(ctx, *orgIDs)
 
 		// default scope to available, if not provided.
 		if params.Scope != nil && *params.Scope == openapi.GetApiV2RegionsRegionIDImagesParamsScopeOwned {

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	externalRef0 "github.com/unikorn-cloud/core/pkg/openapi"
+	externalRef1 "github.com/unikorn-cloud/identity/pkg/openapi"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 )
 
 const (
@@ -140,6 +142,9 @@ type ExternalNetwork struct {
 // ExternalNetworks A list of openstack external networks.
 type ExternalNetworks = []ExternalNetwork
 
+// FileStorageId A file storage ID.
+type FileStorageId = regionids.FileStorageID
+
 // Flavor A flavor.
 type Flavor struct {
 	// Metadata This metadata is for resources that just exist, and don't require
@@ -150,6 +155,9 @@ type Flavor struct {
 	// Spec A flavor.
 	Spec FlavorSpec `json:"spec"`
 }
+
+// FlavorId A flavor ID.
+type FlavorId = regionids.FlavorID
 
 // FlavorSpec A flavor.
 type FlavorSpec struct {
@@ -211,6 +219,9 @@ type GpuVendor string
 // IdentitiesRead A list of provider specific identities.
 type IdentitiesRead = []IdentityRead
 
+// IdentityId A cloud identity ID.
+type IdentityId = regionids.IdentityID
+
 // IdentityRead A provider specific identity.
 type IdentityRead struct {
 	// Metadata Metadata required by project scoped resource reads.
@@ -267,8 +278,8 @@ type IdentityWrite struct {
 
 // IdentityWriteSpec Request parameters for creating an identity.
 type IdentityWriteSpec struct {
-	// RegionId The region an identity is provisioned in.
-	RegionId string `json:"regionId"`
+	// RegionId A region ID.
+	RegionId RegionId `json:"regionId"`
 }
 
 // Image An image.
@@ -326,6 +337,9 @@ type ImageGpu struct {
 	// Vendor The GPU vendor.
 	Vendor GpuVendor `json:"vendor"`
 }
+
+// ImageId An image ID.
+type ImageId = regionids.ImageID
 
 // ImageOS An operating system description.
 type ImageOS struct {
@@ -401,9 +415,6 @@ type Ipv4Address = string
 // Ipv4AddressList A list of IPv4 addresses.
 type Ipv4AddressList = []Ipv4Address
 
-// KubernetesNameParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
-type KubernetesNameParameter = string
-
 // LoadBalancerHealthCheckV2 A load balancer pool health check.
 type LoadBalancerHealthCheckV2 struct {
 	HealthyThreshold   *int `json:"healthyThreshold,omitempty"`
@@ -411,6 +422,9 @@ type LoadBalancerHealthCheckV2 struct {
 	TimeoutSeconds     *int `json:"timeoutSeconds,omitempty"`
 	UnhealthyThreshold *int `json:"unhealthyThreshold,omitempty"`
 }
+
+// LoadBalancerId A load balancer ID.
+type LoadBalancerId = regionids.LoadBalancerID
 
 // LoadBalancerListenerNameV2 A load balancer listener name. Must start with a lower-case letter and otherwise be a valid DNS label.
 type LoadBalancerListenerNameV2 = string
@@ -472,8 +486,8 @@ type LoadBalancerV2CreateSpec struct {
 	// Listeners A list of load balancer listeners.
 	Listeners []LoadBalancerListenerV2 `json:"listeners"`
 
-	// NetworkId The network the load balancer belongs to.
-	NetworkId string `json:"networkId"`
+	// NetworkId A network ID.
+	NetworkId NetworkId `json:"networkId"`
 
 	// PublicIP Whether to allocate a public IP.
 	PublicIP *bool `json:"publicIP,omitempty"`
@@ -535,6 +549,9 @@ type NetworkDirection string
 
 // NetworkIDList A list of network IDs
 type NetworkIDList = []string
+
+// NetworkId A network ID.
+type NetworkId = regionids.NetworkID
 
 // NetworkProtocol The layer 3+ protocol to allow.
 type NetworkProtocol string
@@ -633,8 +650,8 @@ type NetworkV2CreateSpec struct {
 	// ProjectId The project to provision the resource in.
 	ProjectId string `json:"projectId"`
 
-	// RegionId The region a network is to be provisioned in.
-	RegionId string `json:"regionId"`
+	// RegionId A region ID.
+	RegionId RegionId `json:"regionId"`
 
 	// Reservations Network reservations carve a prefix from the start of the network CIDR
 	// for infrastructure use such as file storage and internal platform
@@ -769,6 +786,9 @@ type RegionFeatures struct {
 	PhysicalNetworks bool `json:"physicalNetworks"`
 }
 
+// RegionId A region ID.
+type RegionId = regionids.RegionID
+
 // RegionRead A region.
 type RegionRead struct {
 	// Metadata Metadata required by all resource reads.
@@ -804,6 +824,9 @@ type Route struct {
 
 // Routes A list of network routes.
 type Routes = []Route
+
+// SecurityGroupId A security group ID.
+type SecurityGroupId = regionids.SecurityGroupID
 
 // SecurityGroupRead A security group.
 type SecurityGroupRead struct {
@@ -892,8 +915,8 @@ type SecurityGroupV2Create struct {
 
 // SecurityGroupV2CreateSpec defines model for securityGroupV2CreateSpec.
 type SecurityGroupV2CreateSpec struct {
-	// NetworkId The network a security group belongs to.
-	NetworkId string `json:"networkId"`
+	// NetworkId A network ID.
+	NetworkId NetworkId `json:"networkId"`
 
 	// Rules A set of security group rules to apply.
 	Rules SecurityGroupRuleV2List `json:"rules"`
@@ -950,6 +973,9 @@ type SecurityGroupsRead = []SecurityGroupRead
 // SecurityGroupsV2Read A list of security groups.
 type SecurityGroupsV2Read = []SecurityGroupV2Read
 
+// ServerId A server ID.
+type ServerId = regionids.ServerID
+
 // ServerNetwork The server's network.
 type ServerNetwork struct {
 	// AllowedAddressPairs A list of allowed address pairs.
@@ -1003,11 +1029,11 @@ type ServerSecurityGroupList = []ServerSecurityGroup
 
 // ServerSpec A server's specification.
 type ServerSpec struct {
-	// FlavorId The flavor of the server.
-	FlavorId string `json:"flavorId"`
+	// FlavorId A flavor ID.
+	FlavorId FlavorId `json:"flavorId"`
 
-	// ImageId The image of the server.
-	ImageId string `json:"imageId"`
+	// ImageId An image ID.
+	ImageId ImageId `json:"imageId"`
 
 	// Networks A list of networks.
 	Networks ServerNetworkList `json:"networks"`
@@ -1050,17 +1076,17 @@ type ServerV2Create struct {
 
 // ServerV2CreateSpec defines model for serverV2CreateSpec.
 type ServerV2CreateSpec struct {
-	// FlavorId The flavor of the server.
-	FlavorId string `json:"flavorId"`
+	// FlavorId A flavor ID.
+	FlavorId FlavorId `json:"flavorId"`
 
-	// ImageId The image of the server.
-	ImageId string `json:"imageId"`
+	// ImageId An image ID.
+	ImageId ImageId `json:"imageId"`
 
 	// InfrastructureRef A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
 	InfrastructureRef *InfrastructureRef `json:"infrastructureRef,omitempty"`
 
-	// NetworkId The network ID to attach a server to.
-	NetworkId string `json:"networkId"`
+	// NetworkId A network ID.
+	NetworkId NetworkId `json:"networkId"`
 
 	// Networking A server's network configuration.
 	Networking *ServerV2Networking `json:"networking,omitempty"`
@@ -1106,11 +1132,11 @@ type ServerV2SecurityGroupIDList = []string
 
 // ServerV2Spec A server's specification.
 type ServerV2Spec struct {
-	// FlavorId The flavor of the server.
-	FlavorId string `json:"flavorId"`
+	// FlavorId A flavor ID.
+	FlavorId FlavorId `json:"flavorId"`
 
-	// ImageId The image of the server.
-	ImageId string `json:"imageId"`
+	// ImageId An image ID.
+	ImageId ImageId `json:"imageId"`
 
 	// Networking A server's network configuration.
 	Networking *ServerV2Networking `json:"networking,omitempty"`
@@ -1197,6 +1223,9 @@ type SshCertificateAuthoritiesV2Read = []SshCertificateAuthorityV2Read
 
 // SshCertificateAuthorityID The SSH certificate authority ID.
 type SshCertificateAuthorityID = string
+
+// SshCertificateAuthorityId An SSH certificate authority ID.
+type SshCertificateAuthorityId = regionids.SSHCertificateAuthorityID
 
 // SshCertificateAuthorityV2Create An SSH certificate authority creation request.
 type SshCertificateAuthorityV2Create struct {
@@ -1323,8 +1352,8 @@ type StorageV2Create struct {
 		// ProjectId The project to provision the resource in.
 		ProjectId string `json:"projectId"`
 
-		// RegionId The region ID to provision the storage into.
-		RegionId string `json:"regionId"`
+		// RegionId A region ID.
+		RegionId RegionId `json:"regionId"`
 
 		// SizeGiB size in GiB of the storage
 		SizeGiB int64 `json:"sizeGiB"`
@@ -1388,14 +1417,14 @@ type StorageV2Update struct {
 	Spec StorageV2Spec `json:"spec"`
 }
 
-// FilestorageIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
-type FilestorageIDParameter = KubernetesNameParameter
+// FilestorageIDParameter A file storage ID.
+type FilestorageIDParameter = FileStorageId
 
-// IdentityIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
-type IdentityIDParameter = KubernetesNameParameter
+// IdentityIDParameter A cloud identity ID.
+type IdentityIDParameter = IdentityId
 
-// ImageIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
-type ImageIDParameter = KubernetesNameParameter
+// ImageIDParameter An image ID.
+type ImageIDParameter = ImageId
 
 // ImageScopeQueryParameter defines model for imageScopeQueryParameter.
 type ImageScopeQueryParameter string
@@ -1406,23 +1435,23 @@ type ImageStatusQueryParameter = []ImageState
 // LengthParameter defines model for lengthParameter.
 type LengthParameter = int
 
-// LoadBalancerIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
-type LoadBalancerIDParameter = KubernetesNameParameter
+// LoadBalancerIDParameter A load balancer ID.
+type LoadBalancerIDParameter = LoadBalancerId
 
-// NetworkIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
-type NetworkIDParameter = KubernetesNameParameter
+// NetworkIDParameter A network ID.
+type NetworkIDParameter = NetworkId
 
 // NetworkIDQueryParameter defines model for networkIDQueryParameter.
 type NetworkIDQueryParameter = []string
 
-// OrganizationIDParameter defines model for organizationIDParameter.
-type OrganizationIDParameter = string
+// OrganizationIDParameter An organization ID.
+type OrganizationIDParameter = externalRef1.OrganizationId
 
 // OrganizationIDQueryParameter defines model for organizationIDQueryParameter.
 type OrganizationIDQueryParameter = []string
 
-// ProjectIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
-type ProjectIDParameter = KubernetesNameParameter
+// ProjectIDParameter A project ID.
+type ProjectIDParameter = externalRef1.ProjectId
 
 // ProjectIDQueryParameter defines model for projectIDQueryParameter.
 type ProjectIDQueryParameter = []string
@@ -1430,20 +1459,20 @@ type ProjectIDQueryParameter = []string
 // ReferenceParameter defines model for referenceParameter.
 type ReferenceParameter = string
 
-// RegionIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
-type RegionIDParameter = KubernetesNameParameter
+// RegionIDParameter A region ID.
+type RegionIDParameter = RegionId
 
 // RegionIDQueryParameter defines model for regionIDQueryParameter.
 type RegionIDQueryParameter = []string
 
-// SecurityGroupIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
-type SecurityGroupIDParameter = KubernetesNameParameter
+// SecurityGroupIDParameter A security group ID.
+type SecurityGroupIDParameter = SecurityGroupId
 
-// ServerIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
-type ServerIDParameter = KubernetesNameParameter
+// ServerIDParameter A server ID.
+type ServerIDParameter = ServerId
 
-// SshCertificateAuthorityIDParameter A Kubernetes name. Must be a valid DNS containing only lower case characters, numbers or hyphens, start and end with a character or number, and be at most 63 characters in length.
-type SshCertificateAuthorityIDParameter = KubernetesNameParameter
+// SshCertificateAuthorityIDParameter An SSH certificate authority ID.
+type SshCertificateAuthorityIDParameter = SshCertificateAuthorityId
 
 // ConsoleOutputResponse Console output
 type ConsoleOutputResponse = ConsoleOutput

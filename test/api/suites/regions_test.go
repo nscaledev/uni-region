@@ -70,12 +70,16 @@ var _ = Describe("Region Discovery", func() {
 			})
 
 			It("should reject requests with invalid organization ID format", func() {
+				// A malformed (non-UUID) ID is rejected at the routing layer with
+				// 400, before RBAC. This is distinct from an unauthorized but
+				// well-formed org, which is forbidden.
 				path := client.GetListRegionsPath("invalid-org-123")
 				_, respBody, err := client.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
 
 				Expect(err).To(HaveOccurred())
 				Expect(errors.Is(err, coreclient.ErrUnexpectedStatusCode)).To(BeTrue())
-				Expect(string(respBody)).To(ContainSubstring("forbidden"))
+				Expect(string(respBody)).To(ContainSubstring("invalid_request"))
+				Expect(string(respBody)).To(ContainSubstring("invalid path/query element"))
 				GinkgoWriter.Printf("Expected error for invalid organization ID: %v\n", err)
 			})
 		})
@@ -158,10 +162,15 @@ var _ = Describe("Flavor Discovery", func() {
 
 		Describe("Given invalid parameters", func() {
 			It("should reject requests with invalid region ID for flavors", func() {
-				_, err := client.ListFlavors(ctx, config.OrgID, "invalid-region-id")
+				// A malformed (non-UUID) region ID is rejected at the routing
+				// layer with 400, not treated as a missing region (404).
+				path := client.GetEndpoints().ListFlavors(config.OrgID, "invalid-region-id")
+				_, respBody, err := client.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
 
 				Expect(err).To(HaveOccurred())
-				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
+				Expect(errors.Is(err, coreclient.ErrUnexpectedStatusCode)).To(BeTrue())
+				Expect(string(respBody)).To(ContainSubstring("invalid_request"))
+				Expect(string(respBody)).To(ContainSubstring("invalid path/query element"))
 				GinkgoWriter.Printf("Expected error for invalid region ID: %v\n", err)
 			})
 		})
@@ -192,11 +201,15 @@ var _ = Describe("Image Discovery", func() {
 
 		Describe("Given invalid parameters", func() {
 			It("should reject requests with invalid region ID for images", func() {
-				_, err := client.ListImages(ctx, config.OrgID, "invalid-region-id")
+				// A malformed (non-UUID) region ID is rejected at the routing
+				// layer with 400, not treated as a missing region (404).
+				path := client.GetEndpoints().ListImages(config.OrgID, "invalid-region-id")
+				_, respBody, err := client.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
 
 				Expect(err).To(HaveOccurred())
-				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
-				//Expect(errors.Is(err, coreclient.ErrServerError)).To(BeTrue())
+				Expect(errors.Is(err, coreclient.ErrUnexpectedStatusCode)).To(BeTrue())
+				Expect(string(respBody)).To(ContainSubstring("invalid_request"))
+				Expect(string(respBody)).To(ContainSubstring("invalid path/query element"))
 				GinkgoWriter.Printf("Expected error for invalid region ID: %v\n", err)
 			})
 		})
@@ -217,10 +230,16 @@ var _ = Describe("External Network Discovery", func() {
 
 		Describe("Given invalid parameters", func() {
 			It("should reject requests with invalid region ID for external networks", func() {
-				_, err := client.ListExternalNetworks(ctx, config.OrgID, "invalid-region-id")
+				// A malformed (non-UUID) region ID is rejected at the routing
+				// layer with 400, before RBAC denies access (which is what a
+				// well-formed region would hit here).
+				path := client.GetEndpoints().ListExternalNetworks(config.OrgID, "invalid-region-id")
+				_, respBody, err := client.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
 
 				Expect(err).To(HaveOccurred())
-				Expect(errors.Is(err, coreclient.ErrAccessDenied)).To(BeTrue())
+				Expect(errors.Is(err, coreclient.ErrUnexpectedStatusCode)).To(BeTrue())
+				Expect(string(respBody)).To(ContainSubstring("invalid_request"))
+				Expect(string(respBody)).To(ContainSubstring("invalid path/query element"))
 				GinkgoWriter.Printf("Expected error for invalid region ID: %v\n", err)
 			})
 		})

@@ -31,6 +31,7 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
@@ -40,6 +41,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/sshcertificateauthority"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -50,9 +52,10 @@ import (
 )
 
 const (
-	organizationID = "foo"
-	projectID      = "bar"
-	namespace      = "test-namespace"
+	organizationID     = "11111111-1111-4111-a111-111111111111"
+	projectID          = "22222222-2222-4222-a222-222222222222"
+	nonexistentProject = "33333333-3333-4333-a333-333333333333"
+	namespace          = "test-namespace"
 )
 
 func newFakeClient(t *testing.T, objects ...runtime.Object) client.Client {
@@ -144,7 +147,7 @@ func TestCreateV2(t *testing.T) {
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), organizationID, projectID).
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(organizationID), identityids.MustParseProjectID(projectID)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
 		}, nil)
@@ -172,7 +175,7 @@ func TestCreateV2InvalidKey(t *testing.T) {
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), organizationID, projectID).
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(organizationID), identityids.MustParseProjectID(projectID)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
 		}, nil)
@@ -197,7 +200,7 @@ func TestCreateV2RBACOrgScopedProjectNotFound(t *testing.T) {
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), organizationID, "nonexistent-project").
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(organizationID), identityids.MustParseProjectID(nonexistentProject)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusNotFound},
 		}, nil)
@@ -210,7 +213,7 @@ func TestCreateV2RBACOrgScopedProjectNotFound(t *testing.T) {
 	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeCreate(organizationID)))
 
 	request := minimalCreateRequest(mustAuthorizedKey(t))
-	request.Spec.ProjectId = "nonexistent-project"
+	request.Spec.ProjectId = nonexistentProject
 
 	_, err := c.CreateV2(ctx, request)
 	require.Error(t, err)
@@ -226,7 +229,7 @@ func TestDeleteV2InUse(t *testing.T) {
 
 	resource := &regionv1.SSHCertificateAuthority{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ssh-ca-id",
+			Name:      "55555555-5555-4555-a555-555555555555",
 			Namespace: namespace,
 			Labels: map[string]string{
 				coreconstants.OrganizationLabel:   organizationID,
@@ -248,7 +251,7 @@ func TestDeleteV2InUse(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), aclWithReadDelete(organizationID))
 
-	err := c.DeleteV2(ctx, resource.Name)
+	err := c.DeleteV2(ctx, regionids.MustParseSSHCertificateAuthorityID(resource.Name))
 	require.Error(t, err)
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
 }

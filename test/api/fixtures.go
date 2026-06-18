@@ -32,6 +32,7 @@ import (
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 
 	"k8s.io/utils/ptr"
@@ -142,7 +143,7 @@ func NewNetworkPayload(orgID, projectID, regionID string) *NetworkPayloadBuilder
 			Spec: regionopenapi.NetworkV2CreateSpec{
 				OrganizationId: orgID,
 				ProjectId:      projectID,
-				RegionId:       regionID,
+				RegionId:       regionids.MustParseRegionID(regionID),
 				Prefix:         "10.0.0.0/16",
 				DnsNameservers: []regionopenapi.Ipv4Address{"8.8.8.8"},
 			},
@@ -177,7 +178,7 @@ func NewLoadBalancerPayload(networkID string) *LoadBalancerPayloadBuilder {
 				Name: uniqueName("lb"),
 			},
 			Spec: regionopenapi.LoadBalancerV2CreateSpec{
-				NetworkId: networkID,
+				NetworkId: regionids.MustParseNetworkID(networkID),
 				Listeners: []regionopenapi.LoadBalancerListenerV2{
 					{
 						Name:     "http",
@@ -282,7 +283,7 @@ func NewSecurityGroupPayload(networkID string) *SecurityGroupPayloadBuilder {
 				Name: uniqueName("sg"),
 			},
 			Spec: regionopenapi.SecurityGroupV2CreateSpec{
-				NetworkId: networkID,
+				NetworkId: regionids.MustParseNetworkID(networkID),
 				Rules: regionopenapi.SecurityGroupRuleV2List{
 					{
 						Direction: regionopenapi.NetworkDirectionIngress,
@@ -325,9 +326,9 @@ func NewServerPayload(networkID, flavorID, imageID string) *ServerPayloadBuilder
 				Name: uniqueName("server"),
 			},
 			Spec: regionopenapi.ServerV2CreateSpec{
-				NetworkId: networkID,
-				FlavorId:  flavorID,
-				ImageId:   imageID,
+				NetworkId: regionids.MustParseNetworkID(networkID),
+				FlavorId:  regionids.MustParseFlavorID(flavorID),
+				ImageId:   regionids.MustParseImageID(imageID),
 			},
 		},
 	}

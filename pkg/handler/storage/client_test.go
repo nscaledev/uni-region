@@ -30,6 +30,7 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	corev1 "github.com/unikorn-cloud/core/pkg/openapi"
 	servererrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityauth "github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityopenapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/principal"
@@ -38,6 +39,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	networkclient "github.com/unikorn-cloud/region/pkg/handler/network"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	k8sv1 "k8s.io/api/core/v1"
@@ -85,6 +87,8 @@ func newTestNetwork(name string) *regionv1.Network {
 			Namespace: testNamespace,
 			Labels: map[string]string{
 				constants.ResourceAPIVersionLabel: "2",
+				coreconstants.OrganizationLabel:   "11111111-1111-4111-a111-111111111111",
+				coreconstants.ProjectLabel:        "22222222-2222-4222-a222-222222222222",
 			},
 		},
 		Status: regionv1.NetworkStatus{
@@ -1268,10 +1272,10 @@ func TestGenerateV2(t *testing.T) {
 					Labels: map[string]string{
 						constants.RegionLabel:                    "reg-1",
 						coreconstants.NameLabel:                  "test-filestorage",
-						coreconstants.OrganizationLabel:          "org-1",
-						coreconstants.ProjectLabel:               "proj-1",
-						coreconstants.OrganizationPrincipalLabel: "org-1",
-						coreconstants.ProjectPrincipalLabel:      "proj-1",
+						coreconstants.OrganizationLabel:          "11111111-1111-4111-a111-111111111111",
+						coreconstants.ProjectLabel:               "22222222-2222-4222-a222-222222222222",
+						coreconstants.OrganizationPrincipalLabel: "11111111-1111-4111-a111-111111111111",
+						coreconstants.ProjectPrincipalLabel:      "22222222-2222-4222-a222-222222222222",
 					},
 					Annotations: map[string]string{
 						coreconstants.CreatorAnnotation:          "user-1",
@@ -1328,14 +1332,14 @@ func TestGet(t *testing.T) {
 			input: regionv1.FileStorage{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testNamespace,
-					Name:      "fs-1",
+					Name:      "55555555-5555-4555-a555-555555555555",
 					Labels: map[string]string{
 						constants.RegionLabel:                    "reg-1",
 						coreconstants.NameLabel:                  "test-filestorage",
-						coreconstants.OrganizationLabel:          "org-1",
-						coreconstants.ProjectLabel:               "proj-1",
-						coreconstants.OrganizationPrincipalLabel: "org-1",
-						coreconstants.ProjectPrincipalLabel:      "proj-1",
+						coreconstants.OrganizationLabel:          "11111111-1111-4111-a111-111111111111",
+						coreconstants.ProjectLabel:               "22222222-2222-4222-a222-222222222222",
+						coreconstants.OrganizationPrincipalLabel: "11111111-1111-4111-a111-111111111111",
+						coreconstants.ProjectPrincipalLabel:      "22222222-2222-4222-a222-222222222222",
 					},
 					Annotations: map[string]string{
 						coreconstants.CreatorAnnotation:          "user-1",
@@ -1355,7 +1359,7 @@ func TestGet(t *testing.T) {
 			},
 			expected: &openapi.StorageV2Read{
 				Metadata: corev1.ProjectScopedResourceReadMetadata{
-					ProjectId: "proj-1",
+					ProjectId: "22222222-2222-4222-a222-222222222222",
 				},
 				Status: openapi.StorageV2Status{
 					StorageClassId: "sc-1",
@@ -1376,7 +1380,7 @@ func TestGet(t *testing.T) {
 
 			c, ctx := newClientwithObjectandContext(t, ctx, obj...)
 
-			result, err := c.Get(ctx, tt.input.Name)
+			result, err := c.Get(ctx, regionids.MustParseFileStorageID(tt.input.Name))
 			require.NoError(t, err)
 			require.NotNil(t, result, "result should not be empty")
 		})
@@ -1424,8 +1428,8 @@ func TestGenerateV2Validations(t *testing.T) {
 }
 
 type generateV2Input struct {
-	organizationID string
-	projectID      string
+	organizationID identityids.OrganizationID
+	projectID      identityids.ProjectID
 	regionID       string
 	storageClass   *openapi.StorageClassV2Read
 	request        *openapi.StorageV2Update
@@ -1437,8 +1441,8 @@ type generateV2InputBuilder struct {
 
 func newDefaultGenerateV2Input() *generateV2Input {
 	return &generateV2Input{
-		organizationID: "org-1",
-		projectID:      "proj-1",
+		organizationID: identityids.MustParseOrganizationID("11111111-1111-4111-a111-111111111111"),
+		projectID:      identityids.MustParseProjectID("22222222-2222-4222-a222-222222222222"),
 		regionID:       "reg-1",
 		storageClass: &openapi.StorageClassV2Read{
 			Metadata: corev1.ResourceReadMetadata{

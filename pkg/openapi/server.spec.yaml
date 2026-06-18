@@ -1776,7 +1776,7 @@ components:
       description: An organization ID.
       required: true
       schema:
-        type: string
+        $ref: 'https://raw.githubusercontent.com/unikorn-cloud/identity/v1.17.7/pkg/openapi/server.spec.yaml#/components/schemas/organizationId'
     projectIDParameter:
       name: projectID
       in: path
@@ -1784,63 +1784,63 @@ components:
         The project ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: 'https://raw.githubusercontent.com/unikorn-cloud/identity/v1.17.7/pkg/openapi/server.spec.yaml#/components/schemas/projectId'
     regionIDParameter:
       name: regionID
       in: path
       description: The region ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/regionId'
     identityIDParameter:
       name: identityID
       in: path
       description: The identity ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/identityId'
     imageIDParameter:
       name: imageID
       in: path
       description: The image ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/imageId'
     networkIDParameter:
       name: networkID
       in: path
       description: The network ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/networkId'
     securityGroupIDParameter:
       name: securityGroupID
       in: path
       description: The security group ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/securityGroupId'
     loadBalancerIDParameter:
       name: loadBalancerID
       in: path
       description: The load balancer ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/loadBalancerId'
     sshCertificateAuthorityIDParameter:
       name: sshCertificateAuthorityID
       in: path
       description: The SSH certificate authority ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/sshCertificateAuthorityId'
     serverIDParameter:
       name: serverID
       in: path
       description: The server ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/serverId'
     referenceParameter:
       name: reference
       in: path
@@ -1868,7 +1868,7 @@ components:
       description: The storage unique identifier.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/fileStorageId'
     projectIDQueryParameter:
       name: projectID
       in: query
@@ -1917,6 +1917,86 @@ components:
       type: string
       minLength: 1
       maxLength: 63
+    regionId:
+      description: A region ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.RegionID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    identityId:
+      description: A cloud identity ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.IdentityID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    networkId:
+      description: A network ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.NetworkID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    securityGroupId:
+      description: A security group ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.SecurityGroupID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    loadBalancerId:
+      description: A load balancer ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.LoadBalancerID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    serverId:
+      description: A server ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.ServerID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    sshCertificateAuthorityId:
+      description: An SSH certificate authority ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.SSHCertificateAuthorityID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    fileStorageId:
+      description: A file storage ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.FileStorageID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    imageId:
+      description: An image ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.ImageID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    flavorId:
+      description: A flavor ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.FlavorID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
     regionType:
       description: The region's provider type.
       type: string
@@ -2269,8 +2349,7 @@ components:
       - regionId
       properties:
         regionId:
-          description: The region an identity is provisioned in.
-          type: string
+          $ref: '#/components/schemas/regionId'
     identityWrite:
       description: An identity request.
       type: object
@@ -2506,8 +2585,7 @@ components:
             description: The project to provision the resource in.
             type: string
           regionId:
-            description: The region a network is to be provisioned in.
-            type: string 
+            $ref: '#/components/schemas/regionId'
           prefix:
             description: |-
               An IPv4 prefix for the network.  Dynamic modification of the
@@ -2746,8 +2824,7 @@ components:
         - networkId
         properties:
           networkId:
-            description: The network a security group belongs to.
-            type: string
+            $ref: '#/components/schemas/networkId'
     securityGroupV2Status:
       description: Read only status information about a security group.
       type: object
@@ -2919,8 +2996,7 @@ components:
         - networkId
         properties:
           networkId:
-            description: The network the load balancer belongs to.
-            type: string
+            $ref: '#/components/schemas/networkId'
           vipAddress:
             description: The requested virtual IP address. When provided, it must fall within the selected network CIDR.
             $ref: '#/components/schemas/ipv4Address'
@@ -3051,11 +3127,9 @@ components:
       - networks
       properties:
         flavorId:
-          description: The flavor of the server.
-          type: string
+          $ref: '#/components/schemas/flavorId'
         imageId:
-          description: The image of the server.
-          type: string
+          $ref: '#/components/schemas/imageId'
         securityGroups:
           $ref: '#/components/schemas/serverSecurityGroupList'
         publicIPAllocation:
@@ -3218,11 +3292,9 @@ components:
       - imageId
       properties:
         flavorId:
-          description: The flavor of the server.
-          type: string
+          $ref: '#/components/schemas/flavorId'
         imageId:
-          description: The image of the server.
-          type: string
+          $ref: '#/components/schemas/imageId'
         networking:
           $ref: '#/components/schemas/serverV2Networking'
         userData:
@@ -3242,8 +3314,7 @@ components:
         - networkId
         properties:
           networkId:
-            description: The network ID to attach a server to.
-            type: string
+            $ref: '#/components/schemas/networkId'
           sshCertificateAuthorityId:
             description: The SSH certificate authority used to bootstrap login trust when the server is created.
             $ref: '#/components/schemas/sshCertificateAuthorityID'
@@ -3476,8 +3547,7 @@ components:
                 description: The organization to provision the resource in.
                 type: string
               regionId:
-                description: The region ID to provision the storage into.
-                type: string
+                $ref: '#/components/schemas/regionId'
               projectId:
                 description: The project to provision the resource in.
                 type: string
