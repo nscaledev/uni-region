@@ -199,6 +199,10 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
+	if !p.server.ProviderCreateGatesReady() {
+		return fmt.Errorf("%w: provider create gates remaining %v", provisioners.ErrYield, p.server.RemainingProviderCreateGates())
+	}
+
 	options, err := p.serverCreateOptions(ctx, cli)
 	if err != nil {
 		return err

@@ -1436,6 +1436,34 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/servers/{serverID}/provider-create-gates:
+    description: |-
+      Manages externally satisfied gates that must complete before Region asks
+      the provider to create the server.
+    parameters:
+    - $ref: '#/components/parameters/serverIDParameter'
+    post:
+      x-hidden: true
+      description: Satisfy a configured provider-create gate.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/serverProviderCreateGateRequest'
+      responses:
+        '204':
+          description: The gate was recorded as satisfied.
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/servers/{serverID}/sshkey:
     description: |-
       Manages servers.
@@ -3199,6 +3227,46 @@ components:
       items:
         description: A security group ID.
         type: string
+    serverProviderCreateGateType:
+      description: A provider-create gate condition type.
+      type: string
+      minLength: 1
+    serverProviderCreateGate:
+      description: A gate that must be satisfied before provider create starts.
+      type: object
+      required:
+      - conditionType
+      properties:
+        conditionType:
+          $ref: '#/components/schemas/serverProviderCreateGateType'
+    serverProviderCreateGates:
+      description: Provider-create gates requested at server creation time.
+      type: array
+      items:
+        $ref: '#/components/schemas/serverProviderCreateGate'
+    serverRemainingProviderCreateGates:
+      description: Configured provider-create gates that are not currently satisfied.
+      type: array
+      items:
+        $ref: '#/components/schemas/serverProviderCreateGateType'
+    serverProviderCreateGateAction:
+      description: Request to satisfy a configured provider-create gate.
+      type: object
+      required:
+      - conditionType
+      - reason
+      - message
+      properties:
+        conditionType:
+          $ref: '#/components/schemas/serverProviderCreateGateType'
+        reason:
+          description: Machine-readable reason for satisfying the gate.
+          type: string
+          minLength: 1
+        message:
+          description: Human-readable details for operators.
+          type: string
+          minLength: 1
     serverV2Networking:
       description: A server's network configuration.
       type: object
@@ -3249,6 +3317,8 @@ components:
             $ref: '#/components/schemas/sshCertificateAuthorityID'
           infrastructureRef:
             $ref: '#/components/schemas/infrastructureRef'
+          providerCreateGates:
+            $ref: '#/components/schemas/serverProviderCreateGates'
     serverV2Status:
       description: Read only status information about a server.
       type: object
@@ -3278,6 +3348,8 @@ components:
         macAddress:
           description: The MAC address of the server.
           type: string
+        remainingProviderCreateGates:
+          $ref: '#/components/schemas/serverRemainingProviderCreateGates'
     serverV2Read:
       description: A server.
       type: object
@@ -3884,6 +3956,16 @@ components:
                 allowedSourceAddresses:
                 - 192.168.192.0/24
               userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
+    serverProviderCreateGateRequest:
+      description: A request to satisfy a provider-create gate.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/serverProviderCreateGateAction'
+          example:
+            conditionType: example.unikorn-cloud.org/pre-create-ready
+            reason: ExternalStatePrepared
+            message: External state required before provider create is ready.
 
     snapshotServerRequest:
       description: A request to create an image by snapshoting a server.

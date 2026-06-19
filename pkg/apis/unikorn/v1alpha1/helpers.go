@@ -22,6 +22,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
 )
@@ -155,6 +156,74 @@ func (c *Server) StatusConditionRead(t unikornv1core.ConditionType) (*unikornv1c
 // ignored.
 func (c *Server) StatusConditionWrite(t unikornv1core.ConditionType, status corev1.ConditionStatus, reason unikornv1core.ConditionReason, message string) {
 	unikornv1core.UpdateCondition(&c.Status.Conditions, t, status, reason, message)
+}
+
+func (c *Server) ProviderCreateGateConfigured(conditionType string) bool {
+	for _, gate := range c.Spec.ProviderCreateGates {
+		if gate.ConditionType == conditionType {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (c *Server) ProviderCreateGateStatusRead(conditionType string) (*ServerProviderCreateGateStatus, bool) {
+	for i := range c.Status.ProviderCreateGates {
+		if c.Status.ProviderCreateGates[i].ConditionType == conditionType {
+			return &c.Status.ProviderCreateGates[i], true
+		}
+	}
+
+	return nil, false
+}
+
+func (c *Server) ProviderCreateGateStatusWrite(conditionType string, status corev1.ConditionStatus, actor, reason, message string) {
+	now := metav1.Now()
+	gate := ServerProviderCreateGateStatus{
+		ConditionType:      conditionType,
+		Status:             status,
+		LastTransitionTime: now,
+		Actor:              actor,
+		Reason:             reason,
+		Message:            message,
+	}
+
+	existing, ok := c.ProviderCreateGateStatusRead(conditionType)
+	if !ok {
+		c.Status.ProviderCreateGates = append(c.Status.ProviderCreateGates, gate)
+
+		return
+	}
+
+	if existing.Status == status {
+		gate.LastTransitionTime = existing.LastTransitionTime
+	}
+
+	*existing = gate
+}
+
+func (c *Server) RemainingProviderCreateGates() []string {
+	out := make([]string, 0, len(c.Spec.ProviderCreateGates))
+
+	for _, gate := range c.Spec.ProviderCreateGates {
+		status, ok := c.ProviderCreateGateStatusRead(gate.ConditionType)
+		if !ok || status.Status != corev1.ConditionTrue {
+			out = append(out, gate.ConditionType)
+		}
+	}
+
+	return out
+}
+
+func (c *Server) ProviderCreateGatesReady() bool {
+	return len(c.RemainingProviderCreateGates()) == 0
+}
+
+func (c *Server) ProviderCreateGatesReset(actor, reason, message string) {
+	for _, gate := range c.Spec.ProviderCreateGates {
+		c.ProviderCreateGateStatusWrite(gate.ConditionType, corev1.ConditionUnknown, actor, reason, message)
+	}
 }
 
 // ResourceLabels generates a set of labels to uniquely identify the resource

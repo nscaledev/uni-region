@@ -26,6 +26,12 @@ related dependencies rather than from nested path scope.
 - create can carry an `infrastructureRef` that pins initial placement to a
   provider-specific physical host; reads expose the value in status so callers
   can verify the placement request that was persisted
+- create can carry immutable `providerCreateGates`; reads expose only
+  `status.remainingProviderCreateGates`, while the stored Kubernetes object
+  retains per-gate status details for operators
+- internal service callers can satisfy an existing provider-create gate through
+  `POST /api/v2/servers/{serverID}/provider-create-gates`, which records the
+  authenticated service actor, reason, and message on the status subresource
 - snapshot creation bridges server lifecycle into image provenance semantics
 - snapshot creation is also a cross-resource permission bridge: the caller must
   already be able to see the server and also be allowed to create images in the
@@ -56,6 +62,13 @@ related dependencies rather than from nested path scope.
 - `infrastructureRef` is create-time placement input. Updates preserve the
   existing value and the CRD marks it immutable, because moving an existing
   server to a different physical host is not an in-place server update.
+- `providerCreateGates` is create-time coordination input. Updates preserve the
+  existing gate list and the CRD marks it immutable; only Region writes the
+  derived status entries.
+- The provider-create gate action has its own
+  `region:servers:v2/provider-create-gates` permission. It also requires normal
+  server read access because callers must not satisfy gates on servers they
+  cannot see.
 - The Kubernetes resource name for a `v2` server is a deterministic UUID v5
   derived from `(networkID, serverName)` at creation time, making the name
   immutable for the lifetime of the resource — consistent with OpenStack not

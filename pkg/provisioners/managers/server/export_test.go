@@ -20,7 +20,9 @@ import (
 	"context"
 
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
+	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -31,4 +33,13 @@ func ServerCreateOptionsForTest(ctx context.Context, server *unikornv1.Server, c
 	}
 
 	return provisioner.serverCreateOptions(ctx, cli)
+}
+
+func NewForTest(server *unikornv1.Server, providers providers.Providers) *Provisioner {
+	return &Provisioner{
+		server: server,
+		Base: base.Base{
+			Providers: providers,
+		},
+	}
 }
