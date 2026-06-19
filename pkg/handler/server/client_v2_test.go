@@ -18,7 +18,14 @@ package server_test
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
@@ -41,6 +48,7 @@ import (
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
 	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -54,6 +62,7 @@ const (
 	srvProjectID      = "bar"
 	srvNamespace      = "test-namespace"
 	srvNetworkID      = "aaaabbbb-1234-5678-9abc-def012345678"
+	srvProviderGate   = "example.unikorn-cloud.org/pre-create-ready"
 )
 
 // newSrvFakeClient builds a fake k8s client pre-populated with the given objects.
@@ -151,6 +160,26 @@ func aclWithSrvUpdate() *identityapi.Acl {
 	}
 }
 
+func aclWithSrvProviderCreateGate() *identityapi.Acl {
+	return &identityapi.Acl{
+		Organizations: &identityapi.AclOrganizationList{
+			{
+				Id: srvOrganizationID,
+				Endpoints: &identityapi.AclEndpoints{
+					{
+						Name:       "region:servers",
+						Operations: identityapi.AclOperations{identityapi.Read},
+					},
+					{
+						Name:       "region:servers:v2/provider-create-gates",
+						Operations: identityapi.AclOperations{identityapi.Update},
+					},
+				},
+			},
+		},
+	}
+}
+
 func expectProjectFound(mockIdentity *identitymock.MockClientWithResponsesInterface) *gomock.Call {
 	return mockIdentity.EXPECT().
 		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
@@ -188,6 +217,30 @@ func withPrincipal(ctx context.Context) context.Context {
 	return principal.NewContext(ctx, &principal.Principal{
 		Actor: "test@example.com",
 	})
+}
+
+func withProviderCreateServiceCertificate(ctx context.Context, t *testing.T) context.Context {
+	t.Helper()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			CommonName: "pre-create-service",
+		},
+		NotBefore: time.Now(),
+		NotAfter:  time.Now().Add(time.Hour),
+		KeyUsage:  x509.KeyUsageDigitalSignature,
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	require.NoError(t, err)
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+
+	return authorization.NewContextWithClientCert(ctx, url.QueryEscape(string(certPEM)))
 }
 
 func testSSHCertificateAuthorityWithProject(projID, caID string) *regionv1.SSHCertificateAuthority {
@@ -517,6 +570,50 @@ func TestServerCreateV2SetsInfrastructureRef(t *testing.T) {
 	require.Equal(t, infrastructureRef, *created.Spec.InfrastructureRef)
 }
 
+func TestServerCreateV2SetsProviderCreateGates(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	k8sClient := newSrvFakeClient(t, network).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	mockProviders := newMockProvidersWithNoFlavors(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+		Providers: mockProviders,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	gates := openapi.ServerProviderCreateGates{
+		{ConditionType: srvProviderGate},
+	}
+
+	request := minimalServerV2CreateRequest()
+	request.Spec.ProviderCreateGates = &gates
+
+	result, err := c.CreateV2(ctx, request)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Status.RemainingProviderCreateGates)
+	require.Equal(t, openapi.ServerRemainingProviderCreateGates{srvProviderGate}, *result.Status.RemainingProviderCreateGates)
+
+	created := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: result.Metadata.Id}, created))
+	require.Equal(t, []regionv1.ServerProviderCreateGate{
+		{ConditionType: srvProviderGate},
+	}, created.Spec.ProviderCreateGates)
+}
+
 func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 	t.Parallel()
 
@@ -557,6 +654,50 @@ func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 	require.Equal(t, resource.Spec.SSHCertificateAuthorityID, updated.Spec.SSHCertificateAuthorityID)
 }
 
+func TestServerUpdateV2PreservesProviderCreateGates(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+	resource := testServerV2("server-1")
+	resource.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
+		{ConditionType: srvProviderGate},
+	}
+
+	k8sClient := newSrvFakeClient(t, network, resource).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
+
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+			UserData: ptr.To([]byte("#cloud-config\nusers: []\n")),
+		},
+	}
+
+	result, err := c.UpdateV2(ctx, resource.Name, request)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Status.RemainingProviderCreateGates)
+	require.Equal(t, openapi.ServerRemainingProviderCreateGates{srvProviderGate}, *result.Status.RemainingProviderCreateGates)
+
+	updated, err := c.GetV2Raw(ctx, resource.Name)
+	require.NoError(t, err)
+	require.Equal(t, resource.Spec.ProviderCreateGates, updated.Spec.ProviderCreateGates)
+}
+
 func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 	t.Parallel()
 
@@ -586,6 +727,223 @@ func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 	require.Equal(t, resource.Status.PrivateIP, result.Status.PrivateIP)
 	require.Equal(t, resource.Status.PublicIP, result.Status.PublicIP)
 	require.Equal(t, resource.Status.MACAddress, result.Status.MacAddress)
+}
+
+func TestServerGetV2ReturnsRemainingProviderCreateGates(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	resource := testServerV2("server-1")
+	resource.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
+		{ConditionType: srvProviderGate},
+		{ConditionType: "example.unikorn-cloud.org/second-ready"},
+	}
+	resource.ProviderCreateGateStatusWrite(srvProviderGate, corev1.ConditionTrue, "service", "Prepared", "done")
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
+
+	result, err := c.GetV2(ctx, resource.Name)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Status.RemainingProviderCreateGates)
+	require.Equal(t, openapi.ServerRemainingProviderCreateGates{"example.unikorn-cloud.org/second-ready"}, *result.Status.RemainingProviderCreateGates)
+}
+
+func TestServerSatisfyProviderCreateGate(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	resource := testServerV2("server-1")
+	resource.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
+		{ConditionType: srvProviderGate},
+	}
+
+	k8sClient := newSrvFakeClient(t, resource).
+		WithStatusSubresource(&regionv1.Server{}).
+		Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvProviderCreateGate())
+	ctx = withPrincipal(ctx)
+	ctx = withProviderCreateServiceCertificate(ctx, t)
+
+	request := &openapi.ServerProviderCreateGateAction{
+		ConditionType: srvProviderGate,
+		Reason:        "Prepared",
+		Message:       "external state is ready",
+	}
+
+	require.NoError(t, c.SatisfyProviderCreateGate(ctx, resource.Name, request))
+
+	updated := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
+
+	status, ok := updated.ProviderCreateGateStatusRead(srvProviderGate)
+	require.True(t, ok)
+	require.Equal(t, corev1.ConditionTrue, status.Status)
+	require.Equal(t, "pre-create-service", status.Actor)
+	require.Equal(t, request.Reason, status.Reason)
+	require.Equal(t, request.Message, status.Message)
+	require.NotZero(t, status.LastTransitionTime)
+
+	read := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	result, err := read.GetV2(ctx, resource.Name)
+	require.NoError(t, err)
+	require.NotNil(t, result.Status.RemainingProviderCreateGates)
+	require.Empty(t, *result.Status.RemainingProviderCreateGates)
+}
+
+func TestServerSatisfyProviderCreateGateIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	resource := testServerV2("server-1")
+	resource.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
+		{ConditionType: srvProviderGate},
+	}
+
+	k8sClient := newSrvFakeClient(t, resource).
+		WithStatusSubresource(&regionv1.Server{}).
+		Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvProviderCreateGate())
+	ctx = withPrincipal(ctx)
+	ctx = withProviderCreateServiceCertificate(ctx, t)
+
+	request := &openapi.ServerProviderCreateGateAction{
+		ConditionType: srvProviderGate,
+		Reason:        "Prepared",
+		Message:       "external state is ready",
+	}
+
+	require.NoError(t, c.SatisfyProviderCreateGate(ctx, resource.Name, request))
+
+	updated := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
+	status, ok := updated.ProviderCreateGateStatusRead(srvProviderGate)
+	require.True(t, ok)
+
+	transitionTime := status.LastTransitionTime
+
+	require.NoError(t, c.SatisfyProviderCreateGate(ctx, resource.Name, request))
+
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
+	status, ok = updated.ProviderCreateGateStatusRead(srvProviderGate)
+	require.True(t, ok)
+	require.Equal(t, transitionTime, status.LastTransitionTime)
+}
+
+func TestServerSatisfyProviderCreateGateRejectsUnknownGate(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	resource := testServerV2("server-1")
+	resource.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
+		{ConditionType: srvProviderGate},
+	}
+
+	k8sClient := newSrvFakeClient(t, resource).
+		WithStatusSubresource(&regionv1.Server{}).
+		Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvProviderCreateGate())
+	ctx = withPrincipal(ctx)
+	ctx = withProviderCreateServiceCertificate(ctx, t)
+
+	request := &openapi.ServerProviderCreateGateAction{
+		ConditionType: "example.unikorn-cloud.org/not-configured",
+		Reason:        "Prepared",
+		Message:       "external state is ready",
+	}
+
+	err := c.SatisfyProviderCreateGate(ctx, resource.Name, request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+
+	updated := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
+	require.Empty(t, updated.Status.ProviderCreateGates)
+}
+
+func TestServerSatisfyProviderCreateGateRequiresPermission(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	resource := testServerV2("server-1")
+	resource.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
+		{ConditionType: srvProviderGate},
+	}
+
+	k8sClient := newSrvFakeClient(t, resource).
+		WithStatusSubresource(&regionv1.Server{}).
+		Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvReadOnly(srvOrganizationID))
+	ctx = withPrincipal(ctx)
+	ctx = withProviderCreateServiceCertificate(ctx, t)
+
+	request := &openapi.ServerProviderCreateGateAction{
+		ConditionType: srvProviderGate,
+		Reason:        "Prepared",
+		Message:       "external state is ready",
+	}
+
+	err := c.SatisfyProviderCreateGate(ctx, resource.Name, request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
+
+	updated := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
+	require.Empty(t, updated.Status.ProviderCreateGates)
 }
 
 func testServerV2(serverID string) *regionv1.Server {

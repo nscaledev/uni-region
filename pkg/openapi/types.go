@@ -974,6 +974,30 @@ type ServerNetworkAllowedAddressPairList = []ServerNetworkAllowedAddressPair
 // ServerNetworkList A list of networks.
 type ServerNetworkList = []ServerNetwork
 
+// ServerProviderCreateGate A gate that must be satisfied before provider create starts.
+type ServerProviderCreateGate struct {
+	// ConditionType A provider-create gate condition type.
+	ConditionType ServerProviderCreateGateType `json:"conditionType"`
+}
+
+// ServerProviderCreateGateAction Request to satisfy a configured provider-create gate.
+type ServerProviderCreateGateAction struct {
+	// ConditionType A provider-create gate condition type.
+	ConditionType ServerProviderCreateGateType `json:"conditionType"`
+
+	// Message Human-readable details for operators.
+	Message string `json:"message"`
+
+	// Reason Machine-readable reason for satisfying the gate.
+	Reason string `json:"reason"`
+}
+
+// ServerProviderCreateGateType A provider-create gate condition type.
+type ServerProviderCreateGateType = string
+
+// ServerProviderCreateGates Provider-create gates requested at server creation time.
+type ServerProviderCreateGates = []ServerProviderCreateGate
+
 // ServerPublicIPAllocation The server's public IP allocation.
 type ServerPublicIPAllocation struct {
 	// Enabled Whether to allocate a public IP.
@@ -991,6 +1015,9 @@ type ServerRead struct {
 	// Status A server's status.
 	Status ServerStatus `json:"status"`
 }
+
+// ServerRemainingProviderCreateGates Configured provider-create gates that are not currently satisfied.
+type ServerRemainingProviderCreateGates = []ServerProviderCreateGateType
 
 // ServerSecurityGroup A security group.
 type ServerSecurityGroup struct {
@@ -1064,6 +1091,9 @@ type ServerV2CreateSpec struct {
 
 	// Networking A server's network configuration.
 	Networking *ServerV2Networking `json:"networking,omitempty"`
+
+	// ProviderCreateGates Provider-create gates requested at server creation time.
+	ProviderCreateGates *ServerProviderCreateGates `json:"providerCreateGates,omitempty"`
 
 	// SshCertificateAuthorityId The SSH certificate authority ID.
 	SshCertificateAuthorityId *SshCertificateAuthorityID `json:"sshCertificateAuthorityId,omitempty"`
@@ -1148,6 +1178,9 @@ type ServerV2Status struct {
 
 	// RegionId The region a security group belongs to.
 	RegionId string `json:"regionId"`
+
+	// RemainingProviderCreateGates Configured provider-create gates that are not currently satisfied.
+	RemainingProviderCreateGates *ServerRemainingProviderCreateGates `json:"remainingProviderCreateGates,omitempty"`
 
 	// SshCertificateAuthorityId The SSH certificate authority ID.
 	SshCertificateAuthorityId *SshCertificateAuthorityID `json:"sshCertificateAuthorityId,omitempty"`
@@ -1565,6 +1598,9 @@ type SecurityGroupV2CreateRequest = SecurityGroupV2Create
 // SecurityGroupV2UpdateRequest A security group request.
 type SecurityGroupV2UpdateRequest = SecurityGroupV2Update
 
+// ServerProviderCreateGateRequest Request to satisfy a configured provider-create gate.
+type ServerProviderCreateGateRequest = ServerProviderCreateGateAction
+
 // ServerRequest A server request.
 type ServerRequest = ServerWrite
 
@@ -1785,6 +1821,9 @@ type PostApiV2ServersJSONRequestBody = ServerV2Create
 
 // PutApiV2ServersServerIDJSONRequestBody defines body for PutApiV2ServersServerID for application/json ContentType.
 type PutApiV2ServersServerIDJSONRequestBody = ServerV2Update
+
+// PostApiV2ServersServerIDProviderCreateGatesJSONRequestBody defines body for PostApiV2ServersServerIDProviderCreateGates for application/json ContentType.
+type PostApiV2ServersServerIDProviderCreateGatesJSONRequestBody = ServerProviderCreateGateAction
 
 // PostApiV2ServersServerIDSnapshotJSONRequestBody defines body for PostApiV2ServersServerIDSnapshot for application/json ContentType.
 type PostApiV2ServersServerIDSnapshotJSONRequestBody = SnapshotCreate
