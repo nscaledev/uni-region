@@ -39,9 +39,11 @@ import (
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
+	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	principal "github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
+	identityutil "github.com/unikorn-cloud/identity/pkg/util"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
@@ -56,13 +58,17 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"github.com/unikorn-cloud/region/pkg/userdata"
 
+	kcorev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+const providerCreateGatesEndpoint = "region:servers:v2/provider-create-gates"
 
 type ClientV2 struct {
 	*Client
@@ -240,6 +246,15 @@ func deriveProvisioningStatus(in *regionv1.Server, status coreapi.ResourceProvis
 	return status
 }
 
+func convertRemainingProviderCreateGates(in *regionv1.Server) *openapi.ServerRemainingProviderCreateGates {
+	remaining := in.RemainingProviderCreateGates()
+	out := make(openapi.ServerRemainingProviderCreateGates, len(remaining))
+
+	copy(out, remaining)
+
+	return &out
+}
+
 func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 	imageID, err := in.ImageID()
 	if err != nil {
@@ -263,15 +278,16 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 			UserData:   convertUserData(in.Spec.UserData),
 		},
 		Status: openapi.ServerV2Status{
-			RegionId:                  regionID,
-			NetworkId:                 in.Spec.Networks[0].ID,
-			SshCertificateAuthorityId: in.Spec.SSHCertificateAuthorityID,
-			SshInjection:              sshInjectionStatus(in),
-			InfrastructureRef:         in.Spec.InfrastructureRef,
-			PowerState:                serverPowerState(in),
-			PrivateIP:                 in.Status.PrivateIP,
-			PublicIP:                  in.Status.PublicIP,
-			MacAddress:                in.Status.MACAddress,
+			RegionId:                     regionID,
+			NetworkId:                    in.Spec.Networks[0].ID,
+			SshCertificateAuthorityId:    in.Spec.SSHCertificateAuthorityID,
+			SshInjection:                 sshInjectionStatus(in),
+			InfrastructureRef:            in.Spec.InfrastructureRef,
+			PowerState:                   serverPowerState(in),
+			PrivateIP:                    in.Status.PrivateIP,
+			PublicIP:                     in.Status.PublicIP,
+			MacAddress:                   in.Status.MACAddress,
+			RemainingProviderCreateGates: convertRemainingProviderCreateGates(in),
 		},
 	}
 
@@ -382,6 +398,22 @@ func generateUserData(in *[]byte) []byte {
 	}
 
 	return *in
+}
+
+func generateProviderCreateGates(in *openapi.ServerProviderCreateGates) []regionv1.ServerProviderCreateGate {
+	if in == nil || len(*in) == 0 {
+		return nil
+	}
+
+	out := make([]regionv1.ServerProviderCreateGate, len(*in))
+
+	for i, gate := range *in {
+		out[i] = regionv1.ServerProviderCreateGate{
+			ConditionType: gate.ConditionType,
+		}
+	}
+
+	return out
 }
 
 func (c *ClientV2) validateSSHCertificateAuthorityReference(ctx context.Context, scope identityids.ProjectScopeReader, sshCertificateAuthorityID *string) error {
@@ -497,7 +529,7 @@ func (c *ClientV2) validateInfrastructureRefForFlavor(ctx context.Context, regio
 	return nil
 }
 
-func (c *ClientV2) generateV2(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, in *openapi.ServerV2Update, network *regionv1.Network, sshCertificateAuthorityID *string, infrastructureRef *string, sshInjection regionv1.ServerSSHInjection) (*regionv1.Server, error) {
+func (c *ClientV2) generateV2(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, in *openapi.ServerV2Update, network *regionv1.Network, sshCertificateAuthorityID *string, infrastructureRef *string, sshInjection regionv1.ServerSSHInjection, providerCreateGates []regionv1.ServerProviderCreateGate) (*regionv1.Server, error) {
 	networkID, err := network.NetworkID()
 	if err != nil {
 		return nil, err
@@ -528,6 +560,7 @@ func (c *ClientV2) generateV2(ctx context.Context, organizationID identityids.Or
 			SSHCertificateAuthorityID: sshCertificateAuthorityID,
 			SSHInjection:              ptr.To(sshInjection),
 			InfrastructureRef:         infrastructureRef,
+			ProviderCreateGates:       providerCreateGates,
 			UserData:                  generateUserData(in.Spec.UserData),
 		},
 	}
@@ -671,7 +704,7 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 
 	sshInjection := resolveSSHInjection(request.Spec.SshInjection, request.Spec.SshCertificateAuthorityId)
 
-	resource, err := c.generateV2(ctx, organizationID, projectID, commonRequest, network, request.Spec.SshCertificateAuthorityId, request.Spec.InfrastructureRef, sshInjection)
+	resource, err := c.generateV2(ctx, organizationID, projectID, commonRequest, network, request.Spec.SshCertificateAuthorityId, request.Spec.InfrastructureRef, sshInjection, generateProviderCreateGates(request.Spec.ProviderCreateGates))
 	if err != nil {
 		return nil, err
 	}
@@ -786,7 +819,7 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, re
 		return nil, err
 	}
 
-	required, err := c.generateV2(ctx, organizationID, projectID, request, network, current.Spec.SSHCertificateAuthorityID, current.Spec.InfrastructureRef, current.ResolvedSSHInjection())
+	required, err := c.generateV2(ctx, organizationID, projectID, request, network, current.Spec.SSHCertificateAuthorityID, current.Spec.InfrastructureRef, current.ResolvedSSHInjection(), current.Spec.ProviderCreateGates)
 	if err != nil {
 		return nil, err
 	}
@@ -820,6 +853,99 @@ func (c *ClientV2) DeleteV2(ctx context.Context, serverID regionids.ServerID) er
 
 		return fmt.Errorf("%w: unable to delete server", err)
 	}
+
+	return nil
+}
+
+func providerCreateGateActor(ctx context.Context) (string, error) {
+	if certPEM, err := authorization.ClientCertFromContext(ctx); err == nil {
+		certificate, err := identityutil.GetClientCertificate(certPEM)
+		if err != nil {
+			return "", err
+		}
+
+		if certificate.Subject.CommonName != "" {
+			return certificate.Subject.CommonName, nil
+		}
+	}
+
+	info, err := authorization.FromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	if info.Userinfo != nil && info.Userinfo.Sub != "" {
+		return info.Userinfo.Sub, nil
+	}
+
+	if info.ClientID != "" {
+		return info.ClientID, nil
+	}
+
+	return "", fmt.Errorf("%w: provider-create gate actor is not defined", coreerrors.ErrInvalidContext)
+}
+
+func providerCreateGateActionChanged(current *regionv1.Server, conditionType, actor, reason, message string) bool {
+	status, ok := current.ProviderCreateGateStatusRead(conditionType)
+	if !ok {
+		return true
+	}
+
+	return status.Status != kcorev1.ConditionTrue ||
+		status.Actor != actor ||
+		status.Reason != reason ||
+		status.Message != message
+}
+
+func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerProviderCreateGateAction) error {
+	if request.ConditionType == "" {
+		return errors.OAuth2InvalidRequest("conditionType must be specified")
+	}
+
+	if request.Reason == "" {
+		return errors.OAuth2InvalidRequest("reason must be specified")
+	}
+
+	if request.Message == "" {
+		return errors.OAuth2InvalidRequest("message must be specified")
+	}
+
+	current, err := c.GetV2Raw(ctx, serverID.String())
+	if err != nil {
+		return err
+	}
+
+	if err := rbac.AllowProjectScopeReader(ctx, providerCreateGatesEndpoint, identityapi.Update, current); err != nil {
+		return err
+	}
+
+	conditionType := request.ConditionType
+	if !current.ProviderCreateGateConfigured(conditionType) {
+		return errors.HTTPUnprocessableContent("conditionType is not configured for this server")
+	}
+
+	actor, err := providerCreateGateActor(ctx)
+	if err != nil {
+		return fmt.Errorf("%w: unable to derive provider-create gate actor", err)
+	}
+
+	changed := providerCreateGateActionChanged(current, conditionType, actor, request.Reason, request.Message)
+
+	if changed {
+		updated := current.DeepCopy()
+		updated.ProviderCreateGateStatusWrite(conditionType, kcorev1.ConditionTrue, actor, request.Reason, request.Message)
+
+		if err := c.Client.Client.Status().Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
+			return fmt.Errorf("%w: unable to satisfy provider-create gate", err)
+		}
+	}
+
+	log.FromContext(ctx).Info("server provider-create gate satisfied",
+		"server", serverID.String(),
+		"conditionType", conditionType,
+		"actor", actor,
+		"reason", request.Reason,
+		"changed", changed)
 
 	return nil
 }
