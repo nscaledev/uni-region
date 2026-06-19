@@ -22,6 +22,7 @@ package v1alpha1
 import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -877,6 +878,7 @@ type Server struct {
 }
 
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.infrastructureRef) == !has(self.infrastructureRef) && (!has(self.infrastructureRef) || self.infrastructureRef == oldSelf.infrastructureRef)",message="infrastructureRef is immutable"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.providerCreateGates) == !has(self.providerCreateGates) && (!has(self.providerCreateGates) || self.providerCreateGates == oldSelf.providerCreateGates)",message="providerCreateGates is immutable"
 type ServerSpec struct {
 	// Pause, if true, will inhibit reconciliation.
 	Pause bool `json:"pause,omitempty"`
@@ -903,6 +905,17 @@ type ServerSpec struct {
 	// the provider bypasses its scheduler and provisions directly onto the
 	// identified host.
 	InfrastructureRef *string `json:"infrastructureRef,omitempty"`
+	// ProviderCreateGates are externally satisfied gates that must be True before
+	// the server controller calls the provider create path.
+	// +listType=map
+	// +listMapKey=conditionType
+	ProviderCreateGates []ServerProviderCreateGate `json:"providerCreateGates,omitempty"`
+}
+
+type ServerProviderCreateGate struct {
+	// ConditionType is the status condition type that satisfies this gate.
+	// +kubebuilder:validation:MinLength=1
+	ConditionType string `json:"conditionType"`
 }
 
 type ServerSecurityGroupSpec struct {
@@ -959,6 +972,10 @@ const (
 type ServerStatus struct {
 	// Current service state of a cluster manager.
 	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	// ProviderCreateGates reports externally satisfied provider-create gates.
+	// +listType=map
+	// +listMapKey=conditionType
+	ProviderCreateGates []ServerProviderCreateGateStatus `json:"providerCreateGates,omitempty"`
 	// Phase is the current lifecycle phase of the server.
 	Phase InstanceLifecyclePhase `json:"phase,omitempty"`
 	// PrivateIP is the private IP address of the server.
@@ -973,6 +990,24 @@ type ServerStatus struct {
 	// ScheduledAt is the time the provider accepted and processed the creation request.
 	// Nil until the server has been observed in the provider at least once.
 	ScheduledAt *metav1.Time `json:"scheduledAt,omitempty"`
+}
+
+type ServerProviderCreateGateStatus struct {
+	// ConditionType matches a configured ServerSpec.ProviderCreateGates entry.
+	// +kubebuilder:validation:MinLength=1
+	ConditionType string `json:"conditionType"`
+	// Status is True when the gate is satisfied.
+	// +kubebuilder:validation:Enum=True;False;Unknown
+	Status corev1.ConditionStatus `json:"status"`
+	// LastTransitionTime records when the gate status last changed.
+	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
+	// Actor is the authenticated service identity that last wrote this gate
+	// status.
+	Actor string `json:"actor,omitempty"`
+	// Reason is a machine-readable reason for the status.
+	Reason string `json:"reason,omitempty"`
+	// Message is human-readable detail.
+	Message string `json:"message,omitempty"`
 }
 
 // OpenstackServerList is a typed list of servers.

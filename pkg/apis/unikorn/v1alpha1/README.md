@@ -55,6 +55,12 @@ stored objects rely on for linkage, migration, and operational coordination.
   `StatusConditionRead()`, and `StatusConditionWrite()` because this package
   also satisfies generic controller contracts. It should not be described as
   schema-only.
+- `Server.Spec.ProviderCreateGates` is immutable create-time desired state used
+  by the server controller to pause before provider create. Matching
+  `Server.Status.ProviderCreateGates` entries record the condition status,
+  actor, reason, message, and transition time for operator diagnostics. The
+  generic `Server.Status.Conditions` list remains reserved for Region-owned
+  lifecycle conditions.
 - `FileStorage` carries a more explicit observed-state model than the older
   resource types. Attachment-level provisioning state, observed size, usage
   reporting, and per-policy snapshot status are part of the stored
