@@ -30,6 +30,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/placement/v1/resourceproviders"
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 )
 
@@ -135,7 +136,7 @@ func customPlacementResourceClass(resourceClass string) string {
 }
 
 func placementPreflightRequiredTraits(preflight *unikornv1.PlacementPreflightSpec) []string {
-	if preflight == nil {
+	if preflight == nil || len(preflight.RequiredTraits) == 0 {
 		return nil
 	}
 
@@ -166,6 +167,68 @@ func normalizePlacementRequiredTraits(traits []string) []string {
 	}
 
 	return required
+}
+
+type serverCreatePreflight func(context.Context, *unikornv1.Server) error
+
+type placementClientFactory func(context.Context, *unikornv1.Server) (PlacementInterface, error)
+
+type serverCreatePlacementPreflight struct {
+	config                 func() *unikornv1.PlacementPreflightSpec
+	flavorClient           FlavorInterface
+	placementClientFactory placementClientFactory
+}
+
+func (p serverCreatePlacementPreflight) check(ctx context.Context, server *unikornv1.Server) error {
+	config := p.config()
+	if config == nil || !config.Enabled || server.Spec.InfrastructureRef == nil {
+		return nil
+	}
+
+	resourceClass, err := p.flavorPlacementResourceClass(ctx, server.Spec.FlavorID)
+	if err != nil {
+		return err
+	}
+
+	placementClient, err := p.placementClientFactory(ctx, server)
+	if err != nil {
+		return err
+	}
+
+	available, err := placementClient.ResourceProviderAvailable(ctx, PlacementResourceProviderQuery{
+		InfrastructureRef: *server.Spec.InfrastructureRef,
+		ResourceClass:     resourceClass,
+		RequiredTraits:    placementPreflightRequiredTraits(config),
+	})
+	if err != nil {
+		return err
+	}
+
+	if !available {
+		return fmt.Errorf("%w: openstack placement resource provider %q is not ready for flavor %q", provisioners.ErrYield, *server.Spec.InfrastructureRef, server.Spec.FlavorID)
+	}
+
+	return nil
+}
+
+func (p serverCreatePlacementPreflight) flavorPlacementResourceClass(ctx context.Context, flavorID string) (string, error) {
+	flavors, err := p.flavorClient.GetFlavors(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return serverFlavorPlacementResourceClass(flavors, flavorID)
+}
+
+func serverFlavorPlacementResourceClass(openstackFlavors []flavors.Flavor, flavorID string) (string, error) {
+	index := slices.IndexFunc(openstackFlavors, func(flavor flavors.Flavor) bool {
+		return flavor.ID == flavorID
+	})
+	if index < 0 {
+		return "", fmt.Errorf("%w: flavor %q not found", coreerrors.ErrConsistency, flavorID)
+	}
+
+	return flavorPlacementResourceClass(openstackFlavors[index])
 }
 
 func flavorPlacementResourceClass(flavor flavors.Flavor) (string, error) {
@@ -214,4 +277,37 @@ func placementResourceClassFromExtraSpec(key, value string) (string, bool, error
 	}
 
 	return resourceClass, true, nil
+}
+
+func placementPreflightConfig(region *unikornv1.Region) *unikornv1.PlacementPreflightSpec {
+	if region == nil || region.Spec.Openstack == nil || region.Spec.Openstack.Compute == nil {
+		return nil
+	}
+
+	return region.Spec.Openstack.Compute.PlacementPreflight
+}
+
+func (p *Provider) serverCreatePlacementPreflight(identity *unikornv1.Identity, compute FlavorInterface) serverCreatePreflight {
+	preflight := serverCreatePlacementPreflight{
+		config: func() *unikornv1.PlacementPreflightSpec {
+			region, _ := p.openstack.regionSnapshot()
+
+			return placementPreflightConfig(region)
+		},
+		flavorClient: compute,
+		placementClientFactory: func(ctx context.Context, server *unikornv1.Server) (PlacementInterface, error) {
+			return p.placementForServerCreate(ctx, identity, server)
+		},
+	}
+
+	return preflight.check
+}
+
+func (p *Provider) placementForServerCreate(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) (PlacementInterface, error) {
+	provider, err := p.providerForServerCreate(ctx, identity, server)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewPlacementClient(ctx, provider)
 }

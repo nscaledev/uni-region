@@ -2432,7 +2432,7 @@ func (p *Provider) reconcileLoadBalancerFloatingIP(ctx context.Context, client F
 	return nil
 }
 
-func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
+func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight serverCreatePreflight) (*servers.Server, error) {
 	log := log.FromContext(ctx)
 
 	openstackServer, err := client.GetServer(ctx, server)
@@ -2479,6 +2479,12 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 
 	for k, v := range systemMetadata {
 		metadata[k] = v
+	}
+
+	if preflight != nil {
+		if err := preflight(ctx, server); err != nil {
+			return nil, err
+		}
 	}
 
 	log.V(1).Info("creating server")
@@ -2535,7 +2541,7 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
-	if _, err := p.reconcileServer(ctx, compute, serverForCreate, port, resolveServerKeyName(server, openstackIdentity)); err != nil {
+	if _, err := p.reconcileServer(ctx, compute, serverForCreate, port, resolveServerKeyName(server, openstackIdentity), p.serverCreatePlacementPreflight(identity, compute)); err != nil {
 		return err
 	}
 

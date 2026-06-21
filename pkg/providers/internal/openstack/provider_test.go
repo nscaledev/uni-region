@@ -18,6 +18,7 @@ limitations under the License.
 package openstack_test
 
 import (
+	"context"
 	"errors"
 	"net"
 	"net/http"
@@ -1845,6 +1846,110 @@ func TestReconcileServer(t *testing.T) {
 		p := openstack.NewTestProvider(client, regionFixture())
 
 		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
+		require.NoError(t, err)
+	})
+}
+
+// TestReconcileServerPreflight tests the optional preflight hook runs only
+// immediately before server create.
+func TestReconcileServerPreflight(t *testing.T) {
+	t.Parallel()
+
+	client := getClient(t, nil)
+
+	server := serverFixture()
+	network := networkFixture()
+
+	openstackNetwork := openstackNetworkFixture(network)
+	openstackSubnet := openstackSubnetFixture(network, openstackNetwork)
+	openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
+	openstackServer := openstackServerFixture(server)
+
+	openstackNetworks := []servers.Network{
+		{
+			UUID: openstackNetwork.ID,
+			Port: openstackServerPort.ID,
+		},
+	}
+
+	metadata := map[string]string{
+		// Legacy camelCase keys.
+		"serverID":       server.Name,
+		"organizationID": organizationID,
+		"projectID":      projectID,
+		"regionID":       regionID,
+		// Namespaced duplicates.
+		"region:server_id":         server.Name,
+		"identity:organization_id": organizationID,
+		"identity:project_id":      projectID,
+		"region:region_id":         regionID,
+	}
+
+	t.Run("ItYieldsBeforeCreate", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		t.Cleanup(c.Finish)
+
+		compute := mock.NewMockServerInterface(c)
+		compute.EXPECT().GetServer(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		preflightCalled := false
+
+		_, err := openstack.ReconcileServerWithPreflight(t.Context(), p, compute, server, openstackServerPort, sshKeyName, func(_ context.Context, got *regionv1.Server) error {
+			preflightCalled = true
+
+			require.Same(t, server, got)
+
+			return provisioners.ErrYield
+		})
+		require.ErrorIs(t, err, provisioners.ErrYield)
+		require.True(t, preflightCalled)
+	})
+
+	t.Run("ItCreatesAfterPreflight", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		t.Cleanup(c.Finish)
+
+		compute := mock.NewMockServerInterface(c)
+		compute.EXPECT().GetServer(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
+		compute.EXPECT().CreateServer(t.Context(), server, sshKeyName, openstackNetworks, nil, metadata).Return(openstackServer, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		preflightCalled := false
+
+		_, err := openstack.ReconcileServerWithPreflight(t.Context(), p, compute, server, openstackServerPort, sshKeyName, func(_ context.Context, got *regionv1.Server) error {
+			preflightCalled = true
+
+			require.Same(t, server, got)
+
+			return nil
+		})
+		require.NoError(t, err)
+		require.True(t, preflightCalled)
+	})
+
+	t.Run("ItSkipsPreflightWhenServerExists", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		t.Cleanup(c.Finish)
+
+		compute := mock.NewMockServerInterface(c)
+		compute.EXPECT().GetServer(t.Context(), server).Return(openstackServer, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServerWithPreflight(t.Context(), p, compute, server, openstackServerPort, sshKeyName, func(context.Context, *regionv1.Server) error {
+			t.Fatal("preflight called for existing server")
+
+			return nil
+		})
 		require.NoError(t, err)
 	})
 }
