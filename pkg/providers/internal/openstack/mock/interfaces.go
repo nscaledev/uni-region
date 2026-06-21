@@ -2399,6 +2399,44 @@ func (mr *MockComputeInterfaceMockRecorder) UpdateQuotas(ctx, projectID any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateQuotas", reflect.TypeOf((*MockComputeInterface)(nil).UpdateQuotas), ctx, projectID)
 }
 
+// MockPlacementInterface is a mock of PlacementInterface interface.
+type MockPlacementInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockPlacementInterfaceMockRecorder
+}
+
+// MockPlacementInterfaceMockRecorder is the mock recorder for MockPlacementInterface.
+type MockPlacementInterfaceMockRecorder struct {
+	mock *MockPlacementInterface
+}
+
+// NewMockPlacementInterface creates a new mock instance.
+func NewMockPlacementInterface(ctrl *gomock.Controller) *MockPlacementInterface {
+	mock := &MockPlacementInterface{ctrl: ctrl}
+	mock.recorder = &MockPlacementInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockPlacementInterface) EXPECT() *MockPlacementInterfaceMockRecorder {
+	return m.recorder
+}
+
+// ResourceProviderAvailable mocks base method.
+func (m *MockPlacementInterface) ResourceProviderAvailable(ctx context.Context, query openstack.PlacementResourceProviderQuery) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResourceProviderAvailable", ctx, query)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ResourceProviderAvailable indicates an expected call of ResourceProviderAvailable.
+func (mr *MockPlacementInterfaceMockRecorder) ResourceProviderAvailable(ctx, query any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResourceProviderAvailable", reflect.TypeOf((*MockPlacementInterface)(nil).ResourceProviderAvailable), ctx, query)
+}
+
 // MockBaremetalInterface is a mock of BaremetalInterface interface.
 type MockBaremetalInterface struct {
 	ctrl     *gomock.Controller

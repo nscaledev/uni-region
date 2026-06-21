@@ -160,9 +160,20 @@ type RegionOpenstackComputeSpec struct {
 	// ServerGroupPolicy defines the anti-affinity policy to use for
 	// scheduling cluster nodes.  Defaults to "soft-anti-affinity".
 	ServerGroupPolicy *string `json:"serverGroupPolicy,omitempty"`
+	// PlacementPreflight checks OpenStack Placement immediately before pinned
+	// server creation.
+	PlacementPreflight *PlacementPreflightSpec `json:"placementPreflight,omitempty"`
 	// Flavors defines how flavors are filtered and reported to
 	// clients.  If not defined, then all flavors are exported.
 	Flavors *OpenstackFlavorsSpec `json:"flavors,omitempty"`
+}
+
+type PlacementPreflightSpec struct {
+	// Enabled enables the OpenStack Placement readiness preflight.
+	Enabled bool `json:"enabled,omitempty"`
+	// RequiredTraits are the OpenStack Placement traits a resource provider
+	// must have before Region asks Nova to create a pinned server on it.
+	RequiredTraits []string `json:"requiredTraits,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=All;None
