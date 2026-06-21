@@ -19,6 +19,7 @@ package openstack
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
@@ -104,6 +105,21 @@ var MetadataKey = metadataKey
 //nolint:gochecknoglobals
 var ServerForCreate = serverForCreate
 
+//nolint:gochecknoglobals
+var PlacementAPIMicroversion = placementAPIMicroversion
+
+//nolint:gochecknoglobals
+var PlacementPreflightRequiredTraits = placementPreflightRequiredTraits
+
+//nolint:gochecknoglobals
+var PlacementRequiredTraitsQuery = placementRequiredTraitsQuery
+
+//nolint:gochecknoglobals
+var PlacementResourceQuery = placementResourceQuery
+
+//nolint:gochecknoglobals
+var FlavorPlacementResourceClass = flavorPlacementResourceClass
+
 func NewTestComputeClient(endpoint string) *ComputeClient {
 	return &ComputeClient{
 		client: &gophercloud.ServiceClient{
@@ -112,6 +128,27 @@ func NewTestComputeClient(endpoint string) *ComputeClient {
 		},
 		flavorCache: cache.New[[]flavors.Flavor](time.Hour),
 	}
+}
+
+func NewTestPlacementClient(endpoint string, httpClient *http.Client) *PlacementClient {
+	providerClient := &gophercloud.ProviderClient{
+		HTTPClient: *httpClient,
+	}
+	providerClient.UseTokenLock()
+	providerClient.SetToken("token")
+
+	return &PlacementClient{
+		client: &gophercloud.ServiceClient{
+			ProviderClient: providerClient,
+			Endpoint:       gophercloud.NormalizeURL(endpoint),
+			Type:           "placement",
+			Microversion:   placementAPIMicroversion,
+		},
+	}
+}
+
+func PlacementClientMicroversion(client *PlacementClient) string {
+	return client.client.Microversion
 }
 
 func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {

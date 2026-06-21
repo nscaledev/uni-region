@@ -185,6 +185,10 @@ type ComputeInterface interface {
 	ServerInterface
 }
 
+type PlacementInterface interface {
+	ResourceProviderAvailable(ctx context.Context, query PlacementResourceProviderQuery) (bool, error)
+}
+
 // BaremetalInterface lets the live monitor look up the Ironic node bound to a
 // Nova instance so it can refine Phase for baremetal servers in BUILD.
 type BaremetalInterface interface {
