@@ -7,6 +7,9 @@ Distinctive behaviour:
 - maintains explicit reference edges from a server to consumed networks,
   security groups, and optional SSH certificate authority
 - blocks on identity readiness before provider create/delete
+- preflight checks may still yield inside the provider, after other
+  validation succeeds; those checks are transient and are not recorded
+  as lifecycle transitions
 - augments provider create options with managed cloud-init parts for SSH CA use
 - clears or updates consumed-resource references during reprovision and teardown
 

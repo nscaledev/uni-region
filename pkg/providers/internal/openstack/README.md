@@ -91,6 +91,12 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - pinned server creation is one of those privileged project-scoped operations:
     it still targets the identity project, but uses region-level credentials so
     Nova policy can authorise the requested destination
+  - pinned server creation can also enable a transient
+    `openstack.compute.placementPreflight` check. When enabled, the provider
+    asks OpenStack Placement whether the pinned resource provider has available
+    inventory for the flavor's positive custom `resources:*` extra spec and any
+    configured `requiredTraits`. Empty `requiredTraits` means no trait filter.
+    A miss yields and lets the controller retry.
 - `OpenstackIdentity` is the remaining persisted provider-state anchor. It
   currently stores the secret-bearing user/project/application-credential and
   bootstrap state needed to operate on behalf of a region `Identity`.
