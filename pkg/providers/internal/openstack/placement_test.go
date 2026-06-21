@@ -27,10 +27,15 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/placement/v1/resourceproviders"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	openstack "github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
+	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack/mock"
+
+	"k8s.io/utils/ptr"
 )
 
 type staticPlacementCredentialProvider struct {
@@ -140,6 +145,116 @@ func TestFlavorPlacementResourceClass(t *testing.T) {
 		})
 
 		require.ErrorIs(t, err, coreerrors.ErrConsistency)
+	})
+}
+
+func TestServerCreatePlacementPreflight(t *testing.T) {
+	t.Parallel()
+
+	server := &unikornv1.Server{
+		Spec: unikornv1.ServerSpec{
+			FlavorID:          "flavor-a",
+			InfrastructureRef: ptr.To("node-a"),
+		},
+	}
+
+	t.Run("DisabledSkipsDependencies", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		t.Cleanup(c.Finish)
+
+		preflight := openstack.NewTestServerCreatePlacementPreflight(
+			&unikornv1.PlacementPreflightSpec{},
+			mock.NewMockFlavorInterface(c),
+			mock.NewMockPlacementInterface(c),
+		)
+
+		require.NoError(t, preflight(t.Context(), server))
+	})
+
+	t.Run("UnpinnedSkipsDependencies", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		t.Cleanup(c.Finish)
+
+		unpinned := server.DeepCopy()
+		unpinned.Spec.InfrastructureRef = nil
+
+		preflight := openstack.NewTestServerCreatePlacementPreflight(
+			&unikornv1.PlacementPreflightSpec{Enabled: true},
+			mock.NewMockFlavorInterface(c),
+			mock.NewMockPlacementInterface(c),
+		)
+
+		require.NoError(t, preflight(t.Context(), unpinned))
+	})
+
+	t.Run("AvailableProviderPasses", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		t.Cleanup(c.Finish)
+
+		flavorClient := mock.NewMockFlavorInterface(c)
+		flavorClient.EXPECT().GetFlavors(t.Context()).Return([]flavors.Flavor{
+			{
+				ID: "flavor-a",
+				ExtraSpecs: map[string]string{
+					"resources:CUSTOM_GPU": "1",
+				},
+			},
+		}, nil)
+
+		placementClient := mock.NewMockPlacementInterface(c)
+		placementClient.EXPECT().ResourceProviderAvailable(t.Context(), openstack.PlacementResourceProviderQuery{
+			InfrastructureRef: "node-a",
+			ResourceClass:     "CUSTOM_GPU",
+			RequiredTraits:    []string{"CUSTOM_READY"},
+		}).Return(true, nil)
+
+		preflight := openstack.NewTestServerCreatePlacementPreflight(
+			&unikornv1.PlacementPreflightSpec{
+				Enabled:        true,
+				RequiredTraits: []string{"custom_ready"},
+			},
+			flavorClient,
+			placementClient,
+		)
+
+		require.NoError(t, preflight(t.Context(), server))
+	})
+
+	t.Run("UnavailableProviderYields", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		t.Cleanup(c.Finish)
+
+		flavorClient := mock.NewMockFlavorInterface(c)
+		flavorClient.EXPECT().GetFlavors(t.Context()).Return([]flavors.Flavor{
+			{
+				ID: "flavor-a",
+				ExtraSpecs: map[string]string{
+					"resources:CUSTOM_GPU": "1",
+				},
+			},
+		}, nil)
+
+		placementClient := mock.NewMockPlacementInterface(c)
+		placementClient.EXPECT().ResourceProviderAvailable(t.Context(), openstack.PlacementResourceProviderQuery{
+			InfrastructureRef: "node-a",
+			ResourceClass:     "CUSTOM_GPU",
+		}).Return(false, nil)
+
+		preflight := openstack.NewTestServerCreatePlacementPreflight(
+			&unikornv1.PlacementPreflightSpec{Enabled: true},
+			flavorClient,
+			placementClient,
+		)
+
+		require.ErrorIs(t, preflight(t.Context(), server), provisioners.ErrYield)
 	})
 }
 
