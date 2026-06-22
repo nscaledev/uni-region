@@ -973,6 +973,12 @@ type ServerStatus struct {
 	// ScheduledAt is the time the provider accepted and processed the creation request.
 	// Nil until the server has been observed in the provider at least once.
 	ScheduledAt *metav1.Time `json:"scheduledAt,omitempty"`
+	// ProviderCreateFailures records how many provider-accepted create attempts
+	// later landed in a provider error state before the server launched.
+	ProviderCreateFailures int32 `json:"providerCreateFailures,omitempty"`
+	// ProviderCreateRetrying is true while the controller is deleting a failed
+	// provider server before making another create attempt.
+	ProviderCreateRetrying bool `json:"providerCreateRetrying,omitempty"`
 }
 
 // OpenstackServerList is a typed list of servers.
