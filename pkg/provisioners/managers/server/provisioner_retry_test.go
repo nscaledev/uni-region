@@ -39,6 +39,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/record"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -114,13 +115,36 @@ func withRuntimeStatus(server *regionv1.Server) {
 	server.Status.ScheduledAt = &scheduledAt
 }
 
-func retryProvisioner(t *testing.T, server *regionv1.Server, options *serverprovisioner.Options, provider *mocktypes.MockProvider) *serverprovisioner.Provisioner {
+func retryProvisioner(t *testing.T, server *regionv1.Server, options *serverprovisioner.Options, provider *mocktypes.MockProvider, recorders ...record.EventRecorder) *serverprovisioner.Provisioner {
 	t.Helper()
 
 	providers := mockproviders.NewMockProviders(gomock.NewController(t))
 	providers.EXPECT().LookupCloud(retryRegionID).Return(provider, nil)
 
-	return serverprovisioner.NewForTest(server, providers, options)
+	return serverprovisioner.NewForTest(server, providers, options, recorders...)
+}
+
+func requireEvent(t *testing.T, recorder *record.FakeRecorder, values ...string) {
+	t.Helper()
+
+	select {
+	case event := <-recorder.Events:
+		for _, value := range values {
+			require.Contains(t, event, value)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for event")
+	}
+}
+
+func requireNoEvent(t *testing.T, recorder *record.FakeRecorder) {
+	t.Helper()
+
+	select {
+	case event := <-recorder.Events:
+		t.Fatalf("unexpected event: %s", event)
+	default:
+	}
 }
 
 func TestProvision_ProviderCreateFailureDeletesAndYields(t *testing.T) {
@@ -135,7 +159,8 @@ func TestProvision_ProviderCreateFailureDeletesAndYields(t *testing.T) {
 	provider.EXPECT().UpdateServerState(gomock.Any(), gomock.Any(), server).Return(coreerrors.ErrResourceNotFound)
 
 	cli := retryClient(t, retryIdentity(), server)
-	prov := retryProvisioner(t, server, nil, provider)
+	recorder := record.NewFakeRecorder(2)
+	prov := retryProvisioner(t, server, nil, provider, recorder)
 
 	err := prov.Provision(coreclient.NewContext(t.Context(), cli))
 	require.ErrorIs(t, err, provisioners.ErrYield)
@@ -151,6 +176,9 @@ func TestProvision_ProviderCreateFailureDeletesAndYields(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, corev1.ConditionUnknown, condition.Status)
 	require.Equal(t, unikornv1core.ConditionReasonProvisioning, condition.Reason)
+
+	requireEvent(t, recorder, corev1.EventTypeNormal, "ProviderCreateRetrying", "attempt 1/3")
+	requireEvent(t, recorder, corev1.EventTypeNormal, "ProviderCreateRetryReady", "attempt 1/3")
 }
 
 func TestProvision_ProviderCreateRetryKeepsDeleting(t *testing.T) {
@@ -171,7 +199,8 @@ func TestProvision_ProviderCreateRetryKeepsDeleting(t *testing.T) {
 		})
 
 	cli := retryClient(t, retryIdentity(), server)
-	prov := retryProvisioner(t, server, nil, provider)
+	recorder := record.NewFakeRecorder(1)
+	prov := retryProvisioner(t, server, nil, provider, recorder)
 
 	err := prov.Provision(coreclient.NewContext(t.Context(), cli))
 	require.ErrorIs(t, err, provisioners.ErrYield)
@@ -182,6 +211,7 @@ func TestProvision_ProviderCreateRetryKeepsDeleting(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, corev1.ConditionUnknown, condition.Status)
 	require.Equal(t, unikornv1core.ConditionReasonProvisioning, condition.Reason)
+	requireNoEvent(t, recorder)
 }
 
 func TestProvision_ProviderCreateFailureStopsAtAttemptLimit(t *testing.T) {
@@ -195,12 +225,14 @@ func TestProvision_ProviderCreateFailureStopsAtAttemptLimit(t *testing.T) {
 	provider := mocktypes.NewMockProvider(ctrl)
 
 	cli := retryClient(t, retryIdentity(), server)
-	prov := retryProvisioner(t, server, &serverprovisioner.Options{ProviderCreateMaxAttempts: 3}, provider)
+	recorder := record.NewFakeRecorder(1)
+	prov := retryProvisioner(t, server, &serverprovisioner.Options{ProviderCreateMaxAttempts: 3}, provider, recorder)
 
 	err := prov.Provision(coreclient.NewContext(t.Context(), cli))
 	require.ErrorContains(t, err, "provider server create failed after 3 attempts")
 	require.Equal(t, int32(3), server.Status.ProviderCreateFailures)
 	require.False(t, server.Status.ProviderCreateRetrying)
+	requireEvent(t, recorder, corev1.EventTypeWarning, "ProviderCreateFailed", "after 3 attempts")
 }
 
 func TestProvision_LaunchedServerHealthErrorDoesNotRetryCreate(t *testing.T) {
