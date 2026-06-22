@@ -26,6 +26,9 @@ This is the clearest controller-side expression of the lifecycle DAG model:
 - Provider create retry state is stored on `Server.status`; changing retry
   behaviour must preserve the invariant that transient provider create failures
   return `ErrYield` until the configured attempt limit is reached.
+- Provider create retries also emit Kubernetes events and structured logs on
+  retry start, retry readiness after delete, and retry exhaustion; avoid
+  per-reconcile emissions while deletion is still converging.
 - The provisioner currently trusts the API not to supply repeated network or
   security-group IDs, even though the code still carries explicit TODOs to
   reject duplicates.

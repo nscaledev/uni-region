@@ -24,6 +24,8 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 
+	"k8s.io/client-go/tools/record"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -35,16 +37,22 @@ func ServerCreateOptionsForTest(ctx context.Context, server *unikornv1.Server, c
 	return provisioner.serverCreateOptions(ctx, cli)
 }
 
-func NewForTest(server *unikornv1.Server, providers providers.Providers, options *Options) *Provisioner {
+func NewForTest(server *unikornv1.Server, providers providers.Providers, options *Options, recorders ...record.EventRecorder) *Provisioner {
 	if options == nil {
 		options = NewOptions()
 	}
 
-	return &Provisioner{
+	provisioner := &Provisioner{
 		server:  server,
 		options: options,
 		Base: base.Base{
 			Providers: providers,
 		},
 	}
+
+	if len(recorders) > 0 {
+		provisioner.recorder = recorders[0]
+	}
+
+	return provisioner
 }

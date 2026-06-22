@@ -37,11 +37,19 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/tools/record"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-const defaultProviderCreateMaxAttempts = 3
+const (
+	defaultProviderCreateMaxAttempts = 3
+
+	eventReasonProviderCreateRetrying   = "ProviderCreateRetrying"
+	eventReasonProviderCreateRetryReady = "ProviderCreateRetryReady"
+	eventReasonProviderCreateFailed     = "ProviderCreateFailed"
+)
 
 var errProviderServerCreateFailed = errors.New("provider server create failed")
 
@@ -74,6 +82,8 @@ type Provisioner struct {
 	server *unikornv1.Server
 	// options are documented for the type.
 	options *Options
+	// recorder is used to emit provider create retry events.
+	recorder record.EventRecorder
 
 	// Base gives this methods for getting identities and providers.
 	base.Base
@@ -225,6 +235,19 @@ func (p *Provisioner) providerCreateMaxAttempts() int32 {
 	return p.options.ProviderCreateMaxAttempts
 }
 
+func (p *Provisioner) eventRecorder(ctx context.Context) record.EventRecorder {
+	if p.recorder != nil {
+		return p.recorder
+	}
+
+	return manager.FromContext(ctx).GetEventRecorderFor("server-controller")
+}
+
+func (p *Provisioner) recordProviderCreateRetryEvent(ctx context.Context, eventType, reason, logMessage, eventMessage string, attempt, maxAttempts int32) {
+	log.FromContext(ctx).Info(logMessage, "eventType", eventType, "reason", reason, "attempt", attempt, "maxAttempts", maxAttempts)
+	p.eventRecorder(ctx).Event(p.server, eventType, reason, eventMessage)
+}
+
 func (p *Provisioner) providerCreateFailure() bool {
 	if p.server.Status.LaunchedAt != nil {
 		return false
@@ -260,7 +283,7 @@ func (p *Provisioner) resetProviderCreateRuntimeStatus(message string) {
 	p.server.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionUnknown, unikornv1core.ConditionReasonProvisioning, message)
 }
 
-func (p *Provisioner) deleteFailedProviderServer(ctx context.Context, provider types.Provider, identity *unikornv1.Identity) error {
+func (p *Provisioner) deleteFailedProviderServer(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, attempt, maxAttempts int32) error {
 	if err := provider.DeleteServer(ctx, identity, p.server); err != nil {
 		return err
 	}
@@ -272,6 +295,15 @@ func (p *Provisioner) deleteFailedProviderServer(ctx context.Context, provider t
 
 		p.server.Status.ProviderCreateRetrying = false
 		p.resetProviderCreateRuntimeStatus("Retrying provider server create")
+		p.recordProviderCreateRetryEvent(
+			ctx,
+			corev1.EventTypeNormal,
+			eventReasonProviderCreateRetryReady,
+			"retrying provider server create",
+			fmt.Sprintf("Failed provider server deleted; retrying provider server create (attempt %d/%d)", attempt, maxAttempts),
+			attempt,
+			maxAttempts,
+		)
 
 		return provisioners.ErrYield
 	}
@@ -283,8 +315,10 @@ func (p *Provisioner) deleteFailedProviderServer(ctx context.Context, provider t
 }
 
 func (p *Provisioner) handleProviderCreateRetry(ctx context.Context, provider types.Provider, identity *unikornv1.Identity) (bool, error) {
+	maxAttempts := p.providerCreateMaxAttempts()
+
 	if p.server.Status.ProviderCreateRetrying {
-		return true, p.deleteFailedProviderServer(ctx, provider, identity)
+		return true, p.deleteFailedProviderServer(ctx, provider, identity, p.server.Status.ProviderCreateFailures, maxAttempts)
 	}
 
 	if !p.providerCreateFailure() {
@@ -294,15 +328,33 @@ func (p *Provisioner) handleProviderCreateRetry(ctx context.Context, provider ty
 	attempt := p.server.Status.ProviderCreateFailures + 1
 	p.server.Status.ProviderCreateFailures = attempt
 
-	if attempt >= p.providerCreateMaxAttempts() {
+	if attempt >= maxAttempts {
 		p.server.Status.ProviderCreateRetrying = false
+		p.recordProviderCreateRetryEvent(
+			ctx,
+			corev1.EventTypeWarning,
+			eventReasonProviderCreateFailed,
+			"provider server create failed after all retry attempts",
+			fmt.Sprintf("Provider server create failed after %d attempts", attempt),
+			attempt,
+			maxAttempts,
+		)
 
 		return true, fmt.Errorf("%w after %d attempts", errProviderServerCreateFailed, attempt)
 	}
 
 	p.server.Status.ProviderCreateRetrying = true
+	p.recordProviderCreateRetryEvent(
+		ctx,
+		corev1.EventTypeNormal,
+		eventReasonProviderCreateRetrying,
+		"deleting failed provider server before retrying create",
+		fmt.Sprintf("Deleting failed provider server before retrying create (attempt %d/%d)", attempt, maxAttempts),
+		attempt,
+		maxAttempts,
+	)
 
-	return true, p.deleteFailedProviderServer(ctx, provider, identity)
+	return true, p.deleteFailedProviderServer(ctx, provider, identity, attempt, maxAttempts)
 }
 
 // Provision implements the Provision interface.
