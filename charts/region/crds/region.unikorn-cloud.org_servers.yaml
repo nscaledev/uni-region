@@ -241,6 +241,17 @@ spec:
               privateIP:
                 description: PrivateIP is the private IP address of the server.
                 type: string
+              providerCreateFailures:
+                description: |-
+                  ProviderCreateFailures records how many provider-accepted create attempts
+                  later landed in a provider error state before the server launched.
+                format: int32
+                type: integer
+              providerCreateRetrying:
+                description: |-
+                  ProviderCreateRetrying is true while the controller is deleting a failed
+                  provider server before making another create attempt.
+                type: boolean
               publicIP:
                 description: PublicIP is the public IP address of the server.
                 type: string
