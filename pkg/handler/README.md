@@ -64,10 +64,15 @@ path parameters and create-body ID fields to the `regionids.*ID` types from
 [`../ids`](../ids/README.md), so a non-UUID is rejected with a 400 at the router
 before any handler runs — which is also what makes `region.CheckAccess` safe to
 treat its region ID as well-formed. Handlers carry those typed IDs through their
-per-resource client methods and convert to plain strings only at the genuine
-sinks: Kubernetes object names and labels, CRD spec fields, and provider/region
-calls, all of which remain string-typed. The by-name lookup primitives
-(`GetRaw`/`GetV2Raw`) stay string-keyed and do that conversion at the `ObjectKey`.
+per-resource client methods, and the types now continue past the handler into
+region-owned CRD spec fields (e.g. the `Server` CRD's `FlavorID`, `Image.ID`,
+`SecurityGroups[].ID`, `Networks[].ID`) and the provider image interface, so the
+conversion to a plain string happens deeper — only at genuine sinks: Kubernetes
+object names and labels, still-string read-model/status fields, and external
+provider/region SDK calls. The by-name lookup primitives (`GetRaw`/`GetV2Raw`)
+stay string-keyed and do that conversion at the `ObjectKey`. Read-model and
+parent-linkage IDs are recovered fail-closed from labels/names via CRD accessor
+methods (`Server.RegionID()`, `Network.NetworkID()`, `*.OrganizationID()`).
 
 Tenancy, RBAC, and principal attribution are not re-derived here. Handlers
 consume the identity service's scope-reader surface (the RBAC reader variants,

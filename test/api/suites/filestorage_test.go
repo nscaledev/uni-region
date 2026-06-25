@@ -30,14 +30,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"k8s.io/utils/ptr"
-
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
 	coreutil "github.com/unikorn-cloud/core/pkg/testing/util"
-	regionids "github.com/unikorn-cloud/region/pkg/ids"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/test/api"
+
+	"k8s.io/utils/ptr"
 )
 
 const defaultProtectionUpdateStorageSizeGiB = int64(10)
@@ -110,7 +110,7 @@ func defaultProtectionCreateRequest(storageClassID string, defaultProtectionEnab
 			DefaultSnapshotProtectionEnabled: defaultProtectionEnabled,
 			OrganizationId:                   config.OrgID,
 			ProjectId:                        config.ProjectID,
-			RegionId:                         regionids.MustParseRegionID(config.RegionID),
+			RegionId:                         idstest.MustParseRegionID(config.RegionID),
 			SizeGiB:                          defaultProtectionUpdateStorageSizeGiB,
 			SnapshotPolicies:                 snapshotPolicies,
 			StorageClassId:                   storageClassID,
@@ -211,7 +211,7 @@ var _ = Describe("File Storage Management", func() {
 					}{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
-						RegionId:       regionids.MustParseRegionID(config.RegionID),
+						RegionId:       idstest.MustParseRegionID(config.RegionID),
 						SizeGiB:        10,
 						StorageClassId: storageClasses[0].Metadata.Id,
 						StorageType: regionopenapi.StorageTypeV2Spec{
@@ -315,7 +315,7 @@ var _ = Describe("File Storage Management", func() {
 					}{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
-						RegionId:       regionids.MustParseRegionID(config.RegionID),
+						RegionId:       idstest.MustParseRegionID(config.RegionID),
 						SizeGiB:        initialStorageSizeGiB,
 						StorageClassId: storageClassID,
 						StorageType: regionopenapi.StorageTypeV2Spec{
@@ -515,7 +515,7 @@ var _ = Describe("File Storage Management", func() {
 					Spec: regionopenapi.NetworkV2CreateSpec{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
-						RegionId:       regionids.MustParseRegionID(config.RegionID),
+						RegionId:       idstest.MustParseRegionID(config.RegionID),
 						Prefix:         "10.0.1.0/24",
 						DnsNameservers: []string{"8.8.8.8", "8.8.4.4"},
 					},
@@ -578,7 +578,7 @@ var _ = Describe("File Storage Management", func() {
 					}{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
-						RegionId:       regionids.MustParseRegionID(config.RegionID),
+						RegionId:       idstest.MustParseRegionID(config.RegionID),
 						SizeGiB:        storageSizeGiB,
 						StorageClassId: storageClassID,
 						StorageType: regionopenapi.StorageTypeV2Spec{

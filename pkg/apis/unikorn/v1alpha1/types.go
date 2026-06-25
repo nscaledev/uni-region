@@ -21,6 +21,7 @@ package v1alpha1
 
 import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -897,7 +898,7 @@ type ServerSpec struct {
 	// Provider defines the provider type.
 	Provider Provider `json:"provider,omitempty"`
 	// FlavorID is the flavor ID.
-	FlavorID string `json:"flavorID"`
+	FlavorID regionids.FlavorID `json:"flavorID"`
 	// Image defines a set of rules to lookup for the server image.
 	Image *ServerImage `json:"image"`
 	// SecurityGroups is the server security groups.
@@ -918,12 +919,12 @@ type ServerSpec struct {
 
 type ServerSecurityGroupSpec struct {
 	// ID is the security group ID.
-	ID string `json:"id"`
+	ID regionids.SecurityGroupID `json:"id"`
 }
 
 type ServerNetworkSpec struct {
-	// ID is the physical network ID.
-	ID string `json:"id"`
+	// ID is the region network ID.
+	ID regionids.NetworkID `json:"id"`
 	// AllowedAddressPairs is a list of allowed address pairs for the network interface. This will allow multiple MAC/IP address (range) pairs to pass through this port.
 	AllowedAddressPairs []ServerNetworkAddressPair `json:"allowedAddressPairs,omitempty"`
 }
@@ -937,7 +938,7 @@ type ServerNetworkAddressPair struct {
 
 type ServerImage struct {
 	// ID is the image ID. If specified, it has priority over the selector.
-	ID string `json:"id"`
+	ID regionids.ImageID `json:"id"`
 }
 
 type ServerPublicIPAllocationSpec struct {

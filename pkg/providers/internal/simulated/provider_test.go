@@ -24,8 +24,10 @@ import (
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	unikorncoreclient "github.com/unikorn-cloud/core/pkg/client"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/simulated"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
@@ -106,16 +108,19 @@ func TestImages(t *testing.T) {
 
 	provider := newProvider(t)
 
+	// Organization IDs are UUIDs; this stands in for the owning organization.
+	const orgID = "dddddddd-0000-0000-0000-000000000001"
+
 	query, err := provider.QueryImages()
 	require.NoError(t, err)
 
-	images, err := query.AvailableToOrganization("org-1").StatusIn(types.ImageStatusReady).List(t.Context())
+	images, err := query.AvailableToOrganization(identityids.MustParseOrganizationID(orgID)).StatusIn(types.ImageStatusReady).List(t.Context())
 	require.NoError(t, err)
 	require.Len(t, images.Items, 2)
 
 	created, err := provider.CreateImage(t.Context(), &types.Image{
 		Name:           "custom-image",
-		OrganizationID: ptrTo("org-1"),
+		OrganizationID: ptrTo(orgID),
 		Architecture:   types.X86_64,
 		Virtualization: types.Virtualized,
 		OS: types.ImageOS{
@@ -131,19 +136,19 @@ func TestImages(t *testing.T) {
 	query, err = provider.QueryImages()
 	require.NoError(t, err)
 
-	owned, err := query.OwnedByOrganization("org-1").List(t.Context())
+	owned, err := query.OwnedByOrganization(identityids.MustParseOrganizationID(orgID)).List(t.Context())
 	require.NoError(t, err)
 	require.Len(t, owned.Items, 1)
 	require.Equal(t, created.ID, owned.Items[0].ID)
 
-	image, err := provider.GetImage(t.Context(), "org-1", created.ID)
+	image, err := provider.GetImage(t.Context(), identityids.MustParseOrganizationID(orgID), idstest.MustParseImageID(created.ID))
 	require.NoError(t, err)
 	require.Equal(t, created.ID, image.ID)
 
-	err = provider.DeleteImage(t.Context(), created.ID)
+	err = provider.DeleteImage(t.Context(), idstest.MustParseImageID(created.ID))
 	require.NoError(t, err)
 
-	_, err = provider.GetImage(t.Context(), "org-1", created.ID)
+	_, err = provider.GetImage(t.Context(), identityids.MustParseOrganizationID(orgID), idstest.MustParseImageID(created.ID))
 	require.Error(t, err)
 }
 

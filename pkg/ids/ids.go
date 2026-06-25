@@ -25,6 +25,9 @@ import (
 // UnmarshalText delegates to uuid.UUID, so the oapi-codegen runtime rejects
 // non-UUID path parameter values before any handler is reached.
 //
+// +kubebuilder:validation:Type=string
+// +kubebuilder:validation:Format=uuid
+//
 //nolint:recvcheck // UnmarshalText must be a pointer receiver; String/MarshalText are value receivers for fmt.Stringer compatibility.
 type RegionID uuid.UUID
 
@@ -36,6 +39,9 @@ func (v *RegionID) UnmarshalText(b []byte) error { return unmarshalUUID((*uuid.U
 // named type so the compiler prevents accidental interchange with any other ID type.
 // UnmarshalText delegates to uuid.UUID, so the oapi-codegen runtime rejects
 // non-UUID path parameter values before any handler is reached.
+//
+// +kubebuilder:validation:Type=string
+// +kubebuilder:validation:Format=uuid
 //
 //nolint:recvcheck // UnmarshalText must be a pointer receiver; String/MarshalText are value receivers for fmt.Stringer compatibility.
 type IdentityID uuid.UUID
@@ -49,6 +55,9 @@ func (v *IdentityID) UnmarshalText(b []byte) error { return unmarshalUUID((*uuid
 // UnmarshalText delegates to uuid.UUID, so the oapi-codegen runtime rejects
 // non-UUID path parameter values before any handler is reached.
 //
+// +kubebuilder:validation:Type=string
+// +kubebuilder:validation:Format=uuid
+//
 //nolint:recvcheck // UnmarshalText must be a pointer receiver; String/MarshalText are value receivers for fmt.Stringer compatibility.
 type NetworkID uuid.UUID
 
@@ -60,6 +69,9 @@ func (v *NetworkID) UnmarshalText(b []byte) error { return unmarshalUUID((*uuid.
 // named type so the compiler prevents accidental interchange with any other ID type.
 // UnmarshalText delegates to uuid.UUID, so the oapi-codegen runtime rejects
 // non-UUID path parameter values before any handler is reached.
+//
+// +kubebuilder:validation:Type=string
+// +kubebuilder:validation:Format=uuid
 //
 //nolint:recvcheck // UnmarshalText must be a pointer receiver; String/MarshalText are value receivers for fmt.Stringer compatibility.
 type SecurityGroupID uuid.UUID
@@ -73,6 +85,9 @@ func (v *SecurityGroupID) UnmarshalText(b []byte) error { return unmarshalUUID((
 // UnmarshalText delegates to uuid.UUID, so the oapi-codegen runtime rejects
 // non-UUID path parameter values before any handler is reached.
 //
+// +kubebuilder:validation:Type=string
+// +kubebuilder:validation:Format=uuid
+//
 //nolint:recvcheck // UnmarshalText must be a pointer receiver; String/MarshalText are value receivers for fmt.Stringer compatibility.
 type LoadBalancerID uuid.UUID
 
@@ -85,6 +100,9 @@ func (v *LoadBalancerID) UnmarshalText(b []byte) error { return unmarshalUUID((*
 // UnmarshalText delegates to uuid.UUID, so the oapi-codegen runtime rejects
 // non-UUID path parameter values before any handler is reached.
 //
+// +kubebuilder:validation:Type=string
+// +kubebuilder:validation:Format=uuid
+//
 //nolint:recvcheck // UnmarshalText must be a pointer receiver; String/MarshalText are value receivers for fmt.Stringer compatibility.
 type ServerID uuid.UUID
 
@@ -96,6 +114,9 @@ func (v *ServerID) UnmarshalText(b []byte) error { return unmarshalUUID((*uuid.U
 // It is a distinct named type so the compiler prevents accidental interchange with any
 // other ID type. UnmarshalText delegates to uuid.UUID, so the oapi-codegen runtime rejects
 // non-UUID path parameter values before any handler is reached.
+//
+// +kubebuilder:validation:Type=string
+// +kubebuilder:validation:Format=uuid
 //
 //nolint:recvcheck // UnmarshalText must be a pointer receiver; String/MarshalText are value receivers for fmt.Stringer compatibility.
 type SSHCertificateAuthorityID uuid.UUID
@@ -111,6 +132,9 @@ func (v *SSHCertificateAuthorityID) UnmarshalText(b []byte) error {
 // UnmarshalText delegates to uuid.UUID, so the oapi-codegen runtime rejects
 // non-UUID path parameter values before any handler is reached.
 //
+// +kubebuilder:validation:Type=string
+// +kubebuilder:validation:Format=uuid
+//
 //nolint:recvcheck // UnmarshalText must be a pointer receiver; String/MarshalText are value receivers for fmt.Stringer compatibility.
 type FileStorageID uuid.UUID
 
@@ -124,6 +148,9 @@ func (v *FileStorageID) UnmarshalText(b []byte) error { return unmarshalUUID((*u
 // so the oapi-codegen runtime rejects non-UUID path parameter values before any handler
 // is reached.
 //
+// +kubebuilder:validation:Type=string
+// +kubebuilder:validation:Format=uuid
+//
 //nolint:recvcheck // UnmarshalText must be a pointer receiver; String/MarshalText are value receivers for fmt.Stringer compatibility.
 type ImageID uuid.UUID
 
@@ -136,6 +163,9 @@ func (v *ImageID) UnmarshalText(b []byte) error { return unmarshalUUID((*uuid.UU
 // accidental interchange with any other ID type. UnmarshalText delegates to uuid.UUID,
 // so the oapi-codegen runtime rejects non-UUID path parameter values before any handler
 // is reached.
+//
+// +kubebuilder:validation:Type=string
+// +kubebuilder:validation:Format=uuid
 //
 //nolint:recvcheck // UnmarshalText must be a pointer receiver; String/MarshalText are value receivers for fmt.Stringer compatibility.
 type FlavorID uuid.UUID
@@ -266,55 +296,3 @@ func ParseFlavorID(s string) (FlavorID, error) {
 
 	return FlavorID(id), nil
 }
-
-// MustParseRegionID parses s as a UUID into a RegionID.
-// Panics if s is not a valid UUID; use only where s is guaranteed valid
-// (e.g. previously validated API path parameters).
-func MustParseRegionID(s string) RegionID { return RegionID(uuid.MustParse(s)) }
-
-// MustParseIdentityID parses s as a UUID into an IdentityID.
-// Panics if s is not a valid UUID; use only where s is guaranteed valid
-// (e.g. previously validated API path parameters).
-func MustParseIdentityID(s string) IdentityID { return IdentityID(uuid.MustParse(s)) }
-
-// MustParseNetworkID parses s as a UUID into a NetworkID.
-// Panics if s is not a valid UUID; use only where s is guaranteed valid
-// (e.g. previously validated API path parameters).
-func MustParseNetworkID(s string) NetworkID { return NetworkID(uuid.MustParse(s)) }
-
-// MustParseSecurityGroupID parses s as a UUID into a SecurityGroupID.
-// Panics if s is not a valid UUID; use only where s is guaranteed valid
-// (e.g. previously validated API path parameters).
-func MustParseSecurityGroupID(s string) SecurityGroupID { return SecurityGroupID(uuid.MustParse(s)) }
-
-// MustParseLoadBalancerID parses s as a UUID into a LoadBalancerID.
-// Panics if s is not a valid UUID; use only where s is guaranteed valid
-// (e.g. previously validated API path parameters).
-func MustParseLoadBalancerID(s string) LoadBalancerID { return LoadBalancerID(uuid.MustParse(s)) }
-
-// MustParseServerID parses s as a UUID into a ServerID.
-// Panics if s is not a valid UUID; use only where s is guaranteed valid
-// (e.g. previously validated API path parameters).
-func MustParseServerID(s string) ServerID { return ServerID(uuid.MustParse(s)) }
-
-// MustParseSSHCertificateAuthorityID parses s as a UUID into an SSHCertificateAuthorityID.
-// Panics if s is not a valid UUID; use only where s is guaranteed valid
-// (e.g. previously validated API path parameters).
-func MustParseSSHCertificateAuthorityID(s string) SSHCertificateAuthorityID {
-	return SSHCertificateAuthorityID(uuid.MustParse(s))
-}
-
-// MustParseFileStorageID parses s as a UUID into a FileStorageID.
-// Panics if s is not a valid UUID; use only where s is guaranteed valid
-// (e.g. previously validated API path parameters).
-func MustParseFileStorageID(s string) FileStorageID { return FileStorageID(uuid.MustParse(s)) }
-
-// MustParseImageID parses s as a UUID into an ImageID.
-// Panics if s is not a valid UUID; use only where s is guaranteed valid
-// (e.g. previously validated API path parameters).
-func MustParseImageID(s string) ImageID { return ImageID(uuid.MustParse(s)) }
-
-// MustParseFlavorID parses s as a UUID into a FlavorID.
-// Panics if s is not a valid UUID; use only where s is guaranteed valid
-// (e.g. previously validated API path parameters).
-func MustParseFlavorID(s string) FlavorID { return FlavorID(uuid.MustParse(s)) }
