@@ -76,7 +76,7 @@ jobs:
       ref: ${{ steps.find.outputs.ref }}
     steps:
     - name: Resolve Dev checkout ref
-      uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@main
+      uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@codex/support-version-api-pseudo-ref
       id: find
       with:
         service: uni-region
@@ -188,7 +188,7 @@ jobs:
       ref: ${{ steps.find.outputs.ref }}
     steps:
     - name: Resolve UAT checkout ref
-      uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@main
+      uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@codex/support-version-api-pseudo-ref
       id: find
       with:
         service: uni-region
