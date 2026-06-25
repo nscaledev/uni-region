@@ -1157,7 +1157,7 @@ type ServerV2Read struct {
 }
 
 // ServerV2SecurityGroupIDList A list of security group IDs.
-type ServerV2SecurityGroupIDList = []string
+type ServerV2SecurityGroupIDList = []SecurityGroupId
 
 // ServerV2Spec A server's specification.
 type ServerV2Spec struct {
@@ -1184,8 +1184,8 @@ type ServerV2Status struct {
 	// MacAddress The MAC address of the server.
 	MacAddress *string `json:"macAddress,omitempty"`
 
-	// NetworkId The network a security group belongs to.
-	NetworkId string `json:"networkId"`
+	// NetworkId A network ID.
+	NetworkId NetworkId `json:"networkId"`
 
 	// PowerState The lifecycle phase of an instance. Once provisioning_status reaches
 	// provisioned, this becomes the live readiness signal: API consumers
@@ -1201,8 +1201,8 @@ type ServerV2Status struct {
 	// PublicIP The public IP address of the server.
 	PublicIP *string `json:"publicIP,omitempty"`
 
-	// RegionId The region a security group belongs to.
-	RegionId string `json:"regionId"`
+	// RegionId A region ID.
+	RegionId RegionId `json:"regionId"`
 
 	// SshCertificateAuthorityId The SSH certificate authority ID.
 	SshCertificateAuthorityId *SshCertificateAuthorityID `json:"sshCertificateAuthorityId,omitempty"`
