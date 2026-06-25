@@ -39,10 +39,10 @@ var _ = Describe("Authentication Enforcement", func() {
 			unauthClient = api.NewAPIClientWithConfig(&unauthConfig)
 		})
 
-		Describe("Given no Authorization header on the main API", func() {
+		Describe("Given no Authorization header on the region service regions endpoint", func() {
 			It("should return 401 when listing regions", func() {
 				path := unauthClient.GetListRegionsPath(config.OrgID)
-				resp, _, err := unauthClient.DoRequest(ctx, http.MethodGet, path, nil, 0)
+				resp, _, err := unauthClient.DoRegionRequest(ctx, http.MethodGet, path, nil, 0)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
 				GinkgoWriter.Printf("Unauthenticated list regions returned %d as expected\n", resp.StatusCode)

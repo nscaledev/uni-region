@@ -60,7 +60,7 @@ var _ = Describe("Region Discovery", func() {
 		Describe("Given invalid parameters", func() {
 			It("should reject requests with empty organization ID", func() {
 				path := client.GetListRegionsPath("")
-				_, respBody, err := client.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+				_, respBody, err := client.DoRegionRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
 
 				Expect(err).To(HaveOccurred())
 				Expect(errors.Is(err, coreclient.ErrUnexpectedStatusCode)).To(BeTrue())
@@ -74,7 +74,7 @@ var _ = Describe("Region Discovery", func() {
 				// 400, before RBAC. This is distinct from an unauthorized but
 				// well-formed org, which is forbidden.
 				path := client.GetListRegionsPath("invalid-org-123")
-				_, respBody, err := client.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+				_, respBody, err := client.DoRegionRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
 
 				Expect(err).To(HaveOccurred())
 				Expect(errors.Is(err, coreclient.ErrUnexpectedStatusCode)).To(BeTrue())
@@ -165,7 +165,7 @@ var _ = Describe("Flavor Discovery", func() {
 				// A malformed (non-UUID) region ID is rejected at the routing
 				// layer with 400, not treated as a missing region (404).
 				path := client.GetEndpoints().ListFlavors(config.OrgID, "invalid-region-id")
-				_, respBody, err := client.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+				_, respBody, err := client.DoRegionRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
 
 				Expect(err).To(HaveOccurred())
 				Expect(errors.Is(err, coreclient.ErrUnexpectedStatusCode)).To(BeTrue())
@@ -204,7 +204,7 @@ var _ = Describe("Image Discovery", func() {
 				// A malformed (non-UUID) region ID is rejected at the routing
 				// layer with 400, not treated as a missing region (404).
 				path := client.GetEndpoints().ListImages(config.OrgID, "invalid-region-id")
-				_, respBody, err := client.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+				_, respBody, err := client.DoRegionRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
 
 				Expect(err).To(HaveOccurred())
 				Expect(errors.Is(err, coreclient.ErrUnexpectedStatusCode)).To(BeTrue())
