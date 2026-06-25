@@ -20,7 +20,6 @@ package storage
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"net"
@@ -65,6 +64,19 @@ type Client struct {
 	common.ClientArgs
 }
 
+type storageV2GenerateRequest struct {
+	Metadata coreopenapi.ResourceWriteMetadata
+	Spec     storageV2GenerateSpec
+}
+
+type storageV2GenerateSpec struct {
+	Attachments                      *openapi.StorageAttachmentV2Spec
+	DefaultSnapshotProtectionEnabled bool
+	SizeGiB                          int64
+	SnapshotPolicies                 *openapi.StorageSnapshotPolicyListV2Spec
+	StorageType                      openapi.StorageTypeV2Spec
+}
+
 // New creates a new client.
 func New(clientArgs common.ClientArgs) *Client {
 	return &Client{
@@ -73,12 +85,16 @@ func New(clientArgs common.ClientArgs) *Client {
 }
 
 func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
+	snapshotPolicies := userManagedSnapshotPolicies(in.Spec.SnapshotPolicies)
+
 	return &openapi.StorageV2Read{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.StorageV2Spec{
 			Attachments: &openapi.StorageAttachmentV2Spec{
 				NetworkIds: convertAttachmentsList(in.Spec.Attachments),
 			},
+			DefaultSnapshotProtectionEnabled: ptr.To(in.Spec.DefaultSnapshotProtectionEnabled),
+			SnapshotPolicies:                 convertSnapshotPoliciesPointer(snapshotPolicies),
 			StorageType: openapi.StorageTypeV2Spec{
 				NFS: checkRegionNFS(in.Spec.NFS),
 			},
@@ -88,7 +104,11 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 			RegionId:       in.Labels[constants.RegionLabel],
 			StorageClassId: in.Spec.StorageClassID,
 			Attachments:    convertStatusAttachmentList(in),
-			Usage:          convertUsageStatus(in),
+			SnapshotPolicies: convertSnapshotPolicyStatuses(
+				snapshotPolicies,
+				in.Status.SnapshotPolicies,
+			),
+			Usage: convertUsageStatus(in),
 		},
 	}
 }
@@ -307,7 +327,7 @@ func (c *Client) Get(ctx context.Context, storageID regionids.FileStorageID) (*o
 	return storage, nil
 }
 
-func (c *Client) generateV2(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, regionID string, request *openapi.StorageV2Update, storageClass *openapi.StorageClassV2Read) (*regionv1.FileStorage, error) {
+func (c *Client) generateV2(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, regionID string, request *storageV2GenerateRequest, storageClass *openapi.StorageClassV2Read) (*regionv1.FileStorage, error) {
 	networkClient := network.New(c.ClientArgs)
 
 	attachments, err := generateAttachmentList(ctx, networkClient, request, storageClass.Spec.Parallelism)
@@ -315,14 +335,19 @@ func (c *Client) generateV2(ctx context.Context, organizationID identityids.Orga
 		return nil, err
 	}
 
+	defaultSnapshotProtectionEnabled := request.Spec.DefaultSnapshotProtectionEnabled
+	policies := generateSnapshotPolicies(request.Spec.SnapshotPolicies)
+
 	out := &regionv1.FileStorage{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.Namespace).
 			WithLabel(constants.RegionLabel, regionID).
 			Get(),
 		Spec: regionv1.FileStorageSpec{
-			Tags:        conversion.GenerateTagList(request.Metadata.Tags),
-			Size:        *gibToQuantity(request.Spec.SizeGiB),
-			Attachments: attachments,
+			Tags:                             conversion.GenerateTagList(request.Metadata.Tags),
+			Size:                             *gibToQuantity(request.Spec.SizeGiB),
+			Attachments:                      attachments,
+			DefaultSnapshotProtectionEnabled: defaultSnapshotProtectionEnabled,
+			SnapshotPolicies:                 materializeDefaultSnapshotProtection(policies, defaultSnapshotProtectionEnabled),
 			NFS: &regionv1.NFS{
 				RootSquash: checkRootSquash(request.Spec.StorageType.NFS),
 			},
@@ -354,7 +379,7 @@ func checkRootSquash(nfs *openapi.NFSV2Spec) bool {
 	return true
 }
 
-func generateAttachmentList(ctx context.Context, networkClient *network.Client, in *openapi.StorageV2Update, parallelism int) ([]regionv1.Attachment, error) {
+func generateAttachmentList(ctx context.Context, networkClient *network.Client, in *storageV2GenerateRequest, parallelism int) ([]regionv1.Attachment, error) {
 	if in == nil || in.Spec.Attachments == nil {
 		return []regionv1.Attachment{}, nil
 	}
@@ -461,19 +486,32 @@ func narrowStorageRange(in *regionv1.AttachmentIPRange, parallelism int) *region
 	}
 }
 
-func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.StorageV2Update, error) {
-	t, err := json.Marshal(in)
-	if err != nil {
-		return nil, fmt.Errorf("%w: failed to marshal request", err)
+func generateRequestFromCreate(in *openapi.StorageV2Create) *storageV2GenerateRequest {
+	return &storageV2GenerateRequest{
+		Metadata: in.Metadata,
+		Spec: storageV2GenerateSpec{
+			Attachments: in.Spec.Attachments,
+			// Default snapshot protection is enabled on create unless the caller opts out.
+			DefaultSnapshotProtectionEnabled: ptr.Deref(in.Spec.DefaultSnapshotProtectionEnabled, true),
+			SizeGiB:                          in.Spec.SizeGiB,
+			SnapshotPolicies:                 in.Spec.SnapshotPolicies,
+			StorageType:                      in.Spec.StorageType,
+		},
 	}
+}
 
-	out := &openapi.StorageV2Update{}
-
-	if err := json.Unmarshal(t, out); err != nil {
-		return nil, fmt.Errorf("%w: failed to unmarshal request", err)
+func generateRequestFromUpdate(in *openapi.StorageV2Update, currentDefaultProtection bool) *storageV2GenerateRequest {
+	return &storageV2GenerateRequest{
+		Metadata: in.Metadata,
+		Spec: storageV2GenerateSpec{
+			Attachments: in.Spec.Attachments,
+			// An omitted field preserves the current default-protection state.
+			DefaultSnapshotProtectionEnabled: ptr.Deref(in.Spec.DefaultSnapshotProtectionEnabled, currentDefaultProtection),
+			SizeGiB:                          in.Spec.SizeGiB,
+			SnapshotPolicies:                 in.Spec.SnapshotPolicies,
+			StorageType:                      in.Spec.StorageType,
+		},
 	}
-
-	return out, nil
 }
 
 // CreateV2 satisifies an http PUT action by creating a unique storage object.
