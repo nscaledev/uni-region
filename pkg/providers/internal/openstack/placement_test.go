@@ -278,7 +278,7 @@ func TestPlacementClientResourceProviderAvailable(t *testing.T) {
 			t.Errorf("required query = %q, want %q", got, want)
 		}
 
-		if got, want := r.Header.Get("OpenStack-API-Version"), "placement 1.18"; got != want {
+		if got, want := r.Header.Get("Openstack-Api-Version"), "placement 1.18"; got != want {
 			t.Errorf("microversion header = %q, want %q", got, want)
 		}
 
