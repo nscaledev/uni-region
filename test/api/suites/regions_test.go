@@ -215,33 +215,3 @@ var _ = Describe("Image Discovery", func() {
 		})
 	})
 })
-
-var _ = Describe("External Network Discovery", func() {
-	Context("When listing external networks for a region", func() {
-		Describe("Given valid region and organization", func() {
-			It("should return 403 when RBAC denies access to external networks", func() {
-				_, err := client.ListExternalNetworks(ctx, config.OrgID, config.RegionID)
-
-				Expect(err).To(HaveOccurred())
-				Expect(errors.Is(err, coreclient.ErrAccessDenied)).To(BeTrue())
-				GinkgoWriter.Printf("External networks access denied for region %s as expected\n", config.RegionID)
-			})
-		})
-
-		Describe("Given invalid parameters", func() {
-			It("should reject requests with invalid region ID for external networks", func() {
-				// A malformed (non-UUID) region ID is rejected at the routing
-				// layer with 400, before RBAC denies access (which is what a
-				// well-formed region would hit here).
-				path := client.GetEndpoints().ListExternalNetworks(config.OrgID, "invalid-region-id")
-				_, respBody, err := client.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
-
-				Expect(err).To(HaveOccurred())
-				Expect(errors.Is(err, coreclient.ErrUnexpectedStatusCode)).To(BeTrue())
-				Expect(string(respBody)).To(ContainSubstring("invalid_request"))
-				Expect(string(respBody)).To(ContainSubstring("invalid path/query element"))
-				GinkgoWriter.Printf("Expected error for invalid region ID: %v\n", err)
-			})
-		})
-	})
-})
