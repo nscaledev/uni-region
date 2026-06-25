@@ -172,12 +172,12 @@ func sshInjectionStatus(in *regionv1.Server) *openapi.SshInjection {
 }
 
 func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
-	flavorID, err := in.FlavorID()
+	imageID, err := in.ImageID()
 	if err != nil {
 		return nil, err
 	}
 
-	imageID, err := in.ImageID()
+	regionID, err := in.RegionID()
 	if err != nil {
 		return nil, err
 	}
@@ -185,13 +185,13 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 	out := &openapi.ServerV2Read{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.ServerV2Spec{
-			FlavorId:   flavorID,
+			FlavorId:   in.Spec.FlavorID,
 			ImageId:    imageID,
 			Networking: convertNetworkingV2(in),
 			UserData:   convertUserData(in.Spec.UserData),
 		},
 		Status: openapi.ServerV2Status{
-			RegionId:                  in.Labels[constants.RegionLabel],
+			RegionId:                  regionID,
 			NetworkId:                 in.Spec.Networks[0].ID,
 			SshCertificateAuthorityId: in.Spec.SSHCertificateAuthorityID,
 			SshInjection:              sshInjectionStatus(in),
@@ -290,7 +290,7 @@ func generateAllowedAddressPairs(in *openapi.ServerV2Networking) ([]regionv1.Ser
 	return out, nil
 }
 
-func generateNetworks(networkID string, in *openapi.ServerV2Networking) ([]regionv1.ServerNetworkSpec, error) {
+func generateNetworks(networkID regionids.NetworkID, in *openapi.ServerV2Networking) ([]regionv1.ServerNetworkSpec, error) {
 	allowedAddressPairs, err := generateAllowedAddressPairs(in)
 	if err != nil {
 		return nil, err
@@ -381,7 +381,7 @@ func (c *ClientV2) validateSecurityGroupReferences(ctx context.Context, networkI
 	}
 
 	for _, id := range *networking.SecurityGroups {
-		securityGroup, err := securitygroup.New(c.Client.ClientArgs).GetV2Raw(ctx, id)
+		securityGroup, err := securitygroup.New(c.Client.ClientArgs).GetV2Raw(ctx, id.String())
 		if err != nil {
 			return err
 		}
@@ -418,19 +418,19 @@ func (c *ClientV2) validateInfrastructureRefForFlavor(ctx context.Context, regio
 }
 
 func (c *ClientV2) generateV2(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, in *openapi.ServerV2Update, network *regionv1.Network, sshCertificateAuthorityID *string, infrastructureRef *string, sshInjection regionv1.ServerSSHInjection) (*regionv1.Server, error) {
-	networks, err := generateNetworks(network.Name, in.Spec.Networking)
+	networkID, err := network.NetworkID()
 	if err != nil {
 		return nil, err
 	}
 
-	networkNamespace, err := uuid.Parse(network.Name)
+	networks, err := generateNetworks(networkID, in.Spec.Networking)
 	if err != nil {
-		return nil, fmt.Errorf("%w: network ID is not a valid UUID", err)
+		return nil, err
 	}
 
 	out := &regionv1.Server{
 		ObjectMeta: conversion.NewDeterministicObjectMetadata(&in.Metadata, c.Namespace,
-			networkNamespace, in.Metadata.Name).
+			uuid.UUID(networkID), in.Metadata.Name).
 			WithLabel(constants.RegionLabel, network.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, network.Labels[constants.IdentityLabel]).
 			WithLabel(constants.NetworkLabel, network.Name).
@@ -438,9 +438,9 @@ func (c *ClientV2) generateV2(ctx context.Context, organizationID identityids.Or
 			Get(),
 		Spec: regionv1.ServerSpec{
 			Tags:     conversion.GenerateTagList(in.Metadata.Tags),
-			FlavorID: in.Spec.FlavorId.String(),
+			FlavorID: in.Spec.FlavorId,
 			Image: &regionv1.ServerImage{
-				ID: in.Spec.ImageId.String(),
+				ID: in.Spec.ImageId,
 			},
 			PublicIPAllocation:        generatePublicIPAllocation(in.Spec.Networking),
 			SecurityGroups:            generateSecurityGroups(in.Spec.Networking),
@@ -676,7 +676,7 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, re
 	}
 
 	// Get the network, required for generation.
-	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, current.Spec.Networks[0].ID)
+	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, current.Spec.Networks[0].ID.String())
 	if err != nil {
 		return nil, err
 	}

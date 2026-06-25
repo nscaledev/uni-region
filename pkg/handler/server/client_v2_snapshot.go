@@ -19,7 +19,6 @@ package server
 import (
 	"context"
 
-	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -34,12 +33,11 @@ func (c *ClientV2) CreateV2Snapshot(ctx context.Context, serverID regionids.Serv
 		return nil, err
 	}
 
-	organizationID := server.Labels[coreconstants.OrganizationLabel]
-
 	// You need region:servers/read to get the server in the first place, then
 	// region:images/create to make the image. The first of those is implicitly
 	// checked when the server is fetched. Recover the typed organization ID so a
-	// malformed owner label fails closed rather than silently denying access.
+	// malformed owner label fails closed rather than silently denying access; it
+	// is the single source for the string form used in tags below.
 	organizationScopeID, err := server.OrganizationID()
 	if err != nil {
 		return nil, err
@@ -49,8 +47,10 @@ func (c *ClientV2) CreateV2Snapshot(ctx context.Context, serverID regionids.Serv
 		return nil, err
 	}
 
+	organizationID := organizationScopeID.String()
+
 	// Get the existing image so we can preserve the metadata.
-	requested, err := provider.GetImage(ctx, organizationID, server.Spec.Image.ID)
+	requested, err := provider.GetImage(ctx, organizationScopeID, server.Spec.Image.ID)
 	if err != nil {
 		return nil, err
 	}

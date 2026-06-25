@@ -3292,8 +3292,7 @@ components:
       description: A list of security group IDs.
       type: array
       items:
-        description: A security group ID.
-        type: string
+        $ref: '#/components/schemas/securityGroupId'
     serverV2Networking:
       description: A server's network configuration.
       type: object
@@ -3353,10 +3352,10 @@ components:
       properties:
         regionId:
           description: The region a security group belongs to.
-          type: string
+          $ref: '#/components/schemas/regionId'
         networkId:
           description: The network a security group belongs to.
-          type: string
+          $ref: '#/components/schemas/networkId'
         sshCertificateAuthorityId:
           description: The SSH certificate authority configured when the server was created.
           $ref: '#/components/schemas/sshCertificateAuthorityID'

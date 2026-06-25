@@ -31,6 +31,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	"k8s.io/utils/ptr"
@@ -56,11 +57,6 @@ func convertList(in *unikornv1.ServerList) (openapi.ServersRead, error) {
 
 // convert converts from a custom resource into the API definition.
 func convert(in *unikornv1.Server) (*openapi.ServerRead, error) {
-	flavorID, err := in.FlavorID()
-	if err != nil {
-		return nil, err
-	}
-
 	imageID, err := in.ImageID()
 	if err != nil {
 		return nil, err
@@ -69,7 +65,7 @@ func convert(in *unikornv1.Server) (*openapi.ServerRead, error) {
 	out := &openapi.ServerRead{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.ServerSpec{
-			FlavorId:           flavorID,
+			FlavorId:           in.Spec.FlavorID,
 			ImageId:            imageID,
 			Networks:           convertNetworks(in.Spec.Networks),
 			PublicIPAllocation: convertPublicIPAllocation(in.Spec.PublicIPAllocation),
@@ -98,7 +94,7 @@ func convertNetworks(in []unikornv1.ServerNetworkSpec) openapi.ServerNetworkList
 
 func convertNetwork(in *unikornv1.ServerNetworkSpec) openapi.ServerNetwork {
 	return openapi.ServerNetwork{
-		Id:                  in.ID,
+		Id:                  in.ID.String(),
 		AllowedAddressPairs: convertNetworkAddressPairs(in.AllowedAddressPairs),
 	}
 }
@@ -149,7 +145,7 @@ func convertSecurityGroups(in []unikornv1.ServerSecurityGroupSpec) *openapi.Serv
 
 func convertSecurityGroup(in *unikornv1.ServerSecurityGroupSpec) openapi.ServerSecurityGroup {
 	return openapi.ServerSecurityGroup{
-		Id: in.ID,
+		Id: in.ID.String(),
 	}
 }
 
@@ -211,19 +207,29 @@ func (g *generator) generate(ctx context.Context, in *openapi.ServerWrite) (*uni
 		return nil, err
 	}
 
+	securityGroups, err := g.generateSecurityGroups(in.Spec.SecurityGroups)
+	if err != nil {
+		return nil, err
+	}
+
+	networks, err := g.generateNetworks(in.Spec.Networks)
+	if err != nil {
+		return nil, err
+	}
+
 	out := &unikornv1.Server{
 		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, g.Namespace).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, identity.Name).Get(),
 		Spec: unikornv1.ServerSpec{
 			Tags:     conversion.GenerateTagList(in.Metadata.Tags),
 			Provider: identity.Spec.Provider,
-			FlavorID: in.Spec.FlavorId.String(),
+			FlavorID: in.Spec.FlavorId,
 			Image: &unikornv1.ServerImage{
-				ID: in.Spec.ImageId.String(),
+				ID: in.Spec.ImageId,
 			},
 			PublicIPAllocation: g.generatePublicIPAllocation(in.Spec.PublicIPAllocation),
-			SecurityGroups:     g.generateSecurityGroups(in.Spec.SecurityGroups),
-			Networks:           g.generateNetworks(in.Spec.Networks),
+			SecurityGroups:     securityGroups,
+			Networks:           networks,
 			UserData:           g.generateUserData(in.Spec.UserData),
 		},
 	}
@@ -251,35 +257,45 @@ func (g *generator) generatePublicIPAllocation(in *openapi.ServerPublicIPAllocat
 	}
 }
 
-func (g *generator) generateSecurityGroups(in *openapi.ServerSecurityGroupList) []unikornv1.ServerSecurityGroupSpec {
+func (g *generator) generateSecurityGroups(in *openapi.ServerSecurityGroupList) ([]unikornv1.ServerSecurityGroupSpec, error) {
 	if in == nil {
-		return nil
+		return nil, nil
 	}
 
 	out := make([]unikornv1.ServerSecurityGroupSpec, len(*in))
 
 	for i, sg := range *in {
+		id, err := regionids.ParseSecurityGroupID(sg.Id)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid security group ID", err)
+		}
+
 		out[i] = unikornv1.ServerSecurityGroupSpec{
-			ID: sg.Id,
+			ID: id,
 		}
 	}
 
-	return out
+	return out, nil
 }
 
-func (g *generator) generateNetworks(in openapi.ServerNetworkList) []unikornv1.ServerNetworkSpec {
+func (g *generator) generateNetworks(in openapi.ServerNetworkList) ([]unikornv1.ServerNetworkSpec, error) {
 	out := make([]unikornv1.ServerNetworkSpec, len(in))
 
 	for i, network := range in {
+		id, err := regionids.ParseNetworkID(network.Id)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid network ID", err)
+		}
+
 		addressPairs := g.generateAllowedAddressPairs(network.AllowedAddressPairs)
 
 		out[i] = unikornv1.ServerNetworkSpec{
-			ID:                  network.Id,
+			ID:                  id,
 			AllowedAddressPairs: addressPairs,
 		}
 	}
 
-	return out
+	return out, nil
 }
 
 func (g *generator) generateAllowedAddressPairs(in *openapi.ServerNetworkAllowedAddressPairList) []unikornv1.ServerNetworkAddressPair {

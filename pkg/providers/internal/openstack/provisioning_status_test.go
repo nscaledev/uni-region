@@ -32,11 +32,18 @@ import (
 
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+)
+
+// Flavor IDs are UUIDs; these fixtures stand in for a baremetal and a VM flavor.
+const (
+	flavorMetalID = "aaaaaaaa-0000-0000-0000-000000000001"
+	flavorVMID    = "aaaaaaaa-0000-0000-0000-000000000002"
 )
 
 var errIronicUnavailable = errors.New("ironic unavailable")
@@ -234,8 +241,8 @@ func TestUpdateServerStateWithClientsRecordsMACAddress(t *testing.T) {
 	}}
 	identity := &unikornv1.Identity{}
 	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{
-		FlavorID: "vm",
-		Networks: []unikornv1.ServerNetworkSpec{{ID: "ee2b52e3-a844-42bd-864d-a9ff2f39a026"}},
+		FlavorID: idstest.MustParseFlavorID("11111111-1111-4111-a111-111111111111"),
+		Networks: []unikornv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID("ee2b52e3-a844-42bd-864d-a9ff2f39a026")}},
 	}}
 
 	provider := &Provider{
@@ -245,7 +252,7 @@ func TestUpdateServerStateWithClientsRecordsMACAddress(t *testing.T) {
 					Openstack: &unikornv1.RegionOpenstackSpec{
 						Compute: &unikornv1.RegionOpenstackComputeSpec{
 							Flavors: &unikornv1.OpenstackFlavorsSpec{
-								Metadata: []unikornv1.FlavorMetadata{{ID: "vm", Baremetal: false}},
+								Metadata: []unikornv1.FlavorMetadata{{ID: "11111111-1111-4111-a111-111111111111", Baremetal: false}},
 							},
 						},
 					},
@@ -317,7 +324,7 @@ func TestUpdateServerStateWithClientsBaremetalBuildSetsPhaseFromIronicLookup(t *
 
 	compute := &stubComputeClient{server: &servers.Server{ID: "nova-id", Status: "BUILD"}}
 	identity := &unikornv1.Identity{}
-	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{FlavorID: "metal"}}
+	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{FlavorID: idstest.MustParseFlavorID(flavorMetalID)}}
 	baremetalClient := &recordingBaremetalClient{provisionState: nodes.Available}
 	factoryCalled := false
 
@@ -328,7 +335,7 @@ func TestUpdateServerStateWithClientsBaremetalBuildSetsPhaseFromIronicLookup(t *
 					Openstack: &unikornv1.RegionOpenstackSpec{
 						Compute: &unikornv1.RegionOpenstackComputeSpec{
 							Flavors: &unikornv1.OpenstackFlavorsSpec{
-								Metadata: []unikornv1.FlavorMetadata{{ID: "metal", Baremetal: true}},
+								Metadata: []unikornv1.FlavorMetadata{{ID: flavorMetalID, Baremetal: true}},
 							},
 						},
 					},
@@ -359,7 +366,7 @@ func TestUpdateServerStateWithClientsVMBuildSkipsIronicAndBuilds(t *testing.T) {
 
 	compute := &stubComputeClient{server: &servers.Server{ID: "nova-id", Status: "BUILD"}}
 	identity := &unikornv1.Identity{}
-	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{FlavorID: "vm"}}
+	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{FlavorID: idstest.MustParseFlavorID(flavorVMID)}}
 	factoryCalled := false
 
 	provider := &Provider{
@@ -369,7 +376,7 @@ func TestUpdateServerStateWithClientsVMBuildSkipsIronicAndBuilds(t *testing.T) {
 					Openstack: &unikornv1.RegionOpenstackSpec{
 						Compute: &unikornv1.RegionOpenstackComputeSpec{
 							Flavors: &unikornv1.OpenstackFlavorsSpec{
-								Metadata: []unikornv1.FlavorMetadata{{ID: "vm", Baremetal: false}},
+								Metadata: []unikornv1.FlavorMetadata{{ID: flavorVMID, Baremetal: false}},
 							},
 						},
 					},
@@ -398,7 +405,7 @@ func TestUpdateServerStateWithClientsBaremetalIronicFailureDegradesToBuilding(t 
 
 	compute := &stubComputeClient{server: &servers.Server{ID: "nova-id", Status: "BUILD"}}
 	identity := &unikornv1.Identity{}
-	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{FlavorID: "metal"}}
+	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{FlavorID: idstest.MustParseFlavorID(flavorMetalID)}}
 
 	provider := &Provider{
 		openstack: &openStackClients{
@@ -407,7 +414,7 @@ func TestUpdateServerStateWithClientsBaremetalIronicFailureDegradesToBuilding(t 
 					Openstack: &unikornv1.RegionOpenstackSpec{
 						Compute: &unikornv1.RegionOpenstackComputeSpec{
 							Flavors: &unikornv1.OpenstackFlavorsSpec{
-								Metadata: []unikornv1.FlavorMetadata{{ID: "metal", Baremetal: true}},
+								Metadata: []unikornv1.FlavorMetadata{{ID: flavorMetalID, Baremetal: true}},
 							},
 						},
 					},
@@ -487,8 +494,8 @@ func TestIsBaremetalFlavor(t *testing.T) {
 				Compute: &unikornv1.RegionOpenstackComputeSpec{
 					Flavors: &unikornv1.OpenstackFlavorsSpec{
 						Metadata: []unikornv1.FlavorMetadata{
-							{ID: "vm", Baremetal: false},
-							{ID: "metal", Baremetal: true},
+							{ID: flavorVMID, Baremetal: false},
+							{ID: flavorMetalID, Baremetal: true},
 						},
 					},
 				},
@@ -496,8 +503,8 @@ func TestIsBaremetalFlavor(t *testing.T) {
 		},
 	}
 
-	require.True(t, isBaremetalFlavor(region, "metal"))
-	require.False(t, isBaremetalFlavor(region, "vm"))
+	require.True(t, isBaremetalFlavor(region, flavorMetalID))
+	require.False(t, isBaremetalFlavor(region, flavorVMID))
 	require.False(t, isBaremetalFlavor(region, "missing"))
-	require.False(t, isBaremetalFlavor(nil, "metal"))
+	require.False(t, isBaremetalFlavor(nil, flavorMetalID))
 }

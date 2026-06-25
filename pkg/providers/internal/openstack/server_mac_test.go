@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 
 	"k8s.io/utils/ptr"
 )
@@ -78,7 +79,7 @@ func TestSetServerMACAddress(t *testing.T) {
 			// the monitor records it. For baremetal this is the real NIC MAC
 			// bound by Ironic (Intel OUI), not the ephemeral Neutron one.
 			name:          "active with mac sets it",
-			networks:      []unikornv1.ServerNetworkSpec{{ID: primaryNetworkID}},
+			networks:      []unikornv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID(primaryNetworkID)}},
 			existing:      nil,
 			openstack:     &servers.Server{Status: "ACTIVE", Addresses: novaAddresses(realMAC)},
 			wantMACadress: ptr.To(realMAC),
@@ -88,7 +89,7 @@ func TestSetServerMACAddress(t *testing.T) {
 			// (baremetal rebinds during deploy), so the monitor must not record
 			// it yet.
 			name:          "building leaves mac untouched",
-			networks:      []unikornv1.ServerNetworkSpec{{ID: primaryNetworkID}},
+			networks:      []unikornv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID(primaryNetworkID)}},
 			existing:      nil,
 			openstack:     &servers.Server{Status: "BUILD", Addresses: novaAddresses(realMAC)},
 			wantMACadress: nil,
@@ -98,7 +99,7 @@ func TestSetServerMACAddress(t *testing.T) {
 			// hold: the monitor is the sole owner and only ever writes a
 			// non-empty MAC.
 			name:          "active without mac preserves existing",
-			networks:      []unikornv1.ServerNetworkSpec{{ID: primaryNetworkID}},
+			networks:      []unikornv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID(primaryNetworkID)}},
 			existing:      ptr.To(realMAC),
 			openstack:     &servers.Server{Status: "ACTIVE", Addresses: novaAddresses("")},
 			wantMACadress: ptr.To(realMAC),
@@ -107,7 +108,7 @@ func TestSetServerMACAddress(t *testing.T) {
 			// Self-healing: if the recorded MAC ever drifts from the observed
 			// one, the ACTIVE read corrects it.
 			name:          "active with different mac overwrites",
-			networks:      []unikornv1.ServerNetworkSpec{{ID: primaryNetworkID}},
+			networks:      []unikornv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID(primaryNetworkID)}},
 			existing:      ptr.To(otherMAC),
 			openstack:     &servers.Server{Status: "ACTIVE", Addresses: novaAddresses(realMAC)},
 			wantMACadress: ptr.To(realMAC),
@@ -117,7 +118,7 @@ func TestSetServerMACAddress(t *testing.T) {
 			// (Networks[0]) specifically, not an arbitrary entry of Nova's
 			// unordered addresses map, so a second network's MAC never wins.
 			name:     "reads the primary network mac not another",
-			networks: []unikornv1.ServerNetworkSpec{{ID: primaryNetworkID}},
+			networks: []unikornv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID(primaryNetworkID)}},
 			existing: nil,
 			openstack: &servers.Server{Status: "ACTIVE", Addresses: map[string]any{
 				networkNameForID(primaryNetworkID):   []any{novaAddressEntry(realMAC)},

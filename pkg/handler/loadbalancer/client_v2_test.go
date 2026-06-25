@@ -41,7 +41,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/loadbalancer"
-	regionids "github.com/unikorn-cloud/region/pkg/ids"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -279,7 +279,7 @@ func minimalCreateRequest() *openapi.LoadBalancerV2Create {
 			Name: "web-lb",
 		},
 		Spec: openapi.LoadBalancerV2CreateSpec{
-			NetworkId:  regionids.MustParseNetworkID(lbNetworkID),
+			NetworkId:  idstest.MustParseNetworkID(lbNetworkID),
 			PublicIP:   &publicIP,
 			VipAddress: &vipAddress,
 			Listeners: []openapi.LoadBalancerListenerV2{
@@ -517,7 +517,7 @@ func TestGetV2(t *testing.T) {
 		Namespace: lbNamespace,
 	})
 
-	result, err := client.GetV2(rbac.NewContext(t.Context(), projectACL(identityapi.Read)), regionids.MustParseLoadBalancerID(lbLoadBalancerID))
+	result, err := client.GetV2(rbac.NewContext(t.Context(), projectACL(identityapi.Read)), idstest.MustParseLoadBalancerID(lbLoadBalancerID))
 	require.NoError(t, err)
 	require.Equal(t, lbLoadBalancerID, result.Metadata.Id)
 	require.Equal(t, lbRegionID, result.Status.RegionId)
@@ -535,7 +535,7 @@ func TestGetV2ReturnsEmptyPoolMembers(t *testing.T) {
 		Namespace: lbNamespace,
 	})
 
-	result, err := client.GetV2(rbac.NewContext(t.Context(), projectACL(identityapi.Read)), regionids.MustParseLoadBalancerID(lbLoadBalancerID))
+	result, err := client.GetV2(rbac.NewContext(t.Context(), projectACL(identityapi.Read)), idstest.MustParseLoadBalancerID(lbLoadBalancerID))
 	require.NoError(t, err)
 	require.NotNil(t, result.Spec.Listeners[0].Pool.Members)
 	require.Empty(t, result.Spec.Listeners[0].Pool.Members)
@@ -571,7 +571,7 @@ func TestUpdateV2(t *testing.T) {
 
 	ctx := withPrincipal(rbac.NewContext(t.Context(), projectACL(identityapi.Read, identityapi.Update)))
 
-	result, err := client.UpdateV2(ctx, regionids.MustParseLoadBalancerID(lbLoadBalancerID), request)
+	result, err := client.UpdateV2(ctx, idstest.MustParseLoadBalancerID(lbLoadBalancerID), request)
 	require.NoError(t, err)
 	require.NotNil(t, result.Spec.PublicIP)
 	require.True(t, *result.Spec.PublicIP)
@@ -604,7 +604,7 @@ func TestUpdateV2AllowsEmptyPoolMembers(t *testing.T) {
 	request.Spec.PublicIP = &publicIP
 	request.Spec.Listeners[0].Pool.Members = []openapi.LoadBalancerMemberV2{}
 
-	result, err := client.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), projectACL(identityapi.Read, identityapi.Update))), regionids.MustParseLoadBalancerID(lbLoadBalancerID), request)
+	result, err := client.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), projectACL(identityapi.Read, identityapi.Update))), idstest.MustParseLoadBalancerID(lbLoadBalancerID), request)
 	require.NoError(t, err)
 	require.NotNil(t, result.Spec.Listeners[0].Pool.Members)
 	require.Empty(t, result.Spec.Listeners[0].Pool.Members)
@@ -627,7 +627,7 @@ func TestDeleteV2(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), projectACL(identityapi.Read, identityapi.Delete))
 
-	require.NoError(t, client.DeleteV2(ctx, regionids.MustParseLoadBalancerID(lbLoadBalancerID)))
+	require.NoError(t, client.DeleteV2(ctx, idstest.MustParseLoadBalancerID(lbLoadBalancerID)))
 
 	_, err := client.GetV2Raw(ctx, lbLoadBalancerID)
 	require.Error(t, err)
@@ -907,7 +907,7 @@ func TestUpdateV2RejectsListenerProtocolMutation(t *testing.T) {
 	request.Spec.Listeners[0].Protocol = openapi.LoadBalancerListenerProtocolV2Udp
 	request.Spec.Listeners[0].IdleTimeoutSeconds = nil
 
-	_, err := client.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), projectACL(identityapi.Read, identityapi.Update))), regionids.MustParseLoadBalancerID(lbLoadBalancerID), request)
+	_, err := client.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), projectACL(identityapi.Read, identityapi.Update))), idstest.MustParseLoadBalancerID(lbLoadBalancerID), request)
 	require.Error(t, err)
 	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
 }
@@ -927,7 +927,7 @@ func TestUpdateV2RejectsListenerPortMutation(t *testing.T) {
 	request.Spec.PublicIP = ptr.To(false)
 	request.Spec.Listeners[0].Port = 81
 
-	_, err := client.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), projectACL(identityapi.Read, identityapi.Update))), regionids.MustParseLoadBalancerID(lbLoadBalancerID), request)
+	_, err := client.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), projectACL(identityapi.Read, identityapi.Update))), idstest.MustParseLoadBalancerID(lbLoadBalancerID), request)
 	require.Error(t, err)
 	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
 }
@@ -947,7 +947,7 @@ func TestUpdateV2RejectsListenerPoolProxyProtocolV2Mutation(t *testing.T) {
 	request.Spec.PublicIP = ptr.To(false)
 	request.Spec.Listeners[0].Pool.ProxyProtocolV2 = ptr.To(true)
 
-	_, err := client.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), projectACL(identityapi.Read, identityapi.Update))), regionids.MustParseLoadBalancerID(lbLoadBalancerID), request)
+	_, err := client.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), projectACL(identityapi.Read, identityapi.Update))), idstest.MustParseLoadBalancerID(lbLoadBalancerID), request)
 	require.Error(t, err)
 	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
 }
@@ -966,7 +966,7 @@ func TestDeleteV2AlreadyDeleting(t *testing.T) {
 		Namespace: lbNamespace,
 	})
 
-	err := client.DeleteV2(rbac.NewContext(t.Context(), projectACL(identityapi.Read, identityapi.Delete)), regionids.MustParseLoadBalancerID(lbLoadBalancerID))
+	err := client.DeleteV2(rbac.NewContext(t.Context(), projectACL(identityapi.Read, identityapi.Delete)), idstest.MustParseLoadBalancerID(lbLoadBalancerID))
 	require.NoError(t, err)
 }
 
@@ -1003,7 +1003,7 @@ func TestUpdateV2ConflictRollsBackAllocation(t *testing.T) {
 	publicIP := true
 	request.Spec.PublicIP = &publicIP
 
-	_, err := client.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), projectACL(identityapi.Read, identityapi.Update))), regionids.MustParseLoadBalancerID(lbLoadBalancerID), request)
+	_, err := client.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), projectACL(identityapi.Read, identityapi.Update))), idstest.MustParseLoadBalancerID(lbLoadBalancerID), request)
 	require.Error(t, err)
 	require.True(t, coreerrors.IsConflict(err), "expected 409 conflict, got: %v", err)
 }

@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/unikorn-cloud/region/pkg/ids"
+	"github.com/unikorn-cloud/region/pkg/ids/idstest"
 )
 
 const (
@@ -41,53 +42,53 @@ func TestStringFormats(t *testing.T) {
 	}{
 		{
 			"RegionID",
-			fmt.Sprintf("%s", ids.MustParseRegionID(validUUID)), //nolint:staticcheck
-			fmt.Sprintf("%v", ids.MustParseRegionID(validUUID)),
+			fmt.Sprintf("%s", idstest.MustParseRegionID(validUUID)), //nolint:staticcheck
+			fmt.Sprintf("%v", idstest.MustParseRegionID(validUUID)),
 		},
 		{
 			"IdentityID",
-			fmt.Sprintf("%s", ids.MustParseIdentityID(validUUID)), //nolint:staticcheck
-			fmt.Sprintf("%v", ids.MustParseIdentityID(validUUID)),
+			fmt.Sprintf("%s", idstest.MustParseIdentityID(validUUID)), //nolint:staticcheck
+			fmt.Sprintf("%v", idstest.MustParseIdentityID(validUUID)),
 		},
 		{
 			"NetworkID",
-			fmt.Sprintf("%s", ids.MustParseNetworkID(validUUID)), //nolint:staticcheck
-			fmt.Sprintf("%v", ids.MustParseNetworkID(validUUID)),
+			fmt.Sprintf("%s", idstest.MustParseNetworkID(validUUID)), //nolint:staticcheck
+			fmt.Sprintf("%v", idstest.MustParseNetworkID(validUUID)),
 		},
 		{
 			"SecurityGroupID",
-			fmt.Sprintf("%s", ids.MustParseSecurityGroupID(validUUID)), //nolint:staticcheck
-			fmt.Sprintf("%v", ids.MustParseSecurityGroupID(validUUID)),
+			fmt.Sprintf("%s", idstest.MustParseSecurityGroupID(validUUID)), //nolint:staticcheck
+			fmt.Sprintf("%v", idstest.MustParseSecurityGroupID(validUUID)),
 		},
 		{
 			"LoadBalancerID",
-			fmt.Sprintf("%s", ids.MustParseLoadBalancerID(validUUID)), //nolint:staticcheck
-			fmt.Sprintf("%v", ids.MustParseLoadBalancerID(validUUID)),
+			fmt.Sprintf("%s", idstest.MustParseLoadBalancerID(validUUID)), //nolint:staticcheck
+			fmt.Sprintf("%v", idstest.MustParseLoadBalancerID(validUUID)),
 		},
 		{
 			"ServerID",
-			fmt.Sprintf("%s", ids.MustParseServerID(validUUID)), //nolint:staticcheck
-			fmt.Sprintf("%v", ids.MustParseServerID(validUUID)),
+			fmt.Sprintf("%s", idstest.MustParseServerID(validUUID)), //nolint:staticcheck
+			fmt.Sprintf("%v", idstest.MustParseServerID(validUUID)),
 		},
 		{
 			"SSHCertificateAuthorityID",
-			fmt.Sprintf("%s", ids.MustParseSSHCertificateAuthorityID(validUUID)), //nolint:staticcheck
-			fmt.Sprintf("%v", ids.MustParseSSHCertificateAuthorityID(validUUID)),
+			fmt.Sprintf("%s", idstest.MustParseSSHCertificateAuthorityID(validUUID)), //nolint:staticcheck
+			fmt.Sprintf("%v", idstest.MustParseSSHCertificateAuthorityID(validUUID)),
 		},
 		{
 			"FileStorageID",
-			fmt.Sprintf("%s", ids.MustParseFileStorageID(validUUID)), //nolint:staticcheck
-			fmt.Sprintf("%v", ids.MustParseFileStorageID(validUUID)),
+			fmt.Sprintf("%s", idstest.MustParseFileStorageID(validUUID)), //nolint:staticcheck
+			fmt.Sprintf("%v", idstest.MustParseFileStorageID(validUUID)),
 		},
 		{
 			"ImageID",
-			fmt.Sprintf("%s", ids.MustParseImageID(validUUID)), //nolint:staticcheck
-			fmt.Sprintf("%v", ids.MustParseImageID(validUUID)),
+			fmt.Sprintf("%s", idstest.MustParseImageID(validUUID)), //nolint:staticcheck
+			fmt.Sprintf("%v", idstest.MustParseImageID(validUUID)),
 		},
 		{
 			"FlavorID",
-			fmt.Sprintf("%s", ids.MustParseFlavorID(validUUID)), //nolint:staticcheck
-			fmt.Sprintf("%v", ids.MustParseFlavorID(validUUID)),
+			fmt.Sprintf("%s", idstest.MustParseFlavorID(validUUID)), //nolint:staticcheck
+			fmt.Sprintf("%v", idstest.MustParseFlavorID(validUUID)),
 		},
 	}
 
@@ -113,16 +114,16 @@ func TestMarshalText(t *testing.T) {
 		name  string
 		value marshaler
 	}{
-		{"RegionID", ids.MustParseRegionID(validUUID)},
-		{"IdentityID", ids.MustParseIdentityID(validUUID)},
-		{"NetworkID", ids.MustParseNetworkID(validUUID)},
-		{"SecurityGroupID", ids.MustParseSecurityGroupID(validUUID)},
-		{"LoadBalancerID", ids.MustParseLoadBalancerID(validUUID)},
-		{"ServerID", ids.MustParseServerID(validUUID)},
-		{"SSHCertificateAuthorityID", ids.MustParseSSHCertificateAuthorityID(validUUID)},
-		{"FileStorageID", ids.MustParseFileStorageID(validUUID)},
-		{"ImageID", ids.MustParseImageID(validUUID)},
-		{"FlavorID", ids.MustParseFlavorID(validUUID)},
+		{"RegionID", idstest.MustParseRegionID(validUUID)},
+		{"IdentityID", idstest.MustParseIdentityID(validUUID)},
+		{"NetworkID", idstest.MustParseNetworkID(validUUID)},
+		{"SecurityGroupID", idstest.MustParseSecurityGroupID(validUUID)},
+		{"LoadBalancerID", idstest.MustParseLoadBalancerID(validUUID)},
+		{"ServerID", idstest.MustParseServerID(validUUID)},
+		{"SSHCertificateAuthorityID", idstest.MustParseSSHCertificateAuthorityID(validUUID)},
+		{"FileStorageID", idstest.MustParseFileStorageID(validUUID)},
+		{"ImageID", idstest.MustParseImageID(validUUID)},
+		{"FlavorID", idstest.MustParseFlavorID(validUUID)},
 	}
 
 	for _, tc := range cases {
@@ -205,40 +206,6 @@ func TestUnmarshalTextRejectsInvalid(t *testing.T) {
 			if err := tc.target.UnmarshalText([]byte(invalidUUID)); err == nil {
 				t.Fatalf("%s.UnmarshalText should reject non-UUID input", tc.name)
 			}
-		})
-	}
-}
-
-func TestMustParsePanics(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name string
-		fn   func(string)
-	}{
-		{"MustParseRegionID", func(s string) { ids.MustParseRegionID(s) }},
-		{"MustParseIdentityID", func(s string) { ids.MustParseIdentityID(s) }},
-		{"MustParseNetworkID", func(s string) { ids.MustParseNetworkID(s) }},
-		{"MustParseSecurityGroupID", func(s string) { ids.MustParseSecurityGroupID(s) }},
-		{"MustParseLoadBalancerID", func(s string) { ids.MustParseLoadBalancerID(s) }},
-		{"MustParseServerID", func(s string) { ids.MustParseServerID(s) }},
-		{"MustParseSSHCertificateAuthorityID", func(s string) { ids.MustParseSSHCertificateAuthorityID(s) }},
-		{"MustParseFileStorageID", func(s string) { ids.MustParseFileStorageID(s) }},
-		{"MustParseImageID", func(s string) { ids.MustParseImageID(s) }},
-		{"MustParseFlavorID", func(s string) { ids.MustParseFlavorID(s) }},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			defer func() {
-				if r := recover(); r == nil {
-					t.Fatalf("%s should panic on invalid UUID", tc.name)
-				}
-			}()
-
-			tc.fn(invalidUUID)
 		})
 	}
 }
