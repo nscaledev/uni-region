@@ -319,34 +319,38 @@ var _ = Describe("File Storage Management", func() {
 
 				GinkgoWriter.Printf("Created test storage for list: %s (%s)\n", testStorageName, testStorageID)
 
-				storageList, err := regionClient.ListFileStorage(ctx, config.OrgID, config.ProjectID, config.RegionID)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(len(storageList)).To(BeNumerically(">=", 1), "Should have at least one storage resource")
+				// List GETs are served from the controller-runtime cache, so a
+				// just-created resource can briefly be absent from the list.
+				Eventually(func(g Gomega) {
+					storageList, err := regionClient.ListFileStorage(ctx, config.OrgID, config.ProjectID, config.RegionID)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(len(storageList)).To(BeNumerically(">=", 1), "Should have at least one storage resource")
 
-				found := false
-				for _, storage := range storageList {
-					// Validate ALL items in collection have required fields
-					Expect(storage.Metadata).NotTo(BeNil())
-					Expect(storage.Metadata.Id).NotTo(BeEmpty())
-					Expect(storage.Metadata.Name).NotTo(BeEmpty())
-					Expect(storage.Spec.SizeGiB).To(BeNumerically(">", 0))
-					Expect(storage.Status.StorageClassId).NotTo(BeEmpty())
-					Expect(storage.Status.RegionId).NotTo(BeEmpty())
+					found := false
+					for _, storage := range storageList {
+						// Validate ALL items in collection have required fields
+						g.Expect(storage.Metadata).NotTo(BeNil())
+						g.Expect(storage.Metadata.Id).NotTo(BeEmpty())
+						g.Expect(storage.Metadata.Name).NotTo(BeEmpty())
+						g.Expect(storage.Spec.SizeGiB).To(BeNumerically(">", 0))
+						g.Expect(storage.Status.StorageClassId).NotTo(BeEmpty())
+						g.Expect(storage.Status.RegionId).NotTo(BeEmpty())
 
-					if storage.Metadata.Id == testStorageID {
-						found = true
-						Expect(storage.Metadata.Name).To(Equal(testStorageName))
-						Expect(storage.Metadata.OrganizationId).To(Equal(config.OrgID))
-						Expect(storage.Metadata.ProjectId).To(Equal(config.ProjectID))
-						GinkgoWriter.Printf("  Found our test storage: %s (%s) - %dGiB\n",
-							storage.Metadata.Name,
-							storage.Metadata.Id,
-							storage.Spec.SizeGiB)
+						if storage.Metadata.Id == testStorageID {
+							found = true
+							g.Expect(storage.Metadata.Name).To(Equal(testStorageName))
+							g.Expect(storage.Metadata.OrganizationId).To(Equal(config.OrgID))
+							g.Expect(storage.Metadata.ProjectId).To(Equal(config.ProjectID))
+							GinkgoWriter.Printf("  Found our test storage: %s (%s) - %dGiB\n",
+								storage.Metadata.Name,
+								storage.Metadata.Id,
+								storage.Spec.SizeGiB)
+						}
 					}
-				}
 
-				Expect(found).To(BeTrue(), "Created storage should be in the list")
-				GinkgoWriter.Printf("Found %d total file storage resources\n", len(storageList))
+					g.Expect(found).To(BeTrue(), "Created storage should be in the list")
+					GinkgoWriter.Printf("Found %d total file storage resources\n", len(storageList))
+				}).WithTimeout(5 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
 			})
 
 			AfterEach(func() {
