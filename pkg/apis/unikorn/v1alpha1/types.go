@@ -1057,10 +1057,14 @@ type FileStorageSpec struct {
 	// Attachments are the network attachments for the storage.
 	Attachments []Attachment `json:"attachments,omitempty"`
 
+	// DefaultSnapshotProtectionEnabled controls platform-managed baseline snapshot protection.
+	// +optional
+	DefaultSnapshotProtectionEnabled bool `json:"defaultSnapshotProtectionEnabled,omitempty"`
+
 	// SnapshotPolicies are the named snapshot protection rules for the storage.
 	// +listType=map
 	// +listMapKey=name
-	// +kubebuilder:validation:MaxItems=4
+	// +kubebuilder:validation:MaxItems=5
 	// +optional
 	SnapshotPolicies []FileStorageSnapshotPolicy `json:"snapshotPolicies,omitempty"`
 
@@ -1078,8 +1082,8 @@ type FileStorageSpec struct {
 
 type FileStorageSnapshotPolicy struct {
 	// Name is the policy identity key within the file storage volume.
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
-	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=19
 	Name string `json:"name"`
 	// Schedule defines when snapshots run in UTC.
 	Schedule FileStorageSnapshotPolicySchedule `json:"schedule"`
