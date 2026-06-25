@@ -142,12 +142,18 @@ var _ = Describe("Network Management", func() {
 				Expect(putResp.Metadata.Description).NotTo(BeNil())
 				Expect(*putResp.Metadata.Description).To(Equal("updated description"))
 
-				roundTrip, err := regionClient.GetNetwork(ctx, networkID)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(roundTrip.Metadata.Name).To(Equal(updatedName))
-				Expect(roundTrip.Metadata.Description).NotTo(BeNil())
-				Expect(*roundTrip.Metadata.Description).To(Equal("updated description"))
-				Expect(roundTrip.Status.Prefix).To(Equal(networkPrefix))
+				// Single-resource GETs can briefly observe the pre-update object through
+				// the API server's controller-runtime cache.
+				Eventually(func(g Gomega) {
+					roundTrip, err := regionClient.GetNetwork(ctx, networkID)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(roundTrip.Metadata.Name).To(Equal(updatedName))
+					g.Expect(roundTrip.Metadata.Description).NotTo(BeNil())
+					g.Expect(*roundTrip.Metadata.Description).To(Equal("updated description"))
+					g.Expect(roundTrip.Status.Prefix).To(Equal(networkPrefix))
+				}).WithTimeout(30 * time.Second).
+					WithPolling(1 * time.Second).
+					Should(Succeed())
 
 				networkName = updatedName
 			})
