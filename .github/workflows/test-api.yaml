@@ -74,6 +74,7 @@ jobs:
     if: github.event_name == 'schedule' || github.event.inputs.run_dev == 'true'
     outputs:
       ref: ${{ steps.find.outputs.ref }}
+      version: ${{ steps.find.outputs.version }}
     steps:
     - name: Resolve Dev checkout ref
       uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@main
@@ -171,6 +172,7 @@ jobs:
         slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
         send-slack: ${{ github.event.inputs.skip_slack_notifications != 'true' && 'true' || 'false' }}
         environment: dev
+        deployed-version: ${{ needs.find-dev-deployed-version.outputs.version || needs.find-dev-deployed-version.outputs.ref }}
         title: 'Region API Test Results'
         test-history-suite: uni-region-api
         enable-ai-analysis: 'true'
@@ -187,6 +189,7 @@ jobs:
     if: github.event_name == 'schedule' || github.event.inputs.run_uat == 'true'
     outputs:
       ref: ${{ steps.find.outputs.ref }}
+      version: ${{ steps.find.outputs.version }}
     steps:
     - name: Resolve UAT checkout ref
       uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@main
@@ -285,6 +288,7 @@ jobs:
         slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
         send-slack: ${{ github.event.inputs.skip_slack_notifications != 'true' && 'true' || 'false' }}
         environment: uat
+        deployed-version: ${{ needs.find-uat-deployed-version.outputs.version || needs.find-uat-deployed-version.outputs.ref }}
         title: 'Region API Test Results'
         test-history-suite: uni-region-api
         enable-ai-analysis: 'true'
