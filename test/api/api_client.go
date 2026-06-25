@@ -370,27 +370,6 @@ func (c *APIClient) DeleteImage(ctx context.Context, orgID, regionID, imageID st
 	}
 }
 
-// ListExternalNetworks lists all external networks available in a region.
-func (c *APIClient) ListExternalNetworks(ctx context.Context, orgID, regionID string) (regionopenapi.ExternalNetworks, error) {
-	path := c.endpoints.ListExternalNetworks(orgID, regionID)
-
-	client := c.APIClient
-	if c.regionClient != nil {
-		client = c.regionClient
-	}
-
-	return coreclient.ListResource[regionopenapi.ExternalNetwork](
-		ctx,
-		client,
-		path,
-		coreclient.ResponseHandlerConfig{
-			ResourceType:   "externalNetworks",
-			ResourceID:     regionID,
-			ResourceIDType: "region",
-		},
-	)
-}
-
 // ListSecurityGroups lists security groups filtered by org, project and region.
 func (c *APIClient) ListSecurityGroups(ctx context.Context, orgID, projectID, regionID string) (regionopenapi.SecurityGroupsV2Read, error) {
 	path := c.endpoints.ListSecurityGroups(orgID, projectID, regionID)
