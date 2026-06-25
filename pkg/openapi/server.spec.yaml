@@ -1655,7 +1655,12 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     post:
-      description: Create a new storage.
+      description: |-
+        Create a new storage. Snapshot Policies are managed as inline parent File Storage
+        desired state. Omitted or empty spec.snapshotPolicies stores no user-managed
+        policies, and a non-empty list persists exactly the caller-supplied policies.
+        Default Snapshot Protection is controlled separately by
+        spec.defaultSnapshotProtectionEnabled.
       summary: Create file storage
       tags:
       - File storage
@@ -1702,7 +1707,12 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
-      description: Update this storage.
+      description: |-
+        Update this storage. Snapshot Policies are managed as inline parent File Storage
+        desired state. Omitted spec.snapshotPolicies preserves existing user-managed
+        policies, an empty list clears all user-managed policies, and a non-empty list
+        replaces the full user-managed policy list. Default Snapshot Protection is
+        controlled separately by spec.defaultSnapshotProtectionEnabled.
       summary: Update file storage
       tags:
       - File storage
@@ -3471,6 +3481,102 @@ components:
             type: string
         provisioningStatus:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/resourceProvisioningStatus'
+    storageSnapshotPolicyListV2Spec:
+      description: A list of named snapshot policies for storage.
+      type: array
+      maxItems: 4
+      x-kubernetes-list-type: map
+      x-kubernetes-list-map-keys:
+      - name
+      items:
+        $ref: '#/components/schemas/storageSnapshotPolicyV2Spec'
+    storageSnapshotPolicyV2Spec:
+      description: A named snapshot policy for storage.
+      type: object
+      required:
+      - name
+      - schedule
+      - retention
+      properties:
+        name:
+          description: Stable identity key for the snapshot policy.
+          type: string
+          maxLength: 19
+          pattern: '^[a-z]([-a-z0-9]*[a-z0-9])?$'
+        schedule:
+          $ref: '#/components/schemas/storageSnapshotScheduleV2Spec'
+        retention:
+          $ref: '#/components/schemas/storageSnapshotRetentionV2Spec'
+    storageSnapshotScheduleV2Spec:
+      description: Schedule for a storage snapshot policy.
+      type: object
+      required:
+      - interval
+      properties:
+        interval:
+          $ref: '#/components/schemas/storageSnapshotScheduleIntervalV2'
+        timeOfDay:
+          description: UTC time of day in HH:MMZ form.
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]Z$'
+        dayOfWeek:
+          $ref: '#/components/schemas/storageSnapshotDayOfWeekV2'
+        dayOfMonth:
+          description: UTC day of month for monthly snapshot policies.
+          type: integer
+          minimum: 1
+          maximum: 28
+    storageSnapshotScheduleIntervalV2:
+      description: Snapshot policy cadence.
+      type: string
+      enum:
+      - hourly
+      - daily
+      - weekly
+      - monthly
+    storageSnapshotDayOfWeekV2:
+      description: UTC day of week for weekly snapshot policies.
+      type: string
+      enum:
+      - monday
+      - tuesday
+      - wednesday
+      - thursday
+      - friday
+      - saturday
+      - sunday
+    storageSnapshotRetentionV2Spec:
+      description: Retention policy for storage snapshots.
+      type: object
+      required:
+      - keep
+      properties:
+        keep:
+          description: Number of snapshots to retain.
+          type: integer
+          minimum: 1
+    storageSnapshotPolicyListV2Status:
+      description: A list of observed snapshot policy states for storage.
+      type: array
+      items:
+        $ref: '#/components/schemas/storageSnapshotPolicyV2Status'
+    storageSnapshotPolicyV2Status:
+      description: Observed state for a named storage snapshot policy.
+      type: object
+      required:
+      - name
+      - provisioningStatus
+      properties:
+        name:
+          description: Stable identity key for the snapshot policy.
+          type: string
+          maxLength: 19
+          pattern: '^[a-z]([-a-z0-9]*[a-z0-9])?$'
+        provisioningStatus:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/resourceProvisioningStatus'
+        message:
+          description: Optional human-readable status detail for the snapshot policy.
+          type: string
     storageV2Spec:
       description: A storage's specification.
       type: object
@@ -3479,19 +3585,25 @@ components:
       - storageType
       properties:
         sizeGiB:
-          description: size in GiB of the storage 
+          description: size in GiB of the storage
           type: integer
           format: int64
-        storageType: 
+        storageType:
           $ref: '#/components/schemas/storageTypeV2Spec'
         attachments:
           $ref: '#/components/schemas/storageAttachmentV2Spec'
+        defaultSnapshotProtectionEnabled:
+          description: Whether platform-managed Default Snapshot Protection is enabled. On create, omission resolves to enabled. On update, omission preserves the current setting. Reads return the resolved setting. Explicit null is invalid.
+          type: boolean
+        snapshotPolicies:
+          $ref: '#/components/schemas/storageSnapshotPolicyListV2Spec'
     storageV2Status:
       description: Read only status about storage
       type: object
       required:
         - storageClassId
         - regionId
+        - snapshotPolicies
       properties:
         storageClassId:
           description: identifier for the storage
@@ -3503,6 +3615,8 @@ components:
           $ref: '#/components/schemas/storageUsageV2Status'
         attachments:
          $ref: '#/components/schemas/storageAttachmentListV2Status'
+        snapshotPolicies:
+          $ref: '#/components/schemas/storageSnapshotPolicyListV2Status'
     storageUsageV2Status:
         description: Information about the usage of the storage in bytes
         type: object
@@ -3522,7 +3636,7 @@ components:
               type: string
               format: date-time
     storageV2Create:
-      description: A storage create request.
+      description: A storage create request. When spec.defaultSnapshotProtectionEnabled is omitted, Default Snapshot Protection is enabled. Explicit null defaultSnapshotProtectionEnabled is invalid. When spec.snapshotPolicies is omitted or empty, the API stores no user-managed Snapshot Policies. Non-empty policy lists are stored exactly as supplied.
       type: object
       required:
       - metadata
@@ -3553,7 +3667,7 @@ components:
                 type: string
           - $ref: '#/components/schemas/storageV2Spec'
     storageV2Update:
-      description: A storage create request.
+      description: A storage update request. Omitted spec.defaultSnapshotProtectionEnabled preserves the current Default Snapshot Protection setting, and explicit null is invalid. Omitted spec.snapshotPolicies preserves existing desired user-managed Snapshot Policies, an empty list clears them, and a non-empty list replaces the full list.
       type: object
       required:
       - metadata
@@ -4712,9 +4826,12 @@ components:
               attachments:
                 networkIds:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
+              defaultSnapshotProtectionEnabled: true
+              snapshotPolicies: []
             status:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
               storageClassId: 99659b44-1700-400f-9c6c-cfdb4bb0445c
+              snapshotPolicies: []
               usage:
                   capacityBytes: 107374182400
                   usedBytes: 94489280512
@@ -4752,9 +4869,12 @@ components:
               attachments:
                 networkIds:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
+              defaultSnapshotProtectionEnabled: true
+              snapshotPolicies: []
             status:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
               storageClassId: 99659b44-1700-400f-9c6c-cfdb4bb0445c
+              snapshotPolicies: []
               usage:
                   capacityBytes: 107374182400
                   usedBytes: 94489280512

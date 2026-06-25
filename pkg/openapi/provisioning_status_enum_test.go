@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/require"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
@@ -77,4 +78,63 @@ func TestSchemaAcceptsAllProvisioningStatusValues(t *testing.T) {
 	}
 
 	require.NotZero(t, found, "no resourceProvisioningStatus schema found in the embedded document; the bundling layout may have changed and this guard needs updating")
+}
+
+func TestStorageDefaultSnapshotProtectionContract(t *testing.T) {
+	t.Parallel()
+
+	swagger, err := openapi.GetSwagger()
+	require.NoError(t, err)
+
+	storageSpec := componentSchema(t, swagger, "storageV2Spec")
+	defaultProtectionProperty := schemaProperty(t, storageSpec, "defaultSnapshotProtectionEnabled")
+	require.NotContains(t, storageSpec.Required, "defaultSnapshotProtectionEnabled")
+	require.NotNil(t, defaultProtectionProperty.Type)
+	require.True(t, defaultProtectionProperty.Type.Includes("boolean"))
+	require.False(t, defaultProtectionProperty.PermitsNull())
+
+	requireSchemaPropertyRef(t, componentSchema(t, swagger, "storageV2Read"), "spec", "#/components/schemas/storageV2Spec")
+	requireSchemaPropertyRef(t, componentSchema(t, swagger, "storageV2Update"), "spec", "#/components/schemas/storageV2Spec")
+	require.Len(t, componentSchema(t, swagger, "storageV2Create").Properties["spec"].Value.AllOf, 2)
+	require.Equal(t, "#/components/schemas/storageV2Spec", componentSchema(t, swagger, "storageV2Create").Properties["spec"].Value.AllOf[1].Ref)
+}
+
+func TestStorageDefaultSnapshotProtectionRejectsNullInput(t *testing.T) {
+	t.Parallel()
+
+	swagger, err := openapi.GetSwagger()
+	require.NoError(t, err)
+
+	storageSpec := componentSchema(t, swagger, "storageV2Spec")
+	defaultProtectionProperty := schemaProperty(t, storageSpec, "defaultSnapshotProtectionEnabled")
+
+	require.Error(t, defaultProtectionProperty.VisitJSON(nil))
+}
+
+func componentSchema(t *testing.T, swagger *openapi3.T, name string) *openapi3.Schema {
+	t.Helper()
+
+	schemaRef := swagger.Components.Schemas[name]
+	require.NotNil(t, schemaRef, "missing component schema %s", name)
+	require.NotNil(t, schemaRef.Value, "component schema %s has no value", name)
+
+	return schemaRef.Value
+}
+
+func schemaProperty(t *testing.T, schema *openapi3.Schema, name string) *openapi3.Schema {
+	t.Helper()
+
+	schemaRef := schema.Properties[name]
+	require.NotNil(t, schemaRef, "missing schema property %s", name)
+	require.NotNil(t, schemaRef.Value, "schema property %s has no value", name)
+
+	return schemaRef.Value
+}
+
+func requireSchemaPropertyRef(t *testing.T, schema *openapi3.Schema, name string, ref string) {
+	t.Helper()
+
+	schemaRef := schema.Properties[name]
+	require.NotNil(t, schemaRef, "missing schema property %s", name)
+	require.Equal(t, ref, schemaRef.Ref)
 }

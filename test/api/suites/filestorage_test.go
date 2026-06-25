@@ -22,6 +22,8 @@ limitations under the License.
 package suites
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -38,6 +40,233 @@ import (
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 )
+
+const defaultProtectionUpdateStorageSizeGiB = int64(10)
+
+func dailyFileStorageSnapshotPolicies() regionopenapi.StorageSnapshotPolicyListV2Spec {
+	return namedDailyFileStorageSnapshotPolicies("daily")
+}
+
+func defaultNamedFileStorageSnapshotPolicies() regionopenapi.StorageSnapshotPolicyListV2Spec {
+	return namedDailyFileStorageSnapshotPolicies("default")
+}
+
+func systemDefaultFileStorageSnapshotPolicies() regionopenapi.StorageSnapshotPolicyListV2Spec {
+	return regionopenapi.StorageSnapshotPolicyListV2Spec{
+		{
+			Name: "system-default",
+			Schedule: regionopenapi.StorageSnapshotScheduleV2Spec{
+				Interval: regionopenapi.StorageSnapshotScheduleIntervalV2Hourly,
+			},
+			Retention: regionopenapi.StorageSnapshotRetentionV2Spec{Keep: 24},
+		},
+	}
+}
+
+func namedDailyFileStorageSnapshotPolicies(name string) regionopenapi.StorageSnapshotPolicyListV2Spec {
+	return regionopenapi.StorageSnapshotPolicyListV2Spec{
+		{
+			Name: name,
+			Schedule: regionopenapi.StorageSnapshotScheduleV2Spec{
+				Interval:  regionopenapi.StorageSnapshotScheduleIntervalV2Daily,
+				TimeOfDay: ptr.To("04:00Z"),
+			},
+			Retention: regionopenapi.StorageSnapshotRetentionV2Spec{Keep: 7},
+		},
+	}
+}
+
+func hourlyFileStorageSnapshotPolicies() regionopenapi.StorageSnapshotPolicyListV2Spec {
+	return regionopenapi.StorageSnapshotPolicyListV2Spec{
+		{
+			Name: "hourly",
+			Schedule: regionopenapi.StorageSnapshotScheduleV2Spec{
+				Interval: regionopenapi.StorageSnapshotScheduleIntervalV2Hourly,
+			},
+			Retention: regionopenapi.StorageSnapshotRetentionV2Spec{Keep: 24},
+		},
+	}
+}
+
+func nfsFileStorageType() regionopenapi.StorageTypeV2Spec {
+	return regionopenapi.StorageTypeV2Spec{
+		NFS: &regionopenapi.NFSV2Spec{},
+	}
+}
+
+func requireFileStorageClassID() string {
+	storageClasses, err := regionClient.ListFileStorageClasses(ctx, config.RegionID)
+	Expect(err).NotTo(HaveOccurred(), "Failed to list storage classes")
+
+	if len(storageClasses) == 0 {
+		Skip(fmt.Sprintf("No storage classes allocated to region %s", config.RegionID))
+	}
+
+	return storageClasses[0].Metadata.Id
+}
+
+func defaultProtectionCreateRequest(storageClassID string, defaultProtectionEnabled *bool, snapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec) regionopenapi.StorageV2CreateRequest {
+	storageName := coreutil.GenerateRandomName("test-default-protection")
+
+	return regionopenapi.StorageV2CreateRequest{
+		Metadata: coreapi.ResourceWriteMetadata{
+			Name:        storageName,
+			Description: ptr.To("Test default snapshot protection update semantics"),
+		},
+		Spec: struct {
+			Attachments                      *regionopenapi.StorageAttachmentV2Spec         `json:"attachments,omitempty"`
+			DefaultSnapshotProtectionEnabled *bool                                          `json:"defaultSnapshotProtectionEnabled,omitempty"`
+			OrganizationId                   string                                         `json:"organizationId"`
+			ProjectId                        string                                         `json:"projectId"`
+			RegionId                         regionopenapi.RegionId                         `json:"regionId"`
+			SizeGiB                          int64                                          `json:"sizeGiB"`
+			SnapshotPolicies                 *regionopenapi.StorageSnapshotPolicyListV2Spec `json:"snapshotPolicies,omitempty"`
+			StorageClassId                   string                                         `json:"storageClassId"`
+			StorageType                      regionopenapi.StorageTypeV2Spec                `json:"storageType"`
+		}{
+			DefaultSnapshotProtectionEnabled: defaultProtectionEnabled,
+			OrganizationId:                   config.OrgID,
+			ProjectId:                        config.ProjectID,
+			RegionId:                         regionids.MustParseRegionID(config.RegionID),
+			SizeGiB:                          defaultProtectionUpdateStorageSizeGiB,
+			SnapshotPolicies:                 snapshotPolicies,
+			StorageClassId:                   storageClassID,
+			StorageType:                      nfsFileStorageType(),
+		},
+	}
+}
+
+func createDefaultProtectionUpdateTestStorage(storageClassID string, defaultProtectionEnabled *bool, snapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec) *regionopenapi.StorageV2Read {
+	request := defaultProtectionCreateRequest(storageClassID, defaultProtectionEnabled, snapshotPolicies)
+
+	created, err := regionClient.CreateFileStorage(ctx, request)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(created).NotTo(BeNil())
+
+	DeferCleanup(func() {
+		Expect(regionClient.DeleteFileStorage(ctx, created.Metadata.Id)).To(Succeed())
+	})
+
+	return created
+}
+
+func createFileStorageWithRawBody(storageClassID string, defaultProtectionEnabled *bool, snapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec, expectedStatus int) (*http.Response, []byte, error) {
+	request := defaultProtectionCreateRequest(storageClassID, defaultProtectionEnabled, snapshotPolicies)
+	reqBody, err := json.Marshal(request)
+	Expect(err).NotTo(HaveOccurred())
+
+	path := regionClient.GetEndpoints().CreateFileStorage()
+
+	return regionClient.DoRegionRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), expectedStatus)
+}
+
+func defaultProtectionUpdateRequest(name string, defaultProtectionEnabled *bool, snapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec) regionopenapi.StorageV2UpdateRequest {
+	return regionopenapi.StorageV2UpdateRequest{
+		Metadata: coreapi.ResourceWriteMetadata{
+			Name:        name,
+			Description: ptr.To("Updated default snapshot protection semantics"),
+		},
+		Spec: regionopenapi.StorageV2Spec{
+			DefaultSnapshotProtectionEnabled: defaultProtectionEnabled,
+			SizeGiB:                          defaultProtectionUpdateStorageSizeGiB,
+			SnapshotPolicies:                 snapshotPolicies,
+			StorageType:                      nfsFileStorageType(),
+		},
+	}
+}
+
+func updateFileStorageWithRawBody(filestorageID string, body any, expectedStatus int) (*http.Response, []byte, error) {
+	reqBody, err := json.Marshal(body)
+	Expect(err).NotTo(HaveOccurred())
+
+	path := regionClient.GetEndpoints().UpdateFileStorage(filestorageID)
+
+	return regionClient.DoRegionRequest(ctx, http.MethodPut, path, bytes.NewReader(reqBody), expectedStatus)
+}
+
+func updateFileStorageWithOmittedSnapshotPolicies(filestorageID string, name string, defaultProtectionEnabled *bool) *regionopenapi.StorageV2Read {
+	body := struct {
+		Metadata coreapi.ResourceWriteMetadata `json:"metadata"`
+		Spec     struct {
+			DefaultSnapshotProtectionEnabled *bool                           `json:"defaultSnapshotProtectionEnabled,omitempty"`
+			SizeGiB                          int64                           `json:"sizeGiB"`
+			StorageType                      regionopenapi.StorageTypeV2Spec `json:"storageType"`
+		} `json:"spec"`
+	}{
+		Metadata: coreapi.ResourceWriteMetadata{
+			Name:        name,
+			Description: ptr.To("Updated with omitted snapshot policies"),
+		},
+	}
+	body.Spec.DefaultSnapshotProtectionEnabled = defaultProtectionEnabled
+	body.Spec.SizeGiB = defaultProtectionUpdateStorageSizeGiB
+	body.Spec.StorageType = nfsFileStorageType()
+
+	_, respBody, err := updateFileStorageWithRawBody(filestorageID, body, http.StatusAccepted)
+	Expect(err).NotTo(HaveOccurred())
+
+	var storage regionopenapi.StorageV2Read
+	Expect(json.Unmarshal(respBody, &storage)).To(Succeed())
+
+	return &storage
+}
+
+func updateFileStorageWithNullDefaultProtection(filestorageID string, name string) (*http.Response, error) {
+	body := struct {
+		Metadata coreapi.ResourceWriteMetadata `json:"metadata"`
+		Spec     struct {
+			DefaultSnapshotProtectionEnabled *bool                           `json:"defaultSnapshotProtectionEnabled"`
+			SizeGiB                          int64                           `json:"sizeGiB"`
+			StorageType                      regionopenapi.StorageTypeV2Spec `json:"storageType"`
+		} `json:"spec"`
+	}{
+		Metadata: coreapi.ResourceWriteMetadata{
+			Name:        name,
+			Description: ptr.To("Invalid null default snapshot protection"),
+		},
+	}
+	body.Spec.SizeGiB = defaultProtectionUpdateStorageSizeGiB
+	body.Spec.StorageType = nfsFileStorageType()
+
+	resp, _, err := updateFileStorageWithRawBody(filestorageID, body, 0)
+
+	return resp, err
+}
+
+func updateFileStorageWithNullSnapshotPolicies(filestorageID string, name string, defaultProtectionEnabled *bool) (*http.Response, error) {
+	body := struct {
+		Metadata coreapi.ResourceWriteMetadata `json:"metadata"`
+		Spec     struct {
+			DefaultSnapshotProtectionEnabled *bool                                          `json:"defaultSnapshotProtectionEnabled,omitempty"`
+			SizeGiB                          int64                                          `json:"sizeGiB"`
+			SnapshotPolicies                 *regionopenapi.StorageSnapshotPolicyListV2Spec `json:"snapshotPolicies"`
+			StorageType                      regionopenapi.StorageTypeV2Spec                `json:"storageType"`
+		} `json:"spec"`
+	}{
+		Metadata: coreapi.ResourceWriteMetadata{
+			Name:        name,
+			Description: ptr.To("Invalid null snapshot policies"),
+		},
+	}
+	body.Spec.DefaultSnapshotProtectionEnabled = defaultProtectionEnabled
+	body.Spec.SizeGiB = defaultProtectionUpdateStorageSizeGiB
+	body.Spec.StorageType = nfsFileStorageType()
+
+	resp, _, err := updateFileStorageWithRawBody(filestorageID, body, 0)
+
+	return resp, err
+}
+
+func expectDefaultProtectionUpdateState(storage *regionopenapi.StorageV2Read, defaultProtectionEnabled bool, snapshotPolicies regionopenapi.StorageSnapshotPolicyListV2Spec) {
+	Expect(storage).NotTo(BeNil())
+	// These spec fields are generated as pointers; reads always populate them, so
+	// guard against nil then compare the dereferenced values (comparing a *bool or
+	// *slice against a plain bool/slice via Equal always fails on the type mismatch).
+	Expect(storage.Spec.DefaultSnapshotProtectionEnabled).NotTo(BeNil())
+	Expect(*storage.Spec.DefaultSnapshotProtectionEnabled).To(Equal(defaultProtectionEnabled))
+	Expect(storage.Spec.SnapshotPolicies).NotTo(BeNil())
+	Expect(*storage.Spec.SnapshotPolicies).To(Equal(snapshotPolicies))
+}
 
 // INST-926 tracks Dev environment setup for file storage classes. Until Dev exposes
 // a usable class for the configured test region, storage-class-dependent specs skip.
@@ -62,13 +291,15 @@ var _ = Describe("File Storage Management", func() {
 						Description: ptr.To("Test resource for list operation"),
 					},
 					Spec: struct {
-						Attachments    *regionopenapi.StorageAttachmentV2Spec `json:"attachments,omitempty"`
-						OrganizationId string                                 `json:"organizationId"`
-						ProjectId      string                                 `json:"projectId"`
-						RegionId       regionopenapi.RegionId                 `json:"regionId"`
-						SizeGiB        int64                                  `json:"sizeGiB"`
-						StorageClassId string                                 `json:"storageClassId"`
-						StorageType    regionopenapi.StorageTypeV2Spec        `json:"storageType"`
+						Attachments                      *regionopenapi.StorageAttachmentV2Spec         `json:"attachments,omitempty"`
+						DefaultSnapshotProtectionEnabled *bool                                          `json:"defaultSnapshotProtectionEnabled,omitempty"`
+						OrganizationId                   string                                         `json:"organizationId"`
+						ProjectId                        string                                         `json:"projectId"`
+						RegionId                         regionopenapi.RegionId                         `json:"regionId"`
+						SizeGiB                          int64                                          `json:"sizeGiB"`
+						SnapshotPolicies                 *regionopenapi.StorageSnapshotPolicyListV2Spec `json:"snapshotPolicies,omitempty"`
+						StorageClassId                   string                                         `json:"storageClassId"`
+						StorageType                      regionopenapi.StorageTypeV2Spec                `json:"storageType"`
 					}{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
@@ -177,13 +408,15 @@ var _ = Describe("File Storage Management", func() {
 						Description: ptr.To("Test lifecycle file storage"),
 					},
 					Spec: struct {
-						Attachments    *regionopenapi.StorageAttachmentV2Spec `json:"attachments,omitempty"`
-						OrganizationId string                                 `json:"organizationId"`
-						ProjectId      string                                 `json:"projectId"`
-						RegionId       regionopenapi.RegionId                 `json:"regionId"`
-						SizeGiB        int64                                  `json:"sizeGiB"`
-						StorageClassId string                                 `json:"storageClassId"`
-						StorageType    regionopenapi.StorageTypeV2Spec        `json:"storageType"`
+						Attachments                      *regionopenapi.StorageAttachmentV2Spec         `json:"attachments,omitempty"`
+						DefaultSnapshotProtectionEnabled *bool                                          `json:"defaultSnapshotProtectionEnabled,omitempty"`
+						OrganizationId                   string                                         `json:"organizationId"`
+						ProjectId                        string                                         `json:"projectId"`
+						RegionId                         regionopenapi.RegionId                         `json:"regionId"`
+						SizeGiB                          int64                                          `json:"sizeGiB"`
+						SnapshotPolicies                 *regionopenapi.StorageSnapshotPolicyListV2Spec `json:"snapshotPolicies,omitempty"`
+						StorageClassId                   string                                         `json:"storageClassId"`
+						StorageType                      regionopenapi.StorageTypeV2Spec                `json:"storageType"`
 					}{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
@@ -203,6 +436,9 @@ var _ = Describe("File Storage Management", func() {
 				Expect(created.Metadata.Id).NotTo(BeEmpty())
 				Expect(created.Metadata.Name).To(Equal(request.Metadata.Name))
 				Expect(created.Spec.SizeGiB).To(Equal(request.Spec.SizeGiB))
+				Expect(created.Spec.DefaultSnapshotProtectionEnabled).To(BeTrue())
+				Expect(created.Spec.SnapshotPolicies).To(BeEmpty())
+				Expect(created.Status.SnapshotPolicies).To(BeEmpty())
 
 				// Validate resource is correctly scoped and wired up
 				Expect(created.Metadata.OrganizationId).To(Equal(config.OrgID))
@@ -248,6 +484,9 @@ var _ = Describe("File Storage Management", func() {
 				Expect(retrieved.Status.RegionId).To(Equal(config.RegionID))
 				Expect(retrieved.Status.StorageClassId).To(Equal(storageClassID))
 				Expect(retrieved.Spec.SizeGiB).To(Equal(initialStorageSizeGiB))
+				Expect(retrieved.Spec.DefaultSnapshotProtectionEnabled).To(BeTrue())
+				Expect(retrieved.Spec.SnapshotPolicies).To(BeEmpty())
+				Expect(retrieved.Status.SnapshotPolicies).To(BeEmpty())
 				Expect(retrieved.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioned))
 
 				GinkgoWriter.Printf("Retrieved file storage: %s (%s) - %dGiB (Status: %s)\n",
@@ -284,11 +523,42 @@ var _ = Describe("File Storage Management", func() {
 					Expect(*updated.Metadata.Description).To(Equal("Updated test file storage"))
 				}
 				Expect(updated.Spec.SizeGiB).To(Equal(updatedStorageSizeGiB))
+				Expect(updated.Spec.DefaultSnapshotProtectionEnabled).To(BeTrue())
+				Expect(updated.Spec.SnapshotPolicies).To(BeEmpty())
 
 				GinkgoWriter.Printf("Updated file storage: %s (%s) - now %dGiB\n",
 					updated.Metadata.Name,
 					updated.Metadata.Id,
 					updated.Spec.SizeGiB)
+			})
+
+			It("should clear snapshot policies through the parent update", func() {
+				if filestorageID == "" {
+					Skip("No filestorage ID available - create test may have been skipped or failed")
+				}
+
+				snapshotPolicies := regionopenapi.StorageSnapshotPolicyListV2Spec{}
+				update := regionopenapi.StorageV2UpdateRequest{
+					Metadata: coreapi.ResourceWriteMetadata{
+						Name:        filestorageName,
+						Description: ptr.To("Cleared snapshot policies for test file storage"),
+					},
+					Spec: regionopenapi.StorageV2Spec{
+						SizeGiB:          updatedStorageSizeGiB,
+						SnapshotPolicies: &snapshotPolicies,
+						StorageType: regionopenapi.StorageTypeV2Spec{
+							NFS: &regionopenapi.NFSV2Spec{},
+						},
+					},
+				}
+
+				updated, err := regionClient.UpdateFileStorage(ctx, filestorageID, update)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(updated).NotTo(BeNil())
+				Expect(updated.Spec.DefaultSnapshotProtectionEnabled).To(BeTrue())
+				Expect(updated.Spec.SnapshotPolicies).To(BeEmpty())
+				Expect(updated.Status.SnapshotPolicies).To(BeEmpty())
 			})
 
 			It("should delete the file storage resource", func() {
@@ -326,6 +596,168 @@ var _ = Describe("File Storage Management", func() {
 				GinkgoWriter.Printf("Cleaning up test filestorage: %s\n", filestorageID)
 				Expect(regionClient.DeleteFileStorage(ctx, filestorageID)).To(Succeed())
 			}
+		})
+	})
+
+	Context("When updating default snapshot protection", func() {
+		Describe("Given a File Storage resource", func() {
+			It("preserves the current default snapshot protection setting when the flag is omitted", func() {
+				storageClassID := requireFileStorageClassID()
+				created := createDefaultProtectionUpdateTestStorage(storageClassID, ptr.To(false), nil)
+
+				update := defaultProtectionUpdateRequest(created.Metadata.Name, nil, nil)
+				updated, err := regionClient.UpdateFileStorage(ctx, created.Metadata.Id, update)
+				Expect(err).NotTo(HaveOccurred())
+				expectDefaultProtectionUpdateState(updated, false, regionopenapi.StorageSnapshotPolicyListV2Spec{})
+
+				retrieved, err := regionClient.GetFileStorage(ctx, created.Metadata.Id)
+				Expect(err).NotTo(HaveOccurred())
+				expectDefaultProtectionUpdateState(retrieved, false, regionopenapi.StorageSnapshotPolicyListV2Spec{})
+			})
+
+			It("enables default snapshot protection without changing user-managed policies when snapshotPolicies is omitted", func() {
+				storageClassID := requireFileStorageClassID()
+				policies := dailyFileStorageSnapshotPolicies()
+				created := createDefaultProtectionUpdateTestStorage(storageClassID, ptr.To(false), &policies)
+
+				updated := updateFileStorageWithOmittedSnapshotPolicies(created.Metadata.Id, created.Metadata.Name, ptr.To(true))
+				expectDefaultProtectionUpdateState(updated, true, policies)
+
+				retrieved, err := regionClient.GetFileStorage(ctx, created.Metadata.Id)
+				Expect(err).NotTo(HaveOccurred())
+				expectDefaultProtectionUpdateState(retrieved, true, policies)
+			})
+
+			It("rejects explicit null snapshot policies and preserves the current state", func() {
+				storageClassID := requireFileStorageClassID()
+				policies := dailyFileStorageSnapshotPolicies()
+				created := createDefaultProtectionUpdateTestStorage(storageClassID, ptr.To(true), &policies)
+
+				resp, err := updateFileStorageWithNullSnapshotPolicies(created.Metadata.Id, created.Metadata.Name, ptr.To(false))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusBadRequest), Equal(http.StatusUnprocessableEntity)))
+
+				retrieved, err := regionClient.GetFileStorage(ctx, created.Metadata.Id)
+				Expect(err).NotTo(HaveOccurred())
+				expectDefaultProtectionUpdateState(retrieved, true, policies)
+			})
+
+			It("rejects explicit null default snapshot protection and preserves the current state", func() {
+				storageClassID := requireFileStorageClassID()
+				policies := dailyFileStorageSnapshotPolicies()
+				created := createDefaultProtectionUpdateTestStorage(storageClassID, ptr.To(true), &policies)
+
+				resp, err := updateFileStorageWithNullDefaultProtection(created.Metadata.Id, created.Metadata.Name)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusBadRequest), Equal(http.StatusUnprocessableEntity)))
+
+				retrieved, err := regionClient.GetFileStorage(ctx, created.Metadata.Id)
+				Expect(err).NotTo(HaveOccurred())
+				expectDefaultProtectionUpdateState(retrieved, true, policies)
+			})
+
+			It("clears user-managed snapshot policies without changing omitted default snapshot protection", func() {
+				storageClassID := requireFileStorageClassID()
+				policies := dailyFileStorageSnapshotPolicies()
+				emptyPolicies := regionopenapi.StorageSnapshotPolicyListV2Spec{}
+				created := createDefaultProtectionUpdateTestStorage(storageClassID, ptr.To(false), &policies)
+
+				update := defaultProtectionUpdateRequest(created.Metadata.Name, nil, &emptyPolicies)
+				updated, err := regionClient.UpdateFileStorage(ctx, created.Metadata.Id, update)
+				Expect(err).NotTo(HaveOccurred())
+				expectDefaultProtectionUpdateState(updated, false, emptyPolicies)
+
+				retrieved, err := regionClient.GetFileStorage(ctx, created.Metadata.Id)
+				Expect(err).NotTo(HaveOccurred())
+				expectDefaultProtectionUpdateState(retrieved, false, emptyPolicies)
+			})
+
+			It("changes default snapshot protection and replaces user-managed snapshot policies together", func() {
+				storageClassID := requireFileStorageClassID()
+				currentPolicies := dailyFileStorageSnapshotPolicies()
+				replacementPolicies := hourlyFileStorageSnapshotPolicies()
+				created := createDefaultProtectionUpdateTestStorage(storageClassID, ptr.To(false), &currentPolicies)
+
+				update := defaultProtectionUpdateRequest(created.Metadata.Name, ptr.To(true), &replacementPolicies)
+				updated, err := regionClient.UpdateFileStorage(ctx, created.Metadata.Id, update)
+				Expect(err).NotTo(HaveOccurred())
+				expectDefaultProtectionUpdateState(updated, true, replacementPolicies)
+
+				retrieved, err := regionClient.GetFileStorage(ctx, created.Metadata.Id)
+				Expect(err).NotTo(HaveOccurred())
+				expectDefaultProtectionUpdateState(retrieved, true, replacementPolicies)
+			})
+		})
+	})
+
+	Context("When using protected snapshot policy names", func() {
+		Describe("Given File Storage snapshot policy requests", func() {
+			It("accepts user-managed default as an ordinary policy name", func() {
+				storageClassID := requireFileStorageClassID()
+				policies := defaultNamedFileStorageSnapshotPolicies()
+				created := createDefaultProtectionUpdateTestStorage(storageClassID, ptr.To(true), &policies)
+				expectDefaultProtectionUpdateState(created, true, policies)
+
+				retrieved, err := regionClient.GetFileStorage(ctx, created.Metadata.Id)
+				Expect(err).NotTo(HaveOccurred())
+				expectDefaultProtectionUpdateState(retrieved, true, policies)
+			})
+
+			It("rejects a user-managed system-default policy name on create", func() {
+				storageClassID := requireFileStorageClassID()
+				policies := systemDefaultFileStorageSnapshotPolicies()
+
+				resp, _, err := createFileStorageWithRawBody(storageClassID, ptr.To(true), &policies, 0)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusUnprocessableEntity))
+			})
+
+			It("rejects a user-managed system-default policy name on update", func() {
+				storageClassID := requireFileStorageClassID()
+				policies := systemDefaultFileStorageSnapshotPolicies()
+				created := createDefaultProtectionUpdateTestStorage(storageClassID, ptr.To(true), nil)
+
+				update := defaultProtectionUpdateRequest(created.Metadata.Name, ptr.To(false), &policies)
+				resp, _, err := updateFileStorageWithRawBody(created.Metadata.Id, update, 0)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusUnprocessableEntity))
+			})
+
+			It("rejects a single update that enables default protection and claims system-default", func() {
+				storageClassID := requireFileStorageClassID()
+				policies := systemDefaultFileStorageSnapshotPolicies()
+				created := createDefaultProtectionUpdateTestStorage(storageClassID, ptr.To(false), nil)
+
+				update := defaultProtectionUpdateRequest(created.Metadata.Name, ptr.To(true), &policies)
+				resp, _, err := updateFileStorageWithRawBody(created.Metadata.Id, update, 0)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusUnprocessableEntity))
+			})
+
+			It("rejects claiming the system-default name even after default protection is disabled", func() {
+				storageClassID := requireFileStorageClassID()
+				policies := systemDefaultFileStorageSnapshotPolicies()
+				emptyPolicies := regionopenapi.StorageSnapshotPolicyListV2Spec{}
+				created := createDefaultProtectionUpdateTestStorage(storageClassID, ptr.To(true), nil)
+
+				disableUpdate := defaultProtectionUpdateRequest(created.Metadata.Name, ptr.To(false), &emptyPolicies)
+				disabled, err := regionClient.UpdateFileStorage(ctx, created.Metadata.Id, disableUpdate)
+				Expect(err).NotTo(HaveOccurred())
+				expectDefaultProtectionUpdateState(disabled, false, emptyPolicies)
+
+				// Disabling protection removes the hidden system-default baseline, but the
+				// name is reserved unconditionally, so a caller can never claim it as a
+				// user-managed policy. The rejection is synchronous request validation, so
+				// there is no cleanup window to wait on.
+				claimUpdate := defaultProtectionUpdateRequest(created.Metadata.Name, nil, &policies)
+				resp, _, err := updateFileStorageWithRawBody(created.Metadata.Id, claimUpdate, 0)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusUnprocessableEntity))
+
+				retrieved, err := regionClient.GetFileStorage(ctx, created.Metadata.Id)
+				Expect(err).NotTo(HaveOccurred())
+				expectDefaultProtectionUpdateState(retrieved, false, emptyPolicies)
+			})
 		})
 	})
 
@@ -401,13 +833,15 @@ var _ = Describe("File Storage Management", func() {
 						Description: ptr.To("Test file storage for attachment lifecycle"),
 					},
 					Spec: struct {
-						Attachments    *regionopenapi.StorageAttachmentV2Spec `json:"attachments,omitempty"`
-						OrganizationId string                                 `json:"organizationId"`
-						ProjectId      string                                 `json:"projectId"`
-						RegionId       regionopenapi.RegionId                 `json:"regionId"`
-						SizeGiB        int64                                  `json:"sizeGiB"`
-						StorageClassId string                                 `json:"storageClassId"`
-						StorageType    regionopenapi.StorageTypeV2Spec        `json:"storageType"`
+						Attachments                      *regionopenapi.StorageAttachmentV2Spec         `json:"attachments,omitempty"`
+						DefaultSnapshotProtectionEnabled *bool                                          `json:"defaultSnapshotProtectionEnabled,omitempty"`
+						OrganizationId                   string                                         `json:"organizationId"`
+						ProjectId                        string                                         `json:"projectId"`
+						RegionId                         regionopenapi.RegionId                         `json:"regionId"`
+						SizeGiB                          int64                                          `json:"sizeGiB"`
+						SnapshotPolicies                 *regionopenapi.StorageSnapshotPolicyListV2Spec `json:"snapshotPolicies,omitempty"`
+						StorageClassId                   string                                         `json:"storageClassId"`
+						StorageType                      regionopenapi.StorageTypeV2Spec                `json:"storageType"`
 					}{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
