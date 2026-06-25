@@ -163,13 +163,13 @@ jobs:
         max-failures: '5'
 
     - name: Report API Test Results
-      uses: nscaledev/quality-tooling/.github/actions/test-results-report@main
+      uses: nscaledev/quality-tooling/.github/actions/test-results-report@codex/slack-deployed-version
       if: ${{ !cancelled() }}
       with:
         test-results-path: test-results.json
         format: ginkgo-json
         workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        slack-webhook-url: ${{ secrets.SLACK_API_TESTING_TMP_WEBHOOK_URL }}
         send-slack: ${{ github.event.inputs.skip_slack_notifications != 'true' && 'true' || 'false' }}
         environment: dev
         deployed-version: ${{ needs.find-dev-deployed-version.outputs.version || needs.find-dev-deployed-version.outputs.ref }}
@@ -279,13 +279,13 @@ jobs:
         max-failures: '5'
 
     - name: Report API Test Results
-      uses: nscaledev/quality-tooling/.github/actions/test-results-report@main
+      uses: nscaledev/quality-tooling/.github/actions/test-results-report@codex/slack-deployed-version
       if: ${{ !cancelled() }}
       with:
         test-results-path: test-results.json
         format: ginkgo-json
         workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        slack-webhook-url: ${{ secrets.SLACK_API_TESTING_TMP_WEBHOOK_URL }}
         send-slack: ${{ github.event.inputs.skip_slack_notifications != 'true' && 'true' || 'false' }}
         environment: uat
         deployed-version: ${{ needs.find-uat-deployed-version.outputs.version || needs.find-uat-deployed-version.outputs.ref }}
