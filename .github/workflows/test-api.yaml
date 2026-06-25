@@ -86,6 +86,26 @@ jobs:
         version-api-token: ${{ secrets.DEV_API_AUTH_TOKEN }}
         fallback-to-constellation: false
 
+    - name: Summarize Dev test version
+      if: ${{ always() }}
+      env:
+        RESOLVED_VERSION: ${{ steps.find.outputs.version }}
+        RESOLVED_TAG: ${{ steps.find.outputs.tag }}
+        RESOLVED_REF: ${{ steps.find.outputs.ref }}
+        VERSION_API_URL: ${{ vars.DEV_REGION_BASE_URL }}/api/version
+      run: |
+        version="${RESOLVED_VERSION:-<not resolved>}"
+        tag="${RESOLVED_TAG:-<none>}"
+        ref="${RESOLVED_REF:-<not resolved>}"
+
+        cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+        ### Dev API Test Version
+        - **Version API:** \`$VERSION_API_URL\`
+        - **Deployed Version:** \`$version\`
+        - **Resolved Tag:** \`$tag\`
+        - **Checkout Ref:** \`$ref\`
+        EOF
+
   API-Tests-Dev:
     name: API Tests (dev)
     needs: find-dev-deployed-version
@@ -198,6 +218,26 @@ jobs:
         version-api-url: ${{ vars.UAT_REGION_BASE_URL }}/api/version
         version-api-token: ${{ secrets.UAT_API_AUTH_TOKEN }}
         fallback-to-constellation: false
+
+    - name: Summarize UAT test version
+      if: ${{ always() }}
+      env:
+        RESOLVED_VERSION: ${{ steps.find.outputs.version }}
+        RESOLVED_TAG: ${{ steps.find.outputs.tag }}
+        RESOLVED_REF: ${{ steps.find.outputs.ref }}
+        VERSION_API_URL: ${{ vars.UAT_REGION_BASE_URL }}/api/version
+      run: |
+        version="${RESOLVED_VERSION:-<not resolved>}"
+        tag="${RESOLVED_TAG:-<none>}"
+        ref="${RESOLVED_REF:-<not resolved>}"
+
+        cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+        ### UAT API Test Version
+        - **Version API:** \`$VERSION_API_URL\`
+        - **Deployed Version:** \`$version\`
+        - **Resolved Tag:** \`$tag\`
+        - **Checkout Ref:** \`$ref\`
+        EOF
 
   API-Tests-UAT:
     name: API Tests (uat)
