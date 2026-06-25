@@ -56,7 +56,6 @@ rules:
   - events
   verbs:
   - create
-  - update
   - patch
 - apiGroups:
   - region.unikorn-cloud.org
