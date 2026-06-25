@@ -91,6 +91,25 @@ const (
 	StorageClassProtocolTypeNfsv4 StorageClassProtocolType = "nfsv4"
 )
 
+// Defines values for StorageSnapshotDayOfWeekV2.
+const (
+	StorageSnapshotDayOfWeekV2Friday    StorageSnapshotDayOfWeekV2 = "friday"
+	StorageSnapshotDayOfWeekV2Monday    StorageSnapshotDayOfWeekV2 = "monday"
+	StorageSnapshotDayOfWeekV2Saturday  StorageSnapshotDayOfWeekV2 = "saturday"
+	StorageSnapshotDayOfWeekV2Sunday    StorageSnapshotDayOfWeekV2 = "sunday"
+	StorageSnapshotDayOfWeekV2Thursday  StorageSnapshotDayOfWeekV2 = "thursday"
+	StorageSnapshotDayOfWeekV2Tuesday   StorageSnapshotDayOfWeekV2 = "tuesday"
+	StorageSnapshotDayOfWeekV2Wednesday StorageSnapshotDayOfWeekV2 = "wednesday"
+)
+
+// Defines values for StorageSnapshotScheduleIntervalV2.
+const (
+	StorageSnapshotScheduleIntervalV2Daily   StorageSnapshotScheduleIntervalV2 = "daily"
+	StorageSnapshotScheduleIntervalV2Hourly  StorageSnapshotScheduleIntervalV2 = "hourly"
+	StorageSnapshotScheduleIntervalV2Monthly StorageSnapshotScheduleIntervalV2 = "monthly"
+	StorageSnapshotScheduleIntervalV2Weekly  StorageSnapshotScheduleIntervalV2 = "weekly"
+)
+
 // Defines values for ImageScopeQueryParameter.
 const (
 	ImageScopeQueryParameterAvailable ImageScopeQueryParameter = "available"
@@ -1320,6 +1339,63 @@ type StorageClassV2Spec struct {
 	RegionId string `json:"regionId"`
 }
 
+// StorageSnapshotDayOfWeekV2 UTC day of week for weekly snapshot policies.
+type StorageSnapshotDayOfWeekV2 string
+
+// StorageSnapshotPolicyListV2Spec A list of named snapshot policies for storage.
+type StorageSnapshotPolicyListV2Spec = []StorageSnapshotPolicyV2Spec
+
+// StorageSnapshotPolicyListV2Status A list of observed snapshot policy states for storage.
+type StorageSnapshotPolicyListV2Status = []StorageSnapshotPolicyV2Status
+
+// StorageSnapshotPolicyV2Spec A named snapshot policy for storage.
+type StorageSnapshotPolicyV2Spec struct {
+	// Name Stable identity key for the snapshot policy.
+	Name string `json:"name"`
+
+	// Retention Retention policy for storage snapshots.
+	Retention StorageSnapshotRetentionV2Spec `json:"retention"`
+
+	// Schedule Schedule for a storage snapshot policy.
+	Schedule StorageSnapshotScheduleV2Spec `json:"schedule"`
+}
+
+// StorageSnapshotPolicyV2Status Observed state for a named storage snapshot policy.
+type StorageSnapshotPolicyV2Status struct {
+	// Message Optional human-readable status detail for the snapshot policy.
+	Message *string `json:"message,omitempty"`
+
+	// Name Stable identity key for the snapshot policy.
+	Name string `json:"name"`
+
+	// ProvisioningStatus The provisioning state of a resource.
+	ProvisioningStatus externalRef0.ResourceProvisioningStatus `json:"provisioningStatus"`
+}
+
+// StorageSnapshotRetentionV2Spec Retention policy for storage snapshots.
+type StorageSnapshotRetentionV2Spec struct {
+	// Keep Number of snapshots to retain.
+	Keep int `json:"keep"`
+}
+
+// StorageSnapshotScheduleIntervalV2 Snapshot policy cadence.
+type StorageSnapshotScheduleIntervalV2 string
+
+// StorageSnapshotScheduleV2Spec Schedule for a storage snapshot policy.
+type StorageSnapshotScheduleV2Spec struct {
+	// DayOfMonth UTC day of month for monthly snapshot policies.
+	DayOfMonth *int `json:"dayOfMonth,omitempty"`
+
+	// DayOfWeek UTC day of week for weekly snapshot policies.
+	DayOfWeek *StorageSnapshotDayOfWeekV2 `json:"dayOfWeek,omitempty"`
+
+	// Interval Snapshot policy cadence.
+	Interval StorageSnapshotScheduleIntervalV2 `json:"interval"`
+
+	// TimeOfDay UTC time of day in HH:MMZ form.
+	TimeOfDay *string `json:"timeOfDay,omitempty"`
+}
+
 // StorageTypeV2Spec A storage's type
 type StorageTypeV2Spec struct {
 	// NFS NFS specific
@@ -1338,13 +1414,16 @@ type StorageUsageV2Status struct {
 	UsedBytes *int64 `json:"usedBytes,omitempty"`
 }
 
-// StorageV2Create A storage create request.
+// StorageV2Create A storage create request. When spec.defaultSnapshotProtectionEnabled is omitted, Default Snapshot Protection is enabled. Explicit null defaultSnapshotProtectionEnabled is invalid. When spec.snapshotPolicies is omitted or empty, the API stores no user-managed Snapshot Policies. Non-empty policy lists are stored exactly as supplied.
 type StorageV2Create struct {
 	// Metadata Metadata required for all API resource reads and writes.
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
 	Spec     struct {
 		// Attachments Describes the network attachment for storage
 		Attachments *StorageAttachmentV2Spec `json:"attachments,omitempty"`
+
+		// DefaultSnapshotProtectionEnabled Whether platform-managed Default Snapshot Protection is enabled. On create, omission resolves to enabled. On update, omission preserves the current setting. Reads return the resolved setting. Explicit null is invalid.
+		DefaultSnapshotProtectionEnabled *bool `json:"defaultSnapshotProtectionEnabled,omitempty"`
 
 		// OrganizationId The organization to provision the resource in.
 		OrganizationId string `json:"organizationId"`
@@ -1357,6 +1436,9 @@ type StorageV2Create struct {
 
 		// SizeGiB size in GiB of the storage
 		SizeGiB int64 `json:"sizeGiB"`
+
+		// SnapshotPolicies A list of named snapshot policies for storage.
+		SnapshotPolicies *StorageSnapshotPolicyListV2Spec `json:"snapshotPolicies,omitempty"`
 
 		// StorageClassId The storage class ID to provision the storage into.
 		StorageClassId string `json:"storageClassId"`
@@ -1386,8 +1468,14 @@ type StorageV2Spec struct {
 	// Attachments Describes the network attachment for storage
 	Attachments *StorageAttachmentV2Spec `json:"attachments,omitempty"`
 
+	// DefaultSnapshotProtectionEnabled Whether platform-managed Default Snapshot Protection is enabled. On create, omission resolves to enabled. On update, omission preserves the current setting. Reads return the resolved setting. Explicit null is invalid.
+	DefaultSnapshotProtectionEnabled *bool `json:"defaultSnapshotProtectionEnabled,omitempty"`
+
 	// SizeGiB size in GiB of the storage
 	SizeGiB int64 `json:"sizeGiB"`
+
+	// SnapshotPolicies A list of named snapshot policies for storage.
+	SnapshotPolicies *StorageSnapshotPolicyListV2Spec `json:"snapshotPolicies,omitempty"`
 
 	// StorageType A storage's type
 	StorageType StorageTypeV2Spec `json:"storageType"`
@@ -1401,6 +1489,9 @@ type StorageV2Status struct {
 	// RegionId The region an identity is provisioned in.
 	RegionId string `json:"regionId"`
 
+	// SnapshotPolicies A list of observed snapshot policy states for storage.
+	SnapshotPolicies StorageSnapshotPolicyListV2Status `json:"snapshotPolicies"`
+
 	// StorageClassId identifier for the storage
 	StorageClassId string `json:"storageClassId"`
 
@@ -1408,7 +1499,7 @@ type StorageV2Status struct {
 	Usage *StorageUsageV2Status `json:"usage,omitempty"`
 }
 
-// StorageV2Update A storage create request.
+// StorageV2Update A storage update request. Omitted spec.defaultSnapshotProtectionEnabled preserves the current Default Snapshot Protection setting, and explicit null is invalid. Omitted spec.snapshotPolicies preserves existing desired user-managed Snapshot Policies, an empty list clears them, and a non-empty list replaces the full list.
 type StorageV2Update struct {
 	// Metadata Metadata required for all API resource reads and writes.
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
@@ -1609,10 +1700,10 @@ type SnapshotServerRequest = SnapshotCreate
 // SshCertificateAuthorityV2CreateRequest An SSH certificate authority creation request.
 type SshCertificateAuthorityV2CreateRequest = SshCertificateAuthorityV2Create
 
-// StorageV2CreateRequest A storage create request.
+// StorageV2CreateRequest A storage create request. When spec.defaultSnapshotProtectionEnabled is omitted, Default Snapshot Protection is enabled. Explicit null defaultSnapshotProtectionEnabled is invalid. When spec.snapshotPolicies is omitted or empty, the API stores no user-managed Snapshot Policies. Non-empty policy lists are stored exactly as supplied.
 type StorageV2CreateRequest = StorageV2Create
 
-// StorageV2UpdateRequest A storage create request.
+// StorageV2UpdateRequest A storage update request. Omitted spec.defaultSnapshotProtectionEnabled preserves the current Default Snapshot Protection setting, and explicit null is invalid. Omitted spec.snapshotPolicies preserves existing desired user-managed Snapshot Policies, an empty list clears them, and a non-empty list replaces the full list.
 type StorageV2UpdateRequest = StorageV2Update
 
 // GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams defines parameters for GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutput.

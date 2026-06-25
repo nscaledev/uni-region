@@ -156,12 +156,13 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 		return err
 	}
 
-	updateRequest, err := convertCreateToUpdateRequest(s.request)
-	if err != nil {
+	generateRequest := generateRequestFromCreate(s.request)
+
+	if err := validateSnapshotPolicyList(generateRequest.Spec.SnapshotPolicies); err != nil {
 		return err
 	}
 
-	filestorage, err := s.client.generateV2(ctx, s.organizationID, s.projectID, s.request.Spec.RegionId.String(), updateRequest, s.storageClass)
+	filestorage, err := s.client.generateV2(ctx, s.organizationID, s.projectID, s.request.Spec.RegionId.String(), generateRequest, s.storageClass)
 	if err != nil {
 		return err
 	}
@@ -217,12 +218,38 @@ func newUpdateSaga(client *Client, current *regionv1.FileStorage, request *opena
 	}
 }
 
+// resolveGenerateRequest builds the update's generate request with snapshot
+// policies and default protection resolved against the current state: a nil
+// policy list preserves the current user-managed policies and a nil default
+// protection flag preserves the current value. The result is deterministic from
+// request + current, so validateRequest and generate share it and
+// the reserved-name check sees exactly what generate will persist.
+func (s *updateSaga) resolveGenerateRequest() *storageV2GenerateRequest {
+	generateRequest := generateRequestFromUpdate(s.request, s.current.Spec.DefaultSnapshotProtectionEnabled)
+
+	if generateRequest.Spec.SnapshotPolicies == nil {
+		generateRequest.Spec.SnapshotPolicies = convertSnapshotPoliciesPointer(userManagedSnapshotPolicies(s.current.Spec.SnapshotPolicies))
+	}
+
+	return generateRequest
+}
+
 func (s *updateSaga) validateRequest(ctx context.Context) error {
 	networkClient := network.New(s.client.ClientArgs)
 	projectID := s.current.Labels[coreconstants.ProjectLabel]
 
 	if err := validateAttachments(ctx, networkClient, s.request.Spec.Attachments, projectID); err != nil {
 		return err
+	}
+
+	// Only caller-supplied snapshot policies are validated here; a nil list means
+	// "preserve the current policies", and those were already validated when first
+	// stored. validateSnapshotPolicyList rejects the reserved system-default name, so
+	// a user-managed policy can never claim it regardless of default protection state.
+	if s.request.Spec.SnapshotPolicies != nil {
+		if err := validateSnapshotPolicyList(s.request.Spec.SnapshotPolicies); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -236,7 +263,11 @@ func (s *updateSaga) generate(ctx context.Context) error {
 
 	regionID := s.current.Labels[constants.RegionLabel]
 
-	required, err := s.client.generateV2(ctx, organizationID, projectID, regionID, s.request, s.storageClass)
+	// Policies/default resolved against current; the reserved system-default key
+	// check ran in validateRequest against this same resolution.
+	generateRequest := s.resolveGenerateRequest()
+
+	required, err := s.client.generateV2(ctx, organizationID, projectID, regionID, generateRequest, s.storageClass)
 	if err != nil {
 		return err
 	}
