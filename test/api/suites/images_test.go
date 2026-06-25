@@ -56,7 +56,7 @@ var _ = Describe("Image Management", Ordered, func() {
 				// A malformed (non-UUID) region ID is rejected at the routing
 				// layer with 400, not treated as a missing region (404).
 				path := client.GetEndpoints().ListImages(config.OrgID, invalidUUID)
-				_, respBody, err := client.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+				_, respBody, err := client.DoRegionRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
 
 				Expect(err).To(HaveOccurred())
 				Expect(errors.Is(err, coreclient.ErrUnexpectedStatusCode)).To(BeTrue())

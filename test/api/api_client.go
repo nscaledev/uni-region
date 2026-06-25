@@ -266,7 +266,7 @@ func (c *APIClient) ListRegions(ctx context.Context, orgID string) (regionopenap
 
 	return coreclient.ListResource[regionopenapi.RegionRead](
 		ctx,
-		c.APIClient,
+		c.regionClient,
 		path,
 		coreclient.ResponseHandlerConfig{
 			ResourceType:   "regions",
@@ -300,7 +300,7 @@ func (c *APIClient) ListFlavors(ctx context.Context, orgID, regionID string) (re
 
 	return coreclient.ListResource[regionopenapi.Flavor](
 		ctx,
-		c.APIClient,
+		c.regionClient,
 		path,
 		coreclient.ResponseHandlerConfig{
 			ResourceType:   "flavors",
@@ -316,7 +316,7 @@ func (c *APIClient) ListImages(ctx context.Context, orgID, regionID string) (reg
 
 	return coreclient.ListResource[regionopenapi.Image](
 		ctx,
-		c.APIClient,
+		c.regionClient,
 		path,
 		coreclient.ResponseHandlerConfig{
 			ResourceType:   "images",
