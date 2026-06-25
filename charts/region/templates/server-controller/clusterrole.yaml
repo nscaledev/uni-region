@@ -51,6 +51,14 @@ rules:
   - update
   - patch
 - apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - update
+  - patch
+- apiGroups:
   - region.unikorn-cloud.org
   resources:
   - sshcertificateauthorities
