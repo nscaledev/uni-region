@@ -506,7 +506,7 @@ func (c *Client) Update(ctx context.Context, storageID regionids.FileStorageID, 
 		return nil, err
 	}
 
-	if err := rbac.AllowProjectScopeReader(ctx, "region:filestorage:v2", identityapi.Delete, current); err != nil {
+	if err := rbac.AllowProjectScopeReader(ctx, "region:filestorage:v2", identityapi.Update, current); err != nil {
 		return nil, err
 	}
 
