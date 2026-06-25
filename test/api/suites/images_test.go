@@ -22,6 +22,7 @@ package suites
 
 import (
 	"errors"
+	"net/http"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -52,8 +53,15 @@ var _ = Describe("Image Management", Ordered, func() {
 			})
 
 			It("should return an error for an invalid region ID", func() {
-				_, err := client.ListImages(ctx, config.OrgID, invalidUUID)
-				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
+				// A malformed (non-UUID) region ID is rejected at the routing
+				// layer with 400, not treated as a missing region (404).
+				path := client.GetEndpoints().ListImages(config.OrgID, invalidUUID)
+				_, respBody, err := client.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, coreclient.ErrUnexpectedStatusCode)).To(BeTrue())
+				Expect(string(respBody)).To(ContainSubstring("invalid_request"))
+				Expect(string(respBody)).To(ContainSubstring("invalid path/query element"))
 			})
 		})
 

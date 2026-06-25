@@ -152,7 +152,7 @@ func IdentityCreationMockMiddleware() func(http.Handler) http.Handler {
 					ProvisioningStatus: coreopenapi.ResourceProvisioningStatusPending,
 				},
 				Spec: openapi.IdentitySpec{
-					RegionId: identityRequest.Spec.RegionId,
+					RegionId: identityRequest.Spec.RegionId.String(),
 				},
 			}
 

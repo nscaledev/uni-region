@@ -7,7 +7,12 @@ Distinctive behaviour:
 - maintains explicit reference edges from a server to consumed networks,
   security groups, and optional SSH certificate authority
 - blocks on identity readiness before provider create/delete
+- preflight checks may still yield inside the provider, after other
+  validation succeeds; those checks are transient and are not recorded
+  as lifecycle transitions
 - augments provider create options with managed cloud-init parts for SSH CA use
+- retries provider-accepted create attempts that later land in provider error,
+  deleting the failed provider server before a bounded re-attempt
 - clears or updates consumed-resource references during reprovision and teardown
 
 This is the clearest controller-side expression of the lifecycle DAG model:
@@ -21,6 +26,12 @@ This is the clearest controller-side expression of the lifecycle DAG model:
 
 - Reference maintenance here is easy to underappreciate, but it is central to
   keeping server deletion and dependent-resource blocking semantics correct.
+- Provider create retry state is stored on `Server.status`; changing retry
+  behaviour must preserve the invariant that transient provider create failures
+  return `ErrYield` until the configured attempt limit is reached.
+- Provider create retries also emit Kubernetes events and structured logs on
+  retry start, retry readiness after delete, and retry exhaustion; avoid
+  per-reconcile emissions while deletion is still converging.
 - The provisioner currently trusts the API not to supply repeated network or
   security-group IDs, even though the code still carries explicit TODOs to
   reject duplicates.

@@ -160,9 +160,20 @@ type RegionOpenstackComputeSpec struct {
 	// ServerGroupPolicy defines the anti-affinity policy to use for
 	// scheduling cluster nodes.  Defaults to "soft-anti-affinity".
 	ServerGroupPolicy *string `json:"serverGroupPolicy,omitempty"`
+	// PlacementPreflight checks OpenStack Placement immediately before pinned
+	// server creation.
+	PlacementPreflight *PlacementPreflightSpec `json:"placementPreflight,omitempty"`
 	// Flavors defines how flavors are filtered and reported to
 	// clients.  If not defined, then all flavors are exported.
 	Flavors *OpenstackFlavorsSpec `json:"flavors,omitempty"`
+}
+
+type PlacementPreflightSpec struct {
+	// Enabled enables the OpenStack Placement readiness preflight.
+	Enabled bool `json:"enabled,omitempty"`
+	// RequiredTraits are the OpenStack Placement traits a resource provider
+	// must have before Region asks Nova to create a pinned server on it.
+	RequiredTraits []string `json:"requiredTraits,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=All;None
@@ -934,11 +945,23 @@ type ServerPublicIPAllocationSpec struct {
 	Enabled bool `json:"enabled,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=Pending;Running;Stopping;Stopped
+// +kubebuilder:validation:Enum=Pending;Queued;Building;Running;Stopping;Stopped
 type InstanceLifecyclePhase string
 
 const (
-	InstanceLifecyclePhasePending  InstanceLifecyclePhase = "Pending"
+	// InstanceLifecyclePhasePending is the initial phase before the provider has
+	// been observed reporting on the server.
+	InstanceLifecyclePhasePending InstanceLifecyclePhase = "Pending"
+	// InstanceLifecyclePhaseQueued means the provider has accepted the create
+	// request but the underlying hardware has not yet started work. Used for
+	// baremetal servers Nova has admitted while Ironic has not yet entered a
+	// deploy state. From the user's perspective: "you're in line, this is expected".
+	InstanceLifecyclePhaseQueued InstanceLifecyclePhase = "Queued"
+	// InstanceLifecyclePhaseBuilding means the provider is actively provisioning
+	// the server: Nova reports BUILD with no Ironic pre-deploy gating (for VMs
+	// always, for baremetal once Ironic has entered a deploy state). Distinct
+	// from Queued so users know forward progress is happening.
+	InstanceLifecyclePhaseBuilding InstanceLifecyclePhase = "Building"
 	InstanceLifecyclePhaseRunning  InstanceLifecyclePhase = "Running"
 	InstanceLifecyclePhaseStopping InstanceLifecyclePhase = "Stopping"
 	InstanceLifecyclePhaseStopped  InstanceLifecyclePhase = "Stopped"
@@ -961,6 +984,12 @@ type ServerStatus struct {
 	// ScheduledAt is the time the provider accepted and processed the creation request.
 	// Nil until the server has been observed in the provider at least once.
 	ScheduledAt *metav1.Time `json:"scheduledAt,omitempty"`
+	// ProviderCreateFailures records how many provider-accepted create attempts
+	// later landed in a provider error state before the server launched.
+	ProviderCreateFailures int32 `json:"providerCreateFailures,omitempty"`
+	// ProviderCreateRetrying is true while the controller is deleting a failed
+	// provider server before making another create attempt.
+	ProviderCreateRetrying bool `json:"providerCreateRetrying,omitempty"`
 }
 
 // OpenstackServerList is a typed list of servers.

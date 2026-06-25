@@ -43,6 +43,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	regionconstants "github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -53,6 +54,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+// srvTestImageID is a valid UUID used where a typed image ID is required as API input.
+const srvTestImageID = "e1111111-1111-4111-a111-111111111111"
 
 func fakeClientWithSchema(t *testing.T, objects ...client.Object) client.Client {
 	t.Helper()
@@ -169,9 +173,11 @@ func projectScopedLabels(orgID, projectID string, extra labels) labels {
 func knownGoodFixture(t *testing.T, serverName, homeNamespace, orgID string) []client.Object {
 	t.Helper()
 
+	const fixtureProjectID = "22222222-2222-4222-a222-222222222222"
+
 	return []client.Object{
-		withMeta(&regionv1.Identity{}, "id1", homeNamespace, projectScopedLabels(orgID, "project1", labels{})),
-		newServer(t, serverName, homeNamespace, projectScopedLabels(orgID, "project1", labels{
+		withMeta(&regionv1.Identity{}, "id1", homeNamespace, projectScopedLabels(orgID, fixtureProjectID, labels{})),
+		newServer(t, serverName, homeNamespace, projectScopedLabels(orgID, fixtureProjectID, labels{
 			regionconstants.IdentityLabel:           "id1",
 			regionconstants.ResourceAPIVersionLabel: "2",
 		})),
@@ -275,10 +281,10 @@ func newServerV2CreateRequest(ctx context.Context, t *testing.T, name, flavorID,
 			Name: name,
 		},
 		Spec: openapi.ServerV2CreateSpec{
-			FlavorId:          flavorID,
-			ImageId:           imageID,
+			FlavorId:          regionids.MustParseFlavorID(flavorID),
+			ImageId:           regionids.MustParseImageID(imageID),
 			InfrastructureRef: infrastructureRef,
-			NetworkId:         networkID,
+			NetworkId:         regionids.MustParseNetworkID(networkID),
 		},
 	}
 
@@ -306,7 +312,7 @@ func newPinnedOnlyServerV2CreateFixture(t *testing.T, lookup pinnedOnlyFlavorLoo
 
 	var (
 		namespace = "region-test-home"
-		orgID     = "org-pinned-only"
+		orgID     = "77777777-7777-4777-a777-777777777777"
 		projectID = uuid.New().String()
 		regionID  = uuid.New().String()
 		networkID = uuid.New().String()
@@ -359,8 +365,8 @@ func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 
 	const (
 		namespace  = "region-test-home"
-		orgID      = "org-not-allowed-permissions"
-		serverName = "server1"
+		orgID      = "55555555-5555-4555-a555-555555555555"
+		serverName = "a1111111-1111-4111-a111-111111111111"
 	)
 
 	ctrl := gomock.NewController(t)
@@ -414,7 +420,7 @@ func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 			response := httptest.NewRecorder()
 			request := newSnapshotRequest(ctx)
 
-			handler.PostApiV2ServersServerIDSnapshot(response, request, serverName)
+			handler.PostApiV2ServersServerIDSnapshot(response, request, regionids.MustParseServerID(serverName))
 
 			require.Equal(t, http.StatusForbidden, response.Result().StatusCode)
 		})
@@ -426,8 +432,8 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 
 	const (
 		namespace  = "region-test-home"
-		orgID      = "org-happy-path"
-		serverName = "server1"
+		orgID      = "66666666-6666-4666-a666-666666666666"
+		serverName = "a1111111-1111-4111-a111-111111111111"
 	)
 
 	original := &types.Image{
@@ -475,7 +481,7 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 	response := httptest.NewRecorder()
 	request := newSnapshotRequest(ctx)
 
-	handler.PostApiV2ServersServerIDSnapshot(response, request, serverName)
+	handler.PostApiV2ServersServerIDSnapshot(response, request, regionids.MustParseServerID(serverName))
 
 	require.Equal(t, http.StatusCreated, response.Result().StatusCode)
 
@@ -498,7 +504,7 @@ func TestServerV2_Create_PinnedOnlyFlavorWithoutInfrastructureRef(t *testing.T) 
 	ctx, fixture := newPinnedOnlyServerV2CreateFixture(t, expectPinnedOnlyFlavorLookup)
 
 	response := httptest.NewRecorder()
-	request := newServerV2CreateRequest(ctx, t, "test-server", fixture.flavorID, "image1", fixture.networkID, nil)
+	request := newServerV2CreateRequest(ctx, t, "test-server", fixture.flavorID, srvTestImageID, fixture.networkID, nil)
 
 	fixture.handler.PostApiV2Servers(response, request)
 
@@ -519,7 +525,7 @@ func TestServerV2_Create_PinnedOnlyFlavorWithInfrastructureRef(t *testing.T) {
 	infrastructureRef := "node-42"
 
 	response := httptest.NewRecorder()
-	request := newServerV2CreateRequest(ctx, t, "test-server", fixture.flavorID, "image1", fixture.networkID, &infrastructureRef)
+	request := newServerV2CreateRequest(ctx, t, "test-server", fixture.flavorID, srvTestImageID, fixture.networkID, &infrastructureRef)
 
 	fixture.handler.PostApiV2Servers(response, request)
 
@@ -529,7 +535,7 @@ func TestServerV2_Create_PinnedOnlyFlavorWithInfrastructureRef(t *testing.T) {
 
 	requireDeserialiseBody(t, response.Result().Body, &read)
 	require.Equal(t, "test-server", read.Metadata.Name)
-	require.Equal(t, fixture.flavorID, read.Spec.FlavorId)
+	require.Equal(t, fixture.flavorID, read.Spec.FlavorId.String())
 	require.NotNil(t, read.Status.InfrastructureRef)
 	require.Equal(t, infrastructureRef, *read.Status.InfrastructureRef)
 }

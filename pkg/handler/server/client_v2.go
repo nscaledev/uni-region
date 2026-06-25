@@ -35,7 +35,9 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	principal "github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -44,6 +46,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/sshcertificateauthority"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -134,6 +137,10 @@ func convertPowerStateV2(in regionv1.InstanceLifecyclePhase) *openapi.InstanceLi
 	switch in {
 	case regionv1.InstanceLifecyclePhasePending:
 		return ptr.To(openapi.InstanceLifecyclePhasePending)
+	case regionv1.InstanceLifecyclePhaseQueued:
+		return ptr.To(openapi.InstanceLifecyclePhaseQueued)
+	case regionv1.InstanceLifecyclePhaseBuilding:
+		return ptr.To(openapi.InstanceLifecyclePhaseBuilding)
 	case regionv1.InstanceLifecyclePhaseRunning:
 		return ptr.To(openapi.InstanceLifecyclePhaseRunning)
 	case regionv1.InstanceLifecyclePhaseStopping:
@@ -145,12 +152,22 @@ func convertPowerStateV2(in regionv1.InstanceLifecyclePhase) *openapi.InstanceLi
 	return nil
 }
 
-func convertV2(in *regionv1.Server) *openapi.ServerV2Read {
+func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
+	flavorID, err := in.FlavorID()
+	if err != nil {
+		return nil, err
+	}
+
+	imageID, err := in.ImageID()
+	if err != nil {
+		return nil, err
+	}
+
 	out := &openapi.ServerV2Read{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.ServerV2Spec{
-			FlavorId:   in.Spec.FlavorID,
-			ImageId:    in.Spec.Image.ID,
+			FlavorId:   flavorID,
+			ImageId:    imageID,
 			Networking: convertNetworkingV2(in),
 			UserData:   convertUserData(in.Spec.UserData),
 		},
@@ -166,17 +183,22 @@ func convertV2(in *regionv1.Server) *openapi.ServerV2Read {
 		},
 	}
 
-	return out
+	return out, nil
 }
 
-func convertV2List(in *regionv1.ServerList) openapi.ServersV2Read {
+func convertV2List(in *regionv1.ServerList) (openapi.ServersV2Read, error) {
 	out := make(openapi.ServersV2Read, len(in.Items))
 
 	for i := range in.Items {
-		out[i] = *convertV2(&in.Items[i])
+		server, err := convertV2(&in.Items[i])
+		if err != nil {
+			return nil, err
+		}
+
+		out[i] = *server
 	}
 
-	return out
+	return out, nil
 }
 
 // convertCreateToUpdateRequest marshals a create request into an update request
@@ -282,17 +304,22 @@ func validateUserDataForSSHCertificateAuthority(sshCertificateAuthorityID *strin
 	return errors.HTTPUnprocessableContent("userData must be a recognized cloud-init format when sshCertificateAuthorityId is specified")
 }
 
-func (c *ClientV2) validateSSHCertificateAuthorityReference(ctx context.Context, organizationID, projectID string, sshCertificateAuthorityID *string) error {
+func (c *ClientV2) validateSSHCertificateAuthorityReference(ctx context.Context, scope identityids.ProjectScopeReader, sshCertificateAuthorityID *string) error {
 	if sshCertificateAuthorityID == nil {
 		return nil
 	}
 
-	resource, err := sshcertificateauthority.New(c.Client.ClientArgs).GetV2Raw(ctx, *sshCertificateAuthorityID)
+	ca, err := sshcertificateauthority.New(c.Client.ClientArgs).GetV2Raw(ctx, *sshCertificateAuthorityID)
 	if err != nil {
 		return err
 	}
 
-	if resource.Labels[coreconstants.OrganizationLabel] != organizationID || resource.Labels[coreconstants.ProjectLabel] != projectID {
+	sameProject, err := identityids.SameProject(scope, ca)
+	if err != nil {
+		return err
+	}
+
+	if !sameProject {
 		return errors.HTTPUnprocessableContent("sshCertificateAuthorityId must reference an SSH certificate authority in the same organization and project as the server")
 	}
 
@@ -322,7 +349,7 @@ func (c *ClientV2) validateInfrastructureRefForFlavor(ctx context.Context, regio
 	return nil
 }
 
-func (c *ClientV2) generateV2(ctx context.Context, organizationID, projectID string, in *openapi.ServerV2Update, network *regionv1.Network, sshCertificateAuthorityID *string, infrastructureRef *string) (*regionv1.Server, error) {
+func (c *ClientV2) generateV2(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, in *openapi.ServerV2Update, network *regionv1.Network, sshCertificateAuthorityID *string, infrastructureRef *string) (*regionv1.Server, error) {
 	networks, err := generateNetworks(network.Name, in.Spec.Networking)
 	if err != nil {
 		return nil, err
@@ -336,8 +363,6 @@ func (c *ClientV2) generateV2(ctx context.Context, organizationID, projectID str
 	out := &regionv1.Server{
 		ObjectMeta: conversion.NewDeterministicObjectMetadata(&in.Metadata, c.Namespace,
 			networkNamespace, in.Metadata.Name).
-			WithOrganization(organizationID).
-			WithProject(projectID).
 			WithLabel(constants.RegionLabel, network.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, network.Labels[constants.IdentityLabel]).
 			WithLabel(constants.NetworkLabel, network.Name).
@@ -345,9 +370,9 @@ func (c *ClientV2) generateV2(ctx context.Context, organizationID, projectID str
 			Get(),
 		Spec: regionv1.ServerSpec{
 			Tags:     conversion.GenerateTagList(in.Metadata.Tags),
-			FlavorID: in.Spec.FlavorId,
+			FlavorID: in.Spec.FlavorId.String(),
 			Image: &regionv1.ServerImage{
-				ID: in.Spec.ImageId,
+				ID: in.Spec.ImageId.String(),
 			},
 			PublicIPAllocation:        generatePublicIPAllocation(in.Spec.Networking),
 			SecurityGroups:            generateSecurityGroups(in.Spec.Networking),
@@ -358,11 +383,14 @@ func (c *ClientV2) generateV2(ctx context.Context, organizationID, projectID str
 		},
 	}
 
-	if err := util.InjectUserPrincipal(ctx, organizationID, projectID); err != nil {
+	// Enrich from the parent network's scope before stamping placement and
+	// attribution: the principal must be populated for the audit metadata, and
+	// the new resource inherits the network's tenancy.
+	if err := principal.EnrichUserPrincipalProjectScopeReader(ctx, network); err != nil {
 		return nil, fmt.Errorf("%w: unable to set principal information", err)
 	}
 
-	if err := identitycommon.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
+	if err := identitycommon.SetIdentityMetadataProjectScope(ctx, &out.ObjectMeta, organizationID, projectID); err != nil {
 		return nil, fmt.Errorf("%w: failed to set identity metadata", err)
 	}
 
@@ -418,44 +446,57 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 	}
 
 	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.Server) bool {
-		return !resource.Spec.Tags.ContainsAll(tagSelector) ||
-			rbac.AllowProjectScope(ctx, "region:servers", identityapi.Read, resource.Labels[coreconstants.OrganizationLabel], resource.Labels[coreconstants.ProjectLabel]) != nil
+		if !resource.Spec.Tags.ContainsAll(tagSelector) {
+			return true
+		}
+
+		return rbac.AllowProjectScopeReader(ctx, "region:servers", identityapi.Read, &resource) != nil
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.Server) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	return convertV2List(result), nil
+	return convertV2List(result)
+}
+
+// validateCreateV2Request runs the request-level validations for a v2 server
+// create: SSH certificate authority user-data coupling, that any referenced SSH
+// certificate authority shares the server's tenancy, and the infrastructure
+// reference requirements of the requested flavor.
+func (c *ClientV2) validateCreateV2Request(ctx context.Context, request *openapi.ServerV2Create, network *regionv1.Network) error {
+	if err := validateUserDataForSSHCertificateAuthority(request.Spec.SshCertificateAuthorityId, request.Spec.UserData); err != nil {
+		return err
+	}
+
+	if err := c.validateSSHCertificateAuthorityReference(ctx, network, request.Spec.SshCertificateAuthorityId); err != nil {
+		return err
+	}
+
+	return c.validateInfrastructureRefForFlavor(ctx, network.Labels[constants.RegionLabel], request.Spec.FlavorId.String(), request.Spec.InfrastructureRef)
 }
 
 func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create) (*openapi.ServerV2Read, error) {
-	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId)
+	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId.String())
 	if err != nil {
 		return nil, err
 	}
 
-	organizationID := network.Labels[coreconstants.OrganizationLabel]
-	projectID := network.Labels[coreconstants.ProjectLabel]
-
-	if err := rbac.AllowProjectScopeCreate(ctx, c.Identity, "region:servers", identityapi.Create, organizationID, projectID); err != nil {
+	organizationID, projectID, err := network.OrganizationAndProjectID()
+	if err != nil {
 		return nil, err
 	}
 
-	if err := validateUserDataForSSHCertificateAuthority(request.Spec.SshCertificateAuthorityId, request.Spec.UserData); err != nil {
+	if err := rbac.AllowProjectScopeCreateID(ctx, c.Identity, "region:servers", identityapi.Create, organizationID, projectID); err != nil {
+		return nil, err
+	}
+
+	if err := c.validateCreateV2Request(ctx, request, network); err != nil {
 		return nil, err
 	}
 
 	commonRequest, err := convertCreateToUpdateRequest(request)
 	if err != nil {
-		return nil, err
-	}
-
-	if err := c.validateSSHCertificateAuthorityReference(ctx, organizationID, projectID, request.Spec.SshCertificateAuthorityId); err != nil {
-		return nil, err
-	}
-
-	if err := c.validateInfrastructureRefForFlavor(ctx, network.Labels[constants.RegionLabel], request.Spec.FlavorId, request.Spec.InfrastructureRef); err != nil {
 		return nil, err
 	}
 
@@ -472,7 +513,7 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 		return nil, fmt.Errorf("%w: unable to create server", err)
 	}
 
-	return convertV2(resource), nil
+	return convertV2(resource)
 }
 
 func (c *ClientV2) GetV2Raw(ctx context.Context, serverID string) (*regionv1.Server, error) {
@@ -486,7 +527,7 @@ func (c *ClientV2) GetV2Raw(ctx context.Context, serverID string) (*regionv1.Ser
 		return nil, fmt.Errorf("%w: unable to lookup server", err)
 	}
 
-	if err := rbac.AllowProjectScope(ctx, "region:servers", identityapi.Read, result.Labels[coreconstants.OrganizationLabel], result.Labels[coreconstants.ProjectLabel]); err != nil {
+	if err := rbac.AllowProjectScopeReader(ctx, "region:servers", identityapi.Read, result); err != nil {
 		return nil, err
 	}
 
@@ -508,22 +549,27 @@ func (c *ClientV2) GetV2Raw(ctx context.Context, serverID string) (*regionv1.Ser
 	return result, nil
 }
 
-func (c *ClientV2) GetV2(ctx context.Context, serverID string) (*openapi.ServerV2Read, error) {
-	result, err := c.GetV2Raw(ctx, serverID)
+func (c *ClientV2) GetV2(ctx context.Context, serverID regionids.ServerID) (*openapi.ServerV2Read, error) {
+	result, err := c.GetV2Raw(ctx, serverID.String())
 	if err != nil {
 		return nil, err
 	}
 
-	return convertV2(result), nil
+	return convertV2(result)
 }
 
-func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *openapi.ServerV2Update) (*openapi.ServerV2Read, error) {
-	current, err := c.GetV2Raw(ctx, serverID)
+func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerV2Update) (*openapi.ServerV2Read, error) {
+	current, err := c.GetV2Raw(ctx, serverID.String())
 	if err != nil {
 		return nil, err
 	}
 
-	if err := rbac.AllowProjectScope(ctx, "region:servers", identityapi.Update, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel]); err != nil {
+	organizationID, projectID, err := current.OrganizationAndProjectID()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := rbac.AllowProjectScopeID(ctx, "region:servers", identityapi.Update, organizationID, projectID); err != nil {
 		return nil, err
 	}
 
@@ -543,7 +589,7 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *opena
 
 	// User data is only consumed during initial server bootstrap. Updates preserve it for
 	// completeness and future rebuild support, but they do not re-run cloud-init validation.
-	required, err := c.generateV2(ctx, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel], request, network, current.Spec.SSHCertificateAuthorityID, current.Spec.InfrastructureRef)
+	required, err := c.generateV2(ctx, organizationID, projectID, request, network, current.Spec.SSHCertificateAuthorityID, current.Spec.InfrastructureRef)
 	if err != nil {
 		return nil, err
 	}
@@ -557,16 +603,16 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID string, request *opena
 		return nil, fmt.Errorf("%w: unable to update server", err)
 	}
 
-	return convertV2(updated), nil
+	return convertV2(updated)
 }
 
-func (c *ClientV2) DeleteV2(ctx context.Context, serverID string) error {
-	resource, err := c.GetV2Raw(ctx, serverID)
+func (c *ClientV2) DeleteV2(ctx context.Context, serverID regionids.ServerID) error {
+	resource, err := c.GetV2Raw(ctx, serverID.String())
 	if err != nil {
 		return err
 	}
 
-	if err := rbac.AllowProjectScope(ctx, "region:servers", identityapi.Delete, resource.Labels[coreconstants.OrganizationLabel], resource.Labels[coreconstants.ProjectLabel]); err != nil {
+	if err := rbac.AllowProjectScopeReader(ctx, "region:servers", identityapi.Delete, resource); err != nil {
 		return err
 	}
 
@@ -581,13 +627,18 @@ func (c *ClientV2) DeleteV2(ctx context.Context, serverID string) error {
 	return nil
 }
 
-func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID string) (*regionv1.Server, *regionv1.Identity, types.Provider, error) {
-	server, err := c.GetV2Raw(ctx, serverID)
+func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID regionids.ServerID) (*regionv1.Server, *regionv1.Identity, types.Provider, error) {
+	server, err := c.GetV2Raw(ctx, serverID.String())
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	identity, err := identity.New(c.Client.ClientArgs).GetRaw(ctx, server.Labels[coreconstants.OrganizationLabel], server.Labels[coreconstants.ProjectLabel], server.Labels[constants.IdentityLabel])
+	organizationID, projectID, err := server.OrganizationAndProjectID()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	identity, err := identity.New(c.Client.ClientArgs).GetRaw(ctx, organizationID, projectID, server.Labels[constants.IdentityLabel])
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -600,7 +651,7 @@ func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID 
 	return server, identity, provider, nil
 }
 
-func (c *ClientV2) SSHKey(ctx context.Context, serverID string) (*openapi.SshKey, error) {
+func (c *ClientV2) SSHKey(ctx context.Context, serverID regionids.ServerID) (*openapi.SshKey, error) {
 	_, identity, _, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return nil, err
@@ -623,7 +674,7 @@ func (c *ClientV2) SSHKey(ctx context.Context, serverID string) (*openapi.SshKey
 	return out, nil
 }
 
-func (c *ClientV2) StartV2(ctx context.Context, serverID string) error {
+func (c *ClientV2) StartV2(ctx context.Context, serverID regionids.ServerID) error {
 	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return err
@@ -632,7 +683,7 @@ func (c *ClientV2) StartV2(ctx context.Context, serverID string) error {
 	return c.start(ctx, identity, server, provider)
 }
 
-func (c *ClientV2) StopV2(ctx context.Context, serverID string) error {
+func (c *ClientV2) StopV2(ctx context.Context, serverID regionids.ServerID) error {
 	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return err
@@ -641,7 +692,7 @@ func (c *ClientV2) StopV2(ctx context.Context, serverID string) error {
 	return c.stop(ctx, identity, server, provider)
 }
 
-func (c *ClientV2) RebootV2(ctx context.Context, serverID string, hard bool) error {
+func (c *ClientV2) RebootV2(ctx context.Context, serverID regionids.ServerID, hard bool) error {
 	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return err
@@ -650,7 +701,7 @@ func (c *ClientV2) RebootV2(ctx context.Context, serverID string, hard bool) err
 	return c.reboot(ctx, identity, server, hard, provider)
 }
 
-func (c *ClientV2) ConsoleOutputV2(ctx context.Context, serverID string, params openapi.GetApiV2ServersServerIDConsoleoutputParams) (*openapi.ConsoleOutputResponse, error) {
+func (c *ClientV2) ConsoleOutputV2(ctx context.Context, serverID regionids.ServerID, params openapi.GetApiV2ServersServerIDConsoleoutputParams) (*openapi.ConsoleOutputResponse, error) {
 	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return nil, err
@@ -659,7 +710,7 @@ func (c *ClientV2) ConsoleOutputV2(ctx context.Context, serverID string, params 
 	return c.getConsoleOutput(ctx, identity, server, params.Length, provider)
 }
 
-func (c *ClientV2) ConsoleSessionV2(ctx context.Context, serverID string) (*openapi.ConsoleSessionResponse, error) {
+func (c *ClientV2) ConsoleSessionV2(ctx context.Context, serverID regionids.ServerID) (*openapi.ConsoleSessionResponse, error) {
 	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return nil, err

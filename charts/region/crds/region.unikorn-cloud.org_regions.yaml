@@ -315,6 +315,23 @@ spec:
                                 type: array
                             type: object
                         type: object
+                      placementPreflight:
+                        description: |-
+                          PlacementPreflight checks OpenStack Placement immediately before pinned
+                          server creation.
+                        properties:
+                          enabled:
+                            description: Enabled enables the OpenStack Placement readiness
+                              preflight.
+                            type: boolean
+                          requiredTraits:
+                            description: |-
+                              RequiredTraits are the OpenStack Placement traits a resource provider
+                              must have before Region asks Nova to create a pinned server on it.
+                            items:
+                              type: string
+                            type: array
+                        type: object
                       serverGroupPolicy:
                         description: |-
                           ServerGroupPolicy defines the anti-affinity policy to use for

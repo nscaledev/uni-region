@@ -12,6 +12,7 @@ import (
 	context "context"
 	reflect "reflect"
 
+	ids "github.com/unikorn-cloud/region/pkg/ids"
 	openapi "github.com/unikorn-cloud/region/pkg/openapi"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -40,16 +41,16 @@ func (m *MockNetworkGetter) EXPECT() *MockNetworkGetterMockRecorder {
 }
 
 // GetV2 mocks base method.
-func (m *MockNetworkGetter) GetV2(ctx context.Context, id string) (*openapi.NetworkV2Read, error) {
+func (m *MockNetworkGetter) GetV2(ctx context.Context, networkID ids.NetworkID) (*openapi.NetworkV2Read, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetV2", ctx, id)
+	ret := m.ctrl.Call(m, "GetV2", ctx, networkID)
 	ret0, _ := ret[0].(*openapi.NetworkV2Read)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetV2 indicates an expected call of GetV2.
-func (mr *MockNetworkGetterMockRecorder) GetV2(ctx, id any) *gomock.Call {
+func (mr *MockNetworkGetterMockRecorder) GetV2(ctx, networkID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetV2", reflect.TypeOf((*MockNetworkGetter)(nil).GetV2), ctx, id)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetV2", reflect.TypeOf((*MockNetworkGetter)(nil).GetV2), ctx, networkID)
 }

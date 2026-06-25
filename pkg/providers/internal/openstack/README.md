@@ -91,6 +91,12 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - pinned server creation is one of those privileged project-scoped operations:
     it still targets the identity project, but uses region-level credentials so
     Nova policy can authorise the requested destination
+  - pinned server creation can also enable a transient
+    `openstack.compute.placementPreflight` check. When enabled, the provider
+    asks OpenStack Placement whether the pinned resource provider has available
+    inventory for the flavor's positive custom `resources:*` extra spec and any
+    configured `requiredTraits`. Empty `requiredTraits` means no trait filter.
+    A miss yields and lets the controller retry.
 - `OpenstackIdentity` is the remaining persisted provider-state anchor. It
   currently stores the secret-bearing user/project/application-credential and
   bootstrap state needed to operate on behalf of a region `Identity`.
@@ -104,7 +110,11 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     compatibility while newer namespaced keys provide the upgrade path
 - Flavor export is a hybrid model: OpenStack discovers the flavor inventory, but
   region configuration can enrich or override user-facing flavor metadata such
-  as architecture, baremetal status, and GPU semantics.
+  as architecture, baremetal status, and GPU semantics. The baremetal flag is
+  also operationally meaningful for live Phase reporting: a Nova `BUILD`
+  server with a baremetal flavor is disambiguated through Ironic so the API
+  can distinguish `Queued` (waiting on hardware) from `Building` (provider
+  actively deploying).
 - Image handling is a first-class contract surface here:
   - OpenStack image properties are validated against a schema
   - public images can additionally be signature-verified
@@ -119,6 +129,30 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
 - Network, security group, and server resources are re-found in OpenStack by
   deterministic lookup rather than relying on mirrored `OpenstackNetwork`,
   `OpenstackSecurityGroup`, or `OpenstackServer` CRDs as authoritative state.
+- Baremetal server progress uses Ironic as an additional provider truth source
+  only while Nova reports `BUILD` for a flavor marked baremetal in region
+  configuration. The result feeds `setServerPhase`, which writes `Queued`
+  (pre-deploy Ironic states: not yet picked up, cleaning, inspecting, etc.)
+  or `Building` (Ironic actively deploying — including the post-deploy `Error`
+  state and the transient `*Fail` states, on the principle that the node is
+  still in the build pipeline as far as the platform is concerned and the
+  failure signal belongs on the `Healthy` condition rather than on Phase.
+  The node lifecycle eventually terminates via delete; splitting "in the
+  pipeline" from "in the pipeline but unhappy" across both Phase and Healthy
+  would just duplicate one concept across two axes). Provisioning status
+  itself is provisioner-owned and the monitor never writes it. The lookup is
+  filtered by `instance_uuid`. Because Ironic node ownership and visibility
+  are provider infrastructure concerns rather than tenant workload operations,
+  this lookup uses the Region top-level provider credentials scoped to the
+  service principal's project, matching the package's other privileged client
+  patterns. Deployments must grant those credentials enough Ironic policy
+  visibility to list/detail nodes by instance UUID, for example through a
+  narrow `bm-mapper`-style role or equivalent admin, service, or system-reader
+  policy that permits `baremetal:node:list_all`/node-detail visibility. If the
+  privileged client cannot be created or Ironic rejects or fails the lookup,
+  the monitor logs the failure and falls back to the VM default `Building`
+  Phase so API responses still see a coherent live signal rather than failing
+  the monitor path.
 - Some OpenStack list APIs are not safe to treat as exact lookup, notably
   server, network, and Octavia load-balancer `name` filters:
   - `name` filters behave like prefix or regular-expression matches rather than
