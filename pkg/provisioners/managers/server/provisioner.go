@@ -248,12 +248,37 @@ func (p *Provisioner) recordProviderCreateRetryEvent(ctx context.Context, eventT
 	p.eventRecorder(ctx).Event(p.server, eventType, reason, eventMessage)
 }
 
-func (p *Provisioner) providerCreateFailure() bool {
-	if p.server.Status.LaunchedAt != nil {
+// ProviderCreateFailure reports whether a server is a pre-launch provider create
+// failure that is eligible for bounded delete-and-retry (rebuild). It is the
+// single source of truth for that decision, shared by the provisioner and the
+// controller's watch predicate so the two can never drift.
+//
+// It deliberately fails closed: any signal that the server has ever booted blocks
+// a rebuild, because a rebuild after first boot destroys data and forecloses
+// debugging or recovery.
+//
+//   - LaunchedAt is the steady-state guard: it mirrors Nova launched_at, which is
+//     set at first boot and never cleared by Nova, so LaunchedAt != nil means the
+//     server has booted.
+//   - ProvisionedAt is a durable, write-once copy of that same launched_at signal
+//     that nothing in this package ever clears. It exists because LaunchedAt is
+//     cleared by resetProviderCreateRuntimeStatus during an in-flight retry: the
+//     latch closes that window (and any future loss of LaunchedAt) so a server
+//     that has booted cannot be re-armed for rebuild. A reconciler-owned Available
+//     condition cannot serve this role — it is re-derived every reconcile and
+//     flips to a non-provisioned value when a reconcile re-runs against a flaky
+//     provider (for example on a controller restart).
+//   - The post-launch Phases are retained as further defence in depth.
+func ProviderCreateFailure(server *unikornv1.Server) bool {
+	if server.Status.ProvisionedAt != nil {
 		return false
 	}
 
-	switch p.server.Status.Phase {
+	if server.Status.LaunchedAt != nil {
+		return false
+	}
+
+	switch server.Status.Phase {
 	case unikornv1.InstanceLifecyclePhaseRunning,
 		unikornv1.InstanceLifecyclePhaseStopping,
 		unikornv1.InstanceLifecyclePhaseStopped:
@@ -264,13 +289,17 @@ func (p *Provisioner) providerCreateFailure() bool {
 		"":
 	}
 
-	condition, err := p.server.StatusConditionRead(unikornv1core.ConditionHealthy)
+	condition, err := server.StatusConditionRead(unikornv1core.ConditionHealthy)
 	if err != nil {
 		return false
 	}
 
 	return condition.Status == corev1.ConditionFalse &&
 		condition.Reason == unikornv1core.ConditionReasonErrored
+}
+
+func (p *Provisioner) providerCreateFailure() bool {
+	return ProviderCreateFailure(p.server)
 }
 
 func (p *Provisioner) resetProviderCreateRuntimeStatus(message string) {

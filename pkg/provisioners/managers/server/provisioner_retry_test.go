@@ -254,3 +254,27 @@ func TestProvision_LaunchedServerHealthErrorDoesNotRetryCreate(t *testing.T) {
 	require.Zero(t, server.Status.ProviderCreateFailures)
 	require.False(t, server.Status.ProviderCreateRetrying)
 }
+
+// TestProvision_ProvisionedServerHealthErrorDoesNotRetryCreate proves the
+// ProvisionedAt latch blocks a rebuild even when the launch timestamp and phase
+// have been lost: a server that has ever been provisioned must never be deleted
+// and recreated, only reconciled normally.
+func TestProvision_ProvisionedServerHealthErrorDoesNotRetryCreate(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	server := retryServer(withProviderCreateFailure)
+	provisionedAt := metav1.NewTime(time.Now().Add(-time.Hour))
+	server.Status.ProvisionedAt = &provisionedAt
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(nil)
+
+	cli := retryClient(t, retryIdentity(), server)
+	prov := retryProvisioner(t, server, nil, provider)
+
+	require.NoError(t, prov.Provision(coreclient.NewContext(t.Context(), cli)))
+	require.Zero(t, server.Status.ProviderCreateFailures)
+	require.False(t, server.Status.ProviderCreateRetrying)
+}

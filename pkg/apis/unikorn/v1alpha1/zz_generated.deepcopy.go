@@ -2680,6 +2680,10 @@ func (in *ServerStatus) DeepCopyInto(out *ServerStatus) {
 		in, out := &in.ScheduledAt, &out.ScheduledAt
 		*out = (*in).DeepCopy()
 	}
+	if in.ProvisionedAt != nil {
+		in, out := &in.ProvisionedAt, &out.ProvisionedAt
+		*out = (*in).DeepCopy()
+	}
 	return
 }
 

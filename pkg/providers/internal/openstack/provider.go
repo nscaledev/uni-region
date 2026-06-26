@@ -2194,6 +2194,18 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 	if !openstackserver.LaunchedAt.IsZero() {
 		t := metav1.NewTime(openstackserver.LaunchedAt)
 		server.Status.LaunchedAt = &t
+
+		// ProvisionedAt is a write-once latch recording that the server has booted
+		// at least once. It mirrors the same Nova launched_at signal as LaunchedAt
+		// (set here, ahead of the BUILD early-return and independent of power
+		// state, so it fires for VMs and baremetal alike) but, unlike LaunchedAt,
+		// it is never cleared: not by the provider-create retry reset, nor by a
+		// re-reconcile against a flaky provider. The bounded delete-and-retry guard
+		// keys off it so a server that has booted is never rebuilt, which would
+		// destroy data.
+		if server.Status.ProvisionedAt == nil {
+			server.Status.ProvisionedAt = &t
+		}
 	}
 
 	// Nova BUILD is the window where the live monitor refines the lifecycle
