@@ -436,8 +436,12 @@ var _ = Describe("File Storage Management", func() {
 				Expect(created.Metadata.Id).NotTo(BeEmpty())
 				Expect(created.Metadata.Name).To(Equal(request.Metadata.Name))
 				Expect(created.Spec.SizeGiB).To(Equal(request.Spec.SizeGiB))
-				Expect(created.Spec.DefaultSnapshotProtectionEnabled).To(BeTrue())
-				Expect(created.Spec.SnapshotPolicies).To(BeEmpty())
+				// Generated as a pointer; reads always populate it, so guard against
+				// nil then assert the dereferenced value.
+				Expect(created.Spec.DefaultSnapshotProtectionEnabled).NotTo(BeNil())
+				Expect(*created.Spec.DefaultSnapshotProtectionEnabled).To(BeTrue())
+				Expect(created.Spec.SnapshotPolicies).NotTo(BeNil())
+				Expect(*created.Spec.SnapshotPolicies).To(BeEmpty())
 				Expect(created.Status.SnapshotPolicies).To(BeEmpty())
 
 				// Validate resource is correctly scoped and wired up
@@ -484,8 +488,10 @@ var _ = Describe("File Storage Management", func() {
 				Expect(retrieved.Status.RegionId).To(Equal(config.RegionID))
 				Expect(retrieved.Status.StorageClassId).To(Equal(storageClassID))
 				Expect(retrieved.Spec.SizeGiB).To(Equal(initialStorageSizeGiB))
-				Expect(retrieved.Spec.DefaultSnapshotProtectionEnabled).To(BeTrue())
-				Expect(retrieved.Spec.SnapshotPolicies).To(BeEmpty())
+				Expect(retrieved.Spec.DefaultSnapshotProtectionEnabled).NotTo(BeNil())
+				Expect(*retrieved.Spec.DefaultSnapshotProtectionEnabled).To(BeTrue())
+				Expect(retrieved.Spec.SnapshotPolicies).NotTo(BeNil())
+				Expect(*retrieved.Spec.SnapshotPolicies).To(BeEmpty())
 				Expect(retrieved.Status.SnapshotPolicies).To(BeEmpty())
 				Expect(retrieved.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioned))
 
@@ -523,8 +529,10 @@ var _ = Describe("File Storage Management", func() {
 					Expect(*updated.Metadata.Description).To(Equal("Updated test file storage"))
 				}
 				Expect(updated.Spec.SizeGiB).To(Equal(updatedStorageSizeGiB))
-				Expect(updated.Spec.DefaultSnapshotProtectionEnabled).To(BeTrue())
-				Expect(updated.Spec.SnapshotPolicies).To(BeEmpty())
+				Expect(updated.Spec.DefaultSnapshotProtectionEnabled).NotTo(BeNil())
+				Expect(*updated.Spec.DefaultSnapshotProtectionEnabled).To(BeTrue())
+				Expect(updated.Spec.SnapshotPolicies).NotTo(BeNil())
+				Expect(*updated.Spec.SnapshotPolicies).To(BeEmpty())
 
 				GinkgoWriter.Printf("Updated file storage: %s (%s) - now %dGiB\n",
 					updated.Metadata.Name,
@@ -556,8 +564,10 @@ var _ = Describe("File Storage Management", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(updated).NotTo(BeNil())
-				Expect(updated.Spec.DefaultSnapshotProtectionEnabled).To(BeTrue())
-				Expect(updated.Spec.SnapshotPolicies).To(BeEmpty())
+				Expect(updated.Spec.DefaultSnapshotProtectionEnabled).NotTo(BeNil())
+				Expect(*updated.Spec.DefaultSnapshotProtectionEnabled).To(BeTrue())
+				Expect(updated.Spec.SnapshotPolicies).NotTo(BeNil())
+				Expect(*updated.Spec.SnapshotPolicies).To(BeEmpty())
 				Expect(updated.Status.SnapshotPolicies).To(BeEmpty())
 			})
 
