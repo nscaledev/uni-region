@@ -984,6 +984,16 @@ type ServerStatus struct {
 	// ScheduledAt is the time the provider accepted and processed the creation request.
 	// Nil until the server has been observed in the provider at least once.
 	ScheduledAt *metav1.Time `json:"scheduledAt,omitempty"`
+	// ProvisionedAt is a write-once latch recording that the server has booted at
+	// least once. It is set from the same Nova launched_at signal as LaunchedAt
+	// (so it fires for VMs and baremetal alike, regardless of live power state)
+	// but, unlike LaunchedAt, it is never cleared: not by the provider-create
+	// retry reset, nor by a re-reconcile against a flaky provider. The bounded
+	// provider-create delete-and-retry guard keys off this field so a server that
+	// has ever booted is never rebuilt (a rebuild after first boot would destroy
+	// data). Unlike the reconciler-owned Available condition, it does not flip back
+	// to a non-provisioned value on a later re-reconcile.
+	ProvisionedAt *metav1.Time `json:"provisionedAt,omitempty"`
 	// ProviderCreateFailures records how many provider-accepted create attempts
 	// later landed in a provider error state before the server launched.
 	ProviderCreateFailures int32 `json:"providerCreateFailures,omitempty"`

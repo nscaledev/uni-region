@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
@@ -128,11 +129,74 @@ func TestSetServerPhaseBuildBaremetalBuilding(t *testing.T) {
 func TestSetServerPhaseRunning(t *testing.T) {
 	t.Parallel()
 
+	launchedAt := time.Now().Add(-time.Minute)
 	server := &unikornv1.Server{}
 
-	setServerPhase(t.Context(), server, &servers.Server{Status: "ACTIVE", PowerState: servers.RUNNING}, nil)
+	setServerPhase(t.Context(), server, &servers.Server{Status: "ACTIVE", PowerState: servers.RUNNING, LaunchedAt: launchedAt}, nil)
 
 	require.Equal(t, unikornv1.InstanceLifecyclePhaseRunning, server.Status.Phase)
+	require.NotNil(t, server.Status.ProvisionedAt)
+	require.Equal(t, metav1.NewTime(launchedAt), *server.Status.ProvisionedAt, "ProvisionedAt latches the Nova launched_at signal")
+}
+
+// TestSetServerPhaseRunningLatchesProvisionedAtOnce proves ProvisionedAt is
+// write-once: a later observation with a fresh launched_at must not overwrite the
+// original latched value.
+func TestSetServerPhaseRunningLatchesProvisionedAtOnce(t *testing.T) {
+	t.Parallel()
+
+	provisionedAt := metav1.NewTime(time.Now().Add(-time.Hour))
+	server := &unikornv1.Server{}
+	server.Status.ProvisionedAt = &provisionedAt
+
+	setServerPhase(t.Context(), server, &servers.Server{Status: "ACTIVE", PowerState: servers.RUNNING, LaunchedAt: time.Now()}, nil)
+
+	require.Equal(t, unikornv1.InstanceLifecyclePhaseRunning, server.Status.Phase)
+	require.Equal(t, provisionedAt, *server.Status.ProvisionedAt, "ProvisionedAt must not be overwritten once latched")
+}
+
+// TestSetServerPhaseLatchesProvisionedAtWithoutRunningPowerState proves the latch
+// is driven by Nova launched_at, not the live power state. A booted server that
+// does not report PowerState RUNNING (e.g. a baremetal node surfacing NOSTATE
+// while Nova-ACTIVE) must still be recorded as provisioned.
+func TestSetServerPhaseLatchesProvisionedAtWithoutRunningPowerState(t *testing.T) {
+	t.Parallel()
+
+	launchedAt := time.Now().Add(-time.Minute)
+	server := &unikornv1.Server{}
+
+	setServerPhase(t.Context(), server, &servers.Server{Status: "ACTIVE", PowerState: servers.NOSTATE, LaunchedAt: launchedAt}, nil)
+
+	require.NotNil(t, server.Status.ProvisionedAt, "a booted server must latch regardless of live power state")
+	require.Equal(t, metav1.NewTime(launchedAt), *server.Status.ProvisionedAt)
+}
+
+// TestSetServerPhaseStoppedStillLatchesProvisionedAt proves a booted server later
+// observed stopped is still recorded as provisioned: it holds data, so the rebuild
+// guard must protect it, and legacy stopped servers backfill the latch.
+func TestSetServerPhaseStoppedStillLatchesProvisionedAt(t *testing.T) {
+	t.Parallel()
+
+	launchedAt := time.Now().Add(-time.Hour)
+	server := &unikornv1.Server{}
+
+	setServerPhase(t.Context(), server, &servers.Server{Status: "SHUTOFF", PowerState: servers.SHUTDOWN, LaunchedAt: launchedAt}, nil)
+
+	require.Equal(t, unikornv1.InstanceLifecyclePhaseStopped, server.Status.Phase)
+	require.NotNil(t, server.Status.ProvisionedAt, "a booted-then-stopped server must remain provisioned")
+}
+
+// TestSetServerPhaseBuildDoesNotLatchProvisionedAt proves a server that has not
+// yet booted (no Nova launched_at) is not considered provisioned, keeping it
+// eligible for delete-and-retry while Ironic provisioning is still flaky.
+func TestSetServerPhaseBuildDoesNotLatchProvisionedAt(t *testing.T) {
+	t.Parallel()
+
+	server := &unikornv1.Server{}
+
+	setServerPhase(t.Context(), server, &servers.Server{Status: "BUILD"}, nil)
+
+	require.Nil(t, server.Status.ProvisionedAt, "a building server must not be considered provisioned")
 }
 
 func TestSetServerPhaseStopped(t *testing.T) {

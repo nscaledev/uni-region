@@ -18,6 +18,14 @@ status/telemetry model.
 - resolves provider and flavor context per region and caches it for a poll cycle
 - updates server status through provider `UpdateServerState(...)`
 - refines the server's live `Phase` from observed Nova + Ironic state. For OpenStack baremetal servers in Nova `BUILD`, an Ironic node lookup distinguishes `Queued` (provider has accepted the create but hardware is not yet engaged — pre-deploy Ironic states) from `Building` (Ironic actively deploying, including transient deploy failures). VMs in Nova `BUILD` go straight to `Building`. Provisioning status itself stays purely condition-derived (provisioner-owned, one-shot): the monitor never writes it. Phase is the live readiness signal once provisioning status reaches `provisioned`.
+- latches `status.provisionedAt` from Nova `launched_at`, alongside `launchedAt`
+  and ahead of the `BUILD` early-return, so it fires for VMs and baremetal alike
+  regardless of live power state. This is monitor-owned observed state (like
+  `launchedAt`), not the provisioner-owned provisioning-status condition; the
+  rebuild decision itself stays with the controller. Unlike `launchedAt` it is
+  written once and never cleared, and the controller's bounded provider-create
+  delete-and-retry guard keys off it so a server that has ever booted is never
+  rebuilt. Servers predating the field backfill it on the next poll once booted.
 - logs phase and health-condition transitions
 - rebuilds gauge counts from the effective server set each cycle
 

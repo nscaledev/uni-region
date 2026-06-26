@@ -86,4 +86,20 @@ func TestProviderCreateFailureUpdate(t *testing.T) {
 			ObjectNew: server,
 		}))
 	})
+
+	// A server that has ever been provisioned must never re-arm the rebuild path,
+	// even if its launch timestamp and phase have been lost and a health error
+	// then appears (e.g. a flaky-provider re-reconcile after a controller restart).
+	t.Run("ProvisionedWithoutLaunchTimestamp", func(t *testing.T) {
+		t.Parallel()
+
+		server := serverWithProviderCreateFailure()
+		provisionedAt := metav1.NewTime(time.Now().Add(-time.Hour))
+		server.Status.ProvisionedAt = &provisionedAt
+
+		require.False(t, providerCreateFailureUpdate(event.TypedUpdateEvent[*unikornv1.Server]{
+			ObjectOld: &unikornv1.Server{},
+			ObjectNew: server,
+		}))
+	})
 }

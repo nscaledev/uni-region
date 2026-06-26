@@ -18,7 +18,6 @@ limitations under the License.
 package server
 
 import (
-	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	coremanager "github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/manager/options"
@@ -27,8 +26,6 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/managers"
 	"github.com/unikorn-cloud/region/pkg/provisioners/managers/server"
-
-	corev1 "k8s.io/api/core/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -64,37 +61,12 @@ func (f *Factory) Reconciler(options *options.Options, controllerOptions coreman
 	return coremanager.NewReconciler(options, controllerOptions, manager, f.ProvisionerCreate(server.New))
 }
 
-func providerCreateFailure(server *unikornv1.Server) bool {
-	if server.Status.LaunchedAt != nil {
-		return false
-	}
-
-	switch server.Status.Phase {
-	case unikornv1.InstanceLifecyclePhaseRunning,
-		unikornv1.InstanceLifecyclePhaseStopping,
-		unikornv1.InstanceLifecyclePhaseStopped:
-		return false
-	case unikornv1.InstanceLifecyclePhasePending,
-		unikornv1.InstanceLifecyclePhaseQueued,
-		unikornv1.InstanceLifecyclePhaseBuilding,
-		"":
-	}
-
-	condition, err := server.StatusConditionRead(unikornv1core.ConditionHealthy)
-	if err != nil {
-		return false
-	}
-
-	return condition.Status == corev1.ConditionFalse &&
-		condition.Reason == unikornv1core.ConditionReasonErrored
-}
-
 func providerCreateFailureUpdate(e event.TypedUpdateEvent[*unikornv1.Server]) bool {
 	if e.ObjectOld == nil || e.ObjectNew == nil {
 		return false
 	}
 
-	return !providerCreateFailure(e.ObjectOld) && providerCreateFailure(e.ObjectNew)
+	return !server.ProviderCreateFailure(e.ObjectOld) && server.ProviderCreateFailure(e.ObjectNew)
 }
 
 // RegisterWatches adds any watches that would trigger a reconcile.

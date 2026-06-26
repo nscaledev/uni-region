@@ -140,7 +140,11 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   The node lifecycle eventually terminates via delete; splitting "in the
   pipeline" from "in the pipeline but unhappy" across both Phase and Healthy
   would just duplicate one concept across two axes). Provisioning status
-  itself is provisioner-owned and the monitor never writes it. The lookup is
+  itself is provisioner-owned and the monitor never writes it; `setServerPhase`
+  does, however, latch the monitor-owned `status.provisionedAt` field from Nova
+  `launched_at` the first time a server is seen booted (write-once, never
+  cleared, independent of live power state), which the controller's rebuild guard
+  relies on. The lookup is
   filtered by `instance_uuid`. Because Ironic node ownership and visibility
   are provider infrastructure concerns rather than tenant workload operations,
   this lookup uses the Region top-level provider credentials scoped to the
