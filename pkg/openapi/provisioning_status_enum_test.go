@@ -17,10 +17,14 @@ limitations under the License.
 package openapi_test
 
 import (
+	"bytes"
+	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/getkin/kin-openapi/openapi3filter"
+	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/stretchr/testify/require"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
@@ -109,6 +113,71 @@ func TestStorageDefaultSnapshotProtectionRejectsNullInput(t *testing.T) {
 	defaultProtectionProperty := schemaProperty(t, storageSpec, "defaultSnapshotProtectionEnabled")
 
 	require.Error(t, defaultProtectionProperty.VisitJSON(nil))
+}
+
+func TestStorageV2UpdateRequestRejectsExplicitNulls(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		body    string
+		wantErr bool
+	}{
+		{
+			name: "omitted nullable-looking fields is valid",
+			body: `{"metadata":{"name":"storage-name"},"spec":{"sizeGiB":10,"storageType":{"NFS":{"rootSquash":true}}}}`,
+		},
+		{
+			name:    "snapshot policies null is invalid",
+			body:    `{"metadata":{"name":"storage-name"},"spec":{"sizeGiB":10,"storageType":{"NFS":{"rootSquash":true}},"snapshotPolicies":null}}`,
+			wantErr: true,
+		},
+		{
+			name:    "default snapshot protection null is invalid",
+			body:    `{"metadata":{"name":"storage-name"},"spec":{"sizeGiB":10,"storageType":{"NFS":{"rootSquash":true}},"defaultSnapshotProtectionEnabled":null}}`,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateStorageV2UpdateRequest(t, tt.body)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+func validateStorageV2UpdateRequest(t *testing.T, body string) error {
+	t.Helper()
+
+	swagger, err := openapi.GetSwagger()
+	require.NoError(t, err)
+
+	router, err := legacy.NewRouter(swagger)
+	require.NoError(t, err)
+
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodPut, "/api/v2/filestorage/00000000-0000-0000-0000-000000000000", bytes.NewBufferString(body))
+	require.NoError(t, err)
+	request.Header.Set("Content-Type", "application/json")
+
+	route, pathParams, err := router.FindRoute(request)
+	require.NoError(t, err)
+
+	return openapi3filter.ValidateRequest(t.Context(), &openapi3filter.RequestValidationInput{
+		Request:    request,
+		PathParams: pathParams,
+		Route:      route,
+		Options: &openapi3filter.Options{
+			AuthenticationFunc: openapi3filter.NoopAuthenticationFunc,
+		},
+	})
 }
 
 func componentSchema(t *testing.T, swagger *openapi3.T, name string) *openapi3.Schema {
