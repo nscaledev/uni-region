@@ -55,6 +55,11 @@ var _ = Describe("SecurityGroup", func() {
 			})
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
 
+			// Reads are served from the controller-runtime cache, so the
+			// security group create below can resolve the network reference
+			// against a stale cache and 404. Await visibility first.
+			api.WaitForNetworkVisible(regionClient, ctx, networkID)
+
 			createReq = api.NewSecurityGroupPayload(networkID).Build()
 			created, err := regionClient.CreateSecurityGroup(ctx, createReq)
 			Expect(err).NotTo(HaveOccurred(), "failed to create security group fixture")
