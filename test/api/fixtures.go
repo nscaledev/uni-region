@@ -406,3 +406,17 @@ func WaitForLoadBalancerGone(c *APIClient, ctx context.Context, lbID string) {
 		Should(And(HaveOccurred(), MatchError(coreclient.ErrResourceNotFound)),
 			"load balancer should eventually be deleted")
 }
+
+// WaitForNetworkVisible polls until the network is readable at the API. The
+// region API is eventually consistent on reads: writes are synchronous but
+// GETs are served from the controller-runtime cache, so a just-created network
+// can briefly 404. A dependent create that resolves the network reference
+// (e.g. a load balancer) reads through the same cache and would fail with that
+// transient 404, so await visibility before referencing it.
+func WaitForNetworkVisible(c *APIClient, ctx context.Context, networkID string) {
+	Eventually(func() error {
+		_, err := c.GetNetwork(ctx, networkID)
+		return err
+	}).WithTimeout(5*time.Second).WithPolling(250*time.Millisecond).
+		Should(Succeed(), "network should become visible at the API")
+}

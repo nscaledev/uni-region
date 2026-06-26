@@ -53,6 +53,11 @@ var _ = Describe("LoadBalancer", func() {
 			networkID = network.Metadata.Id
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
 
+			// Reads are served from the controller-runtime cache, so the
+			// load balancer create below can resolve the network reference
+			// against a stale cache and 404. Await visibility first.
+			api.WaitForNetworkVisible(regionClient, ctx, networkID)
+
 			DeferCleanup(func() {
 				if lbID != "" {
 					if err := regionClient.DeleteLoadBalancer(ctx, lbID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
@@ -244,6 +249,11 @@ var _ = Describe("LoadBalancer", func() {
 			networkID = network.Metadata.Id
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
 
+			// Reads are served from the controller-runtime cache, so the
+			// load balancer create below can resolve the network reference
+			// against a stale cache and 404. Await visibility first.
+			api.WaitForNetworkVisible(regionClient, ctx, networkID)
+
 			DeferCleanup(func() {
 				if lbID != "" {
 					if err := regionClient.DeleteLoadBalancer(ctx, lbID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
@@ -304,6 +314,11 @@ var _ = Describe("LoadBalancer", func() {
 			Expect(network).NotTo(BeNil())
 			networkID = network.Metadata.Id
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
+
+			// Reads are served from the controller-runtime cache, so the
+			// load balancer create below can resolve the network reference
+			// against a stale cache and 404. Await visibility first.
+			api.WaitForNetworkVisible(regionClient, ctx, networkID)
 
 			DeferCleanup(func() {
 				if lbID != "" {
