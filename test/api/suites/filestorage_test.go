@@ -35,6 +35,7 @@ import (
 	coreutil "github.com/unikorn-cloud/core/pkg/testing/util"
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/test/api"
 )
 
 const defaultProtectionUpdateStorageSizeGiB = int64(10)
@@ -486,7 +487,7 @@ var _ = Describe("File Storage Management", func() {
 
 		Describe("Given a network and file storage resource", func() {
 			It("should create a network for attachment", func() {
-				networkName = coreutil.GenerateRandomName("test-attach-network")
+				networkName = api.UniqueName("attach-network")
 				networkRequest := regionopenapi.NetworkV2CreateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{
 						Name:        networkName,
