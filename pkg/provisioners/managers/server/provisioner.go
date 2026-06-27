@@ -354,10 +354,17 @@ func (p *Provisioner) handleProviderCreateRetry(ctx context.Context, provider ty
 		return false, nil
 	}
 
-	attempt := p.server.Status.ProviderCreateFailures + 1
+	attempts := p.server.Status.ProviderCreateFailures
+	if attempts >= maxAttempts {
+		p.server.Status.ProviderCreateRetrying = false
+
+		return true, fmt.Errorf("%w after %d attempts", errProviderServerCreateFailed, attempts)
+	}
+
+	attempt := attempts + 1
 	p.server.Status.ProviderCreateFailures = attempt
 
-	if attempt >= maxAttempts {
+	if attempt == maxAttempts { // i.e., this was the last attempt
 		p.server.Status.ProviderCreateRetrying = false
 		p.recordProviderCreateRetryEvent(
 			ctx,

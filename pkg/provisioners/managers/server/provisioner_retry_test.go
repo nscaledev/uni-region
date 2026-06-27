@@ -233,6 +233,34 @@ func TestProvision_ProviderCreateFailureStopsAtAttemptLimit(t *testing.T) {
 	require.Equal(t, int32(3), server.Status.ProviderCreateFailures)
 	require.False(t, server.Status.ProviderCreateRetrying)
 	requireEvent(t, recorder, corev1.EventTypeWarning, "ProviderCreateFailed", "after 3 attempts")
+
+	prov = retryProvisioner(t, server, &serverprovisioner.Options{ProviderCreateMaxAttempts: 3}, provider, recorder)
+	err = prov.Provision(coreclient.NewContext(t.Context(), cli))
+	require.ErrorContains(t, err, "provider server create failed after 3 attempts")
+	require.Equal(t, int32(3), server.Status.ProviderCreateFailures)
+	require.False(t, server.Status.ProviderCreateRetrying)
+	requireNoEvent(t, recorder)
+}
+
+func TestProvision_ProviderCreateFailurePastAttemptLimitDoesNotAdvance(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	server := retryServer(withProviderCreateFailure)
+	server.Status.ProviderCreateFailures = 4
+
+	provider := mocktypes.NewMockProvider(ctrl)
+
+	cli := retryClient(t, retryIdentity(), server)
+	recorder := record.NewFakeRecorder(1)
+	prov := retryProvisioner(t, server, &serverprovisioner.Options{ProviderCreateMaxAttempts: 3}, provider, recorder)
+
+	err := prov.Provision(coreclient.NewContext(t.Context(), cli))
+	require.ErrorContains(t, err, "provider server create failed after 4 attempts")
+	require.Equal(t, int32(4), server.Status.ProviderCreateFailures)
+	require.False(t, server.Status.ProviderCreateRetrying)
+	requireNoEvent(t, recorder)
 }
 
 func TestProvision_LaunchedServerHealthErrorDoesNotRetryCreate(t *testing.T) {
