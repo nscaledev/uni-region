@@ -212,22 +212,20 @@ func (c *ComputeClient) UpdateQuotas(ctx context.Context, projectID string) erro
 
 	// Quotas are handled globally, not on a per-region basis, so it's safe to
 	// unconditionally remove all OpenStack compute limits here.
+	//
+	// Only the quotas Nova still owns are set here. The networking quotas
+	// (floating IPs, security groups and security group rules) moved to Neutron
+	// and the file-injection quotas were deprecated and removed, so Nova now
+	// rejects them as unexpected properties.
 	opts := &quotasets.UpdateOpts{
 		// TODO: instances, cores and ram need to be driven by client input.
-		Instances:                ptr.To(-1),
-		Cores:                    ptr.To(-1),
-		RAM:                      ptr.To(-1),
-		FixedIPs:                 ptr.To(-1),
-		FloatingIPs:              ptr.To(-1),
-		InjectedFileContentBytes: ptr.To(-1),
-		InjectedFilePathBytes:    ptr.To(-1),
-		InjectedFiles:            ptr.To(-1),
-		KeyPairs:                 ptr.To(-1),
-		MetadataItems:            ptr.To(-1),
-		SecurityGroupRules:       ptr.To(-1),
-		SecurityGroups:           ptr.To(-1),
-		ServerGroups:             ptr.To(-1),
-		ServerGroupMembers:       ptr.To(-1),
+		Instances:          ptr.To(-1),
+		Cores:              ptr.To(-1),
+		RAM:                ptr.To(-1),
+		KeyPairs:           ptr.To(-1),
+		MetadataItems:      ptr.To(-1),
+		ServerGroups:       ptr.To(-1),
+		ServerGroupMembers: ptr.To(-1),
 	}
 
 	return quotasets.Update(ctx, c.client, projectID, opts).Err
