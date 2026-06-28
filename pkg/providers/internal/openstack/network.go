@@ -782,6 +782,10 @@ func (c *NetworkClient) UpdateQuotas(ctx context.Context, projectID string) erro
 
 	// Quotas are handled globally, not on a per-region basis, so it's safe to
 	// unconditionally remove all OpenStack networking limits here.
+	//
+	// Only the core networking quotas are set. The trunk quota is gated behind
+	// the Neutron trunk extension, which is not always loaded, so setting it
+	// makes Neutron reject the request as an unrecognized attribute.
 	opts := &quotas.UpdateOpts{
 		SecurityGroup:     ptr.To(-1),
 		SecurityGroupRule: ptr.To(-1),
@@ -792,7 +796,6 @@ func (c *NetworkClient) UpdateQuotas(ctx context.Context, projectID string) erro
 		Router:            ptr.To(-1),
 		Subnet:            ptr.To(-1),
 		SubnetPool:        ptr.To(-1),
-		Trunk:             ptr.To(-1),
 	}
 
 	return quotas.Update(ctx, c.client, projectID, opts).Err
