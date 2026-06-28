@@ -230,9 +230,34 @@ func TestProvision_ProviderCreateFailureStopsAtAttemptLimit(t *testing.T) {
 
 	err := prov.Provision(coreclient.NewContext(t.Context(), cli))
 	require.ErrorContains(t, err, "provider server create failed after 3 attempts")
+	require.ErrorIs(t, err, provisioners.ErrTerminal)
 	require.Equal(t, int32(3), server.Status.ProviderCreateFailures)
 	require.False(t, server.Status.ProviderCreateRetrying)
 	requireEvent(t, recorder, corev1.EventTypeWarning, "ProviderCreateFailed", "after 3 attempts")
+}
+
+// TestProvision_ProviderCreateFailureAtLimitDoesNotAdvance proves that a
+// re-reconcile of an already-exhausted server (e.g. after a controller restart,
+// where the failure predicate still holds) aborts terminally without advancing
+// the counter past the cap.
+func TestProvision_ProviderCreateFailureAtLimitDoesNotAdvance(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	server := retryServer(withProviderCreateFailure)
+	server.Status.ProviderCreateFailures = 3
+
+	provider := mocktypes.NewMockProvider(ctrl)
+
+	cli := retryClient(t, retryIdentity(), server)
+	recorder := record.NewFakeRecorder(1)
+	prov := retryProvisioner(t, server, &serverprovisioner.Options{ProviderCreateMaxAttempts: 3}, provider, recorder)
+
+	err := prov.Provision(coreclient.NewContext(t.Context(), cli))
+	require.ErrorIs(t, err, provisioners.ErrTerminal)
+	require.Equal(t, int32(3), server.Status.ProviderCreateFailures)
+	require.False(t, server.Status.ProviderCreateRetrying)
 }
 
 func TestProvision_LaunchedServerHealthErrorDoesNotRetryCreate(t *testing.T) {
