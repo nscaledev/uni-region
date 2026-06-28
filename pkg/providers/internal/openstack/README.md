@@ -94,9 +94,11 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - pinned server creation can also enable a transient
     `openstack.compute.placementPreflight` check. When enabled, the provider
     asks OpenStack Placement whether the pinned resource provider has available
-    inventory for the flavor's positive custom `resources:*` extra spec and any
-    configured `requiredTraits`. Empty `requiredTraits` means no trait filter.
-    A miss yields and lets the controller retry.
+    inventory for the flavor's positive custom `resources:*` extra spec and
+    any `trait:*` extra specs, unioned with configured `requiredTraits`.
+    Required flavor traits are sent as positive Placement `required` entries;
+    forbidden flavor traits are sent as `!TRAIT` entries. Empty trait inputs
+    mean no trait filter. A miss yields and lets the controller retry.
 - `OpenstackIdentity` is the remaining persisted provider-state anchor. It
   currently stores the secret-bearing user/project/application-credential and
   bootstrap state needed to operate on behalf of a region `Identity`.

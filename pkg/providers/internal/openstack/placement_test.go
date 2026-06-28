@@ -66,20 +66,23 @@ func TestNewPlacementClientSetsMicroversion(t *testing.T) {
 func TestPlacementPreflightRequiredTraits(t *testing.T) {
 	t.Parallel()
 
-	require.Empty(t, openstack.PlacementPreflightRequiredTraits(nil))
-	require.Empty(t, openstack.PlacementPreflightRequiredTraits(&unikornv1.PlacementPreflightSpec{}))
+	require.Empty(t, openstack.PlacementPreflightRequiredTraits(nil, nil))
+	require.Empty(t, openstack.PlacementPreflightRequiredTraits(&unikornv1.PlacementPreflightSpec{}, nil))
 
-	traits := openstack.PlacementPreflightRequiredTraits(&unikornv1.PlacementPreflightSpec{
-		RequiredTraits: []string{
-			" custom_customer_ready ",
-			"",
-			"CUSTOM_CUSTOMER_READY",
-			"hw_cpu_x86_avx",
+	traits := openstack.PlacementPreflightRequiredTraits(
+		&unikornv1.PlacementPreflightSpec{
+			RequiredTraits: []string{
+				" custom_customer_ready ",
+				"",
+				"CUSTOM_CUSTOMER_READY",
+				"hw_cpu_x86_avx",
+			},
 		},
-	})
+		[]string{"CUSTOM_FLAVOR_READY", "custom_customer_ready"},
+	)
 
-	require.Equal(t, []string{"CUSTOM_CUSTOMER_READY", "HW_CPU_X86_AVX"}, traits)
-	require.Equal(t, "CUSTOM_CUSTOMER_READY,HW_CPU_X86_AVX", openstack.PlacementRequiredTraitsQuery(traits))
+	require.Equal(t, []string{"CUSTOM_FLAVOR_READY", "CUSTOM_CUSTOMER_READY", "HW_CPU_X86_AVX"}, traits)
+	require.Equal(t, "CUSTOM_FLAVOR_READY,CUSTOM_CUSTOMER_READY,HW_CPU_X86_AVX", openstack.PlacementRequiredTraitsQuery(traits))
 }
 
 func TestPlacementResourceQuery(t *testing.T) {
@@ -148,6 +151,40 @@ func TestFlavorPlacementResourceClass(t *testing.T) {
 	})
 }
 
+func TestFlavorPlacementTraits(t *testing.T) {
+	t.Parallel()
+
+	t.Run("RequiredTraits", func(t *testing.T) {
+		t.Parallel()
+
+		traits, err := openstack.FlavorPlacementTraits(flavors.Flavor{
+			ID: "gpu",
+			ExtraSpecs: map[string]string{
+				"trait:CUSTOM_CUSTOMER_READY": "required",
+				"trait:HW_CPU_X86_AVX":        " required ",
+				"trait:CUSTOM_BLOCKED":        "forbidden",
+				"resources:CUSTOM_GPU":        "1",
+			},
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, []string{"!CUSTOM_BLOCKED", "CUSTOM_CUSTOMER_READY", "HW_CPU_X86_AVX"}, traits)
+	})
+
+	t.Run("InvalidValue", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := openstack.FlavorPlacementTraits(flavors.Flavor{
+			ID: "invalid",
+			ExtraSpecs: map[string]string{
+				"trait:CUSTOM_READY": "sometimes",
+			},
+		})
+
+		require.ErrorIs(t, err, coreerrors.ErrConsistency)
+	})
+}
+
 func TestServerCreatePlacementPreflight(t *testing.T) {
 	t.Parallel()
 
@@ -202,7 +239,9 @@ func TestServerCreatePlacementPreflight(t *testing.T) {
 			{
 				ID: "flavor-a",
 				ExtraSpecs: map[string]string{
-					"resources:CUSTOM_GPU": "1",
+					"resources:CUSTOM_GPU":        "1",
+					"trait:CUSTOM_FLAVOR_READY":   "required",
+					"trait:CUSTOM_PROVIDER_BLOCK": "forbidden",
 				},
 			},
 		}, nil)
@@ -211,7 +250,7 @@ func TestServerCreatePlacementPreflight(t *testing.T) {
 		placementClient.EXPECT().ResourceProviderAvailable(t.Context(), openstack.PlacementResourceProviderQuery{
 			InfrastructureRef: "node-a",
 			ResourceClass:     "CUSTOM_GPU",
-			RequiredTraits:    []string{"CUSTOM_READY"},
+			RequiredTraits:    []string{"!CUSTOM_PROVIDER_BLOCK", "CUSTOM_FLAVOR_READY", "CUSTOM_READY"},
 		}).Return(true, nil)
 
 		preflight := openstack.NewTestServerCreatePlacementPreflight(
@@ -278,7 +317,7 @@ func TestPlacementClientResourceProviderAvailable(t *testing.T) {
 			t.Errorf("required query = %q, want %q", got, want)
 		}
 
-		if got, want := r.Header.Get("Openstack-Api-Version"), "placement 1.18"; got != want {
+		if got, want := r.Header.Get("Openstack-Api-Version"), "placement 1.22"; got != want {
 			t.Errorf("microversion header = %q, want %q", got, want)
 		}
 
