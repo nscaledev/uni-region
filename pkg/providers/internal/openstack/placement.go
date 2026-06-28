@@ -35,13 +35,21 @@ import (
 )
 
 const (
-	placementAPIMicroversion = "1.18"
+	placementAPIMicroversion = "1.22"
 
 	placementResourceExtraSpecPrefix = "resources:"
+	placementTraitExtraSpecPrefix    = "trait:"
+	placementRequiredTraitValue      = "required"
+	placementForbiddenTraitValue     = "forbidden"
+	placementForbiddenTraitPrefix    = "!"
 	customPlacementResourcePrefix    = "CUSTOM_"
 )
 
-var errPlacementResourceClassRequired = errors.New("placement resource class is required")
+var (
+	errPlacementResourceClassRequired     = errors.New("placement resource class is required")
+	errPlacementRequiredTraitNameRequired = errors.New("placement required trait name is required")
+	errPlacementRequiredTraitUnsupported  = errors.New("placement required trait is unsupported")
+)
 
 // PlacementResourceProviderQuery scopes an OpenStack Placement provider lookup.
 type PlacementResourceProviderQuery struct {
@@ -135,12 +143,17 @@ func customPlacementResourceClass(resourceClass string) string {
 	return customPlacementResourcePrefix + strings.Trim(normalized, "_")
 }
 
-func placementPreflightRequiredTraits(preflight *unikornv1.PlacementPreflightSpec) []string {
-	if preflight == nil || len(preflight.RequiredTraits) == 0 {
+func placementPreflightRequiredTraits(preflight *unikornv1.PlacementPreflightSpec, flavorTraits []string) []string {
+	traits := flavorTraits
+	if preflight != nil && len(preflight.RequiredTraits) > 0 {
+		traits = append(traits, preflight.RequiredTraits...)
+	}
+
+	if len(traits) == 0 {
 		return nil
 	}
 
-	return normalizePlacementRequiredTraits(preflight.RequiredTraits)
+	return normalizePlacementRequiredTraits(traits)
 }
 
 func placementRequiredTraitsQuery(traits []string) string {
@@ -185,7 +198,7 @@ func (p serverCreatePlacementPreflight) check(ctx context.Context, server *uniko
 		return nil
 	}
 
-	resourceClass, err := p.flavorPlacementResourceClass(ctx, server.Spec.FlavorID)
+	resourceClass, flavorTraits, err := p.flavorPlacementRequirements(ctx, server.Spec.FlavorID)
 	if err != nil {
 		return err
 	}
@@ -198,7 +211,7 @@ func (p serverCreatePlacementPreflight) check(ctx context.Context, server *uniko
 	available, err := placementClient.ResourceProviderAvailable(ctx, PlacementResourceProviderQuery{
 		InfrastructureRef: *server.Spec.InfrastructureRef,
 		ResourceClass:     resourceClass,
-		RequiredTraits:    placementPreflightRequiredTraits(config),
+		RequiredTraits:    placementPreflightRequiredTraits(config, flavorTraits),
 	})
 	if err != nil {
 		return err
@@ -211,24 +224,36 @@ func (p serverCreatePlacementPreflight) check(ctx context.Context, server *uniko
 	return nil
 }
 
-func (p serverCreatePlacementPreflight) flavorPlacementResourceClass(ctx context.Context, flavorID string) (string, error) {
+func (p serverCreatePlacementPreflight) flavorPlacementRequirements(ctx context.Context, flavorID string) (string, []string, error) {
 	flavors, err := p.flavorClient.GetFlavors(ctx)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
-	return serverFlavorPlacementResourceClass(flavors, flavorID)
+	return serverFlavorPlacementRequirements(flavors, flavorID)
 }
 
-func serverFlavorPlacementResourceClass(openstackFlavors []flavors.Flavor, flavorID string) (string, error) {
+func serverFlavorPlacementRequirements(openstackFlavors []flavors.Flavor, flavorID string) (string, []string, error) {
 	index := slices.IndexFunc(openstackFlavors, func(flavor flavors.Flavor) bool {
 		return flavor.ID == flavorID
 	})
 	if index < 0 {
-		return "", fmt.Errorf("%w: flavor %q not found", coreerrors.ErrConsistency, flavorID)
+		return "", nil, fmt.Errorf("%w: flavor %q not found", coreerrors.ErrConsistency, flavorID)
 	}
 
-	return flavorPlacementResourceClass(openstackFlavors[index])
+	flavor := openstackFlavors[index]
+
+	resourceClass, err := flavorPlacementResourceClass(flavor)
+	if err != nil {
+		return "", nil, err
+	}
+
+	requiredTraits, err := flavorPlacementTraits(flavor)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return resourceClass, requiredTraits, nil
 }
 
 func flavorPlacementResourceClass(flavor flavors.Flavor) (string, error) {
@@ -277,6 +302,48 @@ func placementResourceClassFromExtraSpec(key, value string) (string, bool, error
 	}
 
 	return resourceClass, true, nil
+}
+
+func flavorPlacementTraits(flavor flavors.Flavor) ([]string, error) {
+	traits := []string{}
+
+	for key, value := range flavor.ExtraSpecs {
+		trait, ok, err := placementRequiredTraitFromExtraSpec(key, value)
+		if err != nil {
+			return nil, fmt.Errorf("%w: flavor %q placement required trait: %w", coreerrors.ErrConsistency, flavor.ID, err)
+		}
+
+		if !ok {
+			continue
+		}
+
+		traits = append(traits, trait)
+	}
+
+	slices.Sort(traits)
+
+	return normalizePlacementRequiredTraits(traits), nil
+}
+
+func placementRequiredTraitFromExtraSpec(key, value string) (string, bool, error) {
+	key = strings.TrimSpace(key)
+	if !strings.HasPrefix(strings.ToLower(key), placementTraitExtraSpecPrefix) {
+		return "", false, nil
+	}
+
+	trait := strings.ToUpper(strings.TrimSpace(key[len(placementTraitExtraSpecPrefix):]))
+	if trait == "" {
+		return "", false, fmt.Errorf("%w: %q", errPlacementRequiredTraitNameRequired, key)
+	}
+
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case placementRequiredTraitValue:
+		return trait, true, nil
+	case placementForbiddenTraitValue:
+		return placementForbiddenTraitPrefix + trait, true, nil
+	default:
+		return "", false, fmt.Errorf("%w: %q value %q", errPlacementRequiredTraitUnsupported, key, value)
+	}
 }
 
 func placementPreflightConfig(region *unikornv1.Region) *unikornv1.PlacementPreflightSpec {

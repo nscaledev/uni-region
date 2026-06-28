@@ -120,6 +120,9 @@ var PlacementResourceQuery = placementResourceQuery
 //nolint:gochecknoglobals
 var FlavorPlacementResourceClass = flavorPlacementResourceClass
 
+//nolint:gochecknoglobals
+var FlavorPlacementTraits = flavorPlacementTraits
+
 func NewTestServerCreatePlacementPreflight(config *unikornv1.PlacementPreflightSpec, flavorClient FlavorInterface, placementClient PlacementInterface) func(context.Context, *unikornv1.Server) error {
 	preflight := serverCreatePlacementPreflight{
 		config: func() *unikornv1.PlacementPreflightSpec {
