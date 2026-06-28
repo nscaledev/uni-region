@@ -94,8 +94,9 @@ func testSrvNetworkWithProject(projID string) *regionv1.Network {
 	}
 }
 
-// aclWithOrgScopeServerCreate grants network:read and region:servers/Create at
-// organization scope so GetV2Raw passes and AllowProjectScopeCreate is reached.
+// aclWithOrgScopeServerCreate grants network:read, securitygroups:read,
+// sshcertificateauthorities:read and region:servers/Create at organization scope so
+// the referenced-resource GetV2Raw calls pass and AllowProjectScopeCreate is reached.
 func aclWithOrgScopeServerCreate() *identityapi.Acl {
 	return &identityapi.Acl{
 		Organizations: &identityapi.AclOrganizationList{
@@ -109,6 +110,10 @@ func aclWithOrgScopeServerCreate() *identityapi.Acl {
 					{
 						Name:       "region:servers",
 						Operations: identityapi.AclOperations{identityapi.Create},
+					},
+					{
+						Name:       "region:securitygroups:v2",
+						Operations: identityapi.AclOperations{identityapi.Read},
 					},
 					{
 						Name:       "region:sshcertificateauthorities:v2",
@@ -242,6 +247,21 @@ func testServerWithSSHCertificateAuthority(orgID, projID, serverID, caID string)
 	}
 }
 
+func testSecurityGroupInNetwork(networkID, securityGroupID string) *regionv1.SecurityGroup {
+	return &regionv1.SecurityGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      securityGroupID,
+			Namespace: srvNamespace,
+			Labels: map[string]string{
+				coreconstants.OrganizationLabel:   srvOrganizationID,
+				coreconstants.ProjectLabel:        srvProjectID,
+				constants.NetworkLabel:            networkID,
+				constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
+			},
+		},
+	}
+}
+
 // TestServerCreateV2RBACOrgScopedProjectNotFound verifies that CreateV2 returns
 // a 404 Not Found when the caller has org-scoped ACL but the project from the
 // network labels does not exist in the identity service.
@@ -361,6 +381,106 @@ func TestServerCreateV2SSHCertificateAuthorityRejectsCrossProjectReference(t *te
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+}
+
+func TestServerCreateV2SecurityGroupNotFound(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	k8sClient := newSrvFakeClient(t, network).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate())
+
+	request := minimalServerV2CreateRequest()
+	request.Spec.Networking = &openapi.ServerV2Networking{
+		SecurityGroups: &openapi.ServerV2SecurityGroupIDList{"missing-security-group"},
+	}
+
+	_, err := c.CreateV2(ctx, request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+}
+
+func TestServerCreateV2SecurityGroupRejectsDifferentNetwork(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+	// A security group in the same organization and project as the server, but in a
+	// different network — and therefore a different identity / OpenStack project.
+	securityGroup := testSecurityGroupInNetwork("99999999-9999-4999-a999-999999999999", "sg-1")
+
+	k8sClient := newSrvFakeClient(t, network, securityGroup).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate())
+
+	request := minimalServerV2CreateRequest()
+	request.Spec.Networking = &openapi.ServerV2Networking{
+		SecurityGroups: &openapi.ServerV2SecurityGroupIDList{securityGroup.Name},
+	}
+
+	_, err := c.CreateV2(ctx, request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+}
+
+func TestServerCreateV2SecurityGroupAcceptsSameNetwork(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+	securityGroup := testSecurityGroupInNetwork(srvNetworkID, "sg-1")
+
+	k8sClient := newSrvFakeClient(t, network, securityGroup).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	mockProviders := newMockProvidersWithNoFlavors(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+		Providers: mockProviders,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	request := minimalServerV2CreateRequest()
+	request.Spec.Networking = &openapi.ServerV2Networking{
+		SecurityGroups: &openapi.ServerV2SecurityGroupIDList{securityGroup.Name},
+	}
+
+	result, err := c.CreateV2(ctx, request)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
 }
 
 func TestServerCreateV2SSHCertificateAuthorityRejectsUnsupportedUserData(t *testing.T) {

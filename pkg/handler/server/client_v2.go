@@ -44,6 +44,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
+	"github.com/unikorn-cloud/region/pkg/handler/securitygroup"
 	"github.com/unikorn-cloud/region/pkg/handler/sshcertificateauthority"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
@@ -326,6 +327,41 @@ func (c *ClientV2) validateSSHCertificateAuthorityReference(ctx context.Context,
 	return nil
 }
 
+// assertSameNetwork denies a security group reference that belongs to a different
+// network. A network belongs to exactly one identity (one underlying OpenStack
+// project), which in turn belongs to one organization and project, so requiring the
+// security group to share the server's network closes the cross-tenancy hole at its
+// natural granularity — and is what OpenStack itself permits. The security group's
+// owning network is exposed identically in region (the NetworkLabel) and in the read
+// model the compute service consumes (status.networkId), so the same rule is enforced
+// uniformly across both services.
+func assertSameNetwork(networkID string, securityGroup *regionv1.SecurityGroup) error {
+	if securityGroup.Labels[constants.NetworkLabel] != networkID {
+		return errors.HTTPUnprocessableContent("a referenced security group must belong to the same network as the server")
+	}
+
+	return nil
+}
+
+func (c *ClientV2) validateSecurityGroupReferences(ctx context.Context, networkID string, networking *openapi.ServerV2Networking) error {
+	if networking == nil || networking.SecurityGroups == nil {
+		return nil
+	}
+
+	for _, id := range *networking.SecurityGroups {
+		securityGroup, err := securitygroup.New(c.Client.ClientArgs).GetV2Raw(ctx, id)
+		if err != nil {
+			return err
+		}
+
+		if err := assertSameNetwork(networkID, securityGroup); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (c *ClientV2) validateInfrastructureRefForFlavor(ctx context.Context, regionID, flavorID string, infrastructureRef *string) error {
 	if infrastructureRef != nil {
 		return nil
@@ -462,7 +498,8 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 
 // validateCreateV2Request runs the request-level validations for a v2 server
 // create: SSH certificate authority user-data coupling, that any referenced SSH
-// certificate authority shares the server's tenancy, and the infrastructure
+// certificate authority shares the server's organization and project, that any
+// referenced security group belongs to the server's network, and the infrastructure
 // reference requirements of the requested flavor.
 func (c *ClientV2) validateCreateV2Request(ctx context.Context, request *openapi.ServerV2Create, network *regionv1.Network) error {
 	if err := validateUserDataForSSHCertificateAuthority(request.Spec.SshCertificateAuthorityId, request.Spec.UserData); err != nil {
@@ -470,6 +507,10 @@ func (c *ClientV2) validateCreateV2Request(ctx context.Context, request *openapi
 	}
 
 	if err := c.validateSSHCertificateAuthorityReference(ctx, network, request.Spec.SshCertificateAuthorityId); err != nil {
+		return err
+	}
+
+	if err := c.validateSecurityGroupReferences(ctx, network.Name, request.Spec.Networking); err != nil {
 		return err
 	}
 
@@ -579,6 +620,14 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, re
 
 	if request.Metadata.Name != current.Labels[coreconstants.NameLabel] {
 		return nil, errors.HTTPUnprocessableContent("server names are immutable")
+	}
+
+	// Security groups are mutable, so re-validate that every referenced group still
+	// belongs to the server's network. The SSH certificate authority and
+	// infrastructure reference are immutable, so they keep the scope validated at
+	// create time.
+	if err := c.validateSecurityGroupReferences(ctx, current.Labels[constants.NetworkLabel], request.Spec.Networking); err != nil {
+		return nil, err
 	}
 
 	// Get the network, required for generation.

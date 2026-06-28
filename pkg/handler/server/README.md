@@ -23,6 +23,20 @@ related dependencies rather than from nested path scope.
 - `v2` servers are network-linked resources with direct ID-based access
 - create/update validate referenced image existence through the provider layer
 - create/update can validate and bind an SSH certificate authority
+- create/update reject references that escape the server's scope, enforced at the
+  API edge with HTTP 422. The RBAC read check that fetches a reference only proves
+  the caller may see it — a caller authorized across several tenancies could
+  otherwise attach a resource from another tenancy — so an explicit scope check is
+  applied on top:
+  - a referenced security group must belong to the same **network** as the server.
+    A network belongs to exactly one identity (one underlying OpenStack project),
+    which belongs to one organization and project, so same-network is the natural
+    granularity that closes the cross-tenancy hole and matches what OpenStack itself
+    permits. The owning network is exposed identically in region (the `NetworkLabel`)
+    and in the read model the compute service consumes (`status.networkId`), so the
+    same rule is enforced uniformly across both services.
+  - a referenced SSH certificate authority (which is not network-scoped) must share
+    the server's organization and project.
 - create can carry an `infrastructureRef` that pins initial placement to a
   provider-specific physical host; reads expose the value in status so callers
   can verify the placement request that was persisted
@@ -83,5 +97,7 @@ related dependencies rather than from nested path scope.
   `v2` servers
 - [../sshcertificateauthority](../sshcertificateauthority/README.md) documents
   the referenced SSH CA resource model
+- [../securitygroup](../securitygroup/README.md) documents the referenced
+  security group resource model
 - [../image](../image/README.md) documents the image-side semantics that
   snapshot creation feeds into
