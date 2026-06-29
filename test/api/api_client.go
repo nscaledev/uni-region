@@ -518,21 +518,29 @@ func (c *APIClient) CreateFileStorage(ctx context.Context, request regionopenapi
 }
 
 // GetFileStorage gets a specific file storage resource by ID.
+// Returns ErrResourceNotFound if the file storage resource does not exist.
 func (c *APIClient) GetFileStorage(ctx context.Context, filestorageID string) (*regionopenapi.StorageV2Read, error) {
 	path := c.endpoints.GetFileStorage(filestorageID)
 
 	//nolint:bodyclose // DoRequest handles response body closing internally
-	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	resp, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, 0)
 	if err != nil {
 		return nil, fmt.Errorf("getting filestorage: %w", err)
 	}
 
-	var storage regionopenapi.StorageV2Read
-	if err := json.Unmarshal(respBody, &storage); err != nil {
-		return nil, fmt.Errorf("unmarshaling filestorage: %w", err)
-	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var storage regionopenapi.StorageV2Read
+		if err := json.Unmarshal(respBody, &storage); err != nil {
+			return nil, fmt.Errorf("unmarshaling filestorage: %w", err)
+		}
 
-	return &storage, nil
+		return &storage, nil
+	case http.StatusNotFound:
+		return nil, fmt.Errorf("filestorage '%s': %w", filestorageID, coreclient.ErrResourceNotFound)
+	default:
+		return nil, fmt.Errorf("getting filestorage: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
 }
 
 // UpdateFileStorage updates a file storage resource.

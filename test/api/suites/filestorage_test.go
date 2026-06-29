@@ -22,6 +22,8 @@ limitations under the License.
 package suites
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -155,6 +157,23 @@ func expectDefaultProtectionUpdateState(storage *regionopenapi.StorageV2Read, de
 	Expect(*storage.Spec.DefaultSnapshotProtectionEnabled).To(Equal(defaultProtectionEnabled))
 	Expect(storage.Spec.SnapshotPolicies).NotTo(BeNil())
 	Expect(*storage.Spec.SnapshotPolicies).To(Equal(snapshotPolicies))
+}
+
+func EventuallyFileStorageDeleted(ctx context.Context, filestorageID string) {
+	Eventually(func() error {
+		_, err := regionClient.GetFileStorage(ctx, filestorageID)
+		if errors.Is(err, coreclient.ErrResourceNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		return fmt.Errorf("file storage %s still exists", filestorageID)
+	}).
+		WithTimeout(5*time.Minute).
+		WithPolling(5*time.Second).
+		Should(Succeed(), "Storage should be deleted")
 }
 
 // INST-926 tracks Dev environment setup for file storage classes. Until Dev exposes
@@ -728,13 +747,7 @@ var _ = Describe("File Storage Management", func() {
 
 				GinkgoWriter.Printf("Deleted file storage: %s\n", filestorageID)
 
-				Eventually(func() error {
-					_, err := regionClient.GetFileStorage(ctx, filestorageID)
-					return err
-				}).WithTimeout(2*time.Minute).
-					WithPolling(5*time.Second).
-					Should(And(HaveOccurred(), MatchError(coreclient.ErrUnexpectedStatusCode)),
-						"Storage should be deleted")
+				EventuallyFileStorageDeleted(ctx, filestorageID)
 
 				GinkgoWriter.Printf("Confirmed file storage deleted: %s\n", filestorageID)
 				filestorageID = "" // suppress AfterAll cleanup; storage has been confirmed deleted
@@ -781,13 +794,7 @@ var _ = Describe("File Storage Management", func() {
 				}
 
 				GinkgoWriter.Printf("Waiting for storage cleanup: %s\n", filestorageID)
-				Eventually(func() error {
-					_, err := regionClient.GetFileStorage(ctx, filestorageID)
-					return err
-				}).WithTimeout(2*time.Minute).
-					WithPolling(5*time.Second).
-					Should(And(HaveOccurred(), MatchError(coreclient.ErrUnexpectedStatusCode)),
-						"Storage should be deleted during cleanup")
+				EventuallyFileStorageDeleted(ctx, filestorageID)
 			}
 
 			if networkID != "" {
