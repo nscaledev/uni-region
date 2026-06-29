@@ -13,7 +13,8 @@ Distinctive behaviour:
 - augments provider create options with managed cloud-init parts for SSH CA use
 - retries provider-accepted create attempts that later land in provider error,
   deleting the failed provider server before a bounded re-attempt, but only for
-  servers that have never been successfully provisioned
+  servers that have never been successfully provisioned; once the attempt cap is
+  reached it aborts terminally rather than retrying further
 - clears or updates consumed-resource references during reprovision and teardown
 
 This is the clearest controller-side expression of the lifecycle DAG model:
@@ -27,9 +28,19 @@ This is the clearest controller-side expression of the lifecycle DAG model:
 
 - Reference maintenance here is easy to underappreciate, but it is central to
   keeping server deletion and dependent-resource blocking semantics correct.
-- Provider create retry state is stored on `Server.status`; changing retry
-  behaviour must preserve the invariant that transient provider create failures
-  return `ErrYield` until the configured attempt limit is reached.
+- Provider create retry state is stored on `Server.status.providerCreateFailures`.
+  Transient provider create failures return `ErrYield` (a fixed-interval requeue)
+  until the configured attempt cap is reached. At the cap the provisioner returns
+  the core `provisioners.Terminal` disposition, so the reconciler parks the server
+  (writes `Errored`, stops requeuing) instead of looping forever on a failure that
+  cannot self-heal — the bare error it used to return was requeued every yield
+  interval indefinitely, starving the workqueue. The counter is tested against the
+  prospective attempt and clamped to the cap, so it settles at the cap and cannot
+  drift on re-reconcile or controller restart (an already-drifted counter heals
+  back down on its next pass). Recovery is deliberately out of band: the terminal
+  state is sticky until an operator resets `providerCreateFailures`, which re-arms
+  the retry on the next reconcile. Changing retry behaviour must preserve these
+  invariants.
 - The delete-and-retry decision lives in the single `ProviderCreateFailure`
   predicate, shared with the controller watch predicate
   (`pkg/managers/server`) so the trigger and the action cannot drift. It fails

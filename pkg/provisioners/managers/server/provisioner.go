@@ -51,8 +51,6 @@ const (
 	eventReasonProviderCreateFailed     = "ProviderCreateFailed"
 )
 
-var errProviderServerCreateFailed = errors.New("provider server create failed")
-
 // Options allows access to CLI options in the provisioner.
 type Options struct {
 	// ProviderCreateMaxAttempts bounds provider server create attempts before
@@ -355,23 +353,30 @@ func (p *Provisioner) handleProviderCreateRetry(ctx context.Context, provider ty
 	}
 
 	attempt := p.server.Status.ProviderCreateFailures + 1
-	p.server.Status.ProviderCreateFailures = attempt
 
 	if attempt >= maxAttempts {
+		// We have reached the attempt cap. Clamp the counter to the cap before
+		// returning so a re-reconcile (for example after a controller restart,
+		// where the failure predicate still holds) cannot advance it any further,
+		// then abort terminally instead of retrying. Recovery is out of band:
+		// once the underlying fault is fixed an operator resets
+		// ProviderCreateFailures to re-arm the retry process.
+		p.server.Status.ProviderCreateFailures = maxAttempts
 		p.server.Status.ProviderCreateRetrying = false
 		p.recordProviderCreateRetryEvent(
 			ctx,
 			corev1.EventTypeWarning,
 			eventReasonProviderCreateFailed,
 			"provider server create failed after all retry attempts",
-			fmt.Sprintf("Provider server create failed after %d attempts", attempt),
-			attempt,
+			fmt.Sprintf("Provider server create failed after %d attempts", maxAttempts),
+			maxAttempts,
 			maxAttempts,
 		)
 
-		return true, fmt.Errorf("%w after %d attempts", errProviderServerCreateFailed, attempt)
+		return true, provisioners.Terminal("provider_create_failed", fmt.Sprintf("provider server create failed after %d attempts", maxAttempts))
 	}
 
+	p.server.Status.ProviderCreateFailures = attempt
 	p.server.Status.ProviderCreateRetrying = true
 	p.recordProviderCreateRetryEvent(
 		ctx,
