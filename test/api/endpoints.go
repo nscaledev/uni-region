@@ -61,12 +61,6 @@ func (e *Endpoints) DeleteImage(orgID, regionID, imageID string) string {
 		url.PathEscape(orgID), url.PathEscape(regionID), url.PathEscape(imageID))
 }
 
-// ListExternalNetworks returns the endpoint for listing external networks in a region.
-func (e *Endpoints) ListExternalNetworks(orgID, regionID string) string {
-	return fmt.Sprintf("/api/v1/organizations/%s/regions/%s/externalnetworks",
-		url.PathEscape(orgID), url.PathEscape(regionID))
-}
-
 // ListFileStorage returns the endpoint for listing file storage in a project.
 func (e *Endpoints) ListFileStorage(orgID, projectID, regionID string) string {
 	return fmt.Sprintf("/api/v2/filestorage?organizationID=%s&projectID=%s&regionID=%s",

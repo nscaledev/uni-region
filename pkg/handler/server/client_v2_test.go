@@ -28,6 +28,7 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
@@ -37,6 +38,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
 	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
@@ -50,10 +52,15 @@ import (
 )
 
 const (
-	srvOrganizationID = "foo"
-	srvProjectID      = "bar"
-	srvNamespace      = "test-namespace"
-	srvNetworkID      = "aaaabbbb-1234-5678-9abc-def012345678"
+	srvOrganizationID     = "11111111-1111-4111-a111-111111111111"
+	srvProjectID          = "22222222-2222-4222-a222-222222222222"
+	srvNonexistentProject = "33333333-3333-4333-a333-333333333333"
+	srvNamespace          = "test-namespace"
+	srvNetworkID          = "aaaabbbb-1234-5678-9abc-def012345678"
+	srvFlavorID           = "44444444-4444-4444-a444-444444444444"
+	srvImageID            = "55555555-5555-4555-a555-555555555555"
+	srvServerID           = "66666666-6666-4666-a666-666666666666"
+	srvNonexistentID      = "77777777-7777-4777-a777-777777777777"
 )
 
 // newSrvFakeClient builds a fake k8s client pre-populated with the given objects.
@@ -87,8 +94,9 @@ func testSrvNetworkWithProject(projID string) *regionv1.Network {
 	}
 }
 
-// aclWithOrgScopeServerCreate grants network:read and region:servers/Create at
-// organization scope so GetV2Raw passes and AllowProjectScopeCreate is reached.
+// aclWithOrgScopeServerCreate grants network:read, securitygroups:read,
+// sshcertificateauthorities:read and region:servers/Create at organization scope so
+// the referenced-resource GetV2Raw calls pass and AllowProjectScopeCreate is reached.
 func aclWithOrgScopeServerCreate() *identityapi.Acl {
 	return &identityapi.Acl{
 		Organizations: &identityapi.AclOrganizationList{
@@ -102,6 +110,10 @@ func aclWithOrgScopeServerCreate() *identityapi.Acl {
 					{
 						Name:       "region:servers",
 						Operations: identityapi.AclOperations{identityapi.Create},
+					},
+					{
+						Name:       "region:securitygroups:v2",
+						Operations: identityapi.AclOperations{identityapi.Read},
 					},
 					{
 						Name:       "region:sshcertificateauthorities:v2",
@@ -153,7 +165,7 @@ func aclWithSrvUpdate() *identityapi.Acl {
 
 func expectProjectFound(mockIdentity *identitymock.MockClientWithResponsesInterface) *gomock.Call {
 	return mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), identityids.MustParseProjectID(srvProjectID)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
 		}, nil)
@@ -173,7 +185,7 @@ func minimalServerV2CreateRequest() *openapi.ServerV2Create {
 	return &openapi.ServerV2Create{
 		Metadata: coreapi.ResourceWriteMetadata{Name: "test-server"},
 		Spec: openapi.ServerV2CreateSpec{
-			NetworkId: srvNetworkID,
+			NetworkId: regionids.MustParseNetworkID(srvNetworkID),
 		},
 	}
 }
@@ -223,14 +235,29 @@ func testServerWithSSHCertificateAuthority(orgID, projID, serverID, caID string)
 			},
 		},
 		Spec: regionv1.ServerSpec{
-			FlavorID: "flavor-1",
+			FlavorID: srvFlavorID,
 			Image: &regionv1.ServerImage{
-				ID: "image-1",
+				ID: srvImageID,
 			},
 			Networks: []regionv1.ServerNetworkSpec{{
 				ID: srvNetworkID,
 			}},
 			SSHCertificateAuthorityID: ptr.To(caID),
+		},
+	}
+}
+
+func testSecurityGroupInNetwork(networkID, securityGroupID string) *regionv1.SecurityGroup {
+	return &regionv1.SecurityGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      securityGroupID,
+			Namespace: srvNamespace,
+			Labels: map[string]string{
+				coreconstants.OrganizationLabel:   srvOrganizationID,
+				coreconstants.ProjectLabel:        srvProjectID,
+				constants.NetworkLabel:            networkID,
+				constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
+			},
 		},
 	}
 }
@@ -243,13 +270,13 @@ func TestServerCreateV2RBACOrgScopedProjectNotFound(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 
-	network := testSrvNetworkWithProject("nonexistent-project")
+	network := testSrvNetworkWithProject(srvNonexistentProject)
 
 	k8sClient := newSrvFakeClient(t, network).Build()
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, "nonexistent-project").
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), identityids.MustParseProjectID(srvNonexistentProject)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusNotFound},
 		}, nil)
@@ -332,7 +359,7 @@ func TestServerCreateV2SSHCertificateAuthorityRejectsCrossProjectReference(t *te
 	ctrl := gomock.NewController(t)
 
 	network := testSrvNetworkWithProject(srvProjectID)
-	ca := testSSHCertificateAuthorityWithProject("other-project", "ca-1")
+	ca := testSSHCertificateAuthorityWithProject("99999999-9999-4999-a999-999999999999", "ca-1")
 
 	k8sClient := newSrvFakeClient(t, network, ca).Build()
 
@@ -354,6 +381,106 @@ func TestServerCreateV2SSHCertificateAuthorityRejectsCrossProjectReference(t *te
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+}
+
+func TestServerCreateV2SecurityGroupNotFound(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	k8sClient := newSrvFakeClient(t, network).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate())
+
+	request := minimalServerV2CreateRequest()
+	request.Spec.Networking = &openapi.ServerV2Networking{
+		SecurityGroups: &openapi.ServerV2SecurityGroupIDList{"missing-security-group"},
+	}
+
+	_, err := c.CreateV2(ctx, request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+}
+
+func TestServerCreateV2SecurityGroupRejectsDifferentNetwork(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+	// A security group in the same organization and project as the server, but in a
+	// different network — and therefore a different identity / OpenStack project.
+	securityGroup := testSecurityGroupInNetwork("99999999-9999-4999-a999-999999999999", "sg-1")
+
+	k8sClient := newSrvFakeClient(t, network, securityGroup).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate())
+
+	request := minimalServerV2CreateRequest()
+	request.Spec.Networking = &openapi.ServerV2Networking{
+		SecurityGroups: &openapi.ServerV2SecurityGroupIDList{securityGroup.Name},
+	}
+
+	_, err := c.CreateV2(ctx, request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+}
+
+func TestServerCreateV2SecurityGroupAcceptsSameNetwork(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+	securityGroup := testSecurityGroupInNetwork(srvNetworkID, "sg-1")
+
+	k8sClient := newSrvFakeClient(t, network, securityGroup).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	mockProviders := newMockProvidersWithNoFlavors(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+		Providers: mockProviders,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	request := minimalServerV2CreateRequest()
+	request.Spec.Networking = &openapi.ServerV2Networking{
+		SecurityGroups: &openapi.ServerV2SecurityGroupIDList{securityGroup.Name},
+	}
+
+	result, err := c.CreateV2(ctx, request)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
 }
 
 func TestServerCreateV2SSHCertificateAuthorityRejectsUnsupportedUserData(t *testing.T) {
@@ -487,7 +614,7 @@ func TestServerCreateV2SetsInfrastructureRef(t *testing.T) {
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), srvOrganizationID, srvProjectID).
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), identityids.MustParseProjectID(srvProjectID)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
 		}, nil)
@@ -523,7 +650,7 @@ func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	network := testSrvNetworkWithProject(srvProjectID)
-	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, "server-1", "ca-1")
+	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, srvServerID, "ca-1")
 
 	k8sClient := newSrvFakeClient(t, network, resource).Build()
 
@@ -540,13 +667,13 @@ func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 	request := &openapi.ServerV2Update{
 		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
 		Spec: openapi.ServerV2Spec{
-			FlavorId: resource.Spec.FlavorID,
-			ImageId:  resource.Spec.Image.ID,
+			FlavorId: regionids.MustParseFlavorID(resource.Spec.FlavorID),
+			ImageId:  regionids.MustParseImageID(resource.Spec.Image.ID),
 			UserData: ptr.To([]byte("#cloud-config\nusers: []\n")),
 		},
 	}
 
-	result, err := c.UpdateV2(ctx, resource.Name, request)
+	result, err := c.UpdateV2(ctx, regionids.MustParseServerID(resource.Name), request)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -562,7 +689,7 @@ func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 
-	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, "server-1", "ca-1")
+	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, srvServerID, "ca-1")
 	resource.Status.Phase = regionv1.InstanceLifecyclePhaseRunning
 	resource.Status.PrivateIP = ptr.To("192.168.0.42")
 	resource.Status.PublicIP = ptr.To("203.0.113.10")
@@ -579,7 +706,7 @@ func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
 
-	result, err := c.GetV2(ctx, resource.Name)
+	result, err := c.GetV2(ctx, regionids.MustParseServerID(resource.Name))
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -604,8 +731,8 @@ func testServerV2(serverID string) *regionv1.Server {
 			},
 		},
 		Spec: regionv1.ServerSpec{
-			FlavorID: "flavor-1",
-			Image:    &regionv1.ServerImage{ID: "image-1"},
+			FlavorID: srvFlavorID,
+			Image:    &regionv1.ServerImage{ID: srvImageID},
 			Networks: []regionv1.ServerNetworkSpec{{ID: srvNetworkID}},
 		},
 	}
@@ -625,7 +752,7 @@ func TestServerGetV2Raw_NotFound(t *testing.T) {
 		Identity:  mockIdentity,
 	})
 
-	_, err := c.GetV2Raw(rbac.NewContext(t.Context(), aclWithSrvUpdate()), "nonexistent-server")
+	_, err := c.GetV2Raw(rbac.NewContext(t.Context(), aclWithSrvUpdate()), srvNonexistentID)
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -647,7 +774,7 @@ func TestServerGetV2Raw_MissingAPIVersionLabel(t *testing.T) {
 			},
 		},
 		Spec: regionv1.ServerSpec{
-			Image:    &regionv1.ServerImage{ID: "image-1"},
+			Image:    &regionv1.ServerImage{ID: srvImageID},
 			Networks: []regionv1.ServerNetworkSpec{{ID: srvNetworkID}},
 		},
 	}
@@ -684,7 +811,7 @@ func TestServerGetV2Raw_WrongAPIVersion(t *testing.T) {
 			},
 		},
 		Spec: regionv1.ServerSpec{
-			Image:    &regionv1.ServerImage{ID: "image-1"},
+			Image:    &regionv1.ServerImage{ID: srvImageID},
 			Networks: []regionv1.ServerNetworkSpec{{ID: srvNetworkID}},
 		},
 	}
@@ -781,11 +908,11 @@ func TestServerUpdateV2_NotFound(t *testing.T) {
 	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
 
 	request := &openapi.ServerV2Update{
-		Metadata: coreapi.ResourceWriteMetadata{Name: "nonexistent-server"},
-		Spec:     openapi.ServerV2Spec{FlavorId: "flavor-1", ImageId: "image-1"},
+		Metadata: coreapi.ResourceWriteMetadata{Name: srvNonexistentID},
+		Spec:     openapi.ServerV2Spec{FlavorId: regionids.MustParseFlavorID(srvFlavorID), ImageId: regionids.MustParseImageID(srvImageID)},
 	}
 
-	_, err := c.UpdateV2(ctx, "nonexistent-server", request)
+	_, err := c.UpdateV2(ctx, regionids.MustParseServerID(srvNonexistentID), request)
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -797,7 +924,7 @@ func TestServerUpdateV2_NoUpdatePermission(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 
-	resource := testServerV2("server-1")
+	resource := testServerV2(srvServerID)
 
 	k8sClient := newSrvFakeClient(t, resource).Build()
 
@@ -811,10 +938,10 @@ func TestServerUpdateV2_NoUpdatePermission(t *testing.T) {
 
 	request := &openapi.ServerV2Update{
 		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
-		Spec:     openapi.ServerV2Spec{FlavorId: resource.Spec.FlavorID, ImageId: resource.Spec.Image.ID},
+		Spec:     openapi.ServerV2Spec{FlavorId: regionids.MustParseFlavorID(resource.Spec.FlavorID), ImageId: regionids.MustParseImageID(resource.Spec.Image.ID)},
 	}
 
-	_, err := c.UpdateV2(ctx, resource.Name, request)
+	_, err := c.UpdateV2(ctx, regionids.MustParseServerID(resource.Name), request)
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
@@ -826,7 +953,7 @@ func TestServerUpdateV2_ServerBeingDeleted(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 
-	resource := testServerV2("server-1")
+	resource := testServerV2(srvServerID)
 	now := metav1.NewTime(time.Now())
 	resource.DeletionTimestamp = &now
 	resource.Finalizers = []string{"servers.region.unikorn-cloud.org/test"}
@@ -843,10 +970,10 @@ func TestServerUpdateV2_ServerBeingDeleted(t *testing.T) {
 
 	request := &openapi.ServerV2Update{
 		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
-		Spec:     openapi.ServerV2Spec{FlavorId: resource.Spec.FlavorID, ImageId: resource.Spec.Image.ID},
+		Spec:     openapi.ServerV2Spec{FlavorId: regionids.MustParseFlavorID(resource.Spec.FlavorID), ImageId: regionids.MustParseImageID(resource.Spec.Image.ID)},
 	}
 
-	_, err := c.UpdateV2(ctx, resource.Name, request)
+	_, err := c.UpdateV2(ctx, regionids.MustParseServerID(resource.Name), request)
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsBadRequest(err), "expected bad request (server being deleted), got: %v", err)
@@ -859,7 +986,7 @@ func TestServerUpdateV2_NetworkGone(t *testing.T) {
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 
 	// server exists but its network has been deleted
-	resource := testServerV2("server-1")
+	resource := testServerV2(srvServerID)
 
 	k8sClient := newSrvFakeClient(t, resource).Build()
 
@@ -873,10 +1000,10 @@ func TestServerUpdateV2_NetworkGone(t *testing.T) {
 
 	request := &openapi.ServerV2Update{
 		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
-		Spec:     openapi.ServerV2Spec{FlavorId: resource.Spec.FlavorID, ImageId: resource.Spec.Image.ID},
+		Spec:     openapi.ServerV2Spec{FlavorId: regionids.MustParseFlavorID(resource.Spec.FlavorID), ImageId: regionids.MustParseImageID(resource.Spec.Image.ID)},
 	}
 
-	_, err := c.UpdateV2(ctx, resource.Name, request)
+	_, err := c.UpdateV2(ctx, regionids.MustParseServerID(resource.Name), request)
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found (network gone), got: %v", err)
@@ -898,7 +1025,7 @@ func TestServerDeleteV2_NotFound(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
 
-	err := c.DeleteV2(ctx, "nonexistent-server")
+	err := c.DeleteV2(ctx, regionids.MustParseServerID(srvNonexistentID))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -910,7 +1037,7 @@ func TestServerDeleteV2_NoDeletePermission(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 
-	resource := testServerV2("server-1")
+	resource := testServerV2(srvServerID)
 
 	k8sClient := newSrvFakeClient(t, resource).Build()
 
@@ -922,7 +1049,7 @@ func TestServerDeleteV2_NoDeletePermission(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), aclWithSrvReadOnly(srvOrganizationID))
 
-	err := c.DeleteV2(ctx, resource.Name)
+	err := c.DeleteV2(ctx, regionids.MustParseServerID(resource.Name))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
@@ -983,7 +1110,7 @@ func TestServerListV2ExcludesUnauthorizedProject(t *testing.T) {
 	visible := testServerV2("server-visible")
 
 	hidden := testServerV2("server-hidden")
-	hidden.Labels[coreconstants.ProjectLabel] = "other-project"
+	hidden.Labels[coreconstants.ProjectLabel] = "99999999-9999-4999-a999-999999999999"
 
 	k8sClient := newSrvFakeClient(t, visible, hidden).Build()
 
@@ -1006,7 +1133,7 @@ func TestServerListV2ExcludesUnauthorizedProject(t *testing.T) {
 func TestServerListV2FilterByRegion(t *testing.T) {
 	t.Parallel()
 
-	resource := testServerV2("server-1")
+	resource := testServerV2(srvServerID)
 
 	k8sClient := newSrvFakeClient(t, resource).Build()
 
@@ -1061,7 +1188,7 @@ func TestServerStartV2_NotFound(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
 
-	err := c.StartV2(ctx, "nonexistent-server")
+	err := c.StartV2(ctx, regionids.MustParseServerID(srvNonexistentID))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -1149,7 +1276,7 @@ func TestServerCreateV2DeterministicID(t *testing.T) {
 	}
 
 	sameNameOtherNetReq := minimalServerV2CreateRequest()
-	sameNameOtherNetReq.Spec.NetworkId = otherNetworkID
+	sameNameOtherNetReq.Spec.NetworkId = regionids.MustParseNetworkID(otherNetworkID)
 
 	k8sClientOtherNet := newSrvFakeClient(t, otherNetwork).Build()
 	c4 := server.NewClientV2(common.ClientArgs{
@@ -1208,7 +1335,7 @@ func TestServerUpdateV2RejectsRename(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	network := testSrvNetworkWithProject(srvProjectID)
-	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, "server-1", "ca-1")
+	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, srvServerID, "ca-1")
 
 	k8sClient := newSrvFakeClient(t, network, resource).Build()
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
@@ -1224,12 +1351,12 @@ func TestServerUpdateV2RejectsRename(t *testing.T) {
 	request := &openapi.ServerV2Update{
 		Metadata: coreapi.ResourceWriteMetadata{Name: "renamed-server"},
 		Spec: openapi.ServerV2Spec{
-			FlavorId: resource.Spec.FlavorID,
-			ImageId:  resource.Spec.Image.ID,
+			FlavorId: regionids.MustParseFlavorID(resource.Spec.FlavorID),
+			ImageId:  regionids.MustParseImageID(resource.Spec.Image.ID),
 		},
 	}
 
-	_, err := c.UpdateV2(ctx, resource.Name, request)
+	_, err := c.UpdateV2(ctx, regionids.MustParseServerID(resource.Name), request)
 	require.Error(t, err)
 	require.True(t, coreerrors.IsUnprocessableContent(err), "rename attempt must return 422 Unprocessable Content, got: %v", err)
 }

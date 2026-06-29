@@ -28,6 +28,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/provisioners/managers/server"
 
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -52,7 +53,7 @@ func (*Factory) Metadata() util.ServiceDescriptor {
 
 // Options returns any options to be added to the CLI flags and passed to the reconciler.
 func (*Factory) Options() coremanager.ControllerOptions {
-	return nil
+	return server.NewOptions()
 }
 
 // Reconciler returns a new reconciler instance.
@@ -60,10 +61,25 @@ func (f *Factory) Reconciler(options *options.Options, controllerOptions coreman
 	return coremanager.NewReconciler(options, controllerOptions, manager, f.ProvisionerCreate(server.New))
 }
 
+func providerCreateFailureUpdate(e event.TypedUpdateEvent[*unikornv1.Server]) bool {
+	if e.ObjectOld == nil || e.ObjectNew == nil {
+		return false
+	}
+
+	return !server.ProviderCreateFailure(e.ObjectOld) && server.ProviderCreateFailure(e.ObjectNew)
+}
+
 // RegisterWatches adds any watches that would trigger a reconcile.
 func (*Factory) RegisterWatches(manager manager.Manager, controller controller.Controller) error {
 	// Any changes to the server spec, trigger a reconcile.
-	if err := controller.Watch(source.Kind(manager.GetCache(), &unikornv1.Server{}, &handler.TypedEnqueueRequestForObject[*unikornv1.Server]{}, &predicate.TypedGenerationChangedPredicate[*unikornv1.Server]{})); err != nil {
+	serverPredicate := predicate.Or(
+		predicate.TypedGenerationChangedPredicate[*unikornv1.Server]{},
+		predicate.TypedFuncs[*unikornv1.Server]{
+			UpdateFunc: providerCreateFailureUpdate,
+		},
+	)
+
+	if err := controller.Watch(source.Kind(manager.GetCache(), &unikornv1.Server{}, &handler.TypedEnqueueRequestForObject[*unikornv1.Server]{}, serverPredicate)); err != nil {
 		return err
 	}
 

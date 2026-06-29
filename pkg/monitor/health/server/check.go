@@ -95,7 +95,12 @@ func (c *Checker) recordDurationIfFirstObservation(ctx context.Context, server *
 }
 
 // onPhaseTransition logs the phase change and records provisioning histogram
-// observations on the first Pending → Running transition.
+// observations on the first transition into Running from any earlier phase.
+// The Phase path is now Pending → Building → Running for VMs and
+// Pending → Queued → Building → Running for baremetal, so a strict
+// "Pending → Running" predicate would silently miss every observation. The
+// per-server one-shot guarantee is preserved by recordDurationIfFirstObservation,
+// which fires only when the relevant timestamp transitions from nil to non-nil.
 // Precondition: region label validated by Check; identity label validated by checkServer.
 func (c *Checker) onPhaseTransition(ctx context.Context, server, updated *unikornv1.Server, regionID, regionName, flavorID, flavorName string) {
 	if server.Status.Phase == updated.Status.Phase {
@@ -108,10 +113,10 @@ func (c *Checker) onPhaseTransition(ctx context.Context, server, updated *unikor
 		"time_since_creation_ms", time.Since(server.CreationTimestamp.Time).Milliseconds(),
 	)
 
-	pendingToRunning := server.Status.Phase == unikornv1.InstanceLifecyclePhasePending &&
+	becameRunning := server.Status.Phase != unikornv1.InstanceLifecyclePhaseRunning &&
 		updated.Status.Phase == unikornv1.InstanceLifecyclePhaseRunning
 
-	if !pendingToRunning || c.metrics == nil {
+	if !becameRunning || c.metrics == nil {
 		return
 	}
 

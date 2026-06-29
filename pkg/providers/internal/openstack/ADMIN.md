@@ -23,16 +23,22 @@ the region registration step. It accepts the usual OpenStack CLI authentication
 inputs: a standard `openrc`, existing `OS_*` variables, or `OS_CLOUD`.
 
 The default `create` mode creates or updates the Keystone domain, project, user,
-and role grants used by the region provider. Choose a stable prefix for
-persistent regions and keep the output in a secret store because it contains the
-provider user's password.
+and role grants used by the region provider.
+
+The prefix names the **Unikorn deployment** (for example `staging` or
+`production`), not a region. It becomes the Keystone domain name, and a single
+domain hosts every region belonging to that deployment on a given cloud. Because
+a cloud is typically shared by several deployments, each cohabiting deployment
+must use a distinct, stable prefix or they will share a domain and collide. Run
+`configure` once per deployment per cloud, not once per region. Keep the output
+in a secret store because it contains the provider user's password.
 
 ```bash
-provider_env="${TMPDIR:-/tmp}/gb-north-1.openstack.env"
+provider_env="${TMPDIR:-/tmp}/staging.openstack.env"
 
 hack/openstack/configure \
     --openrc /path/to/admin-openrc \
-    --prefix gb-north-1 \
+    --prefix staging \
     --output "${provider_env}"
 ```
 

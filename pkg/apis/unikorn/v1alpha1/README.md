@@ -60,14 +60,17 @@ stored objects rely on for linkage, migration, and operational coordination.
   reporting, and per-policy snapshot status are part of the stored
   reconciliation contract.
 - `FileStorage.Spec.SnapshotPolicies` is an optional inline desired-state list
-  keyed by policy `name`. Omitted and empty lists both mean no snapshot
-  protection is desired. The CRD schema bounds the list to four entries and
-  validates the schedule/retention shape so direct CRD writes cannot persist
-  unsupported policy combinations.
-- `FileStorage.Status.SnapshotPolicies` mirrors the embedded child-status
-  pattern: each entry is keyed by `name` and contains only optional generic
-  conditions. Provider identifiers, observed schedule copies, and aggregate
-  snapshot health are intentionally outside this storage model.
+  keyed by policy `name`. In persisted storage, omitted and empty lists both mean
+  no user-managed snapshot policies are desired. Default snapshot protection is
+  represented separately by a resolved desired-state setting; the region API
+  enables it on create when callers omit the public control field. When default
+  snapshot protection is enabled, the region API also materializes a hidden
+  platform-managed `system-default` entry into this same list so the existing
+  storage controller reconciles it like any other policy; that entry is never exposed in public REST reads. The CRD
+  schema therefore bounds the stored list to five entries — four user-managed
+  policies plus the optional hidden `system-default` baseline — caps policy names
+  at 19 characters, and validates the schedule/retention shape so direct CRD
+  writes cannot persist unsupported policy combinations.
 
 ## Caveats
 

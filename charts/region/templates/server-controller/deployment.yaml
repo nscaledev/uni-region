@@ -20,6 +20,9 @@ spec:
         args:
         {{- include "unikorn.core.flags" . | nindent 8 }}
         {{- include "unikorn.otlp.flags" . | nindent 8 }}
+        {{- range $i, $arg := .Values.serverController.extraFlags }}
+        - {{ $arg }}
+        {{- end }}
         env:
         - name: OTEL_SERVICE_NAME
           value: {{ .Release.Name }}-server-controller

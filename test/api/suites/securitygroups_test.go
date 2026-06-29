@@ -55,6 +55,11 @@ var _ = Describe("SecurityGroup", func() {
 			})
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
 
+			// Reads are served from the controller-runtime cache, so the
+			// security group create below can resolve the network reference
+			// against a stale cache and 404. Await visibility first.
+			api.WaitForNetworkVisible(regionClient, ctx, networkID)
+
 			createReq = api.NewSecurityGroupPayload(networkID).Build()
 			created, err := regionClient.CreateSecurityGroup(ctx, createReq)
 			Expect(err).NotTo(HaveOccurred(), "failed to create security group fixture")
@@ -78,36 +83,44 @@ var _ = Describe("SecurityGroup", func() {
 				Expect(sgID).NotTo(BeEmpty())
 				Expect(createReq.Metadata.Name).NotTo(BeEmpty())
 
-				got, err := regionClient.GetSecurityGroup(ctx, sgID)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(got.Metadata.Id).To(Equal(sgID))
-				Expect(got.Metadata.Name).To(Equal(createReq.Metadata.Name))
-				Expect(got.Metadata.OrganizationId).To(Equal(config.OrgID))
-				Expect(got.Metadata.ProjectId).To(Equal(config.ProjectID))
-				Expect(got.Status.RegionId).To(Equal(config.RegionID))
-				Expect(got.Status.NetworkId).To(Equal(networkID))
-				Expect(got.Spec.Rules).To(HaveLen(1))
-				Expect(got.Spec.Rules[0].Direction).To(Equal(regionopenapi.NetworkDirectionIngress))
-				Expect(got.Spec.Rules[0].Protocol).To(Equal(regionopenapi.NetworkProtocolTcp))
-				Expect(got.Spec.Rules[0].Port).To(Equal(ptr.To(22)))
+				// Single-resource GETs are served from the controller-runtime cache,
+				// so an immediate GET after create can briefly miss the new object.
+				Eventually(func(g Gomega) {
+					got, err := regionClient.GetSecurityGroup(ctx, sgID)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(got.Metadata.Id).To(Equal(sgID))
+					g.Expect(got.Metadata.Name).To(Equal(createReq.Metadata.Name))
+					g.Expect(got.Metadata.OrganizationId).To(Equal(config.OrgID))
+					g.Expect(got.Metadata.ProjectId).To(Equal(config.ProjectID))
+					g.Expect(got.Status.RegionId).To(Equal(config.RegionID))
+					g.Expect(got.Status.NetworkId).To(Equal(networkID))
+					g.Expect(got.Spec.Rules).To(HaveLen(1))
+					g.Expect(got.Spec.Rules[0].Direction).To(Equal(regionopenapi.NetworkDirectionIngress))
+					g.Expect(got.Spec.Rules[0].Protocol).To(Equal(regionopenapi.NetworkProtocolTcp))
+					g.Expect(got.Spec.Rules[0].Port).To(Equal(ptr.To(22)))
+				}).WithTimeout(5 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
 			})
 
 			It("should appear in the list filtered by org, project and region", func() {
-				list, err := regionClient.ListSecurityGroups(ctx, config.OrgID, config.ProjectID, config.RegionID)
-				Expect(err).NotTo(HaveOccurred())
+				// List GETs are served from the controller-runtime cache, so a
+				// just-created security group can briefly be absent from the list.
+				Eventually(func(g Gomega) {
+					list, err := regionClient.ListSecurityGroups(ctx, config.OrgID, config.ProjectID, config.RegionID)
+					g.Expect(err).NotTo(HaveOccurred())
 
-				var found *regionopenapi.SecurityGroupV2Read
-				for i := range list {
-					if list[i].Metadata.Id == sgID {
-						found = &list[i]
-						break
+					var found *regionopenapi.SecurityGroupV2Read
+					for i := range list {
+						if list[i].Metadata.Id == sgID {
+							found = &list[i]
+							break
+						}
 					}
-				}
 
-				Expect(found).NotTo(BeNil(), "created security group %s not found in list", sgID)
-				Expect(found.Metadata.Name).To(Equal(createReq.Metadata.Name))
-				Expect(found.Status.NetworkId).To(Equal(networkID))
-				GinkgoWriter.Printf("Found security group in list: %s\n", sgID)
+					g.Expect(found).NotTo(BeNil(), "created security group %s not found in list", sgID)
+					g.Expect(found.Metadata.Name).To(Equal(createReq.Metadata.Name))
+					g.Expect(found.Status.NetworkId).To(Equal(networkID))
+					GinkgoWriter.Printf("Found security group in list: %s\n", sgID)
+				}).WithTimeout(5 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
 			})
 
 			It("should update rules and verify the change persists on re-GET", func() {

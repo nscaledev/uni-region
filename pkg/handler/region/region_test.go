@@ -29,6 +29,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	corev1 "k8s.io/api/core/v1"
@@ -40,10 +41,13 @@ import (
 )
 
 const (
-	globalRegionName   = "earth"
-	privateRegionName1 = "restricted"
-	privateRegionName2 = "super-secret"
-	privateRegionName3 = "really-secret"
+	globalRegionName   = "11111111-1111-4111-a111-111111111111"
+	privateRegionName1 = "22222222-2222-4222-a222-222222222222"
+	privateRegionName2 = "33333333-3333-4333-a333-333333333333"
+	privateRegionName3 = "44444444-4444-4444-a444-444444444444"
+
+	// regionDoesNotExist is a valid-but-unused UUID for negative/not-found cases.
+	regionDoesNotExist = "99999999-9999-4999-a999-999999999999"
 
 	organizationID1 = "foo"
 	organizationID2 = "bar"
@@ -232,7 +236,7 @@ func TestCheckAccessGlobalRegion(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: globalRegionName},
 	})
 
-	require.NoError(t, c.CheckAccess(aclFixture(t, organizationID4), globalRegionName))
+	require.NoError(t, c.CheckAccess(aclFixture(t, organizationID4), regionids.MustParseRegionID(globalRegionName)))
 }
 
 // TestCheckAccessAllowedOrg verifies an organization in the allowed list can access
@@ -252,7 +256,7 @@ func TestCheckAccessAllowedOrg(t *testing.T) {
 		},
 	})
 
-	require.NoError(t, c.CheckAccess(aclFixture(t, organizationID1), privateRegionName1))
+	require.NoError(t, c.CheckAccess(aclFixture(t, organizationID1), regionids.MustParseRegionID(privateRegionName1)))
 }
 
 // TestCheckAccessDeniedOrg verifies an organization not in the allowed list receives
@@ -271,7 +275,7 @@ func TestCheckAccessDeniedOrg(t *testing.T) {
 		},
 	})
 
-	require.Error(t, c.CheckAccess(aclFixture(t, organizationID4), privateRegionName1))
+	require.Error(t, c.CheckAccess(aclFixture(t, organizationID4), regionids.MustParseRegionID(privateRegionName1)))
 }
 
 // TestCheckAccessGlobalScope verifies platform admins and services with global scope
@@ -290,7 +294,7 @@ func TestCheckAccessGlobalScope(t *testing.T) {
 		},
 	})
 
-	require.NoError(t, c.CheckAccess(globalACLFixture(t), privateRegionName1))
+	require.NoError(t, c.CheckAccess(globalACLFixture(t), regionids.MustParseRegionID(privateRegionName1)))
 }
 
 // TestCheckAccessMissingRegion verifies a non-existent region ID returns an error.
@@ -299,7 +303,7 @@ func TestCheckAccessMissingRegion(t *testing.T) {
 
 	c := regionClientFixture(t)
 
-	require.Error(t, c.CheckAccess(aclFixture(t, organizationID1), "does-not-exist"))
+	require.Error(t, c.CheckAccess(aclFixture(t, organizationID1), regionids.MustParseRegionID("44444444-4444-4444-a444-444444444444")))
 }
 
 // regionClientWithObjects creates a region.Client backed by a fake Kubernetes client
@@ -413,7 +417,7 @@ func TestGetDetailSimulated(t *testing.T) {
 
 	c := regionClientFixture(t, simulatedRegion(globalRegionName))
 
-	result, err := c.GetDetail(aclFixture(t, organizationID1), globalRegionName)
+	result, err := c.GetDetail(aclFixture(t, organizationID1), regionids.MustParseRegionID(globalRegionName))
 
 	require.NoError(t, err)
 	require.Equal(t, globalRegionName, result.Metadata.Id)
@@ -427,7 +431,7 @@ func TestGetDetailKubernetesEmbedsKubeconfig(t *testing.T) {
 	t.Parallel()
 
 	const (
-		regionName    = "k8s-region"
+		regionName    = "55555555-5555-4555-a555-555555555555"
 		kubeconfigRef = "k8s-region-kubeconfig"
 	)
 
@@ -454,7 +458,7 @@ func TestGetDetailKubernetesEmbedsKubeconfig(t *testing.T) {
 
 	c := regionClientWithObjects(t, &resource, secret)
 
-	result, err := c.GetDetail(aclFixture(t, organizationID1), regionName)
+	result, err := c.GetDetail(aclFixture(t, organizationID1), regionids.MustParseRegionID(regionName))
 
 	require.NoError(t, err)
 	require.Equal(t, openapi.RegionTypeKubernetes, result.Spec.Type)
@@ -470,7 +474,7 @@ func TestGetDetailKubernetesMissingKubeconfigKey(t *testing.T) {
 	t.Parallel()
 
 	const (
-		regionName    = "k8s-region"
+		regionName    = "55555555-5555-4555-a555-555555555555"
 		kubeconfigRef = "k8s-region-kubeconfig"
 	)
 
@@ -494,7 +498,7 @@ func TestGetDetailKubernetesMissingKubeconfigKey(t *testing.T) {
 
 	c := regionClientWithObjects(t, &resource, secret)
 
-	_, err := c.GetDetail(aclFixture(t, organizationID1), regionName)
+	_, err := c.GetDetail(aclFixture(t, organizationID1), regionids.MustParseRegionID(regionName))
 
 	require.Error(t, err)
 }
@@ -506,7 +510,7 @@ func TestGetDetailNotFound(t *testing.T) {
 
 	c := regionClientFixture(t)
 
-	_, err := c.GetDetail(aclFixture(t, organizationID1), "does-not-exist")
+	_, err := c.GetDetail(aclFixture(t, organizationID1), regionids.MustParseRegionID(regionDoesNotExist))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -520,7 +524,7 @@ func TestGetDetailAccessDenied(t *testing.T) {
 
 	c := regionClientFixture(t, simulatedRegion(privateRegionName1, organizationID1))
 
-	_, err := c.GetDetail(aclFixture(t, organizationID4), privateRegionName1)
+	_, err := c.GetDetail(aclFixture(t, organizationID4), regionids.MustParseRegionID(privateRegionName1))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)

@@ -1655,7 +1655,12 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     post:
-      description: Create a new storage.
+      description: |-
+        Create a new storage. Snapshot Policies are managed as inline parent File Storage
+        desired state. Omitted or empty spec.snapshotPolicies stores no user-managed
+        policies, and a non-empty list persists exactly the caller-supplied policies.
+        Default Snapshot Protection is controlled separately by
+        spec.defaultSnapshotProtectionEnabled.
       summary: Create file storage
       tags:
       - File storage
@@ -1702,7 +1707,12 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
-      description: Update this storage.
+      description: |-
+        Update this storage. Snapshot Policies are managed as inline parent File Storage
+        desired state. Omitted spec.snapshotPolicies preserves existing user-managed
+        policies, an empty list clears all user-managed policies, and a non-empty list
+        replaces the full user-managed policy list. Default Snapshot Protection is
+        controlled separately by spec.defaultSnapshotProtectionEnabled.
       summary: Update file storage
       tags:
       - File storage
@@ -1776,7 +1786,7 @@ components:
       description: An organization ID.
       required: true
       schema:
-        type: string
+        $ref: 'https://raw.githubusercontent.com/unikorn-cloud/identity/v1.17.7/pkg/openapi/server.spec.yaml#/components/schemas/organizationId'
     projectIDParameter:
       name: projectID
       in: path
@@ -1784,63 +1794,63 @@ components:
         The project ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: 'https://raw.githubusercontent.com/unikorn-cloud/identity/v1.17.7/pkg/openapi/server.spec.yaml#/components/schemas/projectId'
     regionIDParameter:
       name: regionID
       in: path
       description: The region ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/regionId'
     identityIDParameter:
       name: identityID
       in: path
       description: The identity ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/identityId'
     imageIDParameter:
       name: imageID
       in: path
       description: The image ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/imageId'
     networkIDParameter:
       name: networkID
       in: path
       description: The network ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/networkId'
     securityGroupIDParameter:
       name: securityGroupID
       in: path
       description: The security group ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/securityGroupId'
     loadBalancerIDParameter:
       name: loadBalancerID
       in: path
       description: The load balancer ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/loadBalancerId'
     sshCertificateAuthorityIDParameter:
       name: sshCertificateAuthorityID
       in: path
       description: The SSH certificate authority ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/sshCertificateAuthorityId'
     serverIDParameter:
       name: serverID
       in: path
       description: The server ID.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/serverId'
     referenceParameter:
       name: reference
       in: path
@@ -1868,7 +1878,7 @@ components:
       description: The storage unique identifier.
       required: true
       schema:
-        $ref: '#/components/schemas/kubernetesNameParameter'
+        $ref: '#/components/schemas/fileStorageId'
     projectIDQueryParameter:
       name: projectID
       in: query
@@ -1917,6 +1927,86 @@ components:
       type: string
       minLength: 1
       maxLength: 63
+    regionId:
+      description: A region ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.RegionID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    identityId:
+      description: A cloud identity ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.IdentityID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    networkId:
+      description: A network ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.NetworkID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    securityGroupId:
+      description: A security group ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.SecurityGroupID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    loadBalancerId:
+      description: A load balancer ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.LoadBalancerID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    serverId:
+      description: A server ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.ServerID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    sshCertificateAuthorityId:
+      description: An SSH certificate authority ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.SSHCertificateAuthorityID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    fileStorageId:
+      description: A file storage ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.FileStorageID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    imageId:
+      description: An image ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.ImageID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    flavorId:
+      description: A flavor ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.FlavorID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
     regionType:
       description: The region's provider type.
       type: string
@@ -2269,8 +2359,7 @@ components:
       - regionId
       properties:
         regionId:
-          description: The region an identity is provisioned in.
-          type: string
+          $ref: '#/components/schemas/regionId'
     identityWrite:
       description: An identity request.
       type: object
@@ -2506,8 +2595,7 @@ components:
             description: The project to provision the resource in.
             type: string
           regionId:
-            description: The region a network is to be provisioned in.
-            type: string 
+            $ref: '#/components/schemas/regionId'
           prefix:
             description: |-
               An IPv4 prefix for the network.  Dynamic modification of the
@@ -2746,8 +2834,7 @@ components:
         - networkId
         properties:
           networkId:
-            description: The network a security group belongs to.
-            type: string
+            $ref: '#/components/schemas/networkId'
     securityGroupV2Status:
       description: Read only status information about a security group.
       type: object
@@ -2919,8 +3006,7 @@ components:
         - networkId
         properties:
           networkId:
-            description: The network the load balancer belongs to.
-            type: string
+            $ref: '#/components/schemas/networkId'
           vipAddress:
             description: The requested virtual IP address. When provided, it must fall within the selected network CIDR.
             $ref: '#/components/schemas/ipv4Address'
@@ -3051,11 +3137,9 @@ components:
       - networks
       properties:
         flavorId:
-          description: The flavor of the server.
-          type: string
+          $ref: '#/components/schemas/flavorId'
         imageId:
-          description: The image of the server.
-          type: string
+          $ref: '#/components/schemas/imageId'
         securityGroups:
           $ref: '#/components/schemas/serverSecurityGroupList'
         publicIPAllocation:
@@ -3126,10 +3210,18 @@ components:
           description: The security group ID.
           type: string
     instanceLifecyclePhase:
-      description: The lifecycle phase of an instance.
+      description: |
+        The lifecycle phase of an instance. Once provisioning_status reaches
+        provisioned, this becomes the live readiness signal: API consumers
+        should treat Running (not provisioned) as the "ready to use" state.
+        Queued and Building are observed during create — Queued for
+        baremetal servers waiting on hardware, Building for servers the
+        provider is actively bringing up.
       type: string
       enum:
       - Pending
+      - Queued
+      - Building
       - Running
       - Stopping
       - Stopped
@@ -3210,11 +3302,9 @@ components:
       - imageId
       properties:
         flavorId:
-          description: The flavor of the server.
-          type: string
+          $ref: '#/components/schemas/flavorId'
         imageId:
-          description: The image of the server.
-          type: string
+          $ref: '#/components/schemas/imageId'
         networking:
           $ref: '#/components/schemas/serverV2Networking'
         userData:
@@ -3234,8 +3324,7 @@ components:
         - networkId
         properties:
           networkId:
-            description: The network ID to attach a server to.
-            type: string
+            $ref: '#/components/schemas/networkId'
           sshCertificateAuthorityId:
             description: The SSH certificate authority used to bootstrap login trust when the server is created.
             $ref: '#/components/schemas/sshCertificateAuthorityID'
@@ -3392,6 +3481,102 @@ components:
             type: string
         provisioningStatus:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/resourceProvisioningStatus'
+    storageSnapshotPolicyListV2Spec:
+      description: A list of named snapshot policies for storage.
+      type: array
+      maxItems: 4
+      x-kubernetes-list-type: map
+      x-kubernetes-list-map-keys:
+      - name
+      items:
+        $ref: '#/components/schemas/storageSnapshotPolicyV2Spec'
+    storageSnapshotPolicyV2Spec:
+      description: A named snapshot policy for storage.
+      type: object
+      required:
+      - name
+      - schedule
+      - retention
+      properties:
+        name:
+          description: Stable identity key for the snapshot policy.
+          type: string
+          maxLength: 19
+          pattern: '^[a-z]([-a-z0-9]*[a-z0-9])?$'
+        schedule:
+          $ref: '#/components/schemas/storageSnapshotScheduleV2Spec'
+        retention:
+          $ref: '#/components/schemas/storageSnapshotRetentionV2Spec'
+    storageSnapshotScheduleV2Spec:
+      description: Schedule for a storage snapshot policy.
+      type: object
+      required:
+      - interval
+      properties:
+        interval:
+          $ref: '#/components/schemas/storageSnapshotScheduleIntervalV2'
+        timeOfDay:
+          description: UTC time of day in HH:MMZ form.
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]Z$'
+        dayOfWeek:
+          $ref: '#/components/schemas/storageSnapshotDayOfWeekV2'
+        dayOfMonth:
+          description: UTC day of month for monthly snapshot policies.
+          type: integer
+          minimum: 1
+          maximum: 28
+    storageSnapshotScheduleIntervalV2:
+      description: Snapshot policy cadence.
+      type: string
+      enum:
+      - hourly
+      - daily
+      - weekly
+      - monthly
+    storageSnapshotDayOfWeekV2:
+      description: UTC day of week for weekly snapshot policies.
+      type: string
+      enum:
+      - monday
+      - tuesday
+      - wednesday
+      - thursday
+      - friday
+      - saturday
+      - sunday
+    storageSnapshotRetentionV2Spec:
+      description: Retention policy for storage snapshots.
+      type: object
+      required:
+      - keep
+      properties:
+        keep:
+          description: Number of snapshots to retain.
+          type: integer
+          minimum: 1
+    storageSnapshotPolicyListV2Status:
+      description: A list of observed snapshot policy states for storage.
+      type: array
+      items:
+        $ref: '#/components/schemas/storageSnapshotPolicyV2Status'
+    storageSnapshotPolicyV2Status:
+      description: Observed state for a named storage snapshot policy.
+      type: object
+      required:
+      - name
+      - provisioningStatus
+      properties:
+        name:
+          description: Stable identity key for the snapshot policy.
+          type: string
+          maxLength: 19
+          pattern: '^[a-z]([-a-z0-9]*[a-z0-9])?$'
+        provisioningStatus:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/resourceProvisioningStatus'
+        message:
+          description: Optional human-readable status detail for the snapshot policy.
+          type: string
     storageV2Spec:
       description: A storage's specification.
       type: object
@@ -3400,19 +3585,25 @@ components:
       - storageType
       properties:
         sizeGiB:
-          description: size in GiB of the storage 
+          description: size in GiB of the storage
           type: integer
           format: int64
-        storageType: 
+        storageType:
           $ref: '#/components/schemas/storageTypeV2Spec'
         attachments:
           $ref: '#/components/schemas/storageAttachmentV2Spec'
+        defaultSnapshotProtectionEnabled:
+          description: Whether platform-managed Default Snapshot Protection is enabled. On create, omission resolves to enabled. On update, omission preserves the current setting. Reads return the resolved setting. Explicit null is invalid.
+          type: boolean
+        snapshotPolicies:
+          $ref: '#/components/schemas/storageSnapshotPolicyListV2Spec'
     storageV2Status:
       description: Read only status about storage
       type: object
       required:
         - storageClassId
         - regionId
+        - snapshotPolicies
       properties:
         storageClassId:
           description: identifier for the storage
@@ -3424,6 +3615,8 @@ components:
           $ref: '#/components/schemas/storageUsageV2Status'
         attachments:
          $ref: '#/components/schemas/storageAttachmentListV2Status'
+        snapshotPolicies:
+          $ref: '#/components/schemas/storageSnapshotPolicyListV2Status'
     storageUsageV2Status:
         description: Information about the usage of the storage in bytes
         type: object
@@ -3443,7 +3636,7 @@ components:
               type: string
               format: date-time
     storageV2Create:
-      description: A storage create request.
+      description: A storage create request. When spec.defaultSnapshotProtectionEnabled is omitted, Default Snapshot Protection is enabled. Explicit null defaultSnapshotProtectionEnabled is invalid. When spec.snapshotPolicies is omitted or empty, the API stores no user-managed Snapshot Policies. Non-empty policy lists are stored exactly as supplied.
       type: object
       required:
       - metadata
@@ -3468,14 +3661,13 @@ components:
                 description: The organization to provision the resource in.
                 type: string
               regionId:
-                description: The region ID to provision the storage into.
-                type: string
+                $ref: '#/components/schemas/regionId'
               projectId:
                 description: The project to provision the resource in.
                 type: string
           - $ref: '#/components/schemas/storageV2Spec'
     storageV2Update:
-      description: A storage create request.
+      description: A storage update request. Omitted spec.defaultSnapshotProtectionEnabled preserves the current Default Snapshot Protection setting, and explicit null is invalid. Omitted spec.snapshotPolicies preserves existing desired user-managed Snapshot Policies, an empty list clears them, and a non-empty list replaces the full list.
       type: object
       required:
       - metadata
@@ -4634,9 +4826,12 @@ components:
               attachments:
                 networkIds:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
+              defaultSnapshotProtectionEnabled: true
+              snapshotPolicies: []
             status:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
               storageClassId: 99659b44-1700-400f-9c6c-cfdb4bb0445c
+              snapshotPolicies: []
               usage:
                   capacityBytes: 107374182400
                   usedBytes: 94489280512
@@ -4674,9 +4869,12 @@ components:
               attachments:
                 networkIds:
                   - 903b5fba-8eb0-4016-a854-b8f716bcd9bb
+              defaultSnapshotProtectionEnabled: true
+              snapshotPolicies: []
             status:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
               storageClassId: 99659b44-1700-400f-9c6c-cfdb4bb0445c
+              snapshotPolicies: []
               usage:
                   capacityBytes: 107374182400
                   usedBytes: 94489280512

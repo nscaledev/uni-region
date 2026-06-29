@@ -68,14 +68,36 @@ jobs:
         - **Region ID Override:** \`$REGION_ID_OVERRIDE\`
         EOF
 
+  find-dev-deployed-version:
+    name: Resolve Dev test ref
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event.inputs.run_dev == 'true'
+    outputs:
+      ref: ${{ steps.find.outputs.ref }}
+      version: ${{ steps.find.outputs.version }}
+    steps:
+    - name: Resolve Dev checkout ref
+      uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@main
+      id: find
+      with:
+        service: uni-region
+        releases-read-token: ${{ secrets.RELEASES_READ_TOKEN }}
+        use-version-api: true
+        version-api-url: ${{ vars.DEV_REGION_BASE_URL }}/api/version
+        version-api-token: ${{ secrets.DEV_API_AUTH_TOKEN }}
+        fallback-to-constellation: false
+        summary-title: Dev API Test Version
+
   API-Tests-Dev:
     name: API Tests (dev)
+    needs: find-dev-deployed-version
     runs-on: ubuntu-latest
     permissions:
       contents: read
       # Required for Teleport-backed Grafana lookup and OTLP collector shipping.
       id-token: write
-    if: github.event_name == 'schedule' || github.event.inputs.run_dev == 'true'
+    # Runs only when the resolver produced a Dev checkout ref.
+    if: (github.event_name == 'schedule' || github.event.inputs.run_dev == 'true') && needs.find-dev-deployed-version.outputs.ref != ''
     env:
       ENVIRONMENT: dev
       API_BASE_URL: ${{ vars.DEV_API_BASE_URL }}
@@ -93,6 +115,8 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+      with:
+        ref: ${{ needs.find-dev-deployed-version.outputs.ref }}
 
     - name: Setup Go
       uses: actions/setup-go@v3
@@ -148,10 +172,12 @@ jobs:
         slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
         send-slack: ${{ github.event.inputs.skip_slack_notifications != 'true' && 'true' || 'false' }}
         environment: dev
+        deployed-version: ${{ needs.find-dev-deployed-version.outputs.version || needs.find-dev-deployed-version.outputs.ref }}
         title: 'Region API Test Results'
         test-history-suite: uni-region-api
         component-name: uni-region
         component-repo: nscaledev/uni-region
+        component-ref: ${{ needs.find-dev-deployed-version.outputs.ref }}
         component-version-url: ${{ env.REGION_BASE_URL }}/api/version
         component-version-token: ${{ env.API_AUTH_TOKEN }}
         enable-ai-analysis: 'true'
@@ -162,13 +188,13 @@ jobs:
         unikorn-cr-teleport-token: github-unikorn-cr-reader
         unikorn-cr-kube-cluster: nks-dev-glo1
 
-  find-staging-constellation:
+  find-uat-deployed-version:
     name: Resolve UAT test ref
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || github.event.inputs.run_uat == 'true'
     outputs:
       ref: ${{ steps.find.outputs.ref }}
-      tag: ${{ steps.find.outputs.tag }}
+      version: ${{ steps.find.outputs.version }}
     steps:
     - name: Resolve UAT checkout ref
       uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@main
@@ -177,17 +203,22 @@ jobs:
         service: uni-region
         releases-read-token: ${{ secrets.RELEASES_READ_TOKEN }}
         use-staging-constellation: ${{ github.event_name == 'schedule' || github.event.inputs.use_staging_constellation != 'false' }}
+        use-version-api: true
+        version-api-url: ${{ vars.UAT_REGION_BASE_URL }}/api/version
+        version-api-token: ${{ secrets.UAT_API_AUTH_TOKEN }}
+        fallback-to-constellation: false
+        summary-title: UAT API Test Version
 
   API-Tests-UAT:
     name: API Tests (uat)
-    needs: find-staging-constellation
+    needs: find-uat-deployed-version
     runs-on: ubuntu-latest
     permissions:
       contents: read
       # Required for Teleport-backed Grafana lookup and OTLP collector shipping.
       id-token: write
     # Runs only when the resolver produced a UAT checkout ref.
-    if: (github.event_name == 'schedule' || github.event.inputs.run_uat == 'true') && needs.find-staging-constellation.outputs.ref != ''
+    if: (github.event_name == 'schedule' || github.event.inputs.run_uat == 'true') && needs.find-uat-deployed-version.outputs.ref != ''
     env:
       ENVIRONMENT: uat
       API_BASE_URL: ${{ vars.UAT_API_BASE_URL }}
@@ -206,7 +237,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
       with:
-        ref: ${{ needs.find-staging-constellation.outputs.ref }}
+        ref: ${{ needs.find-uat-deployed-version.outputs.ref }}
 
     - name: Setup Go
       uses: actions/setup-go@v3
@@ -262,11 +293,12 @@ jobs:
         slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
         send-slack: ${{ github.event.inputs.skip_slack_notifications != 'true' && 'true' || 'false' }}
         environment: uat
+        deployed-version: ${{ needs.find-uat-deployed-version.outputs.version || needs.find-uat-deployed-version.outputs.ref }}
         title: 'Region API Test Results'
         test-history-suite: uni-region-api
         component-name: uni-region
         component-repo: nscaledev/uni-region
-        component-ref: ${{ needs.find-staging-constellation.outputs.ref }}
+        component-ref: ${{ needs.find-uat-deployed-version.outputs.ref }}
         component-version-url: ${{ env.REGION_BASE_URL }}/api/version
         component-version-token: ${{ env.API_AUTH_TOKEN }}
         enable-ai-analysis: 'true'

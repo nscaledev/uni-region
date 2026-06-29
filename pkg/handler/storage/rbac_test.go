@@ -24,6 +24,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
@@ -33,8 +34,9 @@ import (
 )
 
 const (
-	testOrgID  = "foo"
-	testProjID = "bar"
+	testOrgID             = "11111111-1111-4111-a111-111111111111"
+	testProjID            = "22222222-2222-4222-a222-222222222222"
+	testNonexistentProjID = "33333333-3333-4333-a333-333333333333"
 )
 
 // aclWithOrgScopeStorageCreate grants region:filestorage:v2/Create at
@@ -76,7 +78,7 @@ func TestStorageCreateV2RBACOrgScopedProjectNotFound(t *testing.T) {
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), testOrgID, "nonexistent-project").
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(testOrgID), identityids.MustParseProjectID(testNonexistentProjID)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusNotFound},
 		}, nil)
@@ -85,7 +87,7 @@ func TestStorageCreateV2RBACOrgScopedProjectNotFound(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), aclWithOrgScopeStorageCreate())
 
-	_, err := c.CreateV2(ctx, minimalStorageV2CreateRequest(testOrgID, "nonexistent-project"))
+	_, err := c.CreateV2(ctx, minimalStorageV2CreateRequest(testOrgID, testNonexistentProjID))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
