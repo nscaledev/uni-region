@@ -63,6 +63,8 @@ var _ = Describe("LoadBalancer", func() {
 				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
 					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
 				}
+				api.WaitForNetworkGone(regionClient, ctx, networkID)
+				networkID = ""
 			})
 		})
 
@@ -166,11 +168,13 @@ var _ = Describe("LoadBalancer", func() {
 				Expect(*putResp.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
 				Expect(putResp.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
 
-				roundTrip, err := regionClient.GetLoadBalancer(ctx, lbID)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(roundTrip.Spec.Listeners[0].AllowedCidrs).NotTo(BeNil())
-				Expect(*roundTrip.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
-				Expect(roundTrip.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
+				Eventually(func(g Gomega) {
+					roundTrip, err := regionClient.GetLoadBalancer(ctx, lbID)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(roundTrip.Spec.Listeners[0].AllowedCidrs).NotTo(BeNil())
+					g.Expect(*roundTrip.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
+					g.Expect(roundTrip.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
+				}).WithTimeout(5 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
 			})
 
 			It("accepts an update toggling publicIP to false", func() {
@@ -242,6 +246,8 @@ var _ = Describe("LoadBalancer", func() {
 				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
 					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
 				}
+				api.WaitForNetworkGone(regionClient, ctx, networkID)
+				networkID = ""
 			})
 		})
 
@@ -303,6 +309,8 @@ var _ = Describe("LoadBalancer", func() {
 				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
 					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
 				}
+				api.WaitForNetworkGone(regionClient, ctx, networkID)
+				networkID = ""
 			})
 		})
 

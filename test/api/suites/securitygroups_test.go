@@ -52,6 +52,8 @@ var _ = Describe("SecurityGroup", func() {
 				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
 					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
 				}
+				api.WaitForNetworkGone(regionClient, ctx, networkID)
+				networkID = ""
 			})
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
 
@@ -67,6 +69,13 @@ var _ = Describe("SecurityGroup", func() {
 				if err := regionClient.DeleteSecurityGroup(ctx, sgID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
 					GinkgoWriter.Printf("Warning: cleanup delete security group %s: %v\n", sgID, err)
 				}
+				Eventually(func() bool {
+					_, err := regionClient.GetSecurityGroup(ctx, sgID)
+					return errors.Is(err, coreclient.ErrResourceNotFound)
+				}).WithTimeout(30*time.Second).
+					WithPolling(2*time.Second).
+					Should(BeTrue(), "security group should eventually be deleted")
+				sgID = ""
 			})
 			GinkgoWriter.Printf("Created security group: %s (%s)\n", created.Metadata.Name, sgID)
 		})
@@ -145,19 +154,18 @@ var _ = Describe("SecurityGroup", func() {
 			It("should delete the security group", func() {
 				deletedSGID = sgID
 				Expect(regionClient.DeleteSecurityGroup(ctx, deletedSGID)).To(Succeed())
-				sgID = "" // suppress DeferCleanup — already deleted
 				GinkgoWriter.Printf("Deleted security group: %s\n", deletedSGID)
 			})
 
 			It("should not be found after deletion", func() {
-				Eventually(func() error {
+				Eventually(func() bool {
 					_, err := regionClient.GetSecurityGroup(ctx, deletedSGID)
-					return err
+					return errors.Is(err, coreclient.ErrResourceNotFound)
 				}).WithTimeout(30*time.Second).
 					WithPolling(2*time.Second).
-					Should(And(HaveOccurred(), MatchError(coreclient.ErrResourceNotFound)),
-						"deleted security group should eventually return not found")
+					Should(BeTrue(), "deleted security group should eventually return not found")
 
+				sgID = "" // suppress DeferCleanup — deletion confirmed
 				GinkgoWriter.Printf("Confirmed security group deleted: %s\n", deletedSGID)
 			})
 		})

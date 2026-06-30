@@ -84,7 +84,7 @@ var _ = Describe("Image Management", Ordered, func() {
 				return
 			}
 			GinkgoWriter.Printf("Cleaning up image %s\n", customImageID)
-			// Tolerate not-found: the delete tests below may have already removed the image.
+			// Tolerate not-found: the delete tests below may have already removed the image from delete test.
 			err := regionClient.DeleteImage(ctx, config.OrgID, config.RegionID, customImageID)
 			if errors.Is(err, coreclient.ErrResourceNotFound) {
 				return

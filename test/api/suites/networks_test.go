@@ -164,7 +164,6 @@ var _ = Describe("Network Management", func() {
 
 					GinkgoWriter.Printf("Deleted network: %s\n", networkID)
 					deletedNetworkID = networkID
-					networkID = "" // suppress AfterAll cleanup — already deleted
 				})
 
 				It("should return 404 on subsequent reads", func() {
@@ -172,16 +171,14 @@ var _ = Describe("Network Management", func() {
 						Skip("No deleted network ID available - delete step may have been skipped or failed")
 					}
 
-					Eventually(func() bool {
-						_, err := regionClient.GetNetwork(ctx, deletedNetworkID)
-						return err != nil
-					}).WithTimeout(30 * time.Second).WithPolling(1 * time.Second).Should(BeTrue())
+					api.WaitForNetworkGone(regionClient, ctx, deletedNetworkID)
 
 					path := regionClient.GetEndpoints().GetNetwork(deletedNetworkID)
 					resp, _, err := regionClient.DoRegionRequest(ctx, http.MethodGet, path, nil, 0)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
 
+					networkID = "" // suppress AfterAll cleanup — deletion confirmed
 					GinkgoWriter.Printf("Confirmed network deleted: %s\n", deletedNetworkID)
 				})
 			})
@@ -193,6 +190,8 @@ var _ = Describe("Network Management", func() {
 				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
 					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
 				}
+				api.WaitForNetworkGone(regionClient, ctx, networkID)
+				networkID = ""
 			}
 		})
 	})
@@ -237,7 +236,11 @@ var _ = Describe("Network Management", func() {
 			networkID = created.Metadata.Id
 			DeferCleanup(func() {
 				GinkgoWriter.Printf("Cleaning up cross-org isolation network fixture: %s\n", networkID)
-				_ = regionClient.DeleteNetwork(ctx, networkID)
+				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
+					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
+				}
+				api.WaitForNetworkGone(regionClient, ctx, networkID)
+				networkID = ""
 			})
 			GinkgoWriter.Printf("Created network fixture for cross-org isolation test: %s\n", networkID)
 		})

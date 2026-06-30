@@ -21,6 +21,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -354,10 +355,21 @@ func WaitForLoadBalancerProvisioned(c *APIClient, ctx context.Context, lbID stri
 // WaitForLoadBalancerGone polls until GET for the load balancer returns the
 // expected not-found error.
 func WaitForLoadBalancerGone(c *APIClient, ctx context.Context, lbID string) {
-	Eventually(func() error {
+	Eventually(func() bool {
 		_, err := c.GetLoadBalancer(ctx, lbID)
-		return err
+		return errors.Is(err, coreclient.ErrResourceNotFound)
 	}).WithTimeout(2*time.Minute).WithPolling(2*time.Second).
-		Should(And(HaveOccurred(), MatchError(coreclient.ErrResourceNotFound)),
+		Should(BeTrue(),
 			"load balancer should eventually be deleted")
+}
+
+// WaitForNetworkGone polls until GET for the network returns the expected
+// not-found error.
+func WaitForNetworkGone(c *APIClient, ctx context.Context, networkID string) {
+	Eventually(func() bool {
+		_, err := c.GetNetwork(ctx, networkID)
+		return errors.Is(err, coreclient.ErrResourceNotFound)
+	}).WithTimeout(2*time.Minute).WithPolling(2*time.Second).
+		Should(BeTrue(),
+			"network should eventually be deleted")
 }
