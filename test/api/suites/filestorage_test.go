@@ -22,8 +22,6 @@ limitations under the License.
 package suites
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -33,7 +31,6 @@ import (
 	"k8s.io/utils/ptr"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
-	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
 	coreutil "github.com/unikorn-cloud/core/pkg/testing/util"
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
@@ -157,23 +154,6 @@ func expectDefaultProtectionUpdateState(storage *regionopenapi.StorageV2Read, de
 	Expect(*storage.Spec.DefaultSnapshotProtectionEnabled).To(Equal(defaultProtectionEnabled))
 	Expect(storage.Spec.SnapshotPolicies).NotTo(BeNil())
 	Expect(*storage.Spec.SnapshotPolicies).To(Equal(snapshotPolicies))
-}
-
-func EventuallyFileStorageDeleted(ctx context.Context, filestorageID string) {
-	Eventually(func() error {
-		_, err := regionClient.GetFileStorage(ctx, filestorageID)
-		if errors.Is(err, coreclient.ErrResourceNotFound) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-
-		return fmt.Errorf("file storage %s still exists", filestorageID)
-	}).
-		WithTimeout(5*time.Minute).
-		WithPolling(5*time.Second).
-		Should(Succeed(), "Storage should be deleted")
 }
 
 // INST-926 tracks Dev environment setup for file storage classes. Until Dev exposes
@@ -747,7 +727,7 @@ var _ = Describe("File Storage Management", func() {
 
 				GinkgoWriter.Printf("Deleted file storage: %s\n", filestorageID)
 
-				EventuallyFileStorageDeleted(ctx, filestorageID)
+				api.WaitForFileStorageGone(regionClient, ctx, filestorageID)
 
 				GinkgoWriter.Printf("Confirmed file storage deleted: %s\n", filestorageID)
 				filestorageID = "" // suppress AfterAll cleanup; storage has been confirmed deleted
@@ -794,7 +774,7 @@ var _ = Describe("File Storage Management", func() {
 				}
 
 				GinkgoWriter.Printf("Waiting for storage cleanup: %s\n", filestorageID)
-				EventuallyFileStorageDeleted(ctx, filestorageID)
+				api.WaitForFileStorageGone(regionClient, ctx, filestorageID)
 			}
 
 			if networkID != "" {

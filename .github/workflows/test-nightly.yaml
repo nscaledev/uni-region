@@ -1,0 +1,185 @@
+name: Nightly Tests
+on:
+  schedule:
+    - cron: '50 22 * * *'
+  workflow_dispatch:
+    inputs:
+      use_staging_constellation:
+        description: 'Use the staged constellation tag for UAT checkout'
+        type: boolean
+        default: true
+      skip_slack_notifications:
+        description: 'Skip Slack notifications'
+        type: boolean
+        default: false
+      region_id:
+        description: 'Override TEST_REGION_ID (leave empty to use default)'
+        type: string
+        required: false
+      test_ref:
+        description: 'Git ref for the test code (branch/tag/SHA). Defaults to the UAT-deployed version; set it to validate not-yet-deployed tests against UAT.'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-inputs-summary:
+    name: Workflow input summary
+    runs-on: ubuntu-latest
+    steps:
+    - name: Log workflow inputs
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        USE_STAGING_CONSTELLATION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.use_staging_constellation || 'true' }}
+        SKIP_SLACK_NOTIFICATIONS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.skip_slack_notifications || 'false' }}
+        REGION_ID_OVERRIDE: ${{ inputs.region_id || '<default>' }}
+      run: |
+        cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+        ### Workflow Input Parameters
+        - **Event:** \`$EVENT_NAME\`
+        - **Environment:** \`uat\`
+        - **Use Staging Constellation:** \`$USE_STAGING_CONSTELLATION\`
+        - **Skip Slack Notifications:** \`$SKIP_SLACK_NOTIFICATIONS\`
+        - **Region ID Override:** \`$REGION_ID_OVERRIDE\`
+        EOF
+
+  find-uat-deployed-version:
+    name: Resolve UAT test ref
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.find.outputs.ref }}
+      version: ${{ steps.find.outputs.version }}
+    steps:
+    - name: Resolve UAT checkout ref
+      uses: nscaledev/quality-tooling/.github/actions/uni-find-staging-constellation@main
+      id: find
+      with:
+        service: uni-region
+        releases-read-token: ${{ secrets.RELEASES_READ_TOKEN }}
+        use-staging-constellation: ${{ github.event_name == 'schedule' || github.event.inputs.use_staging_constellation != 'false' }}
+        use-version-api: true
+        version-api-url: ${{ vars.UAT_REGION_BASE_URL }}/api/version
+        version-api-token: ${{ secrets.UAT_API_AUTH_TOKEN }}
+        fallback-to-constellation: false
+        summary-title: UAT Nightly Test Version
+
+  Nightly-Tests-UAT:
+    name: Nightly Tests (uat)
+    needs: find-uat-deployed-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      # Required for Teleport-backed Grafana lookup and OTLP collector shipping.
+      id-token: write
+    # Runs when a test-ref override is given, or the resolver produced a UAT checkout ref.
+    if: ${{ inputs.test_ref != '' || needs.find-uat-deployed-version.outputs.ref != '' }}
+    env:
+      ENVIRONMENT: uat
+      API_BASE_URL: ${{ vars.UAT_API_BASE_URL }}
+      REGION_BASE_URL: ${{ vars.UAT_REGION_BASE_URL }}
+      API_AUTH_TOKEN: ${{ secrets.UAT_API_AUTH_TOKEN }}
+      TEST_ORG_ID: ${{ vars.UAT_TEST_ORG_ID }}
+      TEST_PROJECT_ID: ${{ vars.UAT_TEST_PROJECT_ID }}
+      TEST_REGION_ID: ${{ inputs.region_id || vars.UAT_TEST_REGION_ID }}
+      TEST_NETWORK_ID: ${{ vars.UAT_TEST_NETWORK_ID }}
+      TEST_PRIVATE_REGION_ID: ${{ vars.UAT_TEST_PRIVATE_REGION_ID }}
+      TEST_SECONDARY_ORG_ID: ${{ vars.UAT_TEST_SECONDARY_ORG_ID }}
+      TEST_SECONDARY_PROJECT_ID: ${{ vars.UAT_TEST_SECONDARY_PROJECT_ID }}
+      TEST_SECONDARY_AUTH_TOKEN: ${{ secrets.UAT_TEST_SECONDARY_AUTH_TOKEN }}
+      INTERNAL_API_CN: ${{ vars.UAT_INTERNAL_API_CN || 'unikorn-compute' }}
+      TEST_SERVER_FLAVOR_ID: ${{ vars.UAT_TEST_SERVER_FLAVOR_ID }}
+      TEST_SERVER_IMAGE_ID: ${{ vars.UAT_TEST_SERVER_IMAGE_ID }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.test_ref || needs.find-uat-deployed-version.outputs.ref }}
+
+    - name: Setup Go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: go.mod
+        cache: true
+
+    - name: Touch
+      run: make touch
+
+    - name: Write internal API credentials
+      env:
+        UAT_INTERNAL_API_CLIENT_CERT: ${{ secrets.UAT_INTERNAL_API_CLIENT_CERT }}
+        UAT_INTERNAL_API_CLIENT_KEY: ${{ secrets.UAT_INTERNAL_API_CLIENT_KEY }}
+      run: |
+        : "${UAT_INTERNAL_API_CLIENT_CERT:?UAT_INTERNAL_API_CLIENT_CERT is required}"
+        : "${UAT_INTERNAL_API_CLIENT_KEY:?UAT_INTERNAL_API_CLIENT_KEY is required}"
+
+        cert_path="${RUNNER_TEMP}/uat-internal-api-client.crt"
+        key_path="${RUNNER_TEMP}/uat-internal-api-client.key"
+
+        printf '%s\n' "$UAT_INTERNAL_API_CLIENT_CERT" > "$cert_path"
+        printf '%s\n' "$UAT_INTERNAL_API_CLIENT_KEY" > "$key_path"
+        chmod 600 "$cert_path" "$key_path"
+
+        echo "INTERNAL_API_CLIENT_CERT=$cert_path" >> "$GITHUB_ENV"
+        echo "INTERNAL_API_CLIENT_KEY=$key_path" >> "$GITHUB_ENV"
+
+    - name: Validate slow test configuration
+      run: |
+        : "${TEST_SERVER_FLAVOR_ID:?UAT_TEST_SERVER_FLAVOR_ID is required}"
+        : "${TEST_SERVER_IMAGE_ID:?UAT_TEST_SERVER_IMAGE_ID is required}"
+
+    - name: Run Slow E2E Tests
+      run: make test-e2e-slow
+
+    - name: Archive Slow E2E Test Results
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-slow-test-results-uat
+        path: e2e-slow-test-results.json
+
+    - name: Archive Slow E2E Test JUnit Report
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-slow-test-junit-uat
+        path: e2e-slow-junit.xml
+
+    - name: Create Linear Issues for Test Failures
+      uses: nscaledev/quality-tooling/.github/actions/linear-test-failures@main
+      # Only report when the E2E run actually produced a results file; a setup
+      # failure before the run leaves no report and must not mask the real error.
+      if: ${{ !cancelled() && hashFiles('e2e-slow-test-results.json') != '' }}
+      with:
+        test-results-path: e2e-slow-test-results.json
+        workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        linear-api-key: ${{ secrets.LINEAR_API_KEY }}
+        linear-team-id: ${{ vars.LINEAR_TEAM_ID }}
+        linear-project-id: ${{ vars.LINEAR_PROJECT_ID }}
+        environment: uat
+        linear-priority: '3'
+        max-failures: '5'
+
+    - name: Report Slow E2E Test Results
+      uses: nscaledev/quality-tooling/.github/actions/test-results-report@main
+      if: ${{ !cancelled() && hashFiles('e2e-slow-test-results.json') != '' }}
+      with:
+        test-results-path: e2e-slow-test-results.json
+        format: ginkgo-json
+        workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        send-slack: ${{ github.event.inputs.skip_slack_notifications != 'true' && 'true' || 'false' }}
+        environment: uat
+        deployed-version: ${{ needs.find-uat-deployed-version.outputs.version || needs.find-uat-deployed-version.outputs.ref }}
+        title: 'Region Slow E2E Test Results'
+        test-history-suite: uni-region-e2e-slow
+        enable-ai-analysis: 'true'
+        claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        enable-grafana-log-enrichment: 'true'
+        grafana-service-account-token: ${{ secrets.GRAFANA_SERVICE_ACCOUNT_TOKEN }}
+        enable-unikorn-cr-enrichment: 'true'
+        unikorn-cr-teleport-token: github-unikorn-cr-reader
+        unikorn-cr-kube-cluster: nks-stg-europe-west2
