@@ -85,12 +85,16 @@ func (c *BlockStorageClient) UpdateQuotas(ctx context.Context, projectID string)
 	_, span := traceStart(ctx, "PUT /block-storage/v3/os-quota-sets")
 	defer span.End()
 
+	// Quotas are handled globally, not on a per-region basis, so it's safe to
+	// unconditionally remove all OpenStack block storage limits here.
 	opts := &quotasets.UpdateOpts{
-		Volumes:         ptr.To(-1),
-		Gigabytes:       ptr.To(-1),
-		Snapshots:       ptr.To(-1),
-		Backups:         ptr.To(-1),
-		BackupGigabytes: ptr.To(-1),
+		Volumes:            ptr.To(-1),
+		Gigabytes:          ptr.To(-1),
+		Snapshots:          ptr.To(-1),
+		Backups:            ptr.To(-1),
+		BackupGigabytes:    ptr.To(-1),
+		PerVolumeGigabytes: ptr.To(-1),
+		Groups:             ptr.To(-1),
 	}
 
 	return quotasets.Update(ctx, c.client, projectID, opts).Err

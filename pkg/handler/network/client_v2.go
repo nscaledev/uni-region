@@ -33,13 +33,16 @@ import (
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	principal "github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -146,8 +149,11 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2NetworksPara
 	}
 
 	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.Network) bool {
-		return !resource.Spec.Tags.ContainsAll(tagSelector) ||
-			rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Read, resource.Labels[coreconstants.OrganizationLabel], resource.Labels[coreconstants.ProjectLabel]) != nil
+		if !resource.Spec.Tags.ContainsAll(tagSelector) {
+			return true
+		}
+
+		return rbac.AllowProjectScopeReader(ctx, "region:networks:v2", identityapi.Read, &resource) != nil
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.Network) int {
@@ -168,7 +174,7 @@ func (c *Client) GetV2Raw(ctx context.Context, networkID string) (*regionv1.Netw
 		return nil, fmt.Errorf("%w: unable to lookup network", err)
 	}
 
-	if err := rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Read, result.Labels[coreconstants.OrganizationLabel], result.Labels[coreconstants.ProjectLabel]); err != nil {
+	if err := rbac.AllowProjectScopeReader(ctx, "region:networks:v2", identityapi.Read, result); err != nil {
 		return nil, err
 	}
 
@@ -190,8 +196,8 @@ func (c *Client) GetV2Raw(ctx context.Context, networkID string) (*regionv1.Netw
 	return result, nil
 }
 
-func (c *Client) GetV2(ctx context.Context, networkID string) (*openapi.NetworkV2Read, error) {
-	result, err := c.GetV2Raw(ctx, networkID)
+func (c *Client) GetV2(ctx context.Context, networkID regionids.NetworkID) (*openapi.NetworkV2Read, error) {
+	result, err := c.GetV2Raw(ctx, networkID.String())
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +266,7 @@ func generateRoutes(in *openapi.Routes) ([]regionv1.Route, error) {
 	return out, nil
 }
 
-func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID, identityID string, request *openapi.NetworkV2Update, prefix *net.IPNet, reservations *regionv1.NetworkReservations) (*regionv1.Network, error) {
+func (c *Client) generateV2(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, regionID, identityID string, request *openapi.NetworkV2Update, prefix *net.IPNet, reservations *regionv1.NetworkReservations) (*regionv1.Network, error) {
 	dnsNameservers, err := parseIPV4AddressList(request.Spec.DnsNameservers)
 	if err != nil {
 		return nil, err
@@ -273,8 +279,6 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 
 	out := &regionv1.Network{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.Namespace).
-			WithOrganization(organizationID).
-			WithProject(projectID).
 			WithLabel(constants.RegionLabel, regionID).
 			WithLabel(constants.IdentityLabel, identityID).
 			WithLabel(constants.ResourceAPIVersionLabel, constants.MarshalAPIVersion(2)).
@@ -288,11 +292,14 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 		},
 	}
 
-	if err := util.InjectUserPrincipal(ctx, organizationID, projectID); err != nil {
+	// Root create: no parent resource to read scope from, so enrich the principal
+	// from the typed request IDs before stamping. Attribution still sees the
+	// populated principal, and out needs no early placement labels.
+	if err := principal.EnrichUserPrincipalProjectScopeID(ctx, organizationID, projectID); err != nil {
 		return nil, fmt.Errorf("%w: unable to set principal information", err)
 	}
 
-	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
+	if err := common.SetIdentityMetadataProjectScope(ctx, &out.ObjectMeta, organizationID, projectID); err != nil {
 		return nil, fmt.Errorf("%w: failed to set identity metadata", err)
 	}
 
@@ -303,17 +310,32 @@ type createSaga struct {
 	client  *Client
 	request *openapi.NetworkV2Create
 
+	organizationID identityids.OrganizationID
+	projectID      identityids.ProjectID
+
 	prefix       *net.IPNet
 	identity     *regionv1.Identity
 	network      *regionv1.Network
 	reservations *regionv1.NetworkReservations
 }
 
-func newCreateSaga(client *Client, request *openapi.NetworkV2Create) *createSaga {
-	return &createSaga{
-		client:  client,
-		request: request,
+func newCreateSaga(client *Client, request *openapi.NetworkV2Create) (*createSaga, error) {
+	organizationID, err := identityids.ParseOrganizationID(request.Spec.OrganizationId)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid organization ID", err)
 	}
+
+	projectID, err := identityids.ParseProjectID(request.Spec.ProjectId)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid project ID", err)
+	}
+
+	return &createSaga{
+		client:         client,
+		request:        request,
+		organizationID: organizationID,
+		projectID:      projectID,
+	}, nil
 }
 
 // validateRequest performs any parsing of input data that JSON schema cannot handle,
@@ -355,7 +377,7 @@ func (s *createSaga) createServicePricipal(ctx context.Context) error {
 		},
 	}
 
-	identity, err := identity.New(s.client.ClientArgs).CreateRaw(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, request)
+	identity, err := identity.New(s.client.ClientArgs).CreateRaw(ctx, s.organizationID, s.projectID, request)
 	if err != nil {
 		return err
 	}
@@ -369,11 +391,16 @@ func (s *createSaga) createServicePricipal(ctx context.Context) error {
 // NOTE: you must use the shared delete library call to preserve cascading
 // deletion semantics.
 func (s *createSaga) deleteServicePricipal(ctx context.Context) error {
-	return identity.New(s.client.ClientArgs).Delete(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.identity.Name)
+	identityID, err := regionids.ParseIdentityID(s.identity.Name)
+	if err != nil {
+		return fmt.Errorf("%w: invalid identity ID", err)
+	}
+
+	return identity.New(s.client.ClientArgs).Delete(ctx, s.organizationID, s.projectID, identityID)
 }
 
 func (s *createSaga) generateNetwork(ctx context.Context) error {
-	network, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId, s.identity.Name, convertCreateToUpdateRequest(s.request), s.prefix, s.reservations)
+	network, err := s.client.generateV2(ctx, s.organizationID, s.projectID, s.request.Spec.RegionId.String(), s.identity.Name, convertCreateToUpdateRequest(s.request), s.prefix, s.reservations)
 	if err != nil {
 		return err
 	}
@@ -431,15 +458,18 @@ func (s *createSaga) Actions() []saga.Action {
 }
 
 func (c *Client) CreateV2(ctx context.Context, request *openapi.NetworkV2Create) (*openapi.NetworkV2Read, error) {
-	if err := rbac.AllowProjectScopeCreate(ctx, c.Identity, "region:networks:v2", identityapi.Create, request.Spec.OrganizationId, request.Spec.ProjectId); err != nil {
+	s, err := newCreateSaga(c, request)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := rbac.AllowProjectScopeCreateID(ctx, c.Identity, "region:networks:v2", identityapi.Create, s.organizationID, s.projectID); err != nil {
 		return nil, err
 	}
 
 	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, request.Spec.RegionId); err != nil {
 		return nil, err
 	}
-
-	s := newCreateSaga(c, request)
 
 	if err := saga.Run(ctx, s); err != nil {
 		return nil, err
@@ -448,13 +478,18 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.NetworkV2Create)
 	return convertV2(s.network), nil
 }
 
-func (c *Client) Update(ctx context.Context, networkID string, request *openapi.NetworkV2Update) (*openapi.NetworkV2Read, error) {
-	current, err := c.GetV2Raw(ctx, networkID)
+func (c *Client) Update(ctx context.Context, networkID regionids.NetworkID, request *openapi.NetworkV2Update) (*openapi.NetworkV2Read, error) {
+	current, err := c.GetV2Raw(ctx, networkID.String())
 	if err != nil {
 		return nil, err
 	}
 
-	if err := rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Update, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel]); err != nil {
+	organizationID, projectID, err := current.OrganizationAndProjectID()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := rbac.AllowProjectScopeID(ctx, "region:networks:v2", identityapi.Update, organizationID, projectID); err != nil {
 		return nil, err
 	}
 
@@ -462,8 +497,6 @@ func (c *Client) Update(ctx context.Context, networkID string, request *openapi.
 		return nil, errors.OAuth2InvalidRequest("network is being deleted")
 	}
 
-	organizationID := current.Labels[coreconstants.OrganizationLabel]
-	projectID := current.Labels[coreconstants.ProjectLabel]
 	regionID := current.Labels[constants.RegionLabel]
 	identityID := current.Labels[constants.IdentityLabel]
 
@@ -495,16 +528,18 @@ func (c *Client) Update(ctx context.Context, networkID string, request *openapi.
 	return convertV2(updated), nil
 }
 
-func (c *Client) DeleteV2(ctx context.Context, networkID string) error {
-	resource, err := c.GetV2Raw(ctx, networkID)
+func (c *Client) DeleteV2(ctx context.Context, networkID regionids.NetworkID) error {
+	resource, err := c.GetV2Raw(ctx, networkID.String())
 	if err != nil {
 		return err
 	}
 
-	organizationID := resource.Labels[coreconstants.OrganizationLabel]
-	projectID := resource.Labels[coreconstants.ProjectLabel]
+	organizationID, projectID, err := resource.OrganizationAndProjectID()
+	if err != nil {
+		return err
+	}
 
-	if err := rbac.AllowProjectScope(ctx, "region:networks:v2", identityapi.Delete, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeID(ctx, "region:networks:v2", identityapi.Delete, organizationID, projectID); err != nil {
 		return err
 	}
 
@@ -519,21 +554,23 @@ func (c *Client) DeleteV2(ctx context.Context, networkID string) error {
 	// The V2 API doesn't expose service principals, but they are mapped 1:1 to networks, so as the
 	// real root of the tree we actually delete that and allow cascading deletion to do the
 	// rest.
-	return identity.New(c.ClientArgs).Delete(ctx, organizationID, projectID, resource.Labels[constants.IdentityLabel])
+	identityID, err := regionids.ParseIdentityID(resource.Labels[constants.IdentityLabel])
+	if err != nil {
+		return fmt.Errorf("%w: invalid identity ID", err)
+	}
+
+	return identity.New(c.ClientArgs).Delete(ctx, organizationID, projectID, identityID)
 }
 
 // ReferenceCreateV2 adds a external reference to the resource that blocks deletion
 // until it has been removed.
-func (c *Client) ReferenceCreateV2(ctx context.Context, networkID, reference string) error {
-	resource, err := c.GetV2Raw(ctx, networkID)
+func (c *Client) ReferenceCreateV2(ctx context.Context, networkID regionids.NetworkID, reference string) error {
+	resource, err := c.GetV2Raw(ctx, networkID.String())
 	if err != nil {
 		return err
 	}
 
-	organizationID := resource.Labels[coreconstants.OrganizationLabel]
-	projectID := resource.Labels[coreconstants.ProjectLabel]
-
-	if err := rbac.AllowProjectScope(ctx, "region:networks:v2/references", identityapi.Create, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeReader(ctx, "region:networks:v2/references", identityapi.Create, resource); err != nil {
 		return err
 	}
 
@@ -553,16 +590,13 @@ func (c *Client) ReferenceCreateV2(ctx context.Context, networkID, reference str
 }
 
 // ReferenceDeleteV2 removes an external reference from the resource.
-func (c *Client) ReferenceDeleteV2(ctx context.Context, networkID, reference string) error {
-	resource, err := c.GetV2Raw(ctx, networkID)
+func (c *Client) ReferenceDeleteV2(ctx context.Context, networkID regionids.NetworkID, reference string) error {
+	resource, err := c.GetV2Raw(ctx, networkID.String())
 	if err != nil {
 		return err
 	}
 
-	organizationID := resource.Labels[coreconstants.OrganizationLabel]
-	projectID := resource.Labels[coreconstants.ProjectLabel]
-
-	if err := rbac.AllowProjectScope(ctx, "region:networks:v2/references", identityapi.Delete, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeReader(ctx, "region:networks:v2/references", identityapi.Delete, resource); err != nil {
 		return err
 	}
 

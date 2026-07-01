@@ -26,10 +26,12 @@ The useful way to read it is not as a directory tree, but as one system:
 
 - [constants](./constants/README.md)
 - [apis/unikorn/v1alpha1](./apis/unikorn/v1alpha1/README.md)
+- [ids](./ids/README.md)
 - [openapi](./openapi/README.md)
 
 These packages define the shared control vocabulary, the stored Kubernetes
-resource model, and the HTTP wire contract.
+resource model, the typed resource identifiers exposed at the API layer, and the
+HTTP wire contract.
 
 The most important direction here is that `v2` is the intended API shape.
 `v1` remains as deprecated compatibility surface and should be migrated away

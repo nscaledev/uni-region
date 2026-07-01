@@ -30,11 +30,13 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -265,7 +267,7 @@ func generateRuleList(in openapi.SecurityGroupRuleList) ([]unikornv1.SecurityGro
 }
 
 // generate a new resource from a request.
-func (c *Client) generate(ctx context.Context, organizationID, projectID, identityID string, in *openapi.SecurityGroupWrite) (*unikornv1.SecurityGroup, error) {
+func (c *Client) generate(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID string, in *openapi.SecurityGroupWrite) (*unikornv1.SecurityGroup, error) {
 	identity, err := identity.New(c.ClientArgs).GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
 		return nil, err
@@ -277,14 +279,14 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 	}
 
 	out := &unikornv1.SecurityGroup{
-		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, c.Namespace).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identity.Name).Get(),
+		ObjectMeta: conversion.NewObjectMetadata(&in.Metadata, c.Namespace).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identity.Name).Get(),
 		Spec: unikornv1.SecurityGroupSpec{
 			Tags:  conversion.GenerateTagList(in.Metadata.Tags),
 			Rules: rules,
 		},
 	}
 
-	if err := identitycommon.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
+	if err := identitycommon.SetIdentityMetadataProjectScope(ctx, &out.ObjectMeta, organizationID, projectID); err != nil {
 		return nil, fmt.Errorf("%w: failed to set identity metadata", err)
 	}
 
@@ -298,7 +300,7 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 }
 
 // GetRaw gives access to the raw Kubernetes resource.
-func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, securityGroupID string) (*unikornv1.SecurityGroup, error) {
+func (c *Client) GetRaw(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, securityGroupID string) (*unikornv1.SecurityGroup, error) {
 	resource := &unikornv1.SecurityGroup{}
 
 	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: securityGroupID}, resource); err != nil {
@@ -309,21 +311,26 @@ func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, security
 		return nil, fmt.Errorf("%w: unable to get security group", err)
 	}
 
-	if err := coreutil.AssertProjectOwnership(resource, organizationID, projectID); err != nil {
+	ok, err := identityids.OwnedByProject(resource, organizationID, projectID)
+	if err != nil {
 		return nil, err
+	}
+
+	if !ok {
+		return nil, errors.HTTPNotFound()
 	}
 
 	return resource, nil
 }
 
 // List returns an ordered list of all resources in scope.
-func (c *Client) List(ctx context.Context, organizationID string, params openapi.GetApiV1OrganizationsOrganizationIDSecuritygroupsParams) (openapi.SecurityGroupsRead, error) {
+func (c *Client) List(ctx context.Context, organizationID identityids.OrganizationID, params openapi.GetApiV1OrganizationsOrganizationIDSecuritygroupsParams) (openapi.SecurityGroupsRead, error) {
 	result := &unikornv1.SecurityGroupList{}
 
 	options := &client.ListOptions{
 		Namespace: c.Namespace,
 		LabelSelector: labels.SelectorFromSet(map[string]string{
-			coreconstants.OrganizationLabel: organizationID,
+			coreconstants.OrganizationLabel: organizationID.String(),
 		}),
 	}
 
@@ -348,8 +355,8 @@ func (c *Client) List(ctx context.Context, organizationID string, params openapi
 }
 
 // Create instantiates a new resource.
-func (c *Client) Create(ctx context.Context, organizationID, projectID, identityID string, request *openapi.SecurityGroupWrite) (*openapi.SecurityGroupRead, error) {
-	securityGroup, err := c.generate(ctx, organizationID, projectID, identityID, request)
+func (c *Client) Create(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID regionids.IdentityID, request *openapi.SecurityGroupWrite) (*openapi.SecurityGroupRead, error) {
+	securityGroup, err := c.generate(ctx, organizationID, projectID, identityID.String(), request)
 	if err != nil {
 		return nil, err
 	}
@@ -362,8 +369,8 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 }
 
 // Get a resource.
-func (c *Client) Get(ctx context.Context, organizationID, projectID, securityGroupID string) (*openapi.SecurityGroupRead, error) {
-	result, err := c.GetRaw(ctx, organizationID, projectID, securityGroupID)
+func (c *Client) Get(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, securityGroupID regionids.SecurityGroupID) (*openapi.SecurityGroupRead, error) {
+	result, err := c.GetRaw(ctx, organizationID, projectID, securityGroupID.String())
 	if err != nil {
 		return nil, err
 	}
@@ -372,13 +379,13 @@ func (c *Client) Get(ctx context.Context, organizationID, projectID, securityGro
 }
 
 // Update a resource.
-func (c *Client) Update(ctx context.Context, organizationID, projectID, identityID, securityGroupID string, request *openapi.SecurityGroupWrite) (*openapi.SecurityGroupRead, error) {
-	required, err := c.generate(ctx, organizationID, projectID, identityID, request)
+func (c *Client) Update(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID regionids.IdentityID, securityGroupID regionids.SecurityGroupID, request *openapi.SecurityGroupWrite) (*openapi.SecurityGroupRead, error) {
+	required, err := c.generate(ctx, organizationID, projectID, identityID.String(), request)
 	if err != nil {
 		return nil, err
 	}
 
-	current, err := c.GetRaw(ctx, organizationID, projectID, securityGroupID)
+	current, err := c.GetRaw(ctx, organizationID, projectID, securityGroupID.String())
 	if err != nil {
 		return nil, err
 	}
@@ -396,8 +403,8 @@ func (c *Client) Update(ctx context.Context, organizationID, projectID, identity
 }
 
 // Delete a resource.
-func (c *Client) Delete(ctx context.Context, organizationID, projectID, securityGroupID string) error {
-	resource, err := c.GetRaw(ctx, organizationID, projectID, securityGroupID)
+func (c *Client) Delete(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, securityGroupID regionids.SecurityGroupID) error {
+	resource, err := c.GetRaw(ctx, organizationID, projectID, securityGroupID.String())
 	if err != nil {
 		return err
 	}

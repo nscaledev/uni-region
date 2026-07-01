@@ -30,18 +30,20 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/saga"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type NetworkGetter interface {
-	GetV2(ctx context.Context, id string) (*openapi.NetworkV2Read, error)
+	GetV2(ctx context.Context, networkID regionids.NetworkID) (*openapi.NetworkV2Read, error)
 }
 
 var ErrAllocation = fmt.Errorf("allocation error")
@@ -65,6 +67,9 @@ type createSaga struct {
 	client  *Client
 	request *openapi.StorageV2Create
 
+	organizationID identityids.OrganizationID
+	projectID      identityids.ProjectID
+
 	filestorage  *regionv1.FileStorage
 	storageClass *openapi.StorageClassV2Read
 }
@@ -77,11 +82,23 @@ func (s *createSaga) Actions() []saga.Action {
 	}
 }
 
-func newCreateSaga(client *Client, request *openapi.StorageV2Create) *createSaga {
-	return &createSaga{
-		client:  client,
-		request: request,
+func newCreateSaga(client *Client, request *openapi.StorageV2Create) (*createSaga, error) {
+	organizationID, err := identityids.ParseOrganizationID(request.Spec.OrganizationId)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid organization ID", err)
 	}
+
+	projectID, err := identityids.ParseProjectID(request.Spec.ProjectId)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid project ID", err)
+	}
+
+	return &createSaga{
+		client:         client,
+		request:        request,
+		organizationID: organizationID,
+		projectID:      projectID,
+	}, nil
 }
 
 func (c *Client) generateAllocation(size int64) identityapi.ResourceAllocationList {
@@ -139,12 +156,13 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 		return err
 	}
 
-	updateRequest, err := convertCreateToUpdateRequest(s.request)
-	if err != nil {
+	generateRequest := generateRequestFromCreate(s.request)
+
+	if err := validateSnapshotPolicyList(generateRequest.Spec.SnapshotPolicies); err != nil {
 		return err
 	}
 
-	filestorage, err := s.client.generateV2(ctx, s.request.Spec.OrganizationId, s.request.Spec.ProjectId, s.request.Spec.RegionId, updateRequest, s.storageClass)
+	filestorage, err := s.client.generateV2(ctx, s.organizationID, s.projectID, s.request.Spec.RegionId.String(), generateRequest, s.storageClass)
 	if err != nil {
 		return err
 	}
@@ -154,7 +172,7 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 	return nil
 }
 
-func (s *createSaga) validateRegion(ctx context.Context, regionID string) error {
+func (s *createSaga) validateRegion(ctx context.Context, regionID regionids.RegionID) error {
 	if err := region.NewClient(s.client.ClientArgs).CheckAccess(ctx, regionID); err != nil {
 		if !errors.IsHTTPNotFound(err) {
 			return err
@@ -172,9 +190,9 @@ func (s *createSaga) validateStorageClass(ctx context.Context, storageClassID st
 		return err
 	}
 
-	if sc.Spec.RegionId != s.request.Spec.RegionId {
+	if sc.Spec.RegionId != s.request.Spec.RegionId.String() {
 		return errors.HTTPUnprocessableContent("storage class not available in region").
-			WithValues("storageClassID", sc.Metadata.Name, "storageClassRegionID", sc.Spec.RegionId, "requestedRegionID", s.request.Spec.RegionId)
+			WithValues("storageClassID", sc.Metadata.Name, "storageClassRegionID", sc.Spec.RegionId, "requestedRegionID", s.request.Spec.RegionId.String())
 	}
 
 	s.storageClass = sc
@@ -200,6 +218,22 @@ func newUpdateSaga(client *Client, current *regionv1.FileStorage, request *opena
 	}
 }
 
+// resolveGenerateRequest builds the update's generate request with snapshot
+// policies and default protection resolved against the current state: a nil
+// policy list preserves the current user-managed policies and a nil default
+// protection flag preserves the current value. The result is deterministic from
+// request + current, so validateRequest and generate share it and
+// the reserved-name check sees exactly what generate will persist.
+func (s *updateSaga) resolveGenerateRequest() *storageV2GenerateRequest {
+	generateRequest := generateRequestFromUpdate(s.request, s.current.Spec.DefaultSnapshotProtectionEnabled)
+
+	if generateRequest.Spec.SnapshotPolicies == nil {
+		generateRequest.Spec.SnapshotPolicies = convertSnapshotPoliciesPointer(userManagedSnapshotPolicies(s.current.Spec.SnapshotPolicies))
+	}
+
+	return generateRequest
+}
+
 func (s *updateSaga) validateRequest(ctx context.Context) error {
 	networkClient := network.New(s.client.ClientArgs)
 	projectID := s.current.Labels[coreconstants.ProjectLabel]
@@ -208,15 +242,32 @@ func (s *updateSaga) validateRequest(ctx context.Context) error {
 		return err
 	}
 
+	// Only caller-supplied snapshot policies are validated here; a nil list means
+	// "preserve the current policies", and those were already validated when first
+	// stored. validateSnapshotPolicyList rejects the reserved system-default name, so
+	// a user-managed policy can never claim it regardless of default protection state.
+	if s.request.Spec.SnapshotPolicies != nil {
+		if err := validateSnapshotPolicyList(s.request.Spec.SnapshotPolicies); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 func (s *updateSaga) generate(ctx context.Context) error {
-	organizationID := s.current.Labels[coreconstants.OrganizationLabel]
-	projectID := s.current.Labels[coreconstants.ProjectLabel]
+	organizationID, projectID, err := s.current.OrganizationAndProjectID()
+	if err != nil {
+		return err
+	}
+
 	regionID := s.current.Labels[constants.RegionLabel]
 
-	required, err := s.client.generateV2(ctx, organizationID, projectID, regionID, s.request, s.storageClass)
+	// Policies/default resolved against current; the reserved system-default key
+	// check ran in validateRequest against this same resolution.
+	generateRequest := s.resolveGenerateRequest()
+
+	required, err := s.client.generateV2(ctx, organizationID, projectID, regionID, generateRequest, s.storageClass)
 	if err != nil {
 		return err
 	}
@@ -281,7 +332,12 @@ func validateAttachments(ctx context.Context, networkClient NetworkGetter, attac
 	}
 
 	for _, id := range attachments.NetworkIds {
-		net, err := networkClient.GetV2(ctx, id)
+		networkID, err := regionids.ParseNetworkID(id)
+		if err != nil {
+			return errors.HTTPUnprocessableContent("invalid network ID").WithError(err)
+		}
+
+		net, err := networkClient.GetV2(ctx, networkID)
 		if err != nil {
 			if !errors.IsHTTPNotFound(err) {
 				return err

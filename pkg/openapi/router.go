@@ -233,6 +233,9 @@ type ServerInterface interface {
 	// Get SSH certificate authority
 	// (GET /api/v2/sshcertificateauthorities/{sshCertificateAuthorityID})
 	GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID(w http.ResponseWriter, r *http.Request, sshCertificateAuthorityID SshCertificateAuthorityIDParameter)
+	// Get the deployed service version
+	// (GET /api/version)
+	GetApiVersion(w http.ResponseWriter, r *http.Request)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -629,6 +632,12 @@ func (_ Unimplemented) DeleteApiV2SshcertificateauthoritiesSshCertificateAuthori
 // Get SSH certificate authority
 // (GET /api/v2/sshcertificateauthorities/{sshCertificateAuthorityID})
 func (_ Unimplemented) GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID(w http.ResponseWriter, r *http.Request, sshCertificateAuthorityID SshCertificateAuthorityIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get the deployed service version
+// (GET /api/version)
+func (_ Unimplemented) GetApiVersion(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3624,6 +3633,26 @@ func (siw *ServerInterfaceWrapper) GetApiV2SshcertificateauthoritiesSshCertifica
 	handler.ServeHTTP(w, r)
 }
 
+// GetApiVersion operation middleware
+func (siw *ServerInterfaceWrapper) GetApiVersion(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiVersion(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -3955,6 +3984,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/sshcertificateauthorities/{sshCertificateAuthorityID}", wrapper.GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/version", wrapper.GetApiVersion)
 	})
 
 	return r

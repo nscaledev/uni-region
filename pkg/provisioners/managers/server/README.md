@@ -7,7 +7,14 @@ Distinctive behaviour:
 - maintains explicit reference edges from a server to consumed networks,
   security groups, and optional SSH certificate authority
 - blocks on identity readiness before provider create/delete
+- preflight checks may still yield inside the provider, after other
+  validation succeeds; those checks are transient and are not recorded
+  as lifecycle transitions
 - augments provider create options with managed cloud-init parts for SSH CA use
+- retries provider-accepted create attempts that later land in provider error,
+  deleting the failed provider server before a bounded re-attempt, but only for
+  servers that have never been successfully provisioned; once the attempt cap is
+  reached it aborts terminally rather than retrying further
 - clears or updates consumed-resource references during reprovision and teardown
 
 This is the clearest controller-side expression of the lifecycle DAG model:
@@ -21,6 +28,39 @@ This is the clearest controller-side expression of the lifecycle DAG model:
 
 - Reference maintenance here is easy to underappreciate, but it is central to
   keeping server deletion and dependent-resource blocking semantics correct.
+- Provider create retry state is stored on `Server.status.providerCreateFailures`.
+  Transient provider create failures return `ErrYield` (a fixed-interval requeue)
+  until the configured attempt cap is reached. At the cap the provisioner returns
+  the core `provisioners.Terminal` disposition, so the reconciler parks the server
+  (writes `Errored`, stops requeuing) instead of looping forever on a failure that
+  cannot self-heal — the bare error it used to return was requeued every yield
+  interval indefinitely, starving the workqueue. The counter is tested against the
+  prospective attempt and clamped to the cap, so it settles at the cap and cannot
+  drift on re-reconcile or controller restart (an already-drifted counter heals
+  back down on its next pass). Recovery is deliberately out of band: the terminal
+  state is sticky until an operator resets `providerCreateFailures`, which re-arms
+  the retry on the next reconcile. Changing retry behaviour must preserve these
+  invariants.
+- The delete-and-retry decision lives in the single `ProviderCreateFailure`
+  predicate, shared with the controller watch predicate
+  (`pkg/managers/server`) so the trigger and the action cannot drift. It fails
+  closed: a rebuild destroys data, so any signal that the server has ever booted
+  blocks it. In steady state the load-bearing guard is `launchedAt` (mirrored
+  from Nova `launched_at`, which Nova sets at first boot and never clears).
+  `Server.status.provisionedAt` is a durable, write-once copy of that same Nova
+  signal that the retry reset never clears; it closes the one window `launchedAt`
+  alone cannot — a launched server whose `launchedAt` is wiped by an in-flight
+  retry reset, or a re-reconcile against a flaky provider. A reconciler-owned
+  `Available`/Provisioned condition would be unsuitable for this: it is
+  re-derived every reconcile and legitimately flips to `Errored`/`Provisioning`
+  on a controller restart against a flaky provider — exactly when a rebuild would
+  be catastrophic. The post-launch phases are retained as further defence in
+  depth so losing any single status field cannot re-arm the rebuild path.
+  Existing servers predating the latch backfill it on the next poll once booted
+  and are covered by the `launchedAt` backstop until then.
+- Provider create retries also emit Kubernetes events and structured logs on
+  retry start, retry readiness after delete, and retry exhaustion; avoid
+  per-reconcile emissions while deletion is still converging.
 - The provisioner currently trusts the API not to supply repeated network or
   security-group IDs, even though the code still carries explicit TODOs to
   reject duplicates.

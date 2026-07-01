@@ -6,8 +6,9 @@ identity/service-principal context is ready.
 Distinctive behaviour:
 
 - blocks on parent identity readiness before provider create
-- skips provider delete when identity is not ready and no provider resource IDs
-  have been recorded, because there is nothing provider-side to remove yet
+- always delegates provider delete unconditionally on deprovision; the provider
+  no-ops idempotently when the identity was never realized, so cleanup is never
+  gated on readiness or best-effort recorded status
 - deletes identity-side quota allocation on deprovision for `v2` networks only
 - carries explicit `v1` compatibility debt in that allocation cleanup path
 

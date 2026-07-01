@@ -21,36 +21,51 @@ package storage
 import (
 	"context"
 	"net"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	corev1 "github.com/unikorn-cloud/core/pkg/openapi"
 	servererrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityauth "github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityopenapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
 	"github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	networkclient "github.com/unikorn-cloud/region/pkg/handler/network"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	k8sv1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-const testNamespace = "uni-storage-test"
+const (
+	testNamespace      = "uni-storage-test"
+	testOrganizationID = "11111111-1111-4111-a111-111111111111"
+	testProjectID      = "22222222-2222-4222-a222-222222222222"
+	testRegionID       = "33333333-3333-4333-a333-333333333333"
+	testFileStorageID  = "44444444-4444-4444-a444-444444444444"
+	testAllocationID   = "66666666-6666-4666-a666-666666666666"
+	testNetworkID      = "77777777-7777-4777-a777-777777777777"
+)
 
 //nolint:gochecknoglobals
 var (
@@ -71,6 +86,10 @@ var (
 		Start: v1alpha1.IPv4Address{IP: net.IP{192, 168, 0, 1}},
 		End:   v1alpha1.IPv4Address{IP: net.IP{192, 168, 0, 127}},
 	}
+
+	emptyStorageSnapshotPolicies        = openapi.StorageSnapshotPolicyListV2Spec{}
+	emptyStorageSnapshotPoliciesPointer = &emptyStorageSnapshotPolicies
+	emptyStorageSnapshotPolicyStatuses  = openapi.StorageSnapshotPolicyListV2Status{}
 )
 
 const (
@@ -78,13 +97,15 @@ const (
 	miB = int64(1024 * 1024)
 )
 
-func newTestNetwork(name string) *regionv1.Network {
+func newTestNetwork() *regionv1.Network {
 	return &regionv1.Network{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
+			Name:      testNetworkID,
 			Namespace: testNamespace,
 			Labels: map[string]string{
 				constants.ResourceAPIVersionLabel: "2",
+				coreconstants.OrganizationLabel:   testOrganizationID,
+				coreconstants.ProjectLabel:        testProjectID,
 			},
 		},
 		Status: regionv1.NetworkStatus{
@@ -101,8 +122,10 @@ func newFakeClient(t *testing.T, objects ...client.Object) client.Client {
 
 	scheme := runtime.NewScheme()
 	require.NoError(t, regionv1.AddToScheme(scheme))
+	restMapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{regionv1.SchemeGroupVersion})
+	restMapper.Add(regionv1.SchemeGroupVersion.WithKind("FileStorage"), meta.RESTScopeNamespace)
 
-	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+	return fake.NewClientBuilder().WithScheme(scheme).WithRESTMapper(restMapper).WithObjects(objects...).Build()
 }
 
 func newContextWithPermissions(ctx context.Context) context.Context {
@@ -383,7 +406,7 @@ func TestGenerateAttachment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			network := newTestNetwork("net-1")
+			network := newTestNetwork()
 			network.Status.Openstack.StorageRange = tt.storageRange
 
 			got, err := generateAttachment(network, tt.parallelism)
@@ -398,7 +421,7 @@ func TestGenerateAttachment(t *testing.T) {
 			}
 
 			require.NoError(t, err)
-			require.Equal(t, "net-1", got.NetworkID)
+			require.Equal(t, testNetworkID, got.NetworkID)
 			require.Equal(t, ptr.To(1111), got.SegmentationID)
 			require.Equal(t, tt.wantIPRange, got.IPRange)
 		})
@@ -408,7 +431,7 @@ func TestGenerateAttachment(t *testing.T) {
 func TestGenerateAttachmentList(t *testing.T) {
 	t.Parallel()
 
-	network := newTestNetwork("net-1")
+	network := newTestNetwork()
 	client := newFakeClient(t, network)
 
 	clientArgs := common.ClientArgs{
@@ -422,15 +445,15 @@ func TestGenerateAttachmentList(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		input *openapi.StorageV2Update
+		input *storageV2GenerateRequest
 		want  []regionv1.Attachment
 	}{
 		{
 			name: "test with limited values",
-			input: &openapi.StorageV2Update{
-				Spec: openapi.StorageV2Spec{
+			input: &storageV2GenerateRequest{
+				Spec: storageV2GenerateSpec{
 					Attachments: &openapi.StorageAttachmentV2Spec{
-						NetworkIds: openapi.NetworkIDList{"net-1"},
+						NetworkIds: openapi.NetworkIDList{testNetworkID},
 					},
 					StorageType: openapi.StorageTypeV2Spec{
 						NFS: &openapi.NFSV2Spec{},
@@ -439,7 +462,7 @@ func TestGenerateAttachmentList(t *testing.T) {
 			},
 			want: []regionv1.Attachment{
 				{
-					NetworkID:      "net-1",
+					NetworkID:      testNetworkID,
 					SegmentationID: ptr.To(1111),
 					IPRange:        narrowedRange,
 				},
@@ -447,7 +470,7 @@ func TestGenerateAttachmentList(t *testing.T) {
 		},
 		{
 			name:  "empty",
-			input: &openapi.StorageV2Update{},
+			input: &storageV2GenerateRequest{},
 			want:  []regionv1.Attachment{},
 		},
 		{
@@ -519,6 +542,8 @@ func TestConvertV2List(t *testing.T) {
 						Attachments: &openapi.StorageAttachmentV2Spec{
 							NetworkIds: []string{},
 						},
+						DefaultSnapshotProtectionEnabled: ptr.To(false),
+						SnapshotPolicies:                 emptyStorageSnapshotPoliciesPointer,
 						StorageType: openapi.StorageTypeV2Spec{
 							NFS: &openapi.NFSV2Spec{
 								RootSquash: true,
@@ -527,9 +552,10 @@ func TestConvertV2List(t *testing.T) {
 					},
 
 					Status: openapi.StorageV2Status{
-						Attachments:    nil,
-						RegionId:       "",
-						StorageClassId: "",
+						Attachments:      nil,
+						RegionId:         "",
+						SnapshotPolicies: emptyStorageSnapshotPolicyStatuses,
+						StorageClassId:   "",
 					},
 				},
 			},
@@ -561,7 +587,7 @@ func TestConvertV2List(t *testing.T) {
 							Size: *gibToQuantity(int64(100)),
 							Attachments: []regionv1.Attachment{
 								{
-									NetworkID:      "net-1",
+									NetworkID:      testNetworkID,
 									SegmentationID: ptr.To(1111),
 									IPRange: &regionv1.AttachmentIPRange{
 										Start: v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 0, 1)},
@@ -588,8 +614,10 @@ func TestConvertV2List(t *testing.T) {
 					Spec: openapi.StorageV2Spec{
 						SizeGiB: 100,
 						Attachments: &openapi.StorageAttachmentV2Spec{
-							NetworkIds: []string{"net-1"},
+							NetworkIds: []string{testNetworkID},
 						},
+						DefaultSnapshotProtectionEnabled: ptr.To(false),
+						SnapshotPolicies:                 emptyStorageSnapshotPoliciesPointer,
 						StorageType: openapi.StorageTypeV2Spec{
 							NFS: &openapi.NFSV2Spec{
 								RootSquash: true,
@@ -598,9 +626,10 @@ func TestConvertV2List(t *testing.T) {
 					},
 
 					Status: openapi.StorageV2Status{
-						Attachments:    &openapi.StorageAttachmentListV2Status{{NetworkId: "net-1", MountSource: ptr.To("192.168.0.1:/export"), ProvisioningStatus: corev1.ResourceProvisioningStatusPending}},
-						RegionId:       "",
-						StorageClassId: "",
+						Attachments:      &openapi.StorageAttachmentListV2Status{{NetworkId: testNetworkID, MountSource: ptr.To("192.168.0.1:/export"), ProvisioningStatus: corev1.ResourceProvisioningStatusPending}},
+						RegionId:         "",
+						SnapshotPolicies: emptyStorageSnapshotPolicyStatuses,
+						StorageClassId:   "",
 					},
 				},
 			},
@@ -631,7 +660,7 @@ func TestConvertStatusAttachmentList(t *testing.T) {
 				Spec: regionv1.FileStorageSpec{
 					Attachments: []regionv1.Attachment{
 						{
-							NetworkID: "net-1",
+							NetworkID: testNetworkID,
 							IPRange: &regionv1.AttachmentIPRange{
 								Start: v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 100)},
 								End:   v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 103)},
@@ -643,7 +672,7 @@ func TestConvertStatusAttachmentList(t *testing.T) {
 					MountPath: ptr.To("/export/data"),
 					Attachments: []regionv1.FileStorageAttachmentStatus{
 						{
-							NetworkID:          "net-1",
+							NetworkID:          testNetworkID,
 							ProvisioningStatus: regionv1.AttachmentProvisioned,
 							IPRange: &regionv1.AttachmentIPRange{
 								Start: v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 20, 16)},
@@ -655,7 +684,7 @@ func TestConvertStatusAttachmentList(t *testing.T) {
 			},
 			want: &openapi.StorageAttachmentListV2Status{
 				{
-					NetworkId:          "net-1",
+					NetworkId:          testNetworkID,
 					MountSource:        ptr.To("10.0.0.100:/export/data"),
 					MountOptions:       ptr.To(map[string]string{"remoteports": "192.168.20.16-192.168.20.23"}),
 					ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned,
@@ -668,14 +697,14 @@ func TestConvertStatusAttachmentList(t *testing.T) {
 				Spec: regionv1.FileStorageSpec{
 					Attachments: []regionv1.Attachment{
 						{
-							NetworkID: "net-1",
+							NetworkID: testNetworkID,
 						},
 					},
 				},
 				Status: regionv1.FileStorageStatus{
 					Attachments: []regionv1.FileStorageAttachmentStatus{
 						{
-							NetworkID:          "net-1",
+							NetworkID:          testNetworkID,
 							ProvisioningStatus: regionv1.AttachmentProvisioned,
 							IPRange: &regionv1.AttachmentIPRange{
 								Start: v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 20, 16)},
@@ -687,7 +716,7 @@ func TestConvertStatusAttachmentList(t *testing.T) {
 			},
 			want: &openapi.StorageAttachmentListV2Status{
 				{
-					NetworkId:          "net-1",
+					NetworkId:          testNetworkID,
 					MountOptions:       ptr.To(map[string]string{"remoteports": "192.168.20.16"}),
 					ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned,
 				},
@@ -699,14 +728,14 @@ func TestConvertStatusAttachmentList(t *testing.T) {
 				Spec: regionv1.FileStorageSpec{
 					Attachments: []regionv1.Attachment{
 						{
-							NetworkID: "net-1",
+							NetworkID: testNetworkID,
 						},
 					},
 				},
 			},
 			want: &openapi.StorageAttachmentListV2Status{
 				{
-					NetworkId:          "net-1",
+					NetworkId:          testNetworkID,
 					ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 				},
 			},
@@ -717,7 +746,7 @@ func TestConvertStatusAttachmentList(t *testing.T) {
 				Spec: regionv1.FileStorageSpec{
 					Attachments: []regionv1.Attachment{
 						{
-							NetworkID: "net-1",
+							NetworkID: testNetworkID,
 						},
 					},
 				},
@@ -736,7 +765,7 @@ func TestConvertStatusAttachmentList(t *testing.T) {
 			},
 			want: &openapi.StorageAttachmentListV2Status{
 				{
-					NetworkId:          "net-1",
+					NetworkId:          testNetworkID,
 					ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 				},
 			},
@@ -840,13 +869,17 @@ func TestConvertV2(t *testing.T) {
 					Attachments: &openapi.StorageAttachmentV2Spec{
 						NetworkIds: []string{},
 					},
+					DefaultSnapshotProtectionEnabled: ptr.To(false),
+					SnapshotPolicies:                 emptyStorageSnapshotPoliciesPointer,
 					StorageType: openapi.StorageTypeV2Spec{
 						NFS: &openapi.NFSV2Spec{
 							RootSquash: true,
 						},
 					},
 				},
-				Status: openapi.StorageV2Status{},
+				Status: openapi.StorageV2Status{
+					SnapshotPolicies: emptyStorageSnapshotPolicyStatuses,
+				},
 			},
 		},
 		{
@@ -872,11 +905,14 @@ func TestConvertV2(t *testing.T) {
 					ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 				},
 				Spec: openapi.StorageV2Spec{
-					SizeGiB:     100,
-					Attachments: &openapi.StorageAttachmentV2Spec{NetworkIds: []string{}},
-					StorageType: openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
+					SizeGiB:                          100,
+					Attachments:                      &openapi.StorageAttachmentV2Spec{NetworkIds: []string{}},
+					DefaultSnapshotProtectionEnabled: ptr.To(false),
+					SnapshotPolicies:                 emptyStorageSnapshotPoliciesPointer,
+					StorageType:                      openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
 				},
 				Status: openapi.StorageV2Status{
+					SnapshotPolicies: emptyStorageSnapshotPolicyStatuses,
 					Usage: &openapi.StorageUsageV2Status{
 						CapacityBytes: 100 * giB,
 						UsedBytes:     ptr.To(50 * giB),
@@ -908,12 +944,15 @@ func TestConvertV2(t *testing.T) {
 					ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 				},
 				Spec: openapi.StorageV2Spec{
-					SizeGiB:     100,
-					Attachments: &openapi.StorageAttachmentV2Spec{NetworkIds: []string{}},
-					StorageType: openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
+					SizeGiB:                          100,
+					Attachments:                      &openapi.StorageAttachmentV2Spec{NetworkIds: []string{}},
+					DefaultSnapshotProtectionEnabled: ptr.To(false),
+					SnapshotPolicies:                 emptyStorageSnapshotPoliciesPointer,
+					StorageType:                      openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
 				},
 				Status: openapi.StorageV2Status{
-					Usage: nil,
+					SnapshotPolicies: emptyStorageSnapshotPolicyStatuses,
+					Usage:            nil,
 				},
 			},
 		},
@@ -940,11 +979,14 @@ func TestConvertV2(t *testing.T) {
 					ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 				},
 				Spec: openapi.StorageV2Spec{
-					SizeGiB:     100,
-					Attachments: &openapi.StorageAttachmentV2Spec{NetworkIds: []string{}},
-					StorageType: openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
+					SizeGiB:                          100,
+					Attachments:                      &openapi.StorageAttachmentV2Spec{NetworkIds: []string{}},
+					DefaultSnapshotProtectionEnabled: ptr.To(false),
+					SnapshotPolicies:                 emptyStorageSnapshotPoliciesPointer,
+					StorageType:                      openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
 				},
 				Status: openapi.StorageV2Status{
+					SnapshotPolicies: emptyStorageSnapshotPolicyStatuses,
 					Usage: &openapi.StorageUsageV2Status{
 						CapacityBytes: 100 * giB,
 						UsedBytes:     nil,
@@ -964,7 +1006,7 @@ func TestConvertV2(t *testing.T) {
 					NFS:  &regionv1.NFS{RootSquash: true},
 					Attachments: []regionv1.Attachment{
 						{
-							NetworkID: "net-1",
+							NetworkID: testNetworkID,
 							IPRange: &regionv1.AttachmentIPRange{
 								Start: v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 100)},
 								End:   v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 110)},
@@ -982,14 +1024,17 @@ func TestConvertV2(t *testing.T) {
 					ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 				},
 				Spec: openapi.StorageV2Spec{
-					SizeGiB:     100,
-					Attachments: &openapi.StorageAttachmentV2Spec{NetworkIds: []string{"net-1"}},
-					StorageType: openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
+					SizeGiB:                          100,
+					Attachments:                      &openapi.StorageAttachmentV2Spec{NetworkIds: []string{testNetworkID}},
+					DefaultSnapshotProtectionEnabled: ptr.To(false),
+					SnapshotPolicies:                 emptyStorageSnapshotPoliciesPointer,
+					StorageType:                      openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
 				},
 				Status: openapi.StorageV2Status{
+					SnapshotPolicies: emptyStorageSnapshotPolicyStatuses,
 					Attachments: &openapi.StorageAttachmentListV2Status{
 						{
-							NetworkId:          "net-1",
+							NetworkId:          testNetworkID,
 							MountSource:        ptr.To("10.0.0.100:/export/data"),
 							ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 						},
@@ -1012,64 +1057,15 @@ func TestConvertV2(t *testing.T) {
 func TestConvertV2SizeConversion(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name  string
-		input *regionv1.FileStorage
-		want  *openapi.StorageV2Read
-	}{
-		{
-			name: "test with limited values",
-			input: &regionv1.FileStorage{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "FileStorage",
-					APIVersion: "v1alpha1",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "",
-					Namespace: "default",
-					Labels: map[string]string{
-						"app": "mock",
-					},
-				},
-				Spec: regionv1.FileStorageSpec{
-					Size: *gibToQuantity(int64(2)),
-					NFS: &regionv1.NFS{
-						RootSquash: true,
-					},
-					Attachments: []regionv1.Attachment{},
-				},
-			},
-			want: &openapi.StorageV2Read{
-				Metadata: corev1.ProjectScopedResourceReadMetadata{
-					HealthStatus:       corev1.ResourceHealthStatusUnknown,
-					ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
-				},
-				Spec: openapi.StorageV2Spec{
-					SizeGiB: 2,
-					Attachments: &openapi.StorageAttachmentV2Spec{
-						NetworkIds: []string{},
-					},
-					StorageType: openapi.StorageTypeV2Spec{
-						NFS: &openapi.NFSV2Spec{
-							RootSquash: true,
-						},
-					},
-				},
-				Status: openapi.StorageV2Status{},
-			},
+	input := &regionv1.FileStorage{
+		Spec: regionv1.FileStorageSpec{
+			Size: *gibToQuantity(2),
 		},
 	}
+	require.Equal(t, int64(2147483648), input.Spec.Size.Value())
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			require.Equal(t, int64(2147483648), tt.input.Spec.Size.Value())
-
-			got := convertV2(tt.input)
-			require.Equal(t, tt.want, got)
-		})
-	}
+	got := convertV2(input)
+	require.Equal(t, int64(2), got.Spec.SizeGiB)
 }
 
 func TestConvertClass(t *testing.T) {
@@ -1215,6 +1211,421 @@ func TestGetStorageClassParallelism(t *testing.T) {
 	}
 }
 
+func TestCreateV2OmittedDefaultProtectionEnablesDefaultAndCreatesNoSnapshotPolicies(t *testing.T) {
+	t.Parallel()
+
+	got := createStorageV2ForSnapshotPolicyTest(t, nil)
+
+	require.Equal(t, ptr.To(true), got.Spec.DefaultSnapshotProtectionEnabled)
+
+	require.NotNil(t, got.Spec.SnapshotPolicies)
+	require.Empty(t, *got.Spec.SnapshotPolicies)
+
+	require.NotNil(t, got.Status.SnapshotPolicies)
+	require.Empty(t, got.Status.SnapshotPolicies)
+}
+
+func TestCreateV2ExplicitFalseDisablesDefaultProtection(t *testing.T) {
+	t.Parallel()
+
+	got := createStorageV2ForSnapshotPolicyTest(t, func(request *openapi.StorageV2Create) {
+		request.Spec.DefaultSnapshotProtectionEnabled = ptr.To(false)
+	})
+
+	require.Equal(t, ptr.To(false), got.Spec.DefaultSnapshotProtectionEnabled)
+
+	require.NotNil(t, got.Spec.SnapshotPolicies)
+	require.Empty(t, *got.Spec.SnapshotPolicies)
+
+	require.NotNil(t, got.Status.SnapshotPolicies)
+	require.Empty(t, got.Status.SnapshotPolicies)
+}
+
+func TestCreateV2RejectsSystemDefaultPolicyWhenDefaultProtectionEnabled(t *testing.T) {
+	t.Parallel()
+
+	policies := openapi.StorageSnapshotPolicyListV2Spec{
+		{
+			Name: "system-default",
+			Schedule: openapi.StorageSnapshotScheduleV2Spec{
+				Interval: openapi.StorageSnapshotScheduleIntervalV2Hourly,
+			},
+			Retention: openapi.StorageSnapshotRetentionV2Spec{Keep: 24},
+		},
+	}
+
+	_, err := createStorageV2ForSnapshotPolicyResult(t, func(request *openapi.StorageV2Create) {
+		request.Spec.SnapshotPolicies = &policies
+	})
+	require.Error(t, err)
+	require.True(t, servererrors.IsUnprocessableContent(err), "expected 422, got: %v", err)
+}
+
+func TestCreateV2AllowsDefaultPolicyName(t *testing.T) {
+	t.Parallel()
+
+	policies := openapi.StorageSnapshotPolicyListV2Spec{
+		{
+			Name: "default",
+			Schedule: openapi.StorageSnapshotScheduleV2Spec{
+				Interval:  openapi.StorageSnapshotScheduleIntervalV2Daily,
+				TimeOfDay: ptr.To("04:00Z"),
+			},
+			Retention: openapi.StorageSnapshotRetentionV2Spec{Keep: 7},
+		},
+	}
+
+	got := createStorageV2ForSnapshotPolicyTest(t, func(request *openapi.StorageV2Create) {
+		request.Spec.SnapshotPolicies = &policies
+	})
+
+	require.Equal(t, ptr.To(true), got.Spec.DefaultSnapshotProtectionEnabled)
+	require.Equal(t, &policies, got.Spec.SnapshotPolicies)
+}
+
+func TestCreateV2RejectsSystemDefaultPolicyWhenDefaultProtectionDisabled(t *testing.T) {
+	t.Parallel()
+
+	// system-default is reserved unconditionally, so a caller may not claim it even
+	// when default protection is disabled.
+	policies := openapi.StorageSnapshotPolicyListV2Spec{
+		{
+			Name: "system-default",
+			Schedule: openapi.StorageSnapshotScheduleV2Spec{
+				Interval: openapi.StorageSnapshotScheduleIntervalV2Hourly,
+			},
+			Retention: openapi.StorageSnapshotRetentionV2Spec{Keep: 24},
+		},
+	}
+
+	_, err := createStorageV2ForSnapshotPolicyResult(t, func(request *openapi.StorageV2Create) {
+		request.Spec.DefaultSnapshotProtectionEnabled = ptr.To(false)
+		request.Spec.SnapshotPolicies = &policies
+	})
+	require.Error(t, err)
+	require.True(t, servererrors.IsUnprocessableContent(err), "expected 422, got: %v", err)
+}
+
+func TestCreateV2EmptySnapshotPoliciesCreatesNoSnapshotPolicies(t *testing.T) {
+	t.Parallel()
+
+	policies := openapi.StorageSnapshotPolicyListV2Spec{}
+	got := createStorageV2ForSnapshotPolicyTest(t, func(request *openapi.StorageV2Create) {
+		request.Spec.SnapshotPolicies = &policies
+	})
+
+	require.NotNil(t, got.Spec.SnapshotPolicies)
+	require.Empty(t, *got.Spec.SnapshotPolicies)
+
+	require.NotNil(t, got.Status.SnapshotPolicies)
+	require.Empty(t, got.Status.SnapshotPolicies)
+}
+
+func TestCreateV2NonEmptySnapshotPoliciesPersistsCallerSuppliedPolicies(t *testing.T) {
+	t.Parallel()
+
+	policies := openapi.StorageSnapshotPolicyListV2Spec{
+		{
+			Name: "hourly",
+			Schedule: openapi.StorageSnapshotScheduleV2Spec{
+				Interval: openapi.StorageSnapshotScheduleIntervalV2Hourly,
+			},
+			Retention: openapi.StorageSnapshotRetentionV2Spec{
+				Keep: 24,
+			},
+		},
+	}
+
+	got := createStorageV2ForSnapshotPolicyTest(t, func(request *openapi.StorageV2Create) {
+		request.Spec.SnapshotPolicies = &policies
+	})
+
+	require.NotNil(t, got.Spec.SnapshotPolicies)
+	require.Equal(t, policies, *got.Spec.SnapshotPolicies)
+
+	require.NotNil(t, got.Status.SnapshotPolicies)
+	require.Equal(t, openapi.StorageSnapshotPolicyListV2Status{
+		{
+			Name:               "hourly",
+			ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
+		},
+	}, got.Status.SnapshotPolicies)
+}
+
+func TestUpdateOmittedSnapshotPoliciesPreservesExistingPolicies(t *testing.T) {
+	t.Parallel()
+
+	// A nil configure leaves snapshotPolicies omitted on the update request, which
+	// must preserve the policies already stored on the seeded file storage.
+	got := updateStorageV2ForSnapshotPolicyTest(t, nil)
+
+	expectedPolicies := openapi.StorageSnapshotPolicyListV2Spec{
+		{
+			Name: "default",
+			Schedule: openapi.StorageSnapshotScheduleV2Spec{
+				Interval:  openapi.StorageSnapshotScheduleIntervalV2Daily,
+				TimeOfDay: ptr.To("04:00Z"),
+			},
+			Retention: openapi.StorageSnapshotRetentionV2Spec{
+				Keep: 7,
+			},
+		},
+	}
+
+	require.NotNil(t, got.Spec.SnapshotPolicies)
+	require.Equal(t, expectedPolicies, *got.Spec.SnapshotPolicies)
+
+	require.NotNil(t, got.Status.SnapshotPolicies)
+	require.Equal(t, openapi.StorageSnapshotPolicyListV2Status{
+		{
+			Name:               "default",
+			ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
+		},
+	}, got.Status.SnapshotPolicies)
+}
+
+func TestUpdateEmptySnapshotPoliciesClearsExistingPolicies(t *testing.T) {
+	t.Parallel()
+
+	policies := openapi.StorageSnapshotPolicyListV2Spec{}
+	got := updateStorageV2ForSnapshotPolicyTest(t, func(request *openapi.StorageV2Update) {
+		request.Spec.SnapshotPolicies = &policies
+	})
+
+	require.NotNil(t, got.Spec.SnapshotPolicies)
+	require.Empty(t, *got.Spec.SnapshotPolicies)
+
+	require.NotNil(t, got.Status.SnapshotPolicies)
+	require.Empty(t, got.Status.SnapshotPolicies)
+}
+
+func TestUpdateNonEmptySnapshotPoliciesReplacesExistingPolicies(t *testing.T) {
+	t.Parallel()
+
+	policies := openapi.StorageSnapshotPolicyListV2Spec{
+		{
+			Name: "hourly",
+			Schedule: openapi.StorageSnapshotScheduleV2Spec{
+				Interval: openapi.StorageSnapshotScheduleIntervalV2Hourly,
+			},
+			Retention: openapi.StorageSnapshotRetentionV2Spec{
+				Keep: 24,
+			},
+		},
+	}
+	got := updateStorageV2ForSnapshotPolicyTest(t, func(request *openapi.StorageV2Update) {
+		request.Spec.SnapshotPolicies = &policies
+	})
+
+	require.NotNil(t, got.Spec.SnapshotPolicies)
+	require.Equal(t, policies, *got.Spec.SnapshotPolicies)
+
+	require.NotNil(t, got.Status.SnapshotPolicies)
+	require.Equal(t, openapi.StorageSnapshotPolicyListV2Status{
+		{
+			Name:               "hourly",
+			ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
+		},
+	}, got.Status.SnapshotPolicies)
+}
+
+func updateStorageV2ForSnapshotPolicyTest(t *testing.T, configure func(*openapi.StorageV2Update)) *openapi.StorageV2Read {
+	t.Helper()
+
+	ctrl := gomock.NewController(t)
+	t.Cleanup(ctrl.Finish)
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	mockIdentity.EXPECT().
+		PutApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(testOrganizationID), identityids.MustParseProjectID(testProjectID), identityids.MustParseAllocationID(testAllocationID), gomock.Any()).
+		Return(&identityopenapi.PutApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+			JSON200: &identityopenapi.AllocationResponse{
+				Metadata: corev1.ProjectScopedResourceReadMetadata{
+					Id: testAllocationID,
+				},
+			},
+		}, nil)
+
+	k8sClient := newFakeClient(t,
+		&regionv1.FileStorageClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "sc-1",
+				Namespace: testNamespace,
+				Labels: map[string]string{
+					constants.RegionLabel: testRegionID,
+				},
+			},
+		},
+		&regionv1.FileStorage{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      testFileStorageID,
+				Namespace: testNamespace,
+				Labels: map[string]string{
+					constants.RegionLabel:                    testRegionID,
+					coreconstants.NameLabel:                  "test-filestorage",
+					coreconstants.OrganizationLabel:          testOrganizationID,
+					coreconstants.ProjectLabel:               testProjectID,
+					coreconstants.OrganizationPrincipalLabel: testOrganizationID,
+					coreconstants.ProjectPrincipalLabel:      testProjectID,
+				},
+				Annotations: map[string]string{
+					coreconstants.AllocationAnnotation:       testAllocationID,
+					coreconstants.CreatorAnnotation:          "user-1",
+					coreconstants.CreatorPrincipalAnnotation: "actor@example.com",
+				},
+			},
+			Spec: regionv1.FileStorageSpec{
+				Size:           *resource.NewQuantity(10*giB, resource.BinarySI),
+				StorageClassID: "sc-1",
+				NFS: &regionv1.NFS{
+					RootSquash: true,
+				},
+				SnapshotPolicies: []regionv1.FileStorageSnapshotPolicy{
+					{
+						Name: "default",
+						Schedule: regionv1.FileStorageSnapshotPolicySchedule{
+							Interval:  regionv1.FileStorageSnapshotPolicyIntervalDaily,
+							TimeOfDay: ptr.To("04:00Z"),
+						},
+						Retention: regionv1.FileStorageSnapshotPolicyRetention{
+							Keep: 7,
+						},
+					},
+				},
+			},
+		},
+	)
+
+	client := New(common.ClientArgs{
+		Client:    k8sClient,
+		Identity:  mockIdentity,
+		Namespace: testNamespace,
+	})
+	ctx := identityauth.NewContext(t.Context(), &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}})
+	ctx = principal.NewContext(ctx, &principal.Principal{Actor: "actor@example.com", OrganizationID: testOrganizationID, ProjectID: testProjectID})
+	ctx = rbac.NewContext(ctx, &identityopenapi.Acl{
+		Global: &identityopenapi.AclEndpoints{
+			{
+				Name:       "region:filestorage:v2",
+				Operations: identityopenapi.AclOperations{identityopenapi.Read, identityopenapi.Update},
+			},
+		},
+	})
+
+	request := &openapi.StorageV2Update{
+		Metadata: corev1.ResourceWriteMetadata{Name: "test-filestorage"},
+		Spec: openapi.StorageV2Spec{
+			SizeGiB: 10,
+		},
+	}
+
+	if configure != nil {
+		configure(request)
+	}
+
+	got, err := client.Update(ctx, regionids.MustParseFileStorageID(testFileStorageID), request)
+	require.NoError(t, err)
+
+	return got
+}
+
+func createStorageV2ForSnapshotPolicyTest(t *testing.T, configure func(*openapi.StorageV2Create)) *openapi.StorageV2Read {
+	t.Helper()
+
+	got, err := createStorageV2ForSnapshotPolicyResult(t, configure)
+	require.NoError(t, err)
+
+	return got
+}
+
+func createStorageV2ForSnapshotPolicyResult(t *testing.T, configure func(*openapi.StorageV2Create)) (*openapi.StorageV2Read, error) {
+	t.Helper()
+
+	ctrl := gomock.NewController(t)
+	t.Cleanup(ctrl.Finish)
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	mockIdentity.EXPECT().
+		PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsWithResponse(gomock.Any(), identityids.MustParseOrganizationID(testOrganizationID), identityids.MustParseProjectID(testProjectID), gomock.Any()).
+		Return(&identityopenapi.PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusCreated},
+			JSON201: &identityopenapi.AllocationResponse{
+				Metadata: corev1.ProjectScopedResourceReadMetadata{
+					Id: testAllocationID,
+				},
+			},
+		}, nil).
+		AnyTimes()
+
+	_, prefix, err := net.ParseCIDR("10.0.0.0/24")
+	require.NoError(t, err)
+
+	network := newTestNetwork()
+	network.Labels[constants.RegionLabel] = testRegionID
+	network.Labels[coreconstants.OrganizationLabel] = testOrganizationID
+	network.Labels[coreconstants.ProjectLabel] = testProjectID
+	network.Spec.Prefix = &v1alpha1.IPv4Prefix{IPNet: *prefix}
+	network.Status.Conditions = []v1alpha1.Condition{
+		{
+			Type:   v1alpha1.ConditionAvailable,
+			Status: k8sv1.ConditionTrue,
+			Reason: v1alpha1.ConditionReasonProvisioned,
+		},
+	}
+
+	k8sClient := newFakeClient(t,
+		&regionv1.Region{ObjectMeta: metav1.ObjectMeta{Name: testRegionID, Namespace: testNamespace}},
+		&regionv1.FileStorageClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "sc-1",
+				Namespace: testNamespace,
+				Labels: map[string]string{
+					constants.RegionLabel: testRegionID,
+				},
+			},
+		},
+		network,
+	)
+
+	client := New(common.ClientArgs{
+		Client:    k8sClient,
+		Identity:  mockIdentity,
+		Namespace: testNamespace,
+	})
+
+	ctx := identityauth.NewContext(t.Context(), &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}})
+	ctx = principal.NewContext(ctx, &principal.Principal{Actor: "actor@example.com", OrganizationID: testOrganizationID, ProjectID: testProjectID})
+	ctx = rbac.NewContext(ctx, &identityopenapi.Acl{
+		Global: &identityopenapi.AclEndpoints{
+			{
+				Name:       "region:filestorage:v2",
+				Operations: identityopenapi.AclOperations{identityopenapi.Create},
+			},
+			{
+				Name:       "region:networks:v2",
+				Operations: identityopenapi.AclOperations{identityopenapi.Read},
+			},
+		},
+	})
+
+	request := &openapi.StorageV2Create{
+		Metadata: corev1.ResourceWriteMetadata{Name: "test-filestorage"},
+	}
+	request.Spec.OrganizationId = testOrganizationID
+	request.Spec.ProjectId = testProjectID
+	request.Spec.RegionId = regionids.MustParseRegionID(testRegionID)
+	request.Spec.StorageClassId = "sc-1"
+	request.Spec.SizeGiB = 10
+	request.Spec.Attachments = &openapi.StorageAttachmentV2Spec{NetworkIds: openapi.NetworkIDList{testNetworkID}}
+
+	if configure != nil {
+		configure(request)
+	}
+
+	return client.CreateV2(ctx, request)
+}
+
 func TestConvertProtocols(t *testing.T) {
 	t.Parallel()
 
@@ -1248,7 +1659,7 @@ func TestConvertProtocols(t *testing.T) {
 func TestGenerateV2(t *testing.T) {
 	t.Parallel()
 
-	network := newTestNetwork("net-1")
+	network := newTestNetwork()
 
 	k8s := newFakeClient(t, network)
 
@@ -1266,12 +1677,12 @@ func TestGenerateV2(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testNamespace,
 					Labels: map[string]string{
-						constants.RegionLabel:                    "reg-1",
+						constants.RegionLabel:                    testRegionID,
 						coreconstants.NameLabel:                  "test-filestorage",
-						coreconstants.OrganizationLabel:          "org-1",
-						coreconstants.ProjectLabel:               "proj-1",
-						coreconstants.OrganizationPrincipalLabel: "org-1",
-						coreconstants.ProjectPrincipalLabel:      "proj-1",
+						coreconstants.OrganizationLabel:          testOrganizationID,
+						coreconstants.ProjectLabel:               testProjectID,
+						coreconstants.OrganizationPrincipalLabel: testOrganizationID,
+						coreconstants.ProjectPrincipalLabel:      testProjectID,
 					},
 					Annotations: map[string]string{
 						coreconstants.CreatorAnnotation:          "user-1",
@@ -1279,14 +1690,27 @@ func TestGenerateV2(t *testing.T) {
 					},
 				},
 				Spec: regionv1.FileStorageSpec{
-					Size:           *resource.NewQuantity(10*giB, resource.BinarySI),
-					StorageClassID: "sc-1",
+					DefaultSnapshotProtectionEnabled: true,
+					Size:                             *resource.NewQuantity(10*giB, resource.BinarySI),
+					StorageClassID:                   "sc-1",
 					Attachments: []regionv1.Attachment{
 						{
-							NetworkID:      "net-1",
+							NetworkID:      testNetworkID,
 							SegmentationID: ptr.To(1111),
 							IPRange:        narrowedRange,
 						}},
+					// Default protection is enabled, so the hidden baseline is
+					// materialized into the stored spec.
+					SnapshotPolicies: []regionv1.FileStorageSnapshotPolicy{
+						{
+							Name: "system-default",
+							Schedule: regionv1.FileStorageSnapshotPolicySchedule{
+								Interval:  regionv1.FileStorageSnapshotPolicyIntervalDaily,
+								TimeOfDay: ptr.To("04:00Z"),
+							},
+							Retention: regionv1.FileStorageSnapshotPolicyRetention{Keep: 7},
+						},
+					},
 					NFS: &regionv1.NFS{
 						RootSquash: true,
 					},
@@ -1315,6 +1739,558 @@ func TestGenerateV2(t *testing.T) {
 	}
 }
 
+func TestGenerateV2RoundTripsInlineHourlySnapshotPolicy(t *testing.T) {
+	t.Parallel()
+
+	policyList := openapi.StorageSnapshotPolicyListV2Spec{
+		{
+			Name: "hourly",
+			Schedule: openapi.StorageSnapshotScheduleV2Spec{
+				Interval: openapi.StorageSnapshotScheduleIntervalV2Hourly,
+			},
+			Retention: openapi.StorageSnapshotRetentionV2Spec{
+				Keep: 24,
+			},
+		},
+	}
+
+	input := (&generateV2InputBuilder{}).Default().WithSnapshotPolicies(policyList).Run()
+	client, ctx := newClientAndContext(t, newFakeClient(t, newTestNetwork()), &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
+
+	generated, err := client.generateV2(ctx, input.organizationID, input.projectID, input.regionID, input.request, input.storageClass)
+	require.NoError(t, err)
+
+	// Default protection is enabled, so the stored spec is the caller policy
+	// followed by the hidden baseline; the public read hides it.
+	require.Equal(t, []regionv1.FileStorageSnapshotPolicy{
+		{
+			Name: "hourly",
+			Schedule: regionv1.FileStorageSnapshotPolicySchedule{
+				Interval: regionv1.FileStorageSnapshotPolicyIntervalHourly,
+			},
+			Retention: regionv1.FileStorageSnapshotPolicyRetention{
+				Keep: 24,
+			},
+		},
+		{
+			Name: "system-default",
+			Schedule: regionv1.FileStorageSnapshotPolicySchedule{
+				Interval:  regionv1.FileStorageSnapshotPolicyIntervalDaily,
+				TimeOfDay: ptr.To("04:00Z"),
+			},
+			Retention: regionv1.FileStorageSnapshotPolicyRetention{Keep: 7},
+		},
+	}, generated.Spec.SnapshotPolicies)
+
+	read := convertV2(generated)
+	require.NotNil(t, read.Spec.SnapshotPolicies)
+	require.Equal(t, policyList, *read.Spec.SnapshotPolicies)
+}
+
+func TestGenerateV2EnabledDefaultProtectionMaterializesHiddenBaselineAndReadsEmpty(t *testing.T) {
+	t.Parallel()
+
+	// With default protection resolved to enabled upstream, generateV2 must
+	// materialize the hidden system-default baseline into the stored spec for the
+	// controller to reconcile, yet hide it from public reads.
+	input := (&generateV2InputBuilder{}).Default().Run()
+	input.request.Spec.DefaultSnapshotProtectionEnabled = true
+	client, ctx := newClientAndContext(t, newFakeClient(t, newTestNetwork()), &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
+
+	generated, err := client.generateV2(ctx, input.organizationID, input.projectID, input.regionID, input.request, input.storageClass)
+	require.NoError(t, err)
+	require.True(t, generated.Spec.DefaultSnapshotProtectionEnabled)
+	require.Equal(t, []regionv1.FileStorageSnapshotPolicy{
+		{
+			Name: "system-default",
+			Schedule: regionv1.FileStorageSnapshotPolicySchedule{
+				Interval:  regionv1.FileStorageSnapshotPolicyIntervalDaily,
+				TimeOfDay: ptr.To("04:00Z"),
+			},
+			Retention: regionv1.FileStorageSnapshotPolicyRetention{Keep: 7},
+		},
+	}, generated.Spec.SnapshotPolicies)
+
+	read := convertV2(generated)
+	require.NotNil(t, read.Spec.SnapshotPolicies)
+	require.Empty(t, *read.Spec.SnapshotPolicies)
+	require.NotNil(t, read.Status.SnapshotPolicies)
+	require.Empty(t, read.Status.SnapshotPolicies)
+}
+
+func TestGenerateV2DisabledDefaultProtectionStoresNoPoliciesAndReadsEmpty(t *testing.T) {
+	t.Parallel()
+
+	input := (&generateV2InputBuilder{}).Default().Run()
+	input.request.Spec.DefaultSnapshotProtectionEnabled = false
+	client, ctx := newClientAndContext(t, newFakeClient(t, newTestNetwork()), &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
+
+	generated, err := client.generateV2(ctx, input.organizationID, input.projectID, input.regionID, input.request, input.storageClass)
+	require.NoError(t, err)
+	require.False(t, generated.Spec.DefaultSnapshotProtectionEnabled)
+	require.Nil(t, generated.Spec.SnapshotPolicies)
+
+	read := convertV2(generated)
+	require.NotNil(t, read.Spec.SnapshotPolicies)
+	require.Empty(t, *read.Spec.SnapshotPolicies)
+	require.NotNil(t, read.Status.SnapshotPolicies)
+	require.Empty(t, read.Status.SnapshotPolicies)
+}
+
+func TestGetRoundTripsStoredSnapshotPolicies(t *testing.T) {
+	t.Parallel()
+
+	storage := &regionv1.FileStorage{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      testFileStorageID,
+			Labels: map[string]string{
+				constants.RegionLabel:                    testRegionID,
+				coreconstants.NameLabel:                  "test-filestorage",
+				coreconstants.OrganizationLabel:          testOrganizationID,
+				coreconstants.ProjectLabel:               testProjectID,
+				coreconstants.OrganizationPrincipalLabel: testOrganizationID,
+				coreconstants.ProjectPrincipalLabel:      testProjectID,
+			},
+		},
+		Spec: regionv1.FileStorageSpec{
+			Size:           *resource.NewQuantity(1*giB, resource.BinarySI),
+			StorageClassID: "sc-1",
+			NFS: &regionv1.NFS{
+				RootSquash: true,
+			},
+			SnapshotPolicies: []regionv1.FileStorageSnapshotPolicy{
+				{
+					Name: "hourly",
+					Schedule: regionv1.FileStorageSnapshotPolicySchedule{
+						Interval: regionv1.FileStorageSnapshotPolicyIntervalHourly,
+					},
+					Retention: regionv1.FileStorageSnapshotPolicyRetention{
+						Keep: 24,
+					},
+				},
+			},
+		},
+	}
+
+	c, ctx := newClientwithObjectandContext(t, t.Context(), append(defaultFSK8sObjects(), storage)...)
+
+	result, err := c.Get(ctx, regionids.MustParseFileStorageID(storage.Name))
+	require.NoError(t, err)
+	require.Equal(t, &openapi.StorageSnapshotPolicyListV2Spec{
+		{
+			Name: "hourly",
+			Schedule: openapi.StorageSnapshotScheduleV2Spec{
+				Interval: openapi.StorageSnapshotScheduleIntervalV2Hourly,
+			},
+			Retention: openapi.StorageSnapshotRetentionV2Spec{
+				Keep: 24,
+			},
+		},
+	}, result.Spec.SnapshotPolicies)
+	require.Equal(t, openapi.StorageSnapshotPolicyListV2Status{
+		{
+			Name:               "hourly",
+			ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
+		},
+	}, result.Status.SnapshotPolicies)
+}
+
+func TestListV2ExposesDefaultSnapshotProtectionEnabled(t *testing.T) {
+	t.Parallel()
+
+	enabledStorage := &regionv1.FileStorage{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      testFileStorageID,
+			Labels: map[string]string{
+				constants.RegionLabel:           testRegionID,
+				coreconstants.NameLabel:         "enabled-filestorage",
+				coreconstants.OrganizationLabel: testOrganizationID,
+				coreconstants.ProjectLabel:      testProjectID,
+			},
+		},
+		Spec: regionv1.FileStorageSpec{
+			DefaultSnapshotProtectionEnabled: true,
+			Size:                             *resource.NewQuantity(1*giB, resource.BinarySI),
+			StorageClassID:                   "sc-1",
+			NFS:                              &regionv1.NFS{RootSquash: true},
+		},
+	}
+
+	disabledStorage := &regionv1.FileStorage{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      "55555555-5555-4555-a555-555555555555",
+			Labels: map[string]string{
+				constants.RegionLabel:           testRegionID,
+				coreconstants.NameLabel:         "disabled-filestorage",
+				coreconstants.OrganizationLabel: testOrganizationID,
+				coreconstants.ProjectLabel:      testProjectID,
+			},
+		},
+		Spec: regionv1.FileStorageSpec{
+			DefaultSnapshotProtectionEnabled: false,
+			Size:                             *resource.NewQuantity(1*giB, resource.BinarySI),
+			StorageClassID:                   "sc-1",
+			NFS:                              &regionv1.NFS{RootSquash: true},
+		},
+	}
+
+	c, ctx := newClientwithObjectandContext(t, t.Context(), append(defaultFSK8sObjects(), enabledStorage, disabledStorage)...)
+	organizationIDs := openapi.OrganizationIDQueryParameter{testOrganizationID}
+	projectIDs := openapi.ProjectIDQueryParameter{testProjectID}
+	regionIDs := openapi.RegionIDQueryParameter{testRegionID}
+
+	result, err := c.ListV2(ctx, openapi.GetApiV2FilestorageParams{
+		OrganizationID: &organizationIDs,
+		ProjectID:      &projectIDs,
+		RegionID:       &regionIDs,
+	})
+	require.NoError(t, err)
+	require.Len(t, result, 2)
+
+	defaultProtectionByID := map[string]bool{}
+	for _, storage := range result {
+		defaultProtectionByID[storage.Metadata.Id] = ptr.Deref(storage.Spec.DefaultSnapshotProtectionEnabled, false)
+	}
+
+	require.True(t, defaultProtectionByID[testFileStorageID])
+	require.False(t, defaultProtectionByID[disabledStorage.Name])
+}
+
+func TestGetHidesSystemDefaultSnapshotProtectionPolicy(t *testing.T) {
+	t.Parallel()
+
+	storage := &regionv1.FileStorage{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      testFileStorageID,
+			Labels: map[string]string{
+				constants.RegionLabel:           testRegionID,
+				coreconstants.NameLabel:         "test-filestorage",
+				coreconstants.OrganizationLabel: testOrganizationID,
+				coreconstants.ProjectLabel:      testProjectID,
+			},
+		},
+		Spec: regionv1.FileStorageSpec{
+			DefaultSnapshotProtectionEnabled: true,
+			Size:                             *resource.NewQuantity(1*giB, resource.BinarySI),
+			StorageClassID:                   "sc-1",
+			NFS:                              &regionv1.NFS{RootSquash: true},
+			SnapshotPolicies: []regionv1.FileStorageSnapshotPolicy{
+				{
+					Name: "system-default",
+					Schedule: regionv1.FileStorageSnapshotPolicySchedule{
+						Interval: regionv1.FileStorageSnapshotPolicyIntervalHourly,
+					},
+					Retention: regionv1.FileStorageSnapshotPolicyRetention{Keep: 24},
+				},
+				{
+					Name: "hourly",
+					Schedule: regionv1.FileStorageSnapshotPolicySchedule{
+						Interval: regionv1.FileStorageSnapshotPolicyIntervalHourly,
+					},
+					Retention: regionv1.FileStorageSnapshotPolicyRetention{Keep: 24},
+				},
+			},
+		},
+		Status: regionv1.FileStorageStatus{
+			SnapshotPolicies: []regionv1.FileStorageSnapshotPolicyStatus{
+				{Name: "system-default"},
+				{Name: "hourly"},
+			},
+		},
+	}
+
+	c, ctx := newClientwithObjectandContext(t, t.Context(), append(defaultFSK8sObjects(), storage)...)
+
+	result, err := c.Get(ctx, regionids.MustParseFileStorageID(storage.Name))
+	require.NoError(t, err)
+	require.Equal(t, ptr.To(true), result.Spec.DefaultSnapshotProtectionEnabled)
+	require.Equal(t, &openapi.StorageSnapshotPolicyListV2Spec{
+		{
+			Name: "hourly",
+			Schedule: openapi.StorageSnapshotScheduleV2Spec{
+				Interval: openapi.StorageSnapshotScheduleIntervalV2Hourly,
+			},
+			Retention: openapi.StorageSnapshotRetentionV2Spec{Keep: 24},
+		},
+	}, result.Spec.SnapshotPolicies)
+	require.Equal(t, openapi.StorageSnapshotPolicyListV2Status{
+		{
+			Name:               "hourly",
+			ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
+		},
+	}, result.Status.SnapshotPolicies)
+}
+
+func TestUpdateSagaGenerateSnapshotPolicySemantics(t *testing.T) {
+	t.Parallel()
+
+	currentPolicies := []regionv1.FileStorageSnapshotPolicy{
+		{
+			Name: "daily",
+			Schedule: regionv1.FileStorageSnapshotPolicySchedule{
+				Interval:  regionv1.FileStorageSnapshotPolicyIntervalDaily,
+				TimeOfDay: ptr.To("02:30Z"),
+			},
+			Retention: regionv1.FileStorageSnapshotPolicyRetention{
+				Keep: 7,
+			},
+		},
+	}
+
+	for _, tt := range []struct {
+		name                  string
+		requestSnapshotPolicy *openapi.StorageSnapshotPolicyListV2Spec
+		wantSnapshotPolicies  []regionv1.FileStorageSnapshotPolicy
+	}{
+		{
+			name:                 "omitted snapshotPolicies preserves existing policies",
+			wantSnapshotPolicies: currentPolicies,
+		},
+		{
+			name:                  "empty snapshotPolicies clears existing policies",
+			requestSnapshotPolicy: &openapi.StorageSnapshotPolicyListV2Spec{},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			input := newDefaultGenerateV2Input()
+			request := &openapi.StorageV2Update{
+				Metadata: corev1.ResourceWriteMetadata{Name: "test-filestorage"},
+				Spec: openapi.StorageV2Spec{
+					SizeGiB:          input.request.Spec.SizeGiB,
+					SnapshotPolicies: tt.requestSnapshotPolicy,
+				},
+			}
+
+			current := &regionv1.FileStorage{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testFileStorageID,
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						coreconstants.OrganizationLabel: testOrganizationID,
+						coreconstants.ProjectLabel:      testProjectID,
+						constants.RegionLabel:           testRegionID,
+					},
+				},
+				Spec: regionv1.FileStorageSpec{
+					SnapshotPolicies: currentPolicies,
+				},
+			}
+
+			client, ctx := newClientAndContext(t, newFakeClient(t), &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
+			saga := newUpdateSaga(client, current, request, input.storageClass)
+
+			require.NoError(t, saga.generate(ctx))
+			require.Equal(t, tt.wantSnapshotPolicies, saga.updated.Spec.SnapshotPolicies)
+		})
+	}
+}
+
+func TestUpdateSagaDisablingDefaultProtectionPreservesOnlyUserManagedPolicies(t *testing.T) {
+	t.Parallel()
+
+	input := newDefaultGenerateV2Input()
+	request := &openapi.StorageV2Update{
+		Metadata: corev1.ResourceWriteMetadata{Name: "test-filestorage"},
+		Spec: openapi.StorageV2Spec{
+			DefaultSnapshotProtectionEnabled: ptr.To(false),
+			SizeGiB:                          input.request.Spec.SizeGiB,
+		},
+	}
+
+	current := &regionv1.FileStorage{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testFileStorageID,
+			Namespace: testNamespace,
+			Labels: map[string]string{
+				coreconstants.OrganizationLabel: testOrganizationID,
+				coreconstants.ProjectLabel:      testProjectID,
+				constants.RegionLabel:           testRegionID,
+			},
+		},
+		Spec: regionv1.FileStorageSpec{
+			DefaultSnapshotProtectionEnabled: true,
+			SnapshotPolicies: []regionv1.FileStorageSnapshotPolicy{
+				{
+					Name: "system-default",
+					Schedule: regionv1.FileStorageSnapshotPolicySchedule{
+						Interval: regionv1.FileStorageSnapshotPolicyIntervalHourly,
+					},
+					Retention: regionv1.FileStorageSnapshotPolicyRetention{Keep: 24},
+				},
+				{
+					Name: "hourly",
+					Schedule: regionv1.FileStorageSnapshotPolicySchedule{
+						Interval: regionv1.FileStorageSnapshotPolicyIntervalHourly,
+					},
+					Retention: regionv1.FileStorageSnapshotPolicyRetention{Keep: 24},
+				},
+			},
+		},
+	}
+
+	client, ctx := newClientAndContext(t, newFakeClient(t), &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
+	saga := newUpdateSaga(client, current, request, input.storageClass)
+
+	require.NoError(t, saga.generate(ctx))
+	require.False(t, saga.updated.Spec.DefaultSnapshotProtectionEnabled)
+	require.Equal(t, []regionv1.FileStorageSnapshotPolicy{
+		{
+			Name: "hourly",
+			Schedule: regionv1.FileStorageSnapshotPolicySchedule{
+				Interval: regionv1.FileStorageSnapshotPolicyIntervalHourly,
+			},
+			Retention: regionv1.FileStorageSnapshotPolicyRetention{Keep: 24},
+		},
+	}, saga.updated.Spec.SnapshotPolicies)
+}
+
+// system-default is reserved unconditionally, so an update that claims it as a
+// user-managed policy name is rejected regardless of default protection state.
+func TestUpdateSagaRejectsReservedSystemDefaultPolicyName(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name              string
+		protectionEnabled bool
+	}{
+		{name: "protection enabled", protectionEnabled: true},
+		{name: "protection disabled", protectionEnabled: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			input := newDefaultGenerateV2Input()
+			policies := openapi.StorageSnapshotPolicyListV2Spec{
+				{
+					Name: "system-default",
+					Schedule: openapi.StorageSnapshotScheduleV2Spec{
+						Interval: openapi.StorageSnapshotScheduleIntervalV2Hourly,
+					},
+					Retention: openapi.StorageSnapshotRetentionV2Spec{Keep: 24},
+				},
+			}
+			request := &openapi.StorageV2Update{
+				Metadata: corev1.ResourceWriteMetadata{Name: "test-filestorage"},
+				Spec: openapi.StorageV2Spec{
+					DefaultSnapshotProtectionEnabled: ptr.To(tt.protectionEnabled),
+					SizeGiB:                          input.request.Spec.SizeGiB,
+					SnapshotPolicies:                 &policies,
+				},
+			}
+
+			current := &regionv1.FileStorage{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testFileStorageID,
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						coreconstants.OrganizationLabel: testOrganizationID,
+						coreconstants.ProjectLabel:      testProjectID,
+						constants.RegionLabel:           testRegionID,
+					},
+				},
+				Spec: regionv1.FileStorageSpec{
+					DefaultSnapshotProtectionEnabled: tt.protectionEnabled,
+				},
+			}
+
+			client, ctx := newClientAndContext(t, newFakeClient(t), &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}}, &principal.Principal{Actor: "actor@example.com"})
+			saga := newUpdateSaga(client, current, request, input.storageClass)
+
+			err := saga.validateRequest(ctx)
+			require.Error(t, err)
+			require.True(t, servererrors.IsUnprocessableContent(err), "expected 422, got: %v", err)
+		})
+	}
+}
+
+func TestGetProjectsSnapshotPolicyStatusOnParentRead(t *testing.T) {
+	t.Parallel()
+
+	storage := &regionv1.FileStorage{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      testFileStorageID,
+			Labels: map[string]string{
+				constants.RegionLabel:                    testRegionID,
+				coreconstants.NameLabel:                  "test-filestorage",
+				coreconstants.OrganizationLabel:          testOrganizationID,
+				coreconstants.ProjectLabel:               testProjectID,
+				coreconstants.OrganizationPrincipalLabel: testOrganizationID,
+				coreconstants.ProjectPrincipalLabel:      testProjectID,
+			},
+		},
+		Spec: regionv1.FileStorageSpec{
+			Size:           *resource.NewQuantity(1*giB, resource.BinarySI),
+			StorageClassID: "sc-1",
+			NFS: &regionv1.NFS{
+				RootSquash: true,
+			},
+			SnapshotPolicies: []regionv1.FileStorageSnapshotPolicy{
+				{
+					Name: "hourly",
+					Schedule: regionv1.FileStorageSnapshotPolicySchedule{
+						Interval: regionv1.FileStorageSnapshotPolicyIntervalHourly,
+					},
+					Retention: regionv1.FileStorageSnapshotPolicyRetention{
+						Keep: 24,
+					},
+				},
+				{
+					Name: "daily",
+					Schedule: regionv1.FileStorageSnapshotPolicySchedule{
+						Interval:  regionv1.FileStorageSnapshotPolicyIntervalDaily,
+						TimeOfDay: ptr.To("02:30Z"),
+					},
+					Retention: regionv1.FileStorageSnapshotPolicyRetention{
+						Keep: 7,
+					},
+				},
+			},
+		},
+		Status: regionv1.FileStorageStatus{
+			SnapshotPolicies: []regionv1.FileStorageSnapshotPolicyStatus{
+				{
+					Name: "stale",
+				},
+				{
+					Name: "daily",
+					Conditions: []v1alpha1.Condition{
+						{
+							Type:               v1alpha1.ConditionAvailable,
+							Status:             k8sv1.ConditionTrue,
+							LastTransitionTime: metav1.Now(),
+							Reason:             v1alpha1.ConditionReasonProvisioned,
+							Message:            "snapshot policy is active",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	c, ctx := newClientwithObjectandContext(t, t.Context(), append(defaultFSK8sObjects(), storage)...)
+
+	result, err := c.Get(ctx, regionids.MustParseFileStorageID(storage.Name))
+	require.NoError(t, err)
+	require.Equal(t, openapi.StorageSnapshotPolicyListV2Status{
+		{
+			Name:               "hourly",
+			ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
+		},
+		{
+			Name:               "daily",
+			ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned,
+			Message:            ptr.To("snapshot policy is active"),
+		},
+	}, result.Status.SnapshotPolicies)
+}
+
 func TestGet(t *testing.T) {
 	t.Parallel()
 
@@ -1328,14 +2304,14 @@ func TestGet(t *testing.T) {
 			input: regionv1.FileStorage{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testNamespace,
-					Name:      "fs-1",
+					Name:      "55555555-5555-4555-a555-555555555555",
 					Labels: map[string]string{
-						constants.RegionLabel:                    "reg-1",
+						constants.RegionLabel:                    testRegionID,
 						coreconstants.NameLabel:                  "test-filestorage",
-						coreconstants.OrganizationLabel:          "org-1",
-						coreconstants.ProjectLabel:               "proj-1",
-						coreconstants.OrganizationPrincipalLabel: "org-1",
-						coreconstants.ProjectPrincipalLabel:      "proj-1",
+						coreconstants.OrganizationLabel:          testOrganizationID,
+						coreconstants.ProjectLabel:               testProjectID,
+						coreconstants.OrganizationPrincipalLabel: testOrganizationID,
+						coreconstants.ProjectPrincipalLabel:      testProjectID,
 					},
 					Annotations: map[string]string{
 						coreconstants.CreatorAnnotation:          "user-1",
@@ -1346,7 +2322,7 @@ func TestGet(t *testing.T) {
 					Size:           *resource.NewQuantity(1*giB, resource.BinarySI),
 					StorageClassID: "sc-1",
 					Attachments: []regionv1.Attachment{
-						{NetworkID: "net-1"},
+						{NetworkID: testNetworkID},
 					},
 					NFS: &regionv1.NFS{
 						RootSquash: true,
@@ -1355,7 +2331,7 @@ func TestGet(t *testing.T) {
 			},
 			expected: &openapi.StorageV2Read{
 				Metadata: corev1.ProjectScopedResourceReadMetadata{
-					ProjectId: "proj-1",
+					ProjectId: "22222222-2222-4222-a222-222222222222",
 				},
 				Status: openapi.StorageV2Status{
 					StorageClassId: "sc-1",
@@ -1376,7 +2352,7 @@ func TestGet(t *testing.T) {
 
 			c, ctx := newClientwithObjectandContext(t, ctx, obj...)
 
-			result, err := c.Get(ctx, tt.input.Name)
+			result, err := c.Get(ctx, regionids.MustParseFileStorageID(tt.input.Name))
 			require.NoError(t, err)
 			require.NotNil(t, result, "result should not be empty")
 		})
@@ -1424,11 +2400,11 @@ func TestGenerateV2Validations(t *testing.T) {
 }
 
 type generateV2Input struct {
-	organizationID string
-	projectID      string
+	organizationID identityids.OrganizationID
+	projectID      identityids.ProjectID
 	regionID       string
 	storageClass   *openapi.StorageClassV2Read
-	request        *openapi.StorageV2Update
+	request        *storageV2GenerateRequest
 }
 
 type generateV2InputBuilder struct {
@@ -1437,9 +2413,9 @@ type generateV2InputBuilder struct {
 
 func newDefaultGenerateV2Input() *generateV2Input {
 	return &generateV2Input{
-		organizationID: "org-1",
-		projectID:      "proj-1",
-		regionID:       "reg-1",
+		organizationID: identityids.MustParseOrganizationID("11111111-1111-4111-a111-111111111111"),
+		projectID:      identityids.MustParseProjectID("22222222-2222-4222-a222-222222222222"),
+		regionID:       testRegionID,
 		storageClass: &openapi.StorageClassV2Read{
 			Metadata: corev1.ResourceReadMetadata{
 				Id:                 "sc-1",
@@ -1451,13 +2427,16 @@ func newDefaultGenerateV2Input() *generateV2Input {
 				Parallelism: DefaultParallelism,
 			},
 		},
-		request: &openapi.StorageV2Update{
+		request: &storageV2GenerateRequest{
 			Metadata: corev1.ResourceWriteMetadata{
 				Name: "test-filestorage",
 			},
-			Spec: openapi.StorageV2Spec{
-				SizeGiB:     10,
-				Attachments: &openapi.StorageAttachmentV2Spec{NetworkIds: openapi.NetworkIDList{"net-1"}},
+			Spec: storageV2GenerateSpec{
+				// generateV2 receives an already-resolved request; the create path
+				// resolves an omitted flag to enabled, so that is the default here.
+				DefaultSnapshotProtectionEnabled: true,
+				SizeGiB:                          10,
+				Attachments:                      &openapi.StorageAttachmentV2Spec{NetworkIds: openapi.NetworkIDList{testNetworkID}},
 			},
 		},
 	}
@@ -1475,6 +2454,16 @@ func (b *generateV2InputBuilder) WithSize(size int) *generateV2InputBuilder {
 	}
 
 	b.input.request.Spec.SizeGiB = int64(size)
+
+	return b
+}
+
+func (b *generateV2InputBuilder) WithSnapshotPolicies(policies openapi.StorageSnapshotPolicyListV2Spec) *generateV2InputBuilder {
+	if b.input == nil {
+		b.input = newDefaultGenerateV2Input()
+	}
+
+	b.input.request.Spec.SnapshotPolicies = &policies
 
 	return b
 }
@@ -1535,7 +2524,7 @@ func newClientwithObjectandContext(t *testing.T, ctx context.Context, initObjs .
 		identityopenapi.AclEndpoint{
 			Name: "region:filestorage:v2",
 			Operations: identityopenapi.AclOperations{
-				identityopenapi.Read, identityopenapi.Create,
+				identityopenapi.Read, identityopenapi.Create, identityopenapi.Update, identityopenapi.Delete,
 			},
 		},
 	},

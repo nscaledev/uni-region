@@ -28,6 +28,7 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityauth "github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
@@ -37,6 +38,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	corev1 "k8s.io/api/core/v1"
@@ -50,12 +52,13 @@ import (
 )
 
 const (
-	namespace      = "base"
-	organizationID = "foo"
-	projectID      = "bar"
-	networkID      = "baz"
-	reference      = "cat"
-	testNamespace  = "test-namespace"
+	namespace          = "base"
+	organizationID     = "11111111-1111-4111-a111-111111111111"
+	projectID          = "22222222-2222-4222-a222-222222222222"
+	nonexistentProject = "33333333-3333-4333-a333-333333333333"
+	networkID          = "44444444-4444-4444-a444-444444444444"
+	reference          = "cat"
+	testNamespace      = "test-namespace"
 )
 
 // aclWithOrgScopeCreate grants region:networks:v2/Create at organization scope,
@@ -159,7 +162,7 @@ func TestCreateV2RBACOrgScopedProjectNotFound(t *testing.T) {
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), organizationID, "nonexistent-project").
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(organizationID), identityids.MustParseProjectID(nonexistentProject)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusNotFound},
 		}, nil)
@@ -168,7 +171,7 @@ func TestCreateV2RBACOrgScopedProjectNotFound(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), aclWithOrgScopeCreate())
 
-	_, err := c.CreateV2(ctx, minimalNetworkV2CreateRequest(organizationID, "nonexistent-project"))
+	_, err := c.CreateV2(ctx, minimalNetworkV2CreateRequest(organizationID, nonexistentProject))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -236,7 +239,7 @@ func TestUpdateV2PreservesReservations(t *testing.T) {
 
 			current := &regionv1.Network{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:            "test-network",
+					Name:            "55555555-5555-4555-a555-555555555555",
 					Namespace:       testNamespace,
 					ResourceVersion: "1",
 					Labels: map[string]string{
@@ -277,7 +280,7 @@ func TestUpdateV2PreservesReservations(t *testing.T) {
 				ProjectID:      projectID,
 			})
 
-			updated, err := c.Update(ctx, current.Name, &openapi.NetworkV2Update{
+			updated, err := c.Update(ctx, regionids.MustParseNetworkID(current.Name), &openapi.NetworkV2Update{
 				Metadata: coreapi.ResourceWriteMetadata{
 					Name: "test-network",
 				},
@@ -322,7 +325,7 @@ func TestGetV2ReturnsEffectiveReservationsForImplicitNetworks(t *testing.T) {
 
 			current := &regionv1.Network{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-network",
+					Name:      networkID,
 					Namespace: testNamespace,
 					Labels: map[string]string{
 						coreconstants.OrganizationLabel:   organizationID,
@@ -347,7 +350,7 @@ func TestGetV2ReturnsEffectiveReservationsForImplicitNetworks(t *testing.T) {
 
 			ctx := rbac.NewContext(t.Context(), networkUpdateContext())
 
-			read, err := c.GetV2(ctx, current.Name)
+			read, err := c.GetV2(ctx, regionids.MustParseNetworkID(current.Name))
 			require.NoError(t, err)
 			require.Equal(t, test.expected, read.Status.Reservations)
 		})
@@ -387,24 +390,24 @@ func TestReferences(t *testing.T) {
 
 	client := network.New(clientArgs)
 
-	require.NoError(t, client.ReferenceCreateV2(ctx, networkID, reference))
+	require.NoError(t, client.ReferenceCreateV2(ctx, regionids.MustParseNetworkID(networkID), reference))
 
 	resource := getNetwork(t, cli)
 	require.Len(t, resource.Finalizers, 1)
 	require.True(t, controllerutil.ContainsFinalizer(resource, reference))
 
-	require.NoError(t, client.ReferenceCreateV2(ctx, networkID, reference))
+	require.NoError(t, client.ReferenceCreateV2(ctx, regionids.MustParseNetworkID(networkID), reference))
 
 	resource = getNetwork(t, cli)
 	require.Len(t, resource.Finalizers, 1)
 	require.True(t, controllerutil.ContainsFinalizer(resource, reference))
 
-	require.NoError(t, client.ReferenceDeleteV2(ctx, networkID, reference))
+	require.NoError(t, client.ReferenceDeleteV2(ctx, regionids.MustParseNetworkID(networkID), reference))
 
 	resource = getNetwork(t, cli)
 	require.Empty(t, resource.Finalizers)
 
-	require.NoError(t, client.ReferenceDeleteV2(ctx, networkID, reference))
+	require.NoError(t, client.ReferenceDeleteV2(ctx, regionids.MustParseNetworkID(networkID), reference))
 
 	resource = getNetwork(t, cli)
 	require.Empty(t, resource.Finalizers)

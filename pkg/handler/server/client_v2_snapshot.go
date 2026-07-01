@@ -24,10 +24,11 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/image"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
 
-func (c *ClientV2) CreateV2Snapshot(ctx context.Context, serverID string, request *openapi.SnapshotCreate) (*openapi.ImageResponse, error) {
+func (c *ClientV2) CreateV2Snapshot(ctx context.Context, serverID regionids.ServerID, request *openapi.SnapshotCreate) (*openapi.ImageResponse, error) {
 	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
 	if err != nil {
 		return nil, err
@@ -37,8 +38,14 @@ func (c *ClientV2) CreateV2Snapshot(ctx context.Context, serverID string, reques
 
 	// You need region:servers/read to get the server in the first place, then
 	// region:images/create to make the image. The first of those is implicitly
-	// checked when the server is fetched.
-	if err := rbac.AllowOrganizationScope(ctx, "region:images", identityapi.Create, organizationID); err != nil {
+	// checked when the server is fetched. Recover the typed organization ID so a
+	// malformed owner label fails closed rather than silently denying access.
+	organizationScopeID, err := server.OrganizationID()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := rbac.AllowOrganizationScopeID(ctx, "region:images", identityapi.Create, organizationScopeID); err != nil {
 		return nil, err
 	}
 

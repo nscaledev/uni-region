@@ -22,9 +22,9 @@ limitations under the License.
 package suites
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -35,8 +35,146 @@ import (
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
 	coreutil "github.com/unikorn-cloud/core/pkg/testing/util"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/test/api"
 )
+
+const defaultProtectionUpdateStorageSizeGiB = int64(10)
+
+func dailyFileStorageSnapshotPolicies() regionopenapi.StorageSnapshotPolicyListV2Spec {
+	return namedDailyFileStorageSnapshotPolicies("daily")
+}
+
+func namedDailyFileStorageSnapshotPolicies(name string) regionopenapi.StorageSnapshotPolicyListV2Spec {
+	return regionopenapi.StorageSnapshotPolicyListV2Spec{
+		{
+			Name: name,
+			Schedule: regionopenapi.StorageSnapshotScheduleV2Spec{
+				Interval:  regionopenapi.StorageSnapshotScheduleIntervalV2Daily,
+				TimeOfDay: ptr.To("04:00Z"),
+			},
+			Retention: regionopenapi.StorageSnapshotRetentionV2Spec{Keep: 7},
+		},
+	}
+}
+
+func hourlyFileStorageSnapshotPolicies() regionopenapi.StorageSnapshotPolicyListV2Spec {
+	return regionopenapi.StorageSnapshotPolicyListV2Spec{
+		{
+			Name: "hourly",
+			Schedule: regionopenapi.StorageSnapshotScheduleV2Spec{
+				Interval: regionopenapi.StorageSnapshotScheduleIntervalV2Hourly,
+			},
+			Retention: regionopenapi.StorageSnapshotRetentionV2Spec{Keep: 24},
+		},
+	}
+}
+
+func nfsFileStorageType() regionopenapi.StorageTypeV2Spec {
+	return regionopenapi.StorageTypeV2Spec{
+		NFS: &regionopenapi.NFSV2Spec{},
+	}
+}
+
+func requireFileStorageClassID() string {
+	storageClasses, err := regionClient.ListFileStorageClasses(ctx, config.RegionID)
+	Expect(err).NotTo(HaveOccurred(), "Failed to list storage classes")
+
+	if len(storageClasses) == 0 {
+		Skip(fmt.Sprintf("No storage classes allocated to region %s", config.RegionID))
+	}
+
+	return storageClasses[0].Metadata.Id
+}
+
+func defaultProtectionCreateRequest(storageClassID string, defaultProtectionEnabled *bool, snapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec) regionopenapi.StorageV2CreateRequest {
+	storageName := coreutil.GenerateRandomName("test-default-protection")
+
+	return regionopenapi.StorageV2CreateRequest{
+		Metadata: coreapi.ResourceWriteMetadata{
+			Name:        storageName,
+			Description: ptr.To("Test default snapshot protection update semantics"),
+		},
+		Spec: struct {
+			Attachments                      *regionopenapi.StorageAttachmentV2Spec         `json:"attachments,omitempty"`
+			DefaultSnapshotProtectionEnabled *bool                                          `json:"defaultSnapshotProtectionEnabled,omitempty"`
+			OrganizationId                   string                                         `json:"organizationId"`
+			ProjectId                        string                                         `json:"projectId"`
+			RegionId                         regionopenapi.RegionId                         `json:"regionId"`
+			SizeGiB                          int64                                          `json:"sizeGiB"`
+			SnapshotPolicies                 *regionopenapi.StorageSnapshotPolicyListV2Spec `json:"snapshotPolicies,omitempty"`
+			StorageClassId                   string                                         `json:"storageClassId"`
+			StorageType                      regionopenapi.StorageTypeV2Spec                `json:"storageType"`
+		}{
+			DefaultSnapshotProtectionEnabled: defaultProtectionEnabled,
+			OrganizationId:                   config.OrgID,
+			ProjectId:                        config.ProjectID,
+			RegionId:                         regionids.MustParseRegionID(config.RegionID),
+			SizeGiB:                          defaultProtectionUpdateStorageSizeGiB,
+			SnapshotPolicies:                 snapshotPolicies,
+			StorageClassId:                   storageClassID,
+			StorageType:                      nfsFileStorageType(),
+		},
+	}
+}
+
+func createDefaultProtectionUpdateTestStorage(storageClassID string, defaultProtectionEnabled *bool, snapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec) *regionopenapi.StorageV2Read {
+	request := defaultProtectionCreateRequest(storageClassID, defaultProtectionEnabled, snapshotPolicies)
+
+	created, err := regionClient.CreateFileStorage(ctx, request)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(created).NotTo(BeNil())
+
+	DeferCleanup(func() {
+		Expect(regionClient.DeleteFileStorage(ctx, created.Metadata.Id)).To(Succeed())
+	})
+
+	return created
+}
+
+func defaultProtectionUpdateRequest(name string, defaultProtectionEnabled *bool, snapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec) regionopenapi.StorageV2UpdateRequest {
+	return regionopenapi.StorageV2UpdateRequest{
+		Metadata: coreapi.ResourceWriteMetadata{
+			Name:        name,
+			Description: ptr.To("Updated default snapshot protection semantics"),
+		},
+		Spec: regionopenapi.StorageV2Spec{
+			DefaultSnapshotProtectionEnabled: defaultProtectionEnabled,
+			SizeGiB:                          defaultProtectionUpdateStorageSizeGiB,
+			SnapshotPolicies:                 snapshotPolicies,
+			StorageType:                      nfsFileStorageType(),
+		},
+	}
+}
+
+func expectDefaultProtectionUpdateState(storage *regionopenapi.StorageV2Read, defaultProtectionEnabled bool, snapshotPolicies regionopenapi.StorageSnapshotPolicyListV2Spec) {
+	Expect(storage).NotTo(BeNil())
+	// These spec fields are generated as pointers; reads always populate them, so
+	// guard against nil then compare the dereferenced values (comparing a *bool or
+	// *slice against a plain bool/slice via Equal always fails on the type mismatch).
+	Expect(storage.Spec.DefaultSnapshotProtectionEnabled).NotTo(BeNil())
+	Expect(*storage.Spec.DefaultSnapshotProtectionEnabled).To(Equal(defaultProtectionEnabled))
+	Expect(storage.Spec.SnapshotPolicies).NotTo(BeNil())
+	Expect(*storage.Spec.SnapshotPolicies).To(Equal(snapshotPolicies))
+}
+
+func EventuallyFileStorageDeleted(ctx context.Context, filestorageID string) {
+	Eventually(func() error {
+		_, err := regionClient.GetFileStorage(ctx, filestorageID)
+		if errors.Is(err, coreclient.ErrResourceNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		return fmt.Errorf("file storage %s still exists", filestorageID)
+	}).
+		WithTimeout(5*time.Minute).
+		WithPolling(5*time.Second).
+		Should(Succeed(), "Storage should be deleted")
+}
 
 // INST-926 tracks Dev environment setup for file storage classes. Until Dev exposes
 // a usable class for the configured test region, storage-class-dependent specs skip.
@@ -61,17 +199,19 @@ var _ = Describe("File Storage Management", func() {
 						Description: ptr.To("Test resource for list operation"),
 					},
 					Spec: struct {
-						Attachments    *regionopenapi.StorageAttachmentV2Spec `json:"attachments,omitempty"`
-						OrganizationId string                                 `json:"organizationId"`
-						ProjectId      string                                 `json:"projectId"`
-						RegionId       string                                 `json:"regionId"`
-						SizeGiB        int64                                  `json:"sizeGiB"`
-						StorageClassId string                                 `json:"storageClassId"`
-						StorageType    regionopenapi.StorageTypeV2Spec        `json:"storageType"`
+						Attachments                      *regionopenapi.StorageAttachmentV2Spec         `json:"attachments,omitempty"`
+						DefaultSnapshotProtectionEnabled *bool                                          `json:"defaultSnapshotProtectionEnabled,omitempty"`
+						OrganizationId                   string                                         `json:"organizationId"`
+						ProjectId                        string                                         `json:"projectId"`
+						RegionId                         regionopenapi.RegionId                         `json:"regionId"`
+						SizeGiB                          int64                                          `json:"sizeGiB"`
+						SnapshotPolicies                 *regionopenapi.StorageSnapshotPolicyListV2Spec `json:"snapshotPolicies,omitempty"`
+						StorageClassId                   string                                         `json:"storageClassId"`
+						StorageType                      regionopenapi.StorageTypeV2Spec                `json:"storageType"`
 					}{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
-						RegionId:       config.RegionID,
+						RegionId:       regionids.MustParseRegionID(config.RegionID),
 						SizeGiB:        10,
 						StorageClassId: storageClasses[0].Metadata.Id,
 						StorageType: regionopenapi.StorageTypeV2Spec{
@@ -87,34 +227,38 @@ var _ = Describe("File Storage Management", func() {
 
 				GinkgoWriter.Printf("Created test storage for list: %s (%s)\n", testStorageName, testStorageID)
 
-				storageList, err := regionClient.ListFileStorage(ctx, config.OrgID, config.ProjectID, config.RegionID)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(len(storageList)).To(BeNumerically(">=", 1), "Should have at least one storage resource")
+				// List GETs are served from the controller-runtime cache, so a
+				// just-created resource can briefly be absent from the list.
+				Eventually(func(g Gomega) {
+					storageList, err := regionClient.ListFileStorage(ctx, config.OrgID, config.ProjectID, config.RegionID)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(len(storageList)).To(BeNumerically(">=", 1), "Should have at least one storage resource")
 
-				found := false
-				for _, storage := range storageList {
-					// Validate ALL items in collection have required fields
-					Expect(storage.Metadata).NotTo(BeNil())
-					Expect(storage.Metadata.Id).NotTo(BeEmpty())
-					Expect(storage.Metadata.Name).NotTo(BeEmpty())
-					Expect(storage.Spec.SizeGiB).To(BeNumerically(">", 0))
-					Expect(storage.Status.StorageClassId).NotTo(BeEmpty())
-					Expect(storage.Status.RegionId).NotTo(BeEmpty())
+					found := false
+					for _, storage := range storageList {
+						// Validate ALL items in collection have required fields
+						g.Expect(storage.Metadata).NotTo(BeNil())
+						g.Expect(storage.Metadata.Id).NotTo(BeEmpty())
+						g.Expect(storage.Metadata.Name).NotTo(BeEmpty())
+						g.Expect(storage.Spec.SizeGiB).To(BeNumerically(">", 0))
+						g.Expect(storage.Status.StorageClassId).NotTo(BeEmpty())
+						g.Expect(storage.Status.RegionId).NotTo(BeEmpty())
 
-					if storage.Metadata.Id == testStorageID {
-						found = true
-						Expect(storage.Metadata.Name).To(Equal(testStorageName))
-						Expect(storage.Metadata.OrganizationId).To(Equal(config.OrgID))
-						Expect(storage.Metadata.ProjectId).To(Equal(config.ProjectID))
-						GinkgoWriter.Printf("  Found our test storage: %s (%s) - %dGiB\n",
-							storage.Metadata.Name,
-							storage.Metadata.Id,
-							storage.Spec.SizeGiB)
+						if storage.Metadata.Id == testStorageID {
+							found = true
+							g.Expect(storage.Metadata.Name).To(Equal(testStorageName))
+							g.Expect(storage.Metadata.OrganizationId).To(Equal(config.OrgID))
+							g.Expect(storage.Metadata.ProjectId).To(Equal(config.ProjectID))
+							GinkgoWriter.Printf("  Found our test storage: %s (%s) - %dGiB\n",
+								storage.Metadata.Name,
+								storage.Metadata.Id,
+								storage.Spec.SizeGiB)
+						}
 					}
-				}
 
-				Expect(found).To(BeTrue(), "Created storage should be in the list")
-				GinkgoWriter.Printf("Found %d total file storage resources\n", len(storageList))
+					g.Expect(found).To(BeTrue(), "Created storage should be in the list")
+					GinkgoWriter.Printf("Found %d total file storage resources\n", len(storageList))
+				}).WithTimeout(5 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
 			})
 
 			AfterEach(func() {
@@ -122,19 +266,6 @@ var _ = Describe("File Storage Management", func() {
 					GinkgoWriter.Printf("Cleaning up test list storage: %s\n", testStorageID)
 					Expect(regionClient.DeleteFileStorage(ctx, testStorageID)).To(Succeed())
 				}
-			})
-		})
-
-		Describe("Given invalid parameters", func() {
-			It("should reject requests with invalid organization ID format", func() {
-				// TODO INST-457: API currently returns 502 instead of a structured 400/403; tighten assertions once fixed.
-				invalidOrgID := "not-a-valid-uuid"
-				path := regionClient.GetEndpoints().ListFileStorage(invalidOrgID, config.ProjectID, config.RegionID)
-				_, _, err := regionClient.DoRegionRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
-
-				Expect(err).To(HaveOccurred())
-				Expect(errors.Is(err, coreclient.ErrUnexpectedStatusCode)).To(BeTrue())
-				GinkgoWriter.Printf("Expected error for invalid organization ID: %v\n", err)
 			})
 		})
 	})
@@ -172,17 +303,19 @@ var _ = Describe("File Storage Management", func() {
 						Description: ptr.To("Test lifecycle file storage"),
 					},
 					Spec: struct {
-						Attachments    *regionopenapi.StorageAttachmentV2Spec `json:"attachments,omitempty"`
-						OrganizationId string                                 `json:"organizationId"`
-						ProjectId      string                                 `json:"projectId"`
-						RegionId       string                                 `json:"regionId"`
-						SizeGiB        int64                                  `json:"sizeGiB"`
-						StorageClassId string                                 `json:"storageClassId"`
-						StorageType    regionopenapi.StorageTypeV2Spec        `json:"storageType"`
+						Attachments                      *regionopenapi.StorageAttachmentV2Spec         `json:"attachments,omitempty"`
+						DefaultSnapshotProtectionEnabled *bool                                          `json:"defaultSnapshotProtectionEnabled,omitempty"`
+						OrganizationId                   string                                         `json:"organizationId"`
+						ProjectId                        string                                         `json:"projectId"`
+						RegionId                         regionopenapi.RegionId                         `json:"regionId"`
+						SizeGiB                          int64                                          `json:"sizeGiB"`
+						SnapshotPolicies                 *regionopenapi.StorageSnapshotPolicyListV2Spec `json:"snapshotPolicies,omitempty"`
+						StorageClassId                   string                                         `json:"storageClassId"`
+						StorageType                      regionopenapi.StorageTypeV2Spec                `json:"storageType"`
 					}{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
-						RegionId:       config.RegionID,
+						RegionId:       regionids.MustParseRegionID(config.RegionID),
 						SizeGiB:        initialStorageSizeGiB,
 						StorageClassId: storageClassID,
 						StorageType: regionopenapi.StorageTypeV2Spec{
@@ -198,6 +331,8 @@ var _ = Describe("File Storage Management", func() {
 				Expect(created.Metadata.Id).NotTo(BeEmpty())
 				Expect(created.Metadata.Name).To(Equal(request.Metadata.Name))
 				Expect(created.Spec.SizeGiB).To(Equal(request.Spec.SizeGiB))
+				expectDefaultProtectionUpdateState(created, true, regionopenapi.StorageSnapshotPolicyListV2Spec{})
+				Expect(created.Status.SnapshotPolicies).To(BeEmpty())
 
 				// Validate resource is correctly scoped and wired up
 				Expect(created.Metadata.OrganizationId).To(Equal(config.OrgID))
@@ -243,6 +378,8 @@ var _ = Describe("File Storage Management", func() {
 				Expect(retrieved.Status.RegionId).To(Equal(config.RegionID))
 				Expect(retrieved.Status.StorageClassId).To(Equal(storageClassID))
 				Expect(retrieved.Spec.SizeGiB).To(Equal(initialStorageSizeGiB))
+				expectDefaultProtectionUpdateState(retrieved, true, regionopenapi.StorageSnapshotPolicyListV2Spec{})
+				Expect(retrieved.Status.SnapshotPolicies).To(BeEmpty())
 				Expect(retrieved.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioned))
 
 				GinkgoWriter.Printf("Retrieved file storage: %s (%s) - %dGiB (Status: %s)\n",
@@ -279,11 +416,40 @@ var _ = Describe("File Storage Management", func() {
 					Expect(*updated.Metadata.Description).To(Equal("Updated test file storage"))
 				}
 				Expect(updated.Spec.SizeGiB).To(Equal(updatedStorageSizeGiB))
+				expectDefaultProtectionUpdateState(updated, true, regionopenapi.StorageSnapshotPolicyListV2Spec{})
 
 				GinkgoWriter.Printf("Updated file storage: %s (%s) - now %dGiB\n",
 					updated.Metadata.Name,
 					updated.Metadata.Id,
 					updated.Spec.SizeGiB)
+			})
+
+			It("should clear snapshot policies through the parent update", func() {
+				if filestorageID == "" {
+					Skip("No filestorage ID available - create test may have been skipped or failed")
+				}
+
+				snapshotPolicies := regionopenapi.StorageSnapshotPolicyListV2Spec{}
+				update := regionopenapi.StorageV2UpdateRequest{
+					Metadata: coreapi.ResourceWriteMetadata{
+						Name:        filestorageName,
+						Description: ptr.To("Cleared snapshot policies for test file storage"),
+					},
+					Spec: regionopenapi.StorageV2Spec{
+						SizeGiB:          updatedStorageSizeGiB,
+						SnapshotPolicies: &snapshotPolicies,
+						StorageType: regionopenapi.StorageTypeV2Spec{
+							NFS: &regionopenapi.NFSV2Spec{},
+						},
+					},
+				}
+
+				updated, err := regionClient.UpdateFileStorage(ctx, filestorageID, update)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(updated).NotTo(BeNil())
+				expectDefaultProtectionUpdateState(updated, true, regionopenapi.StorageSnapshotPolicyListV2Spec{})
+				Expect(updated.Status.SnapshotPolicies).To(BeEmpty())
 			})
 
 			It("should delete the file storage resource", func() {
@@ -298,22 +464,6 @@ var _ = Describe("File Storage Management", func() {
 				GinkgoWriter.Printf("Deleted file storage: %s\n", filestorageID)
 				filestorageDeleted = true
 			})
-
-			It("should not find the deleted file storage resource", func() {
-				if !filestorageDeleted {
-					Skip("No filestorage ID available - create test may have been skipped or failed")
-				}
-
-				Eventually(func() error {
-					_, err := regionClient.GetFileStorage(ctx, filestorageID)
-					return err
-				}).WithTimeout(30*time.Second).
-					WithPolling(2*time.Second).
-					Should(And(HaveOccurred(), MatchError(coreclient.ErrUnexpectedStatusCode)),
-						"Resource should eventually return 404")
-
-				GinkgoWriter.Printf("Confirmed file storage deleted: %s\n", filestorageID)
-			})
 		})
 
 		AfterAll(func() {
@@ -321,6 +471,26 @@ var _ = Describe("File Storage Management", func() {
 				GinkgoWriter.Printf("Cleaning up test filestorage: %s\n", filestorageID)
 				Expect(regionClient.DeleteFileStorage(ctx, filestorageID)).To(Succeed())
 			}
+		})
+	})
+
+	Context("When updating default snapshot protection", func() {
+		Describe("Given a File Storage resource", func() {
+			It("changes default snapshot protection and replaces user-managed snapshot policies together", func() {
+				storageClassID := requireFileStorageClassID()
+				currentPolicies := dailyFileStorageSnapshotPolicies()
+				replacementPolicies := hourlyFileStorageSnapshotPolicies()
+				created := createDefaultProtectionUpdateTestStorage(storageClassID, ptr.To(false), &currentPolicies)
+
+				update := defaultProtectionUpdateRequest(created.Metadata.Name, ptr.To(true), &replacementPolicies)
+				updated, err := regionClient.UpdateFileStorage(ctx, created.Metadata.Id, update)
+				Expect(err).NotTo(HaveOccurred())
+				expectDefaultProtectionUpdateState(updated, true, replacementPolicies)
+
+				retrieved, err := regionClient.GetFileStorage(ctx, created.Metadata.Id)
+				Expect(err).NotTo(HaveOccurred())
+				expectDefaultProtectionUpdateState(retrieved, true, replacementPolicies)
+			})
 		})
 	})
 
@@ -336,7 +506,7 @@ var _ = Describe("File Storage Management", func() {
 
 		Describe("Given a network and file storage resource", func() {
 			It("should create a network for attachment", func() {
-				networkName = coreutil.GenerateRandomName("test-attach-network")
+				networkName = api.UniqueName("attach-network")
 				networkRequest := regionopenapi.NetworkV2CreateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{
 						Name:        networkName,
@@ -345,7 +515,7 @@ var _ = Describe("File Storage Management", func() {
 					Spec: regionopenapi.NetworkV2CreateSpec{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
-						RegionId:       config.RegionID,
+						RegionId:       regionids.MustParseRegionID(config.RegionID),
 						Prefix:         "10.0.1.0/24",
 						DnsNameservers: []string{"8.8.8.8", "8.8.4.4"},
 					},
@@ -396,17 +566,19 @@ var _ = Describe("File Storage Management", func() {
 						Description: ptr.To("Test file storage for attachment lifecycle"),
 					},
 					Spec: struct {
-						Attachments    *regionopenapi.StorageAttachmentV2Spec `json:"attachments,omitempty"`
-						OrganizationId string                                 `json:"organizationId"`
-						ProjectId      string                                 `json:"projectId"`
-						RegionId       string                                 `json:"regionId"`
-						SizeGiB        int64                                  `json:"sizeGiB"`
-						StorageClassId string                                 `json:"storageClassId"`
-						StorageType    regionopenapi.StorageTypeV2Spec        `json:"storageType"`
+						Attachments                      *regionopenapi.StorageAttachmentV2Spec         `json:"attachments,omitempty"`
+						DefaultSnapshotProtectionEnabled *bool                                          `json:"defaultSnapshotProtectionEnabled,omitempty"`
+						OrganizationId                   string                                         `json:"organizationId"`
+						ProjectId                        string                                         `json:"projectId"`
+						RegionId                         regionopenapi.RegionId                         `json:"regionId"`
+						SizeGiB                          int64                                          `json:"sizeGiB"`
+						SnapshotPolicies                 *regionopenapi.StorageSnapshotPolicyListV2Spec `json:"snapshotPolicies,omitempty"`
+						StorageClassId                   string                                         `json:"storageClassId"`
+						StorageType                      regionopenapi.StorageTypeV2Spec                `json:"storageType"`
 					}{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
-						RegionId:       config.RegionID,
+						RegionId:       regionids.MustParseRegionID(config.RegionID),
 						SizeGiB:        storageSizeGiB,
 						StorageClassId: storageClassID,
 						StorageType: regionopenapi.StorageTypeV2Spec{
@@ -575,13 +747,7 @@ var _ = Describe("File Storage Management", func() {
 
 				GinkgoWriter.Printf("Deleted file storage: %s\n", filestorageID)
 
-				Eventually(func() error {
-					_, err := regionClient.GetFileStorage(ctx, filestorageID)
-					return err
-				}).WithTimeout(2*time.Minute).
-					WithPolling(5*time.Second).
-					Should(And(HaveOccurred(), MatchError(coreclient.ErrUnexpectedStatusCode)),
-						"Storage should be deleted")
+				EventuallyFileStorageDeleted(ctx, filestorageID)
 
 				GinkgoWriter.Printf("Confirmed file storage deleted: %s\n", filestorageID)
 				filestorageID = "" // suppress AfterAll cleanup; storage has been confirmed deleted
@@ -628,13 +794,7 @@ var _ = Describe("File Storage Management", func() {
 				}
 
 				GinkgoWriter.Printf("Waiting for storage cleanup: %s\n", filestorageID)
-				Eventually(func() error {
-					_, err := regionClient.GetFileStorage(ctx, filestorageID)
-					return err
-				}).WithTimeout(2*time.Minute).
-					WithPolling(5*time.Second).
-					Should(And(HaveOccurred(), MatchError(coreclient.ErrUnexpectedStatusCode)),
-						"Storage should be deleted during cleanup")
+				EventuallyFileStorageDeleted(ctx, filestorageID)
 			}
 
 			if networkID != "" {

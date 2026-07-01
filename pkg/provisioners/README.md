@@ -31,16 +31,24 @@ The main deviations from a trivial “call provider create/delete” model are:
 
 Provisioners must handle deletion from any state a handler or earlier reconcile
 step can leave behind. Teardown should split provider cleanup, reference
-cleanup, and quota/accounting cleanup into separate idempotent steps. Gate each
-step on the minimum recorded state it needs rather than on a broad prerequisite
-such as parent identity readiness.
+cleanup, and quota/accounting cleanup into separate idempotent steps that each
+run unconditionally.
+
+Crucially, a delete step must never be gated on a readiness condition or on
+best-effort recorded status (for example provider resource IDs written to
+`Status`). Status is non-authoritative and can lag or be lost, so gating on it
+skips a cleanup that is genuinely required and leaks the resource. Instead, make
+each step idempotent and push tolerance for partial state down to where the
+authoritative truth lives: the provider rediscovers its resources by name and
+no-ops when the parent identity was never realized (see
+[providers](../providers/README.md)). Finalizer ordering guarantees the parent
+identity outlives its consumers, so at delete time it is either
+realized-and-complete or never realized — in both cases an unconditional,
+idempotent delete is correct.
 
 This matters for partially created resources: an allocation or reference may
-already exist even when the provider resource was never created. Waiting for
-provider prerequisites in that window can block cleanup of the side effects that
-do exist. When a lifecycle edge is subtle, keep the predicate named after the
-state it actually observes and document the partial-state window next to that
-predicate.
+already exist even when the provider resource was never created. The provider
+delete simply finds nothing to do; the allocation/reference cleanup still runs.
 
 ## Cross-Package Context
 

@@ -28,6 +28,7 @@ import (
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
@@ -37,6 +38,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	networkhandler "github.com/unikorn-cloud/region/pkg/handler/network"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
 	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
@@ -53,10 +55,10 @@ import (
 
 const (
 	testNamespace    = "test-namespace"
-	testRegionID     = "region-1"
-	testOrganization = "organization-1"
-	testProject      = "project-1"
-	testAllocationID = "allocation-1"
+	testRegionID     = "55555555-5555-4555-a555-555555555555"
+	testOrganization = "4d3db1f4-6e01-4a5e-a37f-91d55b5a07ae"
+	testProject      = "9b1e7c82-3d4f-4a6b-b5e2-c8f1a2d3e4f5"
+	testAllocationID = "a1b2c3d4-e5f6-4890-abcd-ef1234567890"
 	testActor        = "test@example.com"
 	testTokenSubject = "token-actor"
 )
@@ -98,7 +100,7 @@ func networkCreateRequest() *openapi.NetworkV2Create {
 		Spec: openapi.NetworkV2CreateSpec{
 			OrganizationId: testOrganization,
 			ProjectId:      testProject,
-			RegionId:       testRegionID,
+			RegionId:       regionids.MustParseRegionID(testRegionID),
 			Prefix:         "10.0.0.0/24",
 			DnsNameservers: []openapi.Ipv4Address{"8.8.8.8"},
 		},
@@ -142,8 +144,8 @@ func expectAllocationCreate(t *testing.T, mockIdentity *identitymock.MockClientW
 	t.Helper()
 
 	mockIdentity.EXPECT().
-		PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsWithResponse(gomock.Any(), testOrganization, testProject, gomock.Any()).
-		DoAndReturn(func(_ context.Context, _, _ string, body identityapi.AllocationWrite, _ ...identityapi.RequestEditorFn) (*identityapi.PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsResponse, error) {
+		PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsWithResponse(gomock.Any(), identityids.MustParseOrganizationID(testOrganization), identityids.MustParseProjectID(testProject), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ identityids.OrganizationID, _ identityids.ProjectID, body identityapi.AllocationWrite, _ ...identityapi.RequestEditorFn) (*identityapi.PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsResponse, error) {
 			require.Equal(t, identityapi.ResourceAllocationList{
 				{Kind: "networks", Committed: 1, Reserved: 0},
 			}, body.Spec.Allocations)
@@ -163,7 +165,7 @@ func expectAllocationCreate(t *testing.T, mockIdentity *identitymock.MockClientW
 
 func expectAllocationDelete(mockIdentity *identitymock.MockClientWithResponsesInterface) {
 	mockIdentity.EXPECT().
-		DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDWithResponse(gomock.Any(), testOrganization, testProject, testAllocationID).
+		DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(testOrganization), identityids.MustParseProjectID(testProject), identityids.MustParseAllocationID(testAllocationID)).
 		Return(&identityapi.DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusAccepted},
 		}, nil)
@@ -186,6 +188,9 @@ func TestDeprovision_UnreadyIdentityDeletesAllocation(t *testing.T) {
 	region := testRegion()
 	provider := mocktypes.NewMockProvider(ctrl)
 	provider.EXPECT().Region(gomock.Any()).Return(region, nil)
+	// Deprovision now always delegates to the provider; the provider is
+	// responsible for no-opping when the identity was never realized.
+	provider.EXPECT().DeleteNetwork(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	providers := mockproviders.NewMockProviders(ctrl)
 	providers.EXPECT().LookupCloud(testRegionID).Return(provider, nil).Times(2)

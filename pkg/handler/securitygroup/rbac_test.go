@@ -28,6 +28,7 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
@@ -37,6 +38,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/securitygroup"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -46,10 +48,13 @@ import (
 )
 
 const (
-	sgOrganizationID = "foo"
-	sgProjectID      = "bar"
-	sgNamespace      = "test-namespace"
-	sgNetworkID      = "test-network"
+	sgOrganizationID     = "11111111-1111-4111-a111-111111111111"
+	sgProjectID          = "22222222-2222-4222-a222-222222222222"
+	sgNonexistentProject = "33333333-3333-4333-a333-333333333333"
+	sgNamespace          = "test-namespace"
+	sgNetworkID          = "55555555-5555-4555-a555-555555555555"
+	sgSecurityGroupID    = "55555555-5555-4555-a555-555555555555"
+	sgNonexistentID      = "66666666-6666-4666-a666-666666666666"
 )
 
 // newSGFakeClient builds a fake k8s client pre-populated with the given objects.
@@ -127,7 +132,7 @@ func minimalSGCreateRequest(networkID string) *openapi.SecurityGroupV2Create {
 	return &openapi.SecurityGroupV2Create{
 		Metadata: coreapi.ResourceWriteMetadata{Name: "test-sg"},
 		Spec: openapi.SecurityGroupV2CreateSpec{
-			NetworkId: networkID,
+			NetworkId: regionids.MustParseNetworkID(networkID),
 			Rules:     openapi.SecurityGroupRuleV2List{},
 		},
 	}
@@ -141,13 +146,13 @@ func TestSGCreateV2RBACOrgScopedProjectNotFound(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 
-	network := testNetworkWithProject(sgOrganizationID, "nonexistent-project")
+	network := testNetworkWithProject(sgOrganizationID, sgNonexistentProject)
 
 	k8sClient := newSGFakeClient(t, network).Build()
 
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	mockIdentity.EXPECT().
-		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), sgOrganizationID, "nonexistent-project").
+		GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(gomock.Any(), identityids.MustParseOrganizationID(sgOrganizationID), identityids.MustParseProjectID(sgNonexistentProject)).
 		Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusNotFound},
 		}, nil)
@@ -264,16 +269,16 @@ func newSGClient(t *testing.T, objects ...runtime.Object) *securitygroup.Client 
 func TestSGGetV2(t *testing.T) {
 	t.Parallel()
 
-	resource := testSecurityGroupV2("sg-1")
+	resource := testSecurityGroupV2(sgSecurityGroupID)
 
 	c := newSGClient(t, resource)
 
 	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read))
 
-	result, err := c.GetV2(ctx, "sg-1")
+	result, err := c.GetV2(ctx, regionids.MustParseSecurityGroupID(sgSecurityGroupID))
 
 	require.NoError(t, err)
-	require.Equal(t, "sg-1", result.Metadata.Id)
+	require.Equal(t, sgSecurityGroupID, result.Metadata.Id)
 	require.Equal(t, "test-region", result.Status.RegionId)
 	require.Equal(t, sgNetworkID, result.Status.NetworkId)
 }
@@ -286,7 +291,7 @@ func TestSGGetV2RawNotFound(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read))
 
-	_, err := c.GetV2Raw(ctx, "does-not-exist")
+	_, err := c.GetV2Raw(ctx, sgNonexistentID)
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -297,14 +302,14 @@ func TestSGGetV2RawNotFound(t *testing.T) {
 func TestSGGetV2RawNoReadPermission(t *testing.T) {
 	t.Parallel()
 
-	resource := testSecurityGroupV2("sg-1")
+	resource := testSecurityGroupV2(sgSecurityGroupID)
 
 	c := newSGClient(t, resource)
 
 	// network read only, no securitygroup read.
 	ctx := rbac.NewContext(t.Context(), sgProjectACL())
 
-	_, err := c.GetV2Raw(ctx, "sg-1")
+	_, err := c.GetV2Raw(ctx, sgSecurityGroupID)
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
@@ -315,14 +320,14 @@ func TestSGGetV2RawNoReadPermission(t *testing.T) {
 func TestSGGetV2RawMissingAPIVersion(t *testing.T) {
 	t.Parallel()
 
-	resource := testSecurityGroupV2("sg-1")
+	resource := testSecurityGroupV2(sgSecurityGroupID)
 	delete(resource.Labels, constants.ResourceAPIVersionLabel)
 
 	c := newSGClient(t, resource)
 
 	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read))
 
-	_, err := c.GetV2Raw(ctx, "sg-1")
+	_, err := c.GetV2Raw(ctx, sgSecurityGroupID)
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -333,14 +338,14 @@ func TestSGGetV2RawMissingAPIVersion(t *testing.T) {
 func TestSGGetV2RawWrongAPIVersion(t *testing.T) {
 	t.Parallel()
 
-	resource := testSecurityGroupV2("sg-1")
+	resource := testSecurityGroupV2(sgSecurityGroupID)
 	resource.Labels[constants.ResourceAPIVersionLabel] = constants.MarshalAPIVersion(1)
 
 	c := newSGClient(t, resource)
 
 	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read))
 
-	_, err := c.GetV2Raw(ctx, "sg-1")
+	_, err := c.GetV2Raw(ctx, sgSecurityGroupID)
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -402,15 +407,15 @@ func TestSGListV2Empty(t *testing.T) {
 func TestSGDeleteV2(t *testing.T) {
 	t.Parallel()
 
-	resource := testSecurityGroupV2("sg-1")
+	resource := testSecurityGroupV2(sgSecurityGroupID)
 
 	c := newSGClient(t, resource)
 
 	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read, identityapi.Delete))
 
-	require.NoError(t, c.DeleteV2(ctx, "sg-1"))
+	require.NoError(t, c.DeleteV2(ctx, regionids.MustParseSecurityGroupID(sgSecurityGroupID)))
 
-	_, err := c.GetV2Raw(ctx, "sg-1")
+	_, err := c.GetV2Raw(ctx, sgSecurityGroupID)
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found after delete, got: %v", err)
 }
@@ -423,7 +428,7 @@ func TestSGDeleteV2NotFound(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read, identityapi.Delete))
 
-	err := c.DeleteV2(ctx, "does-not-exist")
+	err := c.DeleteV2(ctx, regionids.MustParseSecurityGroupID(sgNonexistentID))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -433,13 +438,13 @@ func TestSGDeleteV2NotFound(t *testing.T) {
 func TestSGDeleteV2NoDeletePermission(t *testing.T) {
 	t.Parallel()
 
-	resource := testSecurityGroupV2("sg-1")
+	resource := testSecurityGroupV2(sgSecurityGroupID)
 
 	c := newSGClient(t, resource)
 
 	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read))
 
-	err := c.DeleteV2(ctx, "sg-1")
+	err := c.DeleteV2(ctx, regionids.MustParseSecurityGroupID(sgSecurityGroupID))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
@@ -450,14 +455,14 @@ func TestSGDeleteV2NoDeletePermission(t *testing.T) {
 func TestSGDeleteV2InUse(t *testing.T) {
 	t.Parallel()
 
-	resource := testSecurityGroupV2("sg-1")
+	resource := testSecurityGroupV2(sgSecurityGroupID)
 	resource.Finalizers = []string{"servers.region.unikorn-cloud.org/ref-1"}
 
 	c := newSGClient(t, resource)
 
 	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read, identityapi.Delete))
 
-	err := c.DeleteV2(ctx, "sg-1")
+	err := c.DeleteV2(ctx, regionids.MustParseSecurityGroupID(sgSecurityGroupID))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden (in use), got: %v", err)
@@ -468,7 +473,7 @@ func TestSGDeleteV2InUse(t *testing.T) {
 func TestSGDeleteV2AlreadyDeleting(t *testing.T) {
 	t.Parallel()
 
-	resource := testSecurityGroupV2("sg-1")
+	resource := testSecurityGroupV2(sgSecurityGroupID)
 	now := metav1.NewTime(time.Now())
 	resource.DeletionTimestamp = &now
 	resource.Finalizers = []string{"securitygroups.region.unikorn-cloud.org/test"}
@@ -477,7 +482,7 @@ func TestSGDeleteV2AlreadyDeleting(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read, identityapi.Delete))
 
-	require.NoError(t, c.DeleteV2(ctx, "sg-1"))
+	require.NoError(t, c.DeleteV2(ctx, regionids.MustParseSecurityGroupID(sgSecurityGroupID)))
 }
 
 // TestSGUpdateV2 verifies a successful update applies the requested rules and returns
@@ -490,7 +495,7 @@ func TestSGUpdateV2(t *testing.T) {
 	t.Parallel()
 
 	network := testNetworkWithProject(sgOrganizationID, sgProjectID)
-	resource := testSecurityGroupV2("sg-1")
+	resource := testSecurityGroupV2(sgSecurityGroupID)
 
 	c := newSGClient(t, network, resource)
 
@@ -509,7 +514,7 @@ func TestSGUpdateV2(t *testing.T) {
 		},
 	}
 
-	result, err := c.UpdateV2(ctx, "sg-1", request)
+	result, err := c.UpdateV2(ctx, regionids.MustParseSecurityGroupID(sgSecurityGroupID), request)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -532,7 +537,7 @@ func TestSGUpdateV2NotFound(t *testing.T) {
 		Spec:     openapi.SecurityGroupV2Spec{Rules: openapi.SecurityGroupRuleV2List{}},
 	}
 
-	_, err := c.UpdateV2(ctx, "does-not-exist", request)
+	_, err := c.UpdateV2(ctx, regionids.MustParseSecurityGroupID(sgNonexistentID), request)
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -542,7 +547,7 @@ func TestSGUpdateV2NotFound(t *testing.T) {
 func TestSGUpdateV2NoPermission(t *testing.T) {
 	t.Parallel()
 
-	resource := testSecurityGroupV2("sg-1")
+	resource := testSecurityGroupV2(sgSecurityGroupID)
 
 	c := newSGClient(t, resource)
 
@@ -553,7 +558,7 @@ func TestSGUpdateV2NoPermission(t *testing.T) {
 		Spec:     openapi.SecurityGroupV2Spec{Rules: openapi.SecurityGroupRuleV2List{}},
 	}
 
-	_, err := c.UpdateV2(ctx, "sg-1", request)
+	_, err := c.UpdateV2(ctx, regionids.MustParseSecurityGroupID(sgSecurityGroupID), request)
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
@@ -564,7 +569,7 @@ func TestSGUpdateV2NoPermission(t *testing.T) {
 func TestSGUpdateV2BeingDeleted(t *testing.T) {
 	t.Parallel()
 
-	resource := testSecurityGroupV2("sg-1")
+	resource := testSecurityGroupV2(sgSecurityGroupID)
 	now := metav1.NewTime(time.Now())
 	resource.DeletionTimestamp = &now
 	resource.Finalizers = []string{"securitygroups.region.unikorn-cloud.org/test"}
@@ -579,7 +584,7 @@ func TestSGUpdateV2BeingDeleted(t *testing.T) {
 		Spec:     openapi.SecurityGroupV2Spec{Rules: openapi.SecurityGroupRuleV2List{}},
 	}
 
-	_, err := c.UpdateV2(ctx, "sg-1", request)
+	_, err := c.UpdateV2(ctx, regionids.MustParseSecurityGroupID(sgSecurityGroupID), request)
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsBadRequest(err), "expected bad request (being deleted), got: %v", err)

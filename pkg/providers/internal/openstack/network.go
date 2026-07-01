@@ -771,7 +771,7 @@ func (c *NetworkClient) DeletePort(ctx context.Context, portID string) error {
 }
 
 // Update quotas overrides any OpenStack default quotas for the project's networking.
-// At present it's only security groups, security group rules and floating IPs that are affected.
+// All networking limits are removed.
 func (c *NetworkClient) UpdateQuotas(ctx context.Context, projectID string) error {
 	spanAttributes := trace.WithAttributes(
 		attribute.String("network.project.id", projectID),
@@ -780,10 +780,22 @@ func (c *NetworkClient) UpdateQuotas(ctx context.Context, projectID string) erro
 	_, span := traceStart(ctx, "PUT /network/v2.0/quotas/{id}", spanAttributes)
 	defer span.End()
 
+	// Quotas are handled globally, not on a per-region basis, so it's safe to
+	// unconditionally remove all OpenStack networking limits here.
+	//
+	// Only the core networking quotas are set. The trunk quota is gated behind
+	// the Neutron trunk extension, which is not always loaded, so setting it
+	// makes Neutron reject the request as an unrecognized attribute.
 	opts := &quotas.UpdateOpts{
 		SecurityGroup:     ptr.To(-1),
 		SecurityGroupRule: ptr.To(-1),
 		FloatingIP:        ptr.To(-1),
+		Network:           ptr.To(-1),
+		Port:              ptr.To(-1),
+		RBACPolicy:        ptr.To(-1),
+		Router:            ptr.To(-1),
+		Subnet:            ptr.To(-1),
+		SubnetPool:        ptr.To(-1),
 	}
 
 	return quotas.Update(ctx, c.client, projectID, opts).Err

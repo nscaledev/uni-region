@@ -74,21 +74,25 @@ var _ = Describe("Network Management", func() {
 					Skip("No network ID available - create step may have been skipped or failed")
 				}
 
-				list, err := regionClient.ListNetworks(ctx, config.OrgID, config.ProjectID, config.RegionID)
-				Expect(err).NotTo(HaveOccurred())
+				// List GETs are served from the controller-runtime cache, so a
+				// just-created network can briefly be absent from the list.
+				Eventually(func(g Gomega) {
+					list, err := regionClient.ListNetworks(ctx, config.OrgID, config.ProjectID, config.RegionID)
+					g.Expect(err).NotTo(HaveOccurred())
 
-				var found *regionopenapi.NetworkV2Read
-				for i := range list {
-					if list[i].Metadata.Id == networkID {
-						found = &list[i]
-						break
+					var found *regionopenapi.NetworkV2Read
+					for i := range list {
+						if list[i].Metadata.Id == networkID {
+							found = &list[i]
+							break
+						}
 					}
-				}
 
-				Expect(found).NotTo(BeNil(), "created network not found in list")
-				Expect(found.Metadata.Name).To(Equal(networkName))
-				Expect(found.Metadata.OrganizationId).To(Equal(config.OrgID))
-				Expect(found.Metadata.ProjectId).To(Equal(config.ProjectID))
+					g.Expect(found).NotTo(BeNil(), "created network not found in list")
+					g.Expect(found.Metadata.Name).To(Equal(networkName))
+					g.Expect(found.Metadata.OrganizationId).To(Equal(config.OrgID))
+					g.Expect(found.Metadata.ProjectId).To(Equal(config.ProjectID))
+				}).WithTimeout(5 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
 			})
 
 			It("should reach provisioned state and be retrievable by ID", func() {
@@ -142,12 +146,16 @@ var _ = Describe("Network Management", func() {
 				Expect(putResp.Metadata.Description).NotTo(BeNil())
 				Expect(*putResp.Metadata.Description).To(Equal("updated description"))
 
-				roundTrip, err := regionClient.GetNetwork(ctx, networkID)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(roundTrip.Metadata.Name).To(Equal(updatedName))
-				Expect(roundTrip.Metadata.Description).NotTo(BeNil())
-				Expect(*roundTrip.Metadata.Description).To(Equal("updated description"))
-				Expect(roundTrip.Status.Prefix).To(Equal(networkPrefix))
+				// The API server reads single-resource GETs through the controller-runtime
+				// cache, so an immediate GET after PUT can briefly observe the pre-update object.
+				Eventually(func(g Gomega) {
+					roundTrip, err := regionClient.GetNetwork(ctx, networkID)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(roundTrip.Metadata.Name).To(Equal(updatedName))
+					g.Expect(roundTrip.Metadata.Description).NotTo(BeNil())
+					g.Expect(*roundTrip.Metadata.Description).To(Equal("updated description"))
+					g.Expect(roundTrip.Status.Prefix).To(Equal(networkPrefix))
+				}).WithTimeout(5 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
 
 				networkName = updatedName
 			})
@@ -219,7 +227,7 @@ var _ = Describe("Network Management", func() {
 				path := regionClient.GetEndpoints().CreateNetwork()
 				resp, _, err := regionClient.DoRegionRequest(ctx, http.MethodPost, path, bytes.NewReader([]byte("")), 0)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(resp.StatusCode).To(BeNumerically(">=", http.StatusBadRequest))
+				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 			})
 		})
 	})

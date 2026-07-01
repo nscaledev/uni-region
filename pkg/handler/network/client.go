@@ -28,13 +28,14 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
-	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -153,7 +154,7 @@ func generateIPV4AddressList(in []net.IP) []unikornv1core.IPv4Address {
 }
 
 // generate a new resource from a request.
-func (c *Client) generate(ctx context.Context, organizationID, projectID, identityID string, request *openapi.NetworkWrite) (*unikornv1.Network, error) {
+func (c *Client) generate(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID string, request *openapi.NetworkWrite) (*unikornv1.Network, error) {
 	identity, err := identity.New(c.ClientArgs).GetRaw(ctx, organizationID, projectID, identityID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: unable to get identity", err)
@@ -170,7 +171,7 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 	}
 
 	out := &unikornv1.Network{
-		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.Namespace).WithOrganization(organizationID).WithProject(projectID).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identityID).Get(),
+		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.Namespace).WithLabel(constants.RegionLabel, identity.Labels[constants.RegionLabel]).WithLabel(constants.IdentityLabel, identityID).Get(),
 		Spec: unikornv1.NetworkSpec{
 			Tags:           conversion.GenerateTagList(request.Metadata.Tags),
 			Provider:       identity.Spec.Provider,
@@ -179,7 +180,7 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 		},
 	}
 
-	if err := identitycommon.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
+	if err := identitycommon.SetIdentityMetadataProjectScope(ctx, &out.ObjectMeta, organizationID, projectID); err != nil {
 		return nil, fmt.Errorf("%w: failed to set identity metadata", err)
 	}
 
@@ -192,7 +193,7 @@ func (c *Client) generate(ctx context.Context, organizationID, projectID, identi
 }
 
 // GetRaw gives access to the raw Kubernetes resource.
-func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, networkID string) (*unikornv1.Network, error) {
+func (c *Client) GetRaw(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, networkID string) (*unikornv1.Network, error) {
 	resource := &unikornv1.Network{}
 
 	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: networkID}, resource); err != nil {
@@ -203,20 +204,25 @@ func (c *Client) GetRaw(ctx context.Context, organizationID, projectID, networkI
 		return nil, fmt.Errorf("%w: unable to lookup network", err)
 	}
 
-	if err := coreutil.AssertProjectOwnership(resource, organizationID, projectID); err != nil {
+	ok, err := identityids.OwnedByProject(resource, organizationID, projectID)
+	if err != nil {
 		return nil, err
+	}
+
+	if !ok {
+		return nil, errors.HTTPNotFound()
 	}
 
 	return resource, nil
 }
 
 // List returns an ordered list of all resources in scope.
-func (c *Client) List(ctx context.Context, organizationID string) (openapi.NetworksRead, error) {
+func (c *Client) List(ctx context.Context, organizationID identityids.OrganizationID) (openapi.NetworksRead, error) {
 	var result unikornv1.NetworkList
 
 	options := &client.ListOptions{
 		LabelSelector: labels.SelectorFromSet(map[string]string{
-			coreconstants.OrganizationLabel: organizationID,
+			coreconstants.OrganizationLabel: organizationID.String(),
 		}),
 	}
 
@@ -232,8 +238,8 @@ func (c *Client) List(ctx context.Context, organizationID string) (openapi.Netwo
 }
 
 // Create instantiates a new resource.
-func (c *Client) Create(ctx context.Context, organizationID, projectID, identityID string, request *openapi.NetworkWrite) (*openapi.NetworkRead, error) {
-	resource, err := c.generate(ctx, organizationID, projectID, identityID, request)
+func (c *Client) Create(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID regionids.IdentityID, request *openapi.NetworkWrite) (*openapi.NetworkRead, error) {
+	resource, err := c.generate(ctx, organizationID, projectID, identityID.String(), request)
 	if err != nil {
 		return nil, err
 	}
@@ -246,8 +252,8 @@ func (c *Client) Create(ctx context.Context, organizationID, projectID, identity
 }
 
 // Get a resource.
-func (c *Client) Get(ctx context.Context, organizationID, projectID, networkID string) (*openapi.NetworkRead, error) {
-	result, err := c.GetRaw(ctx, organizationID, projectID, networkID)
+func (c *Client) Get(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, networkID regionids.NetworkID) (*openapi.NetworkRead, error) {
+	result, err := c.GetRaw(ctx, organizationID, projectID, networkID.String())
 	if err != nil {
 		return nil, err
 	}
@@ -256,8 +262,8 @@ func (c *Client) Get(ctx context.Context, organizationID, projectID, networkID s
 }
 
 // Delete a resource.
-func (c *Client) Delete(ctx context.Context, organizationID, projectID, networkID string) error {
-	result, err := c.GetRaw(ctx, organizationID, projectID, networkID)
+func (c *Client) Delete(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, networkID regionids.NetworkID) error {
+	result, err := c.GetRaw(ctx, organizationID, projectID, networkID.String())
 	if err != nil {
 		return err
 	}

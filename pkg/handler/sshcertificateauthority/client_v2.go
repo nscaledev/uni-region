@@ -25,18 +25,20 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	principal "github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	handlerutil "github.com/unikorn-cloud/region/pkg/handler/util"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -143,8 +145,16 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2Sshcertifica
 	}
 
 	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.SSHCertificateAuthority) bool {
-		return !resource.Spec.Tags.ContainsAll(tagSelector) ||
-			rbac.AllowProjectScope(ctx, endpoint, identityapi.Read, resource.Labels[coreconstants.OrganizationLabel], resource.Labels[coreconstants.ProjectLabel]) != nil
+		if !resource.Spec.Tags.ContainsAll(tagSelector) {
+			return true
+		}
+
+		organizationID, projectID, err := resource.OrganizationAndProjectID()
+		if err != nil {
+			return true
+		}
+
+		return rbac.AllowProjectScopeID(ctx, endpoint, identityapi.Read, organizationID, projectID) != nil
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.SSHCertificateAuthority) int {
@@ -165,7 +175,12 @@ func (c *Client) GetV2Raw(ctx context.Context, sshCertificateAuthorityID string)
 		return nil, fmt.Errorf("%w: unable to lookup SSH certificate authority", err)
 	}
 
-	if err := rbac.AllowProjectScope(ctx, endpoint, identityapi.Read, result.Labels[coreconstants.OrganizationLabel], result.Labels[coreconstants.ProjectLabel]); err != nil {
+	organizationID, projectID, err := result.OrganizationAndProjectID()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := rbac.AllowProjectScopeID(ctx, endpoint, identityapi.Read, organizationID, projectID); err != nil {
 		return nil, err
 	}
 
@@ -186,8 +201,8 @@ func (c *Client) GetV2Raw(ctx context.Context, sshCertificateAuthorityID string)
 	return result, nil
 }
 
-func (c *Client) GetV2(ctx context.Context, sshCertificateAuthorityID string) (*openapi.SshCertificateAuthorityV2Read, error) {
-	result, err := c.GetV2Raw(ctx, sshCertificateAuthorityID)
+func (c *Client) GetV2(ctx context.Context, sshCertificateAuthorityID regionids.SSHCertificateAuthorityID) (*openapi.SshCertificateAuthorityV2Read, error) {
+	result, err := c.GetV2Raw(ctx, sshCertificateAuthorityID.String())
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +211,17 @@ func (c *Client) GetV2(ctx context.Context, sshCertificateAuthorityID string) (*
 }
 
 func (c *Client) CreateV2(ctx context.Context, request *openapi.SshCertificateAuthorityV2Create) (*openapi.SshCertificateAuthorityV2Read, error) {
-	if err := rbac.AllowProjectScopeCreate(ctx, c.Identity, endpoint, identityapi.Create, request.Spec.OrganizationId, request.Spec.ProjectId); err != nil {
+	organizationID, err := identityids.ParseOrganizationID(request.Spec.OrganizationId)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid organization ID", err)
+	}
+
+	projectID, err := identityids.ParseProjectID(request.Spec.ProjectId)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid project ID", err)
+	}
+
+	if err := rbac.AllowProjectScopeCreateID(ctx, c.Identity, endpoint, identityapi.Create, organizationID, projectID); err != nil {
 		return nil, err
 	}
 
@@ -207,8 +232,6 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.SshCertificateAu
 
 	resource := &regionv1.SSHCertificateAuthority{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.Namespace).
-			WithOrganization(request.Spec.OrganizationId).
-			WithProject(request.Spec.ProjectId).
 			WithLabel(constants.ResourceAPIVersionLabel, constants.MarshalAPIVersion(2)).
 			Get(),
 		Spec: regionv1.SSHCertificateAuthoritySpec{
@@ -217,11 +240,14 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.SshCertificateAu
 		},
 	}
 
-	if err := handlerutil.InjectUserPrincipal(ctx, request.Spec.OrganizationId, request.Spec.ProjectId); err != nil {
+	// Root create: no parent resource to read scope from, so enrich the principal
+	// from the typed request IDs before stamping. Attribution still sees the
+	// populated principal, and resource needs no early placement labels.
+	if err := principal.EnrichUserPrincipalProjectScopeID(ctx, organizationID, projectID); err != nil {
 		return nil, fmt.Errorf("%w: unable to set principal information", err)
 	}
 
-	if err := identitycommon.SetIdentityMetadata(ctx, &resource.ObjectMeta); err != nil {
+	if err := identitycommon.SetIdentityMetadataProjectScope(ctx, &resource.ObjectMeta, organizationID, projectID); err != nil {
 		return nil, fmt.Errorf("%w: failed to set identity metadata", err)
 	}
 
@@ -232,13 +258,18 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.SshCertificateAu
 	return convertV2(resource), nil
 }
 
-func (c *Client) DeleteV2(ctx context.Context, sshCertificateAuthorityID string) error {
-	resource, err := c.GetV2Raw(ctx, sshCertificateAuthorityID)
+func (c *Client) DeleteV2(ctx context.Context, sshCertificateAuthorityID regionids.SSHCertificateAuthorityID) error {
+	resource, err := c.GetV2Raw(ctx, sshCertificateAuthorityID.String())
 	if err != nil {
 		return err
 	}
 
-	if err := rbac.AllowProjectScope(ctx, endpoint, identityapi.Delete, resource.Labels[coreconstants.OrganizationLabel], resource.Labels[coreconstants.ProjectLabel]); err != nil {
+	organizationID, projectID, err := resource.OrganizationAndProjectID()
+	if err != nil {
+		return err
+	}
+
+	if err := rbac.AllowProjectScopeID(ctx, endpoint, identityapi.Delete, organizationID, projectID); err != nil {
 		return err
 	}
 

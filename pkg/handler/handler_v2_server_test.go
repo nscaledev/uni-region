@@ -28,6 +28,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -35,11 +36,14 @@ import (
 	"github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	identityv1 "github.com/unikorn-cloud/identity/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	"github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	regionconstants "github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -50,6 +54,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+// srvTestImageID is a valid UUID used where a typed image ID is required as API input.
+const srvTestImageID = "e1111111-1111-4111-a111-111111111111"
 
 func fakeClientWithSchema(t *testing.T, objects ...client.Object) client.Client {
 	t.Helper()
@@ -94,9 +101,39 @@ func (b *aclBuilder) addEndpoint(endpoint string, perms ...identityapi.AclOperat
 	return b
 }
 
+func (b *aclBuilder) addProjectEndpoint(projectID, endpoint string, perms ...identityapi.AclOperation) *aclBuilder {
+	var projects identityapi.AclProjectList
+	if b.org.Projects != nil {
+		projects = *b.org.Projects
+	}
+
+	projects = append(projects, identityapi.AclProject{
+		Id: projectID,
+		Endpoints: identityapi.AclEndpoints{
+			{Name: endpoint, Operations: perms},
+		},
+	})
+
+	b.org.Projects = &projects
+
+	return b
+}
+
 func (b *aclBuilder) buildContext(ctx context.Context) context.Context {
 	return rbac.NewContext(ctx, &identityapi.Acl{
 		Organizations: &identityapi.AclOrganizationList{b.org},
+	})
+}
+
+func withPrincipal(ctx context.Context) context.Context {
+	ctx = authorization.NewContext(ctx, &authorization.Info{
+		Userinfo: &identityapi.Userinfo{
+			Sub: "token-actor",
+		},
+	})
+
+	return principal.NewContext(ctx, &principal.Principal{
+		Actor: "test@example.com",
 	})
 }
 
@@ -136,9 +173,11 @@ func projectScopedLabels(orgID, projectID string, extra labels) labels {
 func knownGoodFixture(t *testing.T, serverName, homeNamespace, orgID string) []client.Object {
 	t.Helper()
 
+	const fixtureProjectID = "22222222-2222-4222-a222-222222222222"
+
 	return []client.Object{
-		withMeta(&regionv1.Identity{}, "id1", homeNamespace, projectScopedLabels(orgID, "project1", labels{})),
-		newServer(t, serverName, homeNamespace, projectScopedLabels(orgID, "project1", labels{
+		withMeta(&regionv1.Identity{}, "id1", homeNamespace, projectScopedLabels(orgID, fixtureProjectID, labels{})),
+		newServer(t, serverName, homeNamespace, projectScopedLabels(orgID, fixtureProjectID, labels{
 			regionconstants.IdentityLabel:           "id1",
 			regionconstants.ResourceAPIVersionLabel: "2",
 		})),
@@ -234,13 +273,100 @@ func newSnapshotRequest(ctx context.Context) *http.Request {
 	return httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/servers", requestBody)
 }
 
+func newServerV2CreateRequest(ctx context.Context, t *testing.T, name, flavorID, imageID, networkID string, infrastructureRef *string) *http.Request {
+	t.Helper()
+
+	request := &openapi.ServerV2Create{
+		Metadata: coreapi.ResourceWriteMetadata{
+			Name: name,
+		},
+		Spec: openapi.ServerV2CreateSpec{
+			FlavorId:          regionids.MustParseFlavorID(flavorID),
+			ImageId:           regionids.MustParseImageID(imageID),
+			InfrastructureRef: infrastructureRef,
+			NetworkId:         regionids.MustParseNetworkID(networkID),
+		},
+	}
+
+	body, err := json.Marshal(request)
+	require.NoError(t, err)
+
+	return httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v2/servers", bytes.NewReader(body))
+}
+
+type pinnedOnlyFlavorLookupExpectation int
+
+const (
+	expectNoPinnedOnlyFlavorLookup pinnedOnlyFlavorLookupExpectation = iota
+	expectPinnedOnlyFlavorLookup
+)
+
+type pinnedOnlyServerV2CreateFixture struct {
+	handler   *ServerV2Handler
+	flavorID  string
+	networkID string
+}
+
+func newPinnedOnlyServerV2CreateFixture(t *testing.T, lookup pinnedOnlyFlavorLookupExpectation) (context.Context, *pinnedOnlyServerV2CreateFixture) {
+	t.Helper()
+
+	var (
+		namespace = "region-test-home"
+		orgID     = "77777777-7777-4777-a777-777777777777"
+		projectID = uuid.New().String()
+		regionID  = uuid.New().String()
+		networkID = uuid.New().String()
+		flavorID  = uuid.New().String()
+	)
+
+	ctrl := gomock.NewController(t)
+
+	providers := mockproviders.NewMockProviders(ctrl)
+
+	if lookup == expectPinnedOnlyFlavorLookup {
+		provider := mockprovider.NewMockProvider(ctrl)
+		provider.EXPECT().Flavors(gomock.Any()).Return(types.FlavorList{
+			{ID: flavorID, PinnedOnly: true},
+		}, nil)
+
+		providers.EXPECT().LookupCloud(regionID).Return(provider, nil)
+	}
+
+	net := withMeta(&regionv1.Network{}, networkID, namespace, labels{
+		constants.OrganizationLabel:             orgID,
+		constants.ProjectLabel:                  projectID,
+		regionconstants.RegionLabel:             regionID,
+		regionconstants.IdentityLabel:           "id1",
+		regionconstants.ResourceAPIVersionLabel: "2",
+	})
+
+	c := fakeClientWithSchema(t, net)
+
+	handler := NewServerV2Handler(common.ClientArgs{
+		Client:    c,
+		Namespace: namespace,
+		Providers: providers,
+	})
+
+	ctx := newOrganisationACLBuilder(orgID).
+		addEndpoint("region:networks:v2", identityapi.Read).
+		addProjectEndpoint(projectID, "region:servers", identityapi.Create).
+		buildContext(t.Context())
+
+	return ctx, &pinnedOnlyServerV2CreateFixture{
+		handler:   handler,
+		flavorID:  flavorID,
+		networkID: networkID,
+	}
+}
+
 func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 	t.Parallel()
 
 	const (
 		namespace  = "region-test-home"
-		orgID      = "org-not-allowed-permissions"
-		serverName = "server1"
+		orgID      = "55555555-5555-4555-a555-555555555555"
+		serverName = "a1111111-1111-4111-a111-111111111111"
 	)
 
 	ctrl := gomock.NewController(t)
@@ -294,7 +420,7 @@ func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 			response := httptest.NewRecorder()
 			request := newSnapshotRequest(ctx)
 
-			handler.PostApiV2ServersServerIDSnapshot(response, request, serverName)
+			handler.PostApiV2ServersServerIDSnapshot(response, request, regionids.MustParseServerID(serverName))
 
 			require.Equal(t, http.StatusForbidden, response.Result().StatusCode)
 		})
@@ -306,8 +432,8 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 
 	const (
 		namespace  = "region-test-home"
-		orgID      = "org-happy-path"
-		serverName = "server1"
+		orgID      = "66666666-6666-4666-a666-666666666666"
+		serverName = "a1111111-1111-4111-a111-111111111111"
 	)
 
 	original := &types.Image{
@@ -355,7 +481,7 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 	response := httptest.NewRecorder()
 	request := newSnapshotRequest(ctx)
 
-	handler.PostApiV2ServersServerIDSnapshot(response, request, serverName)
+	handler.PostApiV2ServersServerIDSnapshot(response, request, regionids.MustParseServerID(serverName))
 
 	require.Equal(t, http.StatusCreated, response.Result().StatusCode)
 
@@ -370,4 +496,46 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 		Name:  regionconstants.ImageSourceTag,
 		Value: regionconstants.ImageSourceSnapshot,
 	})
+}
+
+func TestServerV2_Create_PinnedOnlyFlavorWithoutInfrastructureRef(t *testing.T) {
+	t.Parallel()
+
+	ctx, fixture := newPinnedOnlyServerV2CreateFixture(t, expectPinnedOnlyFlavorLookup)
+
+	response := httptest.NewRecorder()
+	request := newServerV2CreateRequest(ctx, t, "test-server", fixture.flavorID, srvTestImageID, fixture.networkID, nil)
+
+	fixture.handler.PostApiV2Servers(response, request)
+
+	require.Equal(t, http.StatusUnprocessableEntity, response.Result().StatusCode)
+
+	var errorResponse coreapi.Error
+
+	requireDeserialiseBody(t, response.Result().Body, &errorResponse)
+	require.Equal(t, coreapi.UnprocessableContent, errorResponse.Error)
+	require.Equal(t, "flavor requires infrastructureRef to be set", errorResponse.ErrorDescription)
+}
+
+func TestServerV2_Create_PinnedOnlyFlavorWithInfrastructureRef(t *testing.T) {
+	t.Parallel()
+
+	ctx, fixture := newPinnedOnlyServerV2CreateFixture(t, expectNoPinnedOnlyFlavorLookup)
+	ctx = withPrincipal(ctx)
+	infrastructureRef := "node-42"
+
+	response := httptest.NewRecorder()
+	request := newServerV2CreateRequest(ctx, t, "test-server", fixture.flavorID, srvTestImageID, fixture.networkID, &infrastructureRef)
+
+	fixture.handler.PostApiV2Servers(response, request)
+
+	require.Equal(t, http.StatusCreated, response.Result().StatusCode)
+
+	var read openapi.ServerV2Read
+
+	requireDeserialiseBody(t, response.Result().Body, &read)
+	require.Equal(t, "test-server", read.Metadata.Name)
+	require.Equal(t, fixture.flavorID, read.Spec.FlavorId.String())
+	require.NotNil(t, read.Status.InfrastructureRef)
+	require.Equal(t, infrastructureRef, *read.Status.InfrastructureRef)
 }
