@@ -231,6 +231,12 @@ func (e *Endpoints) GetServer(serverID string) string {
 		url.PathEscape(serverID))
 }
 
+// GetServerSSHKey returns the endpoint for retrieving a server's generated SSH private key.
+func (e *Endpoints) GetServerSSHKey(serverID string) string {
+	return fmt.Sprintf("/api/v2/servers/%s/sshkey",
+		url.PathEscape(serverID))
+}
+
 // DeleteServer returns the endpoint for deleting a specific server.
 func (e *Endpoints) DeleteServer(serverID string) string {
 	return fmt.Sprintf("/api/v2/servers/%s",
