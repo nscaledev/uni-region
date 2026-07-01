@@ -53,6 +53,11 @@ var _ = Describe("LoadBalancer", func() {
 			networkID = network.Metadata.Id
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
 
+			// Reads are served from the controller-runtime cache, so the
+			// load balancer create below can resolve the network reference
+			// against a stale cache and 404. Await visibility first.
+			api.WaitForNetworkVisible(regionClient, ctx, networkID)
+
 			DeferCleanup(func() {
 				if lbID != "" {
 					if err := regionClient.DeleteLoadBalancer(ctx, lbID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
@@ -110,25 +115,33 @@ var _ = Describe("LoadBalancer", func() {
 			})
 
 			It("appears in the load balancer list", func() {
-				list, err := regionClient.ListLoadBalancers(ctx, config.OrgID, config.ProjectID, config.RegionID)
-				Expect(err).NotTo(HaveOccurred())
+				// List GETs are served from the controller-runtime cache, so a
+				// just-created load balancer can briefly be absent from the list.
+				Eventually(func(g Gomega) {
+					list, err := regionClient.ListLoadBalancers(ctx, config.OrgID, config.ProjectID, config.RegionID)
+					g.Expect(err).NotTo(HaveOccurred())
 
-				var found *regionopenapi.LoadBalancerV2Read
-				for i := range list {
-					if list[i].Metadata.Id == lbID {
-						found = &list[i]
-						break
+					var found *regionopenapi.LoadBalancerV2Read
+					for i := range list {
+						if list[i].Metadata.Id == lbID {
+							found = &list[i]
+							break
+						}
 					}
-				}
-				Expect(found).NotTo(BeNil(), "created load balancer not found in list")
-				Expect(found.Metadata.Name).To(Equal(createReq.Metadata.Name))
+					g.Expect(found).NotTo(BeNil(), "created load balancer not found in list")
+					g.Expect(found.Metadata.Name).To(Equal(createReq.Metadata.Name))
+				}).WithTimeout(5 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
 			})
 
 			It("can be retrieved by id", func() {
-				got, err := regionClient.GetLoadBalancer(ctx, lbID)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(got.Metadata.Id).To(Equal(lbID))
-				Expect(got.Status.NetworkId).To(Equal(networkID))
+				// Single-resource GETs are served from the controller-runtime cache,
+				// so an immediate GET after create can briefly miss the new object.
+				Eventually(func(g Gomega) {
+					got, err := regionClient.GetLoadBalancer(ctx, lbID)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(got.Metadata.Id).To(Equal(lbID))
+					g.Expect(got.Status.NetworkId).To(Equal(networkID))
+				}).WithTimeout(5 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
 			})
 
 			It("eventually reports Provisioned with status.vipAddress and status.publicIP populated", func() {
@@ -166,11 +179,15 @@ var _ = Describe("LoadBalancer", func() {
 				Expect(*putResp.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
 				Expect(putResp.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
 
-				roundTrip, err := regionClient.GetLoadBalancer(ctx, lbID)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(roundTrip.Spec.Listeners[0].AllowedCidrs).NotTo(BeNil())
-				Expect(*roundTrip.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
-				Expect(roundTrip.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
+				// The API server reads single-resource GETs through the controller-runtime cache,
+				// so an immediate GET after PUT can briefly observe the pre-update object.
+				Eventually(func(g Gomega) {
+					roundTrip, err := regionClient.GetLoadBalancer(ctx, lbID)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(roundTrip.Spec.Listeners[0].AllowedCidrs).NotTo(BeNil())
+					g.Expect(*roundTrip.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
+					g.Expect(roundTrip.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
+				}).WithTimeout(5 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
 			})
 
 			It("accepts an update toggling publicIP to false", func() {
@@ -232,6 +249,11 @@ var _ = Describe("LoadBalancer", func() {
 			networkID = network.Metadata.Id
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
 
+			// Reads are served from the controller-runtime cache, so the
+			// load balancer create below can resolve the network reference
+			// against a stale cache and 404. Await visibility first.
+			api.WaitForNetworkVisible(regionClient, ctx, networkID)
+
 			DeferCleanup(func() {
 				if lbID != "" {
 					if err := regionClient.DeleteLoadBalancer(ctx, lbID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
@@ -292,6 +314,11 @@ var _ = Describe("LoadBalancer", func() {
 			Expect(network).NotTo(BeNil())
 			networkID = network.Metadata.Id
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
+
+			// Reads are served from the controller-runtime cache, so the
+			// load balancer create below can resolve the network reference
+			// against a stale cache and 404. Await visibility first.
+			api.WaitForNetworkVisible(regionClient, ctx, networkID)
 
 			DeferCleanup(func() {
 				if lbID != "" {

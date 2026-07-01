@@ -18,8 +18,14 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"fmt"
+
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
+	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -163,6 +169,156 @@ func (c *Server) ResourceLabels() (labels.Set, error) {
 	//nolint:nilnil
 	return nil, nil
 }
+
+// organizationIDFromLabels recovers a typed organization ID from a resource's
+// labels. It returns an error if the label is missing or is not a valid UUID, so
+// callers fail closed with a clean error rather than panicking or making an
+// authorization decision on a malformed value.
+func organizationIDFromLabels(labels map[string]string) (identityids.OrganizationID, error) {
+	id, err := identityids.ParseOrganizationID(labels[coreconstants.OrganizationLabel])
+	if err != nil {
+		return identityids.OrganizationID{}, fmt.Errorf("%w: invalid organization ID in resource labels", err)
+	}
+
+	return id, nil
+}
+
+// organizationAndProjectIDFromLabels recovers both the typed organization and
+// project IDs from a resource's labels, with the same fail-closed semantics as
+// organizationIDFromLabels. The two are recovered together because every
+// project-scoped check needs both and a malformed value is a 500 either way, so
+// the API surface gains nothing from discriminating which one was bad.
+func organizationAndProjectIDFromLabels(labels map[string]string) (identityids.OrganizationID, identityids.ProjectID, error) {
+	organizationID, err := organizationIDFromLabels(labels)
+	if err != nil {
+		return identityids.OrganizationID{}, identityids.ProjectID{}, err
+	}
+
+	projectID, err := identityids.ParseProjectID(labels[coreconstants.ProjectLabel])
+	if err != nil {
+		return identityids.OrganizationID{}, identityids.ProjectID{}, fmt.Errorf("%w: invalid project ID in resource labels", err)
+	}
+
+	return organizationID, projectID, nil
+}
+
+// OrganizationID returns the server's owning organization ID as a typed identifier.
+func (c *Server) OrganizationID() (identityids.OrganizationID, error) {
+	return organizationIDFromLabels(c.Labels)
+}
+
+// OrganizationAndProjectID returns the server's owning organization and project
+// IDs as typed identifiers.
+func (c *Server) OrganizationAndProjectID() (identityids.OrganizationID, identityids.ProjectID, error) {
+	return organizationAndProjectIDFromLabels(c.Labels)
+}
+
+// FlavorID returns the server's flavor as a typed identifier. It returns an
+// error if the stored value is not a valid UUID, so read paths surface a clean
+// error rather than panicking.
+func (c *Server) FlavorID() (regionids.FlavorID, error) {
+	id, err := regionids.ParseFlavorID(c.Spec.FlavorID)
+	if err != nil {
+		return regionids.FlavorID{}, fmt.Errorf("%w: invalid flavor ID on server", err)
+	}
+
+	return id, nil
+}
+
+// ImageID returns the server's image as a typed identifier. It returns an error
+// if the image is unset or its stored value is not a valid UUID, so read paths
+// surface a clean error rather than panicking.
+func (c *Server) ImageID() (regionids.ImageID, error) {
+	if c.Spec.Image == nil {
+		return regionids.ImageID{}, fmt.Errorf("%w: server has no image", coreerrors.ErrConsistency)
+	}
+
+	id, err := regionids.ParseImageID(c.Spec.Image.ID)
+	if err != nil {
+		return regionids.ImageID{}, fmt.Errorf("%w: invalid image ID on server", err)
+	}
+
+	return id, nil
+}
+
+// OrganizationID returns the network's owning organization ID as a typed identifier.
+func (c *Network) OrganizationID() (identityids.OrganizationID, error) {
+	return organizationIDFromLabels(c.Labels)
+}
+
+// OrganizationAndProjectID returns the network's owning organization and project
+// IDs as typed identifiers.
+func (c *Network) OrganizationAndProjectID() (identityids.OrganizationID, identityids.ProjectID, error) {
+	return organizationAndProjectIDFromLabels(c.Labels)
+}
+
+// OrganizationID returns the security group's owning organization ID as a typed identifier.
+func (c *SecurityGroup) OrganizationID() (identityids.OrganizationID, error) {
+	return organizationIDFromLabels(c.Labels)
+}
+
+// OrganizationAndProjectID returns the security group's owning organization and
+// project IDs as typed identifiers.
+func (c *SecurityGroup) OrganizationAndProjectID() (identityids.OrganizationID, identityids.ProjectID, error) {
+	return organizationAndProjectIDFromLabels(c.Labels)
+}
+
+// OrganizationID returns the load balancer's owning organization ID as a typed identifier.
+func (c *LoadBalancer) OrganizationID() (identityids.OrganizationID, error) {
+	return organizationIDFromLabels(c.Labels)
+}
+
+// OrganizationAndProjectID returns the load balancer's owning organization and
+// project IDs as typed identifiers.
+func (c *LoadBalancer) OrganizationAndProjectID() (identityids.OrganizationID, identityids.ProjectID, error) {
+	return organizationAndProjectIDFromLabels(c.Labels)
+}
+
+// OrganizationID returns the SSH certificate authority's owning organization ID as a typed identifier.
+func (c *SSHCertificateAuthority) OrganizationID() (identityids.OrganizationID, error) {
+	return organizationIDFromLabels(c.Labels)
+}
+
+// OrganizationAndProjectID returns the SSH certificate authority's owning
+// organization and project IDs as typed identifiers.
+func (c *SSHCertificateAuthority) OrganizationAndProjectID() (identityids.OrganizationID, identityids.ProjectID, error) {
+	return organizationAndProjectIDFromLabels(c.Labels)
+}
+
+// OrganizationID returns the file storage's owning organization ID as a typed identifier.
+func (s *FileStorage) OrganizationID() (identityids.OrganizationID, error) {
+	return organizationIDFromLabels(s.Labels)
+}
+
+// OrganizationAndProjectID returns the file storage's owning organization and
+// project IDs as typed identifiers.
+func (s *FileStorage) OrganizationAndProjectID() (identityids.OrganizationID, identityids.ProjectID, error) {
+	return organizationAndProjectIDFromLabels(s.Labels)
+}
+
+// OrganizationID returns the identity's owning organization ID as a typed identifier.
+func (c *Identity) OrganizationID() (identityids.OrganizationID, error) {
+	return organizationIDFromLabels(c.Labels)
+}
+
+// OrganizationAndProjectID returns the identity's owning organization and project
+// IDs as typed identifiers.
+func (c *Identity) OrganizationAndProjectID() (identityids.OrganizationID, identityids.ProjectID, error) {
+	return organizationAndProjectIDFromLabels(c.Labels)
+}
+
+// Static assertions that the project-scoped resources satisfy the identity
+// scope-reader interfaces (which embed OrganizationScopeReader), so a drift in
+// the accessor signatures becomes a compile error.
+var (
+	_ identityids.ProjectScopeReader = (*Server)(nil)
+	_ identityids.ProjectScopeReader = (*Network)(nil)
+	_ identityids.ProjectScopeReader = (*SecurityGroup)(nil)
+	_ identityids.ProjectScopeReader = (*LoadBalancer)(nil)
+	_ identityids.ProjectScopeReader = (*SSHCertificateAuthority)(nil)
+	_ identityids.ProjectScopeReader = (*FileStorage)(nil)
+	_ identityids.ProjectScopeReader = (*Identity)(nil)
+)
 
 func (s *RegionOpenstackNetworkSpec) UseProviderNetworks() bool {
 	return s != nil && s.ProviderNetworks != nil && s.ProviderNetworks.Network != nil

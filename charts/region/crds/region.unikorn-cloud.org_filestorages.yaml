@@ -83,6 +83,10 @@ spec:
                   - networkID
                   type: object
                 type: array
+              defaultSnapshotProtectionEnabled:
+                description: DefaultSnapshotProtectionEnabled controls platform-managed
+                  baseline snapshot protection.
+                type: boolean
               nfs:
                 description: NFS is fulfilled when leveraging the NFS storage class.
                 properties:
@@ -107,8 +111,8 @@ spec:
                     name:
                       description: Name is the policy identity key within the file
                         storage volume.
-                      maxLength: 63
-                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      maxLength: 19
+                      pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
                       type: string
                     retention:
                       description: Retention defines how many snapshots are retained.
@@ -177,7 +181,7 @@ spec:
                   - retention
                   - schedule
                   type: object
-                maxItems: 4
+                maxItems: 5
                 type: array
                 x-kubernetes-list-map-keys:
                 - name

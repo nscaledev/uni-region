@@ -19,6 +19,7 @@ package openstack
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
@@ -104,6 +105,38 @@ var MetadataKey = metadataKey
 //nolint:gochecknoglobals
 var ServerForCreate = serverForCreate
 
+//nolint:gochecknoglobals
+var PlacementAPIMicroversion = placementAPIMicroversion
+
+//nolint:gochecknoglobals
+var PlacementPreflightRequiredTraits = placementPreflightRequiredTraits
+
+//nolint:gochecknoglobals
+var PlacementRequiredTraitsQuery = placementRequiredTraitsQuery
+
+//nolint:gochecknoglobals
+var PlacementResourceQuery = placementResourceQuery
+
+//nolint:gochecknoglobals
+var FlavorPlacementResourceClass = flavorPlacementResourceClass
+
+//nolint:gochecknoglobals
+var FlavorPlacementTraits = flavorPlacementTraits
+
+func NewTestServerCreatePlacementPreflight(config *unikornv1.PlacementPreflightSpec, flavorClient FlavorInterface, placementClient PlacementInterface) func(context.Context, *unikornv1.Server) error {
+	preflight := serverCreatePlacementPreflight{
+		config: func() *unikornv1.PlacementPreflightSpec {
+			return config
+		},
+		flavorClient: flavorClient,
+		placementClientFactory: func(context.Context, *unikornv1.Server) (PlacementInterface, error) {
+			return placementClient, nil
+		},
+	}
+
+	return preflight.check
+}
+
 func NewTestComputeClient(endpoint string) *ComputeClient {
 	return &ComputeClient{
 		client: &gophercloud.ServiceClient{
@@ -112,6 +145,27 @@ func NewTestComputeClient(endpoint string) *ComputeClient {
 		},
 		flavorCache: cache.New[[]flavors.Flavor](time.Hour),
 	}
+}
+
+func NewTestPlacementClient(endpoint string, httpClient *http.Client) *PlacementClient {
+	providerClient := &gophercloud.ProviderClient{
+		HTTPClient: *httpClient,
+	}
+	providerClient.UseTokenLock()
+	providerClient.SetToken("token")
+
+	return &PlacementClient{
+		client: &gophercloud.ServiceClient{
+			ProviderClient: providerClient,
+			Endpoint:       gophercloud.NormalizeURL(endpoint),
+			Type:           "placement",
+			Microversion:   placementAPIMicroversion,
+		},
+	}
+}
+
+func PlacementClientMicroversion(client *PlacementClient) string {
+	return client.client.Microversion
 }
 
 func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {
@@ -213,8 +267,11 @@ func ReconcileLoadBalancerFloatingIP(ctx context.Context, p *Provider, client Fl
 }
 
 func ReconcileServer(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
-	// Lewis Denham-Parry was here.
-	return p.reconcileServer(ctx, client, server, port, keyName)
+	return p.reconcileServer(ctx, client, server, port, keyName, nil)
+}
+
+func ReconcileServerWithPreflight(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight func(context.Context, *unikornv1.Server) error) (*servers.Server, error) {
+	return p.reconcileServer(ctx, client, server, port, keyName, serverCreatePreflight(preflight))
 }
 
 func ResolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {

@@ -34,6 +34,7 @@ import (
 
 	"github.com/onsi/ginkgo/v2"
 
+	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
 	identityopenapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/principal"
@@ -78,6 +79,24 @@ func (c *APIClient) GetEndpoints() *Endpoints {
 // Use this for direct API calls that need to hit the region API.
 func (c *APIClient) DoRegionRequest(ctx context.Context, method, path string, body io.Reader, expectedStatus int) (*http.Response, []byte, error) {
 	return c.regionClient.DoRequest(ctx, method, path, body, expectedStatus)
+}
+
+// GetVersion gets the deployed region service version.
+func (c *APIClient) GetVersion(ctx context.Context) (*coreapi.ServiceVersionRead, error) {
+	path := c.endpoints.Version()
+
+	//nolint:bodyclose // DoRegionRequest handles response body closing internally
+	_, respBody, err := c.DoRegionRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	if err != nil {
+		return nil, fmt.Errorf("getting service version: %w", err)
+	}
+
+	var version coreapi.ServiceVersionRead
+	if err := json.Unmarshal(respBody, &version); err != nil {
+		return nil, fmt.Errorf("unmarshaling service version: %w", err)
+	}
+
+	return &version, nil
 }
 
 // InternalAPIConfigured reports whether local internal API mTLS credentials are present.
@@ -247,7 +266,7 @@ func (c *APIClient) ListRegions(ctx context.Context, orgID string) (regionopenap
 
 	return coreclient.ListResource[regionopenapi.RegionRead](
 		ctx,
-		c.APIClient,
+		c.regionClient,
 		path,
 		coreclient.ResponseHandlerConfig{
 			ResourceType:   "regions",
@@ -281,7 +300,7 @@ func (c *APIClient) ListFlavors(ctx context.Context, orgID, regionID string) (re
 
 	return coreclient.ListResource[regionopenapi.Flavor](
 		ctx,
-		c.APIClient,
+		c.regionClient,
 		path,
 		coreclient.ResponseHandlerConfig{
 			ResourceType:   "flavors",
@@ -297,7 +316,7 @@ func (c *APIClient) ListImages(ctx context.Context, orgID, regionID string) (reg
 
 	return coreclient.ListResource[regionopenapi.Image](
 		ctx,
-		c.APIClient,
+		c.regionClient,
 		path,
 		coreclient.ResponseHandlerConfig{
 			ResourceType:   "images",
@@ -349,27 +368,6 @@ func (c *APIClient) DeleteImage(ctx context.Context, orgID, regionID, imageID st
 	default:
 		return fmt.Errorf("deleting image: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
 	}
-}
-
-// ListExternalNetworks lists all external networks available in a region.
-func (c *APIClient) ListExternalNetworks(ctx context.Context, orgID, regionID string) (regionopenapi.ExternalNetworks, error) {
-	path := c.endpoints.ListExternalNetworks(orgID, regionID)
-
-	client := c.APIClient
-	if c.regionClient != nil {
-		client = c.regionClient
-	}
-
-	return coreclient.ListResource[regionopenapi.ExternalNetwork](
-		ctx,
-		client,
-		path,
-		coreclient.ResponseHandlerConfig{
-			ResourceType:   "externalNetworks",
-			ResourceID:     regionID,
-			ResourceIDType: "region",
-		},
-	)
 }
 
 // ListSecurityGroups lists security groups filtered by org, project and region.
@@ -520,21 +518,29 @@ func (c *APIClient) CreateFileStorage(ctx context.Context, request regionopenapi
 }
 
 // GetFileStorage gets a specific file storage resource by ID.
+// Returns ErrResourceNotFound if the file storage resource does not exist.
 func (c *APIClient) GetFileStorage(ctx context.Context, filestorageID string) (*regionopenapi.StorageV2Read, error) {
 	path := c.endpoints.GetFileStorage(filestorageID)
 
 	//nolint:bodyclose // DoRequest handles response body closing internally
-	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	resp, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, 0)
 	if err != nil {
 		return nil, fmt.Errorf("getting filestorage: %w", err)
 	}
 
-	var storage regionopenapi.StorageV2Read
-	if err := json.Unmarshal(respBody, &storage); err != nil {
-		return nil, fmt.Errorf("unmarshaling filestorage: %w", err)
-	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var storage regionopenapi.StorageV2Read
+		if err := json.Unmarshal(respBody, &storage); err != nil {
+			return nil, fmt.Errorf("unmarshaling filestorage: %w", err)
+		}
 
-	return &storage, nil
+		return &storage, nil
+	case http.StatusNotFound:
+		return nil, fmt.Errorf("filestorage '%s': %w", filestorageID, coreclient.ErrResourceNotFound)
+	default:
+		return nil, fmt.Errorf("getting filestorage: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
 }
 
 // UpdateFileStorage updates a file storage resource.

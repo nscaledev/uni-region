@@ -166,26 +166,30 @@ var _ = Describe("Server Management", func() {
 				Expect(created.Status.RegionId).To(Equal(config.RegionID))
 				Expect(created.Status.NetworkId).To(Equal(networkID))
 
-				list, err := regionClient.ListServers(ctx, config.OrgID, config.ProjectID, config.RegionID, networkID)
-				Expect(err).NotTo(HaveOccurred())
+				// List and single-resource GETs are served from the controller-runtime
+				// cache, so a just-created server can briefly be absent or stale.
+				Eventually(func(g Gomega) {
+					list, err := regionClient.ListServers(ctx, config.OrgID, config.ProjectID, config.RegionID, networkID)
+					g.Expect(err).NotTo(HaveOccurred())
 
-				var found *regionopenapi.ServerV2Read
-				for i := range list {
-					if list[i].Metadata.Id == serverID {
-						found = &list[i]
-						break
+					var found *regionopenapi.ServerV2Read
+					for i := range list {
+						if list[i].Metadata.Id == serverID {
+							found = &list[i]
+							break
+						}
 					}
-				}
 
-				Expect(found).NotTo(BeNil(), "created server not found in list")
-				Expect(found.Metadata.Name).To(Equal(createReq.Metadata.Name))
+					g.Expect(found).NotTo(BeNil(), "created server not found in list")
+					g.Expect(found.Metadata.Name).To(Equal(createReq.Metadata.Name))
 
-				got, err := regionClient.GetServer(ctx, serverID)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(got.Metadata.Id).To(Equal(serverID))
-				Expect(got.Spec.FlavorId).To(Equal(createReq.Spec.FlavorId))
-				Expect(got.Spec.ImageId).To(Equal(createReq.Spec.ImageId))
-				Expect(got.Status.NetworkId).To(Equal(networkID))
+					got, err := regionClient.GetServer(ctx, serverID)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(got.Metadata.Id).To(Equal(serverID))
+					g.Expect(got.Spec.FlavorId).To(Equal(createReq.Spec.FlavorId))
+					g.Expect(got.Spec.ImageId).To(Equal(createReq.Spec.ImageId))
+					g.Expect(got.Status.NetworkId).To(Equal(networkID))
+				}).WithTimeout(5 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
 			})
 		})
 	})

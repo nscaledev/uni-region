@@ -30,16 +30,69 @@ accounting meet.
   non-empty storage ranges are accepted and used in full
 - attachment status rows follow desired attachments, then project observed
   attachment provisioning state and API-safe mount options when available
+- user-managed inline snapshot policies are optional and stored on the file
+  storage resource as named schedules with `retention.keep`
+- default snapshot protection is controlled separately from user-managed
+  snapshot policies through `defaultSnapshotProtectionEnabled`
+- parent File Storage create and update requests manage the user-managed
+  snapshot policy list and default snapshot protection setting; snapshot
+  policies do not create independent public resources or IDs
+- parent File Storage reads expose desired user-managed snapshot policy
+  configuration in spec and projected per-policy status in status, reporting
+  pending when no observed policy condition exists yet
+- default snapshot protection is implemented by materializing a hidden
+  platform-managed `system-default` snapshot policy into the stored policy list,
+  which the existing storage controller reconciles like any other policy (no
+  controller change)
+- parent File Storage reads expose the resolved default snapshot protection
+  setting but not the materialized `system-default` policy that implements it
+- attachment status reporting is currently based partly on desired state rather
+  than fully observed actual state
 
 ## Invariants And Guard Rails
 
 - Storage is a `v2` resource and follows the flatter direct-lookup model.
 - Region access is enforced via `region.CheckAccess` during request validation,
   preventing callers from creating storage in regions they cannot see.
+- File Storage update requires File Storage update authorization before mutating
+  storage or allocation state.
 - Quota allocation changes are part of the storage lifecycle contract, not an
   optional side effect.
 - Attachments must reference visible, provisioned networks in the same project.
 - Attached networks must expose a valid non-empty IPv4 storage range.
+- Snapshot policy `name` is the stable identity key for user-managed policies.
+  Create requests with omitted or empty `snapshotPolicies` store no
+  user-managed policies, and non-empty create lists store exactly the caller
+  list.
+- `defaultSnapshotProtectionEnabled` controls the hidden platform-managed
+  baseline. It defaults to enabled when omitted on create, is preserved when
+  omitted on update, rejects null, and is the authoritative public desired state.
+  The handler keeps a materialized `system-default` entry in the stored policy
+  list present if and only if the boolean is true (a fixed `daily`/`04:00Z`/
+  `keep 7` schedule), so the boolean and the stored entry never drift, and that
+  entry is never exposed in public REST responses.
+- `system-default` is a reserved snapshot policy name: a
+  user-managed policy may never use it, independent of whether default snapshot
+  protection is enabled. Server rejects any caller-supplied
+  policy named `system-default` (422) on both create and update, alongside the
+  uniqueness and schedule-shape rules. The name is reserved for the hidden
+  platform-managed baseline, which is materialized into the stored spec only while
+  default protection is enabled.
+- Parent File Storage update preserves existing user-managed snapshot policies
+  when `snapshotPolicies` is omitted, clears them when the list is
+  empty, and replaces them when the list is non-empty.
+- Snapshot policy mutations use File Storage authorization, are blocked while
+  the parent File Storage object is deleting, and mutate only the parent inline
+  desired-state list.
+- Snapshot policy primitive constraints (name pattern and the provider-safe
+  19-character limit, the four-policy caller maximum, retention, and per-field
+  schedule values) are enforced by the OpenAPI schema through the
+  request-validation middleware before the handler runs. The handler validates
+  only the rules the schema cannot express: rejecting duplicate policy names, the
+  reserved `system-default` name, and invalid schedule shapes (the interval/field
+  combinations). The four-policy limit
+  is caller-facing; the stored CRD list allows a fifth entry for the materialized
+  hidden `system-default` baseline, which never counts against the caller maximum.
 - Update preserves the existing allocation annotation while mutating the storage
   resource.
 
@@ -52,6 +105,9 @@ accounting meet.
   derived yet.
 - The package relies heavily on saga compensation because there is no transaction
   boundary for storage-plus-allocation changes.
+- Snapshot policy status is a public projection of stored per-policy conditions.
+  API acceptance means desired state was stored; provider-side protection may
+  still be pending until reconciliation observes it.
 
 ## TODO
 

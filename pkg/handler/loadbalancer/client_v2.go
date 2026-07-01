@@ -33,13 +33,16 @@ import (
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	principal "github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	handlercommon "github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	handlerutil "github.com/unikorn-cloud/region/pkg/handler/util"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -218,8 +221,11 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2Loadbalancer
 	}
 
 	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.LoadBalancer) bool {
-		return !resource.Spec.Tags.ContainsAll(tagSelector) ||
-			rbac.AllowProjectScope(ctx, endpoint, identityapi.Read, resource.Labels[coreconstants.OrganizationLabel], resource.Labels[coreconstants.ProjectLabel]) != nil
+		if !resource.Spec.Tags.ContainsAll(tagSelector) {
+			return true
+		}
+
+		return rbac.AllowProjectScopeReader(ctx, endpoint, identityapi.Read, &resource) != nil
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.LoadBalancer) int {
@@ -240,7 +246,7 @@ func (c *Client) GetV2Raw(ctx context.Context, loadBalancerID string) (*regionv1
 		return nil, fmt.Errorf("%w: unable to lookup load balancer", err)
 	}
 
-	if err := rbac.AllowProjectScope(ctx, endpoint, identityapi.Read, result.Labels[coreconstants.OrganizationLabel], result.Labels[coreconstants.ProjectLabel]); err != nil {
+	if err := rbac.AllowProjectScopeReader(ctx, endpoint, identityapi.Read, result); err != nil {
 		return nil, err
 	}
 
@@ -261,8 +267,8 @@ func (c *Client) GetV2Raw(ctx context.Context, loadBalancerID string) (*regionv1
 	return result, nil
 }
 
-func (c *Client) GetV2(ctx context.Context, loadBalancerID string) (*openapi.LoadBalancerV2Read, error) {
-	result, err := c.GetV2Raw(ctx, loadBalancerID)
+func (c *Client) GetV2(ctx context.Context, loadBalancerID regionids.LoadBalancerID) (*openapi.LoadBalancerV2Read, error) {
+	result, err := c.GetV2Raw(ctx, loadBalancerID.String())
 	if err != nil {
 		return nil, err
 	}
@@ -596,7 +602,7 @@ func generateListenerListV2(in []openapi.LoadBalancerListenerV2) ([]regionv1.Loa
 	return out, nil
 }
 
-func (c *Client) generateV2(ctx context.Context, organizationID, projectID string, request *openapi.LoadBalancerV2Update, network *regionv1.Network, requestedVIPAddress *unikornv1core.IPv4Address) (*regionv1.LoadBalancer, error) {
+func (c *Client) generateV2(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, request *openapi.LoadBalancerV2Update, network *regionv1.Network, requestedVIPAddress *unikornv1core.IPv4Address) (*regionv1.LoadBalancer, error) {
 	listeners, err := generateListenerListV2(request.Spec.Listeners)
 	if err != nil {
 		return nil, err
@@ -604,8 +610,6 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 
 	out := &regionv1.LoadBalancer{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.Namespace).
-			WithOrganization(organizationID).
-			WithProject(projectID).
 			WithLabel(constants.RegionLabel, network.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, network.Labels[constants.IdentityLabel]).
 			WithLabel(constants.NetworkLabel, network.Name).
@@ -619,11 +623,14 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 		},
 	}
 
-	if err := handlerutil.InjectUserPrincipal(ctx, organizationID, projectID); err != nil {
+	// Enrich from the parent network's scope before stamping placement and
+	// attribution: the principal must be populated for the audit metadata, and
+	// the new resource inherits the network's tenancy.
+	if err := principal.EnrichUserPrincipalProjectScopeReader(ctx, network); err != nil {
 		return nil, fmt.Errorf("%w: unable to set principal information", err)
 	}
 
-	if err := identitycommon.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
+	if err := identitycommon.SetIdentityMetadataProjectScope(ctx, &out.ObjectMeta, organizationID, projectID); err != nil {
 		return nil, fmt.Errorf("%w: failed to set identity metadata", err)
 	}
 
@@ -707,7 +714,12 @@ func newCreateSaga(client *Client, request *openapi.LoadBalancerV2Update, networ
 }
 
 func (s *createSaga) generate(ctx context.Context) error {
-	resource, err := s.client.generateV2(ctx, s.network.Labels[coreconstants.OrganizationLabel], s.network.Labels[coreconstants.ProjectLabel], s.request, s.network, s.requestedVIPAddress)
+	organizationID, projectID, err := s.network.OrganizationAndProjectID()
+	if err != nil {
+		return err
+	}
+
+	resource, err := s.client.generateV2(ctx, organizationID, projectID, s.request, s.network, s.requestedVIPAddress)
 	if err != nil {
 		return err
 	}
@@ -750,15 +762,12 @@ func (s *createSaga) Actions() []saga.Action {
 }
 
 func (c *Client) CreateV2(ctx context.Context, request *openapi.LoadBalancerV2Create) (*openapi.LoadBalancerV2Read, error) {
-	networkResource, err := network.New(c.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId)
+	networkResource, err := network.New(c.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId.String())
 	if err != nil {
 		return nil, err
 	}
 
-	organizationID := networkResource.Labels[coreconstants.OrganizationLabel]
-	projectID := networkResource.Labels[coreconstants.ProjectLabel]
-
-	if err := rbac.AllowProjectScopeCreate(ctx, c.Identity, endpoint, identityapi.Create, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeCreateReader(ctx, c.Identity, endpoint, identityapi.Create, networkResource); err != nil {
 		return nil, err
 	}
 
@@ -810,7 +819,12 @@ func newUpdateSaga(client *Client, current *regionv1.LoadBalancer, network *regi
 }
 
 func (s *updateSaga) generate(ctx context.Context) error {
-	required, err := s.client.generateV2(ctx, s.current.Labels[coreconstants.OrganizationLabel], s.current.Labels[coreconstants.ProjectLabel], s.request, s.network, s.current.Spec.RequestedVIPAddress)
+	organizationID, projectID, err := s.current.OrganizationAndProjectID()
+	if err != nil {
+		return err
+	}
+
+	required, err := s.client.generateV2(ctx, organizationID, projectID, s.request, s.network, s.current.Spec.RequestedVIPAddress)
 	if err != nil {
 		return err
 	}
@@ -871,13 +885,13 @@ func (s *updateSaga) Actions() []saga.Action {
 	}
 }
 
-func (c *Client) UpdateV2(ctx context.Context, loadBalancerID string, request *openapi.LoadBalancerV2Update) (*openapi.LoadBalancerV2Read, error) {
-	current, err := c.GetV2Raw(ctx, loadBalancerID)
+func (c *Client) UpdateV2(ctx context.Context, loadBalancerID regionids.LoadBalancerID, request *openapi.LoadBalancerV2Update) (*openapi.LoadBalancerV2Read, error) {
+	current, err := c.GetV2Raw(ctx, loadBalancerID.String())
 	if err != nil {
 		return nil, err
 	}
 
-	if err := rbac.AllowProjectScope(ctx, endpoint, identityapi.Update, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel]); err != nil {
+	if err := rbac.AllowProjectScopeReader(ctx, endpoint, identityapi.Update, current); err != nil {
 		return nil, err
 	}
 
@@ -899,13 +913,13 @@ func (c *Client) UpdateV2(ctx context.Context, loadBalancerID string, request *o
 	return convertV2(s.updated), nil
 }
 
-func (c *Client) DeleteV2(ctx context.Context, loadBalancerID string) error {
-	resource, err := c.GetV2Raw(ctx, loadBalancerID)
+func (c *Client) DeleteV2(ctx context.Context, loadBalancerID regionids.LoadBalancerID) error {
+	resource, err := c.GetV2Raw(ctx, loadBalancerID.String())
 	if err != nil {
 		return err
 	}
 
-	if err := rbac.AllowProjectScope(ctx, endpoint, identityapi.Delete, resource.Labels[coreconstants.OrganizationLabel], resource.Labels[coreconstants.ProjectLabel]); err != nil {
+	if err := rbac.AllowProjectScopeReader(ctx, endpoint, identityapi.Delete, resource); err != nil {
 		return err
 	}
 

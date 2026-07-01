@@ -58,6 +58,19 @@ packages are the concrete provider implementations.
     the real backing resources
   - mirrored provider-state records are not the preferred answer unless the
     state cannot be reconstructed safely enough by other means
+- Provider `Delete*` methods must be idempotent and must tolerate an unrealized
+  identity as a no-op. Callers delegate unconditionally; the provider
+  self-gates on realized identity rather than the caller gating on readiness or
+  status:
+  - rediscover backing resources by name rather than trusting recorded status,
+    and treat already-absent resources as success
+  - when the backing service-principal identity has not been realized (the
+    `OpenstackIdentity` is absent, or has no project allocated yet) nothing
+    could have been created, so the delete returns cleanly instead of erroring
+  - this is safe because finalizer ordering keeps the identity alive until its
+    consumers are gone: at delete time it is either realized-and-complete or
+    never realized. Callers must therefore never gate a delete on identity
+    readiness or recorded status — that belongs to this layer.
 - Providers must tolerate changing backing credentials and region state rather
   than assuming client material is static for process lifetime.
   Credential rotation, secret refresh, and region configuration refresh are part

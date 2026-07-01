@@ -20,7 +20,6 @@ package storage
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"net"
@@ -34,13 +33,16 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/saga"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	principal "github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -62,6 +64,19 @@ type Client struct {
 	common.ClientArgs
 }
 
+type storageV2GenerateRequest struct {
+	Metadata coreopenapi.ResourceWriteMetadata
+	Spec     storageV2GenerateSpec
+}
+
+type storageV2GenerateSpec struct {
+	Attachments                      *openapi.StorageAttachmentV2Spec
+	DefaultSnapshotProtectionEnabled bool
+	SizeGiB                          int64
+	SnapshotPolicies                 *openapi.StorageSnapshotPolicyListV2Spec
+	StorageType                      openapi.StorageTypeV2Spec
+}
+
 // New creates a new client.
 func New(clientArgs common.ClientArgs) *Client {
 	return &Client{
@@ -70,12 +85,16 @@ func New(clientArgs common.ClientArgs) *Client {
 }
 
 func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
+	snapshotPolicies := userManagedSnapshotPolicies(in.Spec.SnapshotPolicies)
+
 	return &openapi.StorageV2Read{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.StorageV2Spec{
 			Attachments: &openapi.StorageAttachmentV2Spec{
 				NetworkIds: convertAttachmentsList(in.Spec.Attachments),
 			},
+			DefaultSnapshotProtectionEnabled: ptr.To(in.Spec.DefaultSnapshotProtectionEnabled),
+			SnapshotPolicies:                 convertSnapshotPoliciesPointer(snapshotPolicies),
 			StorageType: openapi.StorageTypeV2Spec{
 				NFS: checkRegionNFS(in.Spec.NFS),
 			},
@@ -85,7 +104,11 @@ func convertV2(in *regionv1.FileStorage) *openapi.StorageV2Read {
 			RegionId:       in.Labels[constants.RegionLabel],
 			StorageClassId: in.Spec.StorageClassID,
 			Attachments:    convertStatusAttachmentList(in),
-			Usage:          convertUsageStatus(in),
+			SnapshotPolicies: convertSnapshotPolicyStatuses(
+				snapshotPolicies,
+				in.Status.SnapshotPolicies,
+			),
+			Usage: convertUsageStatus(in),
 		},
 	}
 }
@@ -247,8 +270,11 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageP
 	}
 
 	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.FileStorage) bool {
-		return !resource.Spec.Tags.ContainsAll(tagSelector) ||
-			rbac.AllowProjectScope(ctx, "region:filestorage:v2", identityapi.Read, resource.Labels[coreconstants.OrganizationLabel], resource.Labels[coreconstants.ProjectLabel]) != nil
+		if !resource.Spec.Tags.ContainsAll(tagSelector) {
+			return true
+		}
+
+		return rbac.AllowProjectScopeReader(ctx, "region:filestorage:v2", identityapi.Read, &resource) != nil
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.FileStorage) int {
@@ -282,10 +308,7 @@ func (c *Client) GetRaw(ctx context.Context, storageID string) (*regionv1.FileSt
 		return nil, fmt.Errorf("%w: unable to lookup storage", err)
 	}
 
-	err = rbac.AllowProjectScope(ctx, "region:filestorage:v2", identityapi.Read,
-		result.Labels[coreconstants.OrganizationLabel], result.Labels[coreconstants.ProjectLabel])
-
-	if err != nil {
+	if err := rbac.AllowProjectScopeReader(ctx, "region:filestorage:v2", identityapi.Read, result); err != nil {
 		return nil, err
 	}
 
@@ -293,8 +316,8 @@ func (c *Client) GetRaw(ctx context.Context, storageID string) (*regionv1.FileSt
 }
 
 // Get returns a storage object for a specific storageID.
-func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2Read, error) {
-	result, err := c.GetRaw(ctx, storageID)
+func (c *Client) Get(ctx context.Context, storageID regionids.FileStorageID) (*openapi.StorageV2Read, error) {
+	result, err := c.GetRaw(ctx, storageID.String())
 	if err != nil {
 		return nil, err
 	}
@@ -304,29 +327,27 @@ func (c *Client) Get(ctx context.Context, storageID string) (*openapi.StorageV2R
 	return storage, nil
 }
 
-func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regionID string, request *openapi.StorageV2Update, storageClass *openapi.StorageClassV2Read) (*regionv1.FileStorage, error) {
+func (c *Client) generateV2(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, regionID string, request *storageV2GenerateRequest, storageClass *openapi.StorageClassV2Read) (*regionv1.FileStorage, error) {
 	networkClient := network.New(c.ClientArgs)
-
-	err := util.InjectUserPrincipal(ctx, organizationID, projectID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: unable to set principal information", err)
-	}
 
 	attachments, err := generateAttachmentList(ctx, networkClient, request, storageClass.Spec.Parallelism)
 	if err != nil {
 		return nil, err
 	}
 
+	defaultSnapshotProtectionEnabled := request.Spec.DefaultSnapshotProtectionEnabled
+	policies := generateSnapshotPolicies(request.Spec.SnapshotPolicies)
+
 	out := &regionv1.FileStorage{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.Namespace).
-			WithOrganization(organizationID).
-			WithProject(projectID).
 			WithLabel(constants.RegionLabel, regionID).
 			Get(),
 		Spec: regionv1.FileStorageSpec{
-			Tags:        conversion.GenerateTagList(request.Metadata.Tags),
-			Size:        *gibToQuantity(request.Spec.SizeGiB),
-			Attachments: attachments,
+			Tags:                             conversion.GenerateTagList(request.Metadata.Tags),
+			Size:                             *gibToQuantity(request.Spec.SizeGiB),
+			Attachments:                      attachments,
+			DefaultSnapshotProtectionEnabled: defaultSnapshotProtectionEnabled,
+			SnapshotPolicies:                 materializeDefaultSnapshotProtection(policies, defaultSnapshotProtectionEnabled),
 			NFS: &regionv1.NFS{
 				RootSquash: checkRootSquash(request.Spec.StorageType.NFS),
 			},
@@ -334,8 +355,14 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID, regi
 		},
 	}
 
-	err = identitycommon.SetIdentityMetadata(ctx, &out.ObjectMeta)
-	if err != nil {
+	// Root create: no parent resource to read scope from, so enrich the principal
+	// from the typed request IDs before stamping. Attribution still sees the
+	// populated principal, and out needs no early placement labels.
+	if err := principal.EnrichUserPrincipalProjectScopeID(ctx, organizationID, projectID); err != nil {
+		return nil, fmt.Errorf("%w: unable to set principal information", err)
+	}
+
+	if err := identitycommon.SetIdentityMetadataProjectScope(ctx, &out.ObjectMeta, organizationID, projectID); err != nil {
 		return nil, fmt.Errorf("%w: failed to set identity metadata", err)
 	}
 
@@ -352,7 +379,7 @@ func checkRootSquash(nfs *openapi.NFSV2Spec) bool {
 	return true
 }
 
-func generateAttachmentList(ctx context.Context, networkClient *network.Client, in *openapi.StorageV2Update, parallelism int) ([]regionv1.Attachment, error) {
+func generateAttachmentList(ctx context.Context, networkClient *network.Client, in *storageV2GenerateRequest, parallelism int) ([]regionv1.Attachment, error) {
 	if in == nil || in.Spec.Attachments == nil {
 		return []regionv1.Attachment{}, nil
 	}
@@ -459,31 +486,46 @@ func narrowStorageRange(in *regionv1.AttachmentIPRange, parallelism int) *region
 	}
 }
 
-func convertCreateToUpdateRequest(in *openapi.StorageV2Create) (*openapi.StorageV2Update, error) {
-	t, err := json.Marshal(in)
-	if err != nil {
-		return nil, fmt.Errorf("%w: failed to marshal request", err)
+func generateRequestFromCreate(in *openapi.StorageV2Create) *storageV2GenerateRequest {
+	return &storageV2GenerateRequest{
+		Metadata: in.Metadata,
+		Spec: storageV2GenerateSpec{
+			Attachments: in.Spec.Attachments,
+			// Default snapshot protection is enabled on create unless the caller opts out.
+			DefaultSnapshotProtectionEnabled: ptr.Deref(in.Spec.DefaultSnapshotProtectionEnabled, true),
+			SizeGiB:                          in.Spec.SizeGiB,
+			SnapshotPolicies:                 in.Spec.SnapshotPolicies,
+			StorageType:                      in.Spec.StorageType,
+		},
 	}
+}
 
-	out := &openapi.StorageV2Update{}
-
-	if err := json.Unmarshal(t, out); err != nil {
-		return nil, fmt.Errorf("%w: failed to unmarshal request", err)
+func generateRequestFromUpdate(in *openapi.StorageV2Update, currentDefaultProtection bool) *storageV2GenerateRequest {
+	return &storageV2GenerateRequest{
+		Metadata: in.Metadata,
+		Spec: storageV2GenerateSpec{
+			Attachments: in.Spec.Attachments,
+			// An omitted field preserves the current default-protection state.
+			DefaultSnapshotProtectionEnabled: ptr.Deref(in.Spec.DefaultSnapshotProtectionEnabled, currentDefaultProtection),
+			SizeGiB:                          in.Spec.SizeGiB,
+			SnapshotPolicies:                 in.Spec.SnapshotPolicies,
+			StorageType:                      in.Spec.StorageType,
+		},
 	}
-
-	return out, nil
 }
 
 // CreateV2 satisifies an http PUT action by creating a unique storage object.
 // It does this leveraging the saga system which acts as a tape to enable rollbacks
 // in case of errors.
 func (c *Client) CreateV2(ctx context.Context, request *openapi.StorageV2Create) (*openapi.StorageV2Read, error) {
-	if err := rbac.AllowProjectScopeCreate(ctx, c.Identity, "region:filestorage:v2", identityapi.Create,
-		request.Spec.OrganizationId, request.Spec.ProjectId); err != nil {
+	s, err := newCreateSaga(c, request)
+	if err != nil {
 		return nil, err
 	}
 
-	s := newCreateSaga(c, request)
+	if err := rbac.AllowProjectScopeCreateID(ctx, c.Identity, "region:filestorage:v2", identityapi.Create, s.organizationID, s.projectID); err != nil {
+		return nil, err
+	}
 
 	if err := saga.Run(ctx, s); err != nil {
 		return nil, err
@@ -496,13 +538,13 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.StorageV2Create)
 // to the storage ID.
 // it leverages the update saga system, which acts as a tape to enable rollbacks
 // in case of errors.
-func (c *Client) Update(ctx context.Context, storageID string, request *openapi.StorageV2Update) (*openapi.StorageV2Read, error) {
-	current, err := c.GetRaw(ctx, storageID)
+func (c *Client) Update(ctx context.Context, storageID regionids.FileStorageID, request *openapi.StorageV2Update) (*openapi.StorageV2Read, error) {
+	current, err := c.GetRaw(ctx, storageID.String())
 	if err != nil {
 		return nil, err
 	}
 
-	if err := rbac.AllowProjectScope(ctx, "region:filestorage:v2", identityapi.Delete, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel]); err != nil {
+	if err := rbac.AllowProjectScopeReader(ctx, "region:filestorage:v2", identityapi.Update, current); err != nil {
 		return nil, err
 	}
 
@@ -528,16 +570,13 @@ func (c *Client) Update(ctx context.Context, storageID string, request *openapi.
 // Delete satisfies the http DELETE action by removing the client.
 // It does not leverage the saga system because we can rely on finalizers
 // to handle this for us.
-func (c *Client) Delete(ctx context.Context, storageID string) error {
-	resource, err := c.GetRaw(ctx, storageID)
+func (c *Client) Delete(ctx context.Context, storageID regionids.FileStorageID) error {
+	resource, err := c.GetRaw(ctx, storageID.String())
 	if err != nil {
 		return err
 	}
 
-	organizationID := resource.Labels[coreconstants.OrganizationLabel]
-	projectID := resource.Labels[coreconstants.ProjectLabel]
-
-	if err := rbac.AllowProjectScope(ctx, "region:filestorage:v2", identityapi.Delete, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeReader(ctx, "region:filestorage:v2", identityapi.Delete, resource); err != nil {
 		return err
 	}
 
@@ -656,5 +695,10 @@ func authorizeFileStorageClassRead(ctx context.Context, resource *regionv1.FileS
 		return nil
 	}
 
-	return rbac.AllowOrganizationScope(ctx, "region:filestorageclass:v2", identityapi.Read, orgID)
+	organizationID, err := identityids.ParseOrganizationID(orgID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid organization ID in file storage class labels", err)
+	}
+
+	return rbac.AllowOrganizationScopeID(ctx, "region:filestorageclass:v2", identityapi.Read, organizationID)
 }

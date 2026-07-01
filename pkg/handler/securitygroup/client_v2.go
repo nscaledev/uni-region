@@ -25,18 +25,20 @@ import (
 	"slices"
 
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
-	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	principal "github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -152,8 +154,11 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2Securitygrou
 	}
 
 	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.SecurityGroup) bool {
-		return !resource.Spec.Tags.ContainsAll(tagSelector) ||
-			rbac.AllowProjectScope(ctx, "region:securitygroups:v2", identityapi.Read, resource.Labels[coreconstants.OrganizationLabel], resource.Labels[coreconstants.ProjectLabel]) != nil
+		if !resource.Spec.Tags.ContainsAll(tagSelector) {
+			return true
+		}
+
+		return rbac.AllowProjectScopeReader(ctx, "region:securitygroups:v2", identityapi.Read, &resource) != nil
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.SecurityGroup) int {
@@ -174,7 +179,7 @@ func (c *Client) GetV2Raw(ctx context.Context, securityGroupID string) (*regionv
 		return nil, fmt.Errorf("%w: unable to lookup security group", err)
 	}
 
-	if err := rbac.AllowProjectScope(ctx, "region:securitygroups:v2", identityapi.Read, result.Labels[coreconstants.OrganizationLabel], result.Labels[coreconstants.ProjectLabel]); err != nil {
+	if err := rbac.AllowProjectScopeReader(ctx, "region:securitygroups:v2", identityapi.Read, result); err != nil {
 		return nil, err
 	}
 
@@ -196,8 +201,8 @@ func (c *Client) GetV2Raw(ctx context.Context, securityGroupID string) (*regionv
 	return result, nil
 }
 
-func (c *Client) GetV2(ctx context.Context, securityGroupID string) (*openapi.SecurityGroupV2Read, error) {
-	result, err := c.GetV2Raw(ctx, securityGroupID)
+func (c *Client) GetV2(ctx context.Context, securityGroupID regionids.SecurityGroupID) (*openapi.SecurityGroupV2Read, error) {
+	result, err := c.GetV2Raw(ctx, securityGroupID.String())
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +297,7 @@ func generateRuleListV2(in openapi.SecurityGroupRuleV2List) ([]regionv1.Security
 	return out, nil
 }
 
-func (c *Client) generateV2(ctx context.Context, organizationID, projectID string, request *openapi.SecurityGroupV2Update, network *regionv1.Network) (*regionv1.SecurityGroup, error) {
+func (c *Client) generateV2(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, request *openapi.SecurityGroupV2Update, network *regionv1.Network) (*regionv1.SecurityGroup, error) {
 	rules, err := generateRuleListV2(request.Spec.Rules)
 	if err != nil {
 		return nil, err
@@ -300,8 +305,6 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 
 	out := &regionv1.SecurityGroup{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.Namespace).
-			WithOrganization(organizationID).
-			WithProject(projectID).
 			WithLabel(constants.RegionLabel, network.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, network.Labels[constants.IdentityLabel]).
 			WithLabel(constants.NetworkLabel, network.Name).
@@ -313,11 +316,14 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 		},
 	}
 
-	if err := util.InjectUserPrincipal(ctx, organizationID, projectID); err != nil {
+	// Enrich from the parent network's scope before stamping placement and
+	// attribution: the principal must be populated for the audit metadata, and
+	// the new resource inherits the network's tenancy.
+	if err := principal.EnrichUserPrincipalProjectScopeReader(ctx, network); err != nil {
 		return nil, fmt.Errorf("%w: unable to set principal information", err)
 	}
 
-	if err := common.SetIdentityMetadata(ctx, &out.ObjectMeta); err != nil {
+	if err := common.SetIdentityMetadataProjectScope(ctx, &out.ObjectMeta, organizationID, projectID); err != nil {
 		return nil, fmt.Errorf("%w: failed to set identity metadata", err)
 	}
 
@@ -330,15 +336,17 @@ func (c *Client) generateV2(ctx context.Context, organizationID, projectID strin
 
 func (c *Client) CreateV2(ctx context.Context, request *openapi.SecurityGroupV2Create) (*openapi.SecurityGroupV2Read, error) {
 	// Check the network exists, and the user has permission to it.
-	network, err := network.New(c.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId)
+	network, err := network.New(c.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId.String())
 	if err != nil {
 		return nil, err
 	}
 
-	organizationID := network.Labels[coreconstants.OrganizationLabel]
-	projectID := network.Labels[coreconstants.ProjectLabel]
+	organizationID, projectID, err := network.OrganizationAndProjectID()
+	if err != nil {
+		return nil, err
+	}
 
-	if err := rbac.AllowProjectScopeCreate(ctx, c.Identity, "region:securitygroups:v2", identityapi.Create, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeCreateID(ctx, c.Identity, "region:securitygroups:v2", identityapi.Create, organizationID, projectID); err != nil {
 		return nil, err
 	}
 
@@ -359,13 +367,18 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.SecurityGroupV2C
 	return convertV2(resource), nil
 }
 
-func (c *Client) UpdateV2(ctx context.Context, securityGroupID string, request *openapi.SecurityGroupV2Update) (*openapi.SecurityGroupV2Read, error) {
-	current, err := c.GetV2Raw(ctx, securityGroupID)
+func (c *Client) UpdateV2(ctx context.Context, securityGroupID regionids.SecurityGroupID, request *openapi.SecurityGroupV2Update) (*openapi.SecurityGroupV2Read, error) {
+	current, err := c.GetV2Raw(ctx, securityGroupID.String())
 	if err != nil {
 		return nil, err
 	}
 
-	if err := rbac.AllowProjectScope(ctx, "region:securitygroups:v2", identityapi.Delete, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel]); err != nil {
+	organizationID, projectID, err := current.OrganizationAndProjectID()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := rbac.AllowProjectScopeID(ctx, "region:securitygroups:v2", identityapi.Delete, organizationID, projectID); err != nil {
 		return nil, err
 	}
 
@@ -379,7 +392,7 @@ func (c *Client) UpdateV2(ctx context.Context, securityGroupID string, request *
 		return nil, err
 	}
 
-	required, err := c.generateV2(ctx, current.Labels[coreconstants.OrganizationLabel], current.Labels[coreconstants.ProjectLabel], request, network)
+	required, err := c.generateV2(ctx, organizationID, projectID, request, network)
 	if err != nil {
 		return nil, err
 	}
@@ -396,13 +409,13 @@ func (c *Client) UpdateV2(ctx context.Context, securityGroupID string, request *
 	return convertV2(updated), nil
 }
 
-func (c *Client) DeleteV2(ctx context.Context, securityGroupID string) error {
-	resource, err := c.GetV2Raw(ctx, securityGroupID)
+func (c *Client) DeleteV2(ctx context.Context, securityGroupID regionids.SecurityGroupID) error {
+	resource, err := c.GetV2Raw(ctx, securityGroupID.String())
 	if err != nil {
 		return err
 	}
 
-	if err := rbac.AllowProjectScope(ctx, "region:securitygroups:v2", identityapi.Delete, resource.Labels[coreconstants.OrganizationLabel], resource.Labels[coreconstants.ProjectLabel]); err != nil {
+	if err := rbac.AllowProjectScopeReader(ctx, "region:securitygroups:v2", identityapi.Delete, resource); err != nil {
 		return err
 	}
 

@@ -21,8 +21,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
-	"github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -30,47 +28,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 )
-
-func TestInjectUserPrincipalMissingPrincipalReturnsError(t *testing.T) {
-	t.Parallel()
-
-	err := util.InjectUserPrincipal(t.Context(), "org-id", "project-id")
-	require.Error(t, err)
-	require.ErrorIs(t, err, coreerrors.ErrInvalidContext)
-}
-
-func TestInjectUserPrincipalSetsFieldsWhenOrganizationEmpty(t *testing.T) {
-	t.Parallel()
-
-	p := &principal.Principal{Actor: "actor@example.com"}
-	ctx := principal.NewContext(t.Context(), p)
-
-	err := util.InjectUserPrincipal(ctx, "org-id", "project-id")
-	require.NoError(t, err)
-
-	got, err := principal.FromContext(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "org-id", got.OrganizationID)
-	require.Equal(t, "project-id", got.ProjectID)
-}
-
-func TestInjectUserPrincipalDoesNotOverwriteExistingOrganization(t *testing.T) {
-	t.Parallel()
-
-	p := &principal.Principal{
-		OrganizationID: "existing-org",
-		ProjectID:      "existing-project",
-	}
-	ctx := principal.NewContext(t.Context(), p)
-
-	err := util.InjectUserPrincipal(ctx, "request-org", "request-project")
-	require.NoError(t, err)
-
-	got, err := principal.FromContext(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "existing-org", got.OrganizationID)
-	require.Equal(t, "existing-project", got.ProjectID)
-}
 
 func TestOrganizationIDQueryNilReturnsNil(t *testing.T) {
 	t.Parallel()

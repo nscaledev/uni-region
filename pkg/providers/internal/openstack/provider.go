@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
@@ -279,6 +280,29 @@ func (p *Provider) providerForServerCreate(ctx context.Context, identity *unikor
 	return p.getProviderFromServicePrincipal(ctx, identity)
 }
 
+// baremetalPhaseProvider returns the credential provider used for Ironic
+// node lookups that feed Server Phase derivation. Node-to-instance mapping
+// is provider infrastructure state, so use the top-level Region credentials
+// scoped to the service principal's project rather than the tenant
+// service-principal credentials.
+func (p *Provider) baremetalPhaseProvider(ctx context.Context, identity *unikornv1.Identity) (CredentialProvider, error) {
+	return p.getPrivilegedProviderFromServicePrincipal(ctx, identity)
+}
+
+func (p *Provider) baremetalForPhase(ctx context.Context, identity *unikornv1.Identity) (BaremetalInterface, error) {
+	provider, err := p.baremetalPhaseProvider(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := NewBaremetalClient(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
 // computeForServerCreate gets a compute client for creating a server.
 func (p *Provider) computeForServerCreate(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) (ComputeInterface, error) {
 	provider, err := p.providerForServerCreate(ctx, identity, server)
@@ -428,6 +452,7 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 				metadata := &region.Spec.Openstack.Compute.Flavors.Metadata[i]
 
 				f.Baremetal = metadata.Baremetal
+				f.PinnedOnly = metadata.PinnedOnly
 
 				if metadata.CPU != nil {
 					if metadata.CPU.Architecture != nil {
@@ -1530,6 +1555,9 @@ func (p *Provider) reconcileNetwork(ctx context.Context, client NetworkInterface
 	result, err = client.CreateNetwork(ctx, network, vlanID)
 	if err != nil {
 		log.Error(err, "failed to create OpenStack network", "networkID", network.Name, "vlanID", vlanID)
+		// Keep any allocated VLAN assigned to this Network until delete. Returning
+		// it to the pool on create failure can hand the same problematic VLAN to
+		// another Network and spread the failure.
 
 		return nil, err
 	}
@@ -1693,8 +1721,44 @@ func (p *Provider) CreateNetwork(ctx context.Context, identity *unikornv1.Identi
 	return nil
 }
 
+// openstackIdentityProvisioned reports whether the service principal has been
+// realized far enough to build a project-scoped client. Finalizer ordering
+// keeps the identity alive until its consumers are gone, so on delete paths a
+// not-yet-provisioned identity (absent, or no project allocated) means nothing
+// provider-side was ever created and the delete is a no-op. Never use this to
+// gate create paths: there the missing project must surface as an error so the
+// manager requeues.
+//
+// The project is the deliberate watermark: it is allocated before any provider
+// resource (a VLAN, Neutron or Octavia object) can be created, so its absence
+// is sufficient to prove nothing exists to delete. Later identity fields (user,
+// password) gate specific clients and still surface their own errors past this
+// point, which is correct: those deletes are idempotent and the manager
+// requeues.
+func (p *Provider) openstackIdentityProvisioned(ctx context.Context, identity *unikornv1.Identity) (bool, error) {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		if kerrors.IsNotFound(err) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	return openstackIdentity.Spec.ProjectID != nil, nil
+}
+
 // DeleteNetwork deletes a physical network.
 func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identity, network *unikornv1.Network) error {
+	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	if !provisioned {
+		return nil
+	}
+
 	// NOTE: this is a privileged network client as it needs permissions
 	// from the manager policy in order to see provider networks for VLAN
 	// deallocation.
@@ -1755,22 +1819,25 @@ func (p *Provider) deleteNetwork(ctx context.Context, networking NetworkingInter
 		}
 	}
 
-	region, _ := p.openstack.regionSnapshot()
-	if region.Spec.Openstack != nil && region.Spec.Openstack.Network.UseProviderNetworks() {
-		// NetworkID is the allocator source of truth; status and OpenStack
-		// resources can both be missing during delete.
-		log.V(1).Info("freeing vlan", "networkID", network.Name)
-
-		if err := p.vlanAllocator.FreeByNetworkID(ctx, network.Name); err != nil {
-			return fmt.Errorf("%w: failed to free vlan", err)
-		}
-	}
-
 	if openstackNetwork != nil {
 		log.V(1).Info("deleting network")
 
 		if err := networking.DeleteNetwork(ctx, openstackNetwork.ID); err != nil {
 			return err
+		}
+	}
+
+	region, _ := p.openstack.regionSnapshot()
+	if region.Spec.Openstack != nil && region.Spec.Openstack.Network.UseProviderNetworks() {
+		// NetworkID is the allocator source of truth; status and OpenStack
+		// resources can both be missing during delete.
+		// NOTE: VLAN is freed after the Neutron network is confirmed deleted so
+		// that a failed DeleteNetwork cannot leave the allocator out of sync with
+		// OpenStack (which would cause VlanIdInUse on the next allocation).
+		log.V(1).Info("freeing vlan", "networkID", network.Name)
+
+		if err := p.vlanAllocator.FreeByNetworkID(ctx, network.Name); err != nil {
+			return fmt.Errorf("%w: failed to free vlan", err)
 		}
 	}
 
@@ -2020,6 +2087,15 @@ func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.
 func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
 	log := log.FromContext(ctx)
 
+	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	if !provisioned {
+		return nil
+	}
+
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
 		return err
@@ -2077,8 +2153,27 @@ func setServerHealthStatus(server *unikornv1.Server, openstackserver *servers.Se
 	server.StatusConditionWrite(unikornv1core.ConditionHealthy, status, reason, message)
 }
 
+// buildPhase picks the right Phase for a server Nova reports as BUILD. VMs
+// and baremetal lookups that failed fall back to Building (the honest "we
+// don't know more than Nova does" answer); a successful Ironic lookup
+// further distinguishes Queued (pre-deploy) from Building (deploy underway).
+func buildPhase(ironicNode *nodes.Node) unikornv1.InstanceLifecyclePhase {
+	if ironicNode == nil {
+		return unikornv1.InstanceLifecyclePhaseBuilding
+	}
+
+	return baremetalBuildPhase(ironicNode)
+}
+
 // https://docs.openstack.org/api-guide/compute/server_concepts.html
-func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserver *servers.Server) {
+// ironicNode is the Ironic node lookup result for a baremetal server in Nova
+// BUILD. It is nil for VMs, non-BUILD states, non-baremetal flavors, or when
+// the Ironic lookup failed (graceful degradation).
+//
+// BUILD-window branch. Breaking it up further would scatter Phase derivation.
+//
+//nolint:cyclop // Fan-out matches OpenStack's PowerState enum surface plus the BUILD branch that consults Ironic via buildPhase; collapsing it would scatter Phase derivation across helpers.
+func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserver *servers.Server, ironicNode *nodes.Node) {
 	// Default to `Pending` if the phase is not already set. This should only happen to old servers created before we had phases.
 	if server.Status.Phase == "" {
 		server.Status.Phase = unikornv1.InstanceLifecyclePhasePending
@@ -2099,6 +2194,28 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 	if !openstackserver.LaunchedAt.IsZero() {
 		t := metav1.NewTime(openstackserver.LaunchedAt)
 		server.Status.LaunchedAt = &t
+
+		// ProvisionedAt is a write-once latch recording that the server has booted
+		// at least once. It mirrors the same Nova launched_at signal as LaunchedAt
+		// (set here, ahead of the BUILD early-return and independent of power
+		// state, so it fires for VMs and baremetal alike) but, unlike LaunchedAt,
+		// it is never cleared: not by the provider-create retry reset, nor by a
+		// re-reconcile against a flaky provider. The bounded delete-and-retry guard
+		// keys off it so a server that has booted is never rebuilt, which would
+		// destroy data.
+		if server.Status.ProvisionedAt == nil {
+			server.Status.ProvisionedAt = &t
+		}
+	}
+
+	// Nova BUILD is the window where the live monitor refines the lifecycle
+	// view beyond what PowerState alone can express. PowerState is NOSTATE
+	// throughout BUILD, so we look at server.Status + the optional Ironic
+	// state to pick Queued vs Building.
+	if openstackserver.Status == "BUILD" {
+		server.Status.Phase = buildPhase(ironicNode)
+
+		return
 	}
 
 	switch openstackserver.PowerState {
@@ -2107,6 +2224,14 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 	case servers.RUNNING:
 		server.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
 	case servers.SHUTDOWN:
+		// TODO: Stopping is only ever written by the handler in response to a
+		// user-initiated stop. If a monitor poll lands while OpenStack is
+		// already reporting SHUTOFF/SHUTDOWN (e.g. the user stopped via the
+		// OpenStack dashboard rather than the platform API, or the platform
+		// missed the transient Stopping window), this flips Stopping → Stopped
+		// without ever observing the in-flight state on Phase. Pre-existing
+		// behaviour, follow-up work in a later PR; leaving the mapping as-is
+		// here to keep the INST-921 stack scoped.
 		server.Status.Phase = unikornv1.InstanceLifecyclePhaseStopped
 	case servers.CRASHED:
 		// REVIEW_ME: What should we do when the server crashes?
@@ -2319,7 +2444,7 @@ func (p *Provider) reconcileLoadBalancerFloatingIP(ctx context.Context, client F
 	return nil
 }
 
-func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
+func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight serverCreatePreflight) (*servers.Server, error) {
 	log := log.FromContext(ctx)
 
 	openstackServer, err := client.GetServer(ctx, server)
@@ -2368,6 +2493,12 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 		metadata[k] = v
 	}
 
+	if preflight != nil {
+		if err := preflight(ctx, server); err != nil {
+			return nil, err
+		}
+	}
+
 	log.V(1).Info("creating server")
 
 	openstackServer, err = client.CreateServer(ctx, server, keyName, networks, nil, metadata)
@@ -2376,7 +2507,9 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 	}
 
 	setServerHealthStatus(server, openstackServer)
-	setServerPhase(ctx, server, openstackServer)
+	// No Ironic lookup at create time — the live monitor's UpdateServerState
+	// refines Phase from observed Ironic state on each poll.
+	setServerPhase(ctx, server, openstackServer, nil)
 
 	return openstackServer, nil
 }
@@ -2420,7 +2553,7 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
-	if _, err := p.reconcileServer(ctx, compute, serverForCreate, port, resolveServerKeyName(server, openstackIdentity)); err != nil {
+	if _, err := p.reconcileServer(ctx, compute, serverForCreate, port, resolveServerKeyName(server, openstackIdentity), p.serverCreatePlacementPreflight(identity, compute)); err != nil {
 		return err
 	}
 
@@ -2444,6 +2577,15 @@ func resolveServerKeyName(server *unikornv1.Server, identity *unikornv1.Openstac
 //nolint:cyclop
 func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	log := log.FromContext(ctx)
+
+	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	if !provisioned {
+		return nil
+	}
 
 	compute, err := p.computeFromServicePrincipal(ctx, identity)
 	if err != nil {
@@ -2583,13 +2725,62 @@ func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Id
 		return err
 	}
 
+	return p.updateServerStateWithClients(ctx, identity, server, compute, p.baremetalForPhase)
+}
+
+// lookupIronicNodeForPhase fetches the bound Ironic node for a baremetal
+// server in Nova BUILD so setServerPhase can distinguish Queued (pre-deploy)
+// from Building (active deploy). All failure modes log and return nil;
+// setServerPhase then falls back to Building, matching the VM default — the
+// monitor must never error on a missing or unreachable Ironic.
+func (p *Provider) lookupIronicNodeForPhase(
+	ctx context.Context,
+	identity *unikornv1.Identity,
+	server *unikornv1.Server,
+	openstackServer *servers.Server,
+	baremetalForPhase func(context.Context, *unikornv1.Identity) (BaremetalInterface, error),
+) *nodes.Node {
+	baremetalClient, err := baremetalForPhase(ctx, identity)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "failed to create ironic client for server phase derivation", "server", server.Name, "flavor", server.Spec.FlavorID, "instance_uuid", openstackServer.ID)
+
+		return nil
+	}
+
+	node, err := baremetalClient.GetNodeByInstanceUUID(ctx, openstackServer.ID)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "failed to get ironic node for server", "instance_uuid", openstackServer.ID)
+
+		return nil
+	}
+
+	return node
+}
+
+func (p *Provider) updateServerStateWithClients(
+	ctx context.Context,
+	identity *unikornv1.Identity,
+	server *unikornv1.Server,
+	compute ComputeInterface,
+	baremetalForPhase func(context.Context, *unikornv1.Identity) (BaremetalInterface, error),
+) error {
 	openstackServer, err := compute.GetServer(ctx, server)
 	if err != nil {
 		return err
 	}
 
 	setServerHealthStatus(server, openstackServer)
-	setServerPhase(ctx, server, openstackServer)
+
+	region, _ := p.openstack.regionSnapshot()
+	baremetal := isBaremetalFlavor(region, server.Spec.FlavorID)
+
+	var ironicNode *nodes.Node
+
+	if shouldCallIronicForPhase(*openstackServer, baremetal) {
+		ironicNode = p.lookupIronicNodeForPhase(ctx, identity, server, openstackServer, baremetalForPhase)
+	}
+
+	setServerPhase(ctx, server, openstackServer, ironicNode)
 
 	return nil
 }
@@ -3474,6 +3665,15 @@ func (p *Provider) createLoadBalancer(ctx context.Context, lbClient LoadBalancin
 // IP idempotently. It yields while Octavia is in any PENDING_* state and
 // after issuing a cascade delete so the next reconcile can confirm completion.
 func (p *Provider) DeleteLoadBalancer(ctx context.Context, identity *unikornv1.Identity, loadBalancer *unikornv1.LoadBalancer) error {
+	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	if !provisioned {
+		return nil
+	}
+
 	lbClient, err := p.loadBalancerFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err
