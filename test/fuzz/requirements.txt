@@ -1,0 +1,7 @@
+# Layer-1 API fuzzing harness dependencies.
+# Pinned for deterministic, reproducible CI runs. pytest and requests are
+# pulled in transitively by schemathesis but are pinned here because the
+# harness imports them directly.
+schemathesis==4.21.1
+pytest==9.0.3
+requests==2.34.2
