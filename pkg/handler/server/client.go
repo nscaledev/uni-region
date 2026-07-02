@@ -126,7 +126,7 @@ func (c *Client) Create(ctx context.Context, organizationID identityids.Organiza
 		return nil, providers.ProviderToServerError(err)
 	}
 
-	if _, err := provider.GetImage(ctx, organizationID.String(), request.Spec.ImageId.String()); err != nil {
+	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
@@ -170,7 +170,7 @@ func (c *Client) Update(ctx context.Context, organizationID identityids.Organiza
 		return nil, providers.ProviderToServerError(err)
 	}
 
-	if _, err := provider.GetImage(ctx, organizationID.String(), request.Spec.ImageId.String()); err != nil {
+	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}

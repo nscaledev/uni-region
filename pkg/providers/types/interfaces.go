@@ -21,7 +21,9 @@ package types
 import (
 	"context"
 
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 )
 
 type ImageQuery interface {
@@ -30,10 +32,10 @@ type ImageQuery interface {
 
 	// AvailableToOrganization adds a predicate to the query, which will
 	// include only those images that can be used by the identified organization.
-	AvailableToOrganization(organizationID ...string) ImageQuery
+	AvailableToOrganization(organizationID ...identityids.OrganizationID) ImageQuery
 	// OwnedByOrganization adds a predicate to the query, to include only images that
 	// are owned specifically by the organizations identified.
-	OwnedByOrganization(organizationID ...string) ImageQuery
+	OwnedByOrganization(organizationID ...identityids.OrganizationID) ImageQuery
 	// StatusIn adds a predicate to the query such that only images with one of
 	// the given statuses will be included.
 	StatusIn(statuses ...ImageStatus) ImageQuery
@@ -44,14 +46,14 @@ type ImageRead interface {
 	// It might return an error if this provider doesn't support querying images.
 	QueryImages() (ImageQuery, error)
 	// GetImage retrieves a specific image by its ID.
-	GetImage(ctx context.Context, organizationID, imageID string) (*Image, error)
+	GetImage(ctx context.Context, organizationID identityids.OrganizationID, imageID regionids.ImageID) (*Image, error)
 }
 
 type ImageWrite interface {
 	// CreateImageForUpload creates a new image resource for upload.
 	CreateImage(ctx context.Context, image *Image, uri string) (*Image, error)
 	// DeleteImage deletes an image.
-	DeleteImage(ctx context.Context, imageID string) error
+	DeleteImage(ctx context.Context, imageID regionids.ImageID) error
 }
 
 type Identity interface {

@@ -32,7 +32,7 @@ import (
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
-	regionids "github.com/unikorn-cloud/region/pkg/ids"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 
 	"k8s.io/utils/ptr"
@@ -157,7 +157,7 @@ func NewNetworkPayload(orgID, projectID, regionID string) *NetworkPayloadBuilder
 			Spec: regionopenapi.NetworkV2CreateSpec{
 				OrganizationId: orgID,
 				ProjectId:      projectID,
-				RegionId:       regionids.MustParseRegionID(regionID),
+				RegionId:       idstest.MustParseRegionID(regionID),
 				Prefix:         "10.0.0.0/16",
 				DnsNameservers: []regionopenapi.Ipv4Address{"8.8.8.8"},
 			},
@@ -192,7 +192,7 @@ func NewLoadBalancerPayload(networkID string) *LoadBalancerPayloadBuilder {
 				Name: UniqueName("lb"),
 			},
 			Spec: regionopenapi.LoadBalancerV2CreateSpec{
-				NetworkId: regionids.MustParseNetworkID(networkID),
+				NetworkId: idstest.MustParseNetworkID(networkID),
 				Listeners: []regionopenapi.LoadBalancerListenerV2{
 					{
 						Name:     "http",
@@ -297,7 +297,7 @@ func NewSecurityGroupPayload(networkID string) *SecurityGroupPayloadBuilder {
 				Name: UniqueName("sg"),
 			},
 			Spec: regionopenapi.SecurityGroupV2CreateSpec{
-				NetworkId: regionids.MustParseNetworkID(networkID),
+				NetworkId: idstest.MustParseNetworkID(networkID),
 				Rules: regionopenapi.SecurityGroupRuleV2List{
 					{
 						Direction: regionopenapi.NetworkDirectionIngress,
@@ -340,9 +340,9 @@ func NewServerPayload(networkID, flavorID, imageID string) *ServerPayloadBuilder
 				Name: UniqueName("server"),
 			},
 			Spec: regionopenapi.ServerV2CreateSpec{
-				NetworkId: regionids.MustParseNetworkID(networkID),
-				FlavorId:  regionids.MustParseFlavorID(flavorID),
-				ImageId:   regionids.MustParseImageID(imageID),
+				NetworkId: idstest.MustParseNetworkID(networkID),
+				FlavorId:  idstest.MustParseFlavorID(flavorID),
+				ImageId:   idstest.MustParseImageID(imageID),
 			},
 		},
 	}

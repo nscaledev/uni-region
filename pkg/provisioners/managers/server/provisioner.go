@@ -115,7 +115,7 @@ func (p *Provisioner) networkIDs() []string {
 
 	// TODO: ensure the API rejects repeats.
 	for i := range p.server.Spec.Networks {
-		ids[i] = p.server.Spec.Networks[i].ID
+		ids[i] = p.server.Spec.Networks[i].ID.String()
 	}
 
 	return ids
@@ -126,7 +126,7 @@ func (p *Provisioner) securityGroupIDs() []string {
 
 	// TODO: ensure the API rejects repeats.
 	for i := range p.server.Spec.SecurityGroups {
-		ids[i] = p.server.Spec.SecurityGroups[i].ID
+		ids[i] = p.server.Spec.SecurityGroups[i].ID.String()
 	}
 
 	return ids

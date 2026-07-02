@@ -51,8 +51,10 @@ import (
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/providers/allocation/vlan"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"github.com/unikorn-cloud/region/pkg/providers/util"
@@ -655,17 +657,21 @@ type imageQuery struct {
 	filters  []imageFilter
 }
 
-func (q *imageQuery) AvailableToOrganization(organizationIDs ...string) types.ImageQuery {
+func (q *imageQuery) AvailableToOrganization(organizationIDs ...identityids.OrganizationID) types.ImageQuery {
+	ids := types.OrganizationIDStrings(organizationIDs)
+
 	q.filters = append(q.filters, func(im *types.Image) bool {
-		return !isPublicOrOrganizationOwnedImage(im, organizationIDs)
+		return !isPublicOrOrganizationOwnedImage(im, ids)
 	})
 
 	return q
 }
 
-func (q *imageQuery) OwnedByOrganization(organizationIDs ...string) types.ImageQuery {
+func (q *imageQuery) OwnedByOrganization(organizationIDs ...identityids.OrganizationID) types.ImageQuery {
+	ids := types.OrganizationIDStrings(organizationIDs)
+
 	q.filters = append(q.filters, func(im *types.Image) bool {
-		return !isOrganizationOwnedImage(im, organizationIDs)
+		return !isOrganizationOwnedImage(im, ids)
 	})
 
 	return q
@@ -738,12 +744,12 @@ func (p *Provider) QueryImages() (types.ImageQuery, error) {
 }
 
 // GetImage retrieves a specific image by its ID.
-func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
+func (p *Provider) GetImage(ctx context.Context, organizationID identityids.OrganizationID, imageID regionids.ImageID) (*types.Image, error) {
 	if p.imageCache == nil {
 		return nil, fmt.Errorf("%w: image caching is disabled", coreerrors.ErrResourceNotFound)
 	}
 
-	image, err := p.imageCache.Get(imageID)
+	image, err := p.imageCache.Get(imageID.String())
 	if err != nil {
 		if errors.Is(err, cache.ErrNotFound) {
 			return nil, fmt.Errorf("%w: image %s", coreerrors.ErrResourceNotFound, imageID)
@@ -752,7 +758,7 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 		return nil, err
 	}
 
-	if !isPublicOrOrganizationOwnedImage(image.Item, []string{organizationID}) {
+	if !isPublicOrOrganizationOwnedImage(image.Item, []string{organizationID.String()}) {
 		return nil, fmt.Errorf(
 			"%w: image %s is not accessible to organization %s",
 			coreerrors.ErrResourceNotFound,
@@ -881,12 +887,14 @@ func (p *Provider) CreateImage(ctx context.Context, image *types.Image, uri stri
 	return syntheticImage, nil
 }
 
-func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
+func (p *Provider) DeleteImage(ctx context.Context, imageID regionids.ImageID) error {
 	if p.imageCache == nil {
 		return fmt.Errorf("%w: image caching is disabled", coreerrors.ErrResourceNotFound)
 	}
 
-	image, err := p.imageCache.Get(imageID)
+	imageIDString := imageID.String()
+
+	image, err := p.imageCache.Get(imageIDString)
 	if err != nil {
 		return err
 	}
@@ -908,7 +916,7 @@ func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
 			return err
 		}
 
-		return p.deleteImage(ctx, imageService, image.Item, imageID)
+		return p.deleteImage(ctx, imageService, image.Item, imageIDString)
 	}
 
 	// Otherwise it exists in our project...
@@ -917,7 +925,7 @@ func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
 		return err
 	}
 
-	return p.deleteImage(ctx, imageService, image.Item, imageID)
+	return p.deleteImage(ctx, imageService, image.Item, imageIDString)
 }
 
 func (p *Provider) deleteImage(ctx context.Context, imageService *ImageClient, image *types.Image, imageID string) error {
@@ -2273,7 +2281,7 @@ func (p *Provider) lookupSecurityGroup(ctx context.Context, securityGroups Secur
 func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInterface, server *unikornv1.Server) (*ports.Port, error) {
 	log := log.FromContext(ctx)
 
-	network, err := p.lookupNetwork(ctx, client, server.Namespace, server.Spec.Networks[0].ID)
+	network, err := p.lookupNetwork(ctx, client, server.Namespace, server.Spec.Networks[0].ID.String())
 	if err != nil {
 		return nil, err
 	}
@@ -2281,7 +2289,7 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 	securityGroupIDs := make([]string, len(server.Spec.SecurityGroups))
 
 	for i, s := range server.Spec.SecurityGroups {
-		securityGroup, err := p.lookupSecurityGroup(ctx, client, server.Namespace, s.ID)
+		securityGroup, err := p.lookupSecurityGroup(ctx, client, server.Namespace, s.ID.String())
 		if err != nil {
 			return nil, err
 		}
@@ -2742,7 +2750,7 @@ func (p *Provider) lookupIronicNodeForPhase(
 ) *nodes.Node {
 	baremetalClient, err := baremetalForPhase(ctx, identity)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "failed to create ironic client for server phase derivation", "server", server.Name, "flavor", server.Spec.FlavorID, "instance_uuid", openstackServer.ID)
+		log.FromContext(ctx).Error(err, "failed to create ironic client for server phase derivation", "server", server.Name, "flavor", server.Spec.FlavorID.String(), "instance_uuid", openstackServer.ID)
 
 		return nil
 	}
@@ -2772,7 +2780,7 @@ func (p *Provider) updateServerStateWithClients(
 	setServerHealthStatus(server, openstackServer)
 
 	region, _ := p.openstack.regionSnapshot()
-	baremetal := isBaremetalFlavor(region, server.Spec.FlavorID)
+	baremetal := isBaremetalFlavor(region, server.Spec.FlavorID.String())
 
 	var ironicNode *nodes.Node
 

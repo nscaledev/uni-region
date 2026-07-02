@@ -36,6 +36,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	identityv1 "github.com/unikorn-cloud/identity/pkg/apis/unikorn/v1alpha1"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/principal"
@@ -43,7 +44,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	regionconstants "github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
-	regionids "github.com/unikorn-cloud/region/pkg/ids"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -153,7 +154,7 @@ func newServer(t *testing.T, name, namespace string, metalabels labels) *regionv
 	return withMeta(&regionv1.Server{
 		Spec: regionv1.ServerSpec{
 			Image: &regionv1.ServerImage{
-				ID: "image1",
+				ID: idstest.MustParseImageID(srvTestImageID),
 			},
 		},
 	}, name, namespace, metalabels)
@@ -281,10 +282,10 @@ func newServerV2CreateRequest(ctx context.Context, t *testing.T, name, flavorID,
 			Name: name,
 		},
 		Spec: openapi.ServerV2CreateSpec{
-			FlavorId:          regionids.MustParseFlavorID(flavorID),
-			ImageId:           regionids.MustParseImageID(imageID),
+			FlavorId:          idstest.MustParseFlavorID(flavorID),
+			ImageId:           idstest.MustParseImageID(imageID),
 			InfrastructureRef: infrastructureRef,
-			NetworkId:         regionids.MustParseNetworkID(networkID),
+			NetworkId:         idstest.MustParseNetworkID(networkID),
 		},
 	}
 
@@ -420,7 +421,7 @@ func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 			response := httptest.NewRecorder()
 			request := newSnapshotRequest(ctx)
 
-			handler.PostApiV2ServersServerIDSnapshot(response, request, regionids.MustParseServerID(serverName))
+			handler.PostApiV2ServersServerIDSnapshot(response, request, idstest.MustParseServerID(serverName))
 
 			require.Equal(t, http.StatusForbidden, response.Result().StatusCode)
 		})
@@ -437,7 +438,7 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 	)
 
 	original := &types.Image{
-		ID: "image1", // to match the server's image ID
+		ID: srvTestImageID, // to match the server's image ID
 	}
 	snapshot := &types.Image{
 		Name: "foobar",    // matches the request
@@ -449,7 +450,7 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	provider := mockprovider.NewMockProvider(ctrl)
-	provider.EXPECT().GetImage(gomock.Any(), orgID, "image1").Return(original, nil)
+	provider.EXPECT().GetImage(gomock.Any(), identityids.MustParseOrganizationID(orgID), idstest.MustParseImageID(srvTestImageID)).Return(original, nil)
 	provider.EXPECT().CreateSnapshot(
 		gomock.Any(),
 		gomock.AssignableToTypeOf(&regionv1.Identity{}),
@@ -481,7 +482,7 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 	response := httptest.NewRecorder()
 	request := newSnapshotRequest(ctx)
 
-	handler.PostApiV2ServersServerIDSnapshot(response, request, regionids.MustParseServerID(serverName))
+	handler.PostApiV2ServersServerIDSnapshot(response, request, idstest.MustParseServerID(serverName))
 
 	require.Equal(t, http.StatusCreated, response.Result().StatusCode)
 

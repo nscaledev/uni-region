@@ -48,8 +48,10 @@ import (
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -82,10 +84,15 @@ func mustConvertImage(t *testing.T, in *images.Image) *types.Image {
 func TestImageFiltering(t *testing.T) {
 	t.Parallel()
 
+	const (
+		catsOrgID = "cccccccc-0000-0000-0000-000000000001"
+		dogsOrgID = "cccccccc-0000-0000-0000-000000000002"
+	)
+
 	public1 := mustConvertImage(t, imageFixtureWithID("foo"))
 	public2 := mustConvertImage(t, withStatus(imageFixtureWithID("foo"), images.ImageStatusQueued))
-	private1 := mustConvertImage(t, withOrganizationID(imageFixtureWithID("felix"), "cats"))
-	private2 := mustConvertImage(t, withOrganizationID(imageFixtureWithID("rover"), "dogs"))
+	private1 := mustConvertImage(t, withOrganizationID(imageFixtureWithID("felix"), catsOrgID))
+	private2 := mustConvertImage(t, withOrganizationID(imageFixtureWithID("rover"), dogsOrgID))
 
 	//nolint:unparam // lint doesn't know this needs to be this func type
 	listimages := func() (*cache.ListSnapshot[types.Image], error) {
@@ -103,7 +110,7 @@ func TestImageFiltering(t *testing.T) {
 		t.Parallel()
 
 		query := openstack.NewImageQuery(listimages)
-		images, err := query.AvailableToOrganization("cats").List(t.Context())
+		images, err := query.AvailableToOrganization(identityids.MustParseOrganizationID(catsOrgID)).List(t.Context())
 		require.NoError(t, err)
 
 		require.ElementsMatch(t, images.Items, []*types.Image{
@@ -133,7 +140,7 @@ func TestImageFiltering(t *testing.T) {
 		query := openstack.NewImageQuery(listimages)
 		images, err := query.
 			StatusIn(types.ImageStatusReady).
-			AvailableToOrganization("cats").
+			AvailableToOrganization(identityids.MustParseOrganizationID(catsOrgID)).
 			List(t.Context())
 		require.NoError(t, err)
 
@@ -796,7 +803,7 @@ func withFloatingIP(s *regionv1.Server) {
 func withSecurityGroup(securityGroup *regionv1.SecurityGroup) func(*regionv1.Server) {
 	return func(s *regionv1.Server) {
 		s.Spec.SecurityGroups = append(s.Spec.SecurityGroups, regionv1.ServerSecurityGroupSpec{
-			ID: securityGroup.Name,
+			ID: idstest.MustParseSecurityGroupID(securityGroup.Name),
 		})
 	}
 }
@@ -804,7 +811,7 @@ func withSecurityGroup(securityGroup *regionv1.SecurityGroup) func(*regionv1.Ser
 func withNetwork(network *regionv1.Network) func(*regionv1.Server) {
 	return func(s *regionv1.Server) {
 		s.Spec.Networks = append(s.Spec.Networks, regionv1.ServerNetworkSpec{
-			ID: network.Name,
+			ID: idstest.MustParseNetworkID(network.Name),
 		})
 	}
 }
@@ -1561,7 +1568,7 @@ func TestReconcileServerPort(t *testing.T) {
 
 		server := server.DeepCopy()
 		server.Spec.SecurityGroups = append(server.Spec.SecurityGroups, regionv1.ServerSecurityGroupSpec{
-			ID: securityGroup2.Name,
+			ID: idstest.MustParseSecurityGroupID(securityGroup2.Name),
 		})
 
 		networking := mock.NewMockNetworkingInterface(c)
