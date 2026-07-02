@@ -17,6 +17,7 @@ limitations under the License.
 package network_test
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"testing"
@@ -42,12 +43,15 @@ import (
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
@@ -298,6 +302,80 @@ func TestUpdateV2PreservesReservations(t *testing.T) {
 			require.Equal(t, "1.1.1.1", persisted.Spec.DNSNameservers[0].String())
 		})
 	}
+}
+
+// TestUpdateV2ConflictReturns409 verifies that Update maps a Kubernetes
+// optimistic-lock conflict from the underlying patch to an HTTP 409, rather
+// than letting it surface as an unhandled 500. The region controller actively
+// reconciles a freshly provisioned network, so the resourceVersion can move
+// between the read and the patch.
+func TestUpdateV2ConflictReturns409(t *testing.T) {
+	t.Parallel()
+
+	_, prefix, err := net.ParseCIDR("10.0.0.0/24")
+	require.NoError(t, err)
+
+	current := &regionv1.Network{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "55555555-5555-4555-a555-555555555555",
+			Namespace:       testNamespace,
+			ResourceVersion: "1",
+			Labels: map[string]string{
+				coreconstants.OrganizationLabel:   organizationID,
+				coreconstants.ProjectLabel:        projectID,
+				constants.RegionLabel:             "region-1",
+				constants.IdentityLabel:           "identity-1",
+				constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
+			},
+			Annotations: map[string]string{
+				coreconstants.AllocationAnnotation: "allocation-1",
+			},
+		},
+		Spec: regionv1.NetworkSpec{
+			Prefix: &corev1alpha1.IPv4Prefix{
+				IPNet: *prefix,
+			},
+		},
+	}
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, regionv1.AddToScheme(scheme))
+
+	k8sClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(current).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(_ context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
+				return apierrors.NewConflict(schema.GroupResource{Group: regionv1.GroupName, Resource: "networks"}, current.Name, nil)
+			},
+		}).
+		Build()
+
+	c := network.New(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: testNamespace,
+	})
+
+	ctx := rbac.NewContext(t.Context(), networkUpdateContext())
+	ctx = identityauth.NewContext(ctx, &identityauth.Info{
+		Userinfo: &identityapi.Userinfo{Sub: "user-1"},
+	})
+	ctx = principal.NewContext(ctx, &principal.Principal{
+		Actor:          "actor@example.com",
+		OrganizationID: organizationID,
+		ProjectID:      projectID,
+	})
+
+	_, err = c.Update(ctx, regionids.MustParseNetworkID(current.Name), &openapi.NetworkV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{
+			Name: "test-network",
+		},
+		Spec: openapi.NetworkV2Spec{
+			DnsNameservers: []string{"1.1.1.1"},
+		},
+	})
+	require.Error(t, err)
+	require.True(t, coreerrors.IsConflict(err), "expected 409 conflict, got: %v", err)
 }
 
 func TestGetV2ReturnsEffectiveReservationsForImplicitNetworks(t *testing.T) {
