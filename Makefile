@@ -207,6 +207,8 @@ license:
 	go run github.com/unikorn-cloud/core/hack/check_license
 
 GINKGO_INTEGRATION_TEST_FLAGS = --json-report=test-results.json --junit-report=junit.xml --tags=integration
+GINKGO_E2E_TEST_FLAGS = --json-report=e2e-test-results.json --junit-report=e2e-junit.xml --tags=e2e
+GINKGO_E2E_NIGHTLY_TEST_FLAGS = --json-report=e2e-nightly-test-results.json --junit-report=e2e-nightly-junit.xml --tags=e2e --label-filter='nightly' --timeout=2h
 
 # API test targets
 .PHONY: test-api
@@ -245,6 +247,24 @@ test-api-ci: test-api-setup
 	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
 	$(GOBIN)/ginkgo run --randomize-all --randomize-suites --race $(GINKGO_INTEGRATION_TEST_FLAGS) --output-interceptor-mode=none ./test/api/suites/
 
+.PHONY: test-e2e
+test-e2e: test-api-setup
+	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
+	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
+	$(GOBIN)/ginkgo run -v --show-node-events $(GINKGO_E2E_TEST_FLAGS) --label-filter='!nightly' ./test/api/suites/
+
+.PHONY: test-e2e-focus
+test-e2e-focus: test-api-setup
+	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
+	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
+	LOG_REQUESTS=true LOG_RESPONSES=true $(GOBIN)/ginkgo run -v --focus="$(FOCUS)" $(GINKGO_E2E_TEST_FLAGS) --label-filter='!nightly' ./test/api/suites/
+
+.PHONY: test-e2e-nightly
+test-e2e-nightly: test-api-setup
+	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
+	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
+	$(GOBIN)/ginkgo run -v --show-node-events $(GINKGO_E2E_NIGHTLY_TEST_FLAGS) ./test/api/suites/
+
 .PHONY: test-api-setup
 test-api-setup:
 	@go install github.com/onsi/ginkgo/v2/ginkgo@$(GINKGO_VERSION)
@@ -253,7 +273,7 @@ test-api-setup:
 # Clean test artifacts
 .PHONY: test-api-clean
 test-api-clean:
-	@rm -f test/api/suites/test-results.json test/api/suites/junit.xml
+	@rm -f test/api/suites/test-results.json test/api/suites/junit.xml test/api/suites/e2e-test-results.json test/api/suites/e2e-junit.xml test/api/suites/e2e-nightly-test-results.json test/api/suites/e2e-nightly-junit.xml
 
 # Layer-1 API fuzzing harness (Schemathesis) against the simulated provider.
 # Reuses the test/.env produced by `make integration-fixtures`.
