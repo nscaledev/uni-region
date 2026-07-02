@@ -146,7 +146,11 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   does, however, latch the monitor-owned `status.provisionedAt` field from Nova
   `launched_at` the first time a server is seen booted (write-once, never
   cleared, independent of live power state), which the controller's rebuild guard
-  relies on. The lookup is
+  relies on. `setServerPhase` also short-circuits Nova `REBUILD` to `Building`
+  before the PowerState switch: an in-place rebuild keeps PowerState `RUNNING`,
+  so without that branch a rebuilding server would mis-report `Running` (this
+  REBUILD branch never consults Ironic — `reconcileServerImage` passes
+  `ironicNode==nil`). The lookup is
   filtered by `instance_uuid`. Because Ironic node ownership and visibility
   are provider infrastructure concerns rather than tenant workload operations,
   this lookup uses the Region top-level provider credentials scoped to the
@@ -159,6 +163,18 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   the monitor logs the failure and falls back to the VM default `Building`
   Phase so API responses still see a coherent live signal rather than failing
   the monitor path.
+- Server image changes are reconciled in place rather than by replacing the
+  server, via `reconcileServerImage`:
+  - If Nova already reports `REBUILD`, a rebuild is in flight — set health/phase
+    and yield (`ErrYield`) until it settles. Nova rewrites the server's image
+    reference as soon as it accepts the rebuild, so an image-equality check alone
+    cannot detect an in-progress rebuild; the `REBUILD` status is the signal.
+  - A server with no desired image (boot-from-volume, `Spec.Image == nil`) has
+    nothing to rebuild and is left alone.
+  - Otherwise, when the live image differs from the desired image, issue a Nova
+    rebuild. If Nova returns `409 Conflict` (the server is in a state it will not
+    rebuild from), this is transient: yield (`ErrYield`) and retry on a later
+    reconcile rather than treating it as a hard error.
 - Some OpenStack list APIs are not safe to treat as exact lookup, notably
   server, network, and Octavia load-balancer `name` filters:
   - `name` filters behave like prefix or regular-expression matches rather than

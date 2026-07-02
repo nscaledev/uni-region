@@ -21,7 +21,12 @@ related dependencies rather than from nested path scope.
 
 - `v1` servers are nested more explicitly under identity paths
 - `v2` servers are network-linked resources with direct ID-based access
-- create/update validate referenced image existence through the provider layer
+- v2 create and update validate the referenced image and flavor through the
+  provider layer: image exists and is visible to the organization, image is
+  ready, flavor exists, image architecture matches the flavor architecture,
+  flavor disk is large enough, and image virtualization is compatible with the
+  flavor. Update validates whenever the persisted image would change (including
+  when a server that previously had no image gains one).
 - create/update can validate and bind an SSH certificate authority
 - create/update reject references that escape the server's scope, enforced at the
   API edge with HTTP 422. The RBAC read check that fetches a reference only proves

@@ -2141,6 +2141,8 @@ func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, 
 		return corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server is in an error state"
 	case "UNKNOWN":
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
+	case "REBUILD":
+		return corev1.ConditionFalse, unikornv1core.ConditionReasonProvisioning, "server is rebuilding"
 	default:
 		return corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "server is in state " + server.Status
 	}
@@ -2172,7 +2174,7 @@ func buildPhase(ironicNode *nodes.Node) unikornv1.InstanceLifecyclePhase {
 //
 // BUILD-window branch. Breaking it up further would scatter Phase derivation.
 //
-//nolint:cyclop // Fan-out matches OpenStack's PowerState enum surface plus the BUILD branch that consults Ironic via buildPhase; collapsing it would scatter Phase derivation across helpers.
+//nolint:cyclop // Fan-out matches OpenStack's PowerState enum surface plus the BUILD branch that consults Ironic via buildPhase and the REBUILD branch that maps in-place rebuilds to Building; collapsing it would scatter Phase derivation across helpers.
 func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserver *servers.Server, ironicNode *nodes.Node) {
 	// Default to `Pending` if the phase is not already set. This should only happen to old servers created before we had phases.
 	if server.Status.Phase == "" {
@@ -2214,6 +2216,17 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 	// state to pick Queued vs Building.
 	if openstackserver.Status == "BUILD" {
 		server.Status.Phase = buildPhase(ironicNode)
+
+		return
+	}
+
+	// REBUILD is the in-place image rebuild window driven by reconcileServerImage.
+	// PowerState reads RUNNING throughout (the instance keeps its old state until
+	// the rebuild completes), so without this branch a rebuilding server would
+	// report Running. Map it to Building. Unlike BUILD this never consults Ironic:
+	// reconcileServerImage passes ironicNode==nil deliberately.
+	if openstackserver.Status == "REBUILD" {
+		server.Status.Phase = unikornv1.InstanceLifecyclePhaseBuilding
 
 		return
 	}
@@ -2444,15 +2457,65 @@ func (p *Provider) reconcileLoadBalancerFloatingIP(ctx context.Context, client F
 	return nil
 }
 
-func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight serverCreatePreflight) (*servers.Server, error) {
+// reconcileServerImage triggers an in-place Nova rebuild when an existing
+// server's running image differs from the desired image. It is called only for
+// servers that already exist.
+func reconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
 	log := log.FromContext(ctx)
+	log.V(1).Info("server already exists")
 
-	openstackServer, err := client.GetServer(ctx, server)
-	if err == nil {
-		log.V(1).Info("server already exists")
+	// A rebuild is already running; wait for it to settle. Nova updates the
+	// server's image reference as soon as it accepts a rebuild, so an
+	// image-equality check alone cannot detect an in-progress rebuild.
+	if openstackServer.Status == "REBUILD" {
+		log.V(1).Info("server rebuild in progress")
 
+		setServerHealthStatus(server, openstackServer)
+		setServerPhase(ctx, server, openstackServer, nil)
+
+		return openstackServer, provisioners.ErrYield
+	}
+
+	// A server with no desired image (e.g. boot-from-volume) has nothing to rebuild.
+	if server.Spec.Image == nil {
 		return openstackServer, nil
 	}
+
+	// Image is a map for an image-backed server and nil for a boot-from-volume
+	// server. Indexing a nil map is safe and yields the zero value.
+	currentImageID, ok := openstackServer.Image["id"].(string)
+	if !ok || currentImageID == "" {
+		return openstackServer, nil
+	}
+
+	if currentImageID == server.Spec.Image.ID {
+		return openstackServer, nil
+	}
+
+	log.Info("server image changed, rebuilding", "current", currentImageID, "desired", server.Spec.Image.ID)
+
+	if _, err := client.RebuildServer(ctx, openstackServer.ID, server.Spec.Image.ID); err != nil {
+		// The server is not in a state Nova permits a rebuild from; retry later.
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			return openstackServer, provisioners.ErrYield
+		}
+
+		return nil, err
+	}
+
+	setServerHealthStatus(server, openstackServer)
+	setServerPhase(ctx, server, openstackServer, nil)
+
+	return openstackServer, provisioners.ErrYield
+}
+
+func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight serverCreatePreflight) (*servers.Server, error) {
+	openstackServer, err := client.GetServer(ctx, server)
+	if err == nil {
+		return reconcileServerImage(ctx, client, server, openstackServer)
+	}
+
+	log := log.FromContext(ctx)
 
 	networks := []servers.Network{
 		{

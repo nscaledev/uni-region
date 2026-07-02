@@ -168,6 +168,9 @@ func PlacementClientMicroversion(client *PlacementClient) string {
 	return client.client.Microversion
 }
 
+//nolint:gochecknoglobals
+var ConvertServerHealthStatus = convertServerHealthStatus
+
 func NewTestProvider(client client.Client, region *unikornv1.Region) *Provider {
 	return &Provider{
 		client: client,
@@ -272,6 +275,10 @@ func ReconcileServer(ctx context.Context, p *Provider, client ServerInterface, s
 
 func ReconcileServerWithPreflight(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight func(context.Context, *unikornv1.Server) error) (*servers.Server, error) {
 	return p.reconcileServer(ctx, client, server, port, keyName, serverCreatePreflight(preflight))
+}
+
+func ReconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
+	return reconcileServerImage(ctx, client, server, openstackServer)
 }
 
 func ResolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {

@@ -80,6 +80,33 @@ func (c *ClientV2) getProvider(regionID string) (types.Provider, error) {
 	return provider, nil
 }
 
+// validateImage resolves the region provider and runs the shared image and
+// flavor validation for a server in the given network.
+func (c *ClientV2) validateImage(ctx context.Context, network *regionv1.Network, imageID, flavorID string) error {
+	provider, err := c.getProvider(network.Labels[constants.RegionLabel])
+	if err != nil {
+		return err
+	}
+
+	return validateServerImage(ctx, provider, network.Labels[coreconstants.OrganizationLabel], imageID, flavorID)
+}
+
+// validateUpdatedImage validates the image the same way create does whenever the
+// update would change the image that gets persisted. generateV2 always writes
+// request.Spec.ImageId into Spec.Image (the v2 API has no boot-from-volume,
+// image-less form), so the only case that needs no validation is an update that
+// leaves an existing, already-validated image unchanged. A server with a nil
+// current image (e.g. a legacy boot-from-volume server) gains a persisted image
+// on update, so it is validated exactly like create rather than skipped —
+// otherwise an unvalidated image ID would be written to the spec.
+func (c *ClientV2) validateUpdatedImage(ctx context.Context, network *regionv1.Network, current *regionv1.Server, request *openapi.ServerV2Update) error {
+	if current.Spec.Image != nil && current.Spec.Image.ID == request.Spec.ImageId.String() {
+		return nil
+	}
+
+	return c.validateImage(ctx, network, request.Spec.ImageId.String(), request.Spec.FlavorId.String())
+}
+
 func convertSecurityGroupsV2(in []regionv1.ServerSecurityGroupSpec) *openapi.ServerV2SecurityGroupIDList {
 	if len(in) == 0 {
 		return nil
@@ -532,6 +559,10 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 		return nil, err
 	}
 
+	if err := c.validateImage(ctx, network, request.Spec.ImageId.String(), request.Spec.FlavorId.String()); err != nil {
+		return nil, err
+	}
+
 	if err := c.validateCreateV2Request(ctx, request, network); err != nil {
 		return nil, err
 	}
@@ -599,6 +630,7 @@ func (c *ClientV2) GetV2(ctx context.Context, serverID regionids.ServerID) (*ope
 	return convertV2(result)
 }
 
+//nolint:cyclop // Sequential precondition checks (RBAC, deletion, immutable name, immutable flavor, security groups, image-on-change) before the update; each is a guard clause and extracting them would scatter the update contract.
 func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerV2Update) (*openapi.ServerV2Read, error) {
 	current, err := c.GetV2Raw(ctx, serverID.String())
 	if err != nil {
@@ -622,6 +654,10 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, re
 		return nil, errors.HTTPUnprocessableContent("server names are immutable")
 	}
 
+	if request.Spec.FlavorId.String() != current.Spec.FlavorID {
+		return nil, errors.HTTPUnprocessableContent("server flavor is immutable")
+	}
+
 	// Security groups are mutable, so re-validate that every referenced group still
 	// belongs to the server's network. The SSH certificate authority and
 	// infrastructure reference are immutable, so they keep the scope validated at
@@ -633,6 +669,10 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, re
 	// Get the network, required for generation.
 	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, current.Spec.Networks[0].ID)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := c.validateUpdatedImage(ctx, network, current, request); err != nil {
 		return nil, err
 	}
 
