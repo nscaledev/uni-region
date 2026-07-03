@@ -889,6 +889,12 @@ func withSSHCertificateAuthority(sshCertificateAuthority *regionv1.SSHCertificat
 	}
 }
 
+func withSSHInjectionNone() func(*regionv1.Server) {
+	return func(s *regionv1.Server) {
+		s.Spec.SSHInjection = ptr.To(regionv1.ServerSSHInjectionNone)
+	}
+}
+
 // loadBalancerNetworkFixture creates a Network CRD with a populated
 // Status.Openstack.SubnetID, suitable for seeding the fake client when the
 // load balancer reconciler resolves its parent network.
@@ -2234,6 +2240,19 @@ func TestResolveServerKeyName(t *testing.T) {
 
 		sshCertificateAuthority := sshCertificateAuthorityFixture()
 		server := serverFixture(withSSHCertificateAuthority(sshCertificateAuthority))
+		identity := &regionv1.OpenstackIdentity{
+			Spec: regionv1.OpenstackIdentitySpec{
+				SSHKeyName: ptr.To(sshKeyName),
+			},
+		}
+
+		require.Empty(t, openstack.ResolveServerKeyName(server, identity))
+	})
+
+	t.Run("SuppressesImplicitKeyWithSSHInjectionNone", func(t *testing.T) {
+		t.Parallel()
+
+		server := serverFixture(withSSHInjectionNone())
 		identity := &regionv1.OpenstackIdentity{
 			Spec: regionv1.OpenstackIdentitySpec{
 				SSHKeyName: ptr.To(sshKeyName),

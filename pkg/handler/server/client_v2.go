@@ -153,6 +153,24 @@ func convertPowerStateV2(in regionv1.InstanceLifecyclePhase) *openapi.InstanceLi
 	return nil
 }
 
+func resolveSSHInjection(in *openapi.SshInjection, sshCertificateAuthorityID *string) regionv1.ServerSSHInjection {
+	if in != nil {
+		return regionv1.ServerSSHInjection(*in)
+	}
+
+	if sshCertificateAuthorityID != nil {
+		return regionv1.ServerSSHInjectionCA
+	}
+
+	return regionv1.ServerSSHInjectionIdentityKeypair
+}
+
+func sshInjectionStatus(in *regionv1.Server) *openapi.SshInjection {
+	out := openapi.SshInjection(in.ResolvedSSHInjection())
+
+	return &out
+}
+
 func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 	flavorID, err := in.FlavorID()
 	if err != nil {
@@ -176,6 +194,7 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 			RegionId:                  in.Labels[constants.RegionLabel],
 			NetworkId:                 in.Spec.Networks[0].ID,
 			SshCertificateAuthorityId: in.Spec.SSHCertificateAuthorityID,
+			SshInjection:              sshInjectionStatus(in),
 			InfrastructureRef:         in.Spec.InfrastructureRef,
 			PowerState:                convertPowerStateV2(in.Status.Phase),
 			PrivateIP:                 in.Status.PrivateIP,
@@ -327,6 +346,31 @@ func (c *ClientV2) validateSSHCertificateAuthorityReference(ctx context.Context,
 	return nil
 }
 
+func validateSSHInjection(request *openapi.ServerV2Create, sshInjection regionv1.ServerSSHInjection) error {
+	switch sshInjection {
+	case regionv1.ServerSSHInjectionCA:
+		if request.Spec.SshCertificateAuthorityId == nil {
+			return errors.HTTPUnprocessableContent("sshInjection ca requires sshCertificateAuthorityId")
+		}
+	case regionv1.ServerSSHInjectionIdentityKeypair:
+		if request.Spec.SshCertificateAuthorityId != nil {
+			return errors.HTTPUnprocessableContent("sshInjection identityKeypair cannot be used with sshCertificateAuthorityId")
+		}
+	case regionv1.ServerSSHInjectionNone:
+		if request.Spec.SshCertificateAuthorityId != nil {
+			return errors.HTTPUnprocessableContent("sshInjection none cannot be used with sshCertificateAuthorityId")
+		}
+	default:
+		return errors.HTTPUnprocessableContent("sshInjection must be one of ca, identityKeypair, none")
+	}
+
+	if request.Spec.InfrastructureRef != nil && sshInjection == regionv1.ServerSSHInjectionIdentityKeypair {
+		return errors.HTTPUnprocessableContent("infrastructureRef cannot be used with sshInjection identityKeypair")
+	}
+
+	return nil
+}
+
 // assertSameNetwork denies a security group reference that belongs to a different
 // network. A network belongs to exactly one identity (one underlying OpenStack
 // project), which in turn belongs to one organization and project, so requiring the
@@ -385,7 +429,7 @@ func (c *ClientV2) validateInfrastructureRefForFlavor(ctx context.Context, regio
 	return nil
 }
 
-func (c *ClientV2) generateV2(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, in *openapi.ServerV2Update, network *regionv1.Network, sshCertificateAuthorityID *string, infrastructureRef *string) (*regionv1.Server, error) {
+func (c *ClientV2) generateV2(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, in *openapi.ServerV2Update, network *regionv1.Network, sshCertificateAuthorityID *string, infrastructureRef *string, sshInjection regionv1.ServerSSHInjection) (*regionv1.Server, error) {
 	networks, err := generateNetworks(network.Name, in.Spec.Networking)
 	if err != nil {
 		return nil, err
@@ -414,6 +458,7 @@ func (c *ClientV2) generateV2(ctx context.Context, organizationID identityids.Or
 			SecurityGroups:            generateSecurityGroups(in.Spec.Networking),
 			Networks:                  networks,
 			SSHCertificateAuthorityID: sshCertificateAuthorityID,
+			SSHInjection:              ptr.To(sshInjection),
 			InfrastructureRef:         infrastructureRef,
 			UserData:                  generateUserData(in.Spec.UserData),
 		},
@@ -497,11 +542,18 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 }
 
 // validateCreateV2Request runs the request-level validations for a v2 server
-// create: SSH certificate authority user-data coupling, that any referenced SSH
-// certificate authority shares the server's organization and project, that any
-// referenced security group belongs to the server's network, and the infrastructure
-// reference requirements of the requested flavor.
+// create: SSH injection mode compatibility, SSH certificate authority user-data
+// coupling, that any referenced SSH certificate authority shares the server's
+// organization and project, that any referenced security group belongs to the
+// server's network, and the infrastructure reference requirements of the
+// requested flavor.
 func (c *ClientV2) validateCreateV2Request(ctx context.Context, request *openapi.ServerV2Create, network *regionv1.Network) error {
+	sshInjection := resolveSSHInjection(request.Spec.SshInjection, request.Spec.SshCertificateAuthorityId)
+
+	if err := validateSSHInjection(request, sshInjection); err != nil {
+		return err
+	}
+
 	if err := validateUserDataForSSHCertificateAuthority(request.Spec.SshCertificateAuthorityId, request.Spec.UserData); err != nil {
 		return err
 	}
@@ -541,7 +593,9 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 		return nil, err
 	}
 
-	resource, err := c.generateV2(ctx, organizationID, projectID, commonRequest, network, request.Spec.SshCertificateAuthorityId, request.Spec.InfrastructureRef)
+	sshInjection := resolveSSHInjection(request.Spec.SshInjection, request.Spec.SshCertificateAuthorityId)
+
+	resource, err := c.generateV2(ctx, organizationID, projectID, commonRequest, network, request.Spec.SshCertificateAuthorityId, request.Spec.InfrastructureRef, sshInjection)
 	if err != nil {
 		return nil, err
 	}
@@ -638,7 +692,7 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, re
 
 	// User data is only consumed during initial server bootstrap. Updates preserve it for
 	// completeness and future rebuild support, but they do not re-run cloud-init validation.
-	required, err := c.generateV2(ctx, organizationID, projectID, request, network, current.Spec.SSHCertificateAuthorityID, current.Spec.InfrastructureRef)
+	required, err := c.generateV2(ctx, organizationID, projectID, request, network, current.Spec.SSHCertificateAuthorityID, current.Spec.InfrastructureRef, current.ResolvedSSHInjection())
 	if err != nil {
 		return nil, err
 	}

@@ -50,6 +50,7 @@ import (
 	mockprovider "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -286,6 +287,10 @@ func newServerV2CreateRequest(ctx context.Context, t *testing.T, name, flavorID,
 			InfrastructureRef: infrastructureRef,
 			NetworkId:         regionids.MustParseNetworkID(networkID),
 		},
+	}
+
+	if infrastructureRef != nil {
+		request.Spec.SshInjection = ptr.To(openapi.SshInjectionNone)
 	}
 
 	body, err := json.Marshal(request)

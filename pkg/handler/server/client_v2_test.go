@@ -202,10 +202,10 @@ func withPrincipal(ctx context.Context) context.Context {
 	})
 }
 
-func testSSHCertificateAuthorityWithProject(projID, caID string) *regionv1.SSHCertificateAuthority {
+func testSSHCertificateAuthorityWithProject(projID string) *regionv1.SSHCertificateAuthority {
 	return &regionv1.SSHCertificateAuthority{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      caID,
+			Name:      "ca-1",
 			Namespace: srvNamespace,
 			Labels: map[string]string{
 				coreconstants.OrganizationLabel:   srvOrganizationID,
@@ -359,7 +359,7 @@ func TestServerCreateV2SSHCertificateAuthorityRejectsCrossProjectReference(t *te
 	ctrl := gomock.NewController(t)
 
 	network := testSrvNetworkWithProject(srvProjectID)
-	ca := testSSHCertificateAuthorityWithProject("99999999-9999-4999-a999-999999999999", "ca-1")
+	ca := testSSHCertificateAuthorityWithProject("99999999-9999-4999-a999-999999999999")
 
 	k8sClient := newSrvFakeClient(t, network, ca).Build()
 
@@ -489,7 +489,7 @@ func TestServerCreateV2SSHCertificateAuthorityRejectsUnsupportedUserData(t *test
 	ctrl := gomock.NewController(t)
 
 	network := testSrvNetworkWithProject(srvProjectID)
-	ca := testSSHCertificateAuthorityWithProject(srvProjectID, "ca-1")
+	ca := testSSHCertificateAuthorityWithProject(srvProjectID)
 
 	k8sClient := newSrvFakeClient(t, network, ca).Build()
 
@@ -538,7 +538,7 @@ func TestServerCreateV2SSHCertificateAuthorityAcceptsSupportedUserData(t *testin
 			ctrl := gomock.NewController(t)
 
 			network := testSrvNetworkWithProject(srvProjectID)
-			ca := testSSHCertificateAuthorityWithProject(srvProjectID, "ca-1")
+			ca := testSSHCertificateAuthorityWithProject(srvProjectID)
 
 			k8sClient := newSrvFakeClient(t, network, ca).Build()
 
@@ -630,6 +630,7 @@ func TestServerCreateV2SetsInfrastructureRef(t *testing.T) {
 	infrastructureRef := "node-uuid-123"
 	request := minimalServerV2CreateRequest()
 	request.Spec.InfrastructureRef = &infrastructureRef
+	request.Spec.SshInjection = ptr.To(openapi.SshInjection("none"))
 
 	result, err := c.CreateV2(ctx, request)
 
@@ -637,11 +638,138 @@ func TestServerCreateV2SetsInfrastructureRef(t *testing.T) {
 	require.NotNil(t, result)
 	require.NotNil(t, result.Status.InfrastructureRef)
 	require.Equal(t, infrastructureRef, *result.Status.InfrastructureRef)
+	require.NotNil(t, result.Status.SshInjection)
+	require.Equal(t, openapi.SshInjection("none"), *result.Status.SshInjection)
 
 	created := &regionv1.Server{}
 	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: result.Metadata.Id}, created))
 	require.NotNil(t, created.Spec.InfrastructureRef)
 	require.Equal(t, infrastructureRef, *created.Spec.InfrastructureRef)
+	require.NotNil(t, created.Spec.SSHInjection)
+	require.Equal(t, regionv1.ServerSSHInjectionNone, *created.Spec.SSHInjection)
+}
+
+func TestServerCreateV2RejectsInfrastructureRefWithIdentitySSHKey(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	k8sClient := newSrvFakeClient(t, network).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	infrastructureRef := "node-uuid-123"
+	request := minimalServerV2CreateRequest()
+	request.Spec.InfrastructureRef = &infrastructureRef
+
+	_, err := c.CreateV2(ctx, request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+}
+
+func TestServerCreateV2AllowsInfrastructureRefWithSSHCertificateAuthority(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+	ca := testSSHCertificateAuthorityWithProject(srvProjectID)
+
+	k8sClient := newSrvFakeClient(t, network, ca).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	infrastructureRef := "node-uuid-123"
+	request := minimalServerV2CreateRequest()
+	request.Spec.InfrastructureRef = &infrastructureRef
+	request.Spec.SshCertificateAuthorityId = ptr.To(ca.Name)
+
+	result, err := c.CreateV2(ctx, request)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, ca.Name, *result.Status.SshCertificateAuthorityId)
+	require.NotNil(t, result.Status.SshInjection)
+	require.Equal(t, openapi.SshInjection("ca"), *result.Status.SshInjection)
+	require.Equal(t, infrastructureRef, *result.Status.InfrastructureRef)
+}
+
+func TestServerCreateV2RejectsIncompatibleSSHInjection(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		sshInjection openapi.SshInjection
+		caID         *string
+	}{
+		{
+			name:         "CAWithoutReference",
+			sshInjection: openapi.SshInjection("ca"),
+		},
+		{
+			name:         "IdentityKeypairWithCA",
+			sshInjection: openapi.SshInjection("identityKeypair"),
+			caID:         ptr.To("ca-1"),
+		},
+		{
+			name:         "NoneWithCA",
+			sshInjection: openapi.SshInjection("none"),
+			caID:         ptr.To("ca-1"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctrl := gomock.NewController(t)
+
+			network := testSrvNetworkWithProject(srvProjectID)
+
+			k8sClient := newSrvFakeClient(t, network).Build()
+
+			mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+			expectProjectFound(mockIdentity)
+
+			c := server.NewClientV2(common.ClientArgs{
+				Client:    k8sClient,
+				Namespace: srvNamespace,
+				Identity:  mockIdentity,
+			})
+
+			ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+			request := minimalServerV2CreateRequest()
+			request.Spec.SshInjection = ptr.To(test.sshInjection)
+			request.Spec.SshCertificateAuthorityId = test.caID
+
+			_, err := c.CreateV2(ctx, request)
+
+			require.Error(t, err)
+			require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+		})
+	}
 }
 
 func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
@@ -651,6 +779,7 @@ func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 
 	network := testSrvNetworkWithProject(srvProjectID)
 	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, srvServerID, "ca-1")
+	resource.Spec.SSHInjection = ptr.To(regionv1.ServerSSHInjectionCA)
 
 	k8sClient := newSrvFakeClient(t, network, resource).Build()
 
@@ -678,10 +807,14 @@ func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, resource.Spec.SSHCertificateAuthorityID, result.Status.SshCertificateAuthorityId)
+	require.NotNil(t, result.Status.SshInjection)
+	require.Equal(t, openapi.SshInjection("ca"), *result.Status.SshInjection)
 
 	updated, err := c.GetV2Raw(ctx, resource.Name)
 	require.NoError(t, err)
 	require.Equal(t, resource.Spec.SSHCertificateAuthorityID, updated.Spec.SSHCertificateAuthorityID)
+	require.NotNil(t, updated.Spec.SSHInjection)
+	require.Equal(t, regionv1.ServerSSHInjectionCA, *updated.Spec.SSHInjection)
 }
 
 func TestServerGetV2ReturnsMACAddress(t *testing.T) {
