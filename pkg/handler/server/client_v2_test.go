@@ -848,6 +848,110 @@ func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 	require.Equal(t, resource.Status.MACAddress, result.Status.MacAddress)
 }
 
+func TestServerSSHKeyReturnsIdentityKey(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	resource := testServerV2(srvServerID)
+	identity := testIdentity("test-identity")
+	openstackIdentity := testOpenstackIdentity("test-identity", "private-key")
+
+	k8sClient := newSrvFakeClient(t, resource, identity, openstackIdentity).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
+
+	result, err := c.SSHKey(ctx, regionids.MustParseServerID(resource.Name))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "private-key", result.PrivateKey)
+}
+
+func TestServerSSHKeyReturnsNotFoundWhenIdentityKeyNotInjected(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(*regionv1.Server)
+	}{
+		{
+			name: "SSHCertificateAuthority",
+			mutate: func(server *regionv1.Server) {
+				server.Spec.SSHCertificateAuthorityID = ptr.To("ca-1")
+			},
+		},
+		{
+			name: "SSHInjectionNone",
+			mutate: func(server *regionv1.Server) {
+				server.Spec.SSHInjection = ptr.To(regionv1.ServerSSHInjectionNone)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctrl := gomock.NewController(t)
+
+			resource := testServerV2(srvServerID)
+			test.mutate(resource)
+
+			k8sClient := newSrvFakeClient(t, resource).Build()
+
+			mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+			c := server.NewClientV2(common.ClientArgs{
+				Client:    k8sClient,
+				Namespace: srvNamespace,
+				Identity:  mockIdentity,
+			})
+
+			ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
+
+			_, err := c.SSHKey(ctx, regionids.MustParseServerID(resource.Name))
+
+			require.Error(t, err)
+			require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+		})
+	}
+}
+
+func testIdentity(identityID string) *regionv1.Identity {
+	return &regionv1.Identity{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      identityID,
+			Namespace: srvNamespace,
+			Labels: map[string]string{
+				coreconstants.OrganizationLabel: srvOrganizationID,
+				coreconstants.ProjectLabel:      srvProjectID,
+				constants.RegionLabel:           "test-region",
+			},
+		},
+	}
+}
+
+func testOpenstackIdentity(identityID, privateKey string) *regionv1.OpenstackIdentity {
+	return &regionv1.OpenstackIdentity{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      identityID,
+			Namespace: srvNamespace,
+		},
+		Spec: regionv1.OpenstackIdentitySpec{
+			SSHPrivateKey: []byte(privateKey),
+		},
+	}
+}
+
 func testServerV2(serverID string) *regionv1.Server {
 	return &regionv1.Server{
 		ObjectMeta: metav1.ObjectMeta{
