@@ -23,6 +23,12 @@ related dependencies rather than from nested path scope.
 - `v2` servers are network-linked resources with direct ID-based access
 - create/update validate referenced image existence through the provider layer
 - create/update can validate and bind an SSH certificate authority
+- create accepts an explicit SSH injection mode: `ca`, `identityKeypair`, or
+  `none`. Omitted values preserve the legacy contract: requests with
+  `sshCertificateAuthorityId` resolve to `ca`, all other requests resolve to
+  `identityKeypair`. Pinned servers cannot use `identityKeypair` because it is
+  scoped to the tenant credentials and is not valid for the privileged
+  pinned-create path
 - create/update reject references that escape the server's scope, enforced at the
   API edge with HTTP 422. The RBAC read check that fetches a reference only proves
   the caller may see it — a caller authorized across several tenancies could
@@ -65,6 +71,9 @@ related dependencies rather than from nested path scope.
 - A `Server v2` is owned by its network for cascading deletion.
 - User data and SSH certificate authority combinations are validated together to
   avoid unsupported managed-userdata states.
+- `GET /api/v2/servers/{serverID}/sshkey` only returns the identity private key
+  for servers where Region requested `identityKeypair` SSH injection during
+  create. It returns not found for `ca` and `none` servers.
 - Power-operation errors are translated carefully from provider conflict/not-found
   states into user-facing API semantics.
 - `infrastructureRef` is create-time placement input. Updates preserve the

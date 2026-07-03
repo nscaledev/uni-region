@@ -99,6 +99,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     Required flavor traits are sent as positive Placement `required` entries;
     forbidden flavor traits are sent as `!TRAIT` entries. Empty trait inputs
     mean no trait filter. A miss yields and lets the controller retry.
+- SSH injection is a create-time server decision. OpenStack receives the
+  identity key name only for the resolved `identityKeypair` mode; `ca` and
+  `none` omit Nova `key_name`.
 - `OpenstackIdentity` is the remaining persisted provider-state anchor. It
   currently stores the secret-bearing user/project/application-credential and
   bootstrap state needed to operate on behalf of a region `Identity`.
