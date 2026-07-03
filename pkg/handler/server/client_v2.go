@@ -736,12 +736,7 @@ func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID 
 		return nil, nil, nil, err
 	}
 
-	organizationID, projectID, err := server.OrganizationAndProjectID()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	identity, err := identity.New(c.Client.ClientArgs).GetRaw(ctx, organizationID, projectID, server.Labels[constants.IdentityLabel])
+	identity, err := c.getIdentityForServerV2(ctx, server)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -754,8 +749,31 @@ func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID 
 	return server, identity, provider, nil
 }
 
+func (c *ClientV2) getIdentityForServerV2(ctx context.Context, server *regionv1.Server) (*regionv1.Identity, error) {
+	organizationID, projectID, err := server.OrganizationAndProjectID()
+	if err != nil {
+		return nil, err
+	}
+
+	identity, err := identity.New(c.Client.ClientArgs).GetRaw(ctx, organizationID, projectID, server.Labels[constants.IdentityLabel])
+	if err != nil {
+		return nil, err
+	}
+
+	return identity, nil
+}
+
 func (c *ClientV2) SSHKey(ctx context.Context, serverID regionids.ServerID) (*openapi.SshKey, error) {
-	_, identity, _, err := c.getServerIdentityAndProviderV2(ctx, serverID)
+	server, err := c.GetV2Raw(ctx, serverID.String())
+	if err != nil {
+		return nil, err
+	}
+
+	if !server.UsesIdentitySSHKey() {
+		return nil, errors.HTTPNotFound().WithValues("serverID", serverID)
+	}
+
+	identity, err := c.getIdentityForServerV2(ctx, server)
 	if err != nil {
 		return nil, err
 	}
@@ -767,7 +785,7 @@ func (c *ClientV2) SSHKey(ctx context.Context, serverID regionids.ServerID) (*op
 	}
 
 	if len(openstackIdentity.Spec.SSHPrivateKey) == 0 {
-		return nil, fmt.Errorf("%w: server SSH key unavailable", err)
+		return nil, errors.HTTPNotFound().WithValues("serverID", serverID)
 	}
 
 	out := &openapi.SshKey{
