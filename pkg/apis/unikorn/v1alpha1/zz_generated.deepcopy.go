@@ -2624,6 +2624,11 @@ func (in *ServerSpec) DeepCopyInto(out *ServerSpec) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.SSHInjection != nil {
+		in, out := &in.SSHInjection, &out.SSHInjection
+		*out = new(ServerSSHInjection)
+		**out = **in
+	}
 	if in.UserData != nil {
 		in, out := &in.UserData, &out.UserData
 		*out = make([]byte, len(*in))

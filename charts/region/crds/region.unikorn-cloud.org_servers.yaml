@@ -135,6 +135,14 @@ spec:
                 description: SSHCertificateAuthorityID is an optional project scoped
                   OpenSSH user CA trust anchor.
                 type: string
+              sshInjection:
+                description: SSHInjection identifies the create-time SSH access material
+                  requested for the server.
+                enum:
+                - ca
+                - identityKeypair
+                - none
+                type: string
               tags:
                 description: |-
                   Tags are an abitrary list of key/value pairs that a client

@@ -225,6 +225,27 @@ func (c *Server) FlavorID() (regionids.FlavorID, error) {
 	return id, nil
 }
 
+// ResolvedSSHInjection returns the effective create-time SSH injection mode.
+// Older servers predate this field, so fall back to the legacy contract:
+// CA-backed servers use the CA path, all others use the identity keypair.
+func (c *Server) ResolvedSSHInjection() ServerSSHInjection {
+	if c.Spec.SSHInjection != nil {
+		return *c.Spec.SSHInjection
+	}
+
+	if c.Spec.SSHCertificateAuthorityID != nil {
+		return ServerSSHInjectionCA
+	}
+
+	return ServerSSHInjectionIdentityKeypair
+}
+
+// UsesIdentitySSHKey returns true when Region requested identity-scoped SSH
+// keypair injection for this server.
+func (c *Server) UsesIdentitySSHKey() bool {
+	return c.ResolvedSSHInjection() == ServerSSHInjectionIdentityKeypair
+}
+
 // ImageID returns the server's image as a typed identifier. It returns an error
 // if the image is unset or its stored value is not a valid UUID, so read paths
 // surface a clean error rather than panicking.

@@ -428,6 +428,17 @@ type OpenstackIdentitySpec struct {
 
 type OpenstackIdentityStatus struct{}
 
+// ServerSSHInjection identifies how Region should arrange SSH access material
+// for a server at create time.
+// +kubebuilder:validation:Enum=ca;identityKeypair;none
+type ServerSSHInjection string
+
+const (
+	ServerSSHInjectionCA              ServerSSHInjection = "ca"
+	ServerSSHInjectionIdentityKeypair ServerSSHInjection = "identityKeypair"
+	ServerSSHInjectionNone            ServerSSHInjection = "none"
+)
+
 // NetworkList s a typed list of physical networks.
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type NetworkList struct {
@@ -908,6 +919,8 @@ type ServerSpec struct {
 	Networks []ServerNetworkSpec `json:"networks,omitempty"`
 	// SSHCertificateAuthorityID is an optional project scoped OpenSSH user CA trust anchor.
 	SSHCertificateAuthorityID *string `json:"sshCertificateAuthorityID,omitempty"`
+	// SSHInjection identifies the create-time SSH access material requested for the server.
+	SSHInjection *ServerSSHInjection `json:"sshInjection,omitempty"`
 	// UserData contains configuration information or scripts to use upon launch.
 	UserData []byte `json:"userData,omitempty"`
 	// InfrastructureRef pins the server to a specific physical host. When set,

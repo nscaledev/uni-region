@@ -85,6 +85,13 @@ const (
 	RegionTypeSimulated  RegionType = "simulated"
 )
 
+// Defines values for SshInjection.
+const (
+	SshInjectionCa              SshInjection = "ca"
+	SshInjectionIdentityKeypair SshInjection = "identityKeypair"
+	SshInjectionNone            SshInjection = "none"
+)
+
 // Defines values for StorageClassProtocolType.
 const (
 	StorageClassProtocolTypeNfsv3 StorageClassProtocolType = "nfsv3"
@@ -1113,6 +1120,9 @@ type ServerV2CreateSpec struct {
 	// SshCertificateAuthorityId The SSH certificate authority ID.
 	SshCertificateAuthorityId *SshCertificateAuthorityID `json:"sshCertificateAuthorityId,omitempty"`
 
+	// SshInjection The create-time SSH access material Region should arrange for a server.
+	SshInjection *SshInjection `json:"sshInjection,omitempty"`
+
 	// UserData Contains base64-encoded configuration information or scripts to use upon launch.
 	// The format of the data is governed by the cloud-init standard, and may be a script,
 	// a MIME multipart archive, etc.
@@ -1196,6 +1206,9 @@ type ServerV2Status struct {
 
 	// SshCertificateAuthorityId The SSH certificate authority ID.
 	SshCertificateAuthorityId *SshCertificateAuthorityID `json:"sshCertificateAuthorityId,omitempty"`
+
+	// SshInjection The create-time SSH access material Region should arrange for a server.
+	SshInjection *SshInjection `json:"sshInjection,omitempty"`
 }
 
 // ServerV2Update A server update request.
@@ -1281,6 +1294,9 @@ type SshCertificateAuthorityV2Spec struct {
 	// PublicKey A single-line OpenSSH-formatted CA public key.
 	PublicKey string `json:"publicKey"`
 }
+
+// SshInjection The create-time SSH access material Region should arrange for a server.
+type SshInjection string
 
 // SshKey An SSH key.
 type SshKey struct {

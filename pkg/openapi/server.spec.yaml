@@ -1373,6 +1373,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '409':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/servers/{serverID}:
@@ -3127,6 +3129,13 @@ components:
     sshCertificateAuthorityID:
       description: The SSH certificate authority ID.
       type: string
+    sshInjection:
+      description: The create-time SSH access material Region should arrange for a server.
+      type: string
+      enum:
+      - ca
+      - identityKeypair
+      - none
     infrastructureRef:
       description: A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
       type: string
@@ -3330,6 +3339,9 @@ components:
           sshCertificateAuthorityId:
             description: The SSH certificate authority used to bootstrap login trust when the server is created.
             $ref: '#/components/schemas/sshCertificateAuthorityID'
+          sshInjection:
+            description: The create-time SSH access material Region should arrange for the server. If omitted, Region uses ca when sshCertificateAuthorityId is set, otherwise identityKeypair.
+            $ref: '#/components/schemas/sshInjection'
           infrastructureRef:
             $ref: '#/components/schemas/infrastructureRef'
     serverV2Status:
@@ -3348,6 +3360,9 @@ components:
         sshCertificateAuthorityId:
           description: The SSH certificate authority configured when the server was created.
           $ref: '#/components/schemas/sshCertificateAuthorityID'
+        sshInjection:
+          description: The resolved create-time SSH access material Region arranged for the server.
+          $ref: '#/components/schemas/sshInjection'
         infrastructureRef:
           $ref: '#/components/schemas/infrastructureRef'
         powerState:

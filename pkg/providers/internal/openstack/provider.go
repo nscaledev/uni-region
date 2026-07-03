@@ -2561,9 +2561,9 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 }
 
 func resolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {
-	if server.Spec.SSHCertificateAuthorityID != nil {
+	if !server.UsesIdentitySSHKey() {
 		// gophercloud omits the empty key_name field, which disables legacy Nova key injection
-		// for CA-bootstrapped servers.
+		// for servers that do not use the identity keypair.
 		return ""
 	}
 
