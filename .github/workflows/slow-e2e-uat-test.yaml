@@ -1,4 +1,4 @@
-name: Nightly Tests
+name: Slow E2E Tests (UAT)
 on:
   schedule:
     - cron: '50 22 * * *'
@@ -63,10 +63,10 @@ jobs:
         version-api-url: ${{ vars.UAT_REGION_BASE_URL }}/api/version
         version-api-token: ${{ secrets.UAT_API_AUTH_TOKEN }}
         fallback-to-constellation: false
-        summary-title: UAT Nightly Test Version
+        summary-title: UAT Slow E2E Test Version
 
-  Nightly-Tests-UAT:
-    name: Nightly Tests (uat)
+  Slow-E2E-Tests-UAT:
+    name: Slow E2E Tests (uat)
     needs: find-uat-deployed-version
     runs-on: ubuntu-latest
     timeout-minutes: 120
