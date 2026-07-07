@@ -42,6 +42,7 @@ type TestConfig struct {
 	ServerFlavorID          string
 	ServerImageID           string
 	ServerInfrastructureRef string
+	FileStorageSnapshotDir  string
 }
 
 // HasInternalAPIConfig reports whether local internal API credentials are available.
@@ -54,14 +55,15 @@ func (c *TestConfig) HasInternalAPIConfig() bool {
 func LoadTestConfig() (*TestConfig, error) {
 	// Set up viper with config paths and defaults
 	defaults := map[string]interface{}{
-		"REQUEST_TIMEOUT":    "60s",
-		"TEST_TIMEOUT":       "20m",
-		"SKIP_INTEGRATION":   false,
-		"DEBUG_LOGGING":      false,
-		"LOG_REQUESTS":       false,
-		"LOG_RESPONSES":      false,
-		"INTERNAL_API_CN":    "unikorn-compute",
-		"INTERNAL_API_ACTOR": "api-tests",
+		"REQUEST_TIMEOUT":                "60s",
+		"TEST_TIMEOUT":                   "20m",
+		"SKIP_INTEGRATION":               false,
+		"DEBUG_LOGGING":                  false,
+		"LOG_REQUESTS":                   false,
+		"LOG_RESPONSES":                  false,
+		"INTERNAL_API_CN":                "unikorn-compute",
+		"INTERNAL_API_ACTOR":             "api-tests",
+		"TEST_FILE_STORAGE_SNAPSHOT_DIR": ".snapshot",
 	}
 
 	// .env is located in test/ directory
@@ -103,6 +105,7 @@ func LoadTestConfig() (*TestConfig, error) {
 		ServerFlavorID:          v.GetString("TEST_SERVER_FLAVOR_ID"),
 		ServerImageID:           v.GetString("TEST_SERVER_IMAGE_ID"),
 		ServerInfrastructureRef: v.GetString("TEST_SERVER_INFRASTRUCTURE_REF"),
+		FileStorageSnapshotDir:  v.GetString("TEST_FILE_STORAGE_SNAPSHOT_DIR"),
 	}
 
 	// Validate required fields
