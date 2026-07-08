@@ -21,6 +21,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -371,6 +372,59 @@ func (b *ServerPayloadBuilder) Build() regionopenapi.ServerV2Create {
 	return b.server
 }
 
+// FileStoragePayloadBuilder builds StorageV2CreateRequest payloads for testing.
+type FileStoragePayloadBuilder struct {
+	storage regionopenapi.StorageV2CreateRequest
+}
+
+// NewFileStoragePayload creates a builder for an NFS file storage attached to the given networks.
+func NewFileStoragePayload(orgID, projectID, regionID, storageClassID string, networkIDs ...string) *FileStoragePayloadBuilder {
+	return &FileStoragePayloadBuilder{
+		storage: regionopenapi.StorageV2CreateRequest{
+			Metadata: coreapi.ResourceWriteMetadata{
+				Name:        UniqueName("filestorage"),
+				Description: ptr.To("E2E file storage mounted from a server over NFS"),
+			},
+			Spec: struct {
+				Attachments                      *regionopenapi.StorageAttachmentV2Spec         `json:"attachments,omitempty"`
+				DefaultSnapshotProtectionEnabled *bool                                          `json:"defaultSnapshotProtectionEnabled,omitempty"`
+				OrganizationId                   string                                         `json:"organizationId"`
+				ProjectId                        string                                         `json:"projectId"`
+				RegionId                         regionopenapi.RegionId                         `json:"regionId"`
+				SizeGiB                          int64                                          `json:"sizeGiB"`
+				SnapshotPolicies                 *regionopenapi.StorageSnapshotPolicyListV2Spec `json:"snapshotPolicies,omitempty"`
+				StorageClassId                   string                                         `json:"storageClassId"`
+				StorageType                      regionopenapi.StorageTypeV2Spec                `json:"storageType"`
+			}{
+				Attachments:                      &regionopenapi.StorageAttachmentV2Spec{NetworkIds: networkIDs},
+				DefaultSnapshotProtectionEnabled: ptr.To(false),
+				OrganizationId:                   orgID,
+				ProjectId:                        projectID,
+				RegionId:                         regionids.MustParseRegionID(regionID),
+				StorageClassId:                   storageClassID,
+				StorageType:                      regionopenapi.StorageTypeV2Spec{NFS: &regionopenapi.NFSV2Spec{}},
+			},
+		},
+	}
+}
+
+// WithSizeGiB sets the requested storage size in GiB.
+func (b *FileStoragePayloadBuilder) WithSizeGiB(sizeGiB int64) *FileStoragePayloadBuilder {
+	b.storage.Spec.SizeGiB = sizeGiB
+	return b
+}
+
+// WithSnapshotPolicies attaches user-managed snapshot policies (nil leaves the storage with none).
+func (b *FileStoragePayloadBuilder) WithSnapshotPolicies(policies *regionopenapi.StorageSnapshotPolicyListV2Spec) *FileStoragePayloadBuilder {
+	b.storage.Spec.SnapshotPolicies = policies
+	return b
+}
+
+// Build returns the typed StorageV2CreateRequest struct.
+func (b *FileStoragePayloadBuilder) Build() regionopenapi.StorageV2CreateRequest {
+	return b.storage
+}
+
 // WaitForImageReady polls until the image appears in the region with state ready.
 // Uses a 1-hour timeout to accommodate image download and import times.
 func WaitForImageReady(c *APIClient, ctx context.Context, config *TestConfig, imageID string) {
@@ -433,4 +487,164 @@ func WaitForNetworkVisible(c *APIClient, ctx context.Context, networkID string) 
 		return err
 	}).WithTimeout(5*time.Second).WithPolling(250*time.Millisecond).
 		Should(Succeed(), "network should become visible at the API")
+}
+
+// WaitForNetworkProvisioned polls until the network reaches the provisioned state.
+func WaitForNetworkProvisioned(c *APIClient, ctx context.Context, networkID string) {
+	Eventually(func() coreapi.ResourceProvisioningStatus {
+		network, err := c.GetNetwork(ctx, networkID)
+		if err != nil {
+			GinkgoWriter.Printf("Error retrieving network %s: %v\n", networkID, err)
+			return ""
+		}
+
+		return network.Metadata.ProvisioningStatus
+	}).WithTimeout(5*time.Minute).
+		WithPolling(5*time.Second).
+		Should(Equal(coreapi.ResourceProvisioningStatusProvisioned), "network should be provisioned")
+}
+
+// errResourceStillExists signals a resource is still present during a deletion wait.
+var errResourceStillExists = errors.New("resource still exists")
+
+// waitForResourceGone polls getByID until the resource is absent
+// (coreclient.ErrResourceNotFound), failing if it still exists after the timeout.
+func waitForResourceGone(resource, id string, getByID func() error) {
+	Eventually(func() error {
+		err := getByID()
+		if errors.Is(err, coreclient.ErrResourceNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		return fmt.Errorf("%s %s: %w", resource, id, errResourceStillExists)
+	}).WithTimeout(10*time.Minute).
+		WithPolling(10*time.Second).
+		Should(Succeed(), fmt.Sprintf("%s should be deleted", resource))
+}
+
+// WaitForServerGone polls until the server has been deleted.
+func WaitForServerGone(c *APIClient, ctx context.Context, serverID string) {
+	waitForResourceGone("server", serverID, func() error {
+		_, err := c.GetServer(ctx, serverID)
+		return err
+	})
+}
+
+// WaitForFileStorageGone polls until the file storage has been deleted.
+func WaitForFileStorageGone(c *APIClient, ctx context.Context, filestorageID string) {
+	waitForResourceGone("file storage", filestorageID, func() error {
+		_, err := c.GetFileStorage(ctx, filestorageID)
+		return err
+	})
+}
+
+// WaitForNetworkGone polls until the network has been deleted.
+func WaitForNetworkGone(c *APIClient, ctx context.Context, networkID string) {
+	waitForResourceGone("network", networkID, func() error {
+		_, err := c.GetNetwork(ctx, networkID)
+		return err
+	})
+}
+
+// SkipUnlessOpenStackRegion skips the spec unless the configured region is visible
+// and backed by OpenStack.
+func SkipUnlessOpenStackRegion(c *APIClient, ctx context.Context, config *TestConfig) {
+	regions, err := c.ListRegions(ctx, config.OrgID)
+	Expect(err).NotTo(HaveOccurred(), "failed to resolve region provider")
+
+	for _, region := range regions {
+		if region.Metadata.Id != config.RegionID {
+			continue
+		}
+
+		if region.Spec.Type != regionopenapi.RegionTypeOpenstack {
+			Skip("tests require an OpenStack-backed region")
+		}
+
+		return
+	}
+
+	Skip("tests require TEST_REGION_ID to be visible")
+}
+
+// SkipUnlessInternalAPIConfigured skips the spec unless internal API mTLS credentials
+// are available locally.
+func SkipUnlessInternalAPIConfigured(c *APIClient) {
+	if !c.InternalAPIConfigured() {
+		Skip("tests require local internal API mTLS credentials")
+	}
+}
+
+// SkipUnlessServerFixtureConfigured skips the spec unless a flavor and image are configured.
+func SkipUnlessServerFixtureConfigured(config *TestConfig) {
+	if config.ServerFlavorID == "" || config.ServerImageID == "" {
+		Skip("tests require TEST_SERVER_FLAVOR_ID and TEST_SERVER_IMAGE_ID")
+	}
+}
+
+// MustProvisionNetwork creates a network from createReq and waits for it to become
+// visible and provisioned. It returns the network and a cleanup func the caller should
+// register (e.g. DeferCleanup(cleanup)).
+func MustProvisionNetwork(c *APIClient, ctx context.Context, createReq regionopenapi.NetworkV2Create) (*regionopenapi.NetworkV2Read, func()) {
+	network, err := c.CreateNetwork(ctx, createReq)
+	Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
+	Expect(network).NotTo(BeNil())
+
+	cleanup := func() {
+		MustDeleteNetwork(c, ctx, network.Metadata.Id)
+	}
+
+	WaitForNetworkVisible(c, ctx, network.Metadata.Id)
+	WaitForNetworkProvisioned(c, ctx, network.Metadata.Id)
+
+	return network, cleanup
+}
+
+// MustDeleteNetwork deletes the network and waits for it to disappear. A missing network
+// is treated as already deleted.
+func MustDeleteNetwork(c *APIClient, ctx context.Context, networkID string) {
+	err := c.DeleteNetwork(ctx, networkID)
+
+	switch {
+	case err == nil:
+		WaitForNetworkGone(c, ctx, networkID)
+	case errors.Is(err, coreclient.ErrResourceNotFound):
+		// Already gone; nothing to wait for.
+	default:
+		GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
+	}
+}
+
+// MustCreateServer creates a server from createReq and returns it with a cleanup func the
+// caller should register (e.g. DeferCleanup(cleanup)). It does not wait for provisioning,
+// so callers can assert on the freshly-created (pending) state.
+func MustCreateServer(c *APIClient, ctx context.Context, createReq regionopenapi.ServerV2Create) (*regionopenapi.ServerV2Read, func()) {
+	created, err := c.CreateServer(ctx, createReq)
+	Expect(err).NotTo(HaveOccurred(), "failed to create server")
+	Expect(created).NotTo(BeNil())
+	Expect(created.Metadata.Id).NotTo(BeEmpty())
+
+	cleanup := func() {
+		MustDeleteServer(c, ctx, created.Metadata.Id)
+	}
+
+	return created, cleanup
+}
+
+// MustDeleteServer deletes the server and waits for it to disappear. A missing server is
+// treated as already deleted.
+func MustDeleteServer(c *APIClient, ctx context.Context, serverID string) {
+	err := c.DeleteServer(ctx, serverID)
+
+	switch {
+	case err == nil:
+		WaitForServerGone(c, ctx, serverID)
+	case errors.Is(err, coreclient.ErrResourceNotFound):
+		// Already gone; nothing to wait for.
+	default:
+		GinkgoWriter.Printf("Warning: cleanup delete server %s: %v\n", serverID, err)
+	}
 }
