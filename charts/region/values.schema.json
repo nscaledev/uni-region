@@ -482,6 +482,68 @@
                     }
                   }
                 }
+              },
+              "blockStorage": {
+                "type": "object",
+                "properties": {
+                  "volumeClasses": {
+                    "type": "object",
+                    "properties": {
+                      "selector": {
+                        "type": "object",
+                        "properties": {
+                          "ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "metadata": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "id"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "media": {
+                              "type": "string",
+                              "enum": [
+                                "hdd",
+                                "ssd",
+                                "nvme"
+                              ]
+                            },
+                            "performance": {
+                              "type": "object",
+                              "properties": {
+                                "iops": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "throughputMiBps": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              }
+                            },
+                            "encrypted": {
+                              "type": "boolean"
+                            },
+                            "replicated": {
+                              "type": "boolean"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
           }

@@ -97,6 +97,25 @@ organization: nscaledev
 #           segments:
 #           - startID: 1
 #             endID: 4094
+#     # Block storage service configuration.
+#     blockStorage:
+#       # VolumeClass selection and user-facing metadata. OpenStack maps these
+#       # entries to Cinder volume types internally; Region models them as
+#       # VolumeClass inventory.
+#       volumeClasses:
+#         # Include specific provider volume classes.
+#         selector:
+#           ids:
+#           - cda67b98-331d-4d4f-911e-b1fd64611b0b
+#         # Add user-facing metadata to selected provider volume classes.
+#         metadata:
+#         - id: cda67b98-331d-4d4f-911e-b1fd64611b0b
+#           media: nvme
+#           performance:
+#             iops: 25000
+#             throughputMiBps: 500
+#           encrypted: true
+#           replicated: true
 
 # REST server specific configuration.
 server:

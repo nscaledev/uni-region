@@ -117,6 +117,14 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   server with a baremetal flavor is disambiguated through Ironic so the API
   can distinguish `Queued` (waiting on hardware) from `Building` (provider
   actively deploying).
+- VolumeClass configuration follows the same inventory pattern for block
+  storage: Region configuration under
+  `openstack.blockStorage.volumeClasses` selects which provider volume classes
+  are eligible for export and enriches them with user-facing metadata such as
+  media, performance, encryption, and replication signals. OpenStack maps this
+  configuration to Cinder volume types internally. `VolumeClass` is
+  Region-scoped inventory configuration, not a project-owned resource or
+  lifecycle object.
 - Image handling is a first-class contract surface here:
   - OpenStack image properties are validated against a schema
   - public images can additionally be signature-verified

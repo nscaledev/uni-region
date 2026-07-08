@@ -150,6 +150,11 @@ the CRD documentation:
 kubectl explain regions.region.unikorn-cloud.org
 ```
 
+Block storage class inventory is configured on the `Region` itself. The domain
+term is `VolumeClass`; for OpenStack those entries map to Cinder volume types
+internally. A `VolumeClass` is provider inventory owned by a Region, not a
+project-owned resource and not something users create or delete.
+
 The resulting `Region` shape is equivalent to:
 
 ```yaml
@@ -171,4 +176,17 @@ spec:
       clusterRoles:
       - member
       - load-balancer_member
+    blockStorage:
+      volumeClasses:
+        selector:
+          ids:
+          - cda67b98-331d-4d4f-911e-b1fd64611b0b
+        metadata:
+        - id: cda67b98-331d-4d4f-911e-b1fd64611b0b
+          media: nvme
+          performance:
+            iops: 25000
+            throughputMiBps: 500
+          encrypted: true
+          replicated: true
 ```
