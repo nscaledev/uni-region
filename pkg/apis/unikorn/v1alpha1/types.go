@@ -989,7 +989,16 @@ type ServerStatus struct {
 	PrivateIP *string `json:"privateIP,omitempty"`
 	// PublicIP is the public IP address of the server.
 	PublicIP *string `json:"publicIP,omitempty"`
-	// MACAddress is the MAC address of the server's primary network interface.
+	// MACAddress is the MAC address of the server's primary (single) network
+	// interface. It is owned exclusively by the monitor (the health checker),
+	// not the reconciler: it is recorded from the Nova server response once the
+	// server reaches ACTIVE, the barrier at which the port MAC is guaranteed
+	// bound for VMs and baremetal alike. For baremetal Ironic rebinds the port
+	// to the real NIC MAC asynchronously during deploy, so the value observed
+	// earlier (e.g. at port-create time) is the ephemeral Neutron MAC and is not
+	// trustworthy. It is only ever written, never cleared: the provider-create
+	// retry reset leaves it intact and a transient port-read miss cannot unset
+	// it, while an authoritative ACTIVE read self-heals any drift.
 	MACAddress *string `json:"macAddress,omitempty"`
 	// LaunchedAt is the time the provider booted the VM. Nil until the server has
 	// been observed Running at least once.

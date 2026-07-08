@@ -304,7 +304,8 @@ func (p *Provisioner) resetProviderCreateRuntimeStatus(message string) {
 	p.server.Status.Phase = unikornv1.InstanceLifecyclePhasePending
 	p.server.Status.PrivateIP = nil
 	p.server.Status.PublicIP = nil
-	p.server.Status.MACAddress = nil
+	// MACAddress is deliberately not reset: the monitor is its sole owner, and a
+	// stale value self-heals on the next ACTIVE poll rather than flickering to unset.
 	p.server.Status.LaunchedAt = nil
 	p.server.Status.ScheduledAt = nil
 	p.server.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionUnknown, unikornv1core.ConditionReasonProvisioning, message)

@@ -34,6 +34,7 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -207,6 +208,59 @@ func TestSetServerPhaseStopped(t *testing.T) {
 	setServerPhase(t.Context(), server, &servers.Server{Status: "SHUTOFF", PowerState: servers.SHUTDOWN}, nil)
 
 	require.Equal(t, unikornv1.InstanceLifecyclePhaseStopped, server.Status.Phase)
+}
+
+// TestUpdateServerStateWithClientsRecordsMACAddress is the end-to-end wiring
+// test for the monitor as sole owner of the MAC: an ACTIVE Nova server carrying
+// a bound port MAC results in that MAC being recorded on the resource.
+func TestUpdateServerStateWithClientsRecordsMACAddress(t *testing.T) {
+	t.Parallel()
+
+	const mac = "e0:9d:73:86:cc:18"
+
+	compute := &stubComputeClient{server: &servers.Server{
+		ID:     "nova-id",
+		Status: "ACTIVE",
+		Addresses: map[string]any{
+			"network-ee2b52e3-a844-42bd-864d-a9ff2f39a026": []any{
+				map[string]any{
+					"OS-EXT-IPS-MAC:mac_addr": mac,
+					"OS-EXT-IPS:type":         "fixed",
+					"addr":                    "7.247.33.145",
+					"version":                 float64(4),
+				},
+			},
+		},
+	}}
+	identity := &unikornv1.Identity{}
+	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{
+		FlavorID: "vm",
+		Networks: []unikornv1.ServerNetworkSpec{{ID: "ee2b52e3-a844-42bd-864d-a9ff2f39a026"}},
+	}}
+
+	provider := &Provider{
+		openstack: &openStackClients{
+			_region: &unikornv1.Region{
+				Spec: unikornv1.RegionSpec{
+					Openstack: &unikornv1.RegionOpenstackSpec{
+						Compute: &unikornv1.RegionOpenstackComputeSpec{
+							Flavors: &unikornv1.OpenstackFlavorsSpec{
+								Metadata: []unikornv1.FlavorMetadata{{ID: "vm", Baremetal: false}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	err := provider.updateServerStateWithClients(t.Context(), identity, server, compute,
+		func(context.Context, *unikornv1.Identity) (BaremetalInterface, error) {
+			return nil, errIronicUnavailable
+		})
+
+	require.NoError(t, err)
+	require.Equal(t, mac, ptr.Deref(server.Status.MACAddress, ""))
 }
 
 type stubComputeClient struct {

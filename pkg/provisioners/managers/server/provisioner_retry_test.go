@@ -40,6 +40,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -169,7 +170,9 @@ func TestProvision_ProviderCreateFailureDeletesAndYields(t *testing.T) {
 	require.Equal(t, regionv1.InstanceLifecyclePhasePending, server.Status.Phase)
 	require.Nil(t, server.Status.PrivateIP)
 	require.Nil(t, server.Status.PublicIP)
-	require.Nil(t, server.Status.MACAddress)
+	// The MAC is owned exclusively by the monitor; the reconciler's create-failure
+	// reset must not clear it. A stale value self-heals on the next ACTIVE poll.
+	require.Equal(t, ptr.To("00:11:22:33:44:55"), server.Status.MACAddress)
 	require.Nil(t, server.Status.ScheduledAt)
 
 	condition, err := server.StatusConditionRead(unikornv1core.ConditionHealthy)
