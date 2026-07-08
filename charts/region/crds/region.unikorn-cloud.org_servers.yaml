@@ -233,8 +233,17 @@ spec:
                 format: date-time
                 type: string
               macAddress:
-                description: MACAddress is the MAC address of the server's primary
-                  network interface.
+                description: |-
+                  MACAddress is the MAC address of the server's primary (single) network
+                  interface. It is owned exclusively by the monitor (the health checker),
+                  not the reconciler: it is recorded from the Nova server response once the
+                  server reaches ACTIVE, the barrier at which the port MAC is guaranteed
+                  bound for VMs and baremetal alike. For baremetal Ironic rebinds the port
+                  to the real NIC MAC asynchronously during deploy, so the value observed
+                  earlier (e.g. at port-create time) is the ephemeral Neutron MAC and is not
+                  trustworthy. It is only ever written, never cleared: the provider-create
+                  retry reset leaves it intact and a transient port-read miss cannot unset
+                  it, while an authoritative ACTIVE read self-heals any drift.
                 type: string
               phase:
                 description: Phase is the current lifecycle phase of the server.

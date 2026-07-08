@@ -1536,8 +1536,10 @@ func TestReconcileServerPort(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, server.Status.PrivateIP)
 		require.Equal(t, serverPortIP, *server.Status.PrivateIP)
-		require.NotNil(t, server.Status.MACAddress)
-		require.Equal(t, serverPortMAC, *server.Status.MACAddress)
+		// The MAC is owned exclusively by the monitor, not the reconciler:
+		// the port MAC observed at create time is the ephemeral Neutron one
+		// for baremetal, so reconcileServerPort must not record it.
+		require.Nil(t, server.Status.MACAddress)
 	})
 
 	t.Run("ItExists", func(t *testing.T) {
@@ -1558,8 +1560,8 @@ func TestReconcileServerPort(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, server.Status.PrivateIP)
 		require.Equal(t, serverPortIP, *server.Status.PrivateIP)
-		require.NotNil(t, server.Status.MACAddress)
-		require.Equal(t, serverPortMAC, *server.Status.MACAddress)
+		// The MAC is owned exclusively by the monitor, not the reconciler.
+		require.Nil(t, server.Status.MACAddress)
 	})
 
 	t.Run("ItUpdatesSecurityGroups", func(t *testing.T) {

@@ -149,7 +149,11 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   does, however, latch the monitor-owned `status.provisionedAt` field from Nova
   `launched_at` the first time a server is seen booted (write-once, never
   cleared, independent of live power state), which the controller's rebuild guard
-  relies on. The lookup is
+  relies on. Alongside it, `setServerMACAddress` records the other monitor-owned
+  field, `status.macAddress`, from the Nova response once the server is `ACTIVE`
+  (the port MAC rides inline in `addresses`, reused from the same `GetServer` — no
+  extra call). ACTIVE is required because baremetal Ironic rebinds the port to the
+  real NIC MAC asynchronously; the value is only ever written, never cleared. The lookup is
   filtered by `instance_uuid`. Because Ironic node ownership and visibility
   are provider infrastructure concerns rather than tenant workload operations,
   this lookup uses the Region top-level provider credentials scoped to the
