@@ -779,15 +779,25 @@ type VolumeSpec struct {
 	VolumeClassID string `json:"volumeClassID"`
 	// Size is the requested volume capacity.
 	Size resource.Quantity `json:"size"`
-	// ClaimRef binds this volume to the server that owns its
+	// ClaimRef binds this volume to the resource that owns its
 	// attachment. Unset means the volume is available for claiming.
 	ClaimRef *VolumeClaimRef `json:"claimRef,omitempty"`
 }
 
 type VolumeClaimRef struct {
-	// ServerID is the ID of the server claiming the volume attachment.
-	ServerID string `json:"serverID"`
+	// Kind is the kind of resource claiming the volume attachment.
+	Kind VolumeClaimKind `json:"kind"`
+	// ID is the Region resource ID of the resource claiming the volume attachment.
+	ID string `json:"id"`
 }
+
+// VolumeClaimKind identifies a resource kind that can claim a volume attachment.
+// +kubebuilder:validation:Enum=Server
+type VolumeClaimKind string
+
+const (
+	VolumeClaimKindServer VolumeClaimKind = "Server"
+)
 
 type VolumeStatus struct {
 	// ObservedGeneration is the most recent generation observed by the controller.

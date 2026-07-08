@@ -57,15 +57,22 @@ spec:
             properties:
               claimRef:
                 description: |-
-                  ClaimRef binds this volume to the server that owns its
+                  ClaimRef binds this volume to the resource that owns its
                   attachment. Unset means the volume is available for claiming.
                 properties:
-                  serverID:
-                    description: ServerID is the ID of the server claiming the volume
+                  id:
+                    description: ID is the Region resource ID of the resource claiming
+                      the volume attachment.
+                    type: string
+                  kind:
+                    description: Kind is the kind of resource claiming the volume
                       attachment.
+                    enum:
+                    - Server
                     type: string
                 required:
-                - serverID
+                - id
+                - kind
                 type: object
               networkID:
                 description: |-
