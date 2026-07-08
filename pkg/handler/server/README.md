@@ -69,8 +69,12 @@ related dependencies rather than from nested path scope.
 - direct `v2` object access is gated to resources labeled with
   `ResourceAPIVersionLabel=2`.
 - A `Server v2` is owned by its network for cascading deletion.
-- User data and SSH certificate authority combinations are validated together to
-  avoid unsupported managed-userdata states.
+- User data is validated at create time against the server provisioner's
+  cloud-init parser, so malformed payloads are rejected with HTTP 422 instead of
+  failing mid-provision (when managed augmentation parses them) or silently
+  inside the guest at boot. With an SSH certificate authority the payload must
+  additionally support managed cloud-init augmentation (which excludes gzip);
+  without one, gzip payloads are accepted and passed through unmodified.
 - `GET /api/v2/servers/{serverID}/sshkey` only returns the identity private key
   for servers where Region requested `identityKeypair` SSH injection during
   create. It returns not found for `ca` and `none` servers.
@@ -93,8 +97,10 @@ related dependencies rather than from nested path scope.
   provider compute API.
 - Snapshot behaviour is coupled to image provenance and ownership semantics, so
   server is not fully self-contained as a lifecycle concept.
-- Some semantics, such as managed user-data validation for SSH CA use, are
-  important but narrow enough that they should stay local to this package.
+- Some semantics, such as user-data validation, are important but narrow enough
+  that they should stay local to this package; the parser itself is owned by the
+  server provisioner so the boundary check and provisioning behaviour cannot
+  drift apart.
 
 ## TODO
 

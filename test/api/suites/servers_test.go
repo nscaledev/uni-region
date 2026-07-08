@@ -21,6 +21,7 @@ limitations under the License.
 package suites
 
 import (
+	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -110,6 +111,51 @@ var _ = Describe("Server Management", func() {
 					g.Expect(got.Spec.ImageId).To(Equal(createReq.Spec.ImageId))
 					g.Expect(got.Status.NetworkId).To(Equal(networkID))
 				}).WithTimeout(5 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
+			})
+		})
+	})
+
+	Context("When creating a server with user data", Ordered, func() {
+		var networkID string
+
+		BeforeAll(func() {
+			api.SkipUnlessOpenStackRegion(regionClient, ctx, config)
+			api.SkipUnlessInternalAPIConfigured(regionClient)
+			api.SkipUnlessServerFixtureConfigured(config)
+
+			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
+			network, cleanupNetwork := api.MustProvisionNetwork(regionClient, ctx, networkReq)
+			DeferCleanup(cleanupNetwork)
+			networkID = network.Metadata.Id
+		})
+
+		Describe("Given malformed cloud-init user data", func() {
+			It("should reject the request with an actionable validation error", func() {
+				createReq := api.NewServerPayload(networkID, testFlavorID(), testImageID()).
+					WithUserData([]byte("echo hello")).
+					Build()
+
+				apiError, err := regionClient.CreateServerExpectError(ctx, createReq, http.StatusUnprocessableEntity)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(apiError.Error).To(Equal(coreapi.UnprocessableContent))
+				Expect(apiError.ErrorDescription).To(ContainSubstring("cloud-init"))
+				Expect(apiError.ErrorDescription).To(ContainSubstring("unsupported userData format"))
+			})
+		})
+
+		Describe("Given valid cloud-config user data", func() {
+			It("should create the server and preserve the user data unchanged", func() {
+				userData := []byte("#cloud-config\npackages:\n - vim\n")
+				createReq := api.NewServerPayload(networkID, testFlavorID(), testImageID()).
+					WithUserData(userData).
+					Build()
+
+				created, cleanup := api.MustCreateServer(regionClient, ctx, createReq)
+				DeferCleanup(cleanup)
+
+				Expect(created.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusPending))
+				Expect(created.Spec.UserData).NotTo(BeNil())
+				Expect(*created.Spec.UserData).To(Equal(userData))
 			})
 		})
 	})
