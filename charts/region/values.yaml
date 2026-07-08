@@ -220,30 +220,3 @@ identity:
 # Sets the OTLP endpoint for shipping spans.
 # otlp:
 #   endpoint: jaeger-collector.default:4318
-
-monitoring:
-  prometheusRule:
-    # Creates app-specific alerts when the PrometheusRule CRD is available.
-    enabled: true
-    labels: {}
-
-  controllerCrashLoop:
-    for: 10m
-    window: 15m
-    severity: critical
-
-  identityEndpointProbe:
-    # Enable only in environments with a blackbox exporter available to
-    # Prometheus. Override target per environment.
-    enabled: false
-    target: https://devstack.a73x.sh/identity/v3/
-    module: http_2xx
-    interval: 1m
-    scrapeTimeout: 10s
-    prober:
-      url: prometheus-blackbox-exporter.prometheus-blackbox-exporter.svc.cluster.local:9115
-      path: /probe
-    labels: {}
-    alert:
-      for: 5m
-      severity: warning
