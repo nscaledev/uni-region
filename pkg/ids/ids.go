@@ -18,6 +18,8 @@ package ids
 
 import (
 	"github.com/google/uuid"
+
+	"github.com/unikorn-cloud/core/pkg/util"
 )
 
 // RegionID is a UUID-backed identifier for regions. It is a distinct
@@ -79,6 +81,18 @@ type LoadBalancerID uuid.UUID
 func (v LoadBalancerID) String() string                { return uuid.UUID(v).String() }
 func (v LoadBalancerID) MarshalText() ([]byte, error)  { return uuid.UUID(v).MarshalText() }
 func (v *LoadBalancerID) UnmarshalText(b []byte) error { return unmarshalUUID((*uuid.UUID)(v), b) }
+
+// VolumeID is a UUID-backed identifier for block storage volumes. It is a distinct
+// named type so the compiler prevents accidental interchange with any other ID type.
+// UnmarshalText delegates to uuid.UUID, so the oapi-codegen runtime rejects
+// non-UUID path parameter values before any handler is reached.
+//
+//nolint:recvcheck // UnmarshalText must be a pointer receiver; String/MarshalText are value receivers for fmt.Stringer compatibility.
+type VolumeID uuid.UUID
+
+func (v VolumeID) String() string                { return uuid.UUID(v).String() }
+func (v VolumeID) MarshalText() ([]byte, error)  { return uuid.UUID(v).MarshalText() }
+func (v *VolumeID) UnmarshalText(b []byte) error { return unmarshalUUID((*uuid.UUID)(v), b) }
 
 // ServerID is a UUID-backed identifier for servers. It is a distinct
 // named type so the compiler prevents accidental interchange with any other ID type.
@@ -143,6 +157,12 @@ type FlavorID uuid.UUID
 func (v FlavorID) String() string                { return uuid.UUID(v).String() }
 func (v FlavorID) MarshalText() ([]byte, error)  { return uuid.UUID(v).MarshalText() }
 func (v *FlavorID) UnmarshalText(b []byte) error { return unmarshalUUID((*uuid.UUID)(v), b) }
+
+const (
+	// VolumeIDNamespace is the UUID namespace used to derive deterministic
+	// Volume IDs from the immutable (networkID, volumeName) natural key.
+	VolumeIDNamespace = "0fc969c8-fcf4-4a8a-b3cd-1cbe72bedf34"
+)
 
 // unmarshalUUID is the shared implementation for all UnmarshalText methods.
 func unmarshalUUID(dst *uuid.UUID, text []byte) error {
@@ -212,6 +232,17 @@ func ParseLoadBalancerID(s string) (LoadBalancerID, error) {
 	return LoadBalancerID(id), nil
 }
 
+// ParseVolumeID parses s as a UUID into a VolumeID, returning
+// an error if s is not a valid UUID.
+func ParseVolumeID(s string) (VolumeID, error) {
+	id, err := uuid.Parse(s)
+	if err != nil {
+		return VolumeID{}, err
+	}
+
+	return VolumeID(id), nil
+}
+
 // ParseServerID parses s as a UUID into a ServerID, returning
 // an error if s is not a valid UUID.
 func ParseServerID(s string) (ServerID, error) {
@@ -267,6 +298,25 @@ func ParseFlavorID(s string) (FlavorID, error) {
 	return FlavorID(id), nil
 }
 
+// GenerateVolumeID deterministically derives the VolumeID for a volume's
+// immutable natural key. The network ID anchors uniqueness to a network, while
+// the fixed Volume namespace prevents collisions with other deterministic
+// resource types that may use the same user-visible name.
+func GenerateVolumeID(networkID NetworkID, volumeName string) VolumeID {
+	id := util.GenerateDeterministicResourceID(
+		uuid.MustParse(VolumeIDNamespace),
+		networkID.String()+":"+volumeName,
+	)
+
+	return MustParseVolumeID(id)
+}
+
+// GenerateVolumeName returns the Kubernetes object name for a volume's
+// deterministic ID.
+func GenerateVolumeName(networkID NetworkID, volumeName string) string {
+	return GenerateVolumeID(networkID, volumeName).String()
+}
+
 // MustParseRegionID parses s as a UUID into a RegionID.
 // Panics if s is not a valid UUID; use only where s is guaranteed valid
 // (e.g. previously validated API path parameters).
@@ -291,6 +341,11 @@ func MustParseSecurityGroupID(s string) SecurityGroupID { return SecurityGroupID
 // Panics if s is not a valid UUID; use only where s is guaranteed valid
 // (e.g. previously validated API path parameters).
 func MustParseLoadBalancerID(s string) LoadBalancerID { return LoadBalancerID(uuid.MustParse(s)) }
+
+// MustParseVolumeID parses s as a UUID into a VolumeID.
+// Panics if s is not a valid UUID; use only where s is guaranteed valid
+// (e.g. previously validated API path parameters).
+func MustParseVolumeID(s string) VolumeID { return VolumeID(uuid.MustParse(s)) }
 
 // MustParseServerID parses s as a UUID into a ServerID.
 // Panics if s is not a valid UUID; use only where s is guaranteed valid

@@ -65,6 +65,11 @@ func TestStringFormats(t *testing.T) {
 			fmt.Sprintf("%v", ids.MustParseLoadBalancerID(validUUID)),
 		},
 		{
+			"VolumeID",
+			fmt.Sprintf("%s", ids.MustParseVolumeID(validUUID)), //nolint:staticcheck
+			fmt.Sprintf("%v", ids.MustParseVolumeID(validUUID)),
+		},
+		{
 			"ServerID",
 			fmt.Sprintf("%s", ids.MustParseServerID(validUUID)), //nolint:staticcheck
 			fmt.Sprintf("%v", ids.MustParseServerID(validUUID)),
@@ -118,6 +123,7 @@ func TestMarshalText(t *testing.T) {
 		{"NetworkID", ids.MustParseNetworkID(validUUID)},
 		{"SecurityGroupID", ids.MustParseSecurityGroupID(validUUID)},
 		{"LoadBalancerID", ids.MustParseLoadBalancerID(validUUID)},
+		{"VolumeID", ids.MustParseVolumeID(validUUID)},
 		{"ServerID", ids.MustParseServerID(validUUID)},
 		{"SSHCertificateAuthorityID", ids.MustParseSSHCertificateAuthorityID(validUUID)},
 		{"FileStorageID", ids.MustParseFileStorageID(validUUID)},
@@ -153,6 +159,7 @@ func TestUnmarshalTextAcceptsValid(t *testing.T) {
 		{"NetworkID", new(ids.NetworkID)},
 		{"SecurityGroupID", new(ids.SecurityGroupID)},
 		{"LoadBalancerID", new(ids.LoadBalancerID)},
+		{"VolumeID", new(ids.VolumeID)},
 		{"ServerID", new(ids.ServerID)},
 		{"SSHCertificateAuthorityID", new(ids.SSHCertificateAuthorityID)},
 		{"FileStorageID", new(ids.FileStorageID)},
@@ -191,6 +198,7 @@ func TestUnmarshalTextRejectsInvalid(t *testing.T) {
 		{"NetworkID", new(ids.NetworkID)},
 		{"SecurityGroupID", new(ids.SecurityGroupID)},
 		{"LoadBalancerID", new(ids.LoadBalancerID)},
+		{"VolumeID", new(ids.VolumeID)},
 		{"ServerID", new(ids.ServerID)},
 		{"SSHCertificateAuthorityID", new(ids.SSHCertificateAuthorityID)},
 		{"FileStorageID", new(ids.FileStorageID)},
@@ -221,6 +229,7 @@ func TestMustParsePanics(t *testing.T) {
 		{"MustParseNetworkID", func(s string) { ids.MustParseNetworkID(s) }},
 		{"MustParseSecurityGroupID", func(s string) { ids.MustParseSecurityGroupID(s) }},
 		{"MustParseLoadBalancerID", func(s string) { ids.MustParseLoadBalancerID(s) }},
+		{"MustParseVolumeID", func(s string) { ids.MustParseVolumeID(s) }},
 		{"MustParseServerID", func(s string) { ids.MustParseServerID(s) }},
 		{"MustParseSSHCertificateAuthorityID", func(s string) { ids.MustParseSSHCertificateAuthorityID(s) }},
 		{"MustParseFileStorageID", func(s string) { ids.MustParseFileStorageID(s) }},
@@ -270,6 +279,10 @@ func TestParseRoundTrips(t *testing.T) {
 			v, err := ids.ParseLoadBalancerID(s)
 			return v.String(), err
 		}},
+		{"ParseVolumeID", func(s string) (string, error) {
+			v, err := ids.ParseVolumeID(s)
+			return v.String(), err
+		}},
 		{"ParseServerID", func(s string) (string, error) {
 			v, err := ids.ParseServerID(s)
 			return v.String(), err
@@ -313,5 +326,33 @@ func TestParseRoundTrips(t *testing.T) {
 				t.Fatal("expected error for invalid UUID, got nil")
 			}
 		})
+	}
+}
+
+func TestGenerateVolumeID(t *testing.T) {
+	t.Parallel()
+
+	networkID := ids.MustParseNetworkID("11111111-1111-4111-8111-111111111111")
+	otherNetworkID := ids.MustParseNetworkID("22222222-2222-4222-8222-222222222222")
+
+	a := ids.GenerateVolumeID(networkID, "database")
+	b := ids.GenerateVolumeID(networkID, "database")
+	c := ids.GenerateVolumeID(networkID, "logs")
+	d := ids.GenerateVolumeID(otherNetworkID, "database")
+
+	if a != b {
+		t.Fatalf("GenerateVolumeID must be deterministic for the same network/name")
+	}
+
+	if a == c {
+		t.Fatalf("GenerateVolumeID must differ for different names on the same network")
+	}
+
+	if a == d {
+		t.Fatalf("GenerateVolumeID must differ for the same name on different networks")
+	}
+
+	if got := ids.GenerateVolumeName(networkID, "database"); got != a.String() {
+		t.Fatalf("GenerateVolumeName = %q, want %q", got, a.String())
 	}
 }

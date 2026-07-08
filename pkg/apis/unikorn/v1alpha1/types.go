@@ -733,6 +733,81 @@ type LoadBalancerStatus struct {
 	PublicIP *unikornv1core.IPv4Address `json:"publicIP,omitempty"`
 }
 
+// VolumeList is a typed list of volumes.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type VolumeList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []Volume `json:"items"`
+}
+
+// Volume defines a network-anchored block storage volume.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="network",type="string",JSONPath=".spec.networkID"
+// +kubebuilder:printcolumn:name="size",type="string",JSONPath=".spec.size"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type Volume struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              VolumeSpec   `json:"spec"`
+	Status            VolumeStatus `json:"status,omitempty"`
+}
+
+// VolumeSpec defines the desired state for a block storage volume.
+// +kubebuilder:validation:XValidation:rule="self.networkID == oldSelf.networkID",message="networkID is immutable"
+// +kubebuilder:validation:XValidation:rule="self.volumeName == oldSelf.volumeName",message="volumeName is immutable"
+type VolumeSpec struct {
+	// Pause, if true, will inhibit reconciliation.
+	Pause bool `json:"pause,omitempty"`
+	// Tags are an abitrary list of key/value pairs that a client
+	// may populate to store metadata for the resource.
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
+	// NetworkID is the network that anchors the volume's region, identity,
+	// organization, and project scope.
+	NetworkID string `json:"networkID"`
+	// VolumeName is the immutable per-network natural key used to derive the
+	// volume's deterministic resource ID. Mutable display names remain stored
+	// in metadata labels.
+	VolumeName string `json:"volumeName"`
+	// VolumeClassID is the provider-neutral volume class requested for the
+	// volume. Provider-specific class configuration is defined on Region
+	// separately.
+	VolumeClassID string `json:"volumeClassID"`
+	// Size is the requested volume capacity.
+	Size resource.Quantity `json:"size"`
+}
+
+type VolumeStatus struct {
+	// ObservedGeneration is the most recent generation observed by the controller.
+	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
+	// Current service state of a volume.
+	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	// ProviderID is the provider-assigned backing volume identifier.
+	ProviderID *string `json:"providerID,omitempty"`
+	// Size is the currently provisioned/observed size of the volume.
+	// (May differ from spec.size while provisioning.)
+	Size *resource.Quantity `json:"size,omitempty"`
+	// Attachments reflects observed consumers of this volume. Desired attach
+	// intent lives on the consuming server/instance, not on Volume.
+	// +listType=map
+	// +listMapKey=serverID
+	// +optional
+	Attachments []VolumeAttachmentStatus `json:"attachments,omitempty"`
+}
+
+type VolumeAttachmentStatus struct {
+	// ServerID is the region server currently observed as attached to this volume.
+	ServerID string `json:"serverID"`
+	// Device is the provider-reported device path, when available.
+	Device *string `json:"device,omitempty"`
+	// AttachedAt is the provider-reported attachment timestamp, when available.
+	AttachedAt *metav1.Time `json:"attachedAt,omitempty"`
+}
+
 // +kubebuilder:validation:Enum=tcp;udp
 type LoadBalancerListenerProtocol string
 

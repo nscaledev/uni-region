@@ -19,6 +19,9 @@ The useful way to read it is not as a directory tree, but as one system:
 - provisioners and managers realize provider-side effects
 - monitors project observed provider truth back into status and metrics
 - providers bind the region model to real or simulated clouds
+- `Volume` is an internal Region storage model today: a network-anchored,
+  quota-carrying block storage resource whose public API, controller, and
+  provider behavior are deliberately introduced by later tickets
 
 ## Recommended Reading Order
 

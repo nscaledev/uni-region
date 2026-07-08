@@ -146,6 +146,31 @@ func (c *LoadBalancer) ResourceLabels() (labels.Set, error) {
 }
 
 // Paused implements the ReconcilePauser interface.
+func (c *Volume) Paused() bool {
+	return c.Spec.Pause
+}
+
+// StatusConditionRead scans the status conditions for an existing condition whose type
+// matches.
+func (c *Volume) StatusConditionRead(t unikornv1core.ConditionType) (*unikornv1core.Condition, error) {
+	return unikornv1core.GetCondition(c.Status.Conditions, t)
+}
+
+// StatusConditionWrite either adds or updates a condition in the volume status.
+// If the condition, status and message match an existing condition the update is
+// ignored.
+func (c *Volume) StatusConditionWrite(t unikornv1core.ConditionType, status corev1.ConditionStatus, reason unikornv1core.ConditionReason, message string) {
+	unikornv1core.UpdateCondition(&c.Status.Conditions, t, status, reason, message)
+}
+
+// ResourceLabels generates a set of labels to uniquely identify the resource
+// if it were to be placed in a single global namespace.
+func (c *Volume) ResourceLabels() (labels.Set, error) {
+	//nolint:nilnil
+	return nil, nil
+}
+
+// Paused implements the ReconcilePauser interface.
 func (c *Server) Paused() bool {
 	return c.Spec.Pause
 }
@@ -274,6 +299,27 @@ func (c *LoadBalancer) OrganizationAndProjectID() (identityids.OrganizationID, i
 	return organizationAndProjectIDFromLabels(c.Labels)
 }
 
+// OrganizationID returns the volume's owning organization ID as a typed identifier.
+func (c *Volume) OrganizationID() (identityids.OrganizationID, error) {
+	return organizationIDFromLabels(c.Labels)
+}
+
+// OrganizationAndProjectID returns the volume's owning organization and project
+// IDs as typed identifiers.
+func (c *Volume) OrganizationAndProjectID() (identityids.OrganizationID, identityids.ProjectID, error) {
+	return organizationAndProjectIDFromLabels(c.Labels)
+}
+
+// NetworkID returns the volume's anchoring network ID as a typed identifier.
+func (c *Volume) NetworkID() (regionids.NetworkID, error) {
+	id, err := regionids.ParseNetworkID(c.Spec.NetworkID)
+	if err != nil {
+		return regionids.NetworkID{}, fmt.Errorf("%w: invalid network ID on volume", err)
+	}
+
+	return id, nil
+}
+
 // OrganizationID returns the SSH certificate authority's owning organization ID as a typed identifier.
 func (c *SSHCertificateAuthority) OrganizationID() (identityids.OrganizationID, error) {
 	return organizationIDFromLabels(c.Labels)
@@ -315,6 +361,7 @@ var (
 	_ identityids.ProjectScopeReader = (*Network)(nil)
 	_ identityids.ProjectScopeReader = (*SecurityGroup)(nil)
 	_ identityids.ProjectScopeReader = (*LoadBalancer)(nil)
+	_ identityids.ProjectScopeReader = (*Volume)(nil)
 	_ identityids.ProjectScopeReader = (*SSHCertificateAuthority)(nil)
 	_ identityids.ProjectScopeReader = (*FileStorage)(nil)
 	_ identityids.ProjectScopeReader = (*Identity)(nil)

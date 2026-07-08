@@ -14,6 +14,7 @@ region service addresses through its public API:
 | `NetworkID` | networks |
 | `SecurityGroupID` | security groups |
 | `LoadBalancerID` | load balancers |
+| `VolumeID` | block storage volumes |
 | `ServerID` | servers |
 | `SSHCertificateAuthorityID` | SSH certificate authorities |
 | `FileStorageID` | file storage |
@@ -33,8 +34,8 @@ binding time before any handler is reached. Non-UUID path values produce a
 
 These types live **at the API layer only**. The region service mints UUIDs for
 its own CRD-backed resources (`Region`, `Identity`, `Network`, `SecurityGroup`,
-`LoadBalancer`, `Server`, `SSHCertificateAuthority`, `FileStorage`) and addresses
-provider-owned `Image`/`Flavor` resources by their provider-assigned UUIDs. The
+`LoadBalancer`, `Volume`, `Server`, `SSHCertificateAuthority`, `FileStorage`) and
+addresses provider-owned `Image`/`Flavor` resources by their provider-assigned UUIDs. The
 typed identifiers exist on the generated OpenAPI surface (path parameters and
 request/response body fields); handlers convert to plain strings at the boundary
 when crossing into Kubernetes object names, labels, provider calls, or CRD
@@ -57,3 +58,14 @@ test fixture using a known-good literal.
 **Outward (typed ID → string):** Call `.String()` to produce the canonical
 hyphenated UUID string for Kubernetes object names, label values, provider API
 calls, or log messages.
+
+## Deterministic Volume IDs
+
+`GenerateVolumeID(networkID, volumeName)` and `GenerateVolumeName(networkID,
+volumeName)` derive the Region `Volume` object identity from the immutable
+`(networkId, volumeName)` natural key stored as `Volume.Spec.NetworkID` and
+`Volume.Spec.VolumeName`. The helper uses a fixed Volume UUID namespace plus
+the network ID and name invariant, so duplicate creates for the same name on the
+same network collide at storage while names remain reusable across networks.
+Mutable display names still belong in standard metadata labels, not in this
+identity key.

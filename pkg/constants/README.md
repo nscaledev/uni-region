@@ -13,7 +13,9 @@ small number of contract clusters:
 
 - runtime identity for the service binary
 - linkage labels that tie stored resources back to their region, identity, or
-  network context
+  network context, and to first-class dependent resources such as volumes
+- resource type/reference strings used by RBAC and future reference-management
+  surfaces
 - an API-generation label used to distinguish old and new external API
   semantics while keeping storage broadly in place
 - specialized image and server-state metadata that drives snapshot/import
@@ -29,8 +31,13 @@ descriptor/version string used by shared runtime layers.
   arbitrary constants.
 - Code that reads or writes the region service's standard labels, annotations,
   and tags should use these constants rather than open-coded strings.
-- `RegionLabel`, `IdentityLabel`, and `NetworkLabel` are part of the service's
-  resource-linkage model. They are not optional decorative metadata.
+- `RegionLabel`, `IdentityLabel`, `NetworkLabel`, and `VolumeLabel` are part of
+  the service's resource-linkage model. They are not optional decorative metadata.
+- `VolumeResourceType`, `VolumeResourceReference`, and
+  `VolumeReferencesResourceReference` define the canonical string vocabulary for
+  the Region-owned block storage volume resource. No public Volume handler uses
+  them yet; they exist so the internal model and later API/RBAC work share one
+  name.
 - `ResourceAPIVersionLabel` is the canonical stored discriminator used to
   distinguish old and new external API generations when the underlying CRD
   shape remains broadly stable and objects are migrated in place rather than

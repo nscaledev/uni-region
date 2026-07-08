@@ -75,6 +75,20 @@ const (
 	// ServerLabel creates an indexable linkage between resources and an
 	// owning entity.
 	ServerLabel = "regions.unikorn-cloud.org/server-id"
+	// VolumeLabel creates an indexable linkage between resources and an
+	// owning block storage volume.
+	VolumeLabel = "regions.unikorn-cloud.org/volume-id"
+)
+
+const (
+	// VolumeResourceType is the storage resource type name for Region volumes.
+	VolumeResourceType = "volumes"
+	// VolumeResourceReference is the RBAC/reference resource string for public
+	// Region volume operations once the HTTP surface is introduced.
+	VolumeResourceReference = "region:volumes:v2"
+	// VolumeReferencesResourceReference is the RBAC/reference resource string
+	// for managing references held against volumes.
+	VolumeReferencesResourceReference = VolumeResourceReference + "/references"
 )
 
 const (
