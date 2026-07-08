@@ -48,10 +48,7 @@ var _ = Describe("SecurityGroup", func() {
 			Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
 			networkID = network.Metadata.Id
 			DeferCleanup(func() {
-				GinkgoWriter.Printf("Cleaning up network fixture: %s\n", networkID)
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
-				}
+				api.MustDeleteNetwork(regionClient, ctx, networkID)
 			})
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
 

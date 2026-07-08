@@ -12,6 +12,10 @@ on:
         description: 'Run UAT tests'
         type: boolean
         default: false
+      use_dev_deployed_version:
+        description: 'Use the deployed Dev version for Dev checkout'
+        type: boolean
+        default: true
       use_staging_constellation:
         description: 'Use the staged constellation tag for UAT checkout'
         type: boolean
@@ -52,6 +56,7 @@ jobs:
         EVENT_NAME: ${{ github.event_name }}
         RUN_DEV: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_dev || 'true' }}
         RUN_UAT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_uat || 'false' }}
+        USE_DEV_DEPLOYED_VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.use_dev_deployed_version || 'true' }}
         USE_STAGING_CONSTELLATION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.use_staging_constellation || 'true' }}
         SKIP_SLACK_NOTIFICATIONS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.skip_slack_notifications || 'false' }}
         FOCUS: ${{ github.event.inputs.focus || 'All' }}
@@ -62,6 +67,7 @@ jobs:
         - **Event:** \`$EVENT_NAME\`
         - **Run Dev:** \`$RUN_DEV\`
         - **Run UAT:** \`$RUN_UAT\`
+        - **Use Dev Deployed Version:** \`$USE_DEV_DEPLOYED_VERSION\`
         - **Use Staging Constellation:** \`$USE_STAGING_CONSTELLATION\`
         - **Skip Slack Notifications:** \`$SKIP_SLACK_NOTIFICATIONS\`
         - **Focus:** \`$FOCUS\`
@@ -82,6 +88,7 @@ jobs:
       with:
         service: uni-region
         releases-read-token: ${{ secrets.RELEASES_READ_TOKEN }}
+        use-staging-constellation: ${{ github.event_name == 'schedule' || github.event.inputs.use_dev_deployed_version != 'false' }}
         use-version-api: true
         version-api-url: ${{ vars.DEV_REGION_BASE_URL }}/api/version
         version-api-token: ${{ secrets.DEV_API_AUTH_TOKEN }}
