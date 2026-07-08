@@ -51,7 +51,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
-	servermanager "github.com/unikorn-cloud/region/pkg/provisioners/managers/server"
+	"github.com/unikorn-cloud/region/pkg/userdata"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -312,18 +312,6 @@ func generateUserData(in *[]byte) []byte {
 	return *in
 }
 
-func validateUserDataForSSHCertificateAuthority(sshCertificateAuthorityID *string, userData *[]byte) error {
-	if sshCertificateAuthorityID == nil || userData == nil || len(*userData) == 0 {
-		return nil
-	}
-
-	if err := servermanager.ValidateManagedUserData(*userData); err == nil {
-		return nil
-	}
-
-	return errors.HTTPUnprocessableContent("userData must be a recognized cloud-init format when sshCertificateAuthorityId is specified")
-}
-
 func (c *ClientV2) validateSSHCertificateAuthorityReference(ctx context.Context, scope identityids.ProjectScopeReader, sshCertificateAuthorityID *string) error {
 	if sshCertificateAuthorityID == nil {
 		return nil
@@ -542,8 +530,8 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 }
 
 // validateCreateV2Request runs the request-level validations for a v2 server
-// create: SSH injection mode compatibility, SSH certificate authority user-data
-// coupling, that any referenced SSH certificate authority shares the server's
+// create: SSH injection mode compatibility, that any user-data is well-formed
+// cloud-init, that any referenced SSH certificate authority shares the server's
 // organization and project, that any referenced security group belongs to the
 // server's network, and the infrastructure reference requirements of the
 // requested flavor.
@@ -554,7 +542,10 @@ func (c *ClientV2) validateCreateV2Request(ctx context.Context, request *openapi
 		return err
 	}
 
-	if err := validateUserDataForSSHCertificateAuthority(request.Spec.SshCertificateAuthorityId, request.Spec.UserData); err != nil {
+	// Reject user-data that is not recognizable cloud-init, so a malformed
+	// payload surfaces as a 422 at create time rather than failing mid-provision
+	// (when managed augmentation parses it) or silently inside the guest at boot.
+	if err := userdata.Validate(request.Spec.UserData, request.Spec.SshCertificateAuthorityId != nil); err != nil {
 		return err
 	}
 

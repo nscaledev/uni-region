@@ -569,6 +569,134 @@ func TestServerCreateV2SSHCertificateAuthorityAcceptsSupportedUserData(t *testin
 	}
 }
 
+func TestServerCreateV2RejectsMalformedUserDataWithoutSSHCertificateAuthority(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	k8sClient := newSrvFakeClient(t, network).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	request := minimalServerV2CreateRequest()
+	request.Spec.UserData = ptr.To([]byte("echo hello"))
+
+	_, err := c.CreateV2(ctx, request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+	require.ErrorContains(t, err, "unsupported userData format")
+}
+
+func TestServerCreateV2AcceptsUserDataWithoutSSHCertificateAuthority(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		userData []byte
+	}{
+		{
+			name:     "CloudConfig",
+			userData: []byte("#cloud-config\nusers: []\n"),
+		},
+		{
+			name:     "ShellScript",
+			userData: []byte("#!/bin/sh\necho hello\n"),
+		},
+		{
+			name:     "Multipart",
+			userData: []byte("Content-Type: multipart/mixed; boundary=\"BOUNDARY\"\r\nMIME-Version: 1.0\r\n\r\n--BOUNDARY\r\nContent-Type: text/x-shellscript\r\n\r\n#!/bin/sh\necho hello\r\n--BOUNDARY--\r\n"),
+		},
+		{
+			// Gzip user-data is passed to the platform unmodified when no managed
+			// augmentation occurs, so it must not be rejected at the boundary.
+			name:     "Gzip",
+			userData: []byte{0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctrl := gomock.NewController(t)
+
+			network := testSrvNetworkWithProject(srvProjectID)
+
+			k8sClient := newSrvFakeClient(t, network).Build()
+
+			mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+			expectProjectFound(mockIdentity)
+
+			mockProviders := newMockProvidersWithNoFlavors(ctrl)
+
+			c := server.NewClientV2(common.ClientArgs{
+				Client:    k8sClient,
+				Namespace: srvNamespace,
+				Identity:  mockIdentity,
+				Providers: mockProviders,
+			})
+
+			ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+			request := minimalServerV2CreateRequest()
+			request.Spec.UserData = ptr.To(test.userData)
+
+			result, err := c.CreateV2(ctx, request)
+
+			require.NoError(t, err)
+			require.NotNil(t, result)
+
+			resource := &regionv1.Server{}
+			require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: result.Metadata.Id}, resource))
+			require.Equal(t, test.userData, resource.Spec.UserData)
+		})
+	}
+}
+
+func TestServerCreateV2SSHCertificateAuthorityRejectsGzipUserData(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+	ca := testSSHCertificateAuthorityWithProject(srvProjectID)
+
+	k8sClient := newSrvFakeClient(t, network, ca).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	request := minimalServerV2CreateRequest()
+	request.Spec.SshCertificateAuthorityId = ptr.To(ca.Name)
+	request.Spec.UserData = ptr.To([]byte{0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00})
+
+	_, err := c.CreateV2(ctx, request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+	require.ErrorContains(t, err, "gzip")
+}
+
 func TestServerCreateV2RejectsInvalidAllowedSourceAddress(t *testing.T) {
 	t.Parallel()
 

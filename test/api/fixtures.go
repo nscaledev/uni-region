@@ -367,6 +367,12 @@ func (b *ServerPayloadBuilder) WithInfrastructureRef(infrastructureRef string) *
 	return b
 }
 
+// WithUserData sets the cloud-init user data supplied at boot.
+func (b *ServerPayloadBuilder) WithUserData(userData []byte) *ServerPayloadBuilder {
+	b.server.Spec.UserData = &userData
+	return b
+}
+
 // Build returns the typed ServerV2Create struct.
 func (b *ServerPayloadBuilder) Build() regionopenapi.ServerV2Create {
 	return b.server

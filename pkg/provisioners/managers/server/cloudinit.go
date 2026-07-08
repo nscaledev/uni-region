@@ -45,6 +45,26 @@ type cloudConfigWriteFile struct {
 	Content     string `json:"content"`
 }
 
+// UserDataError reports why a user-data payload was rejected. It unwraps to
+// ErrConsistency so provisioner-side error classification is unchanged, while
+// boundary callers can recover the caller-facing reason structurally instead
+// of parsing the message.
+type UserDataError struct {
+	Reason string
+}
+
+func (e *UserDataError) Error() string {
+	return coreerrors.ErrConsistency.Error() + ": " + e.Reason
+}
+
+func (e *UserDataError) Unwrap() error {
+	return coreerrors.ErrConsistency
+}
+
+func userDataError(reason string) error {
+	return &UserDataError{Reason: reason}
+}
+
 type cloudInitPart struct {
 	ContentType string
 	FileName    string
@@ -114,27 +134,46 @@ func userDataParts(userData []byte) ([]userDataPart, error) {
 }
 
 func isMultipartUserData(userData []byte) bool {
-	return strings.HasPrefix(strings.ToLower(firstUserDataLine(userData)), "content-type: multipart/")
+	// Fast path, and the fallback for payloads that declare multipart but have
+	// otherwise malformed headers, so those still surface multipart-specific
+	// parse errors rather than an unrecognized-format error.
+	if strings.HasPrefix(strings.ToLower(firstUserDataLine(userData)), "content-type: multipart/") {
+		return true
+	}
+
+	// MIME does not mandate header order, so Content-Type need not be the first
+	// line (e.g. MIME-Version first); parse the headers to detect those.
+	message, err := mail.ReadMessage(bytes.NewReader(userData))
+	if err != nil {
+		return false
+	}
+
+	mediaType, _, err := mime.ParseMediaType(message.Header.Get("Content-Type"))
+	if err != nil {
+		return false
+	}
+
+	return strings.HasPrefix(mediaType, "multipart/")
 }
 
 func parseMultipartUserData(userData []byte) ([]userDataPart, error) {
 	message, err := mail.ReadMessage(bytes.NewReader(userData))
 	if err != nil {
-		return nil, fmt.Errorf("%w: unable to parse multipart userData", coreerrors.ErrConsistency)
+		return nil, userDataError("unable to parse multipart userData")
 	}
 
 	mediaType, params, err := mime.ParseMediaType(message.Header.Get("Content-Type"))
 	if err != nil {
-		return nil, fmt.Errorf("%w: unable to parse multipart userData content type", coreerrors.ErrConsistency)
+		return nil, userDataError("unable to parse multipart userData content type")
 	}
 
 	if !strings.HasPrefix(mediaType, "multipart/") {
-		return nil, fmt.Errorf("%w: userData is not multipart", coreerrors.ErrConsistency)
+		return nil, userDataError("userData is not multipart")
 	}
 
 	boundary, ok := params["boundary"]
 	if !ok || boundary == "" {
-		return nil, fmt.Errorf("%w: multipart userData boundary missing", coreerrors.ErrConsistency)
+		return nil, userDataError("multipart userData boundary missing")
 	}
 
 	reader := multipart.NewReader(message.Body, boundary)
@@ -147,12 +186,12 @@ func parseMultipartUserData(userData []byte) ([]userDataPart, error) {
 		}
 
 		if err != nil {
-			return nil, fmt.Errorf("%w: unable to parse multipart userData part", coreerrors.ErrConsistency)
+			return nil, userDataError("unable to parse multipart userData part")
 		}
 
 		body, err := io.ReadAll(part)
 		if err != nil {
-			return nil, fmt.Errorf("%w: unable to read multipart userData part", coreerrors.ErrConsistency)
+			return nil, userDataError("unable to read multipart userData part")
 		}
 
 		parts = append(parts, userDataPart{
@@ -164,9 +203,13 @@ func parseMultipartUserData(userData []byte) ([]userDataPart, error) {
 	return parts, nil
 }
 
+func isGzipUserData(userData []byte) bool {
+	return bytes.HasPrefix(userData, []byte{0x1f, 0x8b})
+}
+
 func userDataContentType(userData []byte) (string, error) {
-	if bytes.HasPrefix(userData, []byte{0x1f, 0x8b}) {
-		return "", fmt.Errorf("%w: gzip userData cannot be combined with managed cloud-init augmentation", coreerrors.ErrConsistency)
+	if isGzipUserData(userData) {
+		return "", userDataError("gzip userData cannot be combined with managed cloud-init augmentation")
 	}
 
 	switch firstLine := firstUserDataLine(userData); {
@@ -185,7 +228,7 @@ func userDataContentType(userData []byte) (string, error) {
 	case strings.HasPrefix(firstLine, "#part-handler"):
 		return "text/part-handler", nil
 	default:
-		return "", fmt.Errorf("%w: unsupported userData format for managed cloud-init augmentation", coreerrors.ErrConsistency)
+		return "", userDataError("unsupported userData format: first line must identify a cloud-init payload (e.g. #cloud-config, #!, or a multipart Content-Type header)")
 	}
 }
 
@@ -196,6 +239,20 @@ func UserDataContentType(userData []byte) (string, error) {
 
 // ValidateManagedUserData checks that user-data can be safely combined with managed cloud-init augmentation.
 func ValidateManagedUserData(userData []byte) error {
+	_, err := userDataParts(userData)
+
+	return err
+}
+
+// ValidateUserData checks that user-data is a payload this provisioner will accept.
+// Unlike ValidateManagedUserData, gzip payloads are permitted: without managed
+// augmentation user-data is passed to the platform unmodified, so compressed
+// payloads remain valid.
+func ValidateUserData(userData []byte) error {
+	if isGzipUserData(userData) {
+		return nil
+	}
+
 	_, err := userDataParts(userData)
 
 	return err
