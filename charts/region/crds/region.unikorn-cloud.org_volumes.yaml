@@ -113,32 +113,6 @@ spec:
               rule: self.volumeName == oldSelf.volumeName
           status:
             properties:
-              attachments:
-                description: |-
-                  Attachments reflects observed consumers of this volume. Desired attach
-                  intent lives on the consuming server/instance, not on Volume.
-                items:
-                  properties:
-                    attachedAt:
-                      description: AttachedAt is the provider-reported attachment
-                        timestamp, when available.
-                      format: date-time
-                      type: string
-                    device:
-                      description: Device is the provider-reported device path, when
-                        available.
-                      type: string
-                    serverID:
-                      description: ServerID is the region server currently observed
-                        as attached to this volume.
-                      type: string
-                  required:
-                  - serverID
-                  type: object
-                type: array
-                x-kubernetes-list-map-keys:
-                - serverID
-                x-kubernetes-list-type: map
               conditions:
                 description: Current service state of a volume.
                 items:

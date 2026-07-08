@@ -791,21 +791,6 @@ type VolumeStatus struct {
 	// Size is the currently provisioned/observed size of the volume.
 	// (May differ from spec.size while provisioning.)
 	Size *resource.Quantity `json:"size,omitempty"`
-	// Attachments reflects observed consumers of this volume. Desired attach
-	// intent lives on the consuming server/instance, not on Volume.
-	// +listType=map
-	// +listMapKey=serverID
-	// +optional
-	Attachments []VolumeAttachmentStatus `json:"attachments,omitempty"`
-}
-
-type VolumeAttachmentStatus struct {
-	// ServerID is the region server currently observed as attached to this volume.
-	ServerID string `json:"serverID"`
-	// Device is the provider-reported device path, when available.
-	Device *string `json:"device,omitempty"`
-	// AttachedAt is the provider-reported attachment timestamp, when available.
-	AttachedAt *metav1.Time `json:"attachedAt,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=tcp;udp

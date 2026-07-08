@@ -65,10 +65,9 @@ stored objects rely on for linkage, migration, and operational coordination.
   `Volume.Spec.VolumeName` is the immutable per-network natural key used for
   deterministic object identity; mutable display names still live in standard
   metadata labels. Attach intent is intentionally not stored on `Volume`;
-  consumers such as Server/Instance own desired attachment, while
-  `Volume.Status.Attachments` records observed attachment facts.
-  `Volume.Status` is conditions-first and also reserves provider ID, observed
-  size, and observed attachment fields for later controller/provider work.
+  consumers such as Server/Instance own desired attachment. `Volume.Status` is
+  conditions-first and also reserves provider ID and observed size fields for
+  later controller/provider work.
 - The `Network -> Volume` graph edge is declared as containment for future
   behavior: Network scope propagates to Volume; co-location is implicit; Volume
   holds a reverse deletion-blocking relationship to Network for its lifetime;
