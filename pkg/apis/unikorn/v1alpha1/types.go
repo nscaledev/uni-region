@@ -779,6 +779,14 @@ type VolumeSpec struct {
 	VolumeClassID string `json:"volumeClassID"`
 	// Size is the requested volume capacity.
 	Size resource.Quantity `json:"size"`
+	// ClaimRef binds this volume to the server that owns its
+	// attachment. Unset means the volume is available for claiming.
+	ClaimRef *VolumeClaimRef `json:"claimRef,omitempty"`
+}
+
+type VolumeClaimRef struct {
+	// ServerID is the ID of the server claiming the volume attachment.
+	ServerID string `json:"serverID"`
 }
 
 type VolumeStatus struct {

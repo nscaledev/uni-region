@@ -55,6 +55,18 @@ spec:
             description: VolumeSpec defines the desired state for a block storage
               volume.
             properties:
+              claimRef:
+                description: |-
+                  ClaimRef binds this volume to the server that owns its
+                  attachment. Unset means the volume is available for claiming.
+                properties:
+                  serverID:
+                    description: ServerID is the ID of the server claiming the volume
+                      attachment.
+                    type: string
+                required:
+                - serverID
+                type: object
               networkID:
                 description: |-
                   NetworkID is the network that anchors the volume's region, identity,

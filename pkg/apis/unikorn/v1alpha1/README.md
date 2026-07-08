@@ -64,8 +64,9 @@ stored objects rely on for linkage, migration, and operational coordination.
   is expected to carry quota/accounting responsibility in the Region layer.
   `Volume.Spec.VolumeName` is the immutable per-network natural key used for
   deterministic object identity; mutable display names still live in standard
-  metadata labels. Attach intent is intentionally not stored on `Volume`;
-  consumers such as Server/Instance own desired attachment. `Volume.Status` is
+  metadata labels. `Volume.Spec.ClaimRef` records the server that owns the
+  volume's attachment claim; a nil claim means the volume is available for
+  claiming. Attachment realization remains outside `Volume.Status`, which is
   conditions-first and also reserves provider ID and observed size fields for
   later controller/provider work.
 - The `Network -> Volume` graph edge is declared as containment for future
