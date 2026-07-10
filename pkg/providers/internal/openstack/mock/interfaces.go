@@ -13,6 +13,7 @@ import (
 	reflect "reflect"
 
 	nodes "github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
+	volumetypes "github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumetypes"
 	flavors "github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	remoteconsoles "github.com/gophercloud/gophercloud/v2/openstack/compute/v2/remoteconsoles"
 	servergroups "github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
@@ -2465,6 +2466,44 @@ func (m *MockPlacementInterface) ResourceProviderAvailable(ctx context.Context, 
 func (mr *MockPlacementInterfaceMockRecorder) ResourceProviderAvailable(ctx, query any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResourceProviderAvailable", reflect.TypeOf((*MockPlacementInterface)(nil).ResourceProviderAvailable), ctx, query)
+}
+
+// MockVolumeTypeInterface is a mock of VolumeTypeInterface interface.
+type MockVolumeTypeInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockVolumeTypeInterfaceMockRecorder
+}
+
+// MockVolumeTypeInterfaceMockRecorder is the mock recorder for MockVolumeTypeInterface.
+type MockVolumeTypeInterfaceMockRecorder struct {
+	mock *MockVolumeTypeInterface
+}
+
+// NewMockVolumeTypeInterface creates a new mock instance.
+func NewMockVolumeTypeInterface(ctrl *gomock.Controller) *MockVolumeTypeInterface {
+	mock := &MockVolumeTypeInterface{ctrl: ctrl}
+	mock.recorder = &MockVolumeTypeInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockVolumeTypeInterface) EXPECT() *MockVolumeTypeInterfaceMockRecorder {
+	return m.recorder
+}
+
+// GetVolumeTypes mocks base method.
+func (m *MockVolumeTypeInterface) GetVolumeTypes(ctx context.Context) ([]volumetypes.VolumeType, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetVolumeTypes", ctx)
+	ret0, _ := ret[0].([]volumetypes.VolumeType)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetVolumeTypes indicates an expected call of GetVolumeTypes.
+func (mr *MockVolumeTypeInterfaceMockRecorder) GetVolumeTypes(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVolumeTypes", reflect.TypeOf((*MockVolumeTypeInterface)(nil).GetVolumeTypes), ctx)
 }
 
 // MockBaremetalInterface is a mock of BaremetalInterface interface.

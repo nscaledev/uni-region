@@ -1172,7 +1172,7 @@ func (p *Provider) provisionQuotas(ctx context.Context, identity *unikornv1.Open
 		return err
 	}
 
-	blockstorage, err := NewBlockStorageClient(ctx, providerClient)
+	blockstorage, err := NewBlockStorageClient(ctx, providerClient, region.Spec.Openstack.BlockStorage)
 	if err != nil {
 		return err
 	}

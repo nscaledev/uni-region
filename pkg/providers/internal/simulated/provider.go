@@ -154,6 +154,28 @@ func (p *Provider) Flavors(_ context.Context) (types.FlavorList, error) {
 	}, nil
 }
 
+func (p *Provider) VolumeClasses(_ context.Context) (types.VolumeClassList, error) {
+	return types.VolumeClassList{
+		{
+			ID:          "33333333-3333-3333-3333-333333333333",
+			Name:        "sim-standard-volume",
+			Description: "Simulated SSD block storage",
+			Media:       types.VolumeClassMediaSSD,
+		},
+		{
+			ID:          "44444444-4444-4444-4444-444444444444",
+			Name:        "sim-fast-volume",
+			Description: "Simulated NVMe block storage",
+			Media:       types.VolumeClassMediaNVMe,
+			Performance: &types.VolumeClassPerformance{
+				MaxIOPS:       ptr(25000),
+				MaxThroughput: ptr(500),
+			},
+			Encrypted: true,
+		},
+	}, nil
+}
+
 func (p *Provider) QueryImages() (types.ImageQuery, error) {
 	return &imageQuery{
 		images: p.listImages,

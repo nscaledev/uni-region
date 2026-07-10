@@ -686,6 +686,21 @@ func (mr *MockCommonProviderMockRecorder) Region(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Region", reflect.TypeOf((*MockCommonProvider)(nil).Region), ctx)
 }
 
+// VolumeClasses mocks base method.
+func (m *MockCommonProvider) VolumeClasses(ctx context.Context) (types.VolumeClassList, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "VolumeClasses", ctx)
+	ret0, _ := ret[0].(types.VolumeClassList)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// VolumeClasses indicates an expected call of VolumeClasses.
+func (mr *MockCommonProviderMockRecorder) VolumeClasses(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VolumeClasses", reflect.TypeOf((*MockCommonProvider)(nil).VolumeClasses), ctx)
+}
+
 // MockProvider is a mock of Provider interface.
 type MockProvider struct {
 	ctrl     *gomock.Controller
@@ -1052,4 +1067,19 @@ func (m *MockProvider) UpdateServerState(ctx context.Context, identity *v1alpha1
 func (mr *MockProviderMockRecorder) UpdateServerState(ctx, identity, server any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateServerState", reflect.TypeOf((*MockProvider)(nil).UpdateServerState), ctx, identity, server)
+}
+
+// VolumeClasses mocks base method.
+func (m *MockProvider) VolumeClasses(ctx context.Context) (types.VolumeClassList, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "VolumeClasses", ctx)
+	ret0, _ := ret[0].(types.VolumeClassList)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// VolumeClasses indicates an expected call of VolumeClasses.
+func (mr *MockProviderMockRecorder) VolumeClasses(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VolumeClasses", reflect.TypeOf((*MockProvider)(nil).VolumeClasses), ctx)
 }

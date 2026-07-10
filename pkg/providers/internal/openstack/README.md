@@ -269,9 +269,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   storage: Region configuration under
   `openstack.blockStorage.volumeClasses` selects which provider volume classes
   are eligible for export and enriches them with user-facing metadata such as
-  media, maximum performance caps, and encryption signals. OpenStack maps this
-  configuration to Cinder volume types internally. Maximum performance metadata
-  records caps rather than guaranteed reservations. `VolumeClass` is
+  media, maximum performance caps, and encryption signals. The provider
+  discovers Cinder volume types and converts the selected/enriched result into
+  provider-neutral `VolumeClass` values. Maximum performance metadata records
+  caps rather than guaranteed reservations. `VolumeClass` is
   Region-scoped inventory configuration, not a project-owned resource or
   lifecycle object.
 - Image handling is a first-class contract surface here:

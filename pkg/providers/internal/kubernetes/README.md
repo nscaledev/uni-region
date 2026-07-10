@@ -26,6 +26,7 @@ Kubernetes regions:
 - connect to the remote cluster using the referenced kubeconfig secret
 - discover schedulable node classes
 - convert declared node-class metadata into provider-neutral `Flavor` values
+- return empty provider-neutral `VolumeClass` inventory
 
 ## Links
 
@@ -52,6 +53,8 @@ belongs to human administrators rather than this package contract summary.
   auto-derived from raw node objects.
 - The package therefore treats the region spec as the authoritative flavor
   description and the cluster as the availability check.
+- VolumeClass inventory is empty because this provider does not currently expose
+  a block-storage class model.
 - Architecture is currently hard-coded to `x86_64`.
 
 ## Caveats
