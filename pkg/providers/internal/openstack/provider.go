@@ -2139,7 +2139,15 @@ func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, 
 	case "ACTIVE":
 		return corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "server is healthy"
 	case "ERROR":
-		return corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server is in an error state"
+		// Nova records the failure cause (e.g. a scheduler "No valid host was
+		// found") on the server fault, visible to the owner; surface it so the
+		// condition explains the error without cloud-side log access.
+		message := "server is in an error state"
+		if server.Fault.Message != "" {
+			message += ": " + server.Fault.Message
+		}
+
+		return corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, message
 	case "UNKNOWN":
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
 	default:
