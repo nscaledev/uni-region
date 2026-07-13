@@ -41,7 +41,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/sshcertificateauthority"
-	regionids "github.com/unikorn-cloud/region/pkg/ids"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -251,7 +251,7 @@ func TestDeleteV2InUse(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), aclWithReadDelete(organizationID))
 
-	err := c.DeleteV2(ctx, regionids.MustParseSSHCertificateAuthorityID(resource.Name))
+	err := c.DeleteV2(ctx, idstest.MustParseSSHCertificateAuthorityID(resource.Name))
 	require.Error(t, err)
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
 }

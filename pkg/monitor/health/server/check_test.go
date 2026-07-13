@@ -31,6 +31,7 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	healthserver "github.com/unikorn-cloud/region/pkg/monitor/health/server"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
 	providerTypes "github.com/unikorn-cloud/region/pkg/providers/types"
@@ -51,7 +52,7 @@ const (
 	identityID = "identity-1"
 	serverID   = "server-1"
 	orgID      = "org-1"
-	flavorID   = "flavor-uuid-1"
+	flavorID   = "eeeeeeee-0000-0000-0000-000000000001"
 	flavorName = "m1.small"
 )
 
@@ -138,7 +139,7 @@ func serverFixture(phase unikornv1.InstanceLifecyclePhase, conditions ...unikorn
 			},
 		},
 		Spec: unikornv1.ServerSpec{
-			FlavorID: flavorID,
+			FlavorID: idstest.MustParseFlavorID(flavorID),
 		},
 		Status: unikornv1.ServerStatus{
 			Phase:      phase,

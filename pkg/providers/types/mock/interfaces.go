@@ -12,7 +12,9 @@ import (
 	context "context"
 	reflect "reflect"
 
+	ids "github.com/unikorn-cloud/identity/pkg/ids"
 	v1alpha1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	ids0 "github.com/unikorn-cloud/region/pkg/ids"
 	types "github.com/unikorn-cloud/region/pkg/providers/types"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -41,7 +43,7 @@ func (m *MockImageQuery) EXPECT() *MockImageQueryMockRecorder {
 }
 
 // AvailableToOrganization mocks base method.
-func (m *MockImageQuery) AvailableToOrganization(organizationID ...string) types.ImageQuery {
+func (m *MockImageQuery) AvailableToOrganization(organizationID ...ids.OrganizationID) types.ImageQuery {
 	m.ctrl.T.Helper()
 	varargs := []any{}
 	for _, a := range organizationID {
@@ -74,7 +76,7 @@ func (mr *MockImageQueryMockRecorder) List(ctx any) *gomock.Call {
 }
 
 // OwnedByOrganization mocks base method.
-func (m *MockImageQuery) OwnedByOrganization(organizationID ...string) types.ImageQuery {
+func (m *MockImageQuery) OwnedByOrganization(organizationID ...ids.OrganizationID) types.ImageQuery {
 	m.ctrl.T.Helper()
 	varargs := []any{}
 	for _, a := range organizationID {
@@ -133,7 +135,7 @@ func (m *MockImageRead) EXPECT() *MockImageReadMockRecorder {
 }
 
 // GetImage mocks base method.
-func (m *MockImageRead) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
+func (m *MockImageRead) GetImage(ctx context.Context, organizationID ids.OrganizationID, imageID ids0.ImageID) (*types.Image, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetImage", ctx, organizationID, imageID)
 	ret0, _ := ret[0].(*types.Image)
@@ -201,7 +203,7 @@ func (mr *MockImageWriteMockRecorder) CreateImage(ctx, image, uri any) *gomock.C
 }
 
 // DeleteImage mocks base method.
-func (m *MockImageWrite) DeleteImage(ctx context.Context, imageID string) error {
+func (m *MockImageWrite) DeleteImage(ctx context.Context, imageID ids0.ImageID) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DeleteImage", ctx, imageID)
 	ret0, _ := ret[0].(error)
@@ -837,7 +839,7 @@ func (mr *MockProviderMockRecorder) DeleteIdentity(ctx, identity any) *gomock.Ca
 }
 
 // DeleteImage mocks base method.
-func (m *MockProvider) DeleteImage(ctx context.Context, imageID string) error {
+func (m *MockProvider) DeleteImage(ctx context.Context, imageID ids0.ImageID) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DeleteImage", ctx, imageID)
 	ret0, _ := ret[0].(error)
@@ -937,7 +939,7 @@ func (mr *MockProviderMockRecorder) GetConsoleOutput(ctx, identity, server, leng
 }
 
 // GetImage mocks base method.
-func (m *MockProvider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
+func (m *MockProvider) GetImage(ctx context.Context, organizationID ids.OrganizationID, imageID ids0.ImageID) (*types.Image, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetImage", ctx, organizationID, imageID)
 	ret0, _ := ret[0].(*types.Image)

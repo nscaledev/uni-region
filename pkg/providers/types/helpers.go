@@ -17,10 +17,26 @@ limitations under the License.
 
 package types
 
+import (
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
+)
+
 func (f Flavor) GPUCount() int {
 	if f.GPU != nil {
 		return f.GPU.LogicalCount
 	}
 
 	return 0
+}
+
+// OrganizationIDStrings converts typed organization IDs to their canonical
+// string form for comparison against the string organization IDs/tags stored
+// on provider images.
+func OrganizationIDStrings(organizationIDs []identityids.OrganizationID) []string {
+	ids := make([]string, len(organizationIDs))
+	for i := range organizationIDs {
+		ids[i] = organizationIDs[i].String()
+	}
+
+	return ids
 }

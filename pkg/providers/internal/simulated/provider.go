@@ -30,8 +30,10 @@ import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -48,17 +50,21 @@ type imageQuery struct {
 	predicates []imagePredicate
 }
 
-func (q *imageQuery) AvailableToOrganization(organizationIDs ...string) types.ImageQuery {
+func (q *imageQuery) AvailableToOrganization(organizationIDs ...identityids.OrganizationID) types.ImageQuery {
+	ids := types.OrganizationIDStrings(organizationIDs)
+
 	q.predicates = append(q.predicates, func(image types.Image) bool {
-		return image.OrganizationID == nil || slices.Contains(organizationIDs, *image.OrganizationID)
+		return image.OrganizationID == nil || slices.Contains(ids, *image.OrganizationID)
 	})
 
 	return q
 }
 
-func (q *imageQuery) OwnedByOrganization(organizationIDs ...string) types.ImageQuery {
+func (q *imageQuery) OwnedByOrganization(organizationIDs ...identityids.OrganizationID) types.ImageQuery {
+	ids := types.OrganizationIDStrings(organizationIDs)
+
 	q.predicates = append(q.predicates, func(image types.Image) bool {
-		return image.OrganizationID != nil && slices.Contains(organizationIDs, *image.OrganizationID)
+		return image.OrganizationID != nil && slices.Contains(ids, *image.OrganizationID)
 	})
 
 	return q
@@ -233,13 +239,15 @@ func builtInImages() []types.Image {
 	}
 }
 
-func (p *Provider) GetImage(_ context.Context, organizationID, imageID string) (*types.Image, error) {
+func (p *Provider) GetImage(_ context.Context, organizationID identityids.OrganizationID, imageID regionids.ImageID) (*types.Image, error) {
+	imageIDString := imageID.String()
+
 	for _, image := range p.listImages() {
-		if image.ID != imageID {
+		if image.ID != imageIDString {
 			continue
 		}
 
-		if image.OrganizationID != nil && *image.OrganizationID != organizationID {
+		if image.OrganizationID != nil && *image.OrganizationID != organizationID.String() {
 			return nil, fmt.Errorf("%w: image %s", coreerrors.ErrResourceNotFound, imageID)
 		}
 
@@ -266,15 +274,17 @@ func (p *Provider) CreateImage(_ context.Context, image *types.Image, _ string) 
 	return &created, nil
 }
 
-func (p *Provider) DeleteImage(_ context.Context, imageID string) error {
+func (p *Provider) DeleteImage(_ context.Context, imageID regionids.ImageID) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if _, ok := p.customImages[imageID]; !ok {
+	imageIDString := imageID.String()
+
+	if _, ok := p.customImages[imageIDString]; !ok {
 		return fmt.Errorf("%w: image %s", coreerrors.ErrResourceNotFound, imageID)
 	}
 
-	delete(p.customImages, imageID)
+	delete(p.customImages, imageIDString)
 
 	return nil
 }

@@ -92,8 +92,8 @@ func (c *Client) QueryImages(ctx context.Context, regionID regionids.RegionID, p
 // caller is permitted to read images for. Each ID is untrusted query input, so
 // parsing it is the validation step and an invalid or unauthorized value is
 // simply dropped.
-func allowedOrganizations(ctx context.Context, orgIDs []string) []string {
-	var allowed []string
+func allowedOrganizations(ctx context.Context, orgIDs []string) []identityids.OrganizationID {
+	var allowed []identityids.OrganizationID
 
 	for _, orgID := range orgIDs {
 		organizationID, err := identityids.ParseOrganizationID(orgID)
@@ -102,7 +102,7 @@ func allowedOrganizations(ctx context.Context, orgIDs []string) []string {
 		}
 
 		if err := rbac.AllowOrganizationScopeID(ctx, "region:images", identityapi.Read, organizationID); err == nil {
-			allowed = append(allowed, orgID)
+			allowed = append(allowed, organizationID)
 		}
 	}
 

@@ -302,7 +302,9 @@ func (c *Checker) processServer(ctx context.Context, srv *unikornv1.Server, regi
 		return nil
 	}
 
-	result, err := c.checkServer(ctx, srv, ri.provider, regionID, ri.regionName, srv.Spec.FlavorID, lookupFlavorName(ri.flavors, srv.Spec.FlavorID))
+	flavorID := srv.Spec.FlavorID.String()
+
+	result, err := c.checkServer(ctx, srv, ri.provider, regionID, ri.regionName, flavorID, lookupFlavorName(ri.flavors, flavorID))
 	if err != nil {
 		if isFatal(err) {
 			return err

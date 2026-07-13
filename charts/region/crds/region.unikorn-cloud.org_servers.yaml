@@ -55,6 +55,7 @@ spec:
             properties:
               flavorID:
                 description: FlavorID is the flavor ID.
+                format: uuid
                 type: string
               image:
                 description: Image defines a set of rules to lookup for the server
@@ -63,6 +64,7 @@ spec:
                   id:
                     description: ID is the image ID. If specified, it has priority
                       over the selector.
+                    format: uuid
                     type: string
                 required:
                 - id
@@ -95,7 +97,8 @@ spec:
                         type: object
                       type: array
                     id:
-                      description: ID is the physical network ID.
+                      description: ID is the region network ID.
+                      format: uuid
                       type: string
                   required:
                   - id
@@ -126,6 +129,7 @@ spec:
                   properties:
                     id:
                       description: ID is the security group ID.
+                      format: uuid
                       type: string
                   required:
                   - id
