@@ -29,7 +29,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
-	coreutil "github.com/unikorn-cloud/core/pkg/testing/util"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/test/api"
@@ -86,7 +85,7 @@ func requireFileStorageClassID() string {
 }
 
 func defaultProtectionCreateRequest(storageClassID string, defaultProtectionEnabled *bool, snapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec) regionopenapi.StorageV2CreateRequest {
-	storageName := coreutil.GenerateRandomName("test-default-protection")
+	storageName := api.UniqueName("fs-default")
 
 	return regionopenapi.StorageV2CreateRequest{
 		Metadata: coreapi.ResourceWriteMetadata{
@@ -172,7 +171,7 @@ var _ = Describe("File Storage Management", func() {
 					Skip(fmt.Sprintf("No storage classes allocated to region %s", config.RegionID))
 				}
 
-				testStorageName = coreutil.GenerateRandomName("test-list-storage")
+				testStorageName = api.UniqueName("fs-list")
 				request := regionopenapi.StorageV2CreateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{
 						Name:        testStorageName,
@@ -275,7 +274,7 @@ var _ = Describe("File Storage Management", func() {
 					storageClasses[0].Metadata.Name,
 					storageClassID)
 
-				storageName := coreutil.GenerateRandomName("test-storage")
+				storageName := api.UniqueName("fs")
 
 				request := regionopenapi.StorageV2CreateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{
@@ -486,7 +485,7 @@ var _ = Describe("File Storage Management", func() {
 
 		Describe("Given a network and file storage resource", func() {
 			It("should create a network for attachment", func() {
-				networkName = api.UniqueName("attach-network")
+				networkName = api.UniqueName("net-attach")
 				networkRequest := regionopenapi.NetworkV2CreateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{
 						Name:        networkName,
@@ -538,7 +537,7 @@ var _ = Describe("File Storage Management", func() {
 				}
 
 				storageClassID = storageClasses[0].Metadata.Id
-				filestorageName = coreutil.GenerateRandomName("test-attach-storage")
+				filestorageName = api.UniqueName("fs-attach")
 
 				request := regionopenapi.StorageV2CreateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{
