@@ -296,6 +296,14 @@ func createStateHandlers(ctx context.Context, stateManager *commonstate.StateMan
 
 			return nil, err
 		},
+
+		// State handler for "region has images"
+		commonstate.StateRegionHasImages: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleRegionHasImagesState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
 	}
 }
 
