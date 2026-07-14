@@ -56,6 +56,7 @@ const (
 // auto-uni-region-29234292437-1-1784023200-lb-a1b2c3d4.
 const TestResourceNamePrefix = "auto-uni-region-"
 
+//nolint:gochecknoglobals // Captures one process-stable timestamp so a test run shares a single prefix.
 var testResourceRunNamePrefix = buildTestResourceRunNamePrefix(time.Now(), os.Getenv)
 
 // UniqueName builds a collision-resistant resource name carrying
@@ -129,11 +130,13 @@ func sanitizeNamePart(value string) string {
 	value = strings.ToLower(value)
 
 	var builder strings.Builder
+
 	lastHyphen := false
 
 	for _, r := range value {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
 			builder.WriteRune(r)
+
 			lastHyphen = false
 
 			continue
@@ -144,6 +147,7 @@ func sanitizeNamePart(value string) string {
 		}
 
 		builder.WriteByte('-')
+
 		lastHyphen = true
 	}
 

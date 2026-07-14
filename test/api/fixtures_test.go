@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//nolint:revive,paralleltest,testpackage // Ginkgo suite uses dot imports and package-local helper access.
+//nolint:revive,testpackage // Ginkgo suite uses dot imports and package-local helper access.
 package api
 
 import (
