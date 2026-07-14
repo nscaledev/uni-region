@@ -3378,6 +3378,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 	})
 }
 
+//nolint:maintidx,nolintlint // CI flags this grouped delete table; local lint can treat the directive as unused.
 func TestDeleteLoadBalancer(t *testing.T) {
 	t.Parallel()
 
