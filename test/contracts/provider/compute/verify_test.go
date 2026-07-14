@@ -50,6 +50,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 	commonstate "github.com/unikorn-cloud/region/test/contracts/provider/common"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -374,11 +375,20 @@ func createHandlerInterface(ctx context.Context, k8sClient client.Client, namesp
 		panic(fmt.Sprintf("failed to create identity client: %v", err))
 	}
 
+	// Create providers interface so image/flavor handlers can reach the cloud provider.
+	providers, err := providers.New(ctx, k8sClient, k8sClient, namespace, providers.Options{
+		WarmImageCache: true,
+	})
+	if err != nil {
+		panic(fmt.Sprintf("failed to create providers: %v", err))
+	}
+
 	handlerOpts := handler.Options{}
 
 	handlerInterface, err := handler.New(common.ClientArgs{
 		Client:    k8sClient,
 		Namespace: namespace,
+		Providers: providers,
 		Identity:  identity,
 	}, &handlerOpts)
 	if err != nil {
