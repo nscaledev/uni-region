@@ -41,6 +41,10 @@ import (
 type RegionStateManager struct {
 	client    client.Client
 	namespace string
+
+	// openstackEndpoint, when set, is the Keystone endpoint of OpenStack regions
+	// created for contract verification (a mock OpenStack server).
+	openstackEndpoint string
 }
 
 // NewRegionStateManager creates a new region state manager.
@@ -162,6 +166,7 @@ func (rm *RegionStateManager) setupRegionWithOrg(ctx context.Context, regionName
 		Spec: unikornv1.RegionSpec{
 			Provider: unikornv1.ProviderOpenstack,
 			Openstack: &unikornv1.RegionOpenstackSpec{
+				Endpoint: rm.openstackEndpoint,
 				ServiceAccountSecret: &unikornv1.NamespacedObject{
 					Namespace: rm.namespace,
 					Name:      "openstack-service-account",
@@ -203,6 +208,7 @@ func (rm *RegionStateManager) setupOpenstackRegion(ctx context.Context, regionNa
 		Spec: unikornv1.RegionSpec{
 			Provider: unikornv1.ProviderOpenstack,
 			Openstack: &unikornv1.RegionOpenstackSpec{
+				Endpoint: rm.openstackEndpoint,
 				ServiceAccountSecret: &unikornv1.NamespacedObject{
 					Namespace: rm.namespace,
 					Name:      "openstack-service-account",

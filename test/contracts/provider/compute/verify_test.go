@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -77,6 +78,7 @@ var _ = Describe("Region Provider Verification", func() {
 		cancel         context.CancelFunc
 		k8sClient      client.Client
 		stateManager   *commonstate.StateManager
+		openstackMock  *httptest.Server
 		pactBrokerURL  string
 		brokerUsername string
 		brokerPassword string
@@ -115,6 +117,10 @@ var _ = Describe("Region Provider Verification", func() {
 		// Initialize state manager
 		stateManager = commonstate.NewStateManager(k8sClient)
 
+		// Point OpenStack regions at a mock so the image contract can be verified.
+		openstackMock = newOpenStackMock()
+		stateManager.SetOpenstackEndpoint(openstackMock.URL + "/v3")
+
 		// Find an available port
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		Expect(err).NotTo(HaveOccurred())
@@ -151,6 +157,9 @@ var _ = Describe("Region Provider Verification", func() {
 			if err := testServer.Shutdown(shutdownCtx); err != nil {
 				fmt.Printf("failed to shutdown server: %v\n", err)
 			}
+		}
+		if openstackMock != nil {
+			openstackMock.Close()
 		}
 		cancel()
 	})
@@ -340,7 +349,7 @@ func buildRouter(schema *helpers.Schema, corsOpts *cors.Options) *chi.Mux {
 	router.Use(cors.Middleware)
 
 	// Mock ACL middleware allows all organizations for contract testing
-	router.Use(MockACLMiddleware(nil))              // Inject mock ACL for contract testing
+	router.Use(MockACLMiddleware(nil))                // Inject mock ACL for contract testing
 	router.Use(commonstate.RegionSortingMiddleware()) // Sort regions for Pact contract testing
 	router.NotFound(http.HandlerFunc(handler.NotFound))
 	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
