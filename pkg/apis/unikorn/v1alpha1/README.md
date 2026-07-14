@@ -37,8 +37,14 @@ stored objects rely on for linkage, migration, and operational coordination.
   stable stored shapes.
 - `Region` is the configuration and capability root for a provider-backed
   region. It carries provider type, provider-specific configuration, stored
-  visibility inputs, flavor/image/network selection rules, and helper methods
-  that downstream code actively depends on.
+  visibility inputs, flavor/image/network/volume-class selection rules, and
+  helper methods that downstream code actively depends on.
+- OpenStack `VolumeClass` configuration is Region-scoped inventory metadata. It
+  records which provider volume classes are eligible for export and how that
+  inventory should be enriched; it does not create a project-owned
+  `VolumeClass` CRD or any user-managed lifecycle resource. OpenStack maps this
+  inventory to Cinder volume types internally, but the Region storage and
+  public/domain vocabulary remains `VolumeClass`.
 - Namespaced Kubernetes storage scope and platform tenancy scope are separate
   concerns. These objects are namespaced, but their logical visibility and
   authorization are often organization-, project-, identity-, or region-scoped

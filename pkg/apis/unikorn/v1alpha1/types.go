@@ -141,6 +141,8 @@ type RegionOpenstackSpec struct {
 	Image *RegionOpenstackImageSpec `json:"image,omitempty"`
 	// Network is configuration for the network service.
 	Network *RegionOpenstackNetworkSpec `json:"network,omitempty"`
+	// BlockStorage is configuration for the block storage service.
+	BlockStorage *RegionOpenstackBlockStorageSpec `json:"blockStorage,omitempty"`
 }
 
 type NamespacedObject struct {
@@ -290,6 +292,66 @@ type RegionOpenstackNetworkSpec struct {
 	ExternalNetworks *ExternalNetworks `json:"externalNetworks,omitempty"`
 	// ProviderNetworks allows provider networks to be configured.
 	ProviderNetworks *ProviderNetworks `json:"providerNetworks,omitempty"`
+}
+
+type RegionOpenstackBlockStorageSpec struct {
+	// VolumeClasses defines which provider volume classes are eligible for Region
+	// inventory export and what user-facing metadata is attached to them. If not
+	// defined, then all provider volume classes are eligible.
+	VolumeClasses *OpenstackVolumeClassesSpec `json:"volumeClasses,omitempty"`
+}
+
+type OpenstackVolumeClassesSpec struct {
+	// Selector allows provider volume classes to be manually selected for inclusion.
+	// The selected set is a boolean intersection of all defined filters in the selector.
+	Selector *VolumeClassSelector `json:"selector,omitempty"`
+	// Metadata allows provider volume classes to be explicitly augmented with
+	// user-facing metadata. OpenStack stores these internally as Cinder volume types,
+	// but Region uses the domain term VolumeClass for this inventory. This metadata
+	// is operator-authored because backend-native encryption and QoS capabilities
+	// may not be reliably discoverable from Cinder volume type metadata alone.
+	// +listType=map
+	// +listMapKey=id
+	Metadata []VolumeClassMetadata `json:"metadata,omitempty"`
+}
+
+type VolumeClassSelector struct {
+	// IDs is an explicit list of allowed provider volume class IDs. If not
+	// specified, then all provider volume classes are considered.
+	IDs []string `json:"ids,omitempty"`
+}
+
+// +kubebuilder:validation:Enum=hdd;ssd;nvme
+type VolumeClassMedia string
+
+const (
+	VolumeClassMediaHDD  VolumeClassMedia = "hdd"
+	VolumeClassMediaSSD  VolumeClassMedia = "ssd"
+	VolumeClassMediaNVMe VolumeClassMedia = "nvme"
+)
+
+type VolumeClassMetadata struct {
+	// ID is the immutable provider identifier for the volume class. For OpenStack,
+	// this is the Cinder volume type ID.
+	ID string `json:"id"`
+	// Media describes the backing storage medium.
+	Media VolumeClassMedia `json:"media,omitempty"`
+	// Performance describes advertised performance characteristics.
+	Performance *VolumeClassPerformanceSpec `json:"performance,omitempty"`
+	// Encrypted indicates that volumes provisioned from this class are encrypted
+	// at rest by the provider.
+	Encrypted bool `json:"encrypted,omitempty"`
+}
+
+type VolumeClassPerformanceSpec struct {
+	// MaxIOPS describes the advertised maximum input/output operations per second
+	// cap. This is not a guaranteed reservation.
+	// +kubebuilder:validation:Minimum=1
+	MaxIOPS *int `json:"maxIOPS,omitempty"`
+	// MaxThroughput describes the advertised maximum throughput cap in mebibytes
+	// per second. This is not a guaranteed reservation.
+	// +kubebuilder:validation:Minimum=1
+	MaxThroughput *int `json:"maxThroughputMiBps,omitempty"`
 }
 
 type ExternalNetworks struct {

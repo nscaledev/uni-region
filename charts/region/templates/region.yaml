@@ -61,5 +61,9 @@ spec:
       {{ printf "network:" | nindent 4 }}
       {{- toYaml $network | nindent 6 }}
     {{- end }}
+    {{- with $blockStorage := $openstack.blockStorage -}}
+      {{ printf "blockStorage:" | nindent 4 }}
+      {{- toYaml $blockStorage | nindent 6 }}
+    {{- end }}
   {{- end }}
 {{- end }}
