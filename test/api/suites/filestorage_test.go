@@ -85,7 +85,7 @@ func requireFileStorageClassID() string {
 }
 
 func defaultProtectionCreateRequest(storageClassID string, defaultProtectionEnabled *bool, snapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec) regionopenapi.StorageV2CreateRequest {
-	storageName := api.UniqueName("fs-default")
+	storageName := api.UniqueName("test-default-protection")
 
 	return regionopenapi.StorageV2CreateRequest{
 		Metadata: coreapi.ResourceWriteMetadata{
@@ -171,7 +171,7 @@ var _ = Describe("File Storage Management", func() {
 					Skip(fmt.Sprintf("No storage classes allocated to region %s", config.RegionID))
 				}
 
-				testStorageName = api.UniqueName("fs-list")
+				testStorageName = api.UniqueName("test-list-storage")
 				request := regionopenapi.StorageV2CreateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{
 						Name:        testStorageName,
@@ -274,7 +274,7 @@ var _ = Describe("File Storage Management", func() {
 					storageClasses[0].Metadata.Name,
 					storageClassID)
 
-				storageName := api.UniqueName("fs")
+				storageName := api.UniqueName("test-storage")
 
 				request := regionopenapi.StorageV2CreateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{
@@ -485,7 +485,7 @@ var _ = Describe("File Storage Management", func() {
 
 		Describe("Given a network and file storage resource", func() {
 			It("should create a network for attachment", func() {
-				networkName = api.UniqueName("net-attach")
+				networkName = api.UniqueName("attach-network")
 				networkRequest := regionopenapi.NetworkV2CreateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{
 						Name:        networkName,
@@ -537,7 +537,7 @@ var _ = Describe("File Storage Management", func() {
 				}
 
 				storageClassID = storageClasses[0].Metadata.Id
-				filestorageName = api.UniqueName("fs-attach")
+				filestorageName = api.UniqueName("test-attach-storage")
 
 				request := regionopenapi.StorageV2CreateRequest{
 					Metadata: coreapi.ResourceWriteMetadata{
