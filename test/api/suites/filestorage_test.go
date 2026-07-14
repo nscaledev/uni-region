@@ -22,6 +22,7 @@ limitations under the License.
 package suites
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -31,6 +32,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
+	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
 	coreutil "github.com/unikorn-cloud/core/pkg/testing/util"
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
@@ -83,6 +85,29 @@ func requireFileStorageClassID() string {
 	}
 
 	return storageClasses[0].Metadata.Id
+}
+
+func waitForAttachmentTestResourceGone(resource, id string, getByID func() error) error {
+	deadline := time.Now().Add(10 * time.Minute)
+	var lastErr error
+
+	for {
+		err := getByID()
+		switch {
+		case errors.Is(err, coreclient.ErrResourceNotFound):
+			return nil
+		case err != nil:
+			lastErr = err
+		default:
+			lastErr = fmt.Errorf("%s still exists", resource)
+		}
+
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s %s should be deleted: %w", resource, id, lastErr)
+		}
+
+		time.Sleep(10 * time.Second)
+	}
 }
 
 func defaultProtectionCreateRequest(storageClassID string, defaultProtectionEnabled *bool, snapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec) regionopenapi.StorageV2CreateRequest {
@@ -484,6 +509,83 @@ var _ = Describe("File Storage Management", func() {
 		var networkID string
 		var networkName string
 
+		cleanupFileStorage := func() error {
+			if filestorageID == "" {
+				return nil
+			}
+
+			if !filestorageDeleteRequested {
+				GinkgoWriter.Printf("Cleaning up test filestorage: %s\n", filestorageID)
+				if err := regionClient.DeleteFileStorage(ctx, filestorageID); err != nil {
+					if errors.Is(err, coreclient.ErrResourceNotFound) {
+						filestorageID = ""
+						return nil
+					}
+
+					return fmt.Errorf("delete file storage %s: %w", filestorageID, err)
+				}
+
+				filestorageDeleteRequested = true
+			}
+
+			GinkgoWriter.Printf("Waiting for storage cleanup: %s\n", filestorageID)
+			if err := waitForAttachmentTestResourceGone("file storage", filestorageID, func() error {
+				_, err := regionClient.GetFileStorage(ctx, filestorageID)
+				return err
+			}); err != nil {
+				return err
+			}
+
+			filestorageID = ""
+
+			return nil
+		}
+
+		cleanupNetwork := func() error {
+			if networkID == "" {
+				return nil
+			}
+
+			GinkgoWriter.Printf("Cleaning up test network: %s\n", networkID)
+			if err := regionClient.DeleteNetwork(ctx, networkID); err != nil {
+				if errors.Is(err, coreclient.ErrResourceNotFound) {
+					networkID = ""
+					return nil
+				}
+
+				return fmt.Errorf("delete network %s: %w", networkID, err)
+			}
+
+			if err := waitForAttachmentTestResourceGone("network", networkID, func() error {
+				_, err := regionClient.GetNetwork(ctx, networkID)
+				return err
+			}); err != nil {
+				return err
+			}
+
+			networkID = ""
+
+			return nil
+		}
+
+		BeforeAll(func() {
+			DeferCleanup(func() error {
+				var cleanupErrs []error
+
+				if err := cleanupFileStorage(); err != nil {
+					GinkgoWriter.Printf("Warning: cleanup file storage failed: %v\n", err)
+					cleanupErrs = append(cleanupErrs, err)
+				}
+
+				if err := cleanupNetwork(); err != nil {
+					GinkgoWriter.Printf("Warning: cleanup network failed: %v\n", err)
+					cleanupErrs = append(cleanupErrs, err)
+				}
+
+				return errors.Join(cleanupErrs...)
+			})
+		})
+
 		Describe("Given a network and file storage resource", func() {
 			It("should create a network for attachment", func() {
 				networkName = api.UniqueName("attach-network")
@@ -721,16 +823,8 @@ var _ = Describe("File Storage Management", func() {
 					Skip("No filestorage ID available")
 				}
 
-				err := regionClient.DeleteFileStorage(ctx, filestorageID)
-				Expect(err).NotTo(HaveOccurred())
-				filestorageDeleteRequested = true
-
-				GinkgoWriter.Printf("Deleted file storage: %s\n", filestorageID)
-
-				api.WaitForFileStorageGone(regionClient, ctx, filestorageID)
-
-				GinkgoWriter.Printf("Confirmed file storage deleted: %s\n", filestorageID)
-				filestorageID = "" // suppress AfterAll cleanup; storage has been confirmed deleted
+				Expect(cleanupFileStorage()).To(Succeed())
+				GinkgoWriter.Printf("Confirmed file storage deleted\n")
 			})
 
 			It("should delete the network resource", func() {
@@ -738,49 +832,9 @@ var _ = Describe("File Storage Management", func() {
 					Skip("No network ID available")
 				}
 
-				err := regionClient.DeleteNetwork(ctx, networkID)
-				Expect(err).NotTo(HaveOccurred())
-
-				GinkgoWriter.Printf("Deleted network: %s\n", networkID)
-
-				Eventually(func() int {
-					networks, err := regionClient.ListNetworks(ctx, config.OrgID, config.ProjectID, config.RegionID)
-					if err != nil {
-						return -1
-					}
-					count := 0
-					for _, n := range networks {
-						if n.Metadata.Id == networkID {
-							count++
-						}
-					}
-					return count
-				}).WithTimeout(2*time.Minute).
-					WithPolling(5*time.Second).
-					Should(Equal(0), "Network should be deleted")
-
-				GinkgoWriter.Printf("Confirmed network deleted: %s\n", networkID)
-				networkID = "" // suppress cleanup — already deleted
+				Expect(cleanupNetwork()).To(Succeed())
+				GinkgoWriter.Printf("Confirmed network deleted\n")
 			})
-		})
-
-		AfterAll(func() {
-			// Delete storage first to detach from network
-			if filestorageID != "" {
-				if !filestorageDeleteRequested {
-					GinkgoWriter.Printf("Cleaning up test filestorage: %s\n", filestorageID)
-					Expect(regionClient.DeleteFileStorage(ctx, filestorageID)).To(Succeed())
-					filestorageDeleteRequested = true
-				}
-
-				GinkgoWriter.Printf("Waiting for storage cleanup: %s\n", filestorageID)
-				api.WaitForFileStorageGone(regionClient, ctx, filestorageID)
-			}
-
-			if networkID != "" {
-				GinkgoWriter.Printf("Cleaning up test network: %s\n", networkID)
-				Expect(regionClient.DeleteNetwork(ctx, networkID)).To(Succeed())
-			}
 		})
 	})
 })

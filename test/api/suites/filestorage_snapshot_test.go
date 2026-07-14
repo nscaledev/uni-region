@@ -152,11 +152,10 @@ func buildHourlySnapshotPolicy() regionopenapi.StorageSnapshotPolicyListV2Spec {
 	}
 }
 
-// MustProvisionFileStorage creates NFS file storage attached to networkID, waits for a
-// mountable attachment, and — when snapshotPolicies is set — waits for the snapshot
-// policy to be provisioned. It returns the storage, its attachment, and a cleanup func
-// the caller should register (e.g. DeferCleanup(cleanup)).
-func MustProvisionFileStorage(storageClassID, networkID string, snapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec) (*regionopenapi.StorageV2Read, regionopenapi.StorageAttachmentV2Status, func()) {
+// MustProvisionFileStorage creates NFS file storage attached to networkID, registers
+// cleanup immediately, waits for a mountable attachment, and when snapshotPolicies is
+// set, waits for the snapshot policy to be provisioned.
+func MustProvisionFileStorage(storageClassID, networkID string, snapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec) (*regionopenapi.StorageV2Read, regionopenapi.StorageAttachmentV2Status) {
 	request := api.NewFileStoragePayload(config.OrgID, config.ProjectID, config.RegionID, storageClassID, networkID).
 		WithSizeGiB(storageSizeGiB).
 		WithSnapshotPolicies(snapshotPolicies).
@@ -174,6 +173,7 @@ func MustProvisionFileStorage(storageClassID, networkID string, snapshotPolicies
 
 		api.WaitForFileStorageGone(regionClient, ctx, storage.Metadata.Id)
 	}
+	DeferCleanup(cleanup)
 
 	var attachment regionopenapi.StorageAttachmentV2Status
 
@@ -205,7 +205,7 @@ func MustProvisionFileStorage(storageClassID, networkID string, snapshotPolicies
 		EventuallyProvisionSnapshotPolicy(storage.Metadata.Id)
 	}
 
-	return storage, attachment, cleanup
+	return storage, attachment
 }
 
 func EventuallyProvisionSnapshotPolicy(storageID string) {
@@ -408,8 +408,7 @@ func EventuallyProvisionMountedFilesystem(snapshotPolicies *regionopenapi.Storag
 	DeferCleanup(cleanupSecurityGroup)
 
 	By("creating the NFS file storage and waiting for a mountable attachment")
-	storage, attachment, cleanupStorage := MustProvisionFileStorage(storageClassID, network.Metadata.Id, snapshotPolicies)
-	DeferCleanup(cleanupStorage)
+	storage, attachment := MustProvisionFileStorage(storageClassID, network.Metadata.Id, snapshotPolicies)
 
 	By("provisioning a server and waiting for it to run with a public IP")
 	server, cleanupServer := MustProvisionServer(network.Metadata.Id, securityGroup.Metadata.Id)
