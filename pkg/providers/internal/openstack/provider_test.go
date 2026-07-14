@@ -826,6 +826,27 @@ func expectNoFloatingIP(t *testing.T, c *gomock.Controller, vipPortID string) *m
 	return m
 }
 
+func deleteLoadBalancerWithClients(
+	t *testing.T,
+	network *regionv1.Network,
+	lb *regionv1.LoadBalancer,
+	lbClient openstack.LoadBalancingInterface,
+	fipClient openstack.FloatingIPInterface,
+) error {
+	t.Helper()
+
+	p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
+
+	return openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, fipClient, lb)
+}
+
+func requireLoadBalancerIPsCleared(t *testing.T, lb *regionv1.LoadBalancer) {
+	t.Helper()
+
+	require.Nil(t, lb.Status.PublicIP)
+	require.Nil(t, lb.Status.VIPAddress)
+}
+
 // openstackListenerFixture builds an ACTIVE listener live representation. The
 // timeout fields default to the 60s admission default in millis so steady-state
 // tests don't need to repeat them.
@@ -3378,8 +3399,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 	})
 }
 
-//nolint:maintidx,nolintlint // CI flags this grouped delete table; local lint can treat the directive as unused.
-func TestDeleteLoadBalancer(t *testing.T) {
+func TestDeleteLoadBalancerAlreadyGone(t *testing.T) {
 	t.Parallel()
 
 	c := gomock.NewController(t)
@@ -3398,6 +3418,69 @@ func TestDeleteLoadBalancer(t *testing.T) {
 
 		networkClient := mock.NewMockNetworkingInterface(c)
 
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
+		require.NoError(t, err)
+		requireLoadBalancerIPsCleared(t, lb)
+	})
+}
+
+func TestDeleteLoadBalancerStatusGuards(t *testing.T) {
+	t.Parallel()
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	tests := []struct {
+		name   string
+		status string
+		err    error
+	}{
+		{"LBPendingCreate_Yields", "PENDING_CREATE", provisioners.ErrYield},
+		{"LBPendingUpdate_Yields", "PENDING_UPDATE", provisioners.ErrYield},
+		{"LBPendingDelete_Yields", "PENDING_DELETE", provisioners.ErrYield},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			network := loadBalancerNetworkFixture()
+			lb := loadBalancerFixture(network)
+
+			osLB := openstackLoadBalancerFixture(lb, withProvisioningStatus(tc.status))
+
+			lbClient := mock.NewMockLoadBalancingInterface(c)
+			lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+
+			networkClient := mock.NewMockNetworkingInterface(c)
+
+			err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
+			require.ErrorIs(t, err, tc.err)
+		})
+	}
+}
+
+func TestDeleteLoadBalancerCascade(t *testing.T) {
+	t.Parallel()
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	t.Run("LBDeleted_NoOp", func(t *testing.T) {
+		t.Parallel()
+
+		network := loadBalancerNetworkFixture()
+		lb := loadBalancerFixture(network)
+		lb.Status.PublicIP = &corev1.IPv4Address{IP: net.ParseIP("12.34.56.78").To4()}
+		lb.Status.VIPAddress = &corev1.IPv4Address{IP: net.ParseIP("10.0.0.42").To4()}
+
+		osLB := openstackLoadBalancerFixture(lb, withProvisioningStatus("DELETED"))
+
+		lbClient := mock.NewMockLoadBalancingInterface(c)
+		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
+
+		networkClient := mock.NewMockNetworkingInterface(c)
+
 		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
 		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
@@ -3406,15 +3489,14 @@ func TestDeleteLoadBalancer(t *testing.T) {
 		require.Nil(t, lb.Status.VIPAddress)
 	})
 
-	pendingStates := []struct {
+	unexpectedStates := []struct {
 		name   string
 		status string
 	}{
-		{"LBPendingCreate_Yields", "PENDING_CREATE"},
-		{"LBPendingUpdate_Yields", "PENDING_UPDATE"},
-		{"LBPendingDelete_Yields", "PENDING_DELETE"},
+		{"LBUnknownStatus_Consistency", "UNKNOWN"},
+		{"LBEmptyStatus_Consistency", ""},
 	}
-	for _, tc := range pendingStates {
+	for _, tc := range unexpectedStates {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -3431,7 +3513,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 			p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
 
 			err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
-			require.ErrorIs(t, err, provisioners.ErrYield)
+			require.ErrorIs(t, err, errors.ErrConsistency)
 		})
 	}
 
@@ -3449,9 +3531,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 
 		networkClient := expectNoFloatingIP(t, c, osLB.VipPortID)
 
-		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
-
-		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
 		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
 
@@ -3475,9 +3555,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 			lbClient.EXPECT().DeleteLoadBalancer(t.Context(), osLB.ID, true).Return(nil),
 		)
 
-		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
-
-		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
 		require.ErrorIs(t, err, provisioners.ErrYield)
 		require.Nil(t, lb.Status.PublicIP)
 	})
@@ -3496,9 +3574,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 
 		networkClient := expectNoFloatingIP(t, c, osLB.VipPortID)
 
-		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
-
-		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
 		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
 
@@ -3516,11 +3592,16 @@ func TestDeleteLoadBalancer(t *testing.T) {
 
 		networkClient := mock.NewMockNetworkingInterface(c)
 
-		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
-
-		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
 		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
+}
+
+func TestDeleteLoadBalancerErrors(t *testing.T) {
+	t.Parallel()
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
 
 	t.Run("GetFloatingIPConsistency_Propagates", func(t *testing.T) {
 		t.Parallel()
@@ -3536,9 +3617,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 		networkClient := mock.NewMockNetworkingInterface(c)
 		networkClient.EXPECT().GetFloatingIP(t.Context(), osLB.VipPortID).Return(nil, errors.ErrConsistency)
 
-		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
-
-		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
 		require.ErrorIs(t, err, errors.ErrConsistency)
 	})
 
@@ -3553,9 +3632,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 
 		networkClient := mock.NewMockNetworkingInterface(c)
 
-		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
-
-		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
 		require.ErrorIs(t, err, errors.ErrConsistency)
 	})
 
@@ -3568,7 +3645,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 		osLB := openstackLoadBalancerFixture(lb)
 		openstackFloatingIP := openstackFloatingIPFixture(&ports.Port{ID: osLB.VipPortID})
 
-		// FIP delete failure must short-circuit before cascade — no DeleteLoadBalancer expectation.
+		// FIP delete failure must short-circuit before cascade; no DeleteLoadBalancer expectation.
 		lbClient := mock.NewMockLoadBalancingInterface(c)
 		lbClient.EXPECT().GetLoadBalancer(t.Context(), loadBalancerMatcher(lb)).Return(osLB, nil)
 
@@ -3576,9 +3653,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 		networkClient.EXPECT().GetFloatingIP(t.Context(), osLB.VipPortID).Return(openstackFloatingIP, nil)
 		networkClient.EXPECT().DeleteFloatingIP(t.Context(), openstackFloatingIP.ID).Return(assert.AnError)
 
-		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
-
-		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
 		require.ErrorIs(t, err, assert.AnError)
 	})
 
@@ -3596,9 +3671,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 
 		networkClient := expectNoFloatingIP(t, c, osLB.VipPortID)
 
-		p := openstack.NewTestProvider(getClient(t, []client.Object{network}), regionFixture())
-
-		err := openstack.DeleteLoadBalancerWithClient(t.Context(), p, lbClient, networkClient, lb)
+		err := deleteLoadBalancerWithClients(t, network, lb, lbClient, networkClient)
 		require.ErrorIs(t, err, assert.AnError)
 	})
 }

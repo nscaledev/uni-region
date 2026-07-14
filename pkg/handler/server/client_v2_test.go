@@ -616,6 +616,7 @@ func TestServerGetV2Raw_MissingAPIVersionLabel(t *testing.T) {
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+	require.NotEmpty(t, err.Error(), "expected non-empty error description in response body")
 }
 
 func TestServerGetV2Raw_WrongAPIVersion(t *testing.T) {

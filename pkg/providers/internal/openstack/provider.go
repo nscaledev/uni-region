@@ -3596,10 +3596,21 @@ func (p *Provider) deleteLoadBalancer(ctx context.Context, lbClient LoadBalancin
 		return err
 	}
 
-	if osLB.ProvisioningStatus == "PENDING_CREATE" ||
-		osLB.ProvisioningStatus == "PENDING_UPDATE" ||
-		osLB.ProvisioningStatus == "PENDING_DELETE" {
+	switch osLB.ProvisioningStatus {
+	case "PENDING_CREATE", "PENDING_UPDATE", "PENDING_DELETE":
+		// Octavia rejects mutations while any PENDING_* action is in flight.
+		// Wait for the operation to settle before probing the VIP port or
+		// issuing the cascade delete.
 		return provisioners.ErrYield
+	case "ACTIVE", "ERROR":
+		// These are the Octavia states where delete is actionable.
+	case "DELETED":
+		loadBalancer.Status.PublicIP = nil
+		loadBalancer.Status.VIPAddress = nil
+
+		return nil
+	default:
+		return fmt.Errorf("%w: octavia loadbalancer %q in unexpected state %q", coreerrors.ErrConsistency, osLB.Name, osLB.ProvisioningStatus)
 	}
 
 	// FIP first — cascade kills the VIP port, after which the FIP would leak.

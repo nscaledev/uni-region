@@ -188,6 +188,9 @@ There are a few Octavia-specific constraints worth preserving:
   load-balancer client pins microversion `2.22` so that protocol is available.
 - Floating IP cleanup runs before cascade-deleting the load balancer because the
   cascade removes the VIP port that otherwise anchors the floating IP lookup.
+- Load balancer delete only proceeds when Octavia reports `ACTIVE` or `ERROR`;
+  `PENDING_*` states are in-flight operations and must be retried after they
+  settle, while `DELETED` or not found are treated as already gone.
 - Delete remains idempotent for resources that failed before Octavia state was
   recorded locally. Missing Octavia endpoints or incomplete service-principal
   state must not keep those never-realized `LoadBalancer` resources stuck on
