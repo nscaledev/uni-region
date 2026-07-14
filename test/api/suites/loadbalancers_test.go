@@ -23,6 +23,7 @@ package suites
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -36,6 +37,64 @@ import (
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/test/api"
 )
+
+const loadBalancerCleanupTimeout = 10 * time.Minute
+
+func waitForLoadBalancerGoneDuringCleanup(c *api.APIClient, lbID string) error {
+	deadline := time.Now().Add(loadBalancerCleanupTimeout)
+	var lastErr error
+
+	for {
+		_, err := c.GetLoadBalancer(ctx, lbID)
+		if errors.Is(err, coreclient.ErrResourceNotFound) {
+			return nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+
+		if time.Now().After(deadline) {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for load balancer %s cleanup: %w", lbID, ctx.Err())
+		case <-time.After(2 * time.Second):
+		}
+	}
+
+	if lastErr != nil {
+		return fmt.Errorf("load balancer %s still not deleted after %s: %w", lbID, loadBalancerCleanupTimeout, lastErr)
+	}
+
+	return fmt.Errorf("load balancer %s still exists after %s", lbID, loadBalancerCleanupTimeout)
+}
+
+func cleanupLoadBalancerFixture(networkID, lbID string) {
+	var cleanupErrs []error
+
+	if lbID != "" {
+		if err := regionClient.DeleteLoadBalancer(ctx, lbID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
+			GinkgoWriter.Printf("Warning: cleanup delete load balancer %s: %v\n", lbID, err)
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete load balancer %s: %w", lbID, err))
+		}
+
+		if err := waitForLoadBalancerGoneDuringCleanup(regionClient, lbID); err != nil {
+			GinkgoWriter.Printf("Warning: cleanup wait load balancer %s: %v\n", lbID, err)
+			cleanupErrs = append(cleanupErrs, err)
+		}
+	}
+
+	if networkID != "" {
+		if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
+			GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete network %s: %w", networkID, err))
+		}
+	}
+
+	Expect(errors.Join(cleanupErrs...)).NotTo(HaveOccurred(), "fixture cleanup should complete")
+}
 
 var _ = Describe("LoadBalancer", func() {
 	Context("When managing load balancer lifecycle", Ordered, func() {
@@ -54,15 +113,7 @@ var _ = Describe("LoadBalancer", func() {
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
 
 			DeferCleanup(func() {
-				if lbID != "" {
-					if err := regionClient.DeleteLoadBalancer(ctx, lbID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-						GinkgoWriter.Printf("Warning: cleanup delete load balancer %s: %v\n", lbID, err)
-					}
-					api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
-				}
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
-				}
+				cleanupLoadBalancerFixture(networkID, lbID)
 			})
 		})
 
@@ -110,23 +161,12 @@ var _ = Describe("LoadBalancer", func() {
 			})
 
 			It("appears in the load balancer list", func() {
-				list, err := regionClient.ListLoadBalancers(ctx, config.OrgID, config.ProjectID, config.RegionID)
-				Expect(err).NotTo(HaveOccurred())
-
-				var found *regionopenapi.LoadBalancerV2Read
-				for i := range list {
-					if list[i].Metadata.Id == lbID {
-						found = &list[i]
-						break
-					}
-				}
-				Expect(found).NotTo(BeNil(), "created load balancer not found in list")
+				found := api.WaitForLoadBalancerListed(regionClient, ctx, config.OrgID, config.ProjectID, config.RegionID, lbID)
 				Expect(found.Metadata.Name).To(Equal(createReq.Metadata.Name))
 			})
 
 			It("can be retrieved by id", func() {
-				got, err := regionClient.GetLoadBalancer(ctx, lbID)
-				Expect(err).NotTo(HaveOccurred())
+				got := api.WaitForLoadBalancerVisible(regionClient, ctx, lbID)
 				Expect(got.Metadata.Id).To(Equal(lbID))
 				Expect(got.Status.NetworkId).To(Equal(networkID))
 			})
@@ -166,11 +206,13 @@ var _ = Describe("LoadBalancer", func() {
 				Expect(*putResp.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
 				Expect(putResp.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
 
-				roundTrip, err := regionClient.GetLoadBalancer(ctx, lbID)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(roundTrip.Spec.Listeners[0].AllowedCidrs).NotTo(BeNil())
-				Expect(*roundTrip.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
-				Expect(roundTrip.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
+				Eventually(func(g Gomega) {
+					roundTrip, err := regionClient.GetLoadBalancer(ctx, lbID)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(roundTrip.Spec.Listeners[0].AllowedCidrs).NotTo(BeNil())
+					g.Expect(*roundTrip.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
+					g.Expect(roundTrip.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
+				}).WithTimeout(30 * time.Second).WithPolling(time.Second).Should(Succeed())
 			})
 
 			It("accepts an update toggling publicIP to false", func() {
@@ -233,15 +275,7 @@ var _ = Describe("LoadBalancer", func() {
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
 
 			DeferCleanup(func() {
-				if lbID != "" {
-					if err := regionClient.DeleteLoadBalancer(ctx, lbID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-						GinkgoWriter.Printf("Warning: cleanup delete load balancer %s: %v\n", lbID, err)
-					}
-					api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
-				}
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
-				}
+				cleanupLoadBalancerFixture(networkID, lbID)
 			})
 		})
 
@@ -272,8 +306,7 @@ var _ = Describe("LoadBalancer", func() {
 				Expect(created.Spec.Listeners[0].Port).To(Equal(53))
 				Expect(created.Spec.Listeners[0].IdleTimeoutSeconds).To(BeNil())
 
-				roundTrip, err := regionClient.GetLoadBalancer(ctx, lbID)
-				Expect(err).NotTo(HaveOccurred())
+				roundTrip := api.WaitForLoadBalancerVisible(regionClient, ctx, lbID)
 				Expect(roundTrip.Spec.Listeners[0].IdleTimeoutSeconds).To(BeNil())
 			})
 		})
@@ -294,15 +327,7 @@ var _ = Describe("LoadBalancer", func() {
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
 
 			DeferCleanup(func() {
-				if lbID != "" {
-					if err := regionClient.DeleteLoadBalancer(ctx, lbID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-						GinkgoWriter.Printf("Warning: cleanup delete load balancer %s: %v\n", lbID, err)
-					}
-					api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
-				}
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
-				}
+				cleanupLoadBalancerFixture(networkID, lbID)
 			})
 		})
 
