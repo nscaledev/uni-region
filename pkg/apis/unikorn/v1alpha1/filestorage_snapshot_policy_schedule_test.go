@@ -17,28 +17,15 @@ limitations under the License.
 package v1alpha1_test
 
 import (
-	"os"
-	"path/filepath"
-	goruntime "runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 
-	apixinternal "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
-	apixv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	structuralschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
-	celvalidation "k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel"
-	apixvalidation "k8s.io/apiextensions-apiserver/pkg/apiserver/validation"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kruntime "k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/validation/field"
-	celconfig "k8s.io/apiserver/pkg/apis/cel"
 	"k8s.io/utils/ptr"
-
-	"sigs.k8s.io/yaml"
 )
 
 func TestFileStorageSnapshotPolicyScheduleValidation(t *testing.T) {
@@ -134,93 +121,10 @@ func TestFileStorageSnapshotPolicyScheduleValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			valid := newFileStorageCRDValidator(t).validates(t, fileStorageWithSnapshotPolicySchedule(tc.schedule))
+			valid := newCRDValidator(t, fileStorageCRDFile).validates(t, fileStorageWithSnapshotPolicySchedule(tc.schedule))
 			require.Equal(t, tc.valid, valid)
 		})
 	}
-}
-
-type fileStorageCRDValidator struct {
-	schema     *apixinternal.JSONSchemaProps
-	structural *structuralschema.Structural
-}
-
-func (v fileStorageCRDValidator) validates(t *testing.T, storage *regionv1.FileStorage) bool {
-	t.Helper()
-
-	obj := toUnstructured(t, storage)
-
-	validator, _, err := apixvalidation.NewSchemaValidator(v.schema)
-	require.NoError(t, err)
-
-	if validator.Validate(obj).HasErrors() {
-		return false
-	}
-
-	celValidator := celvalidation.NewValidator(v.structural, true, celconfig.PerCallLimit)
-	require.NotNil(t, celValidator)
-
-	celErrors, _ := celValidator.Validate(t.Context(), field.NewPath("root"), v.structural, obj, nil, celconfig.RuntimeCELCostBudget)
-
-	return len(celErrors) == 0
-}
-
-func toUnstructured(t *testing.T, storage *regionv1.FileStorage) map[string]any {
-	t.Helper()
-
-	out, err := kruntime.DefaultUnstructuredConverter.ToUnstructured(storage)
-	require.NoError(t, err)
-
-	return out
-}
-
-func newFileStorageCRDValidator(t *testing.T) fileStorageCRDValidator {
-	t.Helper()
-
-	schema := fileStorageInternalSchema(t)
-	structural, err := structuralschema.NewStructural(schema)
-	require.NoError(t, err)
-
-	return fileStorageCRDValidator{
-		schema:     schema,
-		structural: structural,
-	}
-}
-
-func fileStorageInternalSchema(t *testing.T) *apixinternal.JSONSchemaProps {
-	t.Helper()
-
-	var schema apixinternal.JSONSchemaProps
-
-	require.NoError(t, apixv1.Convert_v1_JSONSchemaProps_To_apiextensions_JSONSchemaProps(fileStorageCRDSchema(t), &schema, nil))
-
-	return &schema
-}
-
-func fileStorageCRDSchema(t *testing.T) *apixv1.JSONSchemaProps {
-	t.Helper()
-
-	_, filename, _, ok := goruntime.Caller(0)
-	require.True(t, ok)
-
-	path := filepath.Join(filepath.Dir(filename), "..", "..", "..", "..", "charts", "region", "crds", "region.unikorn-cloud.org_filestorages.yaml")
-	data, err := os.ReadFile(path)
-	require.NoError(t, err)
-
-	var crd apixv1.CustomResourceDefinition
-
-	require.NoError(t, yaml.Unmarshal(data, &crd))
-
-	for i := range crd.Spec.Versions {
-		version := &crd.Spec.Versions[i]
-		if version.Name == regionv1.GroupVersion && version.Schema != nil {
-			return version.Schema.OpenAPIV3Schema
-		}
-	}
-
-	t.Fatalf("file storage CRD does not define schema for %s", regionv1.GroupVersion)
-
-	return nil
 }
 
 func fileStorageWithSnapshotPolicySchedule(schedule regionv1.FileStorageSnapshotPolicySchedule) *regionv1.FileStorage {

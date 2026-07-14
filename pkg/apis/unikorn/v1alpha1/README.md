@@ -11,7 +11,7 @@ The package contains three broad kinds of object:
 
 - user-meaningful region resources such as `Region`, `Identity`, `Network`,
   `SecurityGroup`, `LoadBalancer`, `SSHCertificateAuthority`, `Server`, and
-  `FileStorage`
+  `Volume`, and `FileStorage`
 - service-internal provider state, primarily `OpenstackIdentity`
 - operational support objects such as `VLANAllocation`, `FileStorageClass`, and
   `FileStorageProvisioner`
@@ -65,6 +65,23 @@ stored objects rely on for linkage, migration, and operational coordination.
   resource types. Attachment-level provisioning state, observed size, usage
   reporting, and per-policy snapshot status are part of the stored
   reconciliation contract.
+- `Volume` is the Region-owned block storage primitive. It is anchored to a
+  `Network`, carries its own requested capacity and volume class identity, and
+  is expected to carry quota/accounting responsibility in the Region layer.
+  `Volume` does not define a per-network name uniqueness key; its resource ID
+  follows the platform's normal UUID v4 identity pattern, while mutable display
+  names live in standard metadata labels. `Volume.Spec.ClaimRef` records the
+  kind and Region resource ID of the resource that owns the volume's attachment
+  claim; a nil claim means the volume is available for claiming. `Server` is the
+  current supported claim kind. Attachment realization remains outside
+  `Volume.Status`, which is conditions-first and also reserves observed size for
+  later controller/provider work. Provider-side volume identity is expected to
+  be rediscovered by stable provider lookup rather than mirrored into status.
+- The `Network -> Volume` graph edge is declared as containment for future
+  behavior: Network scope propagates to Volume; co-location is implicit; Volume
+  holds a reverse deletion-blocking relationship to Network for its lifetime;
+  Network deletion may cascade to Volumes once controller/API behavior exists;
+  Volume status does not propagate upward to Network.
 - `FileStorage.Spec.SnapshotPolicies` is an optional inline desired-state list
   keyed by policy `name`. In persisted storage, omitted and empty lists both mean
   no user-managed snapshot policies are desired. Default snapshot protection is

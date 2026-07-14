@@ -47,6 +47,9 @@ func MustParseLoadBalancerID(s string) ids.LoadBalancerID {
 	return ids.LoadBalancerID(uuid.MustParse(s))
 }
 
+// MustParseVolumeID parses s as a UUID into a VolumeID, panicking if invalid.
+func MustParseVolumeID(s string) ids.VolumeID { return ids.VolumeID(uuid.MustParse(s)) }
+
 // MustParseServerID parses s as a UUID into a ServerID, panicking if invalid.
 func MustParseServerID(s string) ids.ServerID { return ids.ServerID(uuid.MustParse(s)) }
 

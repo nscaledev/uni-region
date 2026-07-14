@@ -807,6 +807,77 @@ type LoadBalancerStatus struct {
 	PublicIP *unikornv1core.IPv4Address `json:"publicIP,omitempty"`
 }
 
+// VolumeList is a typed list of volumes.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type VolumeList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []Volume `json:"items"`
+}
+
+// Volume defines a network-anchored block storage volume.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="network",type="string",JSONPath=".spec.networkID"
+// +kubebuilder:printcolumn:name="size",type="string",JSONPath=".spec.size"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type Volume struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              VolumeSpec   `json:"spec"`
+	Status            VolumeStatus `json:"status,omitempty"`
+}
+
+// VolumeSpec defines the desired state for a block storage volume.
+// +kubebuilder:validation:XValidation:rule="self.networkID == oldSelf.networkID",message="networkID is immutable"
+type VolumeSpec struct {
+	// Pause, if true, will inhibit reconciliation.
+	Pause bool `json:"pause,omitempty"`
+	// Tags are an abitrary list of key/value pairs that a client
+	// may populate to store metadata for the resource.
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
+	// NetworkID is the network that anchors the volume's region, identity,
+	// organization, and project scope.
+	NetworkID string `json:"networkID"`
+	// VolumeClassID is the provider-neutral volume class requested for the
+	// volume. Provider-specific class configuration is defined on Region
+	// separately.
+	VolumeClassID string `json:"volumeClassID"`
+	// Size is the requested volume capacity.
+	Size resource.Quantity `json:"size"`
+	// ClaimRef binds this volume to the resource that owns its
+	// attachment. Unset means the volume is available for claiming.
+	ClaimRef *VolumeClaimRef `json:"claimRef,omitempty"`
+}
+
+type VolumeClaimRef struct {
+	// Kind is the kind of resource claiming the volume attachment.
+	Kind VolumeClaimKind `json:"kind"`
+	// ID is the Region resource ID of the resource claiming the volume attachment.
+	ID string `json:"id"`
+}
+
+// VolumeClaimKind identifies a resource kind that can claim a volume attachment.
+// +kubebuilder:validation:Enum=Server
+type VolumeClaimKind string
+
+const (
+	VolumeClaimKindServer VolumeClaimKind = "Server"
+)
+
+type VolumeStatus struct {
+	// ObservedGeneration is the most recent generation observed by the controller.
+	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
+	// Current service state of a volume.
+	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	// Size is the currently provisioned/observed size of the volume.
+	// (May differ from spec.size while provisioning.)
+	Size *resource.Quantity `json:"size,omitempty"`
+}
+
 // +kubebuilder:validation:Enum=tcp;udp
 type LoadBalancerListenerProtocol string
 
