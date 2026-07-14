@@ -13,7 +13,7 @@ small number of contract clusters:
 
 - runtime identity for the service binary
 - linkage labels that tie stored resources back to their region, identity, or
-  network context
+  network context, and to currently wired dependent resources
 - an API-generation label used to distinguish old and new external API
   semantics while keeping storage broadly in place
 - specialized image and server-state metadata that drives snapshot/import

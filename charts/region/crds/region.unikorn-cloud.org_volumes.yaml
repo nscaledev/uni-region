@@ -1,0 +1,197 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.3
+  name: volumes.region.unikorn-cloud.org
+spec:
+  group: region.unikorn-cloud.org
+  names:
+    categories:
+    - unikorn
+    kind: Volume
+    listKind: VolumeList
+    plural: volumes
+    singular: volume
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Available")].reason
+      name: status
+      type: string
+    - jsonPath: .spec.networkID
+      name: network
+      type: string
+    - jsonPath: .spec.size
+      name: size
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Volume defines a network-anchored block storage volume.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: VolumeSpec defines the desired state for a block storage
+              volume.
+            properties:
+              claimRef:
+                description: |-
+                  ClaimRef binds this volume to the resource that owns its
+                  attachment. Unset means the volume is available for claiming.
+                properties:
+                  id:
+                    description: ID is the Region resource ID of the resource claiming
+                      the volume attachment.
+                    type: string
+                  kind:
+                    description: Kind is the kind of resource claiming the volume
+                      attachment.
+                    enum:
+                    - Server
+                    type: string
+                required:
+                - id
+                - kind
+                type: object
+              networkID:
+                description: |-
+                  NetworkID is the network that anchors the volume's region, identity,
+                  organization, and project scope.
+                type: string
+              pause:
+                description: Pause, if true, will inhibit reconciliation.
+                type: boolean
+              size:
+                anyOf:
+                - type: integer
+                - type: string
+                description: Size is the requested volume capacity.
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
+              tags:
+                description: |-
+                  Tags are an abitrary list of key/value pairs that a client
+                  may populate to store metadata for the resource.
+                items:
+                  description: Tag is an arbirary key/value.
+                  properties:
+                    name:
+                      description: Name of the tag.
+                      type: string
+                    value:
+                      description: Value of the tag.
+                      type: string
+                  required:
+                  - name
+                  - value
+                  type: object
+                type: array
+              volumeClassID:
+                description: |-
+                  VolumeClassID is the provider-neutral volume class requested for the
+                  volume. Provider-specific class configuration is defined on Region
+                  separately.
+                type: string
+            required:
+            - networkID
+            - size
+            - volumeClassID
+            type: object
+            x-kubernetes-validations:
+            - message: networkID is immutable
+              rule: self.networkID == oldSelf.networkID
+          status:
+            properties:
+              conditions:
+                description: Current service state of a volume.
+                items:
+                  description: |-
+                    Condition is a generic condition type for use across all resource types.
+                    It's generic so that the underlying controller-manager functionality can
+                    be shared across all resources.
+                  properties:
+                    lastTransitionTime:
+                      description: Last time the condition transitioned from one status
+                        to another.
+                      format: date-time
+                      type: string
+                    message:
+                      description: Human-readable message indicating details about
+                        last transition.
+                      type: string
+                    reason:
+                      description: Unique, one-word, CamelCase reason for the condition's
+                        last transition.
+                      enum:
+                      - Provisioning
+                      - Provisioned
+                      - Cancelled
+                      - Errored
+                      - Deprovisioning
+                      - Deprovisioned
+                      - Unknown
+                      - Healthy
+                      - Degraded
+                      type: string
+                    status:
+                      description: |-
+                        Status is the status of the condition.
+                        Can be True, False, Unknown.
+                      type: string
+                    type:
+                      description: Type is the type of the condition.
+                      enum:
+                      - Available
+                      - Healthy
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by the controller.
+                format: int64
+                type: integer
+              size:
+                anyOf:
+                - type: integer
+                - type: string
+                description: |-
+                  Size is the currently provisioned/observed size of the volume.
+                  (May differ from spec.size while provisioning.)
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

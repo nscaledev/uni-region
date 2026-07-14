@@ -14,6 +14,7 @@ region service addresses through its public API:
 | `NetworkID` | networks |
 | `SecurityGroupID` | security groups |
 | `LoadBalancerID` | load balancers |
+| `VolumeID` | block storage volumes |
 | `ServerID` | servers |
 | `SSHCertificateAuthorityID` | SSH certificate authorities |
 | `FileStorageID` | file storage |
@@ -33,7 +34,7 @@ binding time before any handler is reached. Non-UUID path values produce a
 
 These types run from the router down to the provider layer — not the API layer
 alone. The region service mints UUIDs for its own CRD-backed resources (`Region`,
-`Identity`, `Network`, `SecurityGroup`, `LoadBalancer`, `Server`,
+`Identity`, `Network`, `SecurityGroup`, `LoadBalancer`, `Volume`, `Server`,
 `SSHCertificateAuthority`, `FileStorage`) and addresses provider-owned
 `Image`/`Flavor` resources by their provider-assigned UUIDs. They appear on:
 
@@ -76,3 +77,7 @@ validated by the oapi-codegen binder via `UnmarshalText` before the handler runs
 **Outward (typed ID → string):** Call `.String()` to produce the canonical
 hyphenated UUID string — only at the sinks above (external SDK calls, by-name
 Kubernetes lookups, label values, string read-model fields, log messages).
+
+`VolumeID` follows the same UUID v4 identity model as the other Region resource
+IDs that do not have a concrete natural uniqueness key. Volume display names are
+metadata, not part of the stored identity model.

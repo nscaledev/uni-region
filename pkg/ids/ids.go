@@ -95,6 +95,21 @@ func (v LoadBalancerID) String() string                { return uuid.UUID(v).Str
 func (v LoadBalancerID) MarshalText() ([]byte, error)  { return uuid.UUID(v).MarshalText() }
 func (v *LoadBalancerID) UnmarshalText(b []byte) error { return unmarshalUUID((*uuid.UUID)(v), b) }
 
+// VolumeID is a UUID-backed identifier for block storage volumes. It is a distinct
+// named type so the compiler prevents accidental interchange with any other ID type.
+// UnmarshalText delegates to uuid.UUID, so the oapi-codegen runtime rejects
+// non-UUID path parameter values before any handler is reached.
+//
+// +kubebuilder:validation:Type=string
+// +kubebuilder:validation:Format=uuid
+//
+//nolint:recvcheck // UnmarshalText must be a pointer receiver; String/MarshalText are value receivers for fmt.Stringer compatibility.
+type VolumeID uuid.UUID
+
+func (v VolumeID) String() string                { return uuid.UUID(v).String() }
+func (v VolumeID) MarshalText() ([]byte, error)  { return uuid.UUID(v).MarshalText() }
+func (v *VolumeID) UnmarshalText(b []byte) error { return unmarshalUUID((*uuid.UUID)(v), b) }
+
 // ServerID is a UUID-backed identifier for servers. It is a distinct
 // named type so the compiler prevents accidental interchange with any other ID type.
 // UnmarshalText delegates to uuid.UUID, so the oapi-codegen runtime rejects
@@ -240,6 +255,17 @@ func ParseLoadBalancerID(s string) (LoadBalancerID, error) {
 	}
 
 	return LoadBalancerID(id), nil
+}
+
+// ParseVolumeID parses s as a UUID into a VolumeID, returning
+// an error if s is not a valid UUID.
+func ParseVolumeID(s string) (VolumeID, error) {
+	id, err := uuid.Parse(s)
+	if err != nil {
+		return VolumeID{}, err
+	}
+
+	return VolumeID(id), nil
 }
 
 // ParseServerID parses s as a UUID into a ServerID, returning

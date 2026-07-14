@@ -66,6 +66,11 @@ func TestStringFormats(t *testing.T) {
 			fmt.Sprintf("%v", idstest.MustParseLoadBalancerID(validUUID)),
 		},
 		{
+			"VolumeID",
+			fmt.Sprintf("%s", idstest.MustParseVolumeID(validUUID)), //nolint:staticcheck
+			fmt.Sprintf("%v", idstest.MustParseVolumeID(validUUID)),
+		},
+		{
 			"ServerID",
 			fmt.Sprintf("%s", idstest.MustParseServerID(validUUID)), //nolint:staticcheck
 			fmt.Sprintf("%v", idstest.MustParseServerID(validUUID)),
@@ -119,6 +124,7 @@ func TestMarshalText(t *testing.T) {
 		{"NetworkID", idstest.MustParseNetworkID(validUUID)},
 		{"SecurityGroupID", idstest.MustParseSecurityGroupID(validUUID)},
 		{"LoadBalancerID", idstest.MustParseLoadBalancerID(validUUID)},
+		{"VolumeID", idstest.MustParseVolumeID(validUUID)},
 		{"ServerID", idstest.MustParseServerID(validUUID)},
 		{"SSHCertificateAuthorityID", idstest.MustParseSSHCertificateAuthorityID(validUUID)},
 		{"FileStorageID", idstest.MustParseFileStorageID(validUUID)},
@@ -154,6 +160,7 @@ func TestUnmarshalTextAcceptsValid(t *testing.T) {
 		{"NetworkID", new(ids.NetworkID)},
 		{"SecurityGroupID", new(ids.SecurityGroupID)},
 		{"LoadBalancerID", new(ids.LoadBalancerID)},
+		{"VolumeID", new(ids.VolumeID)},
 		{"ServerID", new(ids.ServerID)},
 		{"SSHCertificateAuthorityID", new(ids.SSHCertificateAuthorityID)},
 		{"FileStorageID", new(ids.FileStorageID)},
@@ -192,6 +199,7 @@ func TestUnmarshalTextRejectsInvalid(t *testing.T) {
 		{"NetworkID", new(ids.NetworkID)},
 		{"SecurityGroupID", new(ids.SecurityGroupID)},
 		{"LoadBalancerID", new(ids.LoadBalancerID)},
+		{"VolumeID", new(ids.VolumeID)},
 		{"ServerID", new(ids.ServerID)},
 		{"SSHCertificateAuthorityID", new(ids.SSHCertificateAuthorityID)},
 		{"FileStorageID", new(ids.FileStorageID)},
@@ -235,6 +243,10 @@ func TestParseRoundTrips(t *testing.T) {
 		}},
 		{"ParseLoadBalancerID", func(s string) (string, error) {
 			v, err := ids.ParseLoadBalancerID(s)
+			return v.String(), err
+		}},
+		{"ParseVolumeID", func(s string) (string, error) {
+			v, err := ids.ParseVolumeID(s)
 			return v.String(), err
 		}},
 		{"ParseServerID", func(s string) (string, error) {
