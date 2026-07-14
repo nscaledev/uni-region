@@ -28,6 +28,7 @@ import (
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -70,8 +71,8 @@ func newServerFixture(name string) *unikornv1.Server {
 			},
 		},
 		Spec: unikornv1.ServerSpec{
-			Image:    &unikornv1.ServerImage{ID: "image-id"},
-			FlavorID: "flavor-id",
+			Image:    &unikornv1.ServerImage{ID: idstest.MustParseImageID("bbbbbbbb-0000-0000-0000-000000000001")},
+			FlavorID: idstest.MustParseFlavorID("bbbbbbbb-0000-0000-0000-000000000002"),
 		},
 	}
 }

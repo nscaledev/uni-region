@@ -115,7 +115,7 @@ func (p *Provisioner) networkIDs() []string {
 
 	// TODO: ensure the API rejects repeats.
 	for i := range p.server.Spec.Networks {
-		ids[i] = p.server.Spec.Networks[i].ID
+		ids[i] = p.server.Spec.Networks[i].ID.String()
 	}
 
 	return ids
@@ -126,7 +126,7 @@ func (p *Provisioner) securityGroupIDs() []string {
 
 	// TODO: ensure the API rejects repeats.
 	for i := range p.server.Spec.SecurityGroups {
-		ids[i] = p.server.Spec.SecurityGroups[i].ID
+		ids[i] = p.server.Spec.SecurityGroups[i].ID.String()
 	}
 
 	return ids
@@ -304,7 +304,8 @@ func (p *Provisioner) resetProviderCreateRuntimeStatus(message string) {
 	p.server.Status.Phase = unikornv1.InstanceLifecyclePhasePending
 	p.server.Status.PrivateIP = nil
 	p.server.Status.PublicIP = nil
-	p.server.Status.MACAddress = nil
+	// MACAddress is deliberately not reset: the monitor is its sole owner, and a
+	// stale value self-heals on the next ACTIVE poll rather than flickering to unset.
 	p.server.Status.LaunchedAt = nil
 	p.server.Status.ScheduledAt = nil
 	p.server.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionUnknown, unikornv1core.ConditionReasonProvisioning, message)

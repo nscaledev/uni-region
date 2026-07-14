@@ -32,6 +32,7 @@ import (
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	openstack "github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack/mock"
 
@@ -188,9 +189,13 @@ func TestFlavorPlacementTraits(t *testing.T) {
 func TestServerCreatePlacementPreflight(t *testing.T) {
 	t.Parallel()
 
+	// Flavor IDs are UUIDs; the server's typed flavor ID and the OpenStack
+	// flavor's string ID must agree for the resource-class lookup to match.
+	const flavorAID = "aaaaaaaa-1111-0000-0000-000000000001"
+
 	server := &unikornv1.Server{
 		Spec: unikornv1.ServerSpec{
-			FlavorID:          "flavor-a",
+			FlavorID:          idstest.MustParseFlavorID(flavorAID),
 			InfrastructureRef: ptr.To("node-a"),
 		},
 	}
@@ -237,7 +242,7 @@ func TestServerCreatePlacementPreflight(t *testing.T) {
 		flavorClient := mock.NewMockFlavorInterface(c)
 		flavorClient.EXPECT().GetFlavors(t.Context()).Return([]flavors.Flavor{
 			{
-				ID: "flavor-a",
+				ID: flavorAID,
 				ExtraSpecs: map[string]string{
 					"resources:CUSTOM_GPU":        "1",
 					"trait:CUSTOM_FLAVOR_READY":   "required",
@@ -274,7 +279,7 @@ func TestServerCreatePlacementPreflight(t *testing.T) {
 		flavorClient := mock.NewMockFlavorInterface(c)
 		flavorClient.EXPECT().GetFlavors(t.Context()).Return([]flavors.Flavor{
 			{
-				ID: "flavor-a",
+				ID: flavorAID,
 				ExtraSpecs: map[string]string{
 					"resources:CUSTOM_GPU": "1",
 				},

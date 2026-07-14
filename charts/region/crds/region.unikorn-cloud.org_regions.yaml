@@ -190,6 +190,82 @@ spec:
                 description: Openstack is provider specific configuration for the
                   region.
                 properties:
+                  blockStorage:
+                    description: BlockStorage is configuration for the block storage
+                      service.
+                    properties:
+                      volumeClasses:
+                        description: |-
+                          VolumeClasses defines which provider volume classes are eligible for Region
+                          inventory export and what user-facing metadata is attached to them. If not
+                          defined, then all provider volume classes are eligible.
+                        properties:
+                          metadata:
+                            description: |-
+                              Metadata allows provider volume classes to be explicitly augmented with
+                              user-facing metadata. OpenStack stores these internally as Cinder volume types,
+                              but Region uses the domain term VolumeClass for this inventory. This metadata
+                              is operator-authored because backend-native encryption and QoS capabilities
+                              may not be reliably discoverable from Cinder volume type metadata alone.
+                            items:
+                              properties:
+                                encrypted:
+                                  description: |-
+                                    Encrypted indicates that volumes provisioned from this class are encrypted
+                                    at rest by the provider.
+                                  type: boolean
+                                id:
+                                  description: |-
+                                    ID is the immutable provider identifier for the volume class. For OpenStack,
+                                    this is the Cinder volume type ID.
+                                  type: string
+                                media:
+                                  description: Media describes the backing storage
+                                    medium.
+                                  enum:
+                                  - hdd
+                                  - ssd
+                                  - nvme
+                                  type: string
+                                performance:
+                                  description: Performance describes advertised performance
+                                    characteristics.
+                                  properties:
+                                    maxIOPS:
+                                      description: |-
+                                        MaxIOPS describes the advertised maximum input/output operations per second
+                                        cap. This is not a guaranteed reservation.
+                                      minimum: 1
+                                      type: integer
+                                    maxThroughputMiBps:
+                                      description: |-
+                                        MaxThroughput describes the advertised maximum throughput cap in mebibytes
+                                        per second. This is not a guaranteed reservation.
+                                      minimum: 1
+                                      type: integer
+                                  type: object
+                              required:
+                              - id
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - id
+                            x-kubernetes-list-type: map
+                          selector:
+                            description: |-
+                              Selector allows provider volume classes to be manually selected for inclusion.
+                              The selected set is a boolean intersection of all defined filters in the selector.
+                            properties:
+                              ids:
+                                description: |-
+                                  IDs is an explicit list of allowed provider volume class IDs. If not
+                                  specified, then all provider volume classes are considered.
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                        type: object
+                    type: object
                   compute:
                     description: Compute is configuration for the compute service.
                     properties:

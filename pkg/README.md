@@ -19,6 +19,9 @@ The useful way to read it is not as a directory tree, but as one system:
 - provisioners and managers realize provider-side effects
 - monitors project observed provider truth back into status and metrics
 - providers bind the region model to real or simulated clouds
+- `Volume` is an internal Region storage model today: a network-anchored,
+  quota-carrying block storage resource whose public API, controller, and
+  provider behavior are deliberately introduced by later tickets
 
 ## Recommended Reading Order
 
@@ -28,10 +31,11 @@ The useful way to read it is not as a directory tree, but as one system:
 - [apis/unikorn/v1alpha1](./apis/unikorn/v1alpha1/README.md)
 - [ids](./ids/README.md)
 - [openapi](./openapi/README.md)
+- [userdata](./userdata/README.md)
 
 These packages define the shared control vocabulary, the stored Kubernetes
-resource model, the typed resource identifiers exposed at the API layer, and the
-HTTP wire contract.
+resource model, the typed resource identifiers exposed at the API layer, the
+HTTP wire contract, and the cross-service user-data validation contract.
 
 The most important direction here is that `v2` is the intended API shape.
 `v1` remains as deprecated compatibility surface and should be migrated away

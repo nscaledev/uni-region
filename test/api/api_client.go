@@ -939,6 +939,30 @@ func (c *APIClient) CreateServer(ctx context.Context, request regionopenapi.Serv
 	return &server, nil
 }
 
+// CreateServerExpectError attempts a server create that is expected to be rejected
+// with the given status, returning the decoded standard error body.
+func (c *APIClient) CreateServerExpectError(ctx context.Context, request regionopenapi.ServerV2Create, expectedStatus int) (*coreapi.Error, error) {
+	path := c.endpoints.CreateServer()
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling server request: %w", err)
+	}
+
+	//nolint:bodyclose // DoInternalRegionRequest handles response body closing internally
+	_, respBody, err := c.DoInternalRegionRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), expectedStatus)
+	if err != nil {
+		return nil, fmt.Errorf("creating server: %w", err)
+	}
+
+	var apiError coreapi.Error
+	if err := json.Unmarshal(respBody, &apiError); err != nil {
+		return nil, fmt.Errorf("unmarshaling error response: %w", err)
+	}
+
+	return &apiError, nil
+}
+
 // GetServer gets a specific server by ID.
 func (c *APIClient) GetServer(ctx context.Context, serverID string) (*regionopenapi.ServerV2Read, error) {
 	path := c.endpoints.GetServer(serverID)

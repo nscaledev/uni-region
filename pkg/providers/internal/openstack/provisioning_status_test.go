@@ -32,10 +32,18 @@ import (
 
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+)
+
+// Flavor IDs are UUIDs; these fixtures stand in for a baremetal and a VM flavor.
+const (
+	flavorMetalID = "aaaaaaaa-0000-0000-0000-000000000001"
+	flavorVMID    = "aaaaaaaa-0000-0000-0000-000000000002"
 )
 
 var errIronicUnavailable = errors.New("ironic unavailable")
@@ -209,6 +217,59 @@ func TestSetServerPhaseStopped(t *testing.T) {
 	require.Equal(t, unikornv1.InstanceLifecyclePhaseStopped, server.Status.Phase)
 }
 
+// TestUpdateServerStateWithClientsRecordsMACAddress is the end-to-end wiring
+// test for the monitor as sole owner of the MAC: an ACTIVE Nova server carrying
+// a bound port MAC results in that MAC being recorded on the resource.
+func TestUpdateServerStateWithClientsRecordsMACAddress(t *testing.T) {
+	t.Parallel()
+
+	const mac = "e0:9d:73:86:cc:18"
+
+	compute := &stubComputeClient{server: &servers.Server{
+		ID:     "nova-id",
+		Status: "ACTIVE",
+		Addresses: map[string]any{
+			"network-ee2b52e3-a844-42bd-864d-a9ff2f39a026": []any{
+				map[string]any{
+					"OS-EXT-IPS-MAC:mac_addr": mac,
+					"OS-EXT-IPS:type":         "fixed",
+					"addr":                    "7.247.33.145",
+					"version":                 float64(4),
+				},
+			},
+		},
+	}}
+	identity := &unikornv1.Identity{}
+	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{
+		FlavorID: idstest.MustParseFlavorID("11111111-1111-4111-a111-111111111111"),
+		Networks: []unikornv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID("ee2b52e3-a844-42bd-864d-a9ff2f39a026")}},
+	}}
+
+	provider := &Provider{
+		openstack: &openStackClients{
+			_region: &unikornv1.Region{
+				Spec: unikornv1.RegionSpec{
+					Openstack: &unikornv1.RegionOpenstackSpec{
+						Compute: &unikornv1.RegionOpenstackComputeSpec{
+							Flavors: &unikornv1.OpenstackFlavorsSpec{
+								Metadata: []unikornv1.FlavorMetadata{{ID: "11111111-1111-4111-a111-111111111111", Baremetal: false}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	err := provider.updateServerStateWithClients(t.Context(), identity, server, compute,
+		func(context.Context, *unikornv1.Identity) (BaremetalInterface, error) {
+			return nil, errIronicUnavailable
+		})
+
+	require.NoError(t, err)
+	require.Equal(t, mac, ptr.Deref(server.Status.MACAddress, ""))
+}
+
 type stubComputeClient struct {
 	server          *servers.Server
 	requestedServer *unikornv1.Server
@@ -263,7 +324,7 @@ func TestUpdateServerStateWithClientsBaremetalBuildSetsPhaseFromIronicLookup(t *
 
 	compute := &stubComputeClient{server: &servers.Server{ID: "nova-id", Status: "BUILD"}}
 	identity := &unikornv1.Identity{}
-	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{FlavorID: "metal"}}
+	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{FlavorID: idstest.MustParseFlavorID(flavorMetalID)}}
 	baremetalClient := &recordingBaremetalClient{provisionState: nodes.Available}
 	factoryCalled := false
 
@@ -274,7 +335,7 @@ func TestUpdateServerStateWithClientsBaremetalBuildSetsPhaseFromIronicLookup(t *
 					Openstack: &unikornv1.RegionOpenstackSpec{
 						Compute: &unikornv1.RegionOpenstackComputeSpec{
 							Flavors: &unikornv1.OpenstackFlavorsSpec{
-								Metadata: []unikornv1.FlavorMetadata{{ID: "metal", Baremetal: true}},
+								Metadata: []unikornv1.FlavorMetadata{{ID: flavorMetalID, Baremetal: true}},
 							},
 						},
 					},
@@ -305,7 +366,7 @@ func TestUpdateServerStateWithClientsVMBuildSkipsIronicAndBuilds(t *testing.T) {
 
 	compute := &stubComputeClient{server: &servers.Server{ID: "nova-id", Status: "BUILD"}}
 	identity := &unikornv1.Identity{}
-	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{FlavorID: "vm"}}
+	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{FlavorID: idstest.MustParseFlavorID(flavorVMID)}}
 	factoryCalled := false
 
 	provider := &Provider{
@@ -315,7 +376,7 @@ func TestUpdateServerStateWithClientsVMBuildSkipsIronicAndBuilds(t *testing.T) {
 					Openstack: &unikornv1.RegionOpenstackSpec{
 						Compute: &unikornv1.RegionOpenstackComputeSpec{
 							Flavors: &unikornv1.OpenstackFlavorsSpec{
-								Metadata: []unikornv1.FlavorMetadata{{ID: "vm", Baremetal: false}},
+								Metadata: []unikornv1.FlavorMetadata{{ID: flavorVMID, Baremetal: false}},
 							},
 						},
 					},
@@ -344,7 +405,7 @@ func TestUpdateServerStateWithClientsBaremetalIronicFailureDegradesToBuilding(t 
 
 	compute := &stubComputeClient{server: &servers.Server{ID: "nova-id", Status: "BUILD"}}
 	identity := &unikornv1.Identity{}
-	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{FlavorID: "metal"}}
+	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{FlavorID: idstest.MustParseFlavorID(flavorMetalID)}}
 
 	provider := &Provider{
 		openstack: &openStackClients{
@@ -353,7 +414,7 @@ func TestUpdateServerStateWithClientsBaremetalIronicFailureDegradesToBuilding(t 
 					Openstack: &unikornv1.RegionOpenstackSpec{
 						Compute: &unikornv1.RegionOpenstackComputeSpec{
 							Flavors: &unikornv1.OpenstackFlavorsSpec{
-								Metadata: []unikornv1.FlavorMetadata{{ID: "metal", Baremetal: true}},
+								Metadata: []unikornv1.FlavorMetadata{{ID: flavorMetalID, Baremetal: true}},
 							},
 						},
 					},
@@ -433,8 +494,8 @@ func TestIsBaremetalFlavor(t *testing.T) {
 				Compute: &unikornv1.RegionOpenstackComputeSpec{
 					Flavors: &unikornv1.OpenstackFlavorsSpec{
 						Metadata: []unikornv1.FlavorMetadata{
-							{ID: "vm", Baremetal: false},
-							{ID: "metal", Baremetal: true},
+							{ID: flavorVMID, Baremetal: false},
+							{ID: flavorMetalID, Baremetal: true},
 						},
 					},
 				},
@@ -442,8 +503,8 @@ func TestIsBaremetalFlavor(t *testing.T) {
 		},
 	}
 
-	require.True(t, isBaremetalFlavor(region, "metal"))
-	require.False(t, isBaremetalFlavor(region, "vm"))
+	require.True(t, isBaremetalFlavor(region, flavorMetalID))
+	require.False(t, isBaremetalFlavor(region, flavorVMID))
 	require.False(t, isBaremetalFlavor(region, "missing"))
-	require.False(t, isBaremetalFlavor(nil, "metal"))
+	require.False(t, isBaremetalFlavor(nil, flavorMetalID))
 }

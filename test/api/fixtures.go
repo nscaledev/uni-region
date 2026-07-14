@@ -33,7 +33,7 @@ import (
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
-	regionids "github.com/unikorn-cloud/region/pkg/ids"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 
 	"k8s.io/utils/ptr"
@@ -158,7 +158,7 @@ func NewNetworkPayload(orgID, projectID, regionID string) *NetworkPayloadBuilder
 			Spec: regionopenapi.NetworkV2CreateSpec{
 				OrganizationId: orgID,
 				ProjectId:      projectID,
-				RegionId:       regionids.MustParseRegionID(regionID),
+				RegionId:       idstest.MustParseRegionID(regionID),
 				Prefix:         "10.0.0.0/16",
 				DnsNameservers: []regionopenapi.Ipv4Address{"8.8.8.8"},
 			},
@@ -193,7 +193,7 @@ func NewLoadBalancerPayload(networkID string) *LoadBalancerPayloadBuilder {
 				Name: UniqueName("lb"),
 			},
 			Spec: regionopenapi.LoadBalancerV2CreateSpec{
-				NetworkId: regionids.MustParseNetworkID(networkID),
+				NetworkId: idstest.MustParseNetworkID(networkID),
 				Listeners: []regionopenapi.LoadBalancerListenerV2{
 					{
 						Name:     "http",
@@ -298,7 +298,7 @@ func NewSecurityGroupPayload(networkID string) *SecurityGroupPayloadBuilder {
 				Name: UniqueName("sg"),
 			},
 			Spec: regionopenapi.SecurityGroupV2CreateSpec{
-				NetworkId: regionids.MustParseNetworkID(networkID),
+				NetworkId: idstest.MustParseNetworkID(networkID),
 				Rules: regionopenapi.SecurityGroupRuleV2List{
 					{
 						Direction: regionopenapi.NetworkDirectionIngress,
@@ -341,9 +341,9 @@ func NewServerPayload(networkID, flavorID, imageID string) *ServerPayloadBuilder
 				Name: UniqueName("server"),
 			},
 			Spec: regionopenapi.ServerV2CreateSpec{
-				NetworkId: regionids.MustParseNetworkID(networkID),
-				FlavorId:  regionids.MustParseFlavorID(flavorID),
-				ImageId:   regionids.MustParseImageID(imageID),
+				NetworkId: idstest.MustParseNetworkID(networkID),
+				FlavorId:  idstest.MustParseFlavorID(flavorID),
+				ImageId:   idstest.MustParseImageID(imageID),
 			},
 		},
 	}
@@ -364,6 +364,12 @@ func (b *ServerPayloadBuilder) WithNetworking(networking *regionopenapi.ServerV2
 // WithInfrastructureRef pins the server to a provider-specific host.
 func (b *ServerPayloadBuilder) WithInfrastructureRef(infrastructureRef string) *ServerPayloadBuilder {
 	b.server.Spec.InfrastructureRef = &infrastructureRef
+	return b
+}
+
+// WithUserData sets the cloud-init user data supplied at boot.
+func (b *ServerPayloadBuilder) WithUserData(userData []byte) *ServerPayloadBuilder {
+	b.server.Spec.UserData = &userData
 	return b
 }
 
@@ -400,7 +406,7 @@ func NewFileStoragePayload(orgID, projectID, regionID, storageClassID string, ne
 				DefaultSnapshotProtectionEnabled: ptr.To(false),
 				OrganizationId:                   orgID,
 				ProjectId:                        projectID,
-				RegionId:                         regionids.MustParseRegionID(regionID),
+				RegionId:                         idstest.MustParseRegionID(regionID),
 				StorageClassId:                   storageClassID,
 				StorageType:                      regionopenapi.StorageTypeV2Spec{NFS: &regionopenapi.NFSV2Spec{}},
 			},

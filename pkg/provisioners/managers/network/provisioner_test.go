@@ -38,7 +38,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	networkhandler "github.com/unikorn-cloud/region/pkg/handler/network"
-	regionids "github.com/unikorn-cloud/region/pkg/ids"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
 	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
@@ -100,7 +100,7 @@ func networkCreateRequest() *openapi.NetworkV2Create {
 		Spec: openapi.NetworkV2CreateSpec{
 			OrganizationId: testOrganization,
 			ProjectId:      testProject,
-			RegionId:       regionids.MustParseRegionID(testRegionID),
+			RegionId:       idstest.MustParseRegionID(testRegionID),
 			Prefix:         "10.0.0.0/24",
 			DnsNameservers: []openapi.Ipv4Address{"8.8.8.8"},
 		},

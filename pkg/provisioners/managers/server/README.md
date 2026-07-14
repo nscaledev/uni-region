@@ -58,6 +58,12 @@ This is the clearest controller-side expression of the lifecycle DAG model:
   depth so losing any single status field cannot re-arm the rebuild path.
   Existing servers predating the latch backfill it on the next poll once booted
   and are covered by the `launchedAt` backstop until then.
+- `Server.status.macAddress` is owned exclusively by the monitor (see
+  `pkg/monitor/health/server`), not the reconciler. The reconciler no longer
+  records it at port-create time — that value is the ephemeral Neutron MAC for
+  baremetal, which Ironic later rebinds to the real NIC MAC — and the retry
+  reset deliberately leaves it intact (like `provisionedAt`) so it never
+  flickers to unset; a stale value self-heals on the next `ACTIVE` poll.
 - Provider create retries also emit Kubernetes events and structured logs on
   retry start, retry readiness after delete, and retry exhaustion; avoid
   per-reconcile emissions while deletion is still converging.

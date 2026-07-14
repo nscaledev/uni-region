@@ -55,6 +55,7 @@ spec:
             properties:
               flavorID:
                 description: FlavorID is the flavor ID.
+                format: uuid
                 type: string
               image:
                 description: Image defines a set of rules to lookup for the server
@@ -63,6 +64,7 @@ spec:
                   id:
                     description: ID is the image ID. If specified, it has priority
                       over the selector.
+                    format: uuid
                     type: string
                 required:
                 - id
@@ -95,7 +97,8 @@ spec:
                         type: object
                       type: array
                     id:
-                      description: ID is the physical network ID.
+                      description: ID is the region network ID.
+                      format: uuid
                       type: string
                   required:
                   - id
@@ -126,6 +129,7 @@ spec:
                   properties:
                     id:
                       description: ID is the security group ID.
+                      format: uuid
                       type: string
                   required:
                   - id
@@ -134,6 +138,14 @@ spec:
               sshCertificateAuthorityID:
                 description: SSHCertificateAuthorityID is an optional project scoped
                   OpenSSH user CA trust anchor.
+                type: string
+              sshInjection:
+                description: SSHInjection identifies the create-time SSH access material
+                  requested for the server.
+                enum:
+                - ca
+                - identityKeypair
+                - none
                 type: string
               tags:
                 description: |-
@@ -225,8 +237,17 @@ spec:
                 format: date-time
                 type: string
               macAddress:
-                description: MACAddress is the MAC address of the server's primary
-                  network interface.
+                description: |-
+                  MACAddress is the MAC address of the server's primary (single) network
+                  interface. It is owned exclusively by the monitor (the health checker),
+                  not the reconciler: it is recorded from the Nova server response once the
+                  server reaches ACTIVE, the barrier at which the port MAC is guaranteed
+                  bound for VMs and baremetal alike. For baremetal Ironic rebinds the port
+                  to the real NIC MAC asynchronously during deploy, so the value observed
+                  earlier (e.g. at port-create time) is the ephemeral Neutron MAC and is not
+                  trustworthy. It is only ever written, never cleared: the provider-create
+                  retry reset leaves it intact and a transient port-read miss cannot unset
+                  it, while an authoritative ACTIVE read self-heals any drift.
                 type: string
               phase:
                 description: Phase is the current lifecycle phase of the server.
