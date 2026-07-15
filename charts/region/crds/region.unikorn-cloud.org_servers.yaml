@@ -170,6 +170,24 @@ spec:
                   to use upon launch.
                 format: byte
                 type: string
+              volumes:
+                description: |-
+                  Volumes are existing Region volumes the server should attach.
+                  Inline server-created volume templates are intentionally not part of this
+                  first storage model.
+                items:
+                  properties:
+                    id:
+                      description: ID is the existing Volume resource ID to attach
+                        to the server.
+                      type: string
+                  required:
+                  - id
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - id
+                x-kubernetes-list-type: map
             required:
             - flavorID
             - image
@@ -295,6 +313,43 @@ spec:
                   Nil until the server has been observed in the provider at least once.
                 format: date-time
                 type: string
+              volumes:
+                description: Volumes reflects the observed attachment state for each
+                  desired volume.
+                items:
+                  properties:
+                    device:
+                      description: |-
+                        Device is the guest OS device name where the provider presents the
+                        attached volume, when available.
+                      type: string
+                    id:
+                      description: ID is the Volume resource ID this attachment row
+                        describes.
+                      type: string
+                    message:
+                      description: Message is a human-readable description of the
+                        current attachment state.
+                      type: string
+                    provisioningStatus:
+                      description: |-
+                        ProvisioningStatus indicates whether the volume attachment is ready,
+                        failed, or being provisioned/deprovisioned.
+                      enum:
+                      - Provisioning
+                      - Provisioned
+                      - Errored
+                      - Deprovisioning
+                      type: string
+                  required:
+                  - id
+                  - message
+                  - provisioningStatus
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - id
+                x-kubernetes-list-type: map
             type: object
         required:
         - spec
