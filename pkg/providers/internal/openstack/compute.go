@@ -282,8 +282,8 @@ func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Serv
 
 	serverCreateOpts := servers.CreateOpts{
 		Name:      name,
-		ImageRef:  server.Spec.Image.ID,
-		FlavorRef: server.Spec.FlavorID,
+		ImageRef:  server.Spec.Image.ID.String(),
+		FlavorRef: server.Spec.FlavorID.String(),
 		Networks:  networks,
 		Metadata:  metadata,
 		UserData:  server.Spec.UserData,

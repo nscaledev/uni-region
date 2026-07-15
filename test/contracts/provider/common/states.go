@@ -135,6 +135,12 @@ func NewStateManager(client client.Client) *StateManager {
 	}
 }
 
+// SetOpenstackEndpoint sets the Keystone endpoint for OpenStack regions created
+// during state setup, letting tests point them at a mock OpenStack server.
+func (sm *StateManager) SetOpenstackEndpoint(endpoint string) {
+	sm.regionManager.openstackEndpoint = endpoint
+}
+
 // getTestNamespace returns the namespace for test resources.
 func getTestNamespace() string {
 	if ns := os.Getenv("TEST_NAMESPACE"); ns != "" {
@@ -200,7 +206,7 @@ func (b *RegionBuilder) withOpenStack(endpoint, secretName string) *RegionBuilde
 }
 
 // withKubernetes configures the region as Kubernetes type.
-func (b *RegionBuilder) withKubernetes(kubeconfigSecret string) *RegionBuilder{
+func (b *RegionBuilder) withKubernetes(kubeconfigSecret string) *RegionBuilder {
 	b.region.Spec.Provider = unikornv1.ProviderKubernetes
 	b.region.Spec.Kubernetes = &unikornv1.RegionKubernetesSpec{
 		KubeconfigSecret: &unikornv1.NamespacedObject{

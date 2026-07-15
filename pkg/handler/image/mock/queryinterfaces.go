@@ -12,6 +12,7 @@ import (
 	context "context"
 	reflect "reflect"
 
+	ids "github.com/unikorn-cloud/identity/pkg/ids"
 	types "github.com/unikorn-cloud/region/pkg/providers/types"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -40,7 +41,7 @@ func (m *MockImageQuery) EXPECT() *MockImageQueryMockRecorder {
 }
 
 // AvailableToOrganization mocks base method.
-func (m *MockImageQuery) AvailableToOrganization(arg0 ...string) types.ImageQuery {
+func (m *MockImageQuery) AvailableToOrganization(arg0 ...ids.OrganizationID) types.ImageQuery {
 	m.ctrl.T.Helper()
 	varargs := []any{}
 	for _, a := range arg0 {
@@ -73,7 +74,7 @@ func (mr *MockImageQueryMockRecorder) List(arg0 any) *gomock.Call {
 }
 
 // OwnedByOrganization mocks base method.
-func (m *MockImageQuery) OwnedByOrganization(arg0 ...string) types.ImageQuery {
+func (m *MockImageQuery) OwnedByOrganization(arg0 ...ids.OrganizationID) types.ImageQuery {
 	m.ctrl.T.Helper()
 	varargs := []any{}
 	for _, a := range arg0 {

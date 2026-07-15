@@ -32,6 +32,7 @@ import (
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 )
 
 const (
@@ -224,7 +225,7 @@ func (p serverCreatePlacementPreflight) check(ctx context.Context, server *uniko
 	return nil
 }
 
-func (p serverCreatePlacementPreflight) flavorPlacementRequirements(ctx context.Context, flavorID string) (string, []string, error) {
+func (p serverCreatePlacementPreflight) flavorPlacementRequirements(ctx context.Context, flavorID regionids.FlavorID) (string, []string, error) {
 	flavors, err := p.flavorClient.GetFlavors(ctx)
 	if err != nil {
 		return "", nil, err
@@ -233,9 +234,11 @@ func (p serverCreatePlacementPreflight) flavorPlacementRequirements(ctx context.
 	return serverFlavorPlacementRequirements(flavors, flavorID)
 }
 
-func serverFlavorPlacementRequirements(openstackFlavors []flavors.Flavor, flavorID string) (string, []string, error) {
+func serverFlavorPlacementRequirements(openstackFlavors []flavors.Flavor, flavorID regionids.FlavorID) (string, []string, error) {
+	// flavor.ID is an OpenStack identifier in another system's namespace, so the typed
+	// region flavor ID converts to a string only here, at the external comparison.
 	index := slices.IndexFunc(openstackFlavors, func(flavor flavors.Flavor) bool {
-		return flavor.ID == flavorID
+		return flavor.ID == flavorID.String()
 	})
 	if index < 0 {
 		return "", nil, fmt.Errorf("%w: flavor %q not found", coreerrors.ErrConsistency, flavorID)

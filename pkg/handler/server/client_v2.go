@@ -51,7 +51,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
-	servermanager "github.com/unikorn-cloud/region/pkg/provisioners/managers/server"
+	"github.com/unikorn-cloud/region/pkg/userdata"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -153,13 +153,31 @@ func convertPowerStateV2(in regionv1.InstanceLifecyclePhase) *openapi.InstanceLi
 	return nil
 }
 
+func resolveSSHInjection(in *openapi.SshInjection, sshCertificateAuthorityID *string) regionv1.ServerSSHInjection {
+	if in != nil {
+		return regionv1.ServerSSHInjection(*in)
+	}
+
+	if sshCertificateAuthorityID != nil {
+		return regionv1.ServerSSHInjectionCA
+	}
+
+	return regionv1.ServerSSHInjectionIdentityKeypair
+}
+
+func sshInjectionStatus(in *regionv1.Server) *openapi.SshInjection {
+	out := openapi.SshInjection(in.ResolvedSSHInjection())
+
+	return &out
+}
+
 func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
-	flavorID, err := in.FlavorID()
+	imageID, err := in.ImageID()
 	if err != nil {
 		return nil, err
 	}
 
-	imageID, err := in.ImageID()
+	regionID, err := in.RegionID()
 	if err != nil {
 		return nil, err
 	}
@@ -167,15 +185,16 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 	out := &openapi.ServerV2Read{
 		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.ServerV2Spec{
-			FlavorId:   flavorID,
+			FlavorId:   in.Spec.FlavorID,
 			ImageId:    imageID,
 			Networking: convertNetworkingV2(in),
 			UserData:   convertUserData(in.Spec.UserData),
 		},
 		Status: openapi.ServerV2Status{
-			RegionId:                  in.Labels[constants.RegionLabel],
+			RegionId:                  regionID,
 			NetworkId:                 in.Spec.Networks[0].ID,
 			SshCertificateAuthorityId: in.Spec.SSHCertificateAuthorityID,
+			SshInjection:              sshInjectionStatus(in),
 			InfrastructureRef:         in.Spec.InfrastructureRef,
 			PowerState:                convertPowerStateV2(in.Status.Phase),
 			PrivateIP:                 in.Status.PrivateIP,
@@ -271,7 +290,7 @@ func generateAllowedAddressPairs(in *openapi.ServerV2Networking) ([]regionv1.Ser
 	return out, nil
 }
 
-func generateNetworks(networkID string, in *openapi.ServerV2Networking) ([]regionv1.ServerNetworkSpec, error) {
+func generateNetworks(networkID regionids.NetworkID, in *openapi.ServerV2Networking) ([]regionv1.ServerNetworkSpec, error) {
 	allowedAddressPairs, err := generateAllowedAddressPairs(in)
 	if err != nil {
 		return nil, err
@@ -293,18 +312,6 @@ func generateUserData(in *[]byte) []byte {
 	return *in
 }
 
-func validateUserDataForSSHCertificateAuthority(sshCertificateAuthorityID *string, userData *[]byte) error {
-	if sshCertificateAuthorityID == nil || userData == nil || len(*userData) == 0 {
-		return nil
-	}
-
-	if err := servermanager.ValidateManagedUserData(*userData); err == nil {
-		return nil
-	}
-
-	return errors.HTTPUnprocessableContent("userData must be a recognized cloud-init format when sshCertificateAuthorityId is specified")
-}
-
 func (c *ClientV2) validateSSHCertificateAuthorityReference(ctx context.Context, scope identityids.ProjectScopeReader, sshCertificateAuthorityID *string) error {
 	if sshCertificateAuthorityID == nil {
 		return nil
@@ -322,6 +329,31 @@ func (c *ClientV2) validateSSHCertificateAuthorityReference(ctx context.Context,
 
 	if !sameProject {
 		return errors.HTTPUnprocessableContent("sshCertificateAuthorityId must reference an SSH certificate authority in the same organization and project as the server")
+	}
+
+	return nil
+}
+
+func validateSSHInjection(request *openapi.ServerV2Create, sshInjection regionv1.ServerSSHInjection) error {
+	switch sshInjection {
+	case regionv1.ServerSSHInjectionCA:
+		if request.Spec.SshCertificateAuthorityId == nil {
+			return errors.HTTPUnprocessableContent("sshInjection ca requires sshCertificateAuthorityId")
+		}
+	case regionv1.ServerSSHInjectionIdentityKeypair:
+		if request.Spec.SshCertificateAuthorityId != nil {
+			return errors.HTTPUnprocessableContent("sshInjection identityKeypair cannot be used with sshCertificateAuthorityId")
+		}
+	case regionv1.ServerSSHInjectionNone:
+		if request.Spec.SshCertificateAuthorityId != nil {
+			return errors.HTTPUnprocessableContent("sshInjection none cannot be used with sshCertificateAuthorityId")
+		}
+	default:
+		return errors.HTTPUnprocessableContent("sshInjection must be one of ca, identityKeypair, none")
+	}
+
+	if request.Spec.InfrastructureRef != nil && sshInjection == regionv1.ServerSSHInjectionIdentityKeypair {
+		return errors.HTTPUnprocessableContent("infrastructureRef cannot be used with sshInjection identityKeypair")
 	}
 
 	return nil
@@ -349,7 +381,7 @@ func (c *ClientV2) validateSecurityGroupReferences(ctx context.Context, networkI
 	}
 
 	for _, id := range *networking.SecurityGroups {
-		securityGroup, err := securitygroup.New(c.Client.ClientArgs).GetV2Raw(ctx, id)
+		securityGroup, err := securitygroup.New(c.Client.ClientArgs).GetV2Raw(ctx, id.String())
 		if err != nil {
 			return err
 		}
@@ -385,20 +417,20 @@ func (c *ClientV2) validateInfrastructureRefForFlavor(ctx context.Context, regio
 	return nil
 }
 
-func (c *ClientV2) generateV2(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, in *openapi.ServerV2Update, network *regionv1.Network, sshCertificateAuthorityID *string, infrastructureRef *string) (*regionv1.Server, error) {
-	networks, err := generateNetworks(network.Name, in.Spec.Networking)
+func (c *ClientV2) generateV2(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, in *openapi.ServerV2Update, network *regionv1.Network, sshCertificateAuthorityID *string, infrastructureRef *string, sshInjection regionv1.ServerSSHInjection) (*regionv1.Server, error) {
+	networkID, err := network.NetworkID()
 	if err != nil {
 		return nil, err
 	}
 
-	networkNamespace, err := uuid.Parse(network.Name)
+	networks, err := generateNetworks(networkID, in.Spec.Networking)
 	if err != nil {
-		return nil, fmt.Errorf("%w: network ID is not a valid UUID", err)
+		return nil, err
 	}
 
 	out := &regionv1.Server{
 		ObjectMeta: conversion.NewDeterministicObjectMetadata(&in.Metadata, c.Namespace,
-			networkNamespace, in.Metadata.Name).
+			uuid.UUID(networkID), in.Metadata.Name).
 			WithLabel(constants.RegionLabel, network.Labels[constants.RegionLabel]).
 			WithLabel(constants.IdentityLabel, network.Labels[constants.IdentityLabel]).
 			WithLabel(constants.NetworkLabel, network.Name).
@@ -406,14 +438,15 @@ func (c *ClientV2) generateV2(ctx context.Context, organizationID identityids.Or
 			Get(),
 		Spec: regionv1.ServerSpec{
 			Tags:     conversion.GenerateTagList(in.Metadata.Tags),
-			FlavorID: in.Spec.FlavorId.String(),
+			FlavorID: in.Spec.FlavorId,
 			Image: &regionv1.ServerImage{
-				ID: in.Spec.ImageId.String(),
+				ID: in.Spec.ImageId,
 			},
 			PublicIPAllocation:        generatePublicIPAllocation(in.Spec.Networking),
 			SecurityGroups:            generateSecurityGroups(in.Spec.Networking),
 			Networks:                  networks,
 			SSHCertificateAuthorityID: sshCertificateAuthorityID,
+			SSHInjection:              ptr.To(sshInjection),
 			InfrastructureRef:         infrastructureRef,
 			UserData:                  generateUserData(in.Spec.UserData),
 		},
@@ -497,12 +530,22 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 }
 
 // validateCreateV2Request runs the request-level validations for a v2 server
-// create: SSH certificate authority user-data coupling, that any referenced SSH
-// certificate authority shares the server's organization and project, that any
-// referenced security group belongs to the server's network, and the infrastructure
-// reference requirements of the requested flavor.
+// create: SSH injection mode compatibility, that any user-data is well-formed
+// cloud-init, that any referenced SSH certificate authority shares the server's
+// organization and project, that any referenced security group belongs to the
+// server's network, and the infrastructure reference requirements of the
+// requested flavor.
 func (c *ClientV2) validateCreateV2Request(ctx context.Context, request *openapi.ServerV2Create, network *regionv1.Network) error {
-	if err := validateUserDataForSSHCertificateAuthority(request.Spec.SshCertificateAuthorityId, request.Spec.UserData); err != nil {
+	sshInjection := resolveSSHInjection(request.Spec.SshInjection, request.Spec.SshCertificateAuthorityId)
+
+	if err := validateSSHInjection(request, sshInjection); err != nil {
+		return err
+	}
+
+	// Reject user-data that is not recognizable cloud-init, so a malformed
+	// payload surfaces as a 422 at create time rather than failing mid-provision
+	// (when managed augmentation parses it) or silently inside the guest at boot.
+	if err := userdata.Validate(request.Spec.UserData, request.Spec.SshCertificateAuthorityId != nil); err != nil {
 		return err
 	}
 
@@ -541,7 +584,9 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 		return nil, err
 	}
 
-	resource, err := c.generateV2(ctx, organizationID, projectID, commonRequest, network, request.Spec.SshCertificateAuthorityId, request.Spec.InfrastructureRef)
+	sshInjection := resolveSSHInjection(request.Spec.SshInjection, request.Spec.SshCertificateAuthorityId)
+
+	resource, err := c.generateV2(ctx, organizationID, projectID, commonRequest, network, request.Spec.SshCertificateAuthorityId, request.Spec.InfrastructureRef, sshInjection)
 	if err != nil {
 		return nil, err
 	}
@@ -631,14 +676,14 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, re
 	}
 
 	// Get the network, required for generation.
-	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, current.Spec.Networks[0].ID)
+	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, current.Spec.Networks[0].ID.String())
 	if err != nil {
 		return nil, err
 	}
 
 	// User data is only consumed during initial server bootstrap. Updates preserve it for
 	// completeness and future rebuild support, but they do not re-run cloud-init validation.
-	required, err := c.generateV2(ctx, organizationID, projectID, request, network, current.Spec.SSHCertificateAuthorityID, current.Spec.InfrastructureRef)
+	required, err := c.generateV2(ctx, organizationID, projectID, request, network, current.Spec.SSHCertificateAuthorityID, current.Spec.InfrastructureRef, current.ResolvedSSHInjection())
 	if err != nil {
 		return nil, err
 	}
@@ -682,12 +727,7 @@ func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID 
 		return nil, nil, nil, err
 	}
 
-	organizationID, projectID, err := server.OrganizationAndProjectID()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	identity, err := identity.New(c.Client.ClientArgs).GetRaw(ctx, organizationID, projectID, server.Labels[constants.IdentityLabel])
+	identity, err := c.getIdentityForServerV2(ctx, server)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -700,8 +740,31 @@ func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID 
 	return server, identity, provider, nil
 }
 
+func (c *ClientV2) getIdentityForServerV2(ctx context.Context, server *regionv1.Server) (*regionv1.Identity, error) {
+	organizationID, projectID, err := server.OrganizationAndProjectID()
+	if err != nil {
+		return nil, err
+	}
+
+	identity, err := identity.New(c.Client.ClientArgs).GetRaw(ctx, organizationID, projectID, server.Labels[constants.IdentityLabel])
+	if err != nil {
+		return nil, err
+	}
+
+	return identity, nil
+}
+
 func (c *ClientV2) SSHKey(ctx context.Context, serverID regionids.ServerID) (*openapi.SshKey, error) {
-	_, identity, _, err := c.getServerIdentityAndProviderV2(ctx, serverID)
+	server, err := c.GetV2Raw(ctx, serverID.String())
+	if err != nil {
+		return nil, err
+	}
+
+	if !server.UsesIdentitySSHKey() {
+		return nil, errors.HTTPNotFound().WithValues("serverID", serverID)
+	}
+
+	identity, err := c.getIdentityForServerV2(ctx, server)
 	if err != nil {
 		return nil, err
 	}
@@ -713,7 +776,7 @@ func (c *ClientV2) SSHKey(ctx context.Context, serverID regionids.ServerID) (*op
 	}
 
 	if len(openstackIdentity.Spec.SSHPrivateKey) == 0 {
-		return nil, fmt.Errorf("%w: server SSH key unavailable", err)
+		return nil, errors.HTTPNotFound().WithValues("serverID", serverID)
 	}
 
 	out := &openapi.SshKey{

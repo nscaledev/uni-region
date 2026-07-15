@@ -26,6 +26,17 @@ status/telemetry model.
   written once and never cleared, and the controller's bounded provider-create
   delete-and-retry guard keys off it so a server that has ever booted is never
   rebuilt. Servers predating the field backfill it on the next poll once booted.
+- is the sole owner of `status.macAddress`, recorded from the Nova server
+  response (the port MAC carried inline in `addresses`, reused from the poll's
+  existing `GetServer` — no extra provider call) once the server reaches Nova
+  `ACTIVE`. ACTIVE is the barrier at which the port MAC is guaranteed bound for
+  VMs and baremetal alike: for baremetal Ironic rebinds the port to the real NIC
+  MAC asynchronously during deploy, so the value observed earlier (e.g. by the
+  reconciler at port-create time) is the ephemeral Neutron MAC and must not be
+  trusted. A MAC is only ever written, never cleared: gating on ACTIVE and
+  skipping an empty read means a transient port-read miss cannot unset a held
+  value, while unconditionally writing a valid MAC self-heals drift (the status
+  PATCH makes a same-value write a no-op).
 - logs phase and health-condition transitions
 - rebuilds gauge counts from the effective server set each cycle
 

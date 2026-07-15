@@ -28,10 +28,11 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/unikorn-cloud/core/pkg/util/cache"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	imagemock "github.com/unikorn-cloud/region/pkg/handler/image/mock"
-	regionids "github.com/unikorn-cloud/region/pkg/ids"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -60,7 +61,7 @@ func Test_Imagev2_List(t *testing.T) {
 
 		"available to org": {
 			setupQuery: func(query *imagemock.MockImageQuery) {
-				query.EXPECT().AvailableToOrganization(orgID).Return(query)
+				query.EXPECT().AvailableToOrganization(identityids.MustParseOrganizationID(orgID)).Return(query)
 				query.EXPECT().List(gomock.Any()).Return(&cache.ListSnapshot[types.Image]{}, nil)
 			},
 			params: openapi.GetApiV2RegionsRegionIDImagesParams{
@@ -69,7 +70,7 @@ func Test_Imagev2_List(t *testing.T) {
 		},
 		"filter by status": {
 			setupQuery: func(query *imagemock.MockImageQuery) {
-				query.EXPECT().AvailableToOrganization(orgID).Return(query)
+				query.EXPECT().AvailableToOrganization(identityids.MustParseOrganizationID(orgID)).Return(query)
 				query.EXPECT().StatusIn(types.ImageStatusReady).Return(query)
 				query.EXPECT().List(gomock.Any()).Return(&cache.ListSnapshot[types.Image]{}, nil)
 			},
@@ -80,7 +81,7 @@ func Test_Imagev2_List(t *testing.T) {
 		},
 		"owned by org": {
 			setupQuery: func(query *imagemock.MockImageQuery) {
-				query.EXPECT().OwnedByOrganization(orgID).Return(query)
+				query.EXPECT().OwnedByOrganization(identityids.MustParseOrganizationID(orgID)).Return(query)
 				query.EXPECT().List(gomock.Any()).Return(&cache.ListSnapshot[types.Image]{}, nil)
 			},
 			params: openapi.GetApiV2RegionsRegionIDImagesParams{
@@ -90,7 +91,7 @@ func Test_Imagev2_List(t *testing.T) {
 		},
 		"available, ready images": {
 			setupQuery: func(query *imagemock.MockImageQuery) {
-				query.EXPECT().AvailableToOrganization(orgID).Return(query)
+				query.EXPECT().AvailableToOrganization(identityids.MustParseOrganizationID(orgID)).Return(query)
 				query.EXPECT().StatusIn(types.ImageStatusReady).Return(query)
 				query.EXPECT().List(gomock.Any()).Return(&cache.ListSnapshot[types.Image]{}, nil)
 			},
@@ -162,7 +163,7 @@ func Test_Imagev2_List(t *testing.T) {
 			request := httptest.NewRequestWithContext(ctx, http.MethodGet, path, nil)
 			response := httptest.NewRecorder()
 
-			handler.GetApiV2RegionsRegionIDImages(response, request, regionids.MustParseRegionID(regionID), tc.params)
+			handler.GetApiV2RegionsRegionIDImages(response, request, idstest.MustParseRegionID(regionID), tc.params)
 
 			require.Equal(t, http.StatusOK, response.Result().StatusCode)
 		})

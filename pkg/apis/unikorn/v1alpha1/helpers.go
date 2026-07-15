@@ -146,6 +146,31 @@ func (c *LoadBalancer) ResourceLabels() (labels.Set, error) {
 }
 
 // Paused implements the ReconcilePauser interface.
+func (c *Volume) Paused() bool {
+	return c.Spec.Pause
+}
+
+// StatusConditionRead scans the status conditions for an existing condition whose type
+// matches.
+func (c *Volume) StatusConditionRead(t unikornv1core.ConditionType) (*unikornv1core.Condition, error) {
+	return unikornv1core.GetCondition(c.Status.Conditions, t)
+}
+
+// StatusConditionWrite either adds or updates a condition in the volume status.
+// If the condition, status and message match an existing condition the update is
+// ignored.
+func (c *Volume) StatusConditionWrite(t unikornv1core.ConditionType, status corev1.ConditionStatus, reason unikornv1core.ConditionReason, message string) {
+	unikornv1core.UpdateCondition(&c.Status.Conditions, t, status, reason, message)
+}
+
+// ResourceLabels generates a set of labels to uniquely identify the resource
+// if it were to be placed in a single global namespace.
+func (c *Volume) ResourceLabels() (labels.Set, error) {
+	//nolint:nilnil
+	return nil, nil
+}
+
+// Paused implements the ReconcilePauser interface.
 func (c *Server) Paused() bool {
 	return c.Spec.Pause
 }
@@ -202,9 +227,27 @@ func organizationAndProjectIDFromLabels(labels map[string]string) (identityids.O
 	return organizationID, projectID, nil
 }
 
+// regionIDFromLabels recovers the typed region ID from a resource's labels, with
+// the same fail-closed semantics as organizationIDFromLabels: a malformed stored
+// value is a consistency bug, so it surfaces as an error rather than propagating
+// an unchecked string.
+func regionIDFromLabels(labels map[string]string) (regionids.RegionID, error) {
+	id, err := regionids.ParseRegionID(labels[constants.RegionLabel])
+	if err != nil {
+		return regionids.RegionID{}, fmt.Errorf("%w: invalid region ID in resource labels", err)
+	}
+
+	return id, nil
+}
+
 // OrganizationID returns the server's owning organization ID as a typed identifier.
 func (c *Server) OrganizationID() (identityids.OrganizationID, error) {
 	return organizationIDFromLabels(c.Labels)
+}
+
+// RegionID returns the server's owning region ID as a typed identifier.
+func (c *Server) RegionID() (regionids.RegionID, error) {
+	return regionIDFromLabels(c.Labels)
 }
 
 // OrganizationAndProjectID returns the server's owning organization and project
@@ -213,32 +256,37 @@ func (c *Server) OrganizationAndProjectID() (identityids.OrganizationID, identit
 	return organizationAndProjectIDFromLabels(c.Labels)
 }
 
-// FlavorID returns the server's flavor as a typed identifier. It returns an
-// error if the stored value is not a valid UUID, so read paths surface a clean
-// error rather than panicking.
-func (c *Server) FlavorID() (regionids.FlavorID, error) {
-	id, err := regionids.ParseFlavorID(c.Spec.FlavorID)
-	if err != nil {
-		return regionids.FlavorID{}, fmt.Errorf("%w: invalid flavor ID on server", err)
+// ResolvedSSHInjection returns the effective create-time SSH injection mode.
+// Older servers predate this field, so fall back to the legacy contract:
+// CA-backed servers use the CA path, all others use the identity keypair.
+func (c *Server) ResolvedSSHInjection() ServerSSHInjection {
+	if c.Spec.SSHInjection != nil {
+		return *c.Spec.SSHInjection
 	}
 
-	return id, nil
+	if c.Spec.SSHCertificateAuthorityID != nil {
+		return ServerSSHInjectionCA
+	}
+
+	return ServerSSHInjectionIdentityKeypair
+}
+
+// UsesIdentitySSHKey returns true when Region requested identity-scoped SSH
+// keypair injection for this server.
+func (c *Server) UsesIdentitySSHKey() bool {
+	return c.ResolvedSSHInjection() == ServerSSHInjectionIdentityKeypair
 }
 
 // ImageID returns the server's image as a typed identifier. It returns an error
-// if the image is unset or its stored value is not a valid UUID, so read paths
-// surface a clean error rather than panicking.
+// if the image is unset, so read paths surface a clean error rather than
+// dereferencing a nil image. The ID itself is already a typed, UUID-validated
+// field on the spec.
 func (c *Server) ImageID() (regionids.ImageID, error) {
 	if c.Spec.Image == nil {
 		return regionids.ImageID{}, fmt.Errorf("%w: server has no image", coreerrors.ErrConsistency)
 	}
 
-	id, err := regionids.ParseImageID(c.Spec.Image.ID)
-	if err != nil {
-		return regionids.ImageID{}, fmt.Errorf("%w: invalid image ID on server", err)
-	}
-
-	return id, nil
+	return c.Spec.Image.ID, nil
 }
 
 // OrganizationID returns the network's owning organization ID as a typed identifier.
@@ -250,6 +298,17 @@ func (c *Network) OrganizationID() (identityids.OrganizationID, error) {
 // IDs as typed identifiers.
 func (c *Network) OrganizationAndProjectID() (identityids.OrganizationID, identityids.ProjectID, error) {
 	return organizationAndProjectIDFromLabels(c.Labels)
+}
+
+// NetworkID returns the network's own ID as a typed identifier, recovered
+// fail-closed from its resource name (the network is named after its UUID).
+func (c *Network) NetworkID() (regionids.NetworkID, error) {
+	id, err := regionids.ParseNetworkID(c.Name)
+	if err != nil {
+		return regionids.NetworkID{}, fmt.Errorf("%w: invalid network ID in resource name", err)
+	}
+
+	return id, nil
 }
 
 // OrganizationID returns the security group's owning organization ID as a typed identifier.
@@ -272,6 +331,27 @@ func (c *LoadBalancer) OrganizationID() (identityids.OrganizationID, error) {
 // project IDs as typed identifiers.
 func (c *LoadBalancer) OrganizationAndProjectID() (identityids.OrganizationID, identityids.ProjectID, error) {
 	return organizationAndProjectIDFromLabels(c.Labels)
+}
+
+// OrganizationID returns the volume's owning organization ID as a typed identifier.
+func (c *Volume) OrganizationID() (identityids.OrganizationID, error) {
+	return organizationIDFromLabels(c.Labels)
+}
+
+// OrganizationAndProjectID returns the volume's owning organization and project
+// IDs as typed identifiers.
+func (c *Volume) OrganizationAndProjectID() (identityids.OrganizationID, identityids.ProjectID, error) {
+	return organizationAndProjectIDFromLabels(c.Labels)
+}
+
+// NetworkID returns the volume's anchoring network ID as a typed identifier.
+func (c *Volume) NetworkID() (regionids.NetworkID, error) {
+	id, err := regionids.ParseNetworkID(c.Spec.NetworkID)
+	if err != nil {
+		return regionids.NetworkID{}, fmt.Errorf("%w: invalid network ID on volume", err)
+	}
+
+	return id, nil
 }
 
 // OrganizationID returns the SSH certificate authority's owning organization ID as a typed identifier.
@@ -315,6 +395,7 @@ var (
 	_ identityids.ProjectScopeReader = (*Network)(nil)
 	_ identityids.ProjectScopeReader = (*SecurityGroup)(nil)
 	_ identityids.ProjectScopeReader = (*LoadBalancer)(nil)
+	_ identityids.ProjectScopeReader = (*Volume)(nil)
 	_ identityids.ProjectScopeReader = (*SSHCertificateAuthority)(nil)
 	_ identityids.ProjectScopeReader = (*FileStorage)(nil)
 	_ identityids.ProjectScopeReader = (*Identity)(nil)

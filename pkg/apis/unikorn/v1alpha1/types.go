@@ -21,6 +21,7 @@ package v1alpha1
 
 import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -140,6 +141,8 @@ type RegionOpenstackSpec struct {
 	Image *RegionOpenstackImageSpec `json:"image,omitempty"`
 	// Network is configuration for the network service.
 	Network *RegionOpenstackNetworkSpec `json:"network,omitempty"`
+	// BlockStorage is configuration for the block storage service.
+	BlockStorage *RegionOpenstackBlockStorageSpec `json:"blockStorage,omitempty"`
 }
 
 type NamespacedObject struct {
@@ -291,6 +294,66 @@ type RegionOpenstackNetworkSpec struct {
 	ProviderNetworks *ProviderNetworks `json:"providerNetworks,omitempty"`
 }
 
+type RegionOpenstackBlockStorageSpec struct {
+	// VolumeClasses defines which provider volume classes are eligible for Region
+	// inventory export and what user-facing metadata is attached to them. If not
+	// defined, then all provider volume classes are eligible.
+	VolumeClasses *OpenstackVolumeClassesSpec `json:"volumeClasses,omitempty"`
+}
+
+type OpenstackVolumeClassesSpec struct {
+	// Selector allows provider volume classes to be manually selected for inclusion.
+	// The selected set is a boolean intersection of all defined filters in the selector.
+	Selector *VolumeClassSelector `json:"selector,omitempty"`
+	// Metadata allows provider volume classes to be explicitly augmented with
+	// user-facing metadata. OpenStack stores these internally as Cinder volume types,
+	// but Region uses the domain term VolumeClass for this inventory. This metadata
+	// is operator-authored because backend-native encryption and QoS capabilities
+	// may not be reliably discoverable from Cinder volume type metadata alone.
+	// +listType=map
+	// +listMapKey=id
+	Metadata []VolumeClassMetadata `json:"metadata,omitempty"`
+}
+
+type VolumeClassSelector struct {
+	// IDs is an explicit list of allowed provider volume class IDs. If not
+	// specified, then all provider volume classes are considered.
+	IDs []string `json:"ids,omitempty"`
+}
+
+// +kubebuilder:validation:Enum=hdd;ssd;nvme
+type VolumeClassMedia string
+
+const (
+	VolumeClassMediaHDD  VolumeClassMedia = "hdd"
+	VolumeClassMediaSSD  VolumeClassMedia = "ssd"
+	VolumeClassMediaNVMe VolumeClassMedia = "nvme"
+)
+
+type VolumeClassMetadata struct {
+	// ID is the immutable provider identifier for the volume class. For OpenStack,
+	// this is the Cinder volume type ID.
+	ID string `json:"id"`
+	// Media describes the backing storage medium.
+	Media VolumeClassMedia `json:"media,omitempty"`
+	// Performance describes advertised performance characteristics.
+	Performance *VolumeClassPerformanceSpec `json:"performance,omitempty"`
+	// Encrypted indicates that volumes provisioned from this class are encrypted
+	// at rest by the provider.
+	Encrypted bool `json:"encrypted,omitempty"`
+}
+
+type VolumeClassPerformanceSpec struct {
+	// MaxIOPS describes the advertised maximum input/output operations per second
+	// cap. This is not a guaranteed reservation.
+	// +kubebuilder:validation:Minimum=1
+	MaxIOPS *int `json:"maxIOPS,omitempty"`
+	// MaxThroughput describes the advertised maximum throughput cap in mebibytes
+	// per second. This is not a guaranteed reservation.
+	// +kubebuilder:validation:Minimum=1
+	MaxThroughput *int `json:"maxThroughputMiBps,omitempty"`
+}
+
 type ExternalNetworks struct {
 	// Selector defines a set of rules to lookup external networks.
 	// In none is specified, all external networks are selected.
@@ -427,6 +490,17 @@ type OpenstackIdentitySpec struct {
 }
 
 type OpenstackIdentityStatus struct{}
+
+// ServerSSHInjection identifies how Region should arrange SSH access material
+// for a server at create time.
+// +kubebuilder:validation:Enum=ca;identityKeypair;none
+type ServerSSHInjection string
+
+const (
+	ServerSSHInjectionCA              ServerSSHInjection = "ca"
+	ServerSSHInjectionIdentityKeypair ServerSSHInjection = "identityKeypair"
+	ServerSSHInjectionNone            ServerSSHInjection = "none"
+)
 
 // NetworkList s a typed list of physical networks.
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -733,6 +807,77 @@ type LoadBalancerStatus struct {
 	PublicIP *unikornv1core.IPv4Address `json:"publicIP,omitempty"`
 }
 
+// VolumeList is a typed list of volumes.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type VolumeList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []Volume `json:"items"`
+}
+
+// Volume defines a network-anchored block storage volume.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="network",type="string",JSONPath=".spec.networkID"
+// +kubebuilder:printcolumn:name="size",type="string",JSONPath=".spec.size"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type Volume struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              VolumeSpec   `json:"spec"`
+	Status            VolumeStatus `json:"status,omitempty"`
+}
+
+// VolumeSpec defines the desired state for a block storage volume.
+// +kubebuilder:validation:XValidation:rule="self.networkID == oldSelf.networkID",message="networkID is immutable"
+type VolumeSpec struct {
+	// Pause, if true, will inhibit reconciliation.
+	Pause bool `json:"pause,omitempty"`
+	// Tags are an abitrary list of key/value pairs that a client
+	// may populate to store metadata for the resource.
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
+	// NetworkID is the network that anchors the volume's region, identity,
+	// organization, and project scope.
+	NetworkID string `json:"networkID"`
+	// VolumeClassID is the provider-neutral volume class requested for the
+	// volume. Provider-specific class configuration is defined on Region
+	// separately.
+	VolumeClassID string `json:"volumeClassID"`
+	// Size is the requested volume capacity.
+	Size resource.Quantity `json:"size"`
+	// ClaimRef binds this volume to the resource that owns its
+	// attachment. Unset means the volume is available for claiming.
+	ClaimRef *VolumeClaimRef `json:"claimRef,omitempty"`
+}
+
+type VolumeClaimRef struct {
+	// Kind is the kind of resource claiming the volume attachment.
+	Kind VolumeClaimKind `json:"kind"`
+	// ID is the Region resource ID of the resource claiming the volume attachment.
+	ID string `json:"id"`
+}
+
+// VolumeClaimKind identifies a resource kind that can claim a volume attachment.
+// +kubebuilder:validation:Enum=Server
+type VolumeClaimKind string
+
+const (
+	VolumeClaimKindServer VolumeClaimKind = "Server"
+)
+
+type VolumeStatus struct {
+	// ObservedGeneration is the most recent generation observed by the controller.
+	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
+	// Current service state of a volume.
+	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	// Size is the currently provisioned/observed size of the volume.
+	// (May differ from spec.size while provisioning.)
+	Size *resource.Quantity `json:"size,omitempty"`
+}
+
 // +kubebuilder:validation:Enum=tcp;udp
 type LoadBalancerListenerProtocol string
 
@@ -897,7 +1042,7 @@ type ServerSpec struct {
 	// Provider defines the provider type.
 	Provider Provider `json:"provider,omitempty"`
 	// FlavorID is the flavor ID.
-	FlavorID string `json:"flavorID"`
+	FlavorID regionids.FlavorID `json:"flavorID"`
 	// Image defines a set of rules to lookup for the server image.
 	Image *ServerImage `json:"image"`
 	// SecurityGroups is the server security groups.
@@ -908,6 +1053,8 @@ type ServerSpec struct {
 	Networks []ServerNetworkSpec `json:"networks,omitempty"`
 	// SSHCertificateAuthorityID is an optional project scoped OpenSSH user CA trust anchor.
 	SSHCertificateAuthorityID *string `json:"sshCertificateAuthorityID,omitempty"`
+	// SSHInjection identifies the create-time SSH access material requested for the server.
+	SSHInjection *ServerSSHInjection `json:"sshInjection,omitempty"`
 	// UserData contains configuration information or scripts to use upon launch.
 	UserData []byte `json:"userData,omitempty"`
 	// InfrastructureRef pins the server to a specific physical host. When set,
@@ -918,12 +1065,12 @@ type ServerSpec struct {
 
 type ServerSecurityGroupSpec struct {
 	// ID is the security group ID.
-	ID string `json:"id"`
+	ID regionids.SecurityGroupID `json:"id"`
 }
 
 type ServerNetworkSpec struct {
-	// ID is the physical network ID.
-	ID string `json:"id"`
+	// ID is the region network ID.
+	ID regionids.NetworkID `json:"id"`
 	// AllowedAddressPairs is a list of allowed address pairs for the network interface. This will allow multiple MAC/IP address (range) pairs to pass through this port.
 	AllowedAddressPairs []ServerNetworkAddressPair `json:"allowedAddressPairs,omitempty"`
 }
@@ -937,7 +1084,7 @@ type ServerNetworkAddressPair struct {
 
 type ServerImage struct {
 	// ID is the image ID. If specified, it has priority over the selector.
-	ID string `json:"id"`
+	ID regionids.ImageID `json:"id"`
 }
 
 type ServerPublicIPAllocationSpec struct {
@@ -976,7 +1123,16 @@ type ServerStatus struct {
 	PrivateIP *string `json:"privateIP,omitempty"`
 	// PublicIP is the public IP address of the server.
 	PublicIP *string `json:"publicIP,omitempty"`
-	// MACAddress is the MAC address of the server's primary network interface.
+	// MACAddress is the MAC address of the server's primary (single) network
+	// interface. It is owned exclusively by the monitor (the health checker),
+	// not the reconciler: it is recorded from the Nova server response once the
+	// server reaches ACTIVE, the barrier at which the port MAC is guaranteed
+	// bound for VMs and baremetal alike. For baremetal Ironic rebinds the port
+	// to the real NIC MAC asynchronously during deploy, so the value observed
+	// earlier (e.g. at port-create time) is the ephemeral Neutron MAC and is not
+	// trustworthy. It is only ever written, never cleared: the provider-create
+	// retry reset leaves it intact and a transient port-read miss cannot unset
+	// it, while an authoritative ACTIVE read self-heals any drift.
 	MACAddress *string `json:"macAddress,omitempty"`
 	// LaunchedAt is the time the provider booted the VM. Nil until the server has
 	// been observed Running at least once.

@@ -69,7 +69,7 @@ func (c *Client) ListImages(ctx context.Context, organizationID identityids.Orga
 	}
 
 	result, err := query.
-		AvailableToOrganization(organizationID.String()).
+		AvailableToOrganization(organizationID).
 		StatusIn(types.ImageStatusReady).
 		List(ctx)
 
@@ -210,7 +210,7 @@ func (c *Client) DeleteImage(ctx context.Context, organizationID identityids.Org
 		return providers.ProviderToServerError(err)
 	}
 
-	image, err := provider.GetImage(ctx, organizationID.String(), imageID.String())
+	image, err := provider.GetImage(ctx, organizationID, imageID)
 	if err != nil {
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return errors.HTTPNotFound().WithError(err)
@@ -223,7 +223,7 @@ func (c *Client) DeleteImage(ctx context.Context, organizationID identityids.Org
 		return errors.HTTPNotFound()
 	}
 
-	if err = provider.DeleteImage(ctx, imageID.String()); err != nil {
+	if err = provider.DeleteImage(ctx, imageID); err != nil {
 		// Most deletion APIs ignore not found errors, but our other delete APIs return 404. To maintain consistency, we do the same here.
 		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
 			return errors.HTTPNotFound().WithError(err)

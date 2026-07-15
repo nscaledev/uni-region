@@ -29,7 +29,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
-	regionids "github.com/unikorn-cloud/region/pkg/ids"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	corev1 "k8s.io/api/core/v1"
@@ -236,7 +236,7 @@ func TestCheckAccessGlobalRegion(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: globalRegionName},
 	})
 
-	require.NoError(t, c.CheckAccess(aclFixture(t, organizationID4), regionids.MustParseRegionID(globalRegionName)))
+	require.NoError(t, c.CheckAccess(aclFixture(t, organizationID4), idstest.MustParseRegionID(globalRegionName)))
 }
 
 // TestCheckAccessAllowedOrg verifies an organization in the allowed list can access
@@ -256,7 +256,7 @@ func TestCheckAccessAllowedOrg(t *testing.T) {
 		},
 	})
 
-	require.NoError(t, c.CheckAccess(aclFixture(t, organizationID1), regionids.MustParseRegionID(privateRegionName1)))
+	require.NoError(t, c.CheckAccess(aclFixture(t, organizationID1), idstest.MustParseRegionID(privateRegionName1)))
 }
 
 // TestCheckAccessDeniedOrg verifies an organization not in the allowed list receives
@@ -275,7 +275,7 @@ func TestCheckAccessDeniedOrg(t *testing.T) {
 		},
 	})
 
-	require.Error(t, c.CheckAccess(aclFixture(t, organizationID4), regionids.MustParseRegionID(privateRegionName1)))
+	require.Error(t, c.CheckAccess(aclFixture(t, organizationID4), idstest.MustParseRegionID(privateRegionName1)))
 }
 
 // TestCheckAccessGlobalScope verifies platform admins and services with global scope
@@ -294,7 +294,7 @@ func TestCheckAccessGlobalScope(t *testing.T) {
 		},
 	})
 
-	require.NoError(t, c.CheckAccess(globalACLFixture(t), regionids.MustParseRegionID(privateRegionName1)))
+	require.NoError(t, c.CheckAccess(globalACLFixture(t), idstest.MustParseRegionID(privateRegionName1)))
 }
 
 // TestCheckAccessMissingRegion verifies a non-existent region ID returns an error.
@@ -303,7 +303,7 @@ func TestCheckAccessMissingRegion(t *testing.T) {
 
 	c := regionClientFixture(t)
 
-	require.Error(t, c.CheckAccess(aclFixture(t, organizationID1), regionids.MustParseRegionID("44444444-4444-4444-a444-444444444444")))
+	require.Error(t, c.CheckAccess(aclFixture(t, organizationID1), idstest.MustParseRegionID("44444444-4444-4444-a444-444444444444")))
 }
 
 // regionClientWithObjects creates a region.Client backed by a fake Kubernetes client
@@ -417,7 +417,7 @@ func TestGetDetailSimulated(t *testing.T) {
 
 	c := regionClientFixture(t, simulatedRegion(globalRegionName))
 
-	result, err := c.GetDetail(aclFixture(t, organizationID1), regionids.MustParseRegionID(globalRegionName))
+	result, err := c.GetDetail(aclFixture(t, organizationID1), idstest.MustParseRegionID(globalRegionName))
 
 	require.NoError(t, err)
 	require.Equal(t, globalRegionName, result.Metadata.Id)
@@ -458,7 +458,7 @@ func TestGetDetailKubernetesEmbedsKubeconfig(t *testing.T) {
 
 	c := regionClientWithObjects(t, &resource, secret)
 
-	result, err := c.GetDetail(aclFixture(t, organizationID1), regionids.MustParseRegionID(regionName))
+	result, err := c.GetDetail(aclFixture(t, organizationID1), idstest.MustParseRegionID(regionName))
 
 	require.NoError(t, err)
 	require.Equal(t, openapi.RegionTypeKubernetes, result.Spec.Type)
@@ -498,7 +498,7 @@ func TestGetDetailKubernetesMissingKubeconfigKey(t *testing.T) {
 
 	c := regionClientWithObjects(t, &resource, secret)
 
-	_, err := c.GetDetail(aclFixture(t, organizationID1), regionids.MustParseRegionID(regionName))
+	_, err := c.GetDetail(aclFixture(t, organizationID1), idstest.MustParseRegionID(regionName))
 
 	require.Error(t, err)
 }
@@ -510,7 +510,7 @@ func TestGetDetailNotFound(t *testing.T) {
 
 	c := regionClientFixture(t)
 
-	_, err := c.GetDetail(aclFixture(t, organizationID1), regionids.MustParseRegionID(regionDoesNotExist))
+	_, err := c.GetDetail(aclFixture(t, organizationID1), idstest.MustParseRegionID(regionDoesNotExist))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -524,7 +524,7 @@ func TestGetDetailAccessDenied(t *testing.T) {
 
 	c := regionClientFixture(t, simulatedRegion(privateRegionName1, organizationID1))
 
-	_, err := c.GetDetail(aclFixture(t, organizationID4), regionids.MustParseRegionID(privateRegionName1))
+	_, err := c.GetDetail(aclFixture(t, organizationID4), idstest.MustParseRegionID(privateRegionName1))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)

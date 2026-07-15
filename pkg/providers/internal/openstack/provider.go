@@ -19,6 +19,7 @@ package openstack
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -51,8 +52,10 @@ import (
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/providers/allocation/vlan"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"github.com/unikorn-cloud/region/pkg/providers/util"
@@ -655,17 +658,21 @@ type imageQuery struct {
 	filters  []imageFilter
 }
 
-func (q *imageQuery) AvailableToOrganization(organizationIDs ...string) types.ImageQuery {
+func (q *imageQuery) AvailableToOrganization(organizationIDs ...identityids.OrganizationID) types.ImageQuery {
+	ids := types.OrganizationIDStrings(organizationIDs)
+
 	q.filters = append(q.filters, func(im *types.Image) bool {
-		return !isPublicOrOrganizationOwnedImage(im, organizationIDs)
+		return !isPublicOrOrganizationOwnedImage(im, ids)
 	})
 
 	return q
 }
 
-func (q *imageQuery) OwnedByOrganization(organizationIDs ...string) types.ImageQuery {
+func (q *imageQuery) OwnedByOrganization(organizationIDs ...identityids.OrganizationID) types.ImageQuery {
+	ids := types.OrganizationIDStrings(organizationIDs)
+
 	q.filters = append(q.filters, func(im *types.Image) bool {
-		return !isOrganizationOwnedImage(im, organizationIDs)
+		return !isOrganizationOwnedImage(im, ids)
 	})
 
 	return q
@@ -738,12 +745,12 @@ func (p *Provider) QueryImages() (types.ImageQuery, error) {
 }
 
 // GetImage retrieves a specific image by its ID.
-func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string) (*types.Image, error) {
+func (p *Provider) GetImage(ctx context.Context, organizationID identityids.OrganizationID, imageID regionids.ImageID) (*types.Image, error) {
 	if p.imageCache == nil {
 		return nil, fmt.Errorf("%w: image caching is disabled", coreerrors.ErrResourceNotFound)
 	}
 
-	image, err := p.imageCache.Get(imageID)
+	image, err := p.imageCache.Get(imageID.String())
 	if err != nil {
 		if errors.Is(err, cache.ErrNotFound) {
 			return nil, fmt.Errorf("%w: image %s", coreerrors.ErrResourceNotFound, imageID)
@@ -752,7 +759,7 @@ func (p *Provider) GetImage(ctx context.Context, organizationID, imageID string)
 		return nil, err
 	}
 
-	if !isPublicOrOrganizationOwnedImage(image.Item, []string{organizationID}) {
+	if !isPublicOrOrganizationOwnedImage(image.Item, []string{organizationID.String()}) {
 		return nil, fmt.Errorf(
 			"%w: image %s is not accessible to organization %s",
 			coreerrors.ErrResourceNotFound,
@@ -881,12 +888,14 @@ func (p *Provider) CreateImage(ctx context.Context, image *types.Image, uri stri
 	return syntheticImage, nil
 }
 
-func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
+func (p *Provider) DeleteImage(ctx context.Context, imageID regionids.ImageID) error {
 	if p.imageCache == nil {
 		return fmt.Errorf("%w: image caching is disabled", coreerrors.ErrResourceNotFound)
 	}
 
-	image, err := p.imageCache.Get(imageID)
+	imageIDString := imageID.String()
+
+	image, err := p.imageCache.Get(imageIDString)
 	if err != nil {
 		return err
 	}
@@ -908,7 +917,7 @@ func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
 			return err
 		}
 
-		return p.deleteImage(ctx, imageService, image.Item, imageID)
+		return p.deleteImage(ctx, imageService, image.Item, imageIDString)
 	}
 
 	// Otherwise it exists in our project...
@@ -917,7 +926,7 @@ func (p *Provider) DeleteImage(ctx context.Context, imageID string) error {
 		return err
 	}
 
-	return p.deleteImage(ctx, imageService, image.Item, imageID)
+	return p.deleteImage(ctx, imageService, image.Item, imageIDString)
 }
 
 func (p *Provider) deleteImage(ctx context.Context, imageService *ImageClient, image *types.Image, imageID string) error {
@@ -2153,6 +2162,76 @@ func setServerHealthStatus(server *unikornv1.Server, openstackserver *servers.Se
 	server.StatusConditionWrite(unikornv1core.ConditionHealthy, status, reason, message)
 }
 
+// novaServerAddress is a single entry in a Nova server's `addresses` map. It
+// exists only because gophercloud's servers.Address type omits the port MAC
+// that Nova reports under OS-EXT-IPS-MAC:mac_addr, so we decode the addresses
+// into this to read the MAC with a real type rather than untyped assertions.
+type novaServerAddress struct {
+	//nolint:tagliatelle // Nova API field name, fixed by the OpenStack compute API.
+	MACAddress string `json:"OS-EXT-IPS-MAC:mac_addr"`
+}
+
+// serverMACAddress extracts the primary interface MAC from a Nova server
+// response. gophercloud decodes `addresses` into an untyped map keyed by
+// OpenStack network name, so we round-trip it through JSON into typed entries
+// and read the MAC from the server's primary network (Spec.Networks[0]) rather
+// than an arbitrary map entry. "" means Nova has not (yet) reported a MAC for
+// that network.
+func serverMACAddress(server *unikornv1.Server, openstackserver *servers.Server) (string, error) {
+	if len(server.Spec.Networks) == 0 {
+		return "", nil
+	}
+
+	raw, err := json.Marshal(openstackserver.Addresses)
+	if err != nil {
+		return "", err
+	}
+
+	addresses := map[string][]novaServerAddress{}
+	if err := json.Unmarshal(raw, &addresses); err != nil {
+		return "", err
+	}
+
+	for _, entry := range addresses[networkNameForID(server.Spec.Networks[0].ID.String())] {
+		if entry.MACAddress != "" {
+			return entry.MACAddress, nil
+		}
+	}
+
+	return "", nil
+}
+
+// setServerMACAddress records the server's MAC address from a Nova response.
+//
+// The monitor is the sole owner of Status.MACAddress: the reconciler goes to
+// sleep once the server is provisioned, and for baremetal Ironic rebinds the
+// port to the real NIC MAC asynchronously, so only a live poll can observe the
+// final value. Nova guarantees the port MAC is bound by ACTIVE for VMs and
+// baremetal alike, giving one code path for both.
+//
+// A MAC is only ever written, never cleared: gating on ACTIVE and skipping an
+// empty read means a transient port-read miss can never unset a value we hold,
+// while an unconditional write of a valid MAC self-heals any drift (the
+// monitor's optimistic status PATCH makes a same-value write a harmless no-op).
+func setServerMACAddress(ctx context.Context, server *unikornv1.Server, openstackserver *servers.Server) {
+	if openstackserver == nil || openstackserver.Status != "ACTIVE" {
+		return
+	}
+
+	mac, err := serverMACAddress(server, openstackserver)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "failed to decode server addresses for MAC", "server", server.Name)
+
+		return
+	}
+
+	if mac == "" {
+		return
+	}
+
+	server.Status.MACAddress = &mac
+}
+
 // buildPhase picks the right Phase for a server Nova reports as BUILD. VMs
 // and baremetal lookups that failed fall back to Building (the honest "we
 // don't know more than Nova does" answer); a successful Ironic lookup
@@ -2273,7 +2352,7 @@ func (p *Provider) lookupSecurityGroup(ctx context.Context, securityGroups Secur
 func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInterface, server *unikornv1.Server) (*ports.Port, error) {
 	log := log.FromContext(ctx)
 
-	network, err := p.lookupNetwork(ctx, client, server.Namespace, server.Spec.Networks[0].ID)
+	network, err := p.lookupNetwork(ctx, client, server.Namespace, server.Spec.Networks[0].ID.String())
 	if err != nil {
 		return nil, err
 	}
@@ -2281,7 +2360,7 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 	securityGroupIDs := make([]string, len(server.Spec.SecurityGroups))
 
 	for i, s := range server.Spec.SecurityGroups {
-		securityGroup, err := p.lookupSecurityGroup(ctx, client, server.Namespace, s.ID)
+		securityGroup, err := p.lookupSecurityGroup(ctx, client, server.Namespace, s.ID.String())
 		if err != nil {
 			return nil, err
 		}
@@ -2312,7 +2391,6 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 		}
 
 		server.Status.PrivateIP = ptr.To(port.FixedIPs[0].IPAddress)
-		server.Status.MACAddress = stringPtrOrNil(port.MACAddress)
 
 		return port, nil
 	}
@@ -2326,17 +2404,8 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 	}
 
 	server.Status.PrivateIP = ptr.To(port.FixedIPs[0].IPAddress)
-	server.Status.MACAddress = stringPtrOrNil(port.MACAddress)
 
 	return port, nil
-}
-
-func stringPtrOrNil(value string) *string {
-	if value == "" {
-		return nil
-	}
-
-	return ptr.To(value)
 }
 
 func (p *Provider) reconcileFloatingIP(ctx context.Context, client FloatingIPInterface, server *unikornv1.Server, port *ports.Port) error {
@@ -2561,9 +2630,9 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 }
 
 func resolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {
-	if server.Spec.SSHCertificateAuthorityID != nil {
+	if !server.UsesIdentitySSHKey() {
 		// gophercloud omits the empty key_name field, which disables legacy Nova key injection
-		// for CA-bootstrapped servers.
+		// for servers that do not use the identity keypair.
 		return ""
 	}
 
@@ -2742,7 +2811,7 @@ func (p *Provider) lookupIronicNodeForPhase(
 ) *nodes.Node {
 	baremetalClient, err := baremetalForPhase(ctx, identity)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "failed to create ironic client for server phase derivation", "server", server.Name, "flavor", server.Spec.FlavorID, "instance_uuid", openstackServer.ID)
+		log.FromContext(ctx).Error(err, "failed to create ironic client for server phase derivation", "server", server.Name, "flavor", server.Spec.FlavorID.String(), "instance_uuid", openstackServer.ID)
 
 		return nil
 	}
@@ -2770,9 +2839,10 @@ func (p *Provider) updateServerStateWithClients(
 	}
 
 	setServerHealthStatus(server, openstackServer)
+	setServerMACAddress(ctx, server, openstackServer)
 
 	region, _ := p.openstack.regionSnapshot()
-	baremetal := isBaremetalFlavor(region, server.Spec.FlavorID)
+	baremetal := isBaremetalFlavor(region, server.Spec.FlavorID.String())
 
 	var ironicNode *nodes.Node
 

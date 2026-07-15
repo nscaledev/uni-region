@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -50,6 +51,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers"
 	commonstate "github.com/unikorn-cloud/region/test/contracts/provider/common"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -76,6 +78,7 @@ var _ = Describe("Region Provider Verification", func() {
 		cancel         context.CancelFunc
 		k8sClient      client.Client
 		stateManager   *commonstate.StateManager
+		openstackMock  *httptest.Server
 		pactBrokerURL  string
 		brokerUsername string
 		brokerPassword string
@@ -114,6 +117,10 @@ var _ = Describe("Region Provider Verification", func() {
 		// Initialize state manager
 		stateManager = commonstate.NewStateManager(k8sClient)
 
+		// Point OpenStack regions at a mock so the image contract can be verified.
+		openstackMock = newOpenStackMock()
+		stateManager.SetOpenstackEndpoint(openstackMock.URL + "/v3")
+
 		// Find an available port
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		Expect(err).NotTo(HaveOccurred())
@@ -150,6 +157,9 @@ var _ = Describe("Region Provider Verification", func() {
 			if err := testServer.Shutdown(shutdownCtx); err != nil {
 				fmt.Printf("failed to shutdown server: %v\n", err)
 			}
+		}
+		if openstackMock != nil {
+			openstackMock.Close()
 		}
 		cancel()
 	})
@@ -296,6 +306,14 @@ func createStateHandlers(ctx context.Context, stateManager *commonstate.StateMan
 
 			return nil, err
 		},
+
+		// State handler for "region has images"
+		commonstate.StateRegionHasImages: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleRegionHasImagesState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
 	}
 }
 
@@ -331,7 +349,7 @@ func buildRouter(schema *helpers.Schema, corsOpts *cors.Options) *chi.Mux {
 	router.Use(cors.Middleware)
 
 	// Mock ACL middleware allows all organizations for contract testing
-	router.Use(MockACLMiddleware(nil))              // Inject mock ACL for contract testing
+	router.Use(MockACLMiddleware(nil))                // Inject mock ACL for contract testing
 	router.Use(commonstate.RegionSortingMiddleware()) // Sort regions for Pact contract testing
 	router.NotFound(http.HandlerFunc(handler.NotFound))
 	router.MethodNotAllowed(http.HandlerFunc(handler.MethodNotAllowed))
@@ -366,11 +384,20 @@ func createHandlerInterface(ctx context.Context, k8sClient client.Client, namesp
 		panic(fmt.Sprintf("failed to create identity client: %v", err))
 	}
 
+	// Create providers interface so image/flavor handlers can reach the cloud provider.
+	providers, err := providers.New(ctx, k8sClient, k8sClient, namespace, providers.Options{
+		WarmImageCache: true,
+	})
+	if err != nil {
+		panic(fmt.Sprintf("failed to create providers: %v", err))
+	}
+
 	handlerOpts := handler.Options{}
 
 	handlerInterface, err := handler.New(common.ClientArgs{
 		Client:    k8sClient,
 		Namespace: namespace,
+		Providers: providers,
 		Identity:  identity,
 	}, &handlerOpts)
 	if err != nil {

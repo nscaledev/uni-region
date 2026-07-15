@@ -1,5 +1,5 @@
-//go:build integration
-// +build integration
+//go:build integration || e2e
+// +build integration e2e
 
 /*
 Copyright 2025 the Unikorn Authors.
@@ -35,8 +35,8 @@ var (
 	client          *api.APIClient
 	secondaryClient *api.APIClient // client for secondary org, used to test region visibility isolation
 	regionClient    *api.APIClient
-	ctx          context.Context
-	config       *api.TestConfig
+	ctx             context.Context
+	config          *api.TestConfig
 )
 
 var _ = BeforeSuite(func() {
