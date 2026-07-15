@@ -738,27 +738,9 @@ var _ = Describe("File Storage Management", func() {
 					Skip("No network ID available")
 				}
 
-				err := regionClient.DeleteNetwork(ctx, networkID)
-				Expect(err).NotTo(HaveOccurred())
+				api.MustDeleteNetwork(regionClient, ctx, networkID)
 
 				GinkgoWriter.Printf("Deleted network: %s\n", networkID)
-
-				Eventually(func() int {
-					networks, err := regionClient.ListNetworks(ctx, config.OrgID, config.ProjectID, config.RegionID)
-					if err != nil {
-						return -1
-					}
-					count := 0
-					for _, n := range networks {
-						if n.Metadata.Id == networkID {
-							count++
-						}
-					}
-					return count
-				}).WithTimeout(2*time.Minute).
-					WithPolling(5*time.Second).
-					Should(Equal(0), "Network should be deleted")
-
 				GinkgoWriter.Printf("Confirmed network deleted: %s\n", networkID)
 				networkID = "" // suppress cleanup — already deleted
 			})
@@ -779,7 +761,7 @@ var _ = Describe("File Storage Management", func() {
 
 			if networkID != "" {
 				GinkgoWriter.Printf("Cleaning up test network: %s\n", networkID)
-				Expect(regionClient.DeleteNetwork(ctx, networkID)).To(Succeed())
+				api.MustDeleteNetwork(regionClient, ctx, networkID)
 			}
 		})
 	})
