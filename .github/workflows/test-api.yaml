@@ -182,6 +182,11 @@ jobs:
         deployed-version: ${{ needs.find-dev-deployed-version.outputs.version || needs.find-dev-deployed-version.outputs.ref }}
         title: 'Region API Test Results'
         test-history-suite: uni-region-api
+        component-name: uni-region
+        component-repo: nscaledev/uni-region
+        component-ref: ${{ needs.find-dev-deployed-version.outputs.ref }}
+        component-version-url: ${{ env.REGION_BASE_URL }}/api/version
+        component-version-token: ${{ env.API_AUTH_TOKEN }}
         enable-ai-analysis: 'true'
         claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         enable-grafana-log-enrichment: 'true'
@@ -298,6 +303,11 @@ jobs:
         deployed-version: ${{ needs.find-uat-deployed-version.outputs.version || needs.find-uat-deployed-version.outputs.ref }}
         title: 'Region API Test Results'
         test-history-suite: uni-region-api
+        component-name: uni-region
+        component-repo: nscaledev/uni-region
+        component-ref: ${{ needs.find-uat-deployed-version.outputs.ref }}
+        component-version-url: ${{ env.REGION_BASE_URL }}/api/version
+        component-version-token: ${{ env.API_AUTH_TOKEN }}
         enable-ai-analysis: 'true'
         claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         enable-grafana-log-enrichment: 'true'
