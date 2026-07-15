@@ -18,15 +18,19 @@ limitations under the License.
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	coreconfig "github.com/unikorn-cloud/core/pkg/testing/config"
 	identityopenapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/principal"
 )
@@ -64,6 +68,83 @@ var _ = Describe("Internal API Client", func() {
 				Expect(got.ProjectID).To(Equal("project-1"))
 				Expect(got.Type).To(Equal(identityopenapi.Service))
 				Expect(got.Actor).To(Equal("ci-admin-sa"))
+			})
+		})
+	})
+})
+
+var _ = Describe("Network fixture cleanup", func() {
+	Context("When deleting a network fixture", func() {
+		Describe("Given an empty network ID", func() {
+			It("should skip cleanup", func() {
+				MustDeleteNetwork(&APIClient{}, context.Background(), "")
+			})
+		})
+
+		Describe("Given an existing network", func() {
+			It("should delete and wait for the network to disappear", func() {
+				const networkID = "network-1"
+
+				var deleteCalls atomic.Int32
+				var getCalls atomic.Int32
+
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					Expect(r.URL.Path).To(Equal("/api/v2/networks/" + networkID))
+
+					switch r.Method {
+					case http.MethodDelete:
+						deleteCalls.Add(1)
+						w.WriteHeader(http.StatusAccepted)
+					case http.MethodGet:
+						getCalls.Add(1)
+						w.WriteHeader(http.StatusNotFound)
+					default:
+						w.WriteHeader(http.StatusMethodNotAllowed)
+					}
+				}))
+				DeferCleanup(server.Close)
+
+				client := NewAPIClientWithConfig(&TestConfig{
+					BaseConfig: coreconfig.BaseConfig{
+						BaseURL:        server.URL,
+						RequestTimeout: time.Second,
+					},
+					RegionBaseURL: server.URL,
+				})
+
+				MustDeleteNetwork(client, context.Background(), networkID)
+
+				Expect(deleteCalls.Load()).To(Equal(int32(1)))
+				Expect(getCalls.Load()).To(Equal(int32(1)))
+			})
+		})
+
+		Describe("Given an already deleted network", func() {
+			It("should treat not found as successful cleanup", func() {
+				const networkID = "network-1"
+
+				var deleteCalls atomic.Int32
+
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					Expect(r.Method).To(Equal(http.MethodDelete))
+					Expect(r.URL.Path).To(Equal("/api/v2/networks/" + networkID))
+
+					deleteCalls.Add(1)
+					w.WriteHeader(http.StatusNotFound)
+				}))
+				DeferCleanup(server.Close)
+
+				client := NewAPIClientWithConfig(&TestConfig{
+					BaseConfig: coreconfig.BaseConfig{
+						BaseURL:        server.URL,
+						RequestTimeout: time.Second,
+					},
+					RegionBaseURL: server.URL,
+				})
+
+				MustDeleteNetwork(client, context.Background(), networkID)
+
+				Expect(deleteCalls.Load()).To(Equal(int32(1)))
 			})
 		})
 	})

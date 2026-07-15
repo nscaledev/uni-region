@@ -168,7 +168,7 @@ var _ = Describe("Network Management", func() {
 						Skip("No network ID available - create step may have been skipped or failed")
 					}
 
-					Expect(regionClient.DeleteNetwork(ctx, networkID)).To(Succeed())
+					api.MustDeleteNetwork(regionClient, ctx, networkID)
 
 					GinkgoWriter.Printf("Deleted network: %s\n", networkID)
 					deletedNetworkID = networkID
@@ -198,9 +198,7 @@ var _ = Describe("Network Management", func() {
 		AfterAll(func() {
 			if networkID != "" {
 				GinkgoWriter.Printf("Cleaning up network: %s\n", networkID)
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
-				}
+				api.MustDeleteNetwork(regionClient, ctx, networkID)
 			}
 		})
 	})
@@ -227,7 +225,7 @@ var _ = Describe("Network Management", func() {
 				path := regionClient.GetEndpoints().CreateNetwork()
 				resp, _, err := regionClient.DoRegionRequest(ctx, http.MethodPost, path, bytes.NewReader([]byte("")), 0)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(resp.StatusCode).To(BeNumerically(">=", http.StatusBadRequest))
+				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 			})
 		})
 	})
@@ -245,7 +243,7 @@ var _ = Describe("Network Management", func() {
 			networkID = created.Metadata.Id
 			DeferCleanup(func() {
 				GinkgoWriter.Printf("Cleaning up cross-org isolation network fixture: %s\n", networkID)
-				_ = regionClient.DeleteNetwork(ctx, networkID)
+				api.MustDeleteNetwork(regionClient, ctx, networkID)
 			})
 			GinkgoWriter.Printf("Created network fixture for cross-org isolation test: %s\n", networkID)
 		})

@@ -11,7 +11,7 @@ The package contains three broad kinds of object:
 
 - user-meaningful region resources such as `Region`, `Identity`, `Network`,
   `SecurityGroup`, `LoadBalancer`, `SSHCertificateAuthority`, `Server`, and
-  `FileStorage`
+  `Volume`, and `FileStorage`
 - service-internal provider state, primarily `OpenstackIdentity`
 - operational support objects such as `VLANAllocation`, `FileStorageClass`, and
   `FileStorageProvisioner`
@@ -37,8 +37,14 @@ stored objects rely on for linkage, migration, and operational coordination.
   stable stored shapes.
 - `Region` is the configuration and capability root for a provider-backed
   region. It carries provider type, provider-specific configuration, stored
-  visibility inputs, flavor/image/network selection rules, and helper methods
-  that downstream code actively depends on.
+  visibility inputs, flavor/image/network/volume-class selection rules, and
+  helper methods that downstream code actively depends on.
+- OpenStack `VolumeClass` configuration is Region-scoped inventory metadata. It
+  records which provider volume classes are eligible for export and how that
+  inventory should be enriched; it does not create a project-owned
+  `VolumeClass` CRD or any user-managed lifecycle resource. OpenStack maps this
+  inventory to Cinder volume types internally, but the Region storage and
+  public/domain vocabulary remains `VolumeClass`.
 - Namespaced Kubernetes storage scope and platform tenancy scope are separate
   concerns. These objects are namespaced, but their logical visibility and
   authorization are often organization-, project-, identity-, or region-scoped
@@ -59,6 +65,23 @@ stored objects rely on for linkage, migration, and operational coordination.
   resource types. Attachment-level provisioning state, observed size, usage
   reporting, and per-policy snapshot status are part of the stored
   reconciliation contract.
+- `Volume` is the Region-owned block storage primitive. It is anchored to a
+  `Network`, carries its own requested capacity and volume class identity, and
+  is expected to carry quota/accounting responsibility in the Region layer.
+  `Volume` does not define a per-network name uniqueness key; its resource ID
+  follows the platform's normal UUID v4 identity pattern, while mutable display
+  names live in standard metadata labels. `Volume.Spec.ClaimRef` records the
+  kind and Region resource ID of the resource that owns the volume's attachment
+  claim; a nil claim means the volume is available for claiming. `Server` is the
+  current supported claim kind. Attachment realization remains outside
+  `Volume.Status`, which is conditions-first and also reserves observed size for
+  later controller/provider work. Provider-side volume identity is expected to
+  be rediscovered by stable provider lookup rather than mirrored into status.
+- The `Network -> Volume` graph edge is declared as containment for future
+  behavior: Network scope propagates to Volume; co-location is implicit; Volume
+  holds a reverse deletion-blocking relationship to Network for its lifetime;
+  Network deletion may cascade to Volumes once controller/API behavior exists;
+  Volume status does not propagate upward to Network.
 - `FileStorage.Spec.SnapshotPolicies` is an optional inline desired-state list
   keyed by policy `name`. In persisted storage, omitted and empty lists both mean
   no user-managed snapshot policies are desired. Default snapshot protection is

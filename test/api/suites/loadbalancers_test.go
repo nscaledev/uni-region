@@ -65,9 +65,7 @@ var _ = Describe("LoadBalancer", func() {
 					}
 					api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
 				}
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
-				}
+				api.MustDeleteNetwork(regionClient, ctx, networkID)
 			})
 		})
 
@@ -261,9 +259,7 @@ var _ = Describe("LoadBalancer", func() {
 					}
 					api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
 				}
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
-				}
+				api.MustDeleteNetwork(regionClient, ctx, networkID)
 			})
 		})
 
@@ -327,9 +323,7 @@ var _ = Describe("LoadBalancer", func() {
 					}
 					api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
 				}
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
-				}
+				api.MustDeleteNetwork(regionClient, ctx, networkID)
 			})
 		})
 
@@ -396,7 +390,7 @@ var _ = Describe("LoadBalancer", func() {
 				path := regionClient.GetEndpoints().CreateLoadBalancer()
 				resp, _, err := regionClient.DoRegionRequest(ctx, http.MethodPost, path, bytes.NewReader([]byte("")), 0)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(resp.StatusCode).To(BeNumerically(">=", http.StatusBadRequest))
+				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 			})
 		})
 	})

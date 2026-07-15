@@ -22,22 +22,19 @@ limitations under the License.
 package suites
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"k8s.io/utils/ptr"
-
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
-	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
 	coreutil "github.com/unikorn-cloud/core/pkg/testing/util"
-	regionids "github.com/unikorn-cloud/region/pkg/ids"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/test/api"
+
+	"k8s.io/utils/ptr"
 )
 
 const defaultProtectionUpdateStorageSizeGiB = int64(10)
@@ -110,7 +107,7 @@ func defaultProtectionCreateRequest(storageClassID string, defaultProtectionEnab
 			DefaultSnapshotProtectionEnabled: defaultProtectionEnabled,
 			OrganizationId:                   config.OrgID,
 			ProjectId:                        config.ProjectID,
-			RegionId:                         regionids.MustParseRegionID(config.RegionID),
+			RegionId:                         idstest.MustParseRegionID(config.RegionID),
 			SizeGiB:                          defaultProtectionUpdateStorageSizeGiB,
 			SnapshotPolicies:                 snapshotPolicies,
 			StorageClassId:                   storageClassID,
@@ -159,23 +156,6 @@ func expectDefaultProtectionUpdateState(storage *regionopenapi.StorageV2Read, de
 	Expect(*storage.Spec.SnapshotPolicies).To(Equal(snapshotPolicies))
 }
 
-func EventuallyFileStorageDeleted(ctx context.Context, filestorageID string) {
-	Eventually(func() error {
-		_, err := regionClient.GetFileStorage(ctx, filestorageID)
-		if errors.Is(err, coreclient.ErrResourceNotFound) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-
-		return fmt.Errorf("file storage %s still exists", filestorageID)
-	}).
-		WithTimeout(5*time.Minute).
-		WithPolling(5*time.Second).
-		Should(Succeed(), "Storage should be deleted")
-}
-
 // INST-926 tracks Dev environment setup for file storage classes. Until Dev exposes
 // a usable class for the configured test region, storage-class-dependent specs skip.
 var _ = Describe("File Storage Management", func() {
@@ -211,7 +191,7 @@ var _ = Describe("File Storage Management", func() {
 					}{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
-						RegionId:       regionids.MustParseRegionID(config.RegionID),
+						RegionId:       idstest.MustParseRegionID(config.RegionID),
 						SizeGiB:        10,
 						StorageClassId: storageClasses[0].Metadata.Id,
 						StorageType: regionopenapi.StorageTypeV2Spec{
@@ -315,7 +295,7 @@ var _ = Describe("File Storage Management", func() {
 					}{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
-						RegionId:       regionids.MustParseRegionID(config.RegionID),
+						RegionId:       idstest.MustParseRegionID(config.RegionID),
 						SizeGiB:        initialStorageSizeGiB,
 						StorageClassId: storageClassID,
 						StorageType: regionopenapi.StorageTypeV2Spec{
@@ -515,7 +495,7 @@ var _ = Describe("File Storage Management", func() {
 					Spec: regionopenapi.NetworkV2CreateSpec{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
-						RegionId:       regionids.MustParseRegionID(config.RegionID),
+						RegionId:       idstest.MustParseRegionID(config.RegionID),
 						Prefix:         "10.0.1.0/24",
 						DnsNameservers: []string{"8.8.8.8", "8.8.4.4"},
 					},
@@ -578,7 +558,7 @@ var _ = Describe("File Storage Management", func() {
 					}{
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
-						RegionId:       regionids.MustParseRegionID(config.RegionID),
+						RegionId:       idstest.MustParseRegionID(config.RegionID),
 						SizeGiB:        storageSizeGiB,
 						StorageClassId: storageClassID,
 						StorageType: regionopenapi.StorageTypeV2Spec{
@@ -747,7 +727,7 @@ var _ = Describe("File Storage Management", func() {
 
 				GinkgoWriter.Printf("Deleted file storage: %s\n", filestorageID)
 
-				EventuallyFileStorageDeleted(ctx, filestorageID)
+				api.WaitForFileStorageGone(regionClient, ctx, filestorageID)
 
 				GinkgoWriter.Printf("Confirmed file storage deleted: %s\n", filestorageID)
 				filestorageID = "" // suppress AfterAll cleanup; storage has been confirmed deleted
@@ -758,27 +738,9 @@ var _ = Describe("File Storage Management", func() {
 					Skip("No network ID available")
 				}
 
-				err := regionClient.DeleteNetwork(ctx, networkID)
-				Expect(err).NotTo(HaveOccurred())
+				api.MustDeleteNetwork(regionClient, ctx, networkID)
 
 				GinkgoWriter.Printf("Deleted network: %s\n", networkID)
-
-				Eventually(func() int {
-					networks, err := regionClient.ListNetworks(ctx, config.OrgID, config.ProjectID, config.RegionID)
-					if err != nil {
-						return -1
-					}
-					count := 0
-					for _, n := range networks {
-						if n.Metadata.Id == networkID {
-							count++
-						}
-					}
-					return count
-				}).WithTimeout(2*time.Minute).
-					WithPolling(5*time.Second).
-					Should(Equal(0), "Network should be deleted")
-
 				GinkgoWriter.Printf("Confirmed network deleted: %s\n", networkID)
 				networkID = "" // suppress cleanup — already deleted
 			})
@@ -794,12 +756,12 @@ var _ = Describe("File Storage Management", func() {
 				}
 
 				GinkgoWriter.Printf("Waiting for storage cleanup: %s\n", filestorageID)
-				EventuallyFileStorageDeleted(ctx, filestorageID)
+				api.WaitForFileStorageGone(regionClient, ctx, filestorageID)
 			}
 
 			if networkID != "" {
 				GinkgoWriter.Printf("Cleaning up test network: %s\n", networkID)
-				Expect(regionClient.DeleteNetwork(ctx, networkID)).To(Succeed())
+				api.MustDeleteNetwork(regionClient, ctx, networkID)
 			}
 		})
 	})

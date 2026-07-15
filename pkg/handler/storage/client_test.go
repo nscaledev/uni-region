@@ -42,7 +42,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	networkclient "github.com/unikorn-cloud/region/pkg/handler/network"
-	regionids "github.com/unikorn-cloud/region/pkg/ids"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	k8sv1 "k8s.io/api/core/v1"
@@ -1524,7 +1524,7 @@ func updateStorageV2ForSnapshotPolicyTest(t *testing.T, configure func(*openapi.
 		configure(request)
 	}
 
-	got, err := client.Update(ctx, regionids.MustParseFileStorageID(testFileStorageID), request)
+	got, err := client.Update(ctx, idstest.MustParseFileStorageID(testFileStorageID), request)
 	require.NoError(t, err)
 
 	return got
@@ -1614,7 +1614,7 @@ func createStorageV2ForSnapshotPolicyResult(t *testing.T, configure func(*openap
 	}
 	request.Spec.OrganizationId = testOrganizationID
 	request.Spec.ProjectId = testProjectID
-	request.Spec.RegionId = regionids.MustParseRegionID(testRegionID)
+	request.Spec.RegionId = idstest.MustParseRegionID(testRegionID)
 	request.Spec.StorageClassId = "sc-1"
 	request.Spec.SizeGiB = 10
 	request.Spec.Attachments = &openapi.StorageAttachmentV2Spec{NetworkIds: openapi.NetworkIDList{testNetworkID}}
@@ -1875,7 +1875,7 @@ func TestGetRoundTripsStoredSnapshotPolicies(t *testing.T) {
 
 	c, ctx := newClientwithObjectandContext(t, t.Context(), append(defaultFSK8sObjects(), storage)...)
 
-	result, err := c.Get(ctx, regionids.MustParseFileStorageID(storage.Name))
+	result, err := c.Get(ctx, idstest.MustParseFileStorageID(storage.Name))
 	require.NoError(t, err)
 	require.Equal(t, &openapi.StorageSnapshotPolicyListV2Spec{
 		{
@@ -2005,7 +2005,7 @@ func TestGetHidesSystemDefaultSnapshotProtectionPolicy(t *testing.T) {
 
 	c, ctx := newClientwithObjectandContext(t, t.Context(), append(defaultFSK8sObjects(), storage)...)
 
-	result, err := c.Get(ctx, regionids.MustParseFileStorageID(storage.Name))
+	result, err := c.Get(ctx, idstest.MustParseFileStorageID(storage.Name))
 	require.NoError(t, err)
 	require.Equal(t, ptr.To(true), result.Spec.DefaultSnapshotProtectionEnabled)
 	require.Equal(t, &openapi.StorageSnapshotPolicyListV2Spec{
@@ -2276,7 +2276,7 @@ func TestGetProjectsSnapshotPolicyStatusOnParentRead(t *testing.T) {
 
 	c, ctx := newClientwithObjectandContext(t, t.Context(), append(defaultFSK8sObjects(), storage)...)
 
-	result, err := c.Get(ctx, regionids.MustParseFileStorageID(storage.Name))
+	result, err := c.Get(ctx, idstest.MustParseFileStorageID(storage.Name))
 	require.NoError(t, err)
 	require.Equal(t, openapi.StorageSnapshotPolicyListV2Status{
 		{
@@ -2352,7 +2352,7 @@ func TestGet(t *testing.T) {
 
 			c, ctx := newClientwithObjectandContext(t, ctx, obj...)
 
-			result, err := c.Get(ctx, regionids.MustParseFileStorageID(tt.input.Name))
+			result, err := c.Get(ctx, idstest.MustParseFileStorageID(tt.input.Name))
 			require.NoError(t, err)
 			require.NotNil(t, result, "result should not be empty")
 		})

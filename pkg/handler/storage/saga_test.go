@@ -28,7 +28,7 @@ import (
 	corev1 "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/region/pkg/handler/storage/mock"
-	regionids "github.com/unikorn-cloud/region/pkg/ids"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
 
@@ -48,7 +48,7 @@ func TestValidateAttachments_NetworkNotFound(t *testing.T) {
 
 	m := mock.NewMockNetworkGetter(c)
 	m.EXPECT().
-		GetV2(gomock.Any(), regionids.MustParseNetworkID(netMissing)).
+		GetV2(gomock.Any(), idstest.MustParseNetworkID(netMissing)).
 		Return(nil, errors.HTTPNotFound())
 
 	attachments := &openapi.StorageAttachmentV2Spec{NetworkIds: []string{netMissing}}
@@ -69,7 +69,7 @@ func TestValidateAttachments_NonHTTPNotFoundError(t *testing.T) {
 	m := mock.NewMockNetworkGetter(c)
 	//nolint:err113
 	m.EXPECT().
-		GetV2(gomock.Any(), regionids.MustParseNetworkID(netAny)).
+		GetV2(gomock.Any(), idstest.MustParseNetworkID(netAny)).
 		Return(nil, fmt.Errorf("sentinel"))
 
 	attachments := &openapi.StorageAttachmentV2Spec{NetworkIds: []string{netAny}}
@@ -88,7 +88,7 @@ func TestValidateAttachments_ProjectMismatch(t *testing.T) {
 
 	m := mock.NewMockNetworkGetter(c)
 	m.EXPECT().
-		GetV2(gomock.Any(), regionids.MustParseNetworkID(netID1)).
+		GetV2(gomock.Any(), idstest.MustParseNetworkID(netID1)).
 		Return(&openapi.NetworkV2Read{
 			Metadata: corev1.ProjectScopedResourceReadMetadata{ProjectId: "proj-OK", ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned},
 		}, nil)
@@ -111,12 +111,12 @@ func TestValidateAttachments_OK(t *testing.T) {
 
 	m := mock.NewMockNetworkGetter(c)
 	m.EXPECT().
-		GetV2(gomock.Any(), regionids.MustParseNetworkID(netID1)).
+		GetV2(gomock.Any(), idstest.MustParseNetworkID(netID1)).
 		Return(&openapi.NetworkV2Read{
 			Metadata: corev1.ProjectScopedResourceReadMetadata{ProjectId: "proj-OK", ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned},
 		}, nil)
 	m.EXPECT().
-		GetV2(gomock.Any(), regionids.MustParseNetworkID(netID2)).
+		GetV2(gomock.Any(), idstest.MustParseNetworkID(netID2)).
 		Return(&openapi.NetworkV2Read{
 			Metadata: corev1.ProjectScopedResourceReadMetadata{ProjectId: "proj-OK", ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned},
 		}, nil)
@@ -137,7 +137,7 @@ func TestValidateAttachments_NetworkNotProvisioned(t *testing.T) {
 
 	m := mock.NewMockNetworkGetter(c)
 	m.EXPECT().
-		GetV2(gomock.Any(), regionids.MustParseNetworkID(netID1)).
+		GetV2(gomock.Any(), idstest.MustParseNetworkID(netID1)).
 		Return(&openapi.NetworkV2Read{
 			Metadata: corev1.ProjectScopedResourceReadMetadata{ProjectId: "proj-OK", ProvisioningStatus: corev1.ResourceProvisioningStatusPending},
 		}, nil)

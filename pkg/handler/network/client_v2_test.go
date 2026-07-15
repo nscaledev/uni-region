@@ -38,7 +38,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
-	regionids "github.com/unikorn-cloud/region/pkg/ids"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	corev1 "k8s.io/api/core/v1"
@@ -280,7 +280,7 @@ func TestUpdateV2PreservesReservations(t *testing.T) {
 				ProjectID:      projectID,
 			})
 
-			updated, err := c.Update(ctx, regionids.MustParseNetworkID(current.Name), &openapi.NetworkV2Update{
+			updated, err := c.Update(ctx, idstest.MustParseNetworkID(current.Name), &openapi.NetworkV2Update{
 				Metadata: coreapi.ResourceWriteMetadata{
 					Name: "test-network",
 				},
@@ -350,7 +350,7 @@ func TestGetV2ReturnsEffectiveReservationsForImplicitNetworks(t *testing.T) {
 
 			ctx := rbac.NewContext(t.Context(), networkUpdateContext())
 
-			read, err := c.GetV2(ctx, regionids.MustParseNetworkID(current.Name))
+			read, err := c.GetV2(ctx, idstest.MustParseNetworkID(current.Name))
 			require.NoError(t, err)
 			require.Equal(t, test.expected, read.Status.Reservations)
 		})
@@ -390,24 +390,24 @@ func TestReferences(t *testing.T) {
 
 	client := network.New(clientArgs)
 
-	require.NoError(t, client.ReferenceCreateV2(ctx, regionids.MustParseNetworkID(networkID), reference))
+	require.NoError(t, client.ReferenceCreateV2(ctx, idstest.MustParseNetworkID(networkID), reference))
 
 	resource := getNetwork(t, cli)
 	require.Len(t, resource.Finalizers, 1)
 	require.True(t, controllerutil.ContainsFinalizer(resource, reference))
 
-	require.NoError(t, client.ReferenceCreateV2(ctx, regionids.MustParseNetworkID(networkID), reference))
+	require.NoError(t, client.ReferenceCreateV2(ctx, idstest.MustParseNetworkID(networkID), reference))
 
 	resource = getNetwork(t, cli)
 	require.Len(t, resource.Finalizers, 1)
 	require.True(t, controllerutil.ContainsFinalizer(resource, reference))
 
-	require.NoError(t, client.ReferenceDeleteV2(ctx, regionids.MustParseNetworkID(networkID), reference))
+	require.NoError(t, client.ReferenceDeleteV2(ctx, idstest.MustParseNetworkID(networkID), reference))
 
 	resource = getNetwork(t, cli)
 	require.Empty(t, resource.Finalizers)
 
-	require.NoError(t, client.ReferenceDeleteV2(ctx, regionids.MustParseNetworkID(networkID), reference))
+	require.NoError(t, client.ReferenceDeleteV2(ctx, idstest.MustParseNetworkID(networkID), reference))
 
 	resource = getNetwork(t, cli)
 	require.Empty(t, resource.Finalizers)

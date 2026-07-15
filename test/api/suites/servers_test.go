@@ -21,48 +21,16 @@ limitations under the License.
 package suites
 
 import (
-	"errors"
+	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
-	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/test/api"
 )
-
-func skipUnlessOpenStackRegion() {
-	regions, err := regionClient.ListRegions(ctx, config.OrgID)
-	Expect(err).NotTo(HaveOccurred(), "failed to resolve region provider")
-
-	for _, region := range regions {
-		if region.Metadata.Id != config.RegionID {
-			continue
-		}
-
-		if region.Spec.Type != regionopenapi.RegionTypeOpenstack {
-			Skip("server lifecycle tests require an OpenStack-backed region")
-		}
-
-		return
-	}
-
-	Skip("server lifecycle tests require TEST_REGION_ID to be visible")
-}
-
-func skipUnlessInternalAPIConfigured() {
-	if !regionClient.InternalAPIConfigured() {
-		Skip("server lifecycle tests require local internal API mTLS credentials")
-	}
-}
-
-func skipUnlessServerFixtureConfigured() {
-	if config.ServerFlavorID == "" || config.ServerImageID == "" {
-		Skip("server lifecycle tests require TEST_SERVER_FLAVOR_ID and TEST_SERVER_IMAGE_ID")
-	}
-}
 
 func skipUnlessServerInfrastructureRefConfigured() {
 	if config.ServerInfrastructureRef == "" {
@@ -78,30 +46,6 @@ func testImageID() string {
 	return config.ServerImageID
 }
 
-func waitForNetworkProvisioned(networkID string) {
-	Eventually(func() coreapi.ResourceProvisioningStatus {
-		network, err := regionClient.GetNetwork(ctx, networkID)
-		if err != nil {
-			GinkgoWriter.Printf("Error retrieving network %s: %v\n", networkID, err)
-			return ""
-		}
-
-		return network.Metadata.ProvisioningStatus
-	}).WithTimeout(2*time.Minute).
-		WithPolling(5*time.Second).
-		Should(Equal(coreapi.ResourceProvisioningStatusProvisioned),
-			"network should be provisioned before server creation")
-}
-
-func waitForServerGone(serverID string) {
-	Eventually(func() bool {
-		_, err := regionClient.GetServer(ctx, serverID)
-		return err != nil
-	}).WithTimeout(5*time.Minute).
-		WithPolling(5*time.Second).
-		Should(BeTrue(), "server should disappear after deletion")
-}
-
 func expectServerInfrastructureRef(server *regionopenapi.ServerV2Read, infrastructureRef string) {
 	Expect(server).NotTo(BeNil())
 	Expect(server.Status.InfrastructureRef).NotTo(BeNil())
@@ -113,47 +57,24 @@ var _ = Describe("Server Management", func() {
 		var networkID string
 
 		BeforeAll(func() {
-			skipUnlessOpenStackRegion()
-			skipUnlessInternalAPIConfigured()
-			skipUnlessServerFixtureConfigured()
+			api.SkipUnlessOpenStackRegion(regionClient, ctx, config)
+			api.SkipUnlessInternalAPIConfigured(regionClient)
+			api.SkipUnlessServerFixtureConfigured(config)
 
 			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-			network, err := regionClient.CreateNetwork(ctx, networkReq)
-			Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
-			Expect(network).NotTo(BeNil())
-
+			network, cleanupNetwork := api.MustProvisionNetwork(regionClient, ctx, networkReq)
+			DeferCleanup(cleanupNetwork)
 			networkID = network.Metadata.Id
-
-			DeferCleanup(func() {
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil {
-					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
-				}
-			})
-
-			waitForNetworkProvisioned(networkID)
 		})
 
 		Describe("Given a provisioned network and available compute image", func() {
 			It("should create the server with correct metadata and status", func() {
 				createReq := api.NewServerPayload(networkID, testFlavorID(), testImageID()).Build()
 
-				created, err := regionClient.CreateServer(ctx, createReq)
-				Expect(err).NotTo(HaveOccurred(), "failed to create server")
-				Expect(created).NotTo(BeNil())
-				Expect(created.Metadata.Id).NotTo(BeEmpty())
+				created, cleanup := api.MustCreateServer(regionClient, ctx, createReq)
+				DeferCleanup(cleanup)
 
 				serverID := created.Metadata.Id
-				DeferCleanup(func() {
-					err := regionClient.DeleteServer(ctx, serverID)
-					if errors.Is(err, coreclient.ErrResourceNotFound) {
-						return
-					}
-					if err != nil {
-						GinkgoWriter.Printf("Warning: cleanup delete server %s: %v\n", serverID, err)
-						return
-					}
-					waitForServerGone(serverID)
-				})
 
 				Expect(created.Metadata.Name).To(Equal(createReq.Metadata.Name))
 				Expect(created.Metadata.OrganizationId).To(Equal(config.OrgID))
@@ -194,29 +115,64 @@ var _ = Describe("Server Management", func() {
 		})
 	})
 
+	Context("When creating a server with user data", Ordered, func() {
+		var networkID string
+
+		BeforeAll(func() {
+			api.SkipUnlessOpenStackRegion(regionClient, ctx, config)
+			api.SkipUnlessInternalAPIConfigured(regionClient)
+			api.SkipUnlessServerFixtureConfigured(config)
+
+			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
+			network, cleanupNetwork := api.MustProvisionNetwork(regionClient, ctx, networkReq)
+			DeferCleanup(cleanupNetwork)
+			networkID = network.Metadata.Id
+		})
+
+		Describe("Given malformed cloud-init user data", func() {
+			It("should reject the request with an actionable validation error", func() {
+				createReq := api.NewServerPayload(networkID, testFlavorID(), testImageID()).
+					WithUserData([]byte("echo hello")).
+					Build()
+
+				apiError, err := regionClient.CreateServerExpectError(ctx, createReq, http.StatusUnprocessableEntity)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(apiError.Error).To(Equal(coreapi.UnprocessableContent))
+				Expect(apiError.ErrorDescription).To(ContainSubstring("cloud-init"))
+				Expect(apiError.ErrorDescription).To(ContainSubstring("unsupported userData format"))
+			})
+		})
+
+		Describe("Given valid cloud-config user data", func() {
+			It("should create the server and preserve the user data unchanged", func() {
+				userData := []byte("#cloud-config\npackages:\n - vim\n")
+				createReq := api.NewServerPayload(networkID, testFlavorID(), testImageID()).
+					WithUserData(userData).
+					Build()
+
+				created, cleanup := api.MustCreateServer(regionClient, ctx, createReq)
+				DeferCleanup(cleanup)
+
+				Expect(created.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusPending))
+				Expect(created.Spec.UserData).NotTo(BeNil())
+				Expect(*created.Spec.UserData).To(Equal(userData))
+			})
+		})
+	})
+
 	Context("When creating a server pinned to provider infrastructure", Ordered, func() {
 		var networkID string
 
 		BeforeAll(func() {
-			skipUnlessOpenStackRegion()
-			skipUnlessInternalAPIConfigured()
-			skipUnlessServerFixtureConfigured()
+			api.SkipUnlessOpenStackRegion(regionClient, ctx, config)
+			api.SkipUnlessInternalAPIConfigured(regionClient)
+			api.SkipUnlessServerFixtureConfigured(config)
 			skipUnlessServerInfrastructureRefConfigured()
 
 			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-			network, err := regionClient.CreateNetwork(ctx, networkReq)
-			Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
-			Expect(network).NotTo(BeNil())
-
+			network, cleanupNetwork := api.MustProvisionNetwork(regionClient, ctx, networkReq)
+			DeferCleanup(cleanupNetwork)
 			networkID = network.Metadata.Id
-
-			DeferCleanup(func() {
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil {
-					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
-				}
-			})
-
-			waitForNetworkProvisioned(networkID)
 		})
 
 		Describe("Given an infrastructure reference", func() {
@@ -226,23 +182,10 @@ var _ = Describe("Server Management", func() {
 					WithInfrastructureRef(infrastructureRef).
 					Build()
 
-				created, err := regionClient.CreateServer(ctx, createReq)
-				Expect(err).NotTo(HaveOccurred(), "failed to create pinned server")
-				Expect(created).NotTo(BeNil())
-				Expect(created.Metadata.Id).NotTo(BeEmpty())
+				created, cleanup := api.MustCreateServer(regionClient, ctx, createReq)
+				DeferCleanup(cleanup)
 
 				serverID := created.Metadata.Id
-				DeferCleanup(func() {
-					err := regionClient.DeleteServer(ctx, serverID)
-					if errors.Is(err, coreclient.ErrResourceNotFound) {
-						return
-					}
-					if err != nil {
-						GinkgoWriter.Printf("Warning: cleanup delete pinned server %s: %v\n", serverID, err)
-						return
-					}
-					waitForServerGone(serverID)
-				})
 
 				expectServerInfrastructureRef(created, infrastructureRef)
 

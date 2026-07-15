@@ -38,7 +38,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/securitygroup"
-	regionids "github.com/unikorn-cloud/region/pkg/ids"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -132,7 +132,7 @@ func minimalSGCreateRequest(networkID string) *openapi.SecurityGroupV2Create {
 	return &openapi.SecurityGroupV2Create{
 		Metadata: coreapi.ResourceWriteMetadata{Name: "test-sg"},
 		Spec: openapi.SecurityGroupV2CreateSpec{
-			NetworkId: regionids.MustParseNetworkID(networkID),
+			NetworkId: idstest.MustParseNetworkID(networkID),
 			Rules:     openapi.SecurityGroupRuleV2List{},
 		},
 	}
@@ -275,7 +275,7 @@ func TestSGGetV2(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read))
 
-	result, err := c.GetV2(ctx, regionids.MustParseSecurityGroupID(sgSecurityGroupID))
+	result, err := c.GetV2(ctx, idstest.MustParseSecurityGroupID(sgSecurityGroupID))
 
 	require.NoError(t, err)
 	require.Equal(t, sgSecurityGroupID, result.Metadata.Id)
@@ -413,7 +413,7 @@ func TestSGDeleteV2(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read, identityapi.Delete))
 
-	require.NoError(t, c.DeleteV2(ctx, regionids.MustParseSecurityGroupID(sgSecurityGroupID)))
+	require.NoError(t, c.DeleteV2(ctx, idstest.MustParseSecurityGroupID(sgSecurityGroupID)))
 
 	_, err := c.GetV2Raw(ctx, sgSecurityGroupID)
 	require.Error(t, err)
@@ -428,7 +428,7 @@ func TestSGDeleteV2NotFound(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read, identityapi.Delete))
 
-	err := c.DeleteV2(ctx, regionids.MustParseSecurityGroupID(sgNonexistentID))
+	err := c.DeleteV2(ctx, idstest.MustParseSecurityGroupID(sgNonexistentID))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -444,7 +444,7 @@ func TestSGDeleteV2NoDeletePermission(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read))
 
-	err := c.DeleteV2(ctx, regionids.MustParseSecurityGroupID(sgSecurityGroupID))
+	err := c.DeleteV2(ctx, idstest.MustParseSecurityGroupID(sgSecurityGroupID))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
@@ -462,7 +462,7 @@ func TestSGDeleteV2InUse(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read, identityapi.Delete))
 
-	err := c.DeleteV2(ctx, regionids.MustParseSecurityGroupID(sgSecurityGroupID))
+	err := c.DeleteV2(ctx, idstest.MustParseSecurityGroupID(sgSecurityGroupID))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden (in use), got: %v", err)
@@ -482,7 +482,7 @@ func TestSGDeleteV2AlreadyDeleting(t *testing.T) {
 
 	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read, identityapi.Delete))
 
-	require.NoError(t, c.DeleteV2(ctx, regionids.MustParseSecurityGroupID(sgSecurityGroupID)))
+	require.NoError(t, c.DeleteV2(ctx, idstest.MustParseSecurityGroupID(sgSecurityGroupID)))
 }
 
 // TestSGUpdateV2 verifies a successful update applies the requested rules and returns
@@ -514,7 +514,7 @@ func TestSGUpdateV2(t *testing.T) {
 		},
 	}
 
-	result, err := c.UpdateV2(ctx, regionids.MustParseSecurityGroupID(sgSecurityGroupID), request)
+	result, err := c.UpdateV2(ctx, idstest.MustParseSecurityGroupID(sgSecurityGroupID), request)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -537,7 +537,7 @@ func TestSGUpdateV2NotFound(t *testing.T) {
 		Spec:     openapi.SecurityGroupV2Spec{Rules: openapi.SecurityGroupRuleV2List{}},
 	}
 
-	_, err := c.UpdateV2(ctx, regionids.MustParseSecurityGroupID(sgNonexistentID), request)
+	_, err := c.UpdateV2(ctx, idstest.MustParseSecurityGroupID(sgNonexistentID), request)
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -558,7 +558,7 @@ func TestSGUpdateV2NoPermission(t *testing.T) {
 		Spec:     openapi.SecurityGroupV2Spec{Rules: openapi.SecurityGroupRuleV2List{}},
 	}
 
-	_, err := c.UpdateV2(ctx, regionids.MustParseSecurityGroupID(sgSecurityGroupID), request)
+	_, err := c.UpdateV2(ctx, idstest.MustParseSecurityGroupID(sgSecurityGroupID), request)
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
@@ -584,7 +584,7 @@ func TestSGUpdateV2BeingDeleted(t *testing.T) {
 		Spec:     openapi.SecurityGroupV2Spec{Rules: openapi.SecurityGroupRuleV2List{}},
 	}
 
-	_, err := c.UpdateV2(ctx, regionids.MustParseSecurityGroupID(sgSecurityGroupID), request)
+	_, err := c.UpdateV2(ctx, idstest.MustParseSecurityGroupID(sgSecurityGroupID), request)
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsBadRequest(err), "expected bad request (being deleted), got: %v", err)

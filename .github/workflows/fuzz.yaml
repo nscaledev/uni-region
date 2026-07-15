@@ -1,0 +1,110 @@
+name: API Fuzz
+on:
+  schedule:
+  # Nightly, offset from the dev/uat API tests (07:00 UTC) to avoid contention.
+  - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      max_examples:
+        description: Generated examples per operation
+        type: string
+        default: '100'
+      seed:
+        description: Generation seed (fixed for reproducible runs)
+        type: string
+        default: '0'
+      skip_slack_notifications:
+        description: Skip Slack notifications
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  Fuzz:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required for OTLP test-history shipping over the Teleport bot.
+      id-token: write
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: go.mod
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Install Helm
+      uses: azure/setup-helm@v4
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Generate random suffix
+      id: rand
+      run: echo "suffix=$(head /dev/urandom | tr -dc a-z0-9 | head -c 8)" >> "$GITHUB_OUTPUT"
+
+    - name: Prepare KinD config
+      run: |
+        go mod download github.com/unikorn-cloud/identity
+        identity_dir="$(go list -m -f '{{.Dir}}' github.com/unikorn-cloud/identity)"
+        cp "${identity_dir}/hack/ci/kind-config.yaml" "${RUNNER_TEMP}/kind-config.yaml"
+
+    - name: Create KinD cluster
+      uses: helm/kind-action@v1
+      with:
+        cluster_name: region-fuzz-${{ github.run_id }}
+        config: ${{ runner.temp }}/kind-config.yaml
+
+    - name: Install cluster infrastructure
+      env:
+        KIND_CLUSTER: region-fuzz-${{ github.run_id }}
+      run: make integration-infra
+
+    - name: Install region
+      env:
+        KIND_CLUSTER: region-fuzz-${{ github.run_id }}
+        KIND_SUFFIX: ${{ steps.rand.outputs.suffix }}
+      run: make integration-install
+
+    - name: Create test fixtures
+      env:
+        KIND_CLUSTER: region-fuzz-${{ github.run_id }}
+        KIND_SUFFIX: ${{ steps.rand.outputs.suffix }}
+      run: make integration-fixtures
+
+    - name: Run API fuzzing
+      env:
+        FUZZ_MAX_EXAMPLES: ${{ github.event.inputs.max_examples || '100' }}
+        FUZZ_SEED: ${{ github.event.inputs.seed || '0' }}
+      run: make test-api-fuzz
+
+    - name: Upload fuzz results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: api-fuzz-results
+        path: fuzz-results.xml
+
+    - name: Report fuzz results
+      uses: nscaledev/quality-tooling/.github/actions/test-results-report@main
+      if: ${{ !cancelled() }}
+      with:
+        test-results-path: fuzz-results.xml
+        format: junit
+        workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        send-slack: ${{ github.event.inputs.skip_slack_notifications != 'true' && 'true' || 'false' }}
+        environment: kind
+        deployed-version: ${{ github.sha }}
+        title: 'Region API Fuzz Results'
+        test-history-suite: uni-region-fuzz
+        enable-ai-analysis: 'true'
+        claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

@@ -99,6 +99,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     Required flavor traits are sent as positive Placement `required` entries;
     forbidden flavor traits are sent as `!TRAIT` entries. Empty trait inputs
     mean no trait filter. A miss yields and lets the controller retry.
+- SSH injection is a create-time server decision. OpenStack receives the
+  identity key name only for the resolved `identityKeypair` mode; `ca` and
+  `none` omit Nova `key_name`.
 - `OpenstackIdentity` is the remaining persisted provider-state anchor. It
   currently stores the secret-bearing user/project/application-credential and
   bootstrap state needed to operate on behalf of a region `Identity`.
@@ -117,6 +120,15 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   server with a baremetal flavor is disambiguated through Ironic so the API
   can distinguish `Queued` (waiting on hardware) from `Building` (provider
   actively deploying).
+- VolumeClass configuration follows the same inventory pattern for block
+  storage: Region configuration under
+  `openstack.blockStorage.volumeClasses` selects which provider volume classes
+  are eligible for export and enriches them with user-facing metadata such as
+  media, maximum performance caps, and encryption signals. OpenStack maps this
+  configuration to Cinder volume types internally. Maximum performance metadata
+  records caps rather than guaranteed reservations. `VolumeClass` is
+  Region-scoped inventory configuration, not a project-owned resource or
+  lifecycle object.
 - Image handling is a first-class contract surface here:
   - OpenStack image properties are validated against a schema
   - public images can additionally be signature-verified
@@ -146,7 +158,11 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   does, however, latch the monitor-owned `status.provisionedAt` field from Nova
   `launched_at` the first time a server is seen booted (write-once, never
   cleared, independent of live power state), which the controller's rebuild guard
-  relies on. The lookup is
+  relies on. Alongside it, `setServerMACAddress` records the other monitor-owned
+  field, `status.macAddress`, from the Nova response once the server is `ACTIVE`
+  (the port MAC rides inline in `addresses`, reused from the same `GetServer` — no
+  extra call). ACTIVE is required because baremetal Ironic rebinds the port to the
+  real NIC MAC asynchronously; the value is only ever written, never cleared. The lookup is
   filtered by `instance_uuid`. Because Ironic node ownership and visibility
   are provider infrastructure concerns rather than tenant workload operations,
   this lookup uses the Region top-level provider credentials scoped to the
