@@ -1487,6 +1487,38 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/servers/{serverID}/rebuild/retry:
+    description: |-
+      Retries a failed Region-issued server image rebuild.
+    parameters:
+    - $ref: '#/components/parameters/serverIDParameter'
+    post:
+      x-hidden: true
+      x-no-body: true
+      description: |-
+        Retries rebuilding the server with its existing desired imageId. This is
+        only valid after a Region-issued rebuild has failed. Rebuild recreates
+        the root disk and destroys its contents; it does not evacuate a server
+        from a failed compute host.
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/servers/{serverID}/stop:
     description: |-
       Manages servers.
@@ -3312,9 +3344,15 @@ components:
       - imageId
       properties:
         flavorId:
-          $ref: '#/components/schemas/flavorId'
+          description: The server flavor. This field is immutable after creation.
+          allOf:
+          - $ref: '#/components/schemas/flavorId'
         imageId:
-          $ref: '#/components/schemas/imageId'
+          description: |-
+            The desired server image. Changing this field rebuilds the server,
+            recreating the root disk and destroying its contents.
+          allOf:
+          - $ref: '#/components/schemas/imageId'
         networking:
           $ref: '#/components/schemas/serverV2Networking'
         userData:

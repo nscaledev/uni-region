@@ -62,6 +62,14 @@ related dependencies rather than from nested path scope.
   layer and is rejected with HTTP 409 without a read-before-write
 - server names are immutable after creation; update requests that supply a
   different name are rejected with HTTP 422
+- changing a v2 server's `imageId` is a destructive in-place Nova rebuild. It
+  recreates the root disk and destroys its contents while retaining the server
+  UUID, ports, fixed and floating IP relationships, attached data volumes,
+  flavor, metadata, and placement. Flavor changes remain unsupported and are
+  rejected with HTTP 422.
+- `POST /api/v2/servers/{serverID}/rebuild/retry` re-arms the same desired image
+  only after an accepted Region-issued rebuild has failed. It does not select a
+  new image, move the server, or recover a failed compute host.
 
 ## Invariants And Guard Rails
 
@@ -90,6 +98,9 @@ related dependencies rather than from nested path scope.
 - Servers provisioned before this mechanism was introduced have random-UUID
   names and are not covered by it; deduplication applies only to resources
   created after deployment.
+- Image rebuild automatically submits at most one Nova-accepted action for a
+  target image and rebuild generation. A failed accepted action requires an
+  explicit retry, another image update, or server replacement.
 
 ## Caveats
 

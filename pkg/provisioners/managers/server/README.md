@@ -17,6 +17,19 @@ Distinctive behaviour:
   reached it aborts terminally rather than retrying further
 - clears or updates consumed-resource references during reprovision and teardown
 
+Create recovery and image rebuild recovery deliberately use different state:
+
+| Initial create failure | Image rebuild failure |
+|---|---|
+| Server never launched | Server previously launched |
+| Delete/recreate, bounded by the existing flag | One accepted attempt per target/generation |
+| `ProviderCreateFailures` | `Status.Rebuild` |
+| Exhaustion is operator-terminal | User retries, selects another image, or replaces the server |
+
+The rebuild state machine lives in the OpenStack provider's existing-server
+reconciliation path. It does not reset, reuse, or broaden the create retry
+counter and predicates.
+
 This is the clearest controller-side expression of the lifecycle DAG model:
 
 - network/security-group/SSH-CA edges are explicit and blocking

@@ -316,6 +316,9 @@ type ClientInterface interface {
 	// PostApiV2ServersServerIDHardreboot request
 	PostApiV2ServersServerIDHardreboot(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PostApiV2ServersServerIDRebuildRetry request
+	PostApiV2ServersServerIDRebuildRetry(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PostApiV2ServersServerIDSnapshotWithBody request with any body
 	PostApiV2ServersServerIDSnapshotWithBody(ctx context.Context, serverID ServerIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1313,6 +1316,18 @@ func (c *Client) GetApiV2ServersServerIDConsolesessions(ctx context.Context, ser
 
 func (c *Client) PostApiV2ServersServerIDHardreboot(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostApiV2ServersServerIDHardrebootRequest(c.Server, serverID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiV2ServersServerIDRebuildRetry(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV2ServersServerIDRebuildRetryRequest(c.Server, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -4776,6 +4791,40 @@ func NewPostApiV2ServersServerIDHardrebootRequest(server string, serverID Server
 	return req, nil
 }
 
+// NewPostApiV2ServersServerIDRebuildRetryRequest generates requests for PostApiV2ServersServerIDRebuildRetry
+func NewPostApiV2ServersServerIDRebuildRetryRequest(server string, serverID ServerIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "serverID", runtime.ParamLocationPath, serverID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/servers/%s/rebuild/retry", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewPostApiV2ServersServerIDSnapshotRequest calls the generic PostApiV2ServersServerIDSnapshot builder with application/json body
 func NewPostApiV2ServersServerIDSnapshotRequest(server string, serverID ServerIDParameter, body PostApiV2ServersServerIDSnapshotJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -5443,6 +5492,9 @@ type ClientWithResponsesInterface interface {
 
 	// PostApiV2ServersServerIDHardrebootWithResponse request
 	PostApiV2ServersServerIDHardrebootWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDHardrebootResponse, error)
+
+	// PostApiV2ServersServerIDRebuildRetryWithResponse request
+	PostApiV2ServersServerIDRebuildRetryWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDRebuildRetryResponse, error)
 
 	// PostApiV2ServersServerIDSnapshotWithBodyWithResponse request with any body
 	PostApiV2ServersServerIDSnapshotWithBodyWithResponse(ctx context.Context, serverID ServerIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDSnapshotResponse, error)
@@ -7178,6 +7230,34 @@ func (r PostApiV2ServersServerIDHardrebootResponse) StatusCode() int {
 	return 0
 }
 
+type PostApiV2ServersServerIDRebuildRetryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON409      *externalRef0.ConflictResponse
+	JSON422      *externalRef0.UnprocessableContentResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApiV2ServersServerIDRebuildRetryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApiV2ServersServerIDRebuildRetryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type PostApiV2ServersServerIDSnapshotResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8150,6 +8230,15 @@ func (c *ClientWithResponses) PostApiV2ServersServerIDHardrebootWithResponse(ctx
 		return nil, err
 	}
 	return ParsePostApiV2ServersServerIDHardrebootResponse(rsp)
+}
+
+// PostApiV2ServersServerIDRebuildRetryWithResponse request returning *PostApiV2ServersServerIDRebuildRetryResponse
+func (c *ClientWithResponses) PostApiV2ServersServerIDRebuildRetryWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDRebuildRetryResponse, error) {
+	rsp, err := c.PostApiV2ServersServerIDRebuildRetry(ctx, serverID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiV2ServersServerIDRebuildRetryResponse(rsp)
 }
 
 // PostApiV2ServersServerIDSnapshotWithBodyWithResponse request with arbitrary body returning *PostApiV2ServersServerIDSnapshotResponse
@@ -11946,6 +12035,74 @@ func ParsePostApiV2ServersServerIDHardrebootResponse(rsp *http.Response) (*PostA
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostApiV2ServersServerIDRebuildRetryResponse parses an HTTP response from a PostApiV2ServersServerIDRebuildRetryWithResponse call
+func ParsePostApiV2ServersServerIDRebuildRetryResponse(rsp *http.Response) (*PostApiV2ServersServerIDRebuildRetryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApiV2ServersServerIDRebuildRetryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest externalRef0.ConflictResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest externalRef0.UnprocessableContentResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest externalRef0.InternalServerErrorResponse

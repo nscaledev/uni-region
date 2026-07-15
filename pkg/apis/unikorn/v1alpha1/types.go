@@ -1057,6 +1057,11 @@ type ServerSpec struct {
 	SSHInjection *ServerSSHInjection `json:"sshInjection,omitempty"`
 	// UserData contains configuration information or scripts to use upon launch.
 	UserData []byte `json:"userData,omitempty"`
+	// RebuildGeneration is incremented by the Region API when a user explicitly
+	// retries a failed rebuild against the current desired image. It is internal
+	// lifecycle intent rather than a public server configuration field.
+	// +kubebuilder:validation:Minimum=0
+	RebuildGeneration int64 `json:"rebuildGeneration,omitempty"`
 	// InfrastructureRef pins the server to a specific physical host. When set,
 	// the provider bypasses its scheduler and provisions directly onto the
 	// identified host.
@@ -1156,6 +1161,23 @@ type ServerStatus struct {
 	// ProviderCreateRetrying is true while the controller is deleting a failed
 	// provider server before making another create attempt.
 	ProviderCreateRetrying bool `json:"providerCreateRetrying,omitempty"`
+	// Rebuild records the most recent Region-issued rebuild intent. Nova remains
+	// authoritative for the live server image and operation state; this marker is
+	// only used to distinguish a failed rebuild from an unrelated runtime error.
+	Rebuild *ServerRebuildStatus `json:"rebuild,omitempty"`
+}
+
+type ServerRebuildStatus struct {
+	// TargetImageID is the desired image of the rebuild Region issued.
+	TargetImageID regionids.ImageID `json:"targetImageID"`
+	// Generation identifies the explicit rebuild retry generation associated
+	// with this attempt.
+	// +kubebuilder:validation:Minimum=0
+	Generation int64 `json:"generation"`
+	// AcceptedAttempts counts rebuild requests that Nova acknowledged for this
+	// target and generation.
+	// +kubebuilder:validation:Minimum=0
+	AcceptedAttempts int32 `json:"acceptedAttempts,omitempty"`
 }
 
 // OpenstackServerList is a typed list of servers.

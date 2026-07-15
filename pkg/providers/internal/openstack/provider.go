@@ -433,14 +433,14 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	for i := range resources {
 		flavor := &resources[i]
 
-		// API memory is in MiB, disk is in GB
+		// API memory is in MiB and disk is in GB. Architecture remains
+		// unknown unless Region metadata supplies it below.
 		f := types.Flavor{
-			ID:           flavor.ID,
-			Name:         flavor.Name,
-			Architecture: types.X86_64,
-			CPUs:         flavor.VCPUs,
-			Memory:       resource.NewQuantity(int64(flavor.RAM)<<20, resource.BinarySI),
-			Disk:         resource.NewScaledQuantity(int64(flavor.Disk), resource.Giga),
+			ID:     flavor.ID,
+			Name:   flavor.Name,
+			CPUs:   flavor.VCPUs,
+			Memory: resource.NewQuantity(int64(flavor.RAM)<<20, resource.BinarySI),
+			Disk:   resource.NewScaledQuantity(int64(flavor.Disk), resource.Giga),
 		}
 
 		// Apply any extra metadata to the flavor.
@@ -569,7 +569,7 @@ func imageArchitecture(image *images.Image) types.Architecture {
 		return types.Architecture(v)
 	}
 
-	return types.X86_64
+	return ""
 }
 
 func imageTags(image *images.Image) map[string]string {
@@ -2148,6 +2148,8 @@ func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, 
 		return corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "server is healthy"
 	case "ERROR":
 		return corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server is in an error state"
+	case "REBUILD":
+		return corev1.ConditionFalse, unikornv1core.ConditionReasonProvisioning, "server is rebuilding"
 	case "UNKNOWN":
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
 	default:
@@ -2293,6 +2295,12 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 	// state to pick Queued vs Building.
 	if openstackserver.Status == "BUILD" {
 		server.Status.Phase = buildPhase(ironicNode)
+
+		return
+	}
+
+	if openstackserver.Status == "REBUILD" {
+		server.Status.Phase = unikornv1.InstanceLifecyclePhaseBuilding
 
 		return
 	}
@@ -2513,6 +2521,141 @@ func (p *Provider) reconcileLoadBalancerFloatingIP(ctx context.Context, client F
 	return nil
 }
 
+func serverRebuildMatches(server *unikornv1.Server, imageID regionids.ImageID) bool {
+	return server.Status.Rebuild != nil &&
+		server.Status.Rebuild.TargetImageID == imageID &&
+		server.Status.Rebuild.Generation == server.Spec.RebuildGeneration
+}
+
+func serverPreviouslyLaunched(server *unikornv1.Server) bool {
+	return server.Status.ProvisionedAt != nil || server.Status.LaunchedAt != nil
+}
+
+func openstackServerImageID(server *servers.Server) (regionids.ImageID, bool) {
+	value, ok := server.Image["id"].(string)
+	if !ok || value == "" {
+		return regionids.ImageID{}, false
+	}
+
+	imageID, err := regionids.ParseImageID(value)
+	if err != nil {
+		return regionids.ImageID{}, false
+	}
+
+	return imageID, true
+}
+
+func markServerRebuilding(server *unikornv1.Server, message string) {
+	server.Status.Phase = unikornv1.InstanceLifecyclePhaseBuilding
+	server.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionUnknown, unikornv1core.ConditionReasonProvisioning, message)
+}
+
+func reconcileServerImageError(ctx context.Context, server *unikornv1.Server, openstackServer *servers.Server, currentImageID, desiredImageID regionids.ImageID) (bool, error) {
+	if openstackServer.Status != "ERROR" {
+		return false, nil
+	}
+
+	setServerHealthStatus(server, openstackServer)
+	setServerPhase(ctx, server, openstackServer, nil)
+
+	if serverRebuildMatches(server, desiredImageID) && server.Status.Rebuild.AcceptedAttempts > 0 {
+		return true, provisioners.UserActionRequired("server_rebuild_failed", "server rebuild failed; retry the rebuild, select another image, or replace the server")
+	}
+
+	retryRequested := server.Status.Rebuild != nil &&
+		server.Status.Rebuild.TargetImageID == desiredImageID &&
+		server.Status.Rebuild.Generation < server.Spec.RebuildGeneration
+	if currentImageID == desiredImageID && !retryRequested {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func submitServerRebuild(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, options ServerRebuildOptions) (*servers.Server, error) {
+	rebuilt, err := client.RebuildServer(ctx, openstackServer.ID, options)
+	if err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			markServerRebuilding(server, "Waiting for the server to enter a rebuildable state")
+
+			return openstackServer, provisioners.ErrYield
+		}
+
+		return nil, err
+	}
+
+	server.Status.Rebuild.AcceptedAttempts = 1
+
+	if rebuilt != nil {
+		setServerHealthStatus(server, rebuilt)
+		setServerPhase(ctx, server, rebuilt, nil)
+	} else {
+		markServerRebuilding(server, "Server rebuild accepted")
+	}
+
+	return rebuilt, provisioners.ErrYield
+}
+
+func serverRebuildReady(server *unikornv1.Server, desiredImageID regionids.ImageID) bool {
+	if !serverRebuildMatches(server, desiredImageID) {
+		server.Status.Rebuild = &unikornv1.ServerRebuildStatus{
+			TargetImageID: desiredImageID,
+			Generation:    server.Spec.RebuildGeneration,
+		}
+	}
+
+	return server.Status.Rebuild.AcceptedAttempts == 0
+}
+
+func reconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, keyName string) (*servers.Server, error) {
+	if openstackServer.Status == "REBUILD" {
+		setServerHealthStatus(server, openstackServer)
+		setServerPhase(ctx, server, openstackServer, nil)
+
+		return openstackServer, provisioners.ErrYield
+	}
+
+	if server.Spec.Image == nil {
+		return openstackServer, nil
+	}
+
+	currentImageID, ok := openstackServerImageID(openstackServer)
+	if !ok {
+		return openstackServer, nil
+	}
+
+	desiredImageID := server.Spec.Image.ID
+
+	if currentImageID == desiredImageID {
+		if openstackServer.Status != "ERROR" {
+			server.Status.Rebuild = nil
+
+			return openstackServer, nil
+		}
+	}
+
+	handled, err := reconcileServerImageError(ctx, server, openstackServer, currentImageID, desiredImageID)
+	if handled || err != nil {
+		return openstackServer, err
+	}
+
+	if !serverPreviouslyLaunched(server) {
+		return openstackServer, nil
+	}
+
+	if !serverRebuildReady(server, desiredImageID) {
+		markServerRebuilding(server, "Waiting for the accepted server rebuild to converge")
+
+		return openstackServer, provisioners.ErrYield
+	}
+
+	return submitServerRebuild(ctx, client, server, openstackServer, ServerRebuildOptions{
+		ImageID:  desiredImageID,
+		KeyName:  keyName,
+		UserData: server.Spec.UserData,
+	})
+}
+
 func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight serverCreatePreflight) (*servers.Server, error) {
 	log := log.FromContext(ctx)
 
@@ -2520,7 +2663,7 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 	if err == nil {
 		log.V(1).Info("server already exists")
 
-		return openstackServer, nil
+		return reconcileServerImage(ctx, client, server, openstackServer, keyName)
 	}
 
 	networks := []servers.Network{
@@ -2622,11 +2765,13 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
-	if _, err := p.reconcileServer(ctx, compute, serverForCreate, port, resolveServerKeyName(server, openstackIdentity), p.serverCreatePlacementPreflight(identity, compute)); err != nil {
-		return err
+	_, reconcileErr := p.reconcileServer(ctx, compute, serverForCreate, port, resolveServerKeyName(server, openstackIdentity), p.serverCreatePlacementPreflight(identity, compute))
+
+	if serverForCreate != server {
+		server.Status.Rebuild = serverForCreate.Status.Rebuild.DeepCopy()
 	}
 
-	return nil
+	return reconcileErr
 }
 
 func resolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {

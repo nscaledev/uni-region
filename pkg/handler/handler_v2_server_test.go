@@ -33,6 +33,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	identityv1 "github.com/unikorn-cloud/identity/pkg/apis/unikorn/v1alpha1"
@@ -50,6 +51,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	mockprovider "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 
@@ -73,6 +75,42 @@ func fakeClientWithSchema(t *testing.T, objects ...client.Object) client.Client 
 	}
 
 	return b.Build()
+}
+
+func TestServerV2_RetryRebuildAccepted(t *testing.T) {
+	t.Parallel()
+
+	const (
+		namespace  = "region-test-home"
+		orgID      = "11111111-1111-4111-a111-111111111111"
+		projectID  = "22222222-2222-4222-a222-222222222222"
+		serverName = "33333333-3333-4333-a333-333333333333"
+	)
+
+	resource := newServer(t, serverName, namespace, projectScopedLabels(orgID, projectID, labels{
+		regionconstants.ResourceAPIVersionLabel: "2",
+	}))
+	resource.Spec.RebuildGeneration = 3
+	resource.Status.Rebuild = &regionv1.ServerRebuildStatus{
+		TargetImageID:    resource.Spec.Image.ID,
+		Generation:       resource.Spec.RebuildGeneration,
+		AcceptedAttempts: 1,
+	}
+	resource.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server rebuild failed")
+
+	handler := NewServerV2Handler(common.ClientArgs{
+		Client:    fakeClientWithSchema(t, resource),
+		Namespace: namespace,
+	})
+	ctx := newOrganisationACLBuilder(orgID).
+		addEndpoint("region:servers", identityapi.Read, identityapi.Update).
+		buildContext(t.Context())
+	request := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v2/servers/"+serverName+"/rebuild/retry", nil)
+	response := httptest.NewRecorder()
+
+	handler.PostApiV2ServersServerIDRebuildRetry(response, request, idstest.MustParseServerID(serverName))
+
+	require.Equal(t, http.StatusAccepted, response.Result().StatusCode)
 }
 
 type aclBuilder struct {

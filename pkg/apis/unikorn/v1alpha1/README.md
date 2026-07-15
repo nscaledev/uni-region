@@ -94,6 +94,13 @@ stored objects rely on for linkage, migration, and operational coordination.
   policies plus the optional hidden `system-default` baseline — caps policy names
   at 19 characters, and validates the schedule/retention shape so direct CRD
   writes cannot persist unsupported policy combinations.
+- `Server.Spec.Image` is desired state. `Server.Spec.RebuildGeneration` is an
+  internal command generation owned by the Region retry API; ordinary server
+  updates preserve it. Nova's observed image and status remain authoritative
+  for live state. `Server.Status.Rebuild` only records the target, generation,
+  and accepted-attempt bookkeeping needed to classify a failed Region-issued
+  rebuild. It is not proof of provider reality, and missing or mismatched
+  bookkeeping must fail closed rather than authorize a destructive action.
 
 ## Caveats
 

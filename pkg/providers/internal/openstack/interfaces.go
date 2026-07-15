@@ -40,6 +40,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 )
 
 type ExternalNetworkInterface interface {
@@ -165,10 +166,17 @@ type ComputeQuotaInterface interface {
 	UpdateQuotas(ctx context.Context, projectID string) error
 }
 
+type ServerRebuildOptions struct {
+	ImageID  regionids.ImageID
+	KeyName  string
+	UserData []byte
+}
+
 type ServerInterface interface {
 	GetServer(ctx context.Context, server *unikornv1.Server) (*servers.Server, error)
 	CreateServer(ctx context.Context, server *unikornv1.Server, keyName string, networks []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error)
 	DeleteServer(ctx context.Context, id string) error
+	RebuildServer(ctx context.Context, id string, options ServerRebuildOptions) (*servers.Server, error)
 	RebootServer(ctx context.Context, id string, hard bool) error
 	StartServer(ctx context.Context, id string) error
 	StopServer(ctx context.Context, id string) error

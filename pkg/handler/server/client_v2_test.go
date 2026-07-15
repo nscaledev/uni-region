@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
@@ -41,8 +42,10 @@ import (
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -78,6 +81,44 @@ func newSrvFakeClient(t *testing.T, objects ...runtime.Object) *fake.ClientBuild
 	}
 
 	return builder
+}
+
+func TestServerRetryRebuildV2IncrementsGeneration(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	resource.Spec.RebuildGeneration = 4
+	resource.Status.Rebuild = &regionv1.ServerRebuildStatus{
+		TargetImageID:    resource.Spec.Image.ID,
+		Generation:       resource.Spec.RebuildGeneration,
+		AcceptedAttempts: 1,
+	}
+	resource.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server rebuild failed")
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
+
+	require.NoError(t, c.RetryRebuildV2(ctx, idstest.MustParseServerID(resource.Name)))
+
+	updated, err := c.GetV2Raw(ctx, resource.Name)
+	require.NoError(t, err)
+	require.Equal(t, int64(5), updated.Spec.RebuildGeneration)
+	require.Equal(t, resource.Spec.Image.ID, updated.Spec.Image.ID)
+}
+
+func TestServerRetryRebuildV2RejectsUnrelatedError(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	resource.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "unrelated error")
+
+	c := server.NewClientV2(common.ClientArgs{Client: newSrvFakeClient(t, resource).Build(), Namespace: srvNamespace})
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
+
+	err := c.RetryRebuildV2(ctx, idstest.MustParseServerID(resource.Name))
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err))
 }
 
 // testSrvNetworkWithProject returns a v2 Network object with the given project label.
@@ -910,6 +951,7 @@ func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 	network := testSrvNetworkWithProject(srvProjectID)
 	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, srvServerID, "ca-1")
 	resource.Spec.SSHInjection = ptr.To(regionv1.ServerSSHInjectionCA)
+	resource.Spec.RebuildGeneration = 7
 
 	k8sClient := newSrvFakeClient(t, network, resource).Build()
 
@@ -945,6 +987,63 @@ func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 	require.Equal(t, resource.Spec.SSHCertificateAuthorityID, updated.Spec.SSHCertificateAuthorityID)
 	require.NotNil(t, updated.Spec.SSHInjection)
 	require.Equal(t, regionv1.ServerSSHInjectionCA, *updated.Spec.SSHInjection)
+	require.Equal(t, int64(7), updated.Spec.RebuildGeneration)
+}
+
+func TestServerUpdateV2RejectsFlavorChange(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, resource).Build(),
+		Namespace: srvNamespace,
+	})
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: idstest.MustParseFlavorID("99999999-9999-4999-a999-999999999999"),
+			ImageId:  resource.Spec.Image.ID,
+		},
+	}
+
+	_, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err))
+}
+
+func TestServerUpdateV2ValidatesChangedImage(t *testing.T) {
+	t.Parallel()
+
+	const newImageID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+
+	ctrl := gomock.NewController(t)
+	resource := testServerV2(srvServerID)
+	network := testSrvNetworkWithProject(srvProjectID)
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().GetImage(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), idstest.MustParseImageID(newImageID)).
+		Return(&types.Image{ID: newImageID, Status: types.ImageStatusReady, Virtualization: types.Any}, nil)
+	provider.EXPECT().Flavors(gomock.Any()).Return(types.FlavorList{{ID: srvFlavorID}}, nil)
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(srvRegionID).Return(provider, nil)
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, network, resource).Build(),
+		Namespace: srvNamespace,
+		Providers: providers,
+	})
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  idstest.MustParseImageID(newImageID),
+		},
+	}
+
+	result, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
+	require.NoError(t, err)
+	require.Equal(t, idstest.MustParseImageID(newImageID), result.Spec.ImageId)
 }
 
 func TestServerGetV2ReturnsMACAddress(t *testing.T) {

@@ -125,6 +125,15 @@ func (h *ServerV2Handler) PostApiV2ServersServerIDStart(w http.ResponseWriter, r
 	w.WriteHeader(http.StatusAccepted)
 }
 
+func (h *ServerV2Handler) PostApiV2ServersServerIDRebuildRetry(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
+	if err := h.serverV2Client().RetryRebuildV2(r.Context(), serverID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
 func (h *ServerV2Handler) PostApiV2ServersServerIDStop(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	if err := h.serverV2Client().StopV2(r.Context(), serverID); err != nil {
 		errors.HandleError(w, r, err)

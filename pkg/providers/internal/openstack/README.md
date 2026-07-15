@@ -101,7 +101,21 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     mean no trait filter. A miss yields and lets the controller retry.
 - SSH injection is a create-time server decision. OpenStack receives the
   identity key name only for the resolved `identityKeypair` mode; `ca` and
-  `none` omit Nova `key_name`.
+  `none` omit Nova `key_name`. Image rebuild explicitly reapplies the effective
+  key-name and user-data values (including managed SSH-CA cloud-init) so guest
+  access remains equivalent to initial create.
+- A desired server image change is reconciled with Nova rebuild only after the
+  server has launched previously. Nova's observed image and status authorize
+  each transition; Kubernetes rebuild status is safety bookkeeping only. The
+  provider submits at most one accepted action per target/generation, treats
+  `REBUILD` as `Building`, and parks an accepted action that settles in `ERROR`
+  until the API increments the rebuild generation or the desired image changes.
+  Missing or unrelated bookkeeping never turns a generic Nova `ERROR` into a
+  rebuild request.
+- Nova rebuild retains the server UUID, network ports and IP relationships,
+  attached data volumes, flavor, metadata, and placement, but recreates the
+  root disk. It stays on the same compute host; evacuation is a separate
+  operator workflow.
 - `OpenstackIdentity` is the remaining persisted provider-state anchor. It
   currently stores the secret-bearing user/project/application-credential and
   bootstrap state needed to operate on behalf of a region `Identity`.

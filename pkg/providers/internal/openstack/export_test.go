@@ -105,6 +105,10 @@ var MetadataKey = metadataKey
 //nolint:gochecknoglobals
 var ServerForCreate = serverForCreate
 
+func ReconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
+	return reconcileServerImage(ctx, client, server, openstackServer, "")
+}
+
 //nolint:gochecknoglobals
 var PlacementAPIMicroversion = placementAPIMicroversion
 

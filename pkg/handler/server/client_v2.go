@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net"
 	"reflect"
 	"slices"
@@ -78,6 +79,24 @@ func (c *ClientV2) getProvider(regionID string) (types.Provider, error) {
 	}
 
 	return provider, nil
+}
+
+func (c *ClientV2) validateUpdatedImage(ctx context.Context, network *regionv1.Network, current *regionv1.Server, request *openapi.ServerV2Update) error {
+	if current.Spec.Image != nil && current.Spec.Image.ID == request.Spec.ImageId {
+		return nil
+	}
+
+	provider, err := c.getProvider(network.Labels[constants.RegionLabel])
+	if err != nil {
+		return err
+	}
+
+	organizationID, _, err := current.OrganizationAndProjectID()
+	if err != nil {
+		return err
+	}
+
+	return validateServerImage(ctx, provider, organizationID, request.Spec.ImageId, request.Spec.FlavorId)
 }
 
 func convertSecurityGroupsV2(in []regionv1.ServerSecurityGroupSpec) *openapi.ServerV2SecurityGroupIDList {
@@ -644,6 +663,22 @@ func (c *ClientV2) GetV2(ctx context.Context, serverID regionids.ServerID) (*ope
 	return convertV2(result)
 }
 
+func validateServerUpdate(current *regionv1.Server, request *openapi.ServerV2Update) error {
+	if current.DeletionTimestamp != nil {
+		return errors.OAuth2InvalidRequest("server is being deleted")
+	}
+
+	if request.Metadata.Name != current.Labels[coreconstants.NameLabel] {
+		return errors.HTTPUnprocessableContent("server names are immutable")
+	}
+
+	if request.Spec.FlavorId != current.Spec.FlavorID {
+		return errors.HTTPUnprocessableContent("server flavor is immutable")
+	}
+
+	return nil
+}
+
 func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerV2Update) (*openapi.ServerV2Read, error) {
 	current, err := c.GetV2Raw(ctx, serverID.String())
 	if err != nil {
@@ -659,12 +694,8 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, re
 		return nil, err
 	}
 
-	if current.DeletionTimestamp != nil {
-		return nil, errors.OAuth2InvalidRequest("server is being deleted")
-	}
-
-	if request.Metadata.Name != current.Labels[coreconstants.NameLabel] {
-		return nil, errors.HTTPUnprocessableContent("server names are immutable")
+	if err := validateServerUpdate(current, request); err != nil {
+		return nil, err
 	}
 
 	// Security groups are mutable, so re-validate that every referenced group still
@@ -681,6 +712,10 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, re
 		return nil, err
 	}
 
+	if err := c.validateUpdatedImage(ctx, network, current, request); err != nil {
+		return nil, err
+	}
+
 	// User data is only consumed during initial server bootstrap. Updates preserve it for
 	// completeness and future rebuild support, but they do not re-run cloud-init validation.
 	required, err := c.generateV2(ctx, organizationID, projectID, request, network, current.Spec.SSHCertificateAuthorityID, current.Spec.InfrastructureRef, current.ResolvedSSHInjection())
@@ -692,6 +727,7 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, re
 	updated.Labels = required.Labels
 	updated.Annotations = required.Annotations
 	updated.Spec = required.Spec
+	updated.Spec.RebuildGeneration = current.Spec.RebuildGeneration
 
 	if err := c.Client.Client.Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
 		return nil, fmt.Errorf("%w: unable to update server", err)
@@ -802,6 +838,64 @@ func (c *ClientV2) StopV2(ctx context.Context, serverID regionids.ServerID) erro
 	}
 
 	return c.stop(ctx, identity, server, provider)
+}
+
+func validateRebuildRetry(server *regionv1.Server) error {
+	if server.DeletionTimestamp != nil {
+		return errors.OAuth2InvalidRequest("server is being deleted")
+	}
+
+	condition, err := server.StatusConditionRead(corev1.ConditionHealthy)
+	if err != nil || condition.Reason != corev1.ConditionReasonErrored {
+		return errors.HTTPUnprocessableContent("server does not have a failed rebuild to retry")
+	}
+
+	if server.Status.Rebuild == nil || server.Status.Rebuild.AcceptedAttempts == 0 {
+		return errors.HTTPUnprocessableContent("server does not have a failed rebuild to retry")
+	}
+
+	if server.Spec.Image == nil || server.Status.Rebuild.TargetImageID != server.Spec.Image.ID {
+		return errors.HTTPUnprocessableContent("failed rebuild does not match the current desired image")
+	}
+
+	if server.Status.Rebuild.Generation != server.Spec.RebuildGeneration {
+		return errors.HTTPUnprocessableContent("failed rebuild does not match the current desired image")
+	}
+
+	if server.Spec.RebuildGeneration == math.MaxInt64 {
+		return errors.HTTPUnprocessableContent("server rebuild retry generation is exhausted")
+	}
+
+	return nil
+}
+
+func (c *ClientV2) RetryRebuildV2(ctx context.Context, serverID regionids.ServerID) error {
+	server, err := c.GetV2Raw(ctx, serverID.String())
+	if err != nil {
+		return err
+	}
+
+	organizationID, projectID, err := server.OrganizationAndProjectID()
+	if err != nil {
+		return err
+	}
+
+	if err := rbac.AllowProjectScopeID(ctx, "region:servers", identityapi.Update, organizationID, projectID); err != nil {
+		return err
+	}
+
+	if err := validateRebuildRetry(server); err != nil {
+		return err
+	}
+
+	updated := server.DeepCopy()
+	updated.Spec.RebuildGeneration++
+
+	if err := c.Client.Client.Patch(ctx, updated, client.MergeFromWithOptions(server, &client.MergeFromWithOptimisticLock{})); err != nil {
+		return fmt.Errorf("%w: unable to request server rebuild retry", err)
+	}
+
+	return nil
 }
 
 func (c *ClientV2) RebootV2(ctx context.Context, serverID regionids.ServerID, hard bool) error {

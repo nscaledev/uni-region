@@ -1102,10 +1102,11 @@ type ServerV2Create struct {
 
 // ServerV2CreateSpec defines model for serverV2CreateSpec.
 type ServerV2CreateSpec struct {
-	// FlavorId A flavor ID.
+	// FlavorId The server flavor. This field is immutable after creation.
 	FlavorId FlavorId `json:"flavorId"`
 
-	// ImageId An image ID.
+	// ImageId The desired server image. Changing this field rebuilds the server,
+	// recreating the root disk and destroying its contents.
 	ImageId ImageId `json:"imageId"`
 
 	// InfrastructureRef A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
@@ -1161,10 +1162,11 @@ type ServerV2SecurityGroupIDList = []SecurityGroupId
 
 // ServerV2Spec A server's specification.
 type ServerV2Spec struct {
-	// FlavorId A flavor ID.
+	// FlavorId The server flavor. This field is immutable after creation.
 	FlavorId FlavorId `json:"flavorId"`
 
-	// ImageId An image ID.
+	// ImageId The desired server image. Changing this field rebuilds the server,
+	// recreating the root disk and destroying its contents.
 	ImageId ImageId `json:"imageId"`
 
 	// Networking A server's network configuration.
