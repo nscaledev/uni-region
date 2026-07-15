@@ -721,6 +721,11 @@ func MustProvisionNetwork(c *APIClient, ctx context.Context, createReq regionope
 // MustDeleteNetwork deletes the network and waits for it to disappear. A missing network
 // is treated as already deleted.
 func MustDeleteNetwork(c *APIClient, ctx context.Context, networkID string) {
+	if networkID == "" {
+		return
+	}
+
+	GinkgoWriter.Printf("Cleaning up network fixture: %s\n", networkID)
 	err := c.DeleteNetwork(ctx, networkID)
 
 	switch {
@@ -729,7 +734,7 @@ func MustDeleteNetwork(c *APIClient, ctx context.Context, networkID string) {
 	case errors.Is(err, coreclient.ErrResourceNotFound):
 		// Already gone; nothing to wait for.
 	default:
-		GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
+		Expect(err).NotTo(HaveOccurred(), "cleanup delete network %s", networkID)
 	}
 }
 
