@@ -26,6 +26,7 @@ import (
 // TestConfig extends the base config with Region-specific fields.
 type TestConfig struct {
 	coreconfig.BaseConfig
+	UserToken               string
 	OrgID                   string
 	ProjectID               string
 	RegionBaseURL           string
@@ -89,6 +90,7 @@ func LoadTestConfig() (*TestConfig, error) {
 			LogRequests:     v.GetBool("LOG_REQUESTS"),
 			LogResponses:    v.GetBool("LOG_RESPONSES"),
 		},
+		UserToken:               v.GetString("USER_AUTH_TOKEN"),
 		RegionBaseURL:           v.GetString("REGION_BASE_URL"),
 		RegionCACertPath:        v.GetString("REGION_CA_CERT"),
 		OrgID:                   v.GetString("TEST_ORG_ID"),

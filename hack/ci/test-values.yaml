@@ -1,0 +1,9 @@
+# Helm value overrides applied during integration testing.
+# Passed to hack/ci/install via --values.
+server:
+  # Run the downstream remote-authorization shadow comparator in CI: serve
+  # the legacy ACL-walk verdict, evaluate identity's central Cerbos PDP (via
+  # POST /authorization/check) in parallel, and log any disagreement for the
+  # divergence gate (hack/ci/divergence-gate) to read once the API suite has
+  # run (test/api/suites/rbac_matrix_test.go).
+  authorizationEngineMode: shadow

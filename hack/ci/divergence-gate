@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# CI gate: fail if region's downstream remote-authorization shadow comparator
+# logged ANY divergence from the legacy ACL walk during the integration run.
+# Run AFTER the API suite (test-api-ci; its traffic, principally
+# test/api/suites/rbac_matrix_test.go, is the gate's signal).
+#
+# Region's server logs are zap JSON; the remote shadow comparator
+# (uni-identity's pkg/rbac/remote_shadow.go, wired into region's dispatch via
+# --authorization-engine-mode=shadow) emits two DISTINCT messages and the
+# distinction is load-bearing — a naive grep for "shadow" would conflate them:
+#   - "remote shadow divergence": identity's remote /authorization/check
+#     produced a VERDICT that differs from region's legacy ACL walk —
+#     policy-parity signal; ANY occurrence fails the gate.
+#   - "remote shadow evaluation failure": NO verdict was obtained (identity
+#     unreachable, a timed-out check, an unclassified transport error) —
+#     infrastructure signal; tolerated but surfaced loudly so it can never
+#     masquerade as parity.
+#
+# These are REGION's own server logs, not identity's: region is the consumer
+# running the shadow comparator against identity's central PDP, so the
+# divergence signal lives in region's log stream. This is a distinct
+# comparator, with distinct message constants, from identity's OWN internal
+# "cerbos shadow divergence" pair (identity's local dispatch shadow
+# comparator, read by identity's own hack/ci/divergence-gate) — the two never
+# overlap and must not be grepped for together.
+#
+# Scope honesty: zero divergence here proves parity for the RBAC-matrix
+# traffic this run generated (test/api/suites/rbac_matrix_test.go) — an
+# admin and a project-scoped user, mixing allowed and denied (resource,
+# operation) pairs. It does NOT cover fail-closed or timeout behavior (those
+# are `enforce`-mode concerns with their own unit-test coverage upstream,
+# deferred to the shadow->enforce flip follow-up) or uni-compute's own
+# adoption (a separate cut).
+#
+# Usage: hack/ci/divergence-gate  (sources test/.env.install)
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+# shellcheck source=/dev/null
+source "${REPO_ROOT}/test/.env.install"
+
+DEPLOYMENT="deploy/${REGION_RELEASE}-server"
+CONTAINER="${REGION_RELEASE}-server"
+
+# The exact message constants from uni-identity's pkg/rbac/remote_shadow.go.
+DIVERGENCE_MSG='remote shadow divergence'
+FAILURE_MSG='remote shadow evaluation failure'
+
+# ── The gate is meaningless unless the server is actually in shadow mode ─────
+ARGS=$(kubectl get "${DEPLOYMENT}" -n "${REGION_NAMESPACE}" \
+  -o jsonpath="{.spec.template.spec.containers[?(@.name=='${CONTAINER}')].args}")
+if [[ "${ARGS}" != *"--authorization-engine-mode=shadow"* ]]; then
+  echo "ERROR: ${DEPLOYMENT} is not running with --authorization-engine-mode=shadow — the gate has nothing to read" >&2
+  exit 1
+fi
+
+# ── A restarted container truncates `kubectl logs` and voids the gate ────────
+RESTARTS=$(kubectl get pods -n "${REGION_NAMESPACE}" -l "app=${REGION_RELEASE}-server" \
+  -o jsonpath="{.items[*].status.containerStatuses[?(@.name=='${CONTAINER}')].restartCount}")
+if [[ -z "${RESTARTS}" ]]; then
+  echo "ERROR: no ${CONTAINER} container found to read restart counts from" >&2
+  exit 1
+fi
+for count in ${RESTARTS}; do
+  if [[ "${count}" -ne 0 ]]; then
+    echo "ERROR: ${CONTAINER} restarted ${count} time(s) — its logs are truncated, so a passing grep would be vacuous" >&2
+    exit 1
+  fi
+done
+
+LOGS=$(kubectl logs "${DEPLOYMENT}" -c "${CONTAINER}" -n "${REGION_NAMESPACE}")
+
+# Anchor on the exact zap message field so no other log field can conflate.
+DIVERGENCE_COUNT=$(grep -cF "\"msg\":\"${DIVERGENCE_MSG}\"" <<< "${LOGS}" || true)
+FAILURE_COUNT=$(grep -cF "\"msg\":\"${FAILURE_MSG}\"" <<< "${LOGS}" || true)
+
+# Self-check against log-encoder drift: if the raw constants appear in lines
+# the anchored greps did not count, the anchors are blind and a pass would be
+# vacuous — fail loudly instead.
+RAW_DIVERGENCE_COUNT=$(grep -cF "${DIVERGENCE_MSG}" <<< "${LOGS}" || true)
+RAW_FAILURE_COUNT=$(grep -cF "${FAILURE_MSG}" <<< "${LOGS}" || true)
+if [[ "${DIVERGENCE_COUNT}" -ne "${RAW_DIVERGENCE_COUNT}" || "${FAILURE_COUNT}" -ne "${RAW_FAILURE_COUNT}" ]]; then
+  echo "ERROR: shadow message constants found outside the expected \"msg\" field (divergence ${DIVERGENCE_COUNT}/${RAW_DIVERGENCE_COUNT}, failure ${FAILURE_COUNT}/${RAW_FAILURE_COUNT}) — log format drift would blind this gate; fix the gate's anchors" >&2
+  grep -F "${DIVERGENCE_MSG}" <<< "${LOGS}" >&2 || true
+  grep -F "${FAILURE_MSG}" <<< "${LOGS}" >&2 || true
+  exit 1
+fi
+
+# ── Evaluation failures: infrastructure signal — tolerated but surfaced ──────
+if [[ "${FAILURE_COUNT}" -gt 0 ]]; then
+  echo "WARNING: ${FAILURE_COUNT} shadow evaluation failure(s) — identity's /authorization/check produced NO verdict for these requests (infrastructure signal, not policy divergence). Tolerated, but the gate proved nothing for them — investigate:" >&2
+  grep -F "\"msg\":\"${FAILURE_MSG}\"" <<< "${LOGS}" >&2
+fi
+
+# ── Divergence: policy-parity signal — any occurrence fails the gate ─────────
+if [[ "${DIVERGENCE_COUNT}" -gt 0 ]]; then
+  echo "ERROR: ${DIVERGENCE_COUNT} shadow divergence(s) — identity's remote check returned a different verdict than region's legacy ACL walk. This is an authorization bug in the migration (e.g. under-provisioned region-service role) or a legacy quirk the resolver failed to replicate: escalate it, never special-case it. The divergent decisions:" >&2
+  grep -F "\"msg\":\"${DIVERGENCE_MSG}\"" <<< "${LOGS}" >&2
+  exit 1
+fi
+
+echo "==> Divergence gate passed: 0 divergences, ${FAILURE_COUNT} evaluation failure(s)." >&2
+echo "==> Scope: RBAC-matrix traffic only (test/api/suites/rbac_matrix_test.go) — enforce/timeout/fail-closed behavior and uni-compute's own adoption are separate, deferred concerns." >&2

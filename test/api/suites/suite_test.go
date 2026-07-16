@@ -35,6 +35,7 @@ var (
 	client          *api.APIClient
 	secondaryClient *api.APIClient // client for secondary org, used to test region visibility isolation
 	regionClient    *api.APIClient
+	userClient      *api.APIClient // project-scoped "user" role, used by the RBAC matrix
 	ctx             context.Context
 	config          *api.TestConfig
 )
@@ -47,6 +48,12 @@ var _ = BeforeSuite(func() {
 	client = api.NewAPIClientWithConfig(config)
 	regionClient = api.NewAPIClientWithConfig(config)
 	ctx = context.Background()
+
+	if config.UserToken != "" {
+		userConfig := *config
+		userConfig.AuthToken = config.UserToken
+		userClient = api.NewAPIClientWithConfig(&userConfig)
+	}
 
 	if config.SecondaryOrgID != "" && config.SecondaryAuthToken != "" {
 		secondaryConfig := *config

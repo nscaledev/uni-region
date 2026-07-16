@@ -582,6 +582,7 @@ integration-install:  ## Deploy identity dependency and region into the current 
 	  --identity-release-name $(IDENTITY_RELEASE) \
 	  --namespace $(KIND_NAMESPACE) \
 	  --release-name $(KIND_RELEASE) \
+	  --values hack/ci/test-values.yaml \
 	  > test/.env.install
 
 .PHONY: integration-fixtures
@@ -597,5 +598,9 @@ integration-fixtures:  ## Create integration fixtures and write test/.env
 	  --fixture-cert-duration "$(FIXTURE_CERT_DURATION)" \
 	  > test/.env
 
+.PHONY: integration-divergence-gate
+integration-divergence-gate:  ## Fail if the shadow comparator logged any authorization divergence (run after test-api-ci)
+	hack/ci/divergence-gate
+
 .PHONY: integration-test
-integration-test: kind-cluster integration-infra integration-install integration-fixtures test-api-ci  ## Full local integration run
+integration-test: kind-cluster integration-infra integration-install integration-fixtures test-api-ci integration-divergence-gate  ## Full local integration run
