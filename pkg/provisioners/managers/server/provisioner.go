@@ -300,6 +300,63 @@ func (p *Provisioner) providerCreateFailure() bool {
 	return ProviderCreateFailure(p.server)
 }
 
+// healthyConditionReason returns the reason of the server's Healthy condition,
+// or the empty reason when the condition is absent. An absent condition is
+// deliberately indistinguishable from an unsettled one for the settlement
+// predicate: neither is a settled outcome.
+func healthyConditionReason(server *unikornv1.Server) unikornv1core.ConditionReason {
+	condition, err := server.StatusConditionRead(unikornv1core.ConditionHealthy)
+	if err != nil {
+		return ""
+	}
+
+	return condition.Reason
+}
+
+// RebuildSettled reports whether a pending rebuild has just been observed
+// to settle. It is the wake signal for a pending rebuild and, like
+// ProviderCreateFailure, the single source of truth for that decision, shared by
+// the provisioner and the controller's watch predicate so the two can never
+// drift.
+//
+// During a rebuild window the reconciler completes after submission and makes no
+// further provider calls. The health monitor's poll is what writes the Healthy
+// condition transition when Nova finishes (ACTIVE -> Healthy, ERROR -> Errored).
+// This predicate turns that single status edge into exactly one reconcile; the
+// reconciler then decides what to do from its own fresh provider read
+// (observation is stimulus, never authorization).
+//
+// It fires iff all of the following hold:
+//   - updated has a pending rebuild marker (RebuildPending: a Nova-accepted
+//     attempt that has not yet been observed to settle);
+//   - updated's Healthy condition reason is a settled one (Healthy or Errored),
+//     i.e. Nova is no longer rebuilding;
+//   - the Healthy condition reason CHANGED between old and updated (an absent
+//     old condition counts as changed).
+//
+// The transition test keeps it quiet in steady state: a parked server's repeated
+// Errored writes are the same reason each time and do not re-fire, and the
+// reconciler's own submission patch (marker set plus Healthy Provisioning in one
+// update) never self-triggers. A settled->settled change (Healthy -> Errored)
+// DOES fire: a rebuilt-then-broken server needs its park pass. A nil old or nil
+// updated object is not a transition and returns false.
+func RebuildSettled(old, updated *unikornv1.Server) bool {
+	if old == nil || updated == nil {
+		return false
+	}
+
+	if !updated.RebuildPending() {
+		return false
+	}
+
+	updatedReason := healthyConditionReason(updated)
+	if updatedReason != unikornv1core.ConditionReasonHealthy && updatedReason != unikornv1core.ConditionReasonErrored {
+		return false
+	}
+
+	return updatedReason != healthyConditionReason(old)
+}
+
 func (p *Provisioner) resetProviderCreateRuntimeStatus(message string) {
 	p.server.Status.Phase = unikornv1.InstanceLifecyclePhasePending
 	p.server.Status.PrivateIP = nil

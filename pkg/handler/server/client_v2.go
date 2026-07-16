@@ -18,6 +18,7 @@ limitations under the License.
 package server
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -31,6 +32,7 @@ import (
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
@@ -78,6 +80,79 @@ func (c *ClientV2) getProvider(regionID string) (types.Provider, error) {
 	}
 
 	return provider, nil
+}
+
+func (c *ClientV2) validateUpdatedImage(ctx context.Context, network *regionv1.Network, current *regionv1.Server, request *openapi.ServerV2Update) error {
+	if current.Spec.Image != nil && current.Spec.Image.ID == request.Spec.ImageId {
+		return nil
+	}
+
+	provider, err := c.getProvider(network.Labels[constants.RegionLabel])
+	if err != nil {
+		return err
+	}
+
+	organizationID, _, err := current.OrganizationAndProjectID()
+	if err != nil {
+		return err
+	}
+
+	return validateServerImage(ctx, provider, organizationID, request.Spec.ImageId, request.Spec.FlavorId)
+}
+
+// validateCreateImage enforces the image contract on the create path: the
+// image must exist and be visible to the organization, be Ready, and be
+// architecture/disk/virtualization compatible with the requested flavor. It
+// mirrors validateUpdatedImage so create and update enforce a single contract
+// for imageId.
+func (c *ClientV2) validateCreateImage(ctx context.Context, network *regionv1.Network, request *openapi.ServerV2Create) error {
+	provider, err := c.getProvider(network.Labels[constants.RegionLabel])
+	if err != nil {
+		return err
+	}
+
+	organizationID, _, err := network.OrganizationAndProjectID()
+	if err != nil {
+		return err
+	}
+
+	return validateServerImage(ctx, provider, organizationID, request.Spec.ImageId, request.Spec.FlavorId)
+}
+
+// userDataChanged reports whether an update request would change the persisted
+// user-data. An omitted field (nil) matches only an absent stored value;
+// byte-identical payloads are unchanged.
+func userDataChanged(current []byte, request *[]byte) bool {
+	if request == nil {
+		return len(current) != 0
+	}
+
+	return !bytes.Equal(current, *request)
+}
+
+// validateUpdatedUserData applies the same boundary validation as create, but
+// only when the update would change the persisted user-data — unchanged
+// payloads are never re-validated, so legacy servers whose stored payloads
+// predate validation keep working when a client PUTs the same bytes back. The
+// CA-awareness flag derives from the server's current SSH certificate
+// authority because updates preserve the CA chosen at create time.
+func validateUpdatedUserData(current *regionv1.Server, request *openapi.ServerV2Update) error {
+	if !userDataChanged(current.Spec.UserData, request.Spec.UserData) {
+		return nil
+	}
+
+	return userdata.Validate(request.Spec.UserData, current.Spec.SSHCertificateAuthorityID != nil)
+}
+
+// validateUpdateV2Request runs the update-path validations that need the
+// parent network or the current resource: the image contract shared with
+// create, and re-validation of changed user-data.
+func (c *ClientV2) validateUpdateV2Request(ctx context.Context, network *regionv1.Network, current *regionv1.Server, request *openapi.ServerV2Update) error {
+	if err := c.validateUpdatedImage(ctx, network, current, request); err != nil {
+		return err
+	}
+
+	return validateUpdatedUserData(current, request)
 }
 
 func convertSecurityGroupsV2(in []regionv1.ServerSecurityGroupSpec) *openapi.ServerV2SecurityGroupIDList {
@@ -171,6 +246,26 @@ func sshInjectionStatus(in *regionv1.Server) *openapi.SshInjection {
 	return &out
 }
 
+// deriveProvisioningStatus reconciles the generic status conversion with a
+// rebuild in flight. Core's manager maps a completed reconcile to Provisioned,
+// but once Nova has accepted a rebuild the server's spec (its image) is not yet
+// realized, so a completed pass does not mean the server is settled. The sole
+// v2 consumer, uni-compute, gates instance settlement on
+// provisioningStatus == Provisioned (yield-and-poll in its
+// managers/instance/provisioner.go), and that poll is the only mechanism
+// projecting rebuild progress onto instances — so "provisioned" must keep
+// meaning "settled". We therefore rewrite only the Provisioned case to
+// Provisioning while a rebuild is pending; a parked rebuild surfaces as Errored
+// (status error) and every other status passes through untouched, so a failure
+// stays visible.
+func deriveProvisioningStatus(in *regionv1.Server, status coreapi.ResourceProvisioningStatus) coreapi.ResourceProvisioningStatus {
+	if in.RebuildPending() && status == coreapi.ResourceProvisioningStatusProvisioned {
+		return coreapi.ResourceProvisioningStatusProvisioning
+	}
+
+	return status
+}
+
 func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 	imageID, err := in.ImageID()
 	if err != nil {
@@ -182,8 +277,11 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 		return nil, err
 	}
 
+	metadata := conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags)
+	metadata.ProvisioningStatus = deriveProvisioningStatus(in, metadata.ProvisioningStatus)
+
 	out := &openapi.ServerV2Read{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
+		Metadata: metadata,
 		Spec: openapi.ServerV2Spec{
 			FlavorId:   in.Spec.FlavorID,
 			ImageId:    imageID,
@@ -533,7 +631,8 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 // create: SSH injection mode compatibility, that any user-data is well-formed
 // cloud-init, that any referenced SSH certificate authority shares the server's
 // organization and project, that any referenced security group belongs to the
-// server's network, and the infrastructure reference requirements of the
+// server's network, that the requested image is Ready and compatible with the
+// requested flavor, and the infrastructure reference requirements of the
 // requested flavor.
 func (c *ClientV2) validateCreateV2Request(ctx context.Context, request *openapi.ServerV2Create, network *regionv1.Network) error {
 	sshInjection := resolveSSHInjection(request.Spec.SshInjection, request.Spec.SshCertificateAuthorityId)
@@ -554,6 +653,10 @@ func (c *ClientV2) validateCreateV2Request(ctx context.Context, request *openapi
 	}
 
 	if err := c.validateSecurityGroupReferences(ctx, network.Name, request.Spec.Networking); err != nil {
+		return err
+	}
+
+	if err := c.validateCreateImage(ctx, network, request); err != nil {
 		return err
 	}
 
@@ -644,6 +747,22 @@ func (c *ClientV2) GetV2(ctx context.Context, serverID regionids.ServerID) (*ope
 	return convertV2(result)
 }
 
+func validateServerUpdate(current *regionv1.Server, request *openapi.ServerV2Update) error {
+	if current.DeletionTimestamp != nil {
+		return errors.OAuth2InvalidRequest("server is being deleted")
+	}
+
+	if request.Metadata.Name != current.Labels[coreconstants.NameLabel] {
+		return errors.HTTPUnprocessableContent("server names are immutable")
+	}
+
+	if request.Spec.FlavorId != current.Spec.FlavorID {
+		return errors.HTTPUnprocessableContent("server flavor is immutable")
+	}
+
+	return nil
+}
+
 func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerV2Update) (*openapi.ServerV2Read, error) {
 	current, err := c.GetV2Raw(ctx, serverID.String())
 	if err != nil {
@@ -659,12 +778,8 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, re
 		return nil, err
 	}
 
-	if current.DeletionTimestamp != nil {
-		return nil, errors.OAuth2InvalidRequest("server is being deleted")
-	}
-
-	if request.Metadata.Name != current.Labels[coreconstants.NameLabel] {
-		return nil, errors.HTTPUnprocessableContent("server names are immutable")
+	if err := validateServerUpdate(current, request); err != nil {
+		return nil, err
 	}
 
 	// Security groups are mutable, so re-validate that every referenced group still
@@ -681,8 +796,14 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, re
 		return nil, err
 	}
 
-	// User data is only consumed during initial server bootstrap. Updates preserve it for
-	// completeness and future rebuild support, but they do not re-run cloud-init validation.
+	// Updates replace the persisted user-data wholesale: an omitted field clears
+	// the stored value. The value is not applied to the running guest — it is
+	// consumed by the next rebuild (image change) or recreate. Changed user-data
+	// is re-validated at the boundary; identical payloads are not.
+	if err := c.validateUpdateV2Request(ctx, network, current, request); err != nil {
+		return nil, err
+	}
+
 	required, err := c.generateV2(ctx, organizationID, projectID, request, network, current.Spec.SSHCertificateAuthorityID, current.Spec.InfrastructureRef, current.ResolvedSSHInjection())
 	if err != nil {
 		return nil, err

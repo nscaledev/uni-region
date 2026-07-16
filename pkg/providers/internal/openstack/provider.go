@@ -433,7 +433,11 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	for i := range resources {
 		flavor := &resources[i]
 
-		// API memory is in MiB, disk is in GB
+		// API memory is in MiB, disk is in GB. Architecture defaults to
+		// x86_64 when region metadata does not override it below: the API
+		// schema requires an enum value and existing consumers compare
+		// architectures strictly, so an honest "unknown" cannot reach the
+		// wire without coordinated schema and consumer changes.
 		f := types.Flavor{
 			ID:           flavor.ID,
 			Name:         flavor.Name,
@@ -569,6 +573,9 @@ func imageArchitecture(image *images.Image) types.Architecture {
 		return types.Architecture(v)
 	}
 
+	// Default images without the Glance architecture property to x86_64,
+	// matching the flavor default above, so the strict-equality consumers
+	// of the API keep their pre-existing behaviour.
 	return types.X86_64
 }
 
@@ -2148,6 +2155,8 @@ func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, 
 		return corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "server is healthy"
 	case "ERROR":
 		return corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server is in an error state"
+	case "REBUILD":
+		return corev1.ConditionFalse, unikornv1core.ConditionReasonProvisioning, "server is rebuilding"
 	case "UNKNOWN":
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
 	default:
@@ -2293,6 +2302,12 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 	// state to pick Queued vs Building.
 	if openstackserver.Status == "BUILD" {
 		server.Status.Phase = buildPhase(ironicNode)
+
+		return
+	}
+
+	if openstackserver.Status == "REBUILD" {
+		server.Status.Phase = unikornv1.InstanceLifecyclePhaseBuilding
 
 		return
 	}
@@ -2513,6 +2528,178 @@ func (p *Provider) reconcileLoadBalancerFloatingIP(ctx context.Context, client F
 	return nil
 }
 
+func serverRebuildMatches(server *unikornv1.Server, imageID regionids.ImageID) bool {
+	return server.Status.Rebuild != nil &&
+		server.Status.Rebuild.TargetImageID == imageID
+}
+
+func serverPreviouslyLaunched(server *unikornv1.Server) bool {
+	return server.Status.ProvisionedAt != nil || server.Status.LaunchedAt != nil
+}
+
+func openstackServerImageID(server *servers.Server) (regionids.ImageID, bool) {
+	value, ok := server.Image["id"].(string)
+	if !ok || value == "" {
+		return regionids.ImageID{}, false
+	}
+
+	imageID, err := regionids.ParseImageID(value)
+	if err != nil {
+		return regionids.ImageID{}, false
+	}
+
+	return imageID, true
+}
+
+func markServerRebuilding(server *unikornv1.Server, message string) {
+	server.Status.Phase = unikornv1.InstanceLifecyclePhaseBuilding
+	server.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionUnknown, unikornv1core.ConditionReasonProvisioning, message)
+}
+
+func reconcileServerImageError(ctx context.Context, server *unikornv1.Server, openstackServer *servers.Server, currentImageID, desiredImageID regionids.ImageID) (bool, error) {
+	if openstackServer.Status != "ERROR" {
+		return false, nil
+	}
+
+	setServerHealthStatus(server, openstackServer)
+	setServerPhase(ctx, server, openstackServer, nil)
+
+	if serverRebuildMatches(server, desiredImageID) && server.Status.Rebuild.AcceptedAttempts > 0 {
+		return true, provisioners.UserActionRequired("server_rebuild_failed", "server entered an error state after a rebuild was issued; select another image or replace the server")
+	}
+
+	if currentImageID == desiredImageID {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+// submitServerRebuild issues the Nova rebuild and stamps the accepted state.
+// Once Nova accepts, the reconcile COMPLETES (returns a nil error): the marker
+// and the Building/Provisioning stamps are the record of the in-flight rebuild,
+// and settlement is observed later by the health monitor's poll — its Healthy
+// write flips the manager's rebuild-settled watch predicate
+// (RebuildSettled in pkg/provisioners/managers/server), which delivers a
+// fresh reconcile that authorizes the marker clear (or failure park) from its
+// own GetServer. This function does not itself requeue to wait for settlement;
+// while the monitor is stopped, settlement is delayed until a restart re-list
+// or a spec change wakes the reconciler.
+//
+// The 409-conflict branch is the exception: it is pre-acceptance (Nova is not
+// yet in a rebuildable state) and yields for a genuine short backoff rather
+// than waiting on settlement.
+func submitServerRebuild(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, options ServerRebuildOptions) (*servers.Server, error) {
+	rebuilt, err := client.RebuildServer(ctx, openstackServer.ID, options)
+	if err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			markServerRebuilding(server, "Waiting for the server to enter a rebuildable state")
+
+			return openstackServer, provisioners.ErrYield
+		}
+
+		return nil, err
+	}
+
+	server.Status.Rebuild.AcceptedAttempts = 1
+
+	if rebuilt != nil {
+		setServerHealthStatus(server, rebuilt)
+		setServerPhase(ctx, server, rebuilt, nil)
+	} else {
+		markServerRebuilding(server, "Server rebuild accepted")
+	}
+
+	return rebuilt, nil
+}
+
+// reconcileServerImageUnobservable handles a Nova server whose current image
+// cannot be observed. Region only creates image-booted servers (CreateServer
+// always sets ImageRef), so a launched server whose current image Nova cannot
+// report is an invariant violation: convergence is undecidable — the
+// desired-vs-observed diff has no observed side — and a rebuild must never be
+// authorized blind. Park it rather than silently reporting the spec
+// converged.
+//
+// Pre-launch is the exception: Nova can omit the image while a create is
+// still in flight, and the create machinery owns that window.
+func reconcileServerImageUnobservable(server *unikornv1.Server) error {
+	if !serverPreviouslyLaunched(server) {
+		return nil
+	}
+
+	return provisioners.UserActionRequired("server_image_unobservable", "replace the server because its current image cannot be observed")
+}
+
+func serverRebuildReady(server *unikornv1.Server, desiredImageID regionids.ImageID) bool {
+	if !serverRebuildMatches(server, desiredImageID) {
+		server.Status.Rebuild = &unikornv1.ServerRebuildStatus{
+			TargetImageID: desiredImageID,
+		}
+	}
+
+	return server.Status.Rebuild.AcceptedAttempts == 0
+}
+
+// reconcileServerImage converges the server onto its desired image. Every
+// action is authorized from the fresh openstackServer the caller just read
+// (observation is stimulus, never authorization). Where a rebuild is in flight
+// — Nova already rebuilding, or a previously accepted rebuild that has not yet
+// converged — it stamps the observed Building/Provisioning state and COMPLETES
+// the reconcile (nil error) rather than requeuing to poll: settlement is
+// observed by the health monitor's poll and delivered as a fresh reconcile via
+// the manager's rebuild-settled watch predicate (RebuildSettled in
+// pkg/provisioners/managers/server). A stopped monitor delays settlement until
+// a restart re-list or a spec change.
+func reconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, keyName string) (*servers.Server, error) {
+	if openstackServer.Status == "REBUILD" {
+		setServerHealthStatus(server, openstackServer)
+		setServerPhase(ctx, server, openstackServer, nil)
+
+		return openstackServer, nil
+	}
+
+	if server.Spec.Image == nil {
+		return openstackServer, nil
+	}
+
+	currentImageID, ok := openstackServerImageID(openstackServer)
+	if !ok {
+		return openstackServer, reconcileServerImageUnobservable(server)
+	}
+
+	desiredImageID := server.Spec.Image.ID
+
+	if currentImageID == desiredImageID {
+		if openstackServer.Status != "ERROR" {
+			server.Status.Rebuild = nil
+
+			return openstackServer, nil
+		}
+	}
+
+	handled, err := reconcileServerImageError(ctx, server, openstackServer, currentImageID, desiredImageID)
+	if handled || err != nil {
+		return openstackServer, err
+	}
+
+	if !serverPreviouslyLaunched(server) {
+		return openstackServer, nil
+	}
+
+	if !serverRebuildReady(server, desiredImageID) {
+		markServerRebuilding(server, "Waiting for the accepted server rebuild to converge")
+
+		return openstackServer, nil
+	}
+
+	return submitServerRebuild(ctx, client, server, openstackServer, ServerRebuildOptions{
+		ImageID:  desiredImageID,
+		KeyName:  keyName,
+		UserData: server.Spec.UserData,
+	})
+}
+
 func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight serverCreatePreflight) (*servers.Server, error) {
 	log := log.FromContext(ctx)
 
@@ -2520,7 +2707,7 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 	if err == nil {
 		log.V(1).Info("server already exists")
 
-		return openstackServer, nil
+		return reconcileServerImage(ctx, client, server, openstackServer, keyName)
 	}
 
 	networks := []servers.Network{
@@ -2595,19 +2782,42 @@ func serverForCreate(server *unikornv1.Server, options *types.ServerCreateOption
 	return serverForCreate
 }
 
-func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, options *types.ServerCreateOptions) error {
-	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
-	if err != nil {
-		return err
-	}
-
+// reconcileServerForCreate reconciles the server against the provider for a
+// create/rebuild, routing the call through the (possibly user-data/SSH-CA
+// augmented) copy built by serverForCreate above, then copies the resulting
+// status back onto the caller's server.
+//
+// The augmented copy is snapshotted HERE — immediately before the reconcile
+// call and after every other status write on the create path (port and
+// floating IP reconciliation write Status.PrivateIP/PublicIP onto the
+// caller's server; see createServer) — so copying the FULL status back is
+// equivalence-preserving: the copy's status starts as the caller's
+// post-port/FIP status and only gains the reconcile's own writes. Fields
+// owned by other actors (e.g. Status.MACAddress, written only by the live
+// monitor's UpdateServerState) are never mutated on this path. Copying back
+// only a single field would silently drop Phase and Healthy condition writes
+// (markServerRebuilding, setServerHealthStatus, setServerPhase) for any
+// server whose augmentation forced the deep copy; snapshotting earlier would
+// revert PrivateIP/PublicIP to stale pre-reconcile values on every pass.
+func (p *Provider) reconcileServerForCreate(ctx context.Context, client ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, port *ports.Port, keyName string, preflight serverCreatePreflight) error {
 	serverForCreate := serverForCreate(server, options)
 
-	networking, err := p.networkFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return err
+	_, err := p.reconcileServer(ctx, client, serverForCreate, port, keyName, preflight)
+
+	if serverForCreate != server {
+		server.Status = *serverForCreate.Status.DeepCopy()
 	}
 
+	return err
+}
+
+// createServer is the client-independent core of CreateServer: reconcile the
+// server's port and floating IP (both write status onto the caller's server),
+// then create/rebuild the provider server via the augmented-copy path. Kept
+// as one unit so the ordering contract documented on reconcileServerForCreate
+// — status-writing steps first, snapshot last — is pinned by a single
+// function (and its tests) rather than spread across call sites.
+func (p *Provider) createServer(ctx context.Context, networking NetworkingInterface, compute ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, keyName string, preflight serverCreatePreflight) error {
 	port, err := p.reconcileServerPort(ctx, networking, server)
 	if err != nil {
 		return err
@@ -2617,16 +2827,26 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
+	return p.reconcileServerForCreate(ctx, compute, server, options, port, keyName, preflight)
+}
+
+func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, options *types.ServerCreateOptions) error {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	networking, err := p.networkFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
 	compute, err := p.computeForServerCreate(ctx, identity, server)
 	if err != nil {
 		return err
 	}
 
-	if _, err := p.reconcileServer(ctx, compute, serverForCreate, port, resolveServerKeyName(server, openstackIdentity), p.serverCreatePlacementPreflight(identity, compute)); err != nil {
-		return err
-	}
-
-	return nil
+	return p.createServer(ctx, networking, compute, server, options, resolveServerKeyName(server, openstackIdentity), p.serverCreatePlacementPreflight(identity, compute))
 }
 
 func resolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {

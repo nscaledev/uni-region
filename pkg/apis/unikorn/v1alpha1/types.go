@@ -1170,6 +1170,15 @@ type ServerStatus struct {
 	// ProviderCreateRetrying is true while the controller is deleting a failed
 	// provider server before making another create attempt.
 	ProviderCreateRetrying bool `json:"providerCreateRetrying,omitempty"`
+	// Rebuild records the most recent Region-issued rebuild intent for a target
+	// image. It is cleared once the server converges on that image. Nova remains
+	// authoritative for the live server image and operation state; this marker is
+	// used to classify an error observed while rebuild intent is retained; an
+	// error arriving after an unobserved success is indistinguishable from a
+	// failed rebuild and is treated as one (fails closed).
+	// An accepted attempt that later fails parks the server until the desired
+	// image changes or the server is replaced.
+	Rebuild *ServerRebuildStatus `json:"rebuild,omitempty"`
 	// Volumes reflects the observed attachment state for each desired volume.
 	// +listType=map
 	// +listMapKey=id
@@ -1177,6 +1186,15 @@ type ServerStatus struct {
 	// +patchMergeKey=id
 	// +optional
 	Volumes []ServerVolumeStatus `json:"volumes,omitempty"`
+}
+
+type ServerRebuildStatus struct {
+	// TargetImageID is the desired image of the rebuild Region issued.
+	TargetImageID regionids.ImageID `json:"targetImageID"`
+	// AcceptedAttempts counts rebuild requests that Nova acknowledged for this
+	// target image.
+	// +kubebuilder:validation:Minimum=0
+	AcceptedAttempts int32 `json:"acceptedAttempts,omitempty"`
 }
 
 type ServerVolumeStatus struct {

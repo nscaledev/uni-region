@@ -1969,6 +1969,63 @@ func TestReconcileServerPreflight(t *testing.T) {
 	})
 }
 
+// TestCreateServerCopyBackPreservesPortAndFloatingIPStatus pins the
+// equivalence property of CreateServer's status copy-back for augmented
+// (managed user-data / SSH-CA) servers against the full create-path
+// interleaving: port and floating IP reconciliation write
+// Status.PrivateIP/PublicIP onto the caller's server BEFORE the augmented
+// copy is snapshotted, so the full status copy-back must both (a) preserve
+// those writes and (b) carry the rebuild's Phase/Rebuild status back to the
+// caller. Snapshotting the copy before port/FIP reconciliation (the original
+// defect placement) silently reverts PrivateIP/PublicIP on every reconcile.
+func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
+	t.Parallel()
+
+	network := networkFixture()
+	client := getClient(t, []client.Object{network})
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	server := serverFixture(withNetwork(network), withFloatingIP)
+	server.Spec.Image = &regionv1.ServerImage{ID: idstest.MustParseImageID(rebuildNewImageID)}
+	server.Status.ProvisionedAt = ptr.To(metav1.Now())
+
+	openstackNetwork := openstackNetworkFixture(network)
+	openstackSubnet := openstackSubnetFixture(network, openstackNetwork)
+	openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
+	openstackFloatingIP := openstackFloatingIPFixture(openstackServerPort)
+
+	options := &types.ServerCreateOptions{UserData: []byte("#cloud-config\nssh_authorized_keys: []\n")}
+
+	networking := mock.NewMockNetworkingInterface(c)
+	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
+	networking.EXPECT().GetServerPort(t.Context(), server).Return(openstackServerPort, nil)
+	networking.EXPECT().UpdatePort(t.Context(), openstackServerPort.ID, []string{}, []ports.AddressPair{}).Return(openstackServerPort, nil)
+	networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(openstackFloatingIP, nil)
+
+	compute := mock.NewMockServerInterface(c)
+	compute.EXPECT().GetServer(t.Context(), gomock.Any()).Return(novaRebuildServer("ACTIVE", rebuildOldImageID), nil)
+	compute.EXPECT().RebuildServer(t.Context(), "server-1", openstack.ServerRebuildOptions{
+		ImageID:  idstest.MustParseImageID(rebuildNewImageID),
+		UserData: options.UserData,
+	}).Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+
+	p := openstack.NewTestProvider(client, regionFixture())
+
+	err := openstack.CreateServerWithClients(t.Context(), p, networking, compute, server, options, "")
+	require.NoError(t, err)
+
+	// (a) the port/FIP status writes must survive the copy-back.
+	require.Equal(t, ptr.To(serverPortIP), server.Status.PrivateIP, "copy-back must not revert PrivateIP written by port reconciliation")
+	require.Equal(t, ptr.To(openstackFloatingIP.FloatingIP), server.Status.PublicIP, "copy-back must not revert PublicIP written by floating IP reconciliation")
+
+	// (b) the rebuild status writes must propagate back to the caller.
+	require.Equal(t, regionv1.InstanceLifecyclePhaseBuilding, server.Status.Phase)
+	require.NotNil(t, server.Status.Rebuild)
+	require.Equal(t, int32(1), server.Status.Rebuild.AcceptedAttempts)
+}
+
 // TestImageTagRoundTrip tests the round-trip conversion of tags:
 // types.Image.Tags -> createImageMetadata -> Glance properties -> imageTags -> map[string]string.
 func TestImageTagRoundTrip(t *testing.T) {

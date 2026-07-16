@@ -291,7 +291,10 @@ func (c *stubComputeClient) GetServer(_ context.Context, server *unikornv1.Serve
 func (c *stubComputeClient) CreateServer(context.Context, *unikornv1.Server, string, []servers.Network, *string, map[string]string) (*servers.Server, error) {
 	return nil, nil //nolint:nilnil // unused stub method
 }
-func (c *stubComputeClient) DeleteServer(context.Context, string) error       { return nil }
+func (c *stubComputeClient) DeleteServer(context.Context, string) error { return nil }
+func (c *stubComputeClient) RebuildServer(context.Context, string, ServerRebuildOptions) (*servers.Server, error) {
+	return nil, nil //nolint:nilnil // unused stub method
+}
 func (c *stubComputeClient) RebootServer(context.Context, string, bool) error { return nil }
 func (c *stubComputeClient) StartServer(context.Context, string) error        { return nil }
 func (c *stubComputeClient) StopServer(context.Context, string) error         { return nil }

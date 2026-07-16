@@ -3312,16 +3312,24 @@ components:
       - imageId
       properties:
         flavorId:
-          $ref: '#/components/schemas/flavorId'
+          description: The server flavor. This field is immutable after creation.
+          allOf:
+          - $ref: '#/components/schemas/flavorId'
         imageId:
-          $ref: '#/components/schemas/imageId'
+          description: |-
+            The desired server image. Changing this field rebuilds the server,
+            recreating the root disk and destroying its contents.
+          allOf:
+          - $ref: '#/components/schemas/imageId'
         networking:
           $ref: '#/components/schemas/serverV2Networking'
         userData:
           description: |-
             Contains base64-encoded configuration information or scripts to use upon launch.
             The format of the data is governed by the cloud-init standard, and may be a script,
-            a MIME multipart archive, etc.
+            a MIME multipart archive, etc. On update the field is replaced wholesale: omitting
+            it clears the stored value. A changed value is not applied to the running guest —
+            it takes effect only when the server is next rebuilt (image change) or recreated.
           type: string
           format: byte
     serverV2CreateSpec:

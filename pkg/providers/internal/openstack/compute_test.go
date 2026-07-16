@@ -35,7 +35,7 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-// fakeNovaServer captures server-create requests and returns a minimal response.
+// fakeNovaServer captures server create and action requests and returns minimal responses.
 type fakeNovaServer struct {
 	body map[string]any
 }
@@ -60,7 +60,73 @@ func (f *fakeNovaServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.Method == http.MethodPost && r.URL.Path == "/servers/server-id/action" {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if err := json.Unmarshal(raw, &f.body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"server":{"id":"server-id","status":"REBUILD"}}`))
+
+		return
+	}
+
 	http.NotFound(w, r)
+}
+
+func TestRebuildServerPreservesGuestConfiguration(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeNovaServer{}
+
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+
+	client := openstack.NewTestComputeClient(srv.URL + "/")
+	options := openstack.ServerRebuildOptions{
+		ImageID:  idstest.MustParseImageID("bbbbbbbb-0000-0000-0000-000000000001"),
+		KeyName:  "identity-keypair",
+		UserData: []byte("#cloud-config\nusers: []\n"),
+	}
+
+	_, err := client.RebuildServer(t.Context(), "server-id", options)
+	require.NoError(t, err)
+
+	rebuildBody, ok := fake.body["rebuild"].(map[string]any)
+	require.True(t, ok, "body missing 'rebuild' key")
+	assert.Equal(t, options.ImageID.String(), rebuildBody["imageRef"])
+	assert.Equal(t, options.KeyName, rebuildBody["key_name"])
+	assert.Equal(t, "I2Nsb3VkLWNvbmZpZwp1c2VyczogW10K", rebuildBody["user_data"])
+}
+
+func TestRebuildServerExplicitlyClearsGuestConfiguration(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeNovaServer{}
+
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+
+	client := openstack.NewTestComputeClient(srv.URL + "/")
+	options := openstack.ServerRebuildOptions{
+		ImageID: idstest.MustParseImageID("bbbbbbbb-0000-0000-0000-000000000001"),
+	}
+
+	_, err := client.RebuildServer(t.Context(), "server-id", options)
+	require.NoError(t, err)
+
+	rebuildBody, ok := fake.body["rebuild"].(map[string]any)
+	require.True(t, ok, "body missing 'rebuild' key")
+	assert.Nil(t, rebuildBody["key_name"])
+	assert.Nil(t, rebuildBody["user_data"])
 }
 
 func newServerFixture(name string) *unikornv1.Server {

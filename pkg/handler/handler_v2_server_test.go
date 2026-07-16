@@ -300,20 +300,13 @@ func newServerV2CreateRequest(ctx context.Context, t *testing.T, name, flavorID,
 	return httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v2/servers", bytes.NewReader(body))
 }
 
-type pinnedOnlyFlavorLookupExpectation int
-
-const (
-	expectNoPinnedOnlyFlavorLookup pinnedOnlyFlavorLookupExpectation = iota
-	expectPinnedOnlyFlavorLookup
-)
-
 type pinnedOnlyServerV2CreateFixture struct {
 	handler   *ServerV2Handler
 	flavorID  string
 	networkID string
 }
 
-func newPinnedOnlyServerV2CreateFixture(t *testing.T, lookup pinnedOnlyFlavorLookupExpectation) (context.Context, *pinnedOnlyServerV2CreateFixture) {
+func newPinnedOnlyServerV2CreateFixture(t *testing.T) (context.Context, *pinnedOnlyServerV2CreateFixture) {
 	t.Helper()
 
 	var (
@@ -327,16 +320,18 @@ func newPinnedOnlyServerV2CreateFixture(t *testing.T, lookup pinnedOnlyFlavorLoo
 
 	ctrl := gomock.NewController(t)
 
+	// The create path always validates the requested image against the pinned
+	// flavor; the infrastructureRef check additionally looks the flavor up when
+	// no reference is supplied.
+	provider := mockprovider.NewMockProvider(ctrl)
+	provider.EXPECT().GetImage(gomock.Any(), identityids.MustParseOrganizationID(orgID), idstest.MustParseImageID(srvTestImageID)).
+		Return(&types.Image{ID: srvTestImageID, Status: types.ImageStatusReady, Virtualization: types.Any}, nil).AnyTimes()
+	provider.EXPECT().Flavors(gomock.Any()).Return(types.FlavorList{
+		{ID: flavorID, PinnedOnly: true},
+	}, nil).AnyTimes()
+
 	providers := mockproviders.NewMockProviders(ctrl)
-
-	if lookup == expectPinnedOnlyFlavorLookup {
-		provider := mockprovider.NewMockProvider(ctrl)
-		provider.EXPECT().Flavors(gomock.Any()).Return(types.FlavorList{
-			{ID: flavorID, PinnedOnly: true},
-		}, nil)
-
-		providers.EXPECT().LookupCloud(regionID).Return(provider, nil)
-	}
+	providers.EXPECT().LookupCloud(regionID).Return(provider, nil).AnyTimes()
 
 	net := withMeta(&regionv1.Network{}, networkID, namespace, labels{
 		constants.OrganizationLabel:             orgID,
@@ -507,7 +502,7 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 func TestServerV2_Create_PinnedOnlyFlavorWithoutInfrastructureRef(t *testing.T) {
 	t.Parallel()
 
-	ctx, fixture := newPinnedOnlyServerV2CreateFixture(t, expectPinnedOnlyFlavorLookup)
+	ctx, fixture := newPinnedOnlyServerV2CreateFixture(t)
 
 	response := httptest.NewRecorder()
 	request := newServerV2CreateRequest(ctx, t, "test-server", fixture.flavorID, srvTestImageID, fixture.networkID, nil)
@@ -526,7 +521,7 @@ func TestServerV2_Create_PinnedOnlyFlavorWithoutInfrastructureRef(t *testing.T) 
 func TestServerV2_Create_PinnedOnlyFlavorWithInfrastructureRef(t *testing.T) {
 	t.Parallel()
 
-	ctx, fixture := newPinnedOnlyServerV2CreateFixture(t, expectNoPinnedOnlyFlavorLookup)
+	ctx, fixture := newPinnedOnlyServerV2CreateFixture(t)
 	ctx = withPrincipal(ctx)
 	infrastructureRef := "node-42"
 

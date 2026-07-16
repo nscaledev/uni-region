@@ -334,6 +334,48 @@ func (c *ComputeClient) RebootServer(ctx context.Context, id string, hard bool) 
 	return servers.Reboot(ctx, c.client, id, opts).ExtractErr()
 }
 
+type serverRebuildOpts struct {
+	ImageRef string `json:"imageRef"`
+	KeyName  any    `json:"key_name"`  //nolint:tagliatelle // Nova API field name.
+	UserData any    `json:"user_data"` //nolint:tagliatelle // Nova API field name.
+}
+
+func (o serverRebuildOpts) ToServerRebuildMap() (map[string]any, error) {
+	body, err := gophercloud.BuildRequestBody(o, "")
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]any{"rebuild": body}, nil
+}
+
+func (c *ComputeClient) RebuildServer(ctx context.Context, id string, options ServerRebuildOptions) (*servers.Server, error) {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", id),
+		attribute.String("compute.server.action", "rebuild"),
+		attribute.String("compute.image.id", options.ImageID.String()),
+	)
+
+	_, span := traceStart(ctx, "POST /compute/v2/servers/{id}/action", spanAttributes)
+	defer span.End()
+
+	var keyName any
+	if options.KeyName != "" {
+		keyName = options.KeyName
+	}
+
+	var userData any
+	if len(options.UserData) > 0 {
+		userData = options.UserData
+	}
+
+	return servers.Rebuild(ctx, c.client, id, serverRebuildOpts{
+		ImageRef: options.ImageID.String(),
+		KeyName:  keyName,
+		UserData: userData,
+	}).Extract()
+}
+
 func (c *ComputeClient) StartServer(ctx context.Context, id string) error {
 	spanAttributes := trace.WithAttributes(
 		attribute.String("compute.server.id", id),

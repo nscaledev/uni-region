@@ -38,6 +38,16 @@ status/telemetry model.
   value, while unconditionally writing a valid MAC self-heals drift (the status
   PATCH makes a same-value write a no-op).
 - logs phase and health-condition transitions
+- its `Healthy` condition writes are the wake signal that settles a pending
+  server rebuild. When a rebuild finishes, the transition the monitor records
+  (Nova `ACTIVE` → Healthy, `ERROR` → Errored) trips the server manager's
+  `RebuildSettled` watch predicate (`pkg/provisioners/managers/server`),
+  which wakes the reconciler for exactly one settlement pass — marker clear on
+  success, `UserActionRequired` park on failure. The chain is: monitor writes
+  the Healthy transition → predicate fires → one reconcile → the reconciler
+  re-decides from its own fresh provider read. The monitor edge is stimulus,
+  not authorization; the reconciler never trusts the projected status to make
+  the rebuild decision.
 - rebuilds gauge counts from the effective server set each cycle
 
 ## Invariants And Guard Rails
@@ -57,12 +67,23 @@ status/telemetry model.
 ## Caveats
 
 - This package is intentionally eventual and observational; it does not make
-  provider state changes happen, it notices and projects them.
+  provider state changes happen, it notices and projects them. That holds
+  literally — the monitor issues no provider calls — but its `Healthy` condition
+  writes are load-bearing for rebuild settlement liveness: the reconciler does
+  not self-poll a rebuild to completion, so a pending rebuild settles (marker
+  clear on success, failure park) only when the monitor records the settling
+  transition and that edge wakes the reconciler. Observation is not purely for
+  display.
 - Phase is a live readiness signal once provisioning status reaches
   `provisioned`. If the monitor stops running, or a server is persistently
   skipped before the status patch (region resolution, identity, or Nova lookup
   failures), Phase can lag observed reality by an unbounded amount. In healthy
-  operation staleness is bounded by one poll period.
+  operation staleness is bounded by one poll period. For a pending rebuild the
+  same stall is functional, not merely cosmetic: a stopped or
+  persistently-skipping monitor never records the settling transition, so the
+  marker clear and the failure park wait indefinitely — until a controller
+  restart re-lists the server or a spec change wakes the reconciler through
+  another path. The rebuild is delayed, not lost.
 - `unikorn_region_server_provision_duration_seconds` measures
   `CreationTimestamp → OS-SRV-USG:launched_at`. `launched_at` is when the
   hypervisor boots the instance, not when the guest OS finishes booting. For

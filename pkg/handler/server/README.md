@@ -21,7 +21,9 @@ related dependencies rather than from nested path scope.
 
 - `v1` servers are nested more explicitly under identity paths
 - `v2` servers are network-linked resources with direct ID-based access
-- create/update validate referenced image existence through the provider layer
+- create/update validate the requested image through the provider layer under a
+  single shared contract: the image must exist and be visible, be Ready, and be
+  architecture/disk/virtualization compatible with the requested flavor
 - create/update can validate and bind an SSH certificate authority
 - create accepts an explicit SSH injection mode: `ca`, `identityKeypair`, or
   `none`. Omitted values preserve the legacy contract: requests with
@@ -62,6 +64,24 @@ related dependencies rather than from nested path scope.
   layer and is rejected with HTTP 409 without a read-before-write
 - server names are immutable after creation; update requests that supply a
   different name are rejected with HTTP 422
+- a v2 update replaces the persisted `userData` wholesale — an omitted field
+  clears the stored value. The value is never applied to the running guest; it
+  is consumed by the next rebuild (image change) or recreate
+- changing a v2 server's `imageId` is a destructive in-place Nova rebuild. It
+  recreates the root disk and destroys its contents while retaining the server
+  UUID, ports, fixed and floating IP relationships, attached data volumes,
+  flavor, metadata, and placement. Flavor changes remain unsupported and are
+  rejected with HTTP 422. An accepted rebuild destroys the previous root disk
+  contents even if the rebuild subsequently fails, so failure recovery is
+  choosing another image or replacing the server — never data restoration.
+- while a rebuild is pending (a Nova-accepted attempt not yet observed to
+  settle) the v2 read reports `provisioningStatus=provisioning` even though the
+  controller has finished its reconcile pass and core would otherwise report
+  `provisioned`. The target image is not yet realized, so the server is not
+  settled: `provisioned` means settled, which the sole consumer (uni-compute's
+  instance settlement gate) relies on. A parked rebuild still surfaces as
+  `error`, so a failure stays visible. See the provider's rebuild handling in
+  [../../providers/internal/openstack/README.md](../../providers/internal/openstack/README.md).
 
 ## Invariants And Guard Rails
 
@@ -69,12 +89,17 @@ related dependencies rather than from nested path scope.
 - direct `v2` object access is gated to resources labeled with
   `ResourceAPIVersionLabel=2`.
 - A `Server v2` is owned by its network for cascading deletion.
-- User data is validated at create time against the server provisioner's
-  cloud-init parser, so malformed payloads are rejected with HTTP 422 instead of
-  failing mid-provision (when managed augmentation parses them) or silently
-  inside the guest at boot. With an SSH certificate authority the payload must
+- User data is validated at create time, and at update time whenever the
+  persisted value would change, against the server provisioner's cloud-init
+  parser, so malformed payloads are rejected with HTTP 422 instead of failing
+  mid-provision (when managed augmentation parses them) or silently inside the
+  guest at boot. With an SSH certificate authority (on update, the server's
+  current one — updates preserve the CA chosen at create) the payload must
   additionally support managed cloud-init augmentation (which excludes gzip);
   without one, gzip payloads are accepted and passed through unmodified.
+  Unchanged user-data is never re-validated, so legacy servers whose stored
+  payloads predate validation keep working when a client PUTs the same bytes
+  back.
 - `GET /api/v2/servers/{serverID}/sshkey` only returns the identity private key
   for servers where Region requested `identityKeypair` SSH injection during
   create. It returns not found for `ca` and `none` servers.
@@ -90,6 +115,9 @@ related dependencies rather than from nested path scope.
 - Servers provisioned before this mechanism was introduced have random-UUID
   names and are not covered by it; deduplication applies only to resources
   created after deployment.
+- Image rebuild automatically submits at most one Nova-accepted action for a
+  target image. A failed accepted action parks the server until a new image
+  update or server replacement re-arms it; there is no explicit retry.
 
 ## Caveats
 

@@ -101,7 +101,39 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     mean no trait filter. A miss yields and lets the controller retry.
 - SSH injection is a create-time server decision. OpenStack receives the
   identity key name only for the resolved `identityKeypair` mode; `ca` and
-  `none` omit Nova `key_name`.
+  `none` omit Nova `key_name`. Image rebuild explicitly reapplies the effective
+  key-name and user-data values (including managed SSH-CA cloud-init) so guest
+  access remains equivalent to initial create.
+- A desired server image change is reconciled with Nova rebuild only after the
+  server has launched previously. Nova's observed image and status authorize
+  each transition; Kubernetes rebuild status is safety bookkeeping only. The
+  provider submits at most one accepted action per target image, treats
+  `REBUILD` as `Building`, and parks an accepted action that settles in `ERROR`
+  until the desired image changes or the server is replaced. Missing or
+  unrelated bookkeeping never turns a generic Nova `ERROR` into a rebuild
+  request. Once Nova accepts the rebuild the reconcile completes rather than
+  self-polling: settlement is observed on a separate pass woken by the health
+  monitor's `Healthy` transition (through the server manager's
+  `RebuildSettled` watch predicate), and that pass still re-authorizes
+  from the provider's own fresh `GetServer` — the monitor edge is stimulus,
+  never authorization. A Nova `409 Conflict` at submission is the one exception
+  that still yields for a short retry, because it is pre-acceptance: no action
+  was taken, so the reconcile has not completed. Because the reconciler does
+  not watch the rebuild converge tick by tick, there is a post-success
+  ambiguity window — during which an unrelated Nova `ERROR` is
+  indistinguishable from a failed rebuild and is treated as one — lasting up
+  to one or two monitor poll cycles. This fails closed: recovery is
+  selecting an image again or replacing the server, never data restoration.
+  A launched server whose current image Nova cannot report (e.g. an
+  out-of-band boot-from-volume server — Region only creates image-booted
+  servers) parks as `server_image_unobservable`: convergence is undecidable
+  without the observed side of the diff, and a rebuild is never authorized
+  blind. Pre-launch the image can legitimately be absent while a create is in
+  flight; that window belongs to the create machinery.
+- Nova rebuild retains the server UUID, network ports and IP relationships,
+  attached data volumes, flavor, metadata, and placement, but recreates the
+  root disk. It stays on the same compute host; evacuation is a separate
+  operator workflow.
 - `OpenstackIdentity` is the remaining persisted provider-state anchor. It
   currently stores the secret-bearing user/project/application-credential and
   bootstrap state needed to operate on behalf of a region `Identity`.

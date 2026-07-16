@@ -102,6 +102,16 @@ stored objects rely on for linkage, migration, and operational coordination.
   policies plus the optional hidden `system-default` baseline — caps policy names
   at 19 characters, and validates the schedule/retention shape so direct CRD
   writes cannot persist unsupported policy combinations.
+- `Server.Spec.Image` is desired state. Nova's observed image and status
+  remain authoritative for live state. `Server.Status.Rebuild` records the
+  most recent Region-issued rebuild intent for a target image: the target
+  image and accepted-attempt bookkeeping needed to classify a failed
+  Region-issued rebuild. It is cleared once the server converges on that
+  image. It is not proof of provider reality, and missing or mismatched
+  bookkeeping must fail closed rather than authorize a destructive action. An
+  accepted attempt that later fails parks the server until the desired image
+  changes or the server is replaced — that is the only re-arm path; there is
+  deliberately no client-facing retry operation.
 
 ## Caveats
 

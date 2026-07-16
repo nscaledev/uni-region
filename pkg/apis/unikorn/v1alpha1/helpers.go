@@ -289,6 +289,16 @@ func (c *Server) ImageID() (regionids.ImageID, error) {
 	return c.Spec.Image.ID, nil
 }
 
+// RebuildPending reports whether the server has a Nova-accepted rebuild that
+// has not yet been observed to settle (marker retained, at least one accepted
+// attempt). Recorded intent that was never accepted (AcceptedAttempts == 0)
+// does not count: nothing destructive is in flight yet. Shared by the
+// manager's settlement wake predicate and the API read conversion so the two
+// definitions of "rebuild in flight" cannot drift.
+func (c *Server) RebuildPending() bool {
+	return c.Status.Rebuild != nil && c.Status.Rebuild.AcceptedAttempts > 0
+}
+
 // OrganizationID returns the network's owning organization ID as a typed identifier.
 func (c *Network) OrganizationID() (identityids.OrganizationID, error) {
 	return organizationIDFromLabels(c.Labels)

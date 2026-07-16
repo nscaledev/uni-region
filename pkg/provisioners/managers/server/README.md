@@ -17,6 +17,47 @@ Distinctive behaviour:
   reached it aborts terminally rather than retrying further
 - clears or updates consumed-resource references during reprovision and teardown
 
+Create recovery and image rebuild recovery deliberately use different state:
+
+| Initial create failure | Image rebuild failure |
+|---|---|
+| Server never launched | Server previously launched |
+| Delete/recreate, bounded by the existing flag | One accepted attempt per target image |
+| `ProviderCreateFailures` | `Status.Rebuild` |
+| Exhaustion is operator-terminal | User selects another image or replaces the server |
+| Edge wake: `ProviderCreateFailure` via `providerCreateFailureUpdate` | Edge wake: `RebuildSettled` via `serverRebuildSettledUpdate` |
+
+The rebuild state machine lives in the OpenStack provider's existing-server
+reconciliation path. It leaves the create retry counter and predicate code
+untouched. During a rebuild the reconcile completes as soon as Nova accepts the
+action: it stamps the observed Healthy condition and Phase (for an existing
+server the monitor's poll also writes them each cycle, so the create retry
+predicate's inputs can arrive through either path) and then returns rather
+than self-polling Nova until the rebuild converges.
+
+Settlement is therefore edge-driven for both recovery paths, and each edge is a
+watch predicate (`pkg/managers/server`) whose eligibility test is a single
+exported helper shared with the provisioner, so the trigger and the action can
+never drift:
+
+- create failure rides `providerCreateFailureUpdate` over the
+  `ProviderCreateFailure` helper — it wakes the reconciler to run the bounded
+  delete-and-retry;
+- rebuild settlement rides `serverRebuildSettledUpdate` over
+  `RebuildSettled` — it wakes the reconciler for exactly one settlement
+  pass (marker clear on success, `UserActionRequired` park on failure) once the
+  monitor records the Nova outcome.
+
+`RebuildSettled` is a transition test, not a level test: it fires only
+when the `Healthy` condition reason changes into a settled reason (`Healthy` or
+`Errored`) while a Nova-accepted rebuild marker is still pending. That keeps it
+quiet in steady state — a parked server's repeated `Errored` writes are the same
+reason each time and do not re-fire, and the reconciler's own submission patch
+(marker plus `Provisioning` in one update) never self-triggers. A rebuilt server
+that then breaks (`Healthy` → `Errored`) does fire, because it needs its park
+pass. The reconciler still makes every decision from its own fresh provider
+read; the monitor edge is stimulus, never authorization.
+
 This is the clearest controller-side expression of the lifecycle DAG model:
 
 - network/security-group/SSH-CA edges are explicit and blocking

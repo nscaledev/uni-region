@@ -103,3 +103,48 @@ func TestProviderCreateFailureUpdate(t *testing.T) {
 		}))
 	})
 }
+
+func serverWithRebuildSettling(reason unikornv1core.ConditionReason) *unikornv1.Server {
+	server := &unikornv1.Server{}
+	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{AcceptedAttempts: 1}
+
+	status := corev1.ConditionFalse
+	if reason == unikornv1core.ConditionReasonHealthy {
+		status = corev1.ConditionTrue
+	}
+
+	server.StatusConditionWrite(unikornv1core.ConditionHealthy, status, reason, "")
+
+	return server
+}
+
+func TestRebuildSettledUpdate(t *testing.T) {
+	t.Parallel()
+
+	t.Run("PendingSettles", func(t *testing.T) {
+		t.Parallel()
+
+		require.True(t, serverRebuildSettledUpdate(event.TypedUpdateEvent[*unikornv1.Server]{
+			ObjectOld: serverWithRebuildSettling(unikornv1core.ConditionReasonProvisioning),
+			ObjectNew: serverWithRebuildSettling(unikornv1core.ConditionReasonHealthy),
+		}))
+	})
+
+	t.Run("NilOld", func(t *testing.T) {
+		t.Parallel()
+
+		require.False(t, serverRebuildSettledUpdate(event.TypedUpdateEvent[*unikornv1.Server]{
+			ObjectOld: nil,
+			ObjectNew: serverWithRebuildSettling(unikornv1core.ConditionReasonHealthy),
+		}))
+	})
+
+	t.Run("NilNew", func(t *testing.T) {
+		t.Parallel()
+
+		require.False(t, serverRebuildSettledUpdate(event.TypedUpdateEvent[*unikornv1.Server]{
+			ObjectOld: serverWithRebuildSettling(unikornv1core.ConditionReasonProvisioning),
+			ObjectNew: nil,
+		}))
+	})
+}
