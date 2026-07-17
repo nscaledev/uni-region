@@ -1051,6 +1051,15 @@ type ServerSpec struct {
 	PublicIPAllocation *ServerPublicIPAllocationSpec `json:"publicIPAllocation,omitempty"`
 	// Networks is the server network configuration.
 	Networks []ServerNetworkSpec `json:"networks,omitempty"`
+	// Volumes are existing Region volumes the server should attach.
+	// Inline server-created volume templates are intentionally not part of this
+	// first storage model.
+	// +listType=map
+	// +listMapKey=id
+	// +patchStrategy=merge
+	// +patchMergeKey=id
+	// +optional
+	Volumes []ServerVolumeSpec `json:"volumes,omitempty"`
 	// SSHCertificateAuthorityID is an optional project scoped OpenSSH user CA trust anchor.
 	SSHCertificateAuthorityID *string `json:"sshCertificateAuthorityID,omitempty"`
 	// SSHInjection identifies the create-time SSH access material requested for the server.
@@ -1080,6 +1089,11 @@ type ServerNetworkAddressPair struct {
 	CIDR unikornv1core.IPv4Prefix `json:"cidr"`
 	// Optional MAC address to allow traffic to/from.
 	MACAddress string `json:"macAddress,omitempty"`
+}
+
+type ServerVolumeSpec struct {
+	// ID is the existing Volume resource ID to attach to the server.
+	ID string `json:"id"`
 }
 
 type ServerImage struct {
@@ -1156,6 +1170,26 @@ type ServerStatus struct {
 	// ProviderCreateRetrying is true while the controller is deleting a failed
 	// provider server before making another create attempt.
 	ProviderCreateRetrying bool `json:"providerCreateRetrying,omitempty"`
+	// Volumes reflects the observed attachment state for each desired volume.
+	// +listType=map
+	// +listMapKey=id
+	// +patchStrategy=merge
+	// +patchMergeKey=id
+	// +optional
+	Volumes []ServerVolumeStatus `json:"volumes,omitempty"`
+}
+
+type ServerVolumeStatus struct {
+	// ID is the Volume resource ID this attachment row describes.
+	ID string `json:"id"`
+	// ProvisioningStatus indicates whether the volume attachment is ready,
+	// failed, or being provisioned/deprovisioned.
+	ProvisioningStatus AttachmentProvisioningStatus `json:"provisioningStatus"`
+	// Device is the guest OS device name where the provider presents the
+	// attached volume, when available.
+	Device *string `json:"device,omitempty"`
+	// Message is a human-readable description of the current attachment state.
+	Message string `json:"message"`
 }
 
 // OpenstackServerList is a typed list of servers.
