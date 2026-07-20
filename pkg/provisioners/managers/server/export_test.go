@@ -19,6 +19,7 @@ package server
 import (
 	"context"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -28,6 +29,18 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// ClassifyDependencyForTest exposes the dependency-gate classification (the
+// classifyDependency arm) for unit testing. The receiver is unused by it.
+func ClassifyDependencyForTest(cli client.Client, resource unikornv1core.ManagableResourceInterface) error {
+	return (&Provisioner{}).classifyDependency(cli, resource)
+}
+
+// BlockUntilResourceReadyForTest exposes blockUntilResourceReady (the fetch +
+// NotFound-is-terminal arm) for unit testing.
+func BlockUntilResourceReadyForTest(ctx context.Context, server *unikornv1.Server, cli client.Client, id string, resource unikornv1core.ManagableResourceInterface) error {
+	return (&Provisioner{server: server}).blockUntilResourceReady(ctx, cli, id, resource)
+}
 
 func ServerCreateOptionsForTest(ctx context.Context, server *unikornv1.Server, cli client.Client) (*types.ServerCreateOptions, error) {
 	provisioner := &Provisioner{
