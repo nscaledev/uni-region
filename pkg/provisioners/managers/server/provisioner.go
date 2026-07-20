@@ -36,6 +36,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/record"
 
@@ -432,6 +433,78 @@ func (p *Provisioner) handleProviderCreateRetry(ctx context.Context, provider ty
 	return true, p.deleteFailedProviderServer(ctx, provider, identity, attempt, maxAttempts)
 }
 
+// blockUntilDependenciesReady gates provider create on the readiness of the
+// server's separately-provisioned platform dependencies: its identity, networks
+// and security groups. Attempting a create before these are provisioned yields a
+// doomed provider call that the retry machinery then has to mop up; gating here
+// turns that into an explicit, self-explanatory wait.
+//
+// Only these are gated. The SSH certificate authority is synchronous spec data
+// with no readiness to wait on, and public IP capacity is not knowable ahead of
+// allocation. The identity is already fetched, so it is classified directly;
+// networks and security groups are fetched by id.
+func (p *Provisioner) blockUntilDependenciesReady(ctx context.Context, cli client.Client, identity *unikornv1.Identity) error {
+	if err := p.classifyDependency(cli, identity); err != nil {
+		return err
+	}
+
+	for _, id := range p.networkIDs() {
+		if err := p.blockUntilResourceReady(ctx, cli, id, &unikornv1.Network{}); err != nil {
+			return err
+		}
+	}
+
+	for _, id := range p.securityGroupIDs() {
+		if err := p.blockUntilResourceReady(ctx, cli, id, &unikornv1.SecurityGroup{}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// blockUntilResourceReady fetches a dependency by id and classifies it.
+//
+// A NotFound is terminal, not transient: addConsumedResourceReferences runs
+// first, rejecting unknown IDs with ErrConsistency and finalizing each
+// dependency, so a network being deleted lingers (with a deletion timestamp)
+// rather than disappearing. A referenced, finalized dependency that is
+// nonetheless gone is a consistency violation no amount of requeuing will fix —
+// parking it is correct.
+func (p *Provisioner) blockUntilResourceReady(ctx context.Context, cli client.Client, id string, resource unikornv1core.ManagableResourceInterface) error {
+	if err := cli.Get(ctx, client.ObjectKey{Namespace: p.server.Namespace, Name: id}, resource); err != nil {
+		if kerrors.IsNotFound(err) {
+			resource.SetName(id)
+
+			return provisioners.DependencyNotFound(cli.Scheme(), resource)
+		}
+
+		return err
+	}
+
+	return p.classifyDependency(cli, resource)
+}
+
+// classifyDependency maps a fetched dependency's Available condition onto a
+// disposition:
+//
+//   - Provisioned   -> nil, proceed
+//   - Errored       -> DependencyFailed: still yields (it may recover), but names
+//     the failure so the wait is not mistaken for progress
+//   - anything else -> DependencyNotReady: still coming up
+func (p *Provisioner) classifyDependency(cli client.Client, resource unikornv1core.ManagableResourceInterface) error {
+	condition, err := unikornv1core.GetAvailableCondition(resource)
+
+	switch {
+	case err == nil && condition.Reason == unikornv1core.ConditionReasonProvisioned:
+		return nil
+	case err == nil && condition.Reason == unikornv1core.ConditionReasonErrored:
+		return provisioners.DependencyFailed(cli.Scheme(), resource)
+	default:
+		return provisioners.DependencyNotReady(cli.Scheme(), resource)
+	}
+}
+
 // Provision implements the Provision interface.
 func (p *Provisioner) Provision(ctx context.Context) error {
 	cli, err := coreclient.FromContext(ctx)
@@ -454,7 +527,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
-	if err := manager.ResourceReady(ctx, identity); err != nil {
+	if err := p.blockUntilDependenciesReady(ctx, cli, identity); err != nil {
 		return err
 	}
 
