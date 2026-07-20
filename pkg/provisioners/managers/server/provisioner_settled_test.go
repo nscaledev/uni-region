@@ -37,14 +37,14 @@ func withRebuildState(state regionv1.ServerRebuildState) func(*regionv1.Server) 
 
 // withAvailableReason writes the core-owned Available condition with the given
 // reason, the way the core reconciler records provision outcomes.
-func withAvailableReason(reason unikornv1core.ConditionReason) func(*regionv1.Server) {
+func withAvailableReason(reason unikornv1core.ProvisioningConditionReason) func(*regionv1.Server) {
 	return func(server *regionv1.Server) {
 		status := corev1.ConditionFalse
 		if reason == unikornv1core.ConditionReasonProvisioned {
 			status = corev1.ConditionTrue
 		}
 
-		server.StatusConditionWrite(unikornv1core.ConditionAvailable, status, reason, "")
+		server.SetProvisioningCondition(status, reason, "")
 	}
 }
 

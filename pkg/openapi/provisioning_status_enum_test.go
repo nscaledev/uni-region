@@ -45,7 +45,6 @@ func TestSchemaAcceptsAllProvisioningStatusValues(t *testing.T) {
 	t.Parallel()
 
 	emittable := []coreapi.ResourceProvisioningStatus{
-		coreapi.ResourceProvisioningStatusUnknown,
 		coreapi.ResourceProvisioningStatusPending,
 		coreapi.ResourceProvisioningStatusProvisioning,
 		coreapi.ResourceProvisioningStatusProvisioned,

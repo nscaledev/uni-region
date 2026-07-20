@@ -3231,7 +3231,8 @@ components:
         should treat Running (not provisioned) as the "ready to use" state.
         Queued and Building are observed during create — Queued for
         baremetal servers waiting on hardware, Building for servers the
-        provider is actively bringing up.
+        provider is actively bringing up. Error means the provider reported
+        the server in a terminal error state.
       type: string
       enum:
       - Pending
@@ -3240,6 +3241,7 @@ components:
       - Running
       - Stopping
       - Stopped
+      - Error
     serverStatus:
       description: A server's status.
       type: object

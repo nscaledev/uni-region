@@ -150,12 +150,12 @@ func (c *Checker) logStateTransition(ctx context.Context, server, updated *uniko
 
 	if oldErr == nil {
 		durationSource = oldCondition.LastTransitionTime.Time
-		fromState = string(oldCondition.Reason)
+		fromState = oldCondition.Reason
 	}
 
 	serverLogger(ctx, server).Info("instance state transition",
 		"from_state", fromState,
-		"to_state", string(newCondition.Reason),
+		"to_state", newCondition.Reason,
 		"duration_ms", newCondition.LastTransitionTime.Sub(durationSource).Milliseconds(),
 	)
 }

@@ -171,6 +171,8 @@ func convertInstanceLifecyclePhase(in unikornv1.InstanceLifecyclePhase) *openapi
 		return ptr.To(openapi.InstanceLifecyclePhaseStopping)
 	case unikornv1.InstanceLifecyclePhaseStopped:
 		return ptr.To(openapi.InstanceLifecyclePhaseStopped)
+	case unikornv1.InstanceLifecyclePhaseError:
+		return ptr.To(openapi.InstanceLifecyclePhaseError)
 	default:
 		return nil
 	}

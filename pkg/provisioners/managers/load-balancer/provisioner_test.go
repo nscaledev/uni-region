@@ -103,7 +103,7 @@ func testIdentity(ready bool) *unikornv1.Identity {
 	}
 
 	if ready {
-		identity.StatusConditionWrite(unikornv1core.ConditionAvailable, corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
+		identity.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
 	}
 
 	return identity
@@ -118,7 +118,7 @@ func testNetwork(ready bool) *unikornv1.Network {
 	}
 
 	if ready {
-		network.StatusConditionWrite(unikornv1core.ConditionAvailable, corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
+		network.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
 	}
 
 	return network

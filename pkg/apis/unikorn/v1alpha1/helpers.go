@@ -28,6 +28,7 @@ import (
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
 )
@@ -39,15 +40,14 @@ func (c *Identity) Paused() bool {
 
 // StatusConditionRead scans the status conditions for an existing condition whose type
 // matches.
-func (c *Identity) StatusConditionRead(t unikornv1core.ConditionType) (*unikornv1core.Condition, error) {
+func (c *Identity) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Condition, error) {
 	return unikornv1core.GetCondition(c.Status.Conditions, t)
 }
 
-// StatusConditionWrite either adds or updates a condition in the cluster manager status.
-// If the condition, status and message match an existing condition the update is
-// ignored.
-func (c *Identity) StatusConditionWrite(t unikornv1core.ConditionType, status corev1.ConditionStatus, reason unikornv1core.ConditionReason, message string) {
-	unikornv1core.UpdateCondition(&c.Status.Conditions, t, status, reason, message)
+// SetProvisioningCondition sets the Available condition with a reason drawn from
+// the provisioning vocabulary.
+func (c *Identity) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
+	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
 }
 
 // ResourceLabels generates a set of labels to uniquely identify the resource
@@ -64,15 +64,14 @@ func (c *Network) Paused() bool {
 
 // StatusConditionRead scans the status conditions for an existing condition whose type
 // matches.
-func (c *Network) StatusConditionRead(t unikornv1core.ConditionType) (*unikornv1core.Condition, error) {
+func (c *Network) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Condition, error) {
 	return unikornv1core.GetCondition(c.Status.Conditions, t)
 }
 
-// StatusConditionWrite either adds or updates a condition in the cluster manager status.
-// If the condition, status and message match an existing condition the update is
-// ignored.
-func (c *Network) StatusConditionWrite(t unikornv1core.ConditionType, status corev1.ConditionStatus, reason unikornv1core.ConditionReason, message string) {
-	unikornv1core.UpdateCondition(&c.Status.Conditions, t, status, reason, message)
+// SetProvisioningCondition sets the Available condition with a reason drawn from
+// the provisioning vocabulary.
+func (c *Network) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
+	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
 }
 
 // ResourceLabels generates a set of labels to uniquely identify the resource
@@ -102,15 +101,14 @@ func (c *SecurityGroup) Paused() bool {
 
 // StatusConditionRead scans the status conditions for an existing condition whose type
 // matches.
-func (c *SecurityGroup) StatusConditionRead(t unikornv1core.ConditionType) (*unikornv1core.Condition, error) {
+func (c *SecurityGroup) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Condition, error) {
 	return unikornv1core.GetCondition(c.Status.Conditions, t)
 }
 
-// StatusConditionWrite either adds or updates a condition in the cluster manager status.
-// If the condition, status and message match an existing condition the update is
-// ignored.
-func (c *SecurityGroup) StatusConditionWrite(t unikornv1core.ConditionType, status corev1.ConditionStatus, reason unikornv1core.ConditionReason, message string) {
-	unikornv1core.UpdateCondition(&c.Status.Conditions, t, status, reason, message)
+// SetProvisioningCondition sets the Available condition with a reason drawn from
+// the provisioning vocabulary.
+func (c *SecurityGroup) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
+	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
 }
 
 // ResourceLabels generates a set of labels to uniquely identify the resource
@@ -127,15 +125,14 @@ func (c *LoadBalancer) Paused() bool {
 
 // StatusConditionRead scans the status conditions for an existing condition whose type
 // matches.
-func (c *LoadBalancer) StatusConditionRead(t unikornv1core.ConditionType) (*unikornv1core.Condition, error) {
+func (c *LoadBalancer) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Condition, error) {
 	return unikornv1core.GetCondition(c.Status.Conditions, t)
 }
 
-// StatusConditionWrite either adds or updates a condition in the cluster manager status.
-// If the condition, status and message match an existing condition the update is
-// ignored.
-func (c *LoadBalancer) StatusConditionWrite(t unikornv1core.ConditionType, status corev1.ConditionStatus, reason unikornv1core.ConditionReason, message string) {
-	unikornv1core.UpdateCondition(&c.Status.Conditions, t, status, reason, message)
+// SetProvisioningCondition sets the Available condition with a reason drawn from
+// the provisioning vocabulary.
+func (c *LoadBalancer) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
+	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
 }
 
 // ResourceLabels generates a set of labels to uniquely identify the resource
@@ -152,15 +149,14 @@ func (c *Volume) Paused() bool {
 
 // StatusConditionRead scans the status conditions for an existing condition whose type
 // matches.
-func (c *Volume) StatusConditionRead(t unikornv1core.ConditionType) (*unikornv1core.Condition, error) {
+func (c *Volume) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Condition, error) {
 	return unikornv1core.GetCondition(c.Status.Conditions, t)
 }
 
-// StatusConditionWrite either adds or updates a condition in the volume status.
-// If the condition, status and message match an existing condition the update is
-// ignored.
-func (c *Volume) StatusConditionWrite(t unikornv1core.ConditionType, status corev1.ConditionStatus, reason unikornv1core.ConditionReason, message string) {
-	unikornv1core.UpdateCondition(&c.Status.Conditions, t, status, reason, message)
+// SetProvisioningCondition sets the Available condition with a reason drawn from
+// the provisioning vocabulary.
+func (c *Volume) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
+	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
 }
 
 // ResourceLabels generates a set of labels to uniquely identify the resource
@@ -177,15 +173,22 @@ func (c *Server) Paused() bool {
 
 // StatusConditionRead scans the status conditions for an existing condition whose type
 // matches.
-func (c *Server) StatusConditionRead(t unikornv1core.ConditionType) (*unikornv1core.Condition, error) {
+func (c *Server) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Condition, error) {
 	return unikornv1core.GetCondition(c.Status.Conditions, t)
 }
 
-// StatusConditionWrite either adds or updates a condition in the cluster manager status.
-// If the condition, status and message match an existing condition the update is
-// ignored.
-func (c *Server) StatusConditionWrite(t unikornv1core.ConditionType, status corev1.ConditionStatus, reason unikornv1core.ConditionReason, message string) {
-	unikornv1core.UpdateCondition(&c.Status.Conditions, t, status, reason, message)
+// SetProvisioningCondition sets the Available condition with a reason drawn from
+// the provisioning vocabulary.
+func (c *Server) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
+	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
+}
+
+// SetHealthCondition sets the Healthy condition with a reason drawn from the
+// health vocabulary. A server is the only region resource that carries a health
+// verdict (derived from the provider's observed server state); it is an
+// informational signal and nothing gates on it.
+func (c *Server) SetHealthCondition(status corev1.ConditionStatus, reason unikornv1core.HealthConditionReason, message string) {
+	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionHealthy, status, string(reason), message)
 }
 
 // ResourceLabels generates a set of labels to uniquely identify the resource
@@ -422,15 +425,22 @@ func (s *FileStorage) Paused() bool {
 
 // StatusConditionRead scans the status conditions for an existing condition whose type
 // matches.
-func (s *FileStorage) StatusConditionRead(t unikornv1core.ConditionType) (*unikornv1core.Condition, error) {
+func (s *FileStorage) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Condition, error) {
 	return unikornv1core.GetCondition(s.Status.Conditions, t)
 }
 
-// StatusConditionWrite either adds or updates a condition in the cluster manager status.
-// If the condition, status and message match an existing condition the update is
-// ignored.
-func (s *FileStorage) StatusConditionWrite(t unikornv1core.ConditionType, status corev1.ConditionStatus, reason unikornv1core.ConditionReason, message string) {
-	unikornv1core.UpdateCondition(&s.Status.Conditions, t, status, reason, message)
+// SetProvisioningCondition sets the Available condition with a reason drawn from
+// the provisioning vocabulary.
+func (s *FileStorage) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
+	unikornv1core.UpdateCondition(&s.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
+}
+
+// StatusConditionRead lets a snapshot policy status be read through the typed
+// condition accessors (GetAvailableCondition et al): it carries its own
+// conditions, so it satisfies StatusConditionReader even though it is a
+// subresource rather than a top-level managed resource.
+func (s *FileStorageSnapshotPolicyStatus) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Condition, error) {
+	return unikornv1core.GetCondition(s.Conditions, t)
 }
 
 // ResourceLabels generates a set of labels to uniquely identify the resource
