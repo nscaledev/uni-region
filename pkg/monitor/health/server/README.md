@@ -17,7 +17,7 @@ status/telemetry model.
 
 - resolves provider and flavor context per region and caches it for a poll cycle
 - updates server status through provider `UpdateServerState(...)`
-- refines the server's live `Phase` from observed Nova + Ironic state. For OpenStack baremetal servers in Nova `BUILD`, an Ironic node lookup distinguishes `Queued` (provider has accepted the create but hardware is not yet engaged — pre-deploy Ironic states) from `Building` (Ironic actively deploying, including transient deploy failures). VMs in Nova `BUILD` go straight to `Building`. Provisioning status itself stays purely condition-derived (provisioner-owned, one-shot): the monitor never writes it. Phase is the live readiness signal once provisioning status reaches `provisioned`.
+- refines the server's live lifecycle state from observed Nova + Ironic state. Lifecycle state rides the generic core `Active` condition (status `True` only when the server is running; the reason carries the precise state via the domain-owned `ActiveConditionReason` vocabulary — `Pending`/`Queued`/`Building`/`Running`/`Stopping`/`Stopped`/`Error`), not a bespoke status field. For OpenStack baremetal servers in Nova `BUILD`, an Ironic node lookup distinguishes `Queued` (provider has accepted the create but hardware is not yet engaged — pre-deploy Ironic states) from `Building` (Ironic actively deploying, including transient deploy failures). VMs in Nova `BUILD` go straight to `Building`. Provisioning status itself is a separate axis (the `Available` condition), condition-derived and provisioner-owned (one-shot): the monitor never writes it. The `Active` condition is the live readiness signal once provisioning status reaches `provisioned`.
 - latches `status.provisionedAt` from Nova `launched_at`, alongside `launchedAt`
   and ahead of the `BUILD` early-return, so it fires for VMs and baremetal alike
   regardless of live power state. This is monitor-owned observed state (like
@@ -65,8 +65,8 @@ status/telemetry model.
 - Servers skipped because region/provider resolution fails are absent from the
   gauge for that cycle rather than misreported as a fake state.
 - Provider-specific progress refinement must be best effort. For example,
-  OpenStack Ironic lookup failures degrade baremetal Phase derivation to the
-  VM default (Building) so API responses still get a coherent live signal
+  OpenStack Ironic lookup failures degrade baremetal `Active`-state derivation
+  to the VM default (Building) so API responses still get a coherent live signal
   instead of failing status refresh. Baremetal progress refinement depends on
   the Region provider credential having Ironic node visibility by instance
   UUID; if local or production policy withholds that visibility, the monitor
@@ -100,12 +100,12 @@ status/telemetry model.
   no-op patch produce no event and drop that wake, reopening the window in which
   a dropped park stalls. See `pkg/provisioners/managers/server` for the wake
   predicate that depends on it.
-- Phase is a live readiness signal once provisioning status reaches
-  `provisioned`. If the monitor stops running, or a server is persistently
-  skipped before the status patch (region resolution, identity, or Nova lookup
-  failures), Phase can lag observed reality by an unbounded amount. In healthy
-  operation staleness is bounded by one poll period. For a pending rebuild the
-  same stall is now functional, not merely cosmetic: a stopped or
+- The `Active` condition is a live readiness signal once provisioning status
+  reaches `provisioned`. If the monitor stops running, or a server is
+  persistently skipped before the status patch (region resolution, identity, or
+  Nova lookup failures), it can lag observed reality by an unbounded amount. In
+  healthy operation staleness is bounded by one poll period. For a pending
+  rebuild the same stall is now functional, not merely cosmetic: a stopped or
   persistently-skipping monitor never records the terminal observation, so the
   marker clear and the failure park wait indefinitely — until a controller
   restart re-lists the server or a spec change wakes the reconciler through
@@ -122,8 +122,8 @@ status/telemetry model.
   overhead and Nova allocation time.
 - Both duration metrics fire only once per server, on the first transition
   into Running where the relevant Nova timestamp is non-nil. The intermediate
-  Phase path (Pending → Building → Running for VMs, Pending → Queued →
+  `Active`-state path (Pending → Building → Running for VMs, Pending → Queued →
   Building → Running for baremetal) is transparent to the histograms: they
-  trigger on the move into Running regardless of which earlier phase the
+  trigger on the move into Running regardless of which earlier state the
   server was last observed in. Negative durations (clock skew between the Uni
   controller and Nova) are logged and skipped rather than recorded.

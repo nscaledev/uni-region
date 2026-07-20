@@ -28,39 +28,52 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-// TestConvertInstanceLifecyclePhase verifies that every CRD phase maps to the
-// correct API enum value and that an unknown phase returns nil.
-func TestConvertInstanceLifecyclePhase(t *testing.T) {
+// TestServerPowerState verifies the server's Active condition (its lifecycle/power
+// axis) projects onto the correct API enum value, and that an absent condition or
+// an unknown reason returns nil (the field is omitted rather than bogus).
+func TestServerPowerState(t *testing.T) {
 	t.Parallel()
+
+	serverWithReason := func(reason unikornv1.ActiveConditionReason) *unikornv1.Server {
+		s := &unikornv1.Server{}
+		s.SetActiveCondition(reason)
+
+		return s
+	}
 
 	cases := []struct {
 		name  string
-		input unikornv1.InstanceLifecyclePhase
+		input *unikornv1.Server
 		want  *openapi.InstanceLifecyclePhase
 	}{
 		{
 			name:  "Pending",
-			input: unikornv1.InstanceLifecyclePhasePending,
+			input: serverWithReason(unikornv1.ActiveConditionReasonPending),
 			want:  ptr.To(openapi.InstanceLifecyclePhasePending),
 		},
 		{
 			name:  "Running",
-			input: unikornv1.InstanceLifecyclePhaseRunning,
+			input: serverWithReason(unikornv1.ActiveConditionReasonRunning),
 			want:  ptr.To(openapi.InstanceLifecyclePhaseRunning),
 		},
 		{
 			name:  "Stopping",
-			input: unikornv1.InstanceLifecyclePhaseStopping,
+			input: serverWithReason(unikornv1.ActiveConditionReasonStopping),
 			want:  ptr.To(openapi.InstanceLifecyclePhaseStopping),
 		},
 		{
 			name:  "Stopped",
-			input: unikornv1.InstanceLifecyclePhaseStopped,
+			input: serverWithReason(unikornv1.ActiveConditionReasonStopped),
 			want:  ptr.To(openapi.InstanceLifecyclePhaseStopped),
 		},
 		{
-			name:  "unknown phase returns nil",
-			input: "some-future-phase",
+			name:  "absent condition returns nil",
+			input: &unikornv1.Server{},
+			want:  nil,
+		},
+		{
+			name:  "unknown reason returns nil",
+			input: serverWithReason("some-future-state"),
 			want:  nil,
 		},
 	}
@@ -69,7 +82,7 @@ func TestConvertInstanceLifecyclePhase(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := server.ConvertInstanceLifecyclePhase(tc.input)
+			got := server.ServerPowerState(tc.input)
 			require.Equal(t, tc.want, got)
 		})
 	}

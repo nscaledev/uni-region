@@ -261,8 +261,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
 - Flavor export is a hybrid model: OpenStack discovers the flavor inventory, but
   region configuration can enrich or override user-facing flavor metadata such
   as architecture, baremetal status, and GPU semantics. The baremetal flag is
-  also operationally meaningful for live Phase reporting: a Nova `BUILD`
-  server with a baremetal flavor is disambiguated through Ironic so the API
+  also operationally meaningful for live lifecycle (`Active` condition) reporting:
+  a Nova `BUILD` server with a baremetal flavor is disambiguated through Ironic so the API
   can distinguish `Queued` (waiting on hardware) from `Building` (provider
   actively deploying).
 - VolumeClass configuration follows the same inventory pattern for block
@@ -297,16 +297,17 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   `OpenstackSecurityGroup`, or `OpenstackServer` CRDs as authoritative state.
 - Baremetal server progress uses Ironic as an additional provider truth source
   only while Nova reports `BUILD` for a flavor marked baremetal in region
-  configuration. The result feeds `setServerPhase`, which writes `Queued`
-  (pre-deploy Ironic states: not yet picked up, cleaning, inspecting, etc.)
-  or `Building` (Ironic actively deploying — including the post-deploy `Error`
-  state and the transient `*Fail` states, on the principle that the node is
-  still in the build pipeline as far as the platform is concerned and the
-  failure signal belongs on the `Healthy` condition rather than on Phase.
-  The node lifecycle eventually terminates via delete; splitting "in the
-  pipeline" from "in the pipeline but unhappy" across both Phase and Healthy
-  would just duplicate one concept across two axes). Provisioning status
-  itself is provisioner-owned and the monitor never writes it; `setServerPhase`
+  configuration. The result feeds `setServerActive`, which sets the `Active`
+  condition to `Queued` (pre-deploy Ironic states: not yet picked up, cleaning,
+  inspecting, etc.) or `Building` (Ironic actively deploying — including the
+  post-deploy `Error` state and the transient `*Fail` states, on the principle
+  that the node is still in the build pipeline as far as the platform is concerned
+  and the failure signal belongs on the `Healthy` condition rather than on the
+  `Active` condition. The node lifecycle eventually terminates via delete;
+  splitting "in the pipeline" from "in the pipeline but unhappy" across both the
+  `Active` and `Healthy` conditions would just duplicate one concept across two
+  axes). Provisioning status itself is a separate axis (the `Available` condition),
+  provisioner-owned and the monitor never writes it; `setServerActive`
   does, however, latch the monitor-owned `status.provisionedAt` field from Nova
   `launched_at` the first time a server is seen booted (write-once, never
   cleared, independent of live power state), which the controller's bounded
@@ -327,8 +328,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   policy that permits `baremetal:node:list_all`/node-detail visibility. If the
   privileged client cannot be created or Ironic rejects or fails the lookup,
   the monitor logs the failure and falls back to the VM default `Building`
-  Phase so API responses still see a coherent live signal rather than failing
-  the monitor path.
+  `Active` state so API responses still see a coherent live signal rather than
+  failing the monitor path.
 - Some OpenStack list APIs are not safe to treat as exact lookup, notably
   server, network, and Octavia load-balancer `name` filters:
   - `name` filters behave like prefix or regular-expression matches rather than

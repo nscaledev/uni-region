@@ -94,27 +94,39 @@ func (c *Checker) recordDurationIfFirstObservation(ctx context.Context, server *
 	record(duration)
 }
 
-// onPhaseTransition logs the phase change and records provisioning histogram
-// observations on the first transition into Running from any earlier phase.
-// The Phase path is now Pending → Building → Running for VMs and
+// onPhaseTransition logs the lifecycle change and records provisioning histogram
+// observations on the first transition into Running from any earlier state. The
+// lifecycle path is now Pending → Building → Running for VMs and
 // Pending → Queued → Building → Running for baremetal, so a strict
 // "Pending → Running" predicate would silently miss every observation. The
 // per-server one-shot guarantee is preserved by recordDurationIfFirstObservation,
 // which fires only when the relevant timestamp transitions from nil to non-nil.
 // Precondition: region label validated by Check; identity label validated by checkServer.
 func (c *Checker) onPhaseTransition(ctx context.Context, server, updated *unikornv1.Server, regionID, regionName, flavorID, flavorName string) {
-	if server.Status.Phase == updated.Status.Phase {
+	newActive, err := unikornv1.GetActiveCondition(updated)
+	if err != nil {
+		return
+	}
+
+	// The prior reason is empty when the server had no Active condition yet (its
+	// first observation), which still counts as a transition into the new state.
+	var oldReason unikornv1.ActiveConditionReason
+	if oldActive, oldErr := unikornv1.GetActiveCondition(server); oldErr == nil {
+		oldReason = oldActive.Reason
+	}
+
+	if oldReason == newActive.Reason {
 		return
 	}
 
 	serverLogger(ctx, server).Info("instance phase transition",
-		"from_phase", string(server.Status.Phase),
-		"to_phase", string(updated.Status.Phase),
+		"from_phase", string(oldReason),
+		"to_phase", string(newActive.Reason),
 		"time_since_creation_ms", time.Since(server.CreationTimestamp.Time).Milliseconds(),
 	)
 
-	becameRunning := server.Status.Phase != unikornv1.InstanceLifecyclePhaseRunning &&
-		updated.Status.Phase == unikornv1.InstanceLifecyclePhaseRunning
+	becameRunning := oldReason != unikornv1.ActiveConditionReasonRunning &&
+		newActive.Reason == unikornv1.ActiveConditionReasonRunning
 
 	if !becameRunning || c.metrics == nil {
 		return
@@ -366,8 +378,15 @@ func (c *Checker) updateStateCounts(servers []checkedServer) {
 	counts := make(map[StateMetricsKey]int64)
 
 	for _, s := range servers {
+		// An unobserved server (no Active condition) contributes an empty state,
+		// matching the prior behaviour of an unset lifecycle phase.
+		var state unikornv1.ActiveConditionReason
+		if active, err := unikornv1.GetActiveCondition(s.server); err == nil {
+			state = active.Reason
+		}
+
 		key := StateMetricsKey{
-			State:      strings.ToLower(string(s.server.Status.Phase)),
+			State:      strings.ToLower(string(state)),
 			RegionID:   s.regionID,
 			RegionName: s.regionName,
 			FlavorID:   s.flavorID,

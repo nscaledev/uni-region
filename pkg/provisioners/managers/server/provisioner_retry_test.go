@@ -95,10 +95,22 @@ func retryClient(t *testing.T, objects ...client.Object) client.Client {
 }
 
 // withProviderCreateFailure marks a server as a terminal provider-create failure
-// via the lifecycle Phase — the axis ProviderCreateFailure now keys off (Nova
-// ERROR is surfaced as InstanceLifecyclePhaseError by the monitor).
+// via the Active condition — the axis ProviderCreateFailure now keys off (Nova
+// ERROR is surfaced as ActiveConditionReasonError by the monitor).
 func withProviderCreateFailure(server *regionv1.Server) {
-	server.Status.Phase = regionv1.InstanceLifecyclePhaseError
+	server.SetActiveCondition(regionv1.ActiveConditionReasonError)
+}
+
+// activeReason reads the server's lifecycle Active condition, failing the test if
+// the condition is absent. It replaces the assertions that used to read the
+// deleted Status.Phase field.
+func activeReason(t *testing.T, server *regionv1.Server) regionv1.ActiveConditionReason {
+	t.Helper()
+
+	active, err := regionv1.GetActiveCondition(server)
+	require.NoError(t, err)
+
+	return active.Reason
 }
 
 func withProviderCreateRetrying(server *regionv1.Server) {
@@ -169,7 +181,7 @@ func TestProvision_ProviderCreateFailureDeletesAndYields(t *testing.T) {
 	require.ErrorIs(t, err, provisioners.ErrYield)
 	require.Equal(t, int32(1), server.Status.ProviderCreateFailures)
 	require.False(t, server.Status.ProviderCreateRetrying)
-	require.Equal(t, regionv1.InstanceLifecyclePhasePending, server.Status.Phase)
+	require.Equal(t, regionv1.ActiveConditionReasonPending, activeReason(t, server))
 	require.Nil(t, server.Status.PrivateIP)
 	require.Nil(t, server.Status.PublicIP)
 	// The MAC is owned exclusively by the monitor; the reconciler's create-failure
@@ -207,7 +219,7 @@ func TestProvision_ProviderCreateRetryKeepsDeleting(t *testing.T) {
 	require.Equal(t, int32(1), server.Status.ProviderCreateFailures)
 	require.True(t, server.Status.ProviderCreateRetrying)
 	// The runtime reset ran, clearing the terminal Error phase back to Pending.
-	require.Equal(t, regionv1.InstanceLifecyclePhasePending, server.Status.Phase)
+	require.Equal(t, regionv1.ActiveConditionReasonPending, activeReason(t, server))
 	requireNoEvent(t, recorder)
 }
 

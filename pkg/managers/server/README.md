@@ -21,5 +21,5 @@ The "pre-launch" test is the shared `ProviderCreateFailure` predicate exported b
 reused here verbatim so the watch trigger and the provisioner action are decided
 by the same code. It blocks the rebuild for any server that has ever been
 provisioned — authoritatively via the write-once `status.provisionedAt` latch,
-with `launchedAt`/phase as backstops — so a healthy, data-bearing server that
+with `launchedAt` and the `Active` condition as backstops — so a healthy, data-bearing server that
 later errors never re-arms delete-and-retry.

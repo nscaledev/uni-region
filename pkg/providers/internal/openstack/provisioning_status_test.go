@@ -35,7 +35,6 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -50,39 +49,51 @@ const (
 
 var errIronicUnavailable = errors.New("ironic unavailable")
 
+// activeReason reads the server's lifecycle Active condition, failing the test if
+// the condition is absent. It replaces the assertions that used to read the
+// deleted Status.Phase field.
+func activeReason(t *testing.T, server *unikornv1.Server) unikornv1.ActiveConditionReason {
+	t.Helper()
+
+	active, err := unikornv1.GetActiveCondition(server)
+	require.NoError(t, err)
+
+	return active.Reason
+}
+
 func TestBaremetalBuildPhase(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name string
 		node *nodes.Node
-		want unikornv1.InstanceLifecyclePhase
+		want unikornv1.ActiveConditionReason
 	}{
-		{name: "no node", node: nil, want: unikornv1.InstanceLifecyclePhaseQueued},
+		{name: "no node", node: nil, want: unikornv1.ActiveConditionReasonQueued},
 		// Pre-deploy: Ironic is alive but has not started deployment.
-		{name: "available", node: &nodes.Node{ProvisionState: string(nodes.Available)}, want: unikornv1.InstanceLifecyclePhaseQueued},
-		{name: "manageable", node: &nodes.Node{ProvisionState: string(nodes.Manageable)}, want: unikornv1.InstanceLifecyclePhaseQueued},
-		{name: "enroll", node: &nodes.Node{ProvisionState: string(nodes.Enroll)}, want: unikornv1.InstanceLifecyclePhaseQueued},
-		{name: "cleaning", node: &nodes.Node{ProvisionState: string(nodes.Cleaning)}, want: unikornv1.InstanceLifecyclePhaseQueued},
-		{name: "clean wait", node: &nodes.Node{ProvisionState: string(nodes.CleanWait)}, want: unikornv1.InstanceLifecyclePhaseQueued},
-		{name: "clean hold", node: &nodes.Node{ProvisionState: string(nodes.CleanHold)}, want: unikornv1.InstanceLifecyclePhaseQueued},
-		{name: "verifying", node: &nodes.Node{ProvisionState: string(nodes.Verifying)}, want: unikornv1.InstanceLifecyclePhaseQueued},
-		{name: "inspecting", node: &nodes.Node{ProvisionState: string(nodes.Inspecting)}, want: unikornv1.InstanceLifecyclePhaseQueued},
-		{name: "inspect wait", node: &nodes.Node{ProvisionState: string(nodes.InspectWait)}, want: unikornv1.InstanceLifecyclePhaseQueued},
-		{name: "adopting", node: &nodes.Node{ProvisionState: string(nodes.Adopting)}, want: unikornv1.InstanceLifecyclePhaseQueued},
+		{name: "available", node: &nodes.Node{ProvisionState: string(nodes.Available)}, want: unikornv1.ActiveConditionReasonQueued},
+		{name: "manageable", node: &nodes.Node{ProvisionState: string(nodes.Manageable)}, want: unikornv1.ActiveConditionReasonQueued},
+		{name: "enroll", node: &nodes.Node{ProvisionState: string(nodes.Enroll)}, want: unikornv1.ActiveConditionReasonQueued},
+		{name: "cleaning", node: &nodes.Node{ProvisionState: string(nodes.Cleaning)}, want: unikornv1.ActiveConditionReasonQueued},
+		{name: "clean wait", node: &nodes.Node{ProvisionState: string(nodes.CleanWait)}, want: unikornv1.ActiveConditionReasonQueued},
+		{name: "clean hold", node: &nodes.Node{ProvisionState: string(nodes.CleanHold)}, want: unikornv1.ActiveConditionReasonQueued},
+		{name: "verifying", node: &nodes.Node{ProvisionState: string(nodes.Verifying)}, want: unikornv1.ActiveConditionReasonQueued},
+		{name: "inspecting", node: &nodes.Node{ProvisionState: string(nodes.Inspecting)}, want: unikornv1.ActiveConditionReasonQueued},
+		{name: "inspect wait", node: &nodes.Node{ProvisionState: string(nodes.InspectWait)}, want: unikornv1.ActiveConditionReasonQueued},
+		{name: "adopting", node: &nodes.Node{ProvisionState: string(nodes.Adopting)}, want: unikornv1.ActiveConditionReasonQueued},
 		// Deploy: Ironic is actively writing the node, including failure variants.
 		// Failures stay in Building; the failure signal lives on the Healthy condition.
-		{name: "deploying", node: &nodes.Node{ProvisionState: string(nodes.Deploying)}, want: unikornv1.InstanceLifecyclePhaseBuilding},
-		{name: "deploy wait", node: &nodes.Node{ProvisionState: string(nodes.DeployWait)}, want: unikornv1.InstanceLifecyclePhaseBuilding},
-		{name: "deploy hold", node: &nodes.Node{ProvisionState: string(nodes.DeployHold)}, want: unikornv1.InstanceLifecyclePhaseBuilding},
-		{name: "active", node: &nodes.Node{ProvisionState: string(nodes.Active)}, want: unikornv1.InstanceLifecyclePhaseBuilding},
-		{name: "deploy fail", node: &nodes.Node{ProvisionState: string(nodes.DeployFail)}, want: unikornv1.InstanceLifecyclePhaseBuilding},
-		{name: "clean fail", node: &nodes.Node{ProvisionState: string(nodes.CleanFail)}, want: unikornv1.InstanceLifecyclePhaseBuilding},
-		{name: "inspect fail", node: &nodes.Node{ProvisionState: string(nodes.InspectFail)}, want: unikornv1.InstanceLifecyclePhaseBuilding},
-		{name: "adopt fail", node: &nodes.Node{ProvisionState: string(nodes.AdoptFail)}, want: unikornv1.InstanceLifecyclePhaseBuilding},
-		{name: "error", node: &nodes.Node{ProvisionState: string(nodes.Error)}, want: unikornv1.InstanceLifecyclePhaseBuilding},
+		{name: "deploying", node: &nodes.Node{ProvisionState: string(nodes.Deploying)}, want: unikornv1.ActiveConditionReasonBuilding},
+		{name: "deploy wait", node: &nodes.Node{ProvisionState: string(nodes.DeployWait)}, want: unikornv1.ActiveConditionReasonBuilding},
+		{name: "deploy hold", node: &nodes.Node{ProvisionState: string(nodes.DeployHold)}, want: unikornv1.ActiveConditionReasonBuilding},
+		{name: "active", node: &nodes.Node{ProvisionState: string(nodes.Active)}, want: unikornv1.ActiveConditionReasonBuilding},
+		{name: "deploy fail", node: &nodes.Node{ProvisionState: string(nodes.DeployFail)}, want: unikornv1.ActiveConditionReasonBuilding},
+		{name: "clean fail", node: &nodes.Node{ProvisionState: string(nodes.CleanFail)}, want: unikornv1.ActiveConditionReasonBuilding},
+		{name: "inspect fail", node: &nodes.Node{ProvisionState: string(nodes.InspectFail)}, want: unikornv1.ActiveConditionReasonBuilding},
+		{name: "adopt fail", node: &nodes.Node{ProvisionState: string(nodes.AdoptFail)}, want: unikornv1.ActiveConditionReasonBuilding},
+		{name: "error", node: &nodes.Node{ProvisionState: string(nodes.Error)}, want: unikornv1.ActiveConditionReasonBuilding},
 		// Unrecognised state is conservatively Queued.
-		{name: "unknown", node: &nodes.Node{ProvisionState: "wat"}, want: unikornv1.InstanceLifecyclePhaseQueued},
+		{name: "unknown", node: &nodes.Node{ProvisionState: "wat"}, want: unikornv1.ActiveConditionReasonQueued},
 	}
 
 	for _, tt := range tests {
@@ -109,9 +120,9 @@ func TestSetServerPhaseBuildVMBuilding(t *testing.T) {
 
 	server := &unikornv1.Server{}
 
-	setServerPhase(t.Context(), server, &servers.Server{Status: "BUILD"}, nil)
+	setServerActive(t.Context(), server, &servers.Server{Status: "BUILD"}, nil)
 
-	require.Equal(t, unikornv1.InstanceLifecyclePhaseBuilding, server.Status.Phase)
+	require.Equal(t, unikornv1.ActiveConditionReasonBuilding, activeReason(t, server))
 }
 
 func TestSetServerPhaseBuildBaremetalQueued(t *testing.T) {
@@ -119,10 +130,10 @@ func TestSetServerPhaseBuildBaremetalQueued(t *testing.T) {
 
 	server := &unikornv1.Server{}
 
-	setServerPhase(t.Context(), server, &servers.Server{Status: "BUILD"},
+	setServerActive(t.Context(), server, &servers.Server{Status: "BUILD"},
 		&nodes.Node{ProvisionState: string(nodes.Available)})
 
-	require.Equal(t, unikornv1.InstanceLifecyclePhaseQueued, server.Status.Phase)
+	require.Equal(t, unikornv1.ActiveConditionReasonQueued, activeReason(t, server))
 }
 
 func TestSetServerPhaseBuildBaremetalBuilding(t *testing.T) {
@@ -130,10 +141,10 @@ func TestSetServerPhaseBuildBaremetalBuilding(t *testing.T) {
 
 	server := &unikornv1.Server{}
 
-	setServerPhase(t.Context(), server, &servers.Server{Status: "BUILD"},
+	setServerActive(t.Context(), server, &servers.Server{Status: "BUILD"},
 		&nodes.Node{ProvisionState: string(nodes.Deploying)})
 
-	require.Equal(t, unikornv1.InstanceLifecyclePhaseBuilding, server.Status.Phase)
+	require.Equal(t, unikornv1.ActiveConditionReasonBuilding, activeReason(t, server))
 }
 
 func TestSetServerPhaseRunning(t *testing.T) {
@@ -142,9 +153,9 @@ func TestSetServerPhaseRunning(t *testing.T) {
 	launchedAt := time.Now().Add(-time.Minute)
 	server := &unikornv1.Server{}
 
-	setServerPhase(t.Context(), server, &servers.Server{Status: "ACTIVE", PowerState: servers.RUNNING, LaunchedAt: launchedAt}, nil)
+	setServerActive(t.Context(), server, &servers.Server{Status: "ACTIVE", PowerState: servers.RUNNING, LaunchedAt: launchedAt}, nil)
 
-	require.Equal(t, unikornv1.InstanceLifecyclePhaseRunning, server.Status.Phase)
+	require.Equal(t, unikornv1.ActiveConditionReasonRunning, activeReason(t, server))
 	require.NotNil(t, server.Status.ProvisionedAt)
 	require.Equal(t, metav1.NewTime(launchedAt), *server.Status.ProvisionedAt, "ProvisionedAt latches the Nova launched_at signal")
 }
@@ -159,9 +170,9 @@ func TestSetServerPhaseRunningLatchesProvisionedAtOnce(t *testing.T) {
 	server := &unikornv1.Server{}
 	server.Status.ProvisionedAt = &provisionedAt
 
-	setServerPhase(t.Context(), server, &servers.Server{Status: "ACTIVE", PowerState: servers.RUNNING, LaunchedAt: time.Now()}, nil)
+	setServerActive(t.Context(), server, &servers.Server{Status: "ACTIVE", PowerState: servers.RUNNING, LaunchedAt: time.Now()}, nil)
 
-	require.Equal(t, unikornv1.InstanceLifecyclePhaseRunning, server.Status.Phase)
+	require.Equal(t, unikornv1.ActiveConditionReasonRunning, activeReason(t, server))
 	require.Equal(t, provisionedAt, *server.Status.ProvisionedAt, "ProvisionedAt must not be overwritten once latched")
 }
 
@@ -175,7 +186,7 @@ func TestSetServerPhaseLatchesProvisionedAtWithoutRunningPowerState(t *testing.T
 	launchedAt := time.Now().Add(-time.Minute)
 	server := &unikornv1.Server{}
 
-	setServerPhase(t.Context(), server, &servers.Server{Status: "ACTIVE", PowerState: servers.NOSTATE, LaunchedAt: launchedAt}, nil)
+	setServerActive(t.Context(), server, &servers.Server{Status: "ACTIVE", PowerState: servers.NOSTATE, LaunchedAt: launchedAt}, nil)
 
 	require.NotNil(t, server.Status.ProvisionedAt, "a booted server must latch regardless of live power state")
 	require.Equal(t, metav1.NewTime(launchedAt), *server.Status.ProvisionedAt)
@@ -190,9 +201,9 @@ func TestSetServerPhaseStoppedStillLatchesProvisionedAt(t *testing.T) {
 	launchedAt := time.Now().Add(-time.Hour)
 	server := &unikornv1.Server{}
 
-	setServerPhase(t.Context(), server, &servers.Server{Status: "SHUTOFF", PowerState: servers.SHUTDOWN, LaunchedAt: launchedAt}, nil)
+	setServerActive(t.Context(), server, &servers.Server{Status: "SHUTOFF", PowerState: servers.SHUTDOWN, LaunchedAt: launchedAt}, nil)
 
-	require.Equal(t, unikornv1.InstanceLifecyclePhaseStopped, server.Status.Phase)
+	require.Equal(t, unikornv1.ActiveConditionReasonStopped, activeReason(t, server))
 	require.NotNil(t, server.Status.ProvisionedAt, "a booted-then-stopped server must remain provisioned")
 }
 
@@ -204,7 +215,7 @@ func TestSetServerPhaseBuildDoesNotLatchProvisionedAt(t *testing.T) {
 
 	server := &unikornv1.Server{}
 
-	setServerPhase(t.Context(), server, &servers.Server{Status: "BUILD"}, nil)
+	setServerActive(t.Context(), server, &servers.Server{Status: "BUILD"}, nil)
 
 	require.Nil(t, server.Status.ProvisionedAt, "a building server must not be considered provisioned")
 }
@@ -214,9 +225,9 @@ func TestSetServerPhaseStopped(t *testing.T) {
 
 	server := &unikornv1.Server{}
 
-	setServerPhase(t.Context(), server, &servers.Server{Status: "SHUTOFF", PowerState: servers.SHUTDOWN}, nil)
+	setServerActive(t.Context(), server, &servers.Server{Status: "SHUTOFF", PowerState: servers.SHUTDOWN}, nil)
 
-	require.Equal(t, unikornv1.InstanceLifecyclePhaseStopped, server.Status.Phase)
+	require.Equal(t, unikornv1.ActiveConditionReasonStopped, activeReason(t, server))
 }
 
 // TestUpdateServerStateWithClientsRecordsMACAddress is the end-to-end wiring
@@ -378,8 +389,8 @@ func TestUpdateServerStateWithClientsStampsSucceededForStoppedConvergedRebuild(t
 
 	condition, conditionErr := server.StatusConditionRead(unikornv1core.ConditionHealthy)
 	require.NoError(t, conditionErr)
-	require.Equal(t, corev1.ConditionFalse, condition.Status)
-	require.Equal(t, unikornv1core.ConditionReasonDegraded, condition.Reason)
+	require.Equal(t, metav1.ConditionFalse, condition.Status)
+	require.Equal(t, string(unikornv1core.ConditionReasonDegraded), condition.Reason)
 }
 
 // TestUpdateServerStateWithClientsBaremetalBuildSetsPhaseFromIronicLookup is the
@@ -422,7 +433,7 @@ func TestUpdateServerStateWithClientsBaremetalBuildSetsPhaseFromIronicLookup(t *
 	require.NoError(t, err)
 	require.True(t, factoryCalled)
 	require.Equal(t, "nova-id", baremetalClient.instanceUUID)
-	require.Equal(t, unikornv1.InstanceLifecyclePhaseQueued, server.Status.Phase)
+	require.Equal(t, unikornv1.ActiveConditionReasonQueued, activeReason(t, server))
 }
 
 // TestUpdateServerStateWithClientsVMBuildSkipsIronicAndBuilds confirms VMs
@@ -460,7 +471,7 @@ func TestUpdateServerStateWithClientsVMBuildSkipsIronicAndBuilds(t *testing.T) {
 
 	require.NoError(t, err)
 	require.False(t, factoryCalled)
-	require.Equal(t, unikornv1.InstanceLifecyclePhaseBuilding, server.Status.Phase)
+	require.Equal(t, unikornv1.ActiveConditionReasonBuilding, activeReason(t, server))
 }
 
 // TestUpdateServerStateWithClientsBaremetalIronicFailureDegradesToBuilding
@@ -495,7 +506,7 @@ func TestUpdateServerStateWithClientsBaremetalIronicFailureDegradesToBuilding(t 
 		})
 
 	require.NoError(t, err)
-	require.Equal(t, unikornv1.InstanceLifecyclePhaseBuilding, server.Status.Phase)
+	require.Equal(t, unikornv1.ActiveConditionReasonBuilding, activeReason(t, server))
 }
 
 func TestBaremetalPhaseProviderUsesPrivilegedCredentials(t *testing.T) {

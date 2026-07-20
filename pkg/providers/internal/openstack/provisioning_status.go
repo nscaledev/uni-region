@@ -24,8 +24,8 @@ import (
 )
 
 // baremetalBuildPhase maps an Ironic node's provision_state onto the Server CR's
-// lifecycle Phase. Used only while Nova reports BUILD for a baremetal flavor;
-// other cases are handled by the Nova-side branches of setServerPhase.
+// lifecycle Active reason. Used only while Nova reports BUILD for a baremetal
+// flavor; other cases are handled by the Nova-side branches of setServerActive.
 //
 // Buckets:
 //   - pre-deploy (node not yet picked up / cleaning / inspecting / adopting) → Queued
@@ -43,23 +43,23 @@ import (
 // Error is still operationally in that pipeline until it is torn down. If we
 // ever introduce an explicit terminal-failure phase, Error is the
 // motivating case to revisit.
-func baremetalBuildPhase(node *nodes.Node) unikornv1.InstanceLifecyclePhase {
+func baremetalBuildPhase(node *nodes.Node) unikornv1.ActiveConditionReason {
 	if node == nil {
-		return unikornv1.InstanceLifecyclePhaseQueued
+		return unikornv1.ActiveConditionReasonQueued
 	}
 
 	//nolint:exhaustive
 	switch nodes.ProvisionState(node.ProvisionState) {
 	case nodes.Available, nodes.Manageable, nodes.Enroll, nodes.Cleaning, nodes.CleanWait, nodes.Verifying, nodes.Inspecting,
 		nodes.InspectWait, nodes.Adopting, nodes.CleanHold:
-		return unikornv1.InstanceLifecyclePhaseQueued
+		return unikornv1.ActiveConditionReasonQueued
 	case nodes.Deploying, nodes.DeployWait, nodes.DeployHold, nodes.Active,
 		nodes.CleanFail, nodes.InspectFail, nodes.AdoptFail, nodes.DeployFail, nodes.Error:
-		return unikornv1.InstanceLifecyclePhaseBuilding
+		return unikornv1.ActiveConditionReasonBuilding
 	default:
 		// Any unrecognised state is conservatively reported as Queued rather
 		// than claiming deploy progress that may not be real.
-		return unikornv1.InstanceLifecyclePhaseQueued
+		return unikornv1.ActiveConditionReasonQueued
 	}
 }
 

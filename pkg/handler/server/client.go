@@ -137,7 +137,7 @@ func (c *Client) Create(ctx context.Context, organizationID identityids.Organiza
 		return nil, err
 	}
 
-	resource.Status.Phase = unikornv1.InstanceLifecyclePhasePending
+	resource.SetActiveCondition(unikornv1.ActiveConditionReasonPending)
 
 	if err := c.Client.Create(ctx, resource); err != nil {
 		return nil, fmt.Errorf("%w: unable to create server", err)
@@ -269,7 +269,7 @@ func (c *Client) start(ctx context.Context, identity *unikornv1.Identity, server
 	}
 
 	updated := server.DeepCopy()
-	updated.Status.Phase = unikornv1.InstanceLifecyclePhasePending
+	updated.SetActiveCondition(unikornv1.ActiveConditionReasonPending)
 
 	if err := c.Client.Status().Patch(ctx, updated, client.MergeFromWithOptions(server, &client.MergeFromWithOptimisticLock{})); err != nil {
 		return fmt.Errorf("%w: failed to patch server", err)
@@ -301,7 +301,7 @@ func (c *Client) stop(ctx context.Context, identity *unikornv1.Identity, server 
 	}
 
 	updated := server.DeepCopy()
-	updated.Status.Phase = unikornv1.InstanceLifecyclePhaseStopping
+	updated.SetActiveCondition(unikornv1.ActiveConditionReasonStopping)
 
 	if err := c.Client.Status().Patch(ctx, updated, client.MergeFromWithOptions(server, &client.MergeFromWithOptimisticLock{})); err != nil {
 		return fmt.Errorf("%w: failed to patch server", err)
