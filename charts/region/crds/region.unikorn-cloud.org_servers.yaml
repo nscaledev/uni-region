@@ -274,17 +274,6 @@ spec:
                   retry reset leaves it intact and a transient port-read miss cannot unset
                   it, while an authoritative ACTIVE read self-heals any drift.
                 type: string
-              phase:
-                description: Phase is the current lifecycle phase of the server.
-                enum:
-                - Pending
-                - Queued
-                - Building
-                - Running
-                - Stopping
-                - Stopped
-                - Error
-                type: string
               privateIP:
                 description: PrivateIP is the private IP address of the server.
                 type: string

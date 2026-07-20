@@ -191,6 +191,68 @@ func (c *Server) SetHealthCondition(status corev1.ConditionStatus, reason unikor
 	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionHealthy, status, string(reason), message)
 }
 
+// SetActiveCondition sets the generic core Active condition to a server lifecycle
+// state. Unlike the provisioning and health axes — whose status and message are
+// independent of the reason — the Active condition's status and message are pure
+// projections of its reason (see ActiveConditionReason.ConditionStatus and
+// Message), so this setter takes only the reason and derives the rest. That makes
+// an inconsistent (status, reason) pair unrepresentable.
+func (c *Server) SetActiveCondition(reason ActiveConditionReason) {
+	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionActive, reason.ConditionStatus(), string(reason), reason.Message())
+}
+
+// GetActiveCondition reads the Active condition, narrowing its reason to the
+// server's domain-owned lifecycle/power vocabulary via core's generic typed
+// handling.
+func GetActiveCondition(r unikornv1core.StatusConditionReader) (*unikornv1core.TypedCondition[ActiveConditionReason], error) {
+	return unikornv1core.GetTypedCondition[ActiveConditionReason](r, unikornv1core.ConditionActive)
+}
+
+// ConditionStatus projects a lifecycle reason onto the Active condition's boolean
+// status: a server is Active (True) only when it is running; every other state
+// (pending, queued, building, stopping, stopped, errored) is not-running (False).
+// ConditionStatus projects a reason onto the boolean Active status: True only
+// when Running, False for every other reason.
+//
+// Active=False means "not currently running/live", NOT "unhealthy": a
+// deliberately Stopped server is False here yet perfectly healthy. Consumers
+// gate on the reason, never on this boolean as a health signal; health is the
+// separate Healthy condition.
+func (r ActiveConditionReason) ConditionStatus() corev1.ConditionStatus {
+	if r == ActiveConditionReasonRunning {
+		return corev1.ConditionTrue
+	}
+
+	return corev1.ConditionFalse
+}
+
+// Message returns a user-facing description of a lifecycle state. The Active
+// condition's message is a pure function of its reason (the provisioning and
+// health axes, by contrast, carry independent operator detail), so it is derived
+// here rather than supplied by callers.
+func (r ActiveConditionReason) Message() string {
+	switch r {
+	case ActiveConditionReasonPending:
+		return "the server is awaiting provider scheduling"
+	case ActiveConditionReasonQueued:
+		return "the server is queued awaiting hardware"
+	case ActiveConditionReasonBuilding:
+		return "the server is being built"
+	case ActiveConditionReasonRebuilding:
+		return "the server is being rebuilt"
+	case ActiveConditionReasonRunning:
+		return "the server is running"
+	case ActiveConditionReasonStopping:
+		return "the server is stopping"
+	case ActiveConditionReasonStopped:
+		return "the server is stopped"
+	case ActiveConditionReasonError:
+		return "the server is in an error state"
+	}
+
+	return ""
+}
+
 // ResourceLabels generates a set of labels to uniquely identify the resource
 // if it were to be placed in a single global namespace.
 func (c *Server) ResourceLabels() (labels.Set, error) {

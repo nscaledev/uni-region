@@ -267,11 +267,11 @@ func (p *Provisioner) recordProviderCreateRetryEvent(ctx context.Context, eventT
 //     condition cannot serve this role — it is re-derived every reconcile and
 //     flips to a non-provisioned value when a reconcile re-runs against a flaky
 //     provider (for example on a controller restart).
-//   - The failure signal itself is the lifecycle Phase: the provider monitor sets
-//     InstanceLifecyclePhaseError when it observes the server in a terminal error
-//     state (e.g. Nova ERROR). Phase is the pertinent axis for a single server's
-//     state; the Healthy condition is a legacy cluster-aggregate concept and
-//     nothing here depends on it.
+//   - The failure signal itself is the Active condition: the provider monitor sets
+//     ActiveConditionReasonError when it observes the server in a terminal error
+//     state (e.g. Nova ERROR). Active is the pertinent lifecycle axis for a single
+//     server's state; the Healthy condition is a legacy cluster-aggregate concept
+//     and nothing here depends on it.
 func ProviderCreateFailure(server *unikornv1.Server) bool {
 	if server.Status.ProvisionedAt != nil {
 		return false
@@ -281,7 +281,13 @@ func ProviderCreateFailure(server *unikornv1.Server) bool {
 		return false
 	}
 
-	return server.Status.Phase == unikornv1.InstanceLifecyclePhaseError
+	// A missing Active condition (server never observed) is not a failure.
+	active, err := unikornv1.GetActiveCondition(server)
+	if err != nil {
+		return false
+	}
+
+	return active.Reason == unikornv1.ActiveConditionReasonError
 }
 
 func (p *Provisioner) providerCreateFailure() bool {
@@ -335,12 +341,12 @@ func RebuildSettled(_, updated *unikornv1.Server) bool {
 }
 
 // resetProviderCreateRuntimeStatus clears the runtime status left by a failed
-// create attempt so the next attempt starts clean. Resetting Phase to Pending
-// also clears the terminal Error phase, so ProviderCreateFailure no longer fires
-// while the retry is in flight. The Healthy condition is left alone: nothing
+// create attempt so the next attempt starts clean. Resetting the Active condition
+// to Pending clears the terminal Error state, so ProviderCreateFailure no longer
+// fires while the retry is in flight. The Healthy condition is left alone: nothing
 // gates on it and the monitor re-derives it on the next observation.
 func (p *Provisioner) resetProviderCreateRuntimeStatus() {
-	p.server.Status.Phase = unikornv1.InstanceLifecyclePhasePending
+	p.server.SetActiveCondition(unikornv1.ActiveConditionReasonPending)
 	p.server.Status.PrivateIP = nil
 	p.server.Status.PublicIP = nil
 	// MACAddress is deliberately not reset: the monitor is its sole owner, and a
@@ -414,7 +420,7 @@ func (p *Provisioner) handleProviderCreateRetry(ctx context.Context, provider ty
 
 		// The provisioning reason is the generic Errored (provisioning state is a
 		// closed, generic vocabulary); the provider-create-failure specificity rides
-		// the lifecycle Phase (InstanceLifecyclePhaseError) and this message.
+		// the Active condition (ActiveConditionReasonError) and this message.
 		return true, provisioners.Terminal(unikornv1core.ConditionReasonErrored, fmt.Sprintf("provider server create failed after %d attempts", maxAttempts))
 	}
 

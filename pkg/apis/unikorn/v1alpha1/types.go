@@ -1108,38 +1108,53 @@ type ServerPublicIPAllocationSpec struct {
 	Enabled bool `json:"enabled,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=Pending;Queued;Building;Running;Stopping;Stopped;Error
-type InstanceLifecyclePhase string
+// ActiveConditionReason is the domain-owned, type-safe reason vocabulary for the
+// generic core ConditionActive (the lifecycle/power axis of a server). It is the
+// sole source of truth for a server's lifecycle state: there is no phase field,
+// the state rides the condition, per the platform specification that resource
+// state is expressed exclusively via status.conditions. The condition's Status is
+// a pure projection of the reason (True only when Running) and its message is a
+// user-facing description of the reason, so both are derived rather than supplied
+// independently (see Server.SetActiveCondition).
+type ActiveConditionReason string
 
 const (
-	// InstanceLifecyclePhasePending is the initial phase before the provider has
+	// ActiveConditionReasonPending is the initial state before the provider has
 	// been observed reporting on the server.
-	InstanceLifecyclePhasePending InstanceLifecyclePhase = "Pending"
-	// InstanceLifecyclePhaseQueued means the provider has accepted the create
-	// request but the underlying hardware has not yet started work. Used for
-	// baremetal servers Nova has admitted while Ironic has not yet entered a
-	// deploy state. From the user's perspective: "you're in line, this is expected".
-	InstanceLifecyclePhaseQueued InstanceLifecyclePhase = "Queued"
-	// InstanceLifecyclePhaseBuilding means the provider is actively provisioning
+	ActiveConditionReasonPending ActiveConditionReason = "Pending"
+	// ActiveConditionReasonQueued means the provider has accepted the create
+	// request but the underlying hardware has not yet started work: baremetal
+	// servers Nova has admitted while Ironic has not yet entered a deploy state.
+	// From the user's perspective: "you're in line, this is expected".
+	ActiveConditionReasonQueued ActiveConditionReason = "Queued"
+	// ActiveConditionReasonBuilding means the provider is actively provisioning
 	// the server: Nova reports BUILD with no Ironic pre-deploy gating (for VMs
-	// always, for baremetal once Ironic has entered a deploy state). Distinct
-	// from Queued so users know forward progress is happening.
-	InstanceLifecyclePhaseBuilding InstanceLifecyclePhase = "Building"
-	InstanceLifecyclePhaseRunning  InstanceLifecyclePhase = "Running"
-	InstanceLifecyclePhaseStopping InstanceLifecyclePhase = "Stopping"
-	InstanceLifecyclePhaseStopped  InstanceLifecyclePhase = "Stopped"
-	// InstanceLifecyclePhaseError means the provider reported the server in a
+	// always, for baremetal once Ironic has entered a deploy state). Distinct from
+	// Queued so users know forward progress is happening.
+	ActiveConditionReasonBuilding ActiveConditionReason = "Building"
+	// ActiveConditionReasonRebuilding means the provider is reimaging an already
+	// provisioned server (Nova REBUILD): it is not usable until the reimage
+	// completes. Distinct from Building (a first provision) so a rebuild is
+	// legible on the Active axis; the fine-grained rebuild progress rides
+	// Status.Rebuild.
+	ActiveConditionReasonRebuilding ActiveConditionReason = "Rebuilding"
+	// ActiveConditionReasonRunning means the server is running and usable; this is
+	// the only reason for which the Active condition Status is True.
+	ActiveConditionReasonRunning ActiveConditionReason = "Running"
+	// ActiveConditionReasonStopping means the server is being stopped.
+	ActiveConditionReasonStopping ActiveConditionReason = "Stopping"
+	// ActiveConditionReasonStopped means the server is stopped.
+	ActiveConditionReasonStopped ActiveConditionReason = "Stopped"
+	// ActiveConditionReasonError means the provider reported the server in a
 	// terminal error state (e.g. Nova ERROR). It is a lifecycle state, not a
-	// health verdict: it is the axis the provider-create-failure guard keys off
-	// to decide whether to tear down and retry a server that never booted.
-	InstanceLifecyclePhaseError InstanceLifecyclePhase = "Error"
+	// health verdict: it is the axis the provider-create-failure guard keys off to
+	// decide whether to tear down and retry a server that never booted.
+	ActiveConditionReasonError ActiveConditionReason = "Error"
 )
 
 type ServerStatus struct {
 	// Current service state of a cluster manager.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	// Phase is the current lifecycle phase of the server.
-	Phase InstanceLifecyclePhase `json:"phase,omitempty"`
 	// PrivateIP is the private IP address of the server.
 	PrivateIP *string `json:"privateIP,omitempty"`
 	// PublicIP is the public IP address of the server.

@@ -1441,7 +1441,7 @@ func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	resource := testServerWithSSHCertificateAuthority()
-	resource.Status.Phase = regionv1.InstanceLifecyclePhaseRunning
+	resource.SetActiveCondition(regionv1.ActiveConditionReasonRunning)
 	resource.Status.PrivateIP = ptr.To("192.168.0.42")
 	resource.Status.PublicIP = ptr.To("203.0.113.10")
 	resource.Status.MACAddress = ptr.To("fa:16:3e:12:34:56")

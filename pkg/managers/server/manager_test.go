@@ -32,7 +32,7 @@ import (
 
 func serverWithProviderCreateFailure() *unikornv1.Server {
 	server := &unikornv1.Server{}
-	server.Status.Phase = unikornv1.InstanceLifecyclePhaseError
+	server.SetActiveCondition(unikornv1.ActiveConditionReasonError)
 
 	return server
 }
@@ -77,7 +77,7 @@ func TestProviderCreateFailureUpdate(t *testing.T) {
 		t.Parallel()
 
 		server := serverWithProviderCreateFailure()
-		server.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+		server.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 
 		require.False(t, providerCreateFailureUpdate(event.TypedUpdateEvent[*unikornv1.Server]{
 			ObjectOld: &unikornv1.Server{},

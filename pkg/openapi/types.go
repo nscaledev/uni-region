@@ -44,13 +44,14 @@ const (
 
 // Defines values for InstanceLifecyclePhase.
 const (
-	InstanceLifecyclePhaseBuilding InstanceLifecyclePhase = "Building"
-	InstanceLifecyclePhaseError    InstanceLifecyclePhase = "Error"
-	InstanceLifecyclePhasePending  InstanceLifecyclePhase = "Pending"
-	InstanceLifecyclePhaseQueued   InstanceLifecyclePhase = "Queued"
-	InstanceLifecyclePhaseRunning  InstanceLifecyclePhase = "Running"
-	InstanceLifecyclePhaseStopped  InstanceLifecyclePhase = "Stopped"
-	InstanceLifecyclePhaseStopping InstanceLifecyclePhase = "Stopping"
+	InstanceLifecyclePhaseBuilding   InstanceLifecyclePhase = "Building"
+	InstanceLifecyclePhaseError      InstanceLifecyclePhase = "Error"
+	InstanceLifecyclePhasePending    InstanceLifecyclePhase = "Pending"
+	InstanceLifecyclePhaseQueued     InstanceLifecyclePhase = "Queued"
+	InstanceLifecyclePhaseRebuilding InstanceLifecyclePhase = "Rebuilding"
+	InstanceLifecyclePhaseRunning    InstanceLifecyclePhase = "Running"
+	InstanceLifecyclePhaseStopped    InstanceLifecyclePhase = "Stopped"
+	InstanceLifecyclePhaseStopping   InstanceLifecyclePhase = "Stopping"
 )
 
 // Defines values for LoadBalancerListenerProtocolV2.
@@ -433,8 +434,10 @@ type InfrastructureRef = string
 // should treat Running (not provisioned) as the "ready to use" state.
 // Queued and Building are observed during create — Queued for
 // baremetal servers waiting on hardware, Building for servers the
-// provider is actively bringing up. Error means the provider reported
-// the server in a terminal error state.
+// provider is actively bringing up. Rebuilding means an already
+// provisioned server is being reimaged in place and is not usable until
+// it completes. Error means the provider reported the server in a
+// terminal error state.
 type InstanceLifecyclePhase string
 
 // Ipv4Address An IPv4 address.
@@ -1084,8 +1087,10 @@ type ServerStatus struct {
 	// should treat Running (not provisioned) as the "ready to use" state.
 	// Queued and Building are observed during create — Queued for
 	// baremetal servers waiting on hardware, Building for servers the
-	// provider is actively bringing up. Error means the provider reported
-	// the server in a terminal error state.
+	// provider is actively bringing up. Rebuilding means an already
+	// provisioned server is being reimaged in place and is not usable until
+	// it completes. Error means the provider reported the server in a
+	// terminal error state.
 	Phase *InstanceLifecyclePhase `json:"phase,omitempty"`
 
 	// PrivateIP The private IP address of the server.
@@ -1202,8 +1207,10 @@ type ServerV2Status struct {
 	// should treat Running (not provisioned) as the "ready to use" state.
 	// Queued and Building are observed during create — Queued for
 	// baremetal servers waiting on hardware, Building for servers the
-	// provider is actively bringing up. Error means the provider reported
-	// the server in a terminal error state.
+	// provider is actively bringing up. Rebuilding means an already
+	// provisioned server is being reimaged in place and is not usable until
+	// it completes. Error means the provider reported the server in a
+	// terminal error state.
 	PowerState *InstanceLifecyclePhase `json:"powerState,omitempty"`
 
 	// PrivateIP The private IP address of the server.
