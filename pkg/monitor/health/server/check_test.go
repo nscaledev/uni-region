@@ -127,7 +127,7 @@ func newFakeClient(t *testing.T, objects ...runtime.Object) client.Client {
 	return builder.Build()
 }
 
-func serverFixture(phase unikornv1.InstanceLifecyclePhase, conditions ...unikornv1core.Condition) *unikornv1.Server {
+func serverFixture(phase unikornv1.InstanceLifecyclePhase, conditions ...metav1.Condition) *unikornv1.Server {
 	return &unikornv1.Server{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serverID,
@@ -169,11 +169,11 @@ func identityFixture() *unikornv1.Identity {
 	}
 }
 
-func healthCondition() unikornv1core.Condition {
-	return unikornv1core.Condition{
-		Type:               unikornv1core.ConditionHealthy,
-		Status:             corev1.ConditionTrue,
-		Reason:             unikornv1core.ConditionReasonHealthy,
+func healthCondition() metav1.Condition {
+	return metav1.Condition{
+		Type:               string(unikornv1core.ConditionHealthy),
+		Status:             metav1.ConditionTrue,
+		Reason:             string(unikornv1core.ConditionReasonHealthy),
 		LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Minute)),
 	}
 }
@@ -270,7 +270,7 @@ func TestCheckServerLogsOnStateChange(t *testing.T) {
 	)
 
 	sink, err := runCheck(t, srv, func(s *unikornv1.Server) {
-		s.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "")
+		s.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "")
 	})
 
 	require.NoError(t, err)
@@ -295,7 +295,7 @@ func TestCheckServerNoLogWhenStateUnchanged(t *testing.T) {
 	)
 
 	sink, err := runCheck(t, srv, func(s *unikornv1.Server) {
-		s.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "")
+		s.SetHealthCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "")
 	})
 
 	require.NoError(t, err)
@@ -304,7 +304,7 @@ func TestCheckServerNoLogWhenStateUnchanged(t *testing.T) {
 
 // TestCheckServerNoLogWhenStatusUnchangedReasonDiffers documents that logStateTransition
 // compares ConditionHealthy.Status, not Reason. If Status stays True while Reason changes
-// (e.g. Healthy → Reconciling, both True), no log is emitted. This is intentional: Reason
+// (e.g. Healthy → Unknown, both True), no log is emitted. This is intentional: Reason
 // changes within the same Status are not considered state transitions.
 func TestCheckServerNoLogWhenStatusUnchangedReasonDiffers(t *testing.T) {
 	t.Parallel()
@@ -315,7 +315,7 @@ func TestCheckServerNoLogWhenStatusUnchangedReasonDiffers(t *testing.T) {
 
 	sink, err := runCheck(t, srv, func(s *unikornv1.Server) {
 		// Status stays True; only Reason changes.
-		s.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioning, "")
+		s.SetHealthCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonUnknown, "")
 	})
 
 	require.NoError(t, err)
@@ -332,7 +332,7 @@ func TestCheckServerLogsWhenConditionAppearsForFirstTime(t *testing.T) {
 	srv.CreationTimestamp = metav1.NewTime(time.Now().Add(-5 * time.Minute))
 
 	sink, err := runCheck(t, srv, func(s *unikornv1.Server) {
-		s.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "")
+		s.SetHealthCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "")
 	})
 
 	require.NoError(t, err)
@@ -355,7 +355,7 @@ func TestCheckServerLogsBothOnCombinedChange(t *testing.T) {
 
 	sink, err := runCheck(t, srv, func(s *unikornv1.Server) {
 		s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
-		s.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "")
+		s.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "")
 	})
 
 	require.NoError(t, err)

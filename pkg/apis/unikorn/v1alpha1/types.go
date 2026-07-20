@@ -400,7 +400,7 @@ type VLANSegment struct {
 // RegionStatus defines the status of the region.
 type RegionStatus struct {
 	// Current service state of a region.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // IdentityList is a typed list of identities.
@@ -444,7 +444,7 @@ type IdentitySpec struct {
 
 type IdentityStatus struct {
 	// Current service state of a cluster manager.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // OpenstackIdentityList is a typed list of identities.
@@ -594,7 +594,7 @@ type NetworkStatusOpenstack struct {
 
 type NetworkStatus struct {
 	// Current service state of a cluster manager.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// TODO: delete me.
 	Openstack *NetworkStatusOpenstack `json:"openstack,omitempty"`
 }
@@ -709,7 +709,7 @@ type SecurityGroupSpec struct {
 
 type SecurityGroupStatus struct {
 	// Current service state of a security group.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=any;icmp;tcp;udp;vrrp
@@ -802,7 +802,7 @@ type LoadBalancerSpec struct {
 
 type LoadBalancerStatus struct {
 	// Current service state of a load balancer.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// VIPAddress is the provisioned virtual IP address.
 	VIPAddress *unikornv1core.IPv4Address `json:"vipAddress,omitempty"`
 	// PublicIP is the provisioned public IP address.
@@ -874,7 +874,7 @@ type VolumeStatus struct {
 	// ObservedGeneration is the most recent generation observed by the controller.
 	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
 	// Current service state of a volume.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// Size is the currently provisioned/observed size of the volume.
 	// (May differ from spec.size while provisioning.)
 	Size *resource.Quantity `json:"size,omitempty"`
@@ -1108,7 +1108,7 @@ type ServerPublicIPAllocationSpec struct {
 	Enabled bool `json:"enabled,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=Pending;Queued;Building;Running;Stopping;Stopped
+// +kubebuilder:validation:Enum=Pending;Queued;Building;Running;Stopping;Stopped;Error
 type InstanceLifecyclePhase string
 
 const (
@@ -1128,11 +1128,16 @@ const (
 	InstanceLifecyclePhaseRunning  InstanceLifecyclePhase = "Running"
 	InstanceLifecyclePhaseStopping InstanceLifecyclePhase = "Stopping"
 	InstanceLifecyclePhaseStopped  InstanceLifecyclePhase = "Stopped"
+	// InstanceLifecyclePhaseError means the provider reported the server in a
+	// terminal error state (e.g. Nova ERROR). It is a lifecycle state, not a
+	// health verdict: it is the axis the provider-create-failure guard keys off
+	// to decide whether to tear down and retry a server that never booted.
+	InstanceLifecyclePhaseError InstanceLifecyclePhase = "Error"
 )
 
 type ServerStatus struct {
 	// Current service state of a cluster manager.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// Phase is the current lifecycle phase of the server.
 	Phase InstanceLifecyclePhase `json:"phase,omitempty"`
 	// PrivateIP is the private IP address of the server.
@@ -1397,7 +1402,7 @@ type FileStorageStatus struct {
 	// ObservedGeneration is the most recent generation observed by the controller.
 	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
 	// Current service state of a file storage.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// Size is the currently provisioned/observed size of the file storage.
 	// (May differ from spec.size while provisioning/resizing.)
 	Size *resource.Quantity `json:"size,omitempty"`
@@ -1428,7 +1433,7 @@ type FileStorageSnapshotPolicyStatus struct {
 	// +listType=map
 	// +listMapKey=type
 	// +optional
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // AttachmentProvisioningStatus describes the state of a single attachment.

@@ -2156,7 +2156,7 @@ const (
 // convertServerHealthStatus translates from an OpenStack server status into a Kubernetes one.
 // See the following for all possible states (currently).
 // https://docs.openstack.org/api-guide/compute/server_concepts.html
-func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, unikornv1core.ConditionReason, string) {
+func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, unikornv1core.HealthConditionReason, string) {
 	if server == nil {
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
 	}
@@ -2165,9 +2165,18 @@ func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, 
 	case novaStatusActive:
 		return corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "server is healthy"
 	case novaStatusError:
-		return corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server is in an error state"
+		// An errored server is degraded on the health axis. The terminal failure
+		// itself is carried on the lifecycle Active condition
+		// (ActiveConditionReasonError), which is the axis the
+		// provider-create-failure guard keys off; health is only an informational
+		// verdict here.
+		return corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "server is in an error state"
 	case novaStatusRebuild:
-		return corev1.ConditionFalse, unikornv1core.ConditionReasonProvisioning, "server is rebuilding"
+		// A rebuilding server's real state is a lifecycle one, carried on the
+		// Active condition (ActiveConditionReasonRebuilding); it is not serving
+		// during the reimage, so health is reported as indeterminate rather than
+		// asserting a verdict.
+		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
 	case novaStatusUnknown:
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
 	default:
@@ -2179,7 +2188,7 @@ func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, 
 func setServerHealthStatus(server *unikornv1.Server, openstackserver *servers.Server) {
 	status, reason, message := convertServerHealthStatus(openstackserver)
 
-	server.StatusConditionWrite(unikornv1core.ConditionHealthy, status, reason, message)
+	server.SetHealthCondition(status, reason, message)
 }
 
 // novaServerAddress is a single entry in a Nova server's `addresses` map. It
@@ -2305,6 +2314,16 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 		if server.Status.ProvisionedAt == nil {
 			server.Status.ProvisionedAt = &t
 		}
+	}
+
+	// Nova ERROR is a terminal lifecycle state that PowerState cannot express
+	// (it is NOSTATE for an errored server, which would otherwise leave the
+	// phase untouched). Surface it explicitly so the provider-create-failure
+	// guard can key off the lifecycle axis rather than the health condition.
+	if openstackserver.Status == "ERROR" {
+		server.Status.Phase = unikornv1.InstanceLifecyclePhaseError
+
+		return
 	}
 
 	// Nova BUILD is the window where the live monitor refines the lifecycle
@@ -2633,14 +2652,14 @@ func openstackServerImageID(server *servers.Server) (regionids.ImageID, bool) {
 	return imageID, true
 }
 
-// markServerRebuildAccepted stamps the post-acceptance in-flight view
-// (Building, Healthy False/Provisioning). The status matches
-// convertServerHealthStatus's REBUILD mapping so reconciler and monitor writes
-// agree rather than flap. Never call before Nova has accepted: pre-acceptance
-// waits are silent yields and the monitor owns observed state.
+// markServerRebuildAccepted stamps the post-acceptance in-flight view: Phase
+// Building and health Unknown, matching convertServerHealthStatus's REBUILD
+// mapping so reconciler and monitor writes agree rather than flap. Never call
+// before Nova has accepted: pre-acceptance waits are silent yields and the
+// monitor owns observed state.
 func markServerRebuildAccepted(server *unikornv1.Server, message string) {
 	server.Status.Phase = unikornv1.InstanceLifecyclePhaseBuilding
-	server.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionFalse, unikornv1core.ConditionReasonProvisioning, message)
+	server.SetHealthCondition(corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, message)
 }
 
 // reconcileServerRebuildPark runs the two-phase, write-ahead park (step P4 of

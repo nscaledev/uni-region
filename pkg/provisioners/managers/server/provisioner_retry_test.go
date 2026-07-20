@@ -73,7 +73,7 @@ func retryIdentity() *regionv1.Identity {
 		},
 	}
 
-	identity.StatusConditionWrite(unikornv1core.ConditionAvailable, corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
+	identity.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
 
 	return identity
 }
@@ -94,8 +94,11 @@ func retryClient(t *testing.T, objects ...client.Object) client.Client {
 		Build()
 }
 
+// withProviderCreateFailure marks a server as a terminal provider-create failure
+// via the lifecycle Phase — the axis ProviderCreateFailure now keys off (Nova
+// ERROR is surfaced as InstanceLifecyclePhaseError by the monitor).
 func withProviderCreateFailure(server *regionv1.Server) {
-	server.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server is in an error state")
+	server.Status.Phase = regionv1.InstanceLifecyclePhaseError
 }
 
 func withProviderCreateRetrying(server *regionv1.Server) {
@@ -109,7 +112,6 @@ func withRuntimeStatus(server *regionv1.Server) {
 	macAddress := "00:11:22:33:44:55"
 	scheduledAt := metav1.NewTime(time.Now().Add(-2 * time.Minute))
 
-	server.Status.Phase = regionv1.InstanceLifecyclePhaseBuilding
 	server.Status.PrivateIP = &privateIP
 	server.Status.PublicIP = &publicIP
 	server.Status.MACAddress = &macAddress
@@ -175,11 +177,6 @@ func TestProvision_ProviderCreateFailureDeletesAndYields(t *testing.T) {
 	require.Equal(t, ptr.To("00:11:22:33:44:55"), server.Status.MACAddress)
 	require.Nil(t, server.Status.ScheduledAt)
 
-	condition, err := server.StatusConditionRead(unikornv1core.ConditionHealthy)
-	require.NoError(t, err)
-	require.Equal(t, corev1.ConditionUnknown, condition.Status)
-	require.Equal(t, unikornv1core.ConditionReasonProvisioning, condition.Reason)
-
 	requireEvent(t, recorder, corev1.EventTypeNormal, "ProviderCreateRetrying", "attempt 1/3")
 	requireEvent(t, recorder, corev1.EventTypeNormal, "ProviderCreateRetryReady", "attempt 1/3")
 }
@@ -209,11 +206,8 @@ func TestProvision_ProviderCreateRetryKeepsDeleting(t *testing.T) {
 	require.ErrorIs(t, err, provisioners.ErrYield)
 	require.Equal(t, int32(1), server.Status.ProviderCreateFailures)
 	require.True(t, server.Status.ProviderCreateRetrying)
-
-	condition, err := server.StatusConditionRead(unikornv1core.ConditionHealthy)
-	require.NoError(t, err)
-	require.Equal(t, corev1.ConditionUnknown, condition.Status)
-	require.Equal(t, unikornv1core.ConditionReasonProvisioning, condition.Reason)
+	// The runtime reset ran, clearing the terminal Error phase back to Pending.
+	require.Equal(t, regionv1.InstanceLifecyclePhasePending, server.Status.Phase)
 	requireNoEvent(t, recorder)
 }
 
