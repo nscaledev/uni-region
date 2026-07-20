@@ -21,13 +21,38 @@ limitations under the License.
 package suites
 
 import (
+	"io"
 	"net/http"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/unikorn-cloud/region/test/api"
 )
+
+func doRawMainAPIRequest(path, authorization string) (int, string) {
+	GinkgoHelper()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		strings.TrimSuffix(config.BaseURL, "/")+path, nil)
+	Expect(err).NotTo(HaveOccurred())
+
+	req.Header.Set("Accept", "application/json")
+	if authorization != "" {
+		req.Header.Set("Authorization", authorization)
+	}
+
+	httpClient := &http.Client{Timeout: config.RequestTimeout}
+	resp, err := httpClient.Do(req)
+	Expect(err).NotTo(HaveOccurred())
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	Expect(err).NotTo(HaveOccurred())
+
+	return resp.StatusCode, string(body)
+}
 
 var _ = Describe("Authentication Enforcement", func() {
 	Context("When requests are made without a valid auth token", func() {
@@ -56,6 +81,30 @@ var _ = Describe("Authentication Enforcement", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
 				GinkgoWriter.Printf("Unauthenticated list networks returned %d as expected\n", resp.StatusCode)
+			})
+		})
+	})
+
+	Context("When requests include malformed Authorization headers", func() {
+		Describe("Given a bare bearer scheme without token material", func() {
+			It("should reject the request with access_denied", func() {
+				path := client.GetListRegionsPath(config.OrgID)
+				status, body := doRawMainAPIRequest(path, "Bearer")
+
+				Expect(status).To(Equal(http.StatusUnauthorized))
+				Expect(body).To(ContainSubstring("access_denied"))
+				Expect(body).To(ContainSubstring("authorization header malformed"))
+			})
+		})
+
+		Describe("Given a non-bearer Authorization scheme", func() {
+			It("should reject the request with access_denied", func() {
+				path := client.GetListRegionsPath(config.OrgID)
+				status, body := doRawMainAPIRequest(path, "Basic "+config.AuthToken)
+
+				Expect(status).To(Equal(http.StatusUnauthorized))
+				Expect(body).To(ContainSubstring("access_denied"))
+				Expect(body).To(ContainSubstring("authorization scheme not allowed"))
 			})
 		})
 	})
