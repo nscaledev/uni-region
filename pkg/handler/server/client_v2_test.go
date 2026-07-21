@@ -41,6 +41,7 @@ import (
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -173,9 +174,14 @@ func expectProjectFound(mockIdentity *identitymock.MockClientWithResponsesInterf
 		}, nil)
 }
 
-func newMockProvidersWithNoFlavors(ctrl *gomock.Controller) *mockproviders.MockProviders {
+// newMockProvidersWithReadyImage builds a Providers mock whose provider
+// resolves the fixture image as Ready and compatible with the fixture flavor,
+// so create requests pass the boundary image validation.
+func newMockProvidersWithReadyImage(ctrl *gomock.Controller) *mockproviders.MockProviders {
 	mockProvider := mocktypes.NewMockProvider(ctrl)
-	mockProvider.EXPECT().Flavors(gomock.Any()).Return(nil, nil).AnyTimes()
+	mockProvider.EXPECT().GetImage(gomock.Any(), gomock.Any(), idstest.MustParseImageID(srvImageID)).
+		Return(&types.Image{ID: srvImageID, Status: types.ImageStatusReady, Virtualization: types.Any}, nil).AnyTimes()
+	mockProvider.EXPECT().Flavors(gomock.Any()).Return(types.FlavorList{{ID: srvFlavorID}}, nil).AnyTimes()
 
 	mockProviders := mockproviders.NewMockProviders(ctrl)
 	mockProviders.EXPECT().LookupCloud(gomock.Any()).Return(mockProvider, nil).AnyTimes()
@@ -188,6 +194,8 @@ func minimalServerV2CreateRequest() *openapi.ServerV2Create {
 		Metadata: coreapi.ResourceWriteMetadata{Name: "test-server"},
 		Spec: openapi.ServerV2CreateSpec{
 			NetworkId: idstest.MustParseNetworkID(srvNetworkID),
+			FlavorId:  idstest.MustParseFlavorID(srvFlavorID),
+			ImageId:   idstest.MustParseImageID(srvImageID),
 		},
 	}
 }
@@ -221,14 +229,19 @@ func testSSHCertificateAuthorityWithProject(projID string) *regionv1.SSHCertific
 	}
 }
 
-func testServerWithSSHCertificateAuthority(orgID, projID, serverID, caID string) *regionv1.Server {
+func testServerWithSSHCertificateAuthority() *regionv1.Server {
+	const (
+		serverID = srvServerID
+		caID     = "ca-1"
+	)
+
 	return &regionv1.Server{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serverID,
 			Namespace: srvNamespace,
 			Labels: map[string]string{
-				coreconstants.OrganizationLabel:   orgID,
-				coreconstants.ProjectLabel:        projID,
+				coreconstants.OrganizationLabel:   srvOrganizationID,
+				coreconstants.ProjectLabel:        srvProjectID,
 				coreconstants.NameLabel:           serverID,
 				constants.RegionLabel:             srvRegionID,
 				constants.IdentityLabel:           "test-identity",
@@ -463,7 +476,7 @@ func TestServerCreateV2SecurityGroupAcceptsSameNetwork(t *testing.T) {
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	expectProjectFound(mockIdentity)
 
-	mockProviders := newMockProvidersWithNoFlavors(ctrl)
+	mockProviders := newMockProvidersWithReadyImage(ctrl)
 
 	c := server.NewClientV2(common.ClientArgs{
 		Client:    k8sClient,
@@ -547,7 +560,7 @@ func TestServerCreateV2SSHCertificateAuthorityAcceptsSupportedUserData(t *testin
 			mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 			expectProjectFound(mockIdentity)
 
-			mockProviders := newMockProvidersWithNoFlavors(ctrl)
+			mockProviders := newMockProvidersWithReadyImage(ctrl)
 
 			c := server.NewClientV2(common.ClientArgs{
 				Client:    k8sClient,
@@ -641,7 +654,7 @@ func TestServerCreateV2AcceptsUserDataWithoutSSHCertificateAuthority(t *testing.
 			mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 			expectProjectFound(mockIdentity)
 
-			mockProviders := newMockProvidersWithNoFlavors(ctrl)
+			mockProviders := newMockProvidersWithReadyImage(ctrl)
 
 			c := server.NewClientV2(common.ClientArgs{
 				Client:    k8sClient,
@@ -711,7 +724,7 @@ func TestServerCreateV2RejectsInvalidAllowedSourceAddress(t *testing.T) {
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	expectProjectFound(mockIdentity)
 
-	mockProviders := newMockProvidersWithNoFlavors(ctrl)
+	mockProviders := newMockProvidersWithReadyImage(ctrl)
 
 	c := server.NewClientV2(common.ClientArgs{
 		Client:    k8sClient,
@@ -753,6 +766,7 @@ func TestServerCreateV2SetsInfrastructureRef(t *testing.T) {
 		Client:    k8sClient,
 		Namespace: srvNamespace,
 		Identity:  mockIdentity,
+		Providers: newMockProvidersWithReadyImage(ctrl),
 	})
 
 	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
@@ -826,6 +840,7 @@ func TestServerCreateV2AllowsInfrastructureRefWithSSHCertificateAuthority(t *tes
 		Client:    k8sClient,
 		Namespace: srvNamespace,
 		Identity:  mockIdentity,
+		Providers: newMockProvidersWithReadyImage(ctrl),
 	})
 
 	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
@@ -908,7 +923,7 @@ func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	network := testSrvNetworkWithProject(srvProjectID)
-	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, srvServerID, "ca-1")
+	resource := testServerWithSSHCertificateAuthority()
 	resource.Spec.SSHInjection = ptr.To(regionv1.ServerSSHInjectionCA)
 
 	k8sClient := newSrvFakeClient(t, network, resource).Build()
@@ -947,12 +962,483 @@ func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 	require.Equal(t, regionv1.ServerSSHInjectionCA, *updated.Spec.SSHInjection)
 }
 
+func TestServerUpdateV2RejectsFlavorChange(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, resource).Build(),
+		Namespace: srvNamespace,
+	})
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: idstest.MustParseFlavorID("99999999-9999-4999-a999-999999999999"),
+			ImageId:  resource.Spec.Image.ID,
+		},
+	}
+
+	_, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err))
+}
+
+func TestServerUpdateV2ValidatesChangedImage(t *testing.T) {
+	t.Parallel()
+
+	const newImageID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+
+	ctrl := gomock.NewController(t)
+	resource := testServerV2(srvServerID)
+	network := testSrvNetworkWithProject(srvProjectID)
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().GetImage(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), idstest.MustParseImageID(newImageID)).
+		Return(&types.Image{ID: newImageID, Status: types.ImageStatusReady, Virtualization: types.Any}, nil)
+	provider.EXPECT().Flavors(gomock.Any()).Return(types.FlavorList{{ID: srvFlavorID}}, nil)
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(srvRegionID).Return(provider, nil)
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, network, resource).Build(),
+		Namespace: srvNamespace,
+		Providers: providers,
+	})
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  idstest.MustParseImageID(newImageID),
+		},
+	}
+
+	result, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
+	require.NoError(t, err)
+	require.Equal(t, idstest.MustParseImageID(newImageID), result.Spec.ImageId)
+}
+
+// TestServerUpdateV2RejectsChangedMalformedUserData verifies that an update
+// changing the persisted user-data to a malformed payload is rejected with
+// HTTP 422 at the API boundary rather than failing at the next rebuild.
+func TestServerUpdateV2RejectsChangedMalformedUserData(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, network, resource).Build(),
+		Namespace: srvNamespace,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
+
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+			UserData: ptr.To([]byte("echo hello")),
+		},
+	}
+
+	_, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+}
+
+// TestServerUpdateV2AcceptsUnchangedMalformedUserData verifies that PUTting
+// back the identical stored user-data is accepted even when that payload
+// predates validation and would no longer pass it, so legacy servers keep
+// working with full-replace clients.
+func TestServerUpdateV2AcceptsUnchangedMalformedUserData(t *testing.T) {
+	t.Parallel()
+
+	legacyUserData := []byte("echo hello")
+
+	resource := testServerV2(srvServerID)
+	resource.Spec.UserData = legacyUserData
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, network, resource).Build(),
+		Namespace: srvNamespace,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
+
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+			UserData: ptr.To(legacyUserData),
+		},
+	}
+
+	result, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, legacyUserData, *result.Spec.UserData)
+}
+
+// TestServerUpdateV2AcceptsChangedValidUserData verifies that an update
+// changing the persisted user-data to a well-formed payload is accepted and
+// the new value is persisted.
+func TestServerUpdateV2AcceptsChangedValidUserData(t *testing.T) {
+	t.Parallel()
+
+	newUserData := []byte("#cloud-config\nusers: []\n")
+
+	resource := testServerV2(srvServerID)
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, network, resource).Build(),
+		Namespace: srvNamespace,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
+
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+			UserData: ptr.To(newUserData),
+		},
+	}
+
+	result, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, newUserData, *result.Spec.UserData)
+
+	updated, err := c.GetV2Raw(ctx, resource.Name)
+	require.NoError(t, err)
+	require.Equal(t, newUserData, updated.Spec.UserData)
+}
+
+// TestServerUpdateV2RejectsChangedGzipUserDataWithCA verifies that changed
+// user-data on update is validated with the CA-awareness flag derived from the
+// server's current SSH certificate authority: gzip payloads cannot receive
+// managed cloud-init augmentation, so they are rejected with HTTP 422.
+func TestServerUpdateV2RejectsChangedGzipUserDataWithCA(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerWithSSHCertificateAuthority()
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, network, resource).Build(),
+		Namespace: srvNamespace,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
+
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+			UserData: ptr.To([]byte{0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00}),
+		},
+	}
+
+	_, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+	require.ErrorContains(t, err, "gzip")
+}
+
+// TestServerCreateV2RejectsNotReadyImage verifies that create enforces the same
+// image contract as update: an image that is not Ready is rejected with HTTP 422.
+func TestServerCreateV2RejectsNotReadyImage(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().GetImage(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), idstest.MustParseImageID(srvImageID)).
+		Return(&types.Image{ID: srvImageID, Status: types.ImageStatusPending}, nil)
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(srvRegionID).Return(provider, nil)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, network).Build(),
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+		Providers: providers,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	_, err := c.CreateV2(ctx, minimalServerV2CreateRequest())
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+	require.ErrorContains(t, err, "image is not ready")
+}
+
+// TestServerCreateV2RejectsArchitectureIncompatibleImage verifies that create
+// rejects an image whose CPU architecture does not match the flavor's with
+// HTTP 422, symmetric with the update-path validation.
+func TestServerCreateV2RejectsArchitectureIncompatibleImage(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().GetImage(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), idstest.MustParseImageID(srvImageID)).
+		Return(&types.Image{ID: srvImageID, Status: types.ImageStatusReady, Architecture: types.Aarch64, Virtualization: types.Any}, nil)
+	provider.EXPECT().Flavors(gomock.Any()).
+		Return(types.FlavorList{{ID: srvFlavorID, Architecture: types.X86_64}}, nil).AnyTimes()
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(srvRegionID).Return(provider, nil).AnyTimes()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, network).Build(),
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+		Providers: providers,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	_, err := c.CreateV2(ctx, minimalServerV2CreateRequest())
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+	require.ErrorContains(t, err, "architecture")
+}
+
+// TestServerCreateV2AcceptsValidImage verifies that create succeeds when the
+// image is Ready and compatible with the requested flavor.
+func TestServerCreateV2AcceptsValidImage(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().GetImage(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), idstest.MustParseImageID(srvImageID)).
+		Return(&types.Image{ID: srvImageID, Status: types.ImageStatusReady, Virtualization: types.Any}, nil)
+	provider.EXPECT().Flavors(gomock.Any()).
+		Return(types.FlavorList{{ID: srvFlavorID}}, nil).AnyTimes()
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(srvRegionID).Return(provider, nil).AnyTimes()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, network).Build(),
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+		Providers: providers,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	result, err := c.CreateV2(ctx, minimalServerV2CreateRequest())
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, idstest.MustParseImageID(srvImageID), result.Spec.ImageId)
+}
+
+// TestServerCreateV2RejectsRetiredFlavor verifies that a create referencing a
+// flavor the region no longer offers fails loudly and identifiably with HTTP
+// 422, rather than an anonymous 404 that reads as "server not found".
+func TestServerCreateV2RejectsRetiredFlavor(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().GetImage(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), idstest.MustParseImageID(srvImageID)).
+		Return(&types.Image{ID: srvImageID, Status: types.ImageStatusReady, Virtualization: types.Any}, nil)
+	provider.EXPECT().Flavors(gomock.Any()).Return(types.FlavorList{}, nil).AnyTimes()
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(srvRegionID).Return(provider, nil).AnyTimes()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, network).Build(),
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+		Providers: providers,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	_, err := c.CreateV2(ctx, minimalServerV2CreateRequest())
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+	require.ErrorContains(t, err, "no longer offered")
+}
+
+// TestServerCreateV2RejectsUnrecognizedImageVirtualization verifies that an
+// image reporting a virtualization type this build does not recognize fails
+// closed with HTTP 422: an unrecognized value is positive evidence of version
+// skew or bad provider metadata and must not pass as universally compatible.
+func TestServerCreateV2RejectsUnrecognizedImageVirtualization(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().GetImage(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), idstest.MustParseImageID(srvImageID)).
+		Return(&types.Image{ID: srvImageID, Status: types.ImageStatusReady, Virtualization: types.ImageVirtualization("paravirtualized")}, nil)
+	provider.EXPECT().Flavors(gomock.Any()).Return(types.FlavorList{{ID: srvFlavorID}}, nil).AnyTimes()
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(srvRegionID).Return(provider, nil).AnyTimes()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, network).Build(),
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+		Providers: providers,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	_, err := c.CreateV2(ctx, minimalServerV2CreateRequest())
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+	require.ErrorContains(t, err, "not recognized")
+}
+
+// TestServerUpdateV2AppliesImageChangeWithRetiredFlavor verifies that an image
+// update still goes through when the server's (immutable, in-use) flavor is no
+// longer offered by the region: the flavor-dependent compatibility checks are
+// skipped — the image below would fail them against any known flavor — and the
+// new image is applied, so a retired flavor cannot strand the fleet.
+func TestServerUpdateV2AppliesImageChangeWithRetiredFlavor(t *testing.T) {
+	t.Parallel()
+
+	const newImageID = "bbbbbbbb-bbbb-4bbb-abbb-bbbbbbbbbbbb"
+
+	ctrl := gomock.NewController(t)
+	resource := testServerV2(srvServerID)
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().GetImage(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), idstest.MustParseImageID(newImageID)).
+		Return(&types.Image{ID: newImageID, Status: types.ImageStatusReady, Virtualization: types.Baremetal, Architecture: types.Aarch64}, nil)
+	provider.EXPECT().Flavors(gomock.Any()).Return(types.FlavorList{}, nil)
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(srvRegionID).Return(provider, nil)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, network, resource).Build(),
+		Namespace: srvNamespace,
+		Providers: providers,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
+
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  idstest.MustParseImageID(newImageID),
+		},
+	}
+
+	result, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, idstest.MustParseImageID(newImageID), result.Spec.ImageId)
+
+	updated, err := c.GetV2Raw(ctx, resource.Name)
+	require.NoError(t, err)
+	require.Equal(t, idstest.MustParseImageID(newImageID), updated.Spec.Image.ID)
+}
+
+// TestServerUpdateV2RetiredFlavorStillRequiresReadyImage verifies that
+// tolerating a retired flavor on update does not relax the image-only checks:
+// a not-Ready target image is still rejected with HTTP 422.
+func TestServerUpdateV2RetiredFlavorStillRequiresReadyImage(t *testing.T) {
+	t.Parallel()
+
+	const newImageID = "bbbbbbbb-bbbb-4bbb-abbb-bbbbbbbbbbbb"
+
+	ctrl := gomock.NewController(t)
+	resource := testServerV2(srvServerID)
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().GetImage(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), idstest.MustParseImageID(newImageID)).
+		Return(&types.Image{ID: newImageID, Status: types.ImageStatusPending}, nil)
+	provider.EXPECT().Flavors(gomock.Any()).Return(types.FlavorList{}, nil).AnyTimes()
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(srvRegionID).Return(provider, nil)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, network, resource).Build(),
+		Namespace: srvNamespace,
+		Providers: providers,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
+
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  idstest.MustParseImageID(newImageID),
+		},
+	}
+
+	_, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
+	require.ErrorContains(t, err, "image is not ready")
+}
+
 func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
 
-	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, srvServerID, "ca-1")
+	resource := testServerWithSSHCertificateAuthority()
 	resource.Status.Phase = regionv1.InstanceLifecyclePhaseRunning
 	resource.Status.PrivateIP = ptr.To("192.168.0.42")
 	resource.Status.PublicIP = ptr.To("203.0.113.10")
@@ -1573,7 +2059,7 @@ func TestServerCreateV2DeterministicID(t *testing.T) {
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	expectProjectFound(mockIdentity).AnyTimes()
 
-	providers := newMockProvidersWithNoFlavors(ctrl)
+	providers := newMockProvidersWithReadyImage(ctrl)
 
 	k8sClient := newSrvFakeClient(t, network).Build()
 
@@ -1670,7 +2156,7 @@ func TestServerCreateV2ConflictOnDuplicateName(t *testing.T) {
 
 	network := testSrvNetworkWithProject(srvProjectID)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-	providers := newMockProvidersWithNoFlavors(ctrl)
+	providers := newMockProvidersWithReadyImage(ctrl)
 
 	expectProjectFound(mockIdentity).AnyTimes()
 
@@ -1703,7 +2189,7 @@ func TestServerUpdateV2RejectsRename(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	network := testSrvNetworkWithProject(srvProjectID)
-	resource := testServerWithSSHCertificateAuthority(srvOrganizationID, srvProjectID, srvServerID, "ca-1")
+	resource := testServerWithSSHCertificateAuthority()
 
 	k8sClient := newSrvFakeClient(t, network, resource).Build()
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)

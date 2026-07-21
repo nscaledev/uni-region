@@ -18,9 +18,11 @@ limitations under the License.
 package server
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
+	goerrors "errors"
 	"fmt"
 	"net"
 	"reflect"
@@ -78,6 +80,82 @@ func (c *ClientV2) getProvider(regionID string) (types.Provider, error) {
 	}
 
 	return provider, nil
+}
+
+func (c *ClientV2) validateUpdatedImage(ctx context.Context, network *regionv1.Network, current *regionv1.Server, request *openapi.ServerV2Update) error {
+	if current.Spec.Image != nil && current.Spec.Image.ID == request.Spec.ImageId {
+		return nil
+	}
+
+	provider, err := c.getProvider(network.Labels[constants.RegionLabel])
+	if err != nil {
+		return err
+	}
+
+	organizationID, _, err := current.OrganizationAndProjectID()
+	if err != nil {
+		return err
+	}
+
+	// The flavor is immutable (enforced by validateServerUpdate before this
+	// runs), so the request's flavor is the server's flavor and the update-path
+	// flavor-miss policy applies.
+	return validateServerImageForUpdate(ctx, provider, organizationID, request.Spec.ImageId, request.Spec.FlavorId)
+}
+
+// validateCreateImage enforces the image contract on the create path: the
+// image must exist and be visible to the organization, be Ready, and be
+// architecture/disk/virtualization compatible with the requested flavor. It
+// mirrors validateUpdatedImage so create and update enforce a single contract
+// for imageId.
+func (c *ClientV2) validateCreateImage(ctx context.Context, network *regionv1.Network, request *openapi.ServerV2Create) error {
+	provider, err := c.getProvider(network.Labels[constants.RegionLabel])
+	if err != nil {
+		return err
+	}
+
+	organizationID, _, err := network.OrganizationAndProjectID()
+	if err != nil {
+		return err
+	}
+
+	return validateServerImageForCreate(ctx, provider, organizationID, request.Spec.ImageId, request.Spec.FlavorId)
+}
+
+// userDataChanged reports whether an update request would change the persisted
+// user-data. An omitted field (nil) matches only an absent stored value;
+// byte-identical payloads are unchanged.
+func userDataChanged(current []byte, request *[]byte) bool {
+	if request == nil {
+		return len(current) != 0
+	}
+
+	return !bytes.Equal(current, *request)
+}
+
+// validateUpdatedUserData applies the same boundary validation as create, but
+// only when the update would change the persisted user-data — unchanged
+// payloads are never re-validated, so legacy servers whose stored payloads
+// predate validation keep working when a client PUTs the same bytes back. The
+// CA-awareness flag derives from the server's current SSH certificate
+// authority because updates preserve the CA chosen at create time.
+func validateUpdatedUserData(current *regionv1.Server, request *openapi.ServerV2Update) error {
+	if !userDataChanged(current.Spec.UserData, request.Spec.UserData) {
+		return nil
+	}
+
+	return userdata.Validate(request.Spec.UserData, current.Spec.SSHCertificateAuthorityID != nil)
+}
+
+// validateUpdateV2Request runs the update-path validations that need the
+// parent network or the current resource: the image contract shared with
+// create, and re-validation of changed user-data.
+func (c *ClientV2) validateUpdateV2Request(ctx context.Context, network *regionv1.Network, current *regionv1.Server, request *openapi.ServerV2Update) error {
+	if err := c.validateUpdatedImage(ctx, network, current, request); err != nil {
+		return err
+	}
+
+	return validateUpdatedUserData(current, request)
 }
 
 func convertSecurityGroupsV2(in []regionv1.ServerSecurityGroupSpec) *openapi.ServerV2SecurityGroupIDList {
@@ -394,7 +472,12 @@ func (c *ClientV2) validateSecurityGroupReferences(ctx context.Context, networkI
 	return nil
 }
 
-func (c *ClientV2) validateInfrastructureRefForFlavor(ctx context.Context, regionID, flavorID string, infrastructureRef *string) error {
+// validateInfrastructureRefForFlavor rejects a request that omits an
+// infrastructureRef when the flavor demands one. It only runs on the create
+// path, so a flavor the region no longer offers gets the create-path miss
+// policy: the same 422 as validateServerImageForCreate, rather than silently
+// passing the pinned-only gate.
+func (c *ClientV2) validateInfrastructureRefForFlavor(ctx context.Context, regionID string, flavorID regionids.FlavorID, infrastructureRef *string) error {
 	if infrastructureRef != nil {
 		return nil
 	}
@@ -404,13 +487,16 @@ func (c *ClientV2) validateInfrastructureRefForFlavor(ctx context.Context, regio
 		return err
 	}
 
-	flavors, err := provider.Flavors(ctx)
+	flavor, err := flavorByID(ctx, provider, flavorID)
 	if err != nil {
+		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
+			return errors.HTTPUnprocessableContent("flavor is no longer offered by the region").WithError(err)
+		}
+
 		return err
 	}
 
-	i := slices.IndexFunc(flavors, func(f types.Flavor) bool { return f.ID == flavorID })
-	if i >= 0 && flavors[i].PinnedOnly {
+	if flavor.PinnedOnly {
 		return errors.HTTPUnprocessableContent("flavor requires infrastructureRef to be set")
 	}
 
@@ -533,7 +619,8 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 // create: SSH injection mode compatibility, that any user-data is well-formed
 // cloud-init, that any referenced SSH certificate authority shares the server's
 // organization and project, that any referenced security group belongs to the
-// server's network, and the infrastructure reference requirements of the
+// server's network, that the requested image is Ready and compatible with the
+// requested flavor, and the infrastructure reference requirements of the
 // requested flavor.
 func (c *ClientV2) validateCreateV2Request(ctx context.Context, request *openapi.ServerV2Create, network *regionv1.Network) error {
 	sshInjection := resolveSSHInjection(request.Spec.SshInjection, request.Spec.SshCertificateAuthorityId)
@@ -557,7 +644,11 @@ func (c *ClientV2) validateCreateV2Request(ctx context.Context, request *openapi
 		return err
 	}
 
-	return c.validateInfrastructureRefForFlavor(ctx, network.Labels[constants.RegionLabel], request.Spec.FlavorId.String(), request.Spec.InfrastructureRef)
+	if err := c.validateCreateImage(ctx, network, request); err != nil {
+		return err
+	}
+
+	return c.validateInfrastructureRefForFlavor(ctx, network.Labels[constants.RegionLabel], request.Spec.FlavorId, request.Spec.InfrastructureRef)
 }
 
 func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create) (*openapi.ServerV2Read, error) {
@@ -644,6 +735,22 @@ func (c *ClientV2) GetV2(ctx context.Context, serverID regionids.ServerID) (*ope
 	return convertV2(result)
 }
 
+func validateServerUpdate(current *regionv1.Server, request *openapi.ServerV2Update) error {
+	if current.DeletionTimestamp != nil {
+		return errors.OAuth2InvalidRequest("server is being deleted")
+	}
+
+	if request.Metadata.Name != current.Labels[coreconstants.NameLabel] {
+		return errors.HTTPUnprocessableContent("server names are immutable")
+	}
+
+	if request.Spec.FlavorId != current.Spec.FlavorID {
+		return errors.HTTPUnprocessableContent("server flavor is immutable")
+	}
+
+	return nil
+}
+
 func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerV2Update) (*openapi.ServerV2Read, error) {
 	current, err := c.GetV2Raw(ctx, serverID.String())
 	if err != nil {
@@ -659,12 +766,8 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, re
 		return nil, err
 	}
 
-	if current.DeletionTimestamp != nil {
-		return nil, errors.OAuth2InvalidRequest("server is being deleted")
-	}
-
-	if request.Metadata.Name != current.Labels[coreconstants.NameLabel] {
-		return nil, errors.HTTPUnprocessableContent("server names are immutable")
+	if err := validateServerUpdate(current, request); err != nil {
+		return nil, err
 	}
 
 	// Security groups are mutable, so re-validate that every referenced group still
@@ -681,8 +784,14 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, re
 		return nil, err
 	}
 
-	// User data is only consumed during initial server bootstrap. Updates preserve it for
-	// completeness and future rebuild support, but they do not re-run cloud-init validation.
+	// Updates replace the persisted user-data wholesale: an omitted field clears
+	// the stored value. The value is not applied to the running guest — it is
+	// consumed by the next rebuild (image change) or recreate. Changed user-data
+	// is re-validated at the boundary; identical payloads are not.
+	if err := c.validateUpdateV2Request(ctx, network, current, request); err != nil {
+		return nil, err
+	}
+
 	required, err := c.generateV2(ctx, organizationID, projectID, request, network, current.Spec.SSHCertificateAuthorityID, current.Spec.InfrastructureRef, current.ResolvedSSHInjection())
 	if err != nil {
 		return nil, err

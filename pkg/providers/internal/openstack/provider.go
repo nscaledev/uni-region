@@ -433,7 +433,11 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	for i := range resources {
 		flavor := &resources[i]
 
-		// API memory is in MiB, disk is in GB
+		// API memory is in MiB, disk is in GB. Architecture defaults to
+		// x86_64 when region metadata does not override it below: the API
+		// schema requires an enum value and existing consumers compare
+		// architectures strictly, so an honest "unknown" cannot reach the
+		// wire without coordinated schema and consumer changes.
 		f := types.Flavor{
 			ID:           flavor.ID,
 			Name:         flavor.Name,
@@ -569,6 +573,9 @@ func imageArchitecture(image *images.Image) types.Architecture {
 		return types.Architecture(v)
 	}
 
+	// Default images without the Glance architecture property to x86_64,
+	// matching the flavor default above, so the strict-equality consumers
+	// of the API keep their pre-existing behaviour.
 	return types.X86_64
 }
 
