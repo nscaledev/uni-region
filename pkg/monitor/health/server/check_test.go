@@ -29,6 +29,7 @@ import (
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	"github.com/unikorn-cloud/core/pkg/provisioninglog"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
@@ -238,14 +239,20 @@ func TestCheckServerLogsOnPhaseChange(t *testing.T) {
 
 	require.NoError(t, err)
 
-	entries := sink.entriesWithMsg("instance phase transition")
+	entries := sink.entriesWithMsg("lifecycle")
 	require.Len(t, entries, 1)
-	require.Equal(t, serverID, entries[0]["instance_id"])
-	require.Equal(t, orgID, entries[0]["org_id"])
-	require.Equal(t, regionID, entries[0]["region_id"])
-	require.Equal(t, string(unikornv1.ActiveConditionReasonPending), entries[0]["from_phase"])
-	require.Equal(t, string(unikornv1.ActiveConditionReasonRunning), entries[0]["to_phase"])
-	require.NotZero(t, entries[0]["time_since_creation_ms"])
+
+	resource, ok := entries[0]["resource"].(*provisioninglog.Resource)
+	require.True(t, ok)
+	require.Equal(t, serverID, resource.ID)
+
+	scope, ok := entries[0]["scope"].(map[string]string)
+	require.True(t, ok)
+	require.Equal(t, orgID, scope["organization"])
+
+	transition, ok := entries[0]["lifecycle"].(*provisioninglog.Transition)
+	require.True(t, ok)
+	require.Equal(t, string(unikornv1.ActiveConditionReasonRunning), transition.Reason)
 }
 
 // TestCheckServerNoLogWhenPhaseUnchanged verifies that no phase transition log is emitted
@@ -260,7 +267,7 @@ func TestCheckServerNoLogWhenPhaseUnchanged(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Empty(t, sink.entriesWithMsg("instance phase transition"))
+	require.Empty(t, sink.entriesWithMsg("lifecycle"))
 }
 
 // TestCheckServerLogsOnStateChange verifies that a state transition log is emitted when
@@ -278,13 +285,13 @@ func TestCheckServerLogsOnStateChange(t *testing.T) {
 
 	require.NoError(t, err)
 
-	entries := sink.entriesWithMsg("instance state transition")
+	entries := sink.entriesWithMsg("instance health transition")
 	require.Len(t, entries, 1)
 	require.Equal(t, serverID, entries[0]["instance_id"])
 	require.Equal(t, orgID, entries[0]["org_id"])
 	require.Equal(t, regionID, entries[0]["region_id"])
-	require.Equal(t, string(unikornv1core.ConditionReasonHealthy), entries[0]["from_state"])
-	require.Equal(t, string(unikornv1core.ConditionReasonDegraded), entries[0]["to_state"])
+	require.Equal(t, string(unikornv1core.ConditionReasonHealthy), entries[0]["from_health"])
+	require.Equal(t, string(unikornv1core.ConditionReasonDegraded), entries[0]["to_health"])
 	require.NotZero(t, entries[0]["duration_ms"])
 }
 
@@ -302,7 +309,7 @@ func TestCheckServerNoLogWhenStateUnchanged(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Empty(t, sink.entriesWithMsg("instance state transition"))
+	require.Empty(t, sink.entriesWithMsg("instance health transition"))
 }
 
 // TestCheckServerNoLogWhenStatusUnchangedReasonDiffers documents that logStateTransition
@@ -322,12 +329,12 @@ func TestCheckServerNoLogWhenStatusUnchangedReasonDiffers(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Empty(t, sink.entriesWithMsg("instance state transition"))
+	require.Empty(t, sink.entriesWithMsg("instance health transition"))
 }
 
 // TestCheckServerLogsWhenConditionAppearsForFirstTime verifies that a state transition log
 // is emitted when there was no prior ConditionHealthy and the provider sets one, and that
-// from_state is empty since there was no previous condition.
+// from_health is empty since there was no previous condition.
 func TestCheckServerLogsWhenConditionAppearsForFirstTime(t *testing.T) {
 	t.Parallel()
 
@@ -340,10 +347,10 @@ func TestCheckServerLogsWhenConditionAppearsForFirstTime(t *testing.T) {
 
 	require.NoError(t, err)
 
-	entries := sink.entriesWithMsg("instance state transition")
+	entries := sink.entriesWithMsg("instance health transition")
 	require.Len(t, entries, 1)
-	require.Empty(t, entries[0]["from_state"])
-	require.Equal(t, string(unikornv1core.ConditionReasonHealthy), entries[0]["to_state"])
+	require.Empty(t, entries[0]["from_health"])
+	require.Equal(t, string(unikornv1core.ConditionReasonHealthy), entries[0]["to_health"])
 	require.NotZero(t, entries[0]["duration_ms"])
 }
 
@@ -362,8 +369,8 @@ func TestCheckServerLogsBothOnCombinedChange(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Len(t, sink.entriesWithMsg("instance phase transition"), 1)
-	require.Len(t, sink.entriesWithMsg("instance state transition"), 1)
+	require.Len(t, sink.entriesWithMsg("lifecycle"), 1)
+	require.Len(t, sink.entriesWithMsg("instance health transition"), 1)
 }
 
 // TestCheckServerNoHistogramOnClockSkew verifies that no histogram observation is recorded
