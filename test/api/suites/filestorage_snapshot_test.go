@@ -38,6 +38,7 @@ import (
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/test/api"
 )
@@ -234,7 +235,7 @@ func EventuallyProvisionSnapshotPolicy(storageID string) {
 // waits until it is running with a public IP for SSH. It returns the server and a cleanup
 // func the caller should register (e.g. DeferCleanup(cleanup)).
 func MustProvisionServer(networkID, securityGroupID string) (*regionopenapi.ServerV2Read, func()) {
-	securityGroups := regionopenapi.ServerV2SecurityGroupIDList{securityGroupID}
+	securityGroups := regionopenapi.ServerV2SecurityGroupIDList{idstest.MustParseSecurityGroupID(securityGroupID)}
 	request := api.NewServerPayload(networkID, config.ServerFlavorID, config.ServerImageID).
 		WithNetworking(&regionopenapi.ServerV2Networking{
 			PublicIP:       ptr.To(true),
