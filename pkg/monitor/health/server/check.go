@@ -29,6 +29,7 @@ import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/provisioninglog"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers"
@@ -119,11 +120,11 @@ func (c *Checker) onPhaseTransition(ctx context.Context, server, updated *unikor
 		return
 	}
 
-	serverLogger(ctx, server).Info("instance phase transition",
-		"from_phase", string(oldReason),
-		"to_phase", string(newActive.Reason),
-		"time_since_creation_ms", time.Since(server.CreationTimestamp.Time).Milliseconds(),
-	)
+	// Emit the lifecycle transition to the structured stream (msg == "lifecycle"),
+	// at parity with the provisioning stream. Reaching here means the Active reason
+	// actually changed, which is the edge the stream requires.
+	provisioninglog.Emit(ctx, c.client.Scheme(), server, provisioninglog.StreamLifecycle,
+		string(newActive.Status), string(newActive.Reason), newActive.Message)
 
 	becameRunning := oldReason != unikornv1.ActiveConditionReasonRunning &&
 		newActive.Reason == unikornv1.ActiveConditionReasonRunning
@@ -158,16 +159,16 @@ func (c *Checker) logStateTransition(ctx context.Context, server, updated *uniko
 	// Condition appeared for the first time, or its status changed.
 	durationSource := server.CreationTimestamp.Time
 
-	var fromState string
+	var fromHealth string
 
 	if oldErr == nil {
 		durationSource = oldCondition.LastTransitionTime.Time
-		fromState = oldCondition.Reason
+		fromHealth = oldCondition.Reason
 	}
 
-	serverLogger(ctx, server).Info("instance state transition",
-		"from_state", fromState,
-		"to_state", newCondition.Reason,
+	serverLogger(ctx, server).Info("instance health transition",
+		"from_health", fromHealth,
+		"to_health", newCondition.Reason,
 		"duration_ms", newCondition.LastTransitionTime.Sub(durationSource).Milliseconds(),
 	)
 }
