@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	corev1alpha1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
@@ -44,6 +45,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -2213,4 +2215,168 @@ func TestServerUpdateV2RejectsRename(t *testing.T) {
 	_, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
 	require.Error(t, err)
 	require.True(t, coreerrors.IsUnprocessableContent(err), "rename attempt must return 422 Unprocessable Content, got: %v", err)
+}
+
+// withAvailableCondition stamps the server's Available condition with the given
+// reason so the read conversion derives a provisioning status from it. The
+// condition status mirrors what the reconciler would write (True only for
+// Provisioned) but the conversion switches on the reason alone.
+func withAvailableCondition(server *regionv1.Server, reason corev1alpha1.ConditionReason) *regionv1.Server {
+	status := corev1.ConditionFalse
+	if reason == corev1alpha1.ConditionReasonProvisioned {
+		status = corev1.ConditionTrue
+	}
+
+	server.StatusConditionWrite(corev1alpha1.ConditionAvailable, status, reason, "")
+
+	return server
+}
+
+// withRebuildMarker records a rebuild marker for the fixture image in the
+// given lifecycle state.
+func withRebuildMarker(server *regionv1.Server, state regionv1.ServerRebuildState) *regionv1.Server {
+	server.Status.Rebuild = &regionv1.ServerRebuildStatus{
+		TargetImageID: idstest.MustParseImageID(srvImageID),
+		State:         state,
+	}
+
+	return server
+}
+
+// TestServerGetV2RebuildPendingReportsProvisioning verifies that a server with a
+// rebuild in flight (marker retained, Nova acting) whose Available condition
+// already reads Provisioned is reported as provisioning at the v2 API — the
+// rebuild's target image is not yet realized, so the server is not settled.
+func TestServerGetV2RebuildPendingReportsProvisioning(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	resource := withRebuildMarker(withAvailableCondition(testServerV2(srvServerID), corev1alpha1.ConditionReasonProvisioned), regionv1.ServerRebuildStateRebuilding)
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
+
+	result, err := c.GetV2(ctx, idstest.MustParseServerID(resource.Name))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, coreapi.ResourceProvisioningStatusProvisioning, result.Metadata.ProvisioningStatus)
+}
+
+// TestServerGetV2NoRebuildReportsProvisioned verifies that a settled server with
+// no rebuild marker passes its converted Provisioned status through untouched.
+func TestServerGetV2NoRebuildReportsProvisioned(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	resource := withAvailableCondition(testServerV2(srvServerID), corev1alpha1.ConditionReasonProvisioned)
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
+
+	result, err := c.GetV2(ctx, idstest.MustParseServerID(resource.Name))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, coreapi.ResourceProvisioningStatusProvisioned, result.Metadata.ProvisioningStatus)
+}
+
+// TestServerGetV2RebuildPendingErroredStaysError verifies that a parked rebuild
+// (marker retained, Available condition Errored) keeps its error status: the
+// override must never mask a failure, so the park stays visible.
+func TestServerGetV2RebuildPendingErroredStaysError(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	resource := withRebuildMarker(withAvailableCondition(testServerV2(srvServerID), corev1alpha1.ConditionReasonErrored), regionv1.ServerRebuildStateFailed)
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
+
+	result, err := c.GetV2(ctx, idstest.MustParseServerID(resource.Name))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, coreapi.ResourceProvisioningStatusError, result.Metadata.ProvisioningStatus)
+}
+
+// TestServerGetV2RebuildIntentNotAcceptedReportsProvisioning verifies that a
+// recorded rebuild intent Nova has not yet accepted (state Initiated) reports
+// the server as provisioning: the desired image is not realized, so the spec
+// is not settled even before Nova acts (an armed rebuild that persistently
+// 409s must not misreport as provisioned).
+func TestServerGetV2RebuildIntentNotAcceptedReportsProvisioning(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	resource := withRebuildMarker(withAvailableCondition(testServerV2(srvServerID), corev1alpha1.ConditionReasonProvisioned), regionv1.ServerRebuildStateInitiated)
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvUpdate())
+
+	result, err := c.GetV2(ctx, idstest.MustParseServerID(resource.Name))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, coreapi.ResourceProvisioningStatusProvisioning, result.Metadata.ProvisioningStatus)
+}
+
+// TestServerListV2RebuildPendingReportsProvisioning pins that the list read path
+// shares the same derivation as get: a pending-rebuild server surfaces as
+// provisioning through ListV2 too.
+func TestServerListV2RebuildPendingReportsProvisioning(t *testing.T) {
+	t.Parallel()
+
+	resource := withRebuildMarker(withAvailableCondition(testServerV2(srvServerID), corev1alpha1.ConditionReasonProvisioned), regionv1.ServerRebuildStateRebuilding)
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+	})
+
+	ctx := rbac.NewContext(t.Context(), srvProjectACL(identityapi.Read))
+
+	result, err := c.ListV2(ctx, openapi.GetApiV2ServersParams{})
+
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	require.Equal(t, coreapi.ResourceProvisioningStatusProvisioning, result[0].Metadata.ProvisioningStatus)
 }

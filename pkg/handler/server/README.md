@@ -93,6 +93,22 @@ related dependencies rather than from nested path scope.
   from the running server. This preserves v1's historical accept-and-ignore
   behaviour for image changes, now enforced at the API boundary instead of
   falling out of the old create-only image handling in the provider.
+- changing a v2 server's `imageId` is a destructive in-place Nova rebuild. It
+  recreates the root disk and destroys its contents while retaining the server
+  UUID, ports, fixed and floating IP relationships, attached data volumes,
+  flavor, metadata, and placement. Flavor changes remain unsupported and are
+  rejected with HTTP 422. An accepted rebuild destroys the previous root disk
+  contents even if the rebuild subsequently fails, so failure recovery is
+  choosing another image or replacing the server — never data restoration.
+- while a rebuild is pending (any recorded rebuild intent that has not
+  settled-and-cleared, including one armed but not yet accepted by Nova) the
+  v2 read reports `provisioningStatus=provisioning` even though the
+  controller has finished its reconcile pass and core would otherwise report
+  `provisioned`. The target image is not yet realized, so the server is not
+  settled: `provisioned` means settled, which the sole consumer (uni-compute's
+  instance settlement gate) relies on. A parked rebuild still surfaces as
+  `error`, so a failure stays visible. See the provider's rebuild handling in
+  [../../providers/internal/openstack/README.md](../../providers/internal/openstack/README.md).
 
 ## Invariants And Guard Rails
 
@@ -126,6 +142,9 @@ related dependencies rather than from nested path scope.
 - Servers provisioned before this mechanism was introduced have random-UUID
   names and are not covered by it; deduplication applies only to resources
   created after deployment.
+- Image rebuild automatically submits at most one Nova-accepted action for a
+  target image. A failed accepted action parks the server until a new image
+  update or server replacement re-arms it; there is no explicit retry.
 
 ## Caveats
 

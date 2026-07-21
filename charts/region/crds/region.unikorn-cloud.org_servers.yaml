@@ -307,6 +307,44 @@ spec:
               publicIP:
                 description: PublicIP is the public IP address of the server.
                 type: string
+              rebuild:
+                description: |-
+                  Rebuild records the most recent Region-issued rebuild intent for a target
+                  image. It is cleared once the server converges on that image. Nova remains
+                  authoritative for the live server image and operation state; this marker is
+                  used to classify an error observed while rebuild intent is retained; an
+                  error arriving after an unobserved success is indistinguishable from a
+                  failed rebuild and is treated as one (fails closed).
+                  An accepted attempt that later fails parks the server until the desired
+                  image changes or the server is replaced.
+                properties:
+                  state:
+                    description: |-
+                      State is forward-only (Initiated < Rebuilding < Succeeded == Failed;
+                      terminals are peers and never flip — first observation wins), with one
+                      exception: the reconciler's park assigns Failed directly, even over
+                      Succeeded. It is advanced by the reconciler (Initiated at arm, Rebuilding
+                      at accept) and by the monitor's provider poll (Rebuilding/Succeeded/Failed
+                      from observed Nova evidence); only the reconciler ever clears or replaces
+                      the struct.
+                    enum:
+                    - Initiated
+                    - Rebuilding
+                    - Succeeded
+                    - Failed
+                    type: string
+                  targetImageID:
+                    description: |-
+                      TargetImageID is the desired image of the rebuild Region issued. It is
+                      write-ahead intent: the provider persists it (via a yield) before Nova
+                      is asked to act, because it is the one fact a failed rebuild cannot be
+                      distinguished from an unrelated failure without.
+                    format: uuid
+                    type: string
+                required:
+                - state
+                - targetImageID
+                type: object
               scheduledAt:
                 description: |-
                   ScheduledAt is the time the provider accepted and processed the creation request.

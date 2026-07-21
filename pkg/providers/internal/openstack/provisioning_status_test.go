@@ -30,10 +30,12 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/stretchr/testify/require"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -317,6 +319,67 @@ func (c *recordingBaremetalClient) GetNodeByInstanceUUID(_ context.Context, inst
 	c.instanceUUID = instanceUUID
 
 	return &nodes.Node{ProvisionState: string(c.provisionState)}, nil
+}
+
+// TestUpdateServerStateWithClientsStampsSucceededForStoppedConvergedRebuild is
+// the regression test for the stopped-server settlement bug: a rebuild that
+// converges while the server is SHUTOFF never produces a Healthy/Errored
+// health reason, so a health-transition wake would never fire and the marker
+// would never settle. The monitor's poll must stamp the terminal rebuild
+// observation (Succeeded) from state evidence — converged image ref plus a
+// stable non-error Nova status — in the same update as its Degraded health
+// write, so the level-based wake predicate fires regardless of health reason.
+func TestUpdateServerStateWithClientsStampsSucceededForStoppedConvergedRebuild(t *testing.T) {
+	t.Parallel()
+
+	const targetImageID = "22222222-2222-4222-a222-222222222222"
+
+	compute := &stubComputeClient{server: &servers.Server{
+		ID:     "nova-id",
+		Status: "SHUTOFF",
+		Image:  map[string]any{"id": targetImageID},
+	}}
+	identity := &unikornv1.Identity{}
+	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{FlavorID: idstest.MustParseFlavorID(flavorVMID)}}
+	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{
+		TargetImageID: idstest.MustParseImageID(targetImageID),
+		State:         unikornv1.ServerRebuildStateRebuilding,
+	}
+
+	provider := &Provider{
+		openstack: &openStackClients{
+			_region: &unikornv1.Region{
+				Spec: unikornv1.RegionSpec{
+					Openstack: &unikornv1.RegionOpenstackSpec{
+						Compute: &unikornv1.RegionOpenstackComputeSpec{
+							Flavors: &unikornv1.OpenstackFlavorsSpec{
+								Metadata: []unikornv1.FlavorMetadata{{ID: flavorVMID, Baremetal: false}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	err := provider.updateServerStateWithClients(t.Context(), identity, server, compute,
+		func(context.Context, *unikornv1.Identity) (BaremetalInterface, error) {
+			return nil, errIronicUnavailable
+		})
+
+	require.NoError(t, err)
+
+	// The terminal rebuild observation and the Degraded health write must land
+	// in the same update: the health reason alone (Degraded, not
+	// Healthy/Errored) carries no settlement signal for a stopped server.
+	require.NotNil(t, server.Status.Rebuild)
+	require.Equal(t, unikornv1.ServerRebuildStateSucceeded, server.Status.Rebuild.State)
+	require.Equal(t, idstest.MustParseImageID(targetImageID), server.Status.Rebuild.TargetImageID, "the monitor must never retarget the marker")
+
+	condition, conditionErr := server.StatusConditionRead(unikornv1core.ConditionHealthy)
+	require.NoError(t, conditionErr)
+	require.Equal(t, corev1.ConditionFalse, condition.Status)
+	require.Equal(t, unikornv1core.ConditionReasonDegraded, condition.Reason)
 }
 
 // TestUpdateServerStateWithClientsBaremetalBuildSetsPhaseFromIronicLookup is the

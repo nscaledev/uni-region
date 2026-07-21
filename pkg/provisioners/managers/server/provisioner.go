@@ -300,6 +300,52 @@ func (p *Provisioner) providerCreateFailure() bool {
 	return ProviderCreateFailure(p.server)
 }
 
+// serverParked reports whether the core reconciler has already parked the
+// server: the core-owned Available condition reads Errored, which is the
+// exact reason core's handleReconcileCondition writes for a terminal
+// (ErrUserActionRequired) provision result. An absent condition is not
+// parked.
+func serverParked(server *unikornv1.Server) bool {
+	condition, err := server.StatusConditionRead(unikornv1core.ConditionAvailable)
+	if err != nil {
+		return false
+	}
+
+	return condition.Reason == unikornv1core.ConditionReasonErrored
+}
+
+// RebuildSettled reports whether the monitor has recorded a terminal rebuild
+// observation the reconciler has not yet acted on. Its only caller is the
+// controller's watch predicate; the observation is stimulus only, so the woken
+// settlement pass re-decides from a fresh provider read.
+//
+// DO NOT CHANGE its exact shape: a LEVEL test firing iff the marker is present
+// and Succeeded, or Failed while not parked. Narrowed to edge-triggered (fire
+// only on a marker-state change) it drops the wake covering a park write lost
+// to a conflicting health patch, hanging a failed rebuild unparked forever.
+// Broadened to any standing marker it re-wakes a lost-advance Initiated marker
+// after a foreign ref-revert, producing a second Nova accept. It depends on the
+// monitor writing marker advance and health in one patch per poll.
+//
+// The old object is unused (kept for the watch predicate's call shape); nil
+// updated returns false.
+func RebuildSettled(_, updated *unikornv1.Server) bool {
+	if updated == nil || updated.Status.Rebuild == nil {
+		return false
+	}
+
+	switch updated.Status.Rebuild.State {
+	case unikornv1.ServerRebuildStateSucceeded:
+		return true
+	case unikornv1.ServerRebuildStateFailed:
+		return !serverParked(updated)
+	case unikornv1.ServerRebuildStateInitiated, unikornv1.ServerRebuildStateRebuilding:
+		return false
+	default:
+		return false
+	}
+}
+
 func (p *Provisioner) resetProviderCreateRuntimeStatus(message string) {
 	p.server.Status.Phase = unikornv1.InstanceLifecyclePhasePending
 	p.server.Status.PrivateIP = nil

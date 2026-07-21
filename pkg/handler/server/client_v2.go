@@ -33,6 +33,7 @@ import (
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
@@ -249,6 +250,19 @@ func sshInjectionStatus(in *regionv1.Server) *openapi.SshInjection {
 	return &out
 }
 
+// deriveProvisioningStatus reports a server with a pending rebuild as
+// provisioning: consumers gate on provisioned meaning the spec is fully
+// realized, and a Nova-accepted rebuild still in flight is not. Only the
+// Provisioned case is rewritten — a parked rebuild's error, and every other
+// status, pass through so failures stay visible.
+func deriveProvisioningStatus(in *regionv1.Server, status coreapi.ResourceProvisioningStatus) coreapi.ResourceProvisioningStatus {
+	if in.RebuildPending() && status == coreapi.ResourceProvisioningStatusProvisioned {
+		return coreapi.ResourceProvisioningStatusProvisioning
+	}
+
+	return status
+}
+
 func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 	imageID, err := in.ImageID()
 	if err != nil {
@@ -260,8 +274,11 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 		return nil, err
 	}
 
+	metadata := conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags)
+	metadata.ProvisioningStatus = deriveProvisioningStatus(in, metadata.ProvisioningStatus)
+
 	out := &openapi.ServerV2Read{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
+		Metadata: metadata,
 		Spec: openapi.ServerV2Spec{
 			FlavorId:   in.Spec.FlavorID,
 			ImageId:    imageID,
