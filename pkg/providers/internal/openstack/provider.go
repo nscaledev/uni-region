@@ -2155,6 +2155,46 @@ func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, 
 	}
 }
 
+func novaServerLogValues(server *servers.Server) []any {
+	if server == nil {
+		return []any{
+			"novaServerID", "",
+			"novaServerName", "",
+			"novaServerStatus", "",
+			"novaServerVMState", "",
+			"novaServerTaskState", "",
+			"novaServerPowerState", "",
+			"novaServerLaunchedAt", time.Time{},
+			"novaServerFaultCode", 0,
+			"novaServerFaultMessage", "",
+		}
+	}
+
+	return []any{
+		"novaServerID", server.ID,
+		"novaServerName", server.Name,
+		"novaServerStatus", server.Status,
+		"novaServerVMState", server.VmState,
+		"novaServerTaskState", server.TaskState,
+		"novaServerPowerState", server.PowerState.String(),
+		"novaServerLaunchedAt", server.LaunchedAt,
+		"novaServerFaultCode", server.Fault.Code,
+		"novaServerFaultMessage", server.Fault.Message,
+	}
+}
+
+func logNovaServerState(ctx context.Context, operation string, server *servers.Server) {
+	values := []any{"operation", operation}
+	values = append(values, novaServerLogValues(server)...)
+
+	logger := log.FromContext(ctx)
+	if server == nil || server.Status != "ERROR" {
+		logger = logger.V(1)
+	}
+
+	logger.Info("observed nova server state", values...)
+}
+
 // SetServerHealthStatus attaches the healt status condition to a server.
 func setServerHealthStatus(server *unikornv1.Server, openstackserver *servers.Server) {
 	status, reason, message := convertServerHealthStatus(openstackserver)
@@ -2519,6 +2559,7 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 	openstackServer, err := client.GetServer(ctx, server)
 	if err == nil {
 		log.V(1).Info("server already exists")
+		logNovaServerState(ctx, "lookup", openstackServer)
 
 		return openstackServer, nil
 	}
@@ -2575,6 +2616,7 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 		return nil, err
 	}
 
+	logNovaServerState(ctx, "create", openstackServer)
 	setServerHealthStatus(server, openstackServer)
 	// No Ironic lookup at create time — the live monitor's UpdateServerState
 	// refines Phase from observed Ironic state on each poll.
@@ -2838,6 +2880,7 @@ func (p *Provider) updateServerStateWithClients(
 		return err
 	}
 
+	logNovaServerState(ctx, "update", openstackServer)
 	setServerHealthStatus(server, openstackServer)
 	setServerMACAddress(ctx, server, openstackServer)
 

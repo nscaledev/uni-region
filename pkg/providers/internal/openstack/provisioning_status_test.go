@@ -20,18 +20,24 @@ package openstack
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/remoteconsoles"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
 	"github.com/stretchr/testify/require"
 
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
+	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/constants"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -47,6 +53,87 @@ const (
 )
 
 var errIronicUnavailable = errors.New("ironic unavailable")
+
+type captureSink struct {
+	entries   *[]map[string]any
+	presetKVs []any
+}
+
+func newCaptureSink() *captureSink {
+	entries := make([]map[string]any, 0)
+
+	return &captureSink{entries: &entries}
+}
+
+var _ logr.LogSink = (*captureSink)(nil)
+
+func (s *captureSink) Init(logr.RuntimeInfo)        {}
+func (s *captureSink) Enabled(int) bool             { return true }
+func (s *captureSink) Error(error, string, ...any)  {}
+func (s *captureSink) WithName(string) logr.LogSink { return s }
+
+func (s *captureSink) WithValues(kvs ...any) logr.LogSink {
+	c := *s
+	c.presetKVs = append(append([]any{}, s.presetKVs...), kvs...)
+
+	return &c
+}
+
+func (s *captureSink) Info(_ int, msg string, keysAndValues ...any) {
+	entry := map[string]any{"_msg": msg}
+
+	for i := 0; i+1 < len(s.presetKVs); i += 2 {
+		entry[fmt.Sprint(s.presetKVs[i])] = s.presetKVs[i+1]
+	}
+
+	for i := 0; i+1 < len(keysAndValues); i += 2 {
+		entry[fmt.Sprint(keysAndValues[i])] = keysAndValues[i+1]
+	}
+
+	*s.entries = append(*s.entries, entry)
+}
+
+func (s *captureSink) entriesWithMsg(msg string) []map[string]any {
+	var out []map[string]any
+
+	for _, e := range *s.entries {
+		if e["_msg"] == msg {
+			out = append(out, e)
+		}
+	}
+
+	return out
+}
+
+func novaErrorServerFixture(launchedAt time.Time) *servers.Server {
+	return &servers.Server{
+		ID:         "nova-id",
+		Name:       "nova-name",
+		Status:     "ERROR",
+		VmState:    "error",
+		TaskState:  "spawning",
+		PowerState: servers.NOSTATE,
+		LaunchedAt: launchedAt,
+		Fault:      servers.Fault{Code: 500, Message: "No valid host found"},
+	}
+}
+
+func requireNovaStateLog(t *testing.T, sink *captureSink, operation string, openstackServer *servers.Server) {
+	t.Helper()
+
+	entries := sink.entriesWithMsg("observed nova server state")
+	require.Len(t, entries, 1)
+	require.Equal(t, operation, entries[0]["operation"])
+	require.Equal(t, openstackServer.ID, entries[0]["novaServerID"])
+	require.Equal(t, openstackServer.Name, entries[0]["novaServerName"])
+	require.Equal(t, openstackServer.Status, entries[0]["novaServerStatus"])
+	require.Equal(t, openstackServer.VmState, entries[0]["novaServerVMState"])
+	require.Equal(t, openstackServer.TaskState, entries[0]["novaServerTaskState"])
+	require.Equal(t, openstackServer.PowerState.String(), entries[0]["novaServerPowerState"])
+	require.Equal(t, openstackServer.LaunchedAt, entries[0]["novaServerLaunchedAt"])
+	require.Equal(t, openstackServer.Fault.Code, entries[0]["novaServerFaultCode"])
+	require.Equal(t, openstackServer.Fault.Message, entries[0]["novaServerFaultMessage"])
+}
 
 func TestBaremetalBuildPhase(t *testing.T) {
 	t.Parallel()
@@ -272,6 +359,8 @@ func TestUpdateServerStateWithClientsRecordsMACAddress(t *testing.T) {
 
 type stubComputeClient struct {
 	server          *servers.Server
+	getServerErr    error
+	createdServer   *servers.Server
 	requestedServer *unikornv1.Server
 }
 
@@ -285,11 +374,14 @@ func (c *stubComputeClient) DeleteServerGroup(context.Context, string) error { r
 func (c *stubComputeClient) UpdateQuotas(context.Context, string) error      { return nil }
 func (c *stubComputeClient) GetServer(_ context.Context, server *unikornv1.Server) (*servers.Server, error) {
 	c.requestedServer = server
+	if c.getServerErr != nil {
+		return nil, c.getServerErr
+	}
 
 	return c.server, nil
 }
 func (c *stubComputeClient) CreateServer(context.Context, *unikornv1.Server, string, []servers.Network, *string, map[string]string) (*servers.Server, error) {
-	return nil, nil //nolint:nilnil // unused stub method
+	return c.createdServer, nil
 }
 func (c *stubComputeClient) DeleteServer(context.Context, string) error       { return nil }
 func (c *stubComputeClient) RebootServer(context.Context, string, bool) error { return nil }
@@ -303,6 +395,71 @@ func (c *stubComputeClient) ShowConsoleOutput(context.Context, string, *int) (st
 }
 func (c *stubComputeClient) CreateImageFromServer(context.Context, string, *servers.CreateImageOpts) (string, error) {
 	return "", nil
+}
+
+func TestReconcileServerLogsCreatedNovaServerState(t *testing.T) {
+	t.Parallel()
+
+	launchedAt := time.Date(2026, time.July, 22, 10, 11, 12, 0, time.UTC)
+	openstackServer := novaErrorServerFixture(launchedAt)
+	compute := &stubComputeClient{
+		getServerErr:  coreerrors.ErrResourceNotFound,
+		createdServer: openstackServer,
+	}
+	server := &unikornv1.Server{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "server-id",
+			Labels: map[string]string{
+				coreconstants.OrganizationLabel: "org-id",
+				coreconstants.ProjectLabel:      "project-id",
+				constants.RegionLabel:           "region-id",
+			},
+		},
+	}
+	port := &ports.Port{ID: "port-id", NetworkID: "network-id"}
+	sink := newCaptureSink()
+	ctx := logr.NewContext(t.Context(), logr.New(sink))
+
+	provider := &Provider{}
+
+	_, err := provider.reconcileServer(ctx, compute, server, port, "", nil)
+	require.NoError(t, err)
+
+	requireNovaStateLog(t, sink, "create", openstackServer)
+}
+
+func TestUpdateServerStateWithClientsLogsNovaServerState(t *testing.T) {
+	t.Parallel()
+
+	launchedAt := time.Date(2026, time.July, 22, 10, 11, 12, 0, time.UTC)
+	openstackServer := novaErrorServerFixture(launchedAt)
+	compute := &stubComputeClient{server: openstackServer}
+	identity := &unikornv1.Identity{}
+	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{FlavorID: idstest.MustParseFlavorID(flavorVMID)}}
+	sink := newCaptureSink()
+	ctx := logr.NewContext(t.Context(), logr.New(sink))
+
+	provider := &Provider{openstack: &openStackClients{
+		_region: &unikornv1.Region{
+			Spec: unikornv1.RegionSpec{
+				Openstack: &unikornv1.RegionOpenstackSpec{
+					Compute: &unikornv1.RegionOpenstackComputeSpec{
+						Flavors: &unikornv1.OpenstackFlavorsSpec{
+							Metadata: []unikornv1.FlavorMetadata{{ID: flavorVMID, Baremetal: false}},
+						},
+					},
+				},
+			},
+		},
+	}}
+
+	err := provider.updateServerStateWithClients(ctx, identity, server, compute,
+		func(context.Context, *unikornv1.Identity) (BaremetalInterface, error) {
+			return nil, errIronicUnavailable
+		})
+	require.NoError(t, err)
+
+	requireNovaStateLog(t, sink, "update", openstackServer)
 }
 
 type recordingBaremetalClient struct {
