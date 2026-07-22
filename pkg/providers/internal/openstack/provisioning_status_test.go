@@ -140,20 +140,91 @@ func requireNovaStateLog(t *testing.T, sink *captureSink, operation string, open
 func TestConvertServerHealthStatusTreatsActiveTaskAsProvisioning(t *testing.T) {
 	t.Parallel()
 
-	status, reason, message := convertServerHealthStatus(&servers.Server{Status: "ERROR", TaskState: "spawning"})
+	now := time.Date(2026, time.July, 22, 10, 11, 12, 0, time.UTC)
+
+	status, reason, message := convertServerHealthStatus(&unikornv1.Server{}, &servers.Server{Status: "ERROR", TaskState: "spawning"}, now)
 
 	require.Equal(t, corev1.ConditionUnknown, status)
 	require.Equal(t, unikornv1core.ConditionReasonProvisioning, reason)
 	require.Contains(t, message, "task_state=spawning")
 }
 
-func TestConvertServerHealthStatusSettledErrorIncludesFault(t *testing.T) {
+func TestConvertServerHealthStatusSettledErrorWaitsForDebounce(t *testing.T) {
 	t.Parallel()
 
-	status, reason, message := convertServerHealthStatus(&servers.Server{
+	now := time.Date(2026, time.July, 22, 10, 11, 12, 0, time.UTC)
+	openstackServer := &servers.Server{
+		ID:     "nova-id",
 		Status: "ERROR",
 		Fault:  servers.Fault{Message: "No valid host found"},
-	})
+	}
+
+	status, reason, message := convertServerHealthStatus(&unikornv1.Server{}, openstackServer, now)
+
+	require.Equal(t, corev1.ConditionFalse, status)
+	require.Equal(t, unikornv1core.ConditionReasonDegraded, reason)
+	require.Equal(t, pendingNovaServerErrorMessage(openstackServer), message)
+}
+
+func TestConvertServerHealthStatusSettledErrorEscalatesAfterDebounce(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.July, 22, 10, 11, 12, 0, time.UTC)
+	openstackServer := &servers.Server{
+		ID:     "nova-id",
+		Status: "ERROR",
+		Fault:  servers.Fault{Message: "No valid host found"},
+	}
+	server := &unikornv1.Server{}
+	server.Status.Conditions = []unikornv1core.Condition{{
+		Type:               unikornv1core.ConditionHealthy,
+		Status:             corev1.ConditionFalse,
+		Reason:             unikornv1core.ConditionReasonDegraded,
+		Message:            pendingNovaServerErrorMessage(openstackServer),
+		LastTransitionTime: metav1.NewTime(now.Add(-novaServerErrorDebounce - time.Second)),
+	}}
+
+	status, reason, message := convertServerHealthStatus(server, openstackServer, now)
+
+	require.Equal(t, corev1.ConditionFalse, status)
+	require.Equal(t, unikornv1core.ConditionReasonErrored, reason)
+	require.Contains(t, message, "No valid host found")
+}
+
+func TestConvertServerHealthStatusSettledErrorResetsForDifferentProviderServer(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.July, 22, 10, 11, 12, 0, time.UTC)
+	oldOpenstackServer := &servers.Server{ID: "old-nova-id", Status: "ERROR"}
+	newOpenstackServer := &servers.Server{ID: "new-nova-id", Status: "ERROR"}
+	server := &unikornv1.Server{}
+	server.Status.Conditions = []unikornv1core.Condition{{
+		Type:               unikornv1core.ConditionHealthy,
+		Status:             corev1.ConditionFalse,
+		Reason:             unikornv1core.ConditionReasonDegraded,
+		Message:            pendingNovaServerErrorMessage(oldOpenstackServer),
+		LastTransitionTime: metav1.NewTime(now.Add(-novaServerErrorDebounce - time.Second)),
+	}}
+
+	status, reason, message := convertServerHealthStatus(server, newOpenstackServer, now)
+
+	require.Equal(t, corev1.ConditionFalse, status)
+	require.Equal(t, unikornv1core.ConditionReasonDegraded, reason)
+	require.Equal(t, pendingNovaServerErrorMessage(newOpenstackServer), message)
+}
+
+func TestConvertServerHealthStatusLaunchedErrorBypassesDebounce(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.July, 22, 10, 11, 12, 0, time.UTC)
+	openstackServer := &servers.Server{
+		ID:         "nova-id",
+		Status:     "ERROR",
+		LaunchedAt: now.Add(-time.Minute),
+		Fault:      servers.Fault{Message: "No valid host found"},
+	}
+
+	status, reason, message := convertServerHealthStatus(&unikornv1.Server{}, openstackServer, now)
 
 	require.Equal(t, corev1.ConditionFalse, status)
 	require.Equal(t, unikornv1core.ConditionReasonErrored, reason)

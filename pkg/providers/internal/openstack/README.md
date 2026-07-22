@@ -181,6 +181,13 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   provisioning health so the controller does not delete an instance Nova may
   still complete. Settled Nova errors include the Nova fault message in the
   condition when one is available.
+- Pre-launch settled Nova `ERROR` observations are debounced through the
+  existing `Healthy` condition. The first observation is written as
+  `Healthy/Degraded`; only a later observation of the same Nova server after the
+  debounce window escalates to `Healthy/Errored` and arms provider-create retry.
+  If the Nova server ID changes or Nova leaves the settled error state, the
+  condition changes and the debounce naturally restarts without an extra status
+  field.
 - Some OpenStack list APIs are not safe to treat as exact lookup, notably
   server, network, and Octavia load-balancer `name` filters:
   - `name` filters behave like prefix or regular-expression matches rather than

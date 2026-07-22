@@ -102,6 +102,10 @@ func withProviderCreateInFlightError(server *regionv1.Server) {
 	server.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionUnknown, unikornv1core.ConditionReasonProvisioning, "server reports ERROR while task_state=spawning; waiting for task to settle")
 }
 
+func withProviderCreatePendingError(server *regionv1.Server) {
+	server.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "provider server nova-id is in settled ERROR; waiting to confirm before retry")
+}
+
 func withProviderCreateRetrying(server *regionv1.Server) {
 	server.Status.ProviderCreateFailures = 1
 	server.Status.ProviderCreateRetrying = true
@@ -192,6 +196,14 @@ func TestProviderCreateFailureInFlightErrorDoesNotRetry(t *testing.T) {
 	t.Parallel()
 
 	server := retryServer(withProviderCreateInFlightError)
+
+	require.False(t, serverprovisioner.ProviderCreateFailure(server))
+}
+
+func TestProviderCreateFailurePendingErrorDoesNotRetry(t *testing.T) {
+	t.Parallel()
+
+	server := retryServer(withProviderCreatePendingError)
 
 	require.False(t, serverprovisioner.ProviderCreateFailure(server))
 }

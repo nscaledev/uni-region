@@ -45,10 +45,10 @@ This is the clearest controller-side expression of the lifecycle DAG model:
   predicate, shared with the controller watch predicate
   (`pkg/managers/server`) so the trigger and the action cannot drift. It fails
   closed: a rebuild destroys data, so any signal that the server has ever booted
-  blocks it. The provider must first project a settled provider create failure
-  as `Healthy/Errored`; in-flight provider work remains non-terminal and does
-  not arm the rebuild path. In steady state the load-bearing guard is
-  `launchedAt` (mirrored
+  blocks it. The provider must first project a confirmed, settled provider
+  create failure as `Healthy/Errored`; in-flight provider work and first-seen
+  settled failures remain non-terminal and do not arm the rebuild path. In
+  steady state the load-bearing guard is `launchedAt` (mirrored
   from Nova `launched_at`, which Nova sets at first boot and never clears).
   `Server.status.provisionedAt` is a durable, write-once copy of that same Nova
   signal that the retry reset never clears; it closes the one window `launchedAt`
