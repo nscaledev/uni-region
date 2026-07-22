@@ -97,6 +97,8 @@ const (
 
 	// These ones are well defined openstack image properties.
 	imageArchitectureProperty = "architecture"
+
+	novaServerErrorDebounce = time.Minute
 )
 
 var tagKeyRegex = regexp.MustCompile(
@@ -2135,29 +2137,130 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 	return nil
 }
 
+func novaServerErrorMessage(server *servers.Server) string {
+	if server.Fault.Message != "" {
+		return "server is in an error state: " + server.Fault.Message
+	}
+
+	return "server is in an error state"
+}
+
+func novaServerStableID(server *servers.Server) string {
+	switch {
+	case server.ID != "":
+		return server.ID
+	case server.Name != "":
+		return server.Name
+	default:
+		return "unknown"
+	}
+}
+
+func pendingNovaServerErrorMessage(server *servers.Server) string {
+	return fmt.Sprintf("provider server %s is in settled ERROR; waiting to confirm before retry", novaServerStableID(server))
+}
+
+func serverHasLaunched(server *unikornv1.Server, openstackServer *servers.Server) bool {
+	if openstackServer != nil && !openstackServer.LaunchedAt.IsZero() {
+		return true
+	}
+
+	return server != nil && (server.Status.LaunchedAt != nil || server.Status.ProvisionedAt != nil)
+}
+
+func confirmedPendingNovaServerError(server *unikornv1.Server, message string, now time.Time) bool {
+	if server == nil {
+		return false
+	}
+
+	condition, err := server.StatusConditionRead(unikornv1core.ConditionHealthy)
+	if err != nil {
+		return false
+	}
+
+	if condition.Status != corev1.ConditionFalse ||
+		condition.Reason != unikornv1core.ConditionReasonDegraded ||
+		condition.Message != message {
+		return false
+	}
+
+	return !condition.LastTransitionTime.Time.Add(novaServerErrorDebounce).After(now)
+}
+
 // convertServerHealthStatus translates from an OpenStack server status into a Kubernetes one.
 // See the following for all possible states (currently).
 // https://docs.openstack.org/api-guide/compute/server_concepts.html
-func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, unikornv1core.ConditionReason, string) {
-	if server == nil {
+func convertServerHealthStatus(server *unikornv1.Server, openstackServer *servers.Server, now time.Time) (corev1.ConditionStatus, unikornv1core.ConditionReason, string) {
+	if openstackServer == nil {
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
 	}
 
-	switch server.Status {
+	switch openstackServer.Status {
 	case "ACTIVE":
 		return corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "server is healthy"
 	case "ERROR":
-		return corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server is in an error state"
+		if openstackServer.TaskState != "" {
+			return corev1.ConditionUnknown, unikornv1core.ConditionReasonProvisioning, fmt.Sprintf("server reports ERROR while task_state=%s; waiting for task to settle", openstackServer.TaskState)
+		}
+
+		if !serverHasLaunched(server, openstackServer) {
+			message := pendingNovaServerErrorMessage(openstackServer)
+			if !confirmedPendingNovaServerError(server, message, now) {
+				return corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, message
+			}
+		}
+
+		return corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, novaServerErrorMessage(openstackServer)
 	case "UNKNOWN":
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
 	default:
-		return corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "server is in state " + server.Status
+		return corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "server is in state " + openstackServer.Status
 	}
+}
+
+func novaServerLogValues(server *servers.Server) []any {
+	if server == nil {
+		return []any{
+			"novaServerID", "",
+			"novaServerName", "",
+			"novaServerStatus", "",
+			"novaServerVMState", "",
+			"novaServerTaskState", "",
+			"novaServerPowerState", "",
+			"novaServerLaunchedAt", time.Time{},
+			"novaServerFaultCode", 0,
+			"novaServerFaultMessage", "",
+		}
+	}
+
+	return []any{
+		"novaServerID", server.ID,
+		"novaServerName", server.Name,
+		"novaServerStatus", server.Status,
+		"novaServerVMState", server.VmState,
+		"novaServerTaskState", server.TaskState,
+		"novaServerPowerState", server.PowerState.String(),
+		"novaServerLaunchedAt", server.LaunchedAt,
+		"novaServerFaultCode", server.Fault.Code,
+		"novaServerFaultMessage", server.Fault.Message,
+	}
+}
+
+func logNovaServerState(ctx context.Context, operation string, server *servers.Server) {
+	values := []any{"operation", operation}
+	values = append(values, novaServerLogValues(server)...)
+
+	logger := log.FromContext(ctx)
+	if server == nil || server.Status != "ERROR" {
+		logger = logger.V(1)
+	}
+
+	logger.Info("observed nova server state", values...)
 }
 
 // SetServerHealthStatus attaches the healt status condition to a server.
 func setServerHealthStatus(server *unikornv1.Server, openstackserver *servers.Server) {
-	status, reason, message := convertServerHealthStatus(openstackserver)
+	status, reason, message := convertServerHealthStatus(server, openstackserver, time.Now())
 
 	server.StatusConditionWrite(unikornv1core.ConditionHealthy, status, reason, message)
 }
@@ -2519,6 +2622,7 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 	openstackServer, err := client.GetServer(ctx, server)
 	if err == nil {
 		log.V(1).Info("server already exists")
+		logNovaServerState(ctx, "lookup", openstackServer)
 
 		return openstackServer, nil
 	}
@@ -2575,6 +2679,7 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 		return nil, err
 	}
 
+	logNovaServerState(ctx, "create", openstackServer)
 	setServerHealthStatus(server, openstackServer)
 	// No Ironic lookup at create time — the live monitor's UpdateServerState
 	// refines Phase from observed Ironic state on each poll.
@@ -2838,6 +2943,7 @@ func (p *Provider) updateServerStateWithClients(
 		return err
 	}
 
+	logNovaServerState(ctx, "update", openstackServer)
 	setServerHealthStatus(server, openstackServer)
 	setServerMACAddress(ctx, server, openstackServer)
 

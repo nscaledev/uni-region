@@ -17,6 +17,12 @@ status/telemetry model.
 
 - resolves provider and flavor context per region and caches it for a poll cycle
 - updates server status through provider `UpdateServerState(...)`
+- relies on the provider's monitor-owned `Healthy` condition projection to
+  distinguish in-flight provider work from confirmed provider failure. For
+  OpenStack, pre-launch Nova `ERROR` is first held as `Healthy/Degraded` and
+  only escalates to `Healthy/Errored` after the same provider server remains in
+  settled error for the debounce window; that escalation is what can wake the
+  server controller's bounded provider-create retry.
 - refines the server's live `Phase` from observed Nova + Ironic state. For OpenStack baremetal servers in Nova `BUILD`, an Ironic node lookup distinguishes `Queued` (provider has accepted the create but hardware is not yet engaged — pre-deploy Ironic states) from `Building` (Ironic actively deploying, including transient deploy failures). VMs in Nova `BUILD` go straight to `Building`. Provisioning status itself stays purely condition-derived (provisioner-owned, one-shot): the monitor never writes it. Phase is the live readiness signal once provisioning status reaches `provisioned`.
 - latches `status.provisionedAt` from Nova `launched_at`, alongside `launchedAt`
   and ahead of the `BUILD` early-return, so it fires for VMs and baremetal alike
