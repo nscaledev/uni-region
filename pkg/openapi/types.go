@@ -117,6 +117,13 @@ const (
 	StorageSnapshotScheduleIntervalV2Weekly  StorageSnapshotScheduleIntervalV2 = "weekly"
 )
 
+// Defines values for VolumeClassV2Media.
+const (
+	VolumeClassV2MediaHdd  VolumeClassV2Media = "hdd"
+	VolumeClassV2MediaNvme VolumeClassV2Media = "nvme"
+	VolumeClassV2MediaSsd  VolumeClassV2Media = "ssd"
+)
+
 // Defines values for ImageScopeQueryParameter.
 const (
 	ImageScopeQueryParameterAvailable ImageScopeQueryParameter = "available"
@@ -1531,6 +1538,47 @@ type StorageV2Update struct {
 	Spec StorageV2Spec `json:"spec"`
 }
 
+// VolumeClassListV2Read A list of provider-neutral block-storage volume classes.
+type VolumeClassListV2Read = []VolumeClassV2Read
+
+// VolumeClassV2Media The physical storage medium backing a volume class.
+type VolumeClassV2Media string
+
+// VolumeClassV2Performance Advertised performance caps; these are not guaranteed reservations.
+type VolumeClassV2Performance struct {
+	// MaxIOPS Advertised maximum input/output operations per second.
+	MaxIOPS *int `json:"maxIOPS,omitempty"`
+
+	// MaxThroughputMiBps Advertised maximum throughput in mebibytes per second.
+	MaxThroughputMiBps *int `json:"maxThroughputMiBps,omitempty"`
+}
+
+// VolumeClassV2Read A provider-neutral block-storage volume class available in a Region.
+type VolumeClassV2Read struct {
+	// Metadata This metadata is for resources that just exist, and don't require
+	// any provisioning and health status, but benefit from a standardized
+	// metadata format.
+	Metadata externalRef0.StaticResourceMetadata `json:"metadata"`
+
+	// Spec Provider-neutral capabilities advertised by a block-storage volume class.
+	Spec VolumeClassV2Spec `json:"spec"`
+}
+
+// VolumeClassV2Spec Provider-neutral capabilities advertised by a block-storage volume class.
+type VolumeClassV2Spec struct {
+	// Encrypted Whether volumes created from this class are encrypted at rest by the provider.
+	Encrypted bool `json:"encrypted"`
+
+	// Media The physical storage medium backing a volume class.
+	Media *VolumeClassV2Media `json:"media,omitempty"`
+
+	// Performance Advertised performance caps; these are not guaranteed reservations.
+	Performance *VolumeClassV2Performance `json:"performance,omitempty"`
+
+	// RegionId A region ID.
+	RegionId RegionId `json:"regionId"`
+}
+
 // FilestorageIDParameter A file storage ID.
 type FilestorageIDParameter = FileStorageId
 
@@ -1677,6 +1725,9 @@ type StorageListV2Response = StorageV2List
 
 // StorageV2Response A storage read only group.
 type StorageV2Response = StorageV2Read
+
+// VolumeClassListV2Response A list of provider-neutral block-storage volume classes.
+type VolumeClassListV2Response = VolumeClassListV2Read
 
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
@@ -1876,6 +1927,12 @@ type GetApiV2SshcertificateauthoritiesParams struct {
 
 	// ProjectID Allows resources to be filtered by project.
 	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
+}
+
+// GetApiV2VolumeclassesParams defines parameters for GetApiV2Volumeclasses.
+type GetApiV2VolumeclassesParams struct {
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
 }
 
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities for application/json ContentType.

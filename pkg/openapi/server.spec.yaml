@@ -1782,6 +1782,30 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/volumeclasses:
+    description: |-
+      Lists provider-neutral block-storage classes available from Regions visible to the caller. Results can be narrowed to one or more Regions.
+    get:
+      description: |-
+        Lists provider-neutral VolumeClasses from Regions visible to the caller. Repeat the regionID query parameter to narrow results to one or more Regions. Media and performance caps are returned only when published by the Region.
+      summary: List volume classes
+      tags:
+      - Volume classes
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: '#/components/parameters/regionIDQueryParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/volumeClassListV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 components:
   parameters:
     organizationIDParameter:
@@ -3768,6 +3792,58 @@ components:
       enum:
       - nfsv3
       - nfsv4
+    volumeClassListV2Read:
+      description: A list of provider-neutral block-storage volume classes.
+      type: array
+      items:
+        $ref: '#/components/schemas/volumeClassV2Read'
+    volumeClassV2Read:
+      description: A provider-neutral block-storage volume class available in a Region.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/staticResourceMetadata'
+        spec:
+          $ref: '#/components/schemas/volumeClassV2Spec'
+    volumeClassV2Spec:
+      description: Provider-neutral capabilities advertised by a block-storage volume class.
+      type: object
+      required:
+      - regionId
+      - encrypted
+      properties:
+        regionId:
+          description: The Region that owns this volume class inventory entry.
+          $ref: '#/components/schemas/regionId'
+        media:
+          $ref: '#/components/schemas/volumeClassV2Media'
+        performance:
+          $ref: '#/components/schemas/volumeClassV2Performance'
+        encrypted:
+          description: Whether volumes created from this class are encrypted at rest by the provider.
+          type: boolean
+    volumeClassV2Media:
+      description: The physical storage medium backing a volume class.
+      type: string
+      enum:
+      - hdd
+      - ssd
+      - nvme
+    volumeClassV2Performance:
+      description: Advertised performance caps; these are not guaranteed reservations.
+      type: object
+      properties:
+        maxIOPS:
+          description: Advertised maximum input/output operations per second.
+          type: integer
+          minimum: 1
+        maxThroughputMiBps:
+          description: Advertised maximum throughput in mebibytes per second.
+          type: integer
+          minimum: 1
   requestBodies:
     identityRequest:
       description: A request for an identity.
@@ -4933,6 +5009,25 @@ components:
                 - nfsv3
                 - nfsv4
               parallelism: 8
+    volumeClassListV2Response:
+      description: A list of provider-neutral block-storage volume classes.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/volumeClassListV2Read'
+          example:
+          - metadata:
+              id: 44444444-4444-4444-4444-444444444444
+              name: fast-nvme
+              description: Latency-sensitive encrypted block storage
+              creationTime: 1970-01-01T00:00:00Z
+            spec:
+              regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
+              media: nvme
+              performance:
+                maxIOPS: 25000
+                maxThroughputMiBps: 500
+              encrypted: true
   securitySchemes:
     oauth2Authentication:
       description: Operation requires OAuth 2.0 bearer token authentication.
