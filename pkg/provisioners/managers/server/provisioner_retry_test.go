@@ -98,6 +98,10 @@ func withProviderCreateFailure(server *regionv1.Server) {
 	server.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server is in an error state")
 }
 
+func withProviderCreateInFlightError(server *regionv1.Server) {
+	server.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionUnknown, unikornv1core.ConditionReasonProvisioning, "server reports ERROR while task_state=spawning; waiting for task to settle")
+}
+
 func withProviderCreateRetrying(server *regionv1.Server) {
 	server.Status.ProviderCreateFailures = 1
 	server.Status.ProviderCreateRetrying = true
@@ -182,6 +186,14 @@ func TestProvision_ProviderCreateFailureDeletesAndYields(t *testing.T) {
 
 	requireEvent(t, recorder, corev1.EventTypeNormal, "ProviderCreateRetrying", "attempt 1/3")
 	requireEvent(t, recorder, corev1.EventTypeNormal, "ProviderCreateRetryReady", "attempt 1/3")
+}
+
+func TestProviderCreateFailureInFlightErrorDoesNotRetry(t *testing.T) {
+	t.Parallel()
+
+	server := retryServer(withProviderCreateInFlightError)
+
+	require.False(t, serverprovisioner.ProviderCreateFailure(server))
 }
 
 func TestProvision_ProviderCreateRetryKeepsDeleting(t *testing.T) {

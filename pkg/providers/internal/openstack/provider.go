@@ -2147,6 +2147,14 @@ func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, 
 	case "ACTIVE":
 		return corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "server is healthy"
 	case "ERROR":
+		if server.TaskState != "" {
+			return corev1.ConditionUnknown, unikornv1core.ConditionReasonProvisioning, fmt.Sprintf("server reports ERROR while task_state=%s; waiting for task to settle", server.TaskState)
+		}
+
+		if server.Fault.Message != "" {
+			return corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server is in an error state: " + server.Fault.Message
+		}
+
 		return corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server is in an error state"
 	case "UNKNOWN":
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"

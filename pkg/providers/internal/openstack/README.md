@@ -175,6 +175,12 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   the monitor logs the failure and falls back to the VM default `Building`
   Phase so API responses still see a coherent live signal rather than failing
   the monitor path.
+- Nova `ERROR` only becomes `Healthy/Errored` after Nova reports no active
+  `OS-EXT-STS:task_state`. An `ERROR` observation with a non-empty task state is
+  still in flight from Region's perspective and remains non-terminal
+  provisioning health so the controller does not delete an instance Nova may
+  still complete. Settled Nova errors include the Nova fault message in the
+  condition when one is available.
 - Some OpenStack list APIs are not safe to treat as exact lookup, notably
   server, network, and Octavia load-balancer `name` filters:
   - `name` filters behave like prefix or regular-expression matches rather than

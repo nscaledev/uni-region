@@ -33,6 +33,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
 	"github.com/stretchr/testify/require"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
@@ -40,6 +41,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -133,6 +135,29 @@ func requireNovaStateLog(t *testing.T, sink *captureSink, operation string, open
 	require.Equal(t, openstackServer.LaunchedAt, entries[0]["novaServerLaunchedAt"])
 	require.Equal(t, openstackServer.Fault.Code, entries[0]["novaServerFaultCode"])
 	require.Equal(t, openstackServer.Fault.Message, entries[0]["novaServerFaultMessage"])
+}
+
+func TestConvertServerHealthStatusTreatsActiveTaskAsProvisioning(t *testing.T) {
+	t.Parallel()
+
+	status, reason, message := convertServerHealthStatus(&servers.Server{Status: "ERROR", TaskState: "spawning"})
+
+	require.Equal(t, corev1.ConditionUnknown, status)
+	require.Equal(t, unikornv1core.ConditionReasonProvisioning, reason)
+	require.Contains(t, message, "task_state=spawning")
+}
+
+func TestConvertServerHealthStatusSettledErrorIncludesFault(t *testing.T) {
+	t.Parallel()
+
+	status, reason, message := convertServerHealthStatus(&servers.Server{
+		Status: "ERROR",
+		Fault:  servers.Fault{Message: "No valid host found"},
+	})
+
+	require.Equal(t, corev1.ConditionFalse, status)
+	require.Equal(t, unikornv1core.ConditionReasonErrored, reason)
+	require.Contains(t, message, "No valid host found")
 }
 
 func TestBaremetalBuildPhase(t *testing.T) {
