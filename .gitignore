@@ -20,3 +20,4 @@ test-results.json
 fuzz-results.xml
 hack/ci/ca-bundle.pem
 .claude/settings.local.json
+docs/adr/working/

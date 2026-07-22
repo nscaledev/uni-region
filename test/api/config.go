@@ -43,6 +43,7 @@ type TestConfig struct {
 	ServerImageID           string
 	ServerInfrastructureRef string
 	FileStorageSnapshotDir  string
+	FakeControlEndpoint     string
 }
 
 // HasInternalAPIConfig reports whether local internal API credentials are available.
@@ -106,6 +107,7 @@ func LoadTestConfig() (*TestConfig, error) {
 		ServerImageID:           v.GetString("TEST_SERVER_IMAGE_ID"),
 		ServerInfrastructureRef: v.GetString("TEST_SERVER_INFRASTRUCTURE_REF"),
 		FileStorageSnapshotDir:  v.GetString("TEST_FILE_STORAGE_SNAPSHOT_DIR"),
+		FakeControlEndpoint:     v.GetString("FAKE_CONTROL_ENDPOINT"),
 	}
 
 	// Validate required fields
