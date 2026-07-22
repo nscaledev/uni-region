@@ -168,7 +168,7 @@ func TestProviderVolumeClassesReusesBlockStorageClientCacheWithDefaultSelector(t
 				},
 			}
 
-			client := newRaceTestClient(t, region, secret)
+			client := newProviderTestClient(t, region, secret)
 			provider := openstack.NewTestProvider(client, region)
 
 			first, err := provider.VolumeClasses(t.Context())
