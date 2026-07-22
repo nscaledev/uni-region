@@ -221,8 +221,20 @@ node_uuid() {
 }
 
 create_node() {
+  local -a driver_args=(--driver "${DRIVER}")
+
+  # The fake-controllable hardware type ships its own power/management/deploy
+  # interfaces; they must be selected explicitly or node create rejects the driver.
+  if [[ "${DRIVER}" == fake-controllable ]]; then
+    driver_args+=(
+      --power-interface fake-controllable
+      --management-interface fake-controllable
+      --deploy-interface fake-controllable
+    )
+  fi
+
   "${OPENSTACK_CLI}" baremetal node create \
-    --driver "${DRIVER}" \
+    "${driver_args[@]}" \
     --name "${NODE_NAME}" \
     --resource-class "${RESOURCE_CLASS}" \
     --no-automated-clean \
