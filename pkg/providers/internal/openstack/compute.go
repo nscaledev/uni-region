@@ -334,6 +334,26 @@ func (c *ComputeClient) RebootServer(ctx context.Context, id string, hard bool) 
 	return servers.Reboot(ctx, c.client, id, opts).ExtractErr()
 }
 
+func (c *ComputeClient) RebuildServer(ctx context.Context, id string, options ServerRebuildOptions) (*servers.Server, error) {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", id),
+		attribute.String("compute.server.action", "rebuild"),
+		attribute.String("compute.image.id", options.ImageID.String()),
+	)
+
+	_, span := traceStart(ctx, "POST /compute/v2/servers/{id}/action", spanAttributes)
+	defer span.End()
+
+	// key_name and user_data are deliberately omitted: Nova preserves the stored
+	// keypair and create-time user data on an omitted field, keeping rebuilt guests
+	// create-equivalent. Updated user data therefore applies on replacement, not
+	// rebuild (Nova accepts user_data on rebuild from microversion 2.57, but
+	// gophercloud's servers.RebuildOpts has no field for it as of v2.10.0).
+	return servers.Rebuild(ctx, c.client, id, servers.RebuildOpts{
+		ImageRef: options.ImageID.String(),
+	}).Extract()
+}
+
 func (c *ComputeClient) StartServer(ctx context.Context, id string) error {
 	spanAttributes := trace.WithAttributes(
 		attribute.String("compute.server.id", id),

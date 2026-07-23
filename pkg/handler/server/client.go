@@ -126,12 +126,10 @@ func (c *Client) Create(ctx context.Context, organizationID identityids.Organiza
 		return nil, providers.ProviderToServerError(err)
 	}
 
-	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
-		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, fmt.Errorf("%w: failed to retrieve image from provider", err)
+	// v1 keeps existence-only image semantics: no readiness or flavor
+	// compatibility checks, those are a v2 contract.
+	if _, err := serverImage(ctx, provider, organizationID, request.Spec.ImageId); err != nil {
+		return nil, err
 	}
 
 	resource, err := newGenerator(c.ClientArgs, organizationID, projectID, identityID.String()).generate(ctx, request)
@@ -160,22 +158,10 @@ func (c *Client) Get(ctx context.Context, organizationID identityids.Organizatio
 
 // Update a resource.
 func (c *Client) Update(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID regionids.IdentityID, serverID regionids.ServerID, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
-	identity, err := identity.New(c.ClientArgs).GetRaw(ctx, organizationID, projectID, identityID.String())
-	if err != nil {
+	// The identity must exist and be owned by the caller's organization and
+	// project; nothing else from it is needed on the update path.
+	if _, err := identity.New(c.ClientArgs).GetRaw(ctx, organizationID, projectID, identityID.String()); err != nil {
 		return nil, err
-	}
-
-	provider, err := c.Providers.LookupCloud(identity.Labels[constants.RegionLabel])
-	if err != nil {
-		return nil, providers.ProviderToServerError(err)
-	}
-
-	if _, err := provider.GetImage(ctx, organizationID, request.Spec.ImageId); err != nil {
-		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, fmt.Errorf("%w: failed to retrieve image from provider", err)
 	}
 
 	current, err := c.get(ctx, organizationID, projectID, serverID.String())
@@ -187,6 +173,14 @@ func (c *Client) Update(ctx context.Context, organizationID identityids.Organiza
 	if err != nil {
 		return nil, err
 	}
+
+	// The image is immutable through the v1 API: the request's imageId is
+	// discarded — and therefore not validated at all — in favour of the stored
+	// image. A stored image change now arms a destructive in-place rebuild in
+	// the provider (INST-920) — a contract only v2 validates and reports on —
+	// whereas v1 has always accepted and ignored image changes, so preserve the
+	// stored image and never 404 an update over a value that has no effect.
+	required.Spec.Image = current.Spec.Image.DeepCopy()
 
 	if err := conversion.UpdateObjectMetadata(required, current, identitycommon.IdentityMetadataMutator); err != nil {
 		return nil, fmt.Errorf("%w: failed to merge metadata", err)

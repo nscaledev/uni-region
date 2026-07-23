@@ -35,7 +35,7 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-// fakeNovaServer captures server-create requests and returns a minimal response.
+// fakeNovaServer captures server create and action requests and returns minimal responses.
 type fakeNovaServer struct {
 	body map[string]any
 }
@@ -60,7 +60,55 @@ func (f *fakeNovaServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.Method == http.MethodPost && r.URL.Path == "/servers/server-id/action" {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if err := json.Unmarshal(raw, &f.body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"server":{"id":"server-id","status":"REBUILD"}}`))
+
+		return
+	}
+
 	http.NotFound(w, r)
+}
+
+func TestRebuildServerSendsOnlyImage(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeNovaServer{}
+
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+
+	client := openstack.NewTestComputeClient(srv.URL + "/")
+	options := openstack.ServerRebuildOptions{
+		ImageID: idstest.MustParseImageID("bbbbbbbb-0000-0000-0000-000000000001"),
+	}
+
+	_, err := client.RebuildServer(t.Context(), "server-id", options)
+	require.NoError(t, err)
+
+	rebuildBody, ok := fake.body["rebuild"].(map[string]any)
+	require.True(t, ok, "body missing 'rebuild' key")
+	assert.Equal(t, options.ImageID.String(), rebuildBody["imageRef"])
+
+	// key_name and user_data are omitted so Nova preserves the stored keypair and
+	// create-time user data, keeping the rebuilt guest create-equivalent.
+	_, hasKeyName := rebuildBody["key_name"]
+	assert.False(t, hasKeyName, "key_name must be omitted so Nova keeps the stored keypair")
+
+	_, hasUserData := rebuildBody["user_data"]
+	assert.False(t, hasUserData, "user_data must be omitted so Nova keeps the create-time user data")
 }
 
 func newServerFixture(name string) *unikornv1.Server {

@@ -129,7 +129,10 @@ var _ = Describe("Network Management", func() {
 				got, err := regionClient.GetNetwork(ctx, networkID)
 				Expect(err).NotTo(HaveOccurred())
 
-				updatedName := networkName + "-upd"
+				// A fresh unique name stays within the 63-character resource-name
+				// limit; appending to networkName overflows it when the local run
+				// prefix is long.
+				updatedName := api.UniqueName("network-upd")
 				updateReq := regionopenapi.NetworkV2Update{
 					Metadata: coreapi.ResourceWriteMetadata{
 						Name:        updatedName,
