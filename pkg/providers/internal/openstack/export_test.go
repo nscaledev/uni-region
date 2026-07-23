@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumetypes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/listeners"
@@ -50,6 +51,9 @@ func NewImageQuery(listFunc func() (*cache.ListSnapshot[types.Image], error)) ty
 
 //nolint:gochecknoglobals
 var ConvertImage = convertImage
+
+//nolint:gochecknoglobals
+var ConvertVolumeClasses = convertVolumeClasses
 
 //nolint:gochecknoglobals
 var GatewayIP = gatewayIP
@@ -148,6 +152,17 @@ func NewTestComputeClient(endpoint string) *ComputeClient {
 			Endpoint:       endpoint,
 		},
 		flavorCache: cache.New[[]flavors.Flavor](time.Hour),
+	}
+}
+
+func NewTestBlockStorageClient(endpoint string, options *unikornv1.RegionOpenstackBlockStorageSpec) *BlockStorageClient {
+	return &BlockStorageClient{
+		client: &gophercloud.ServiceClient{
+			ProviderClient: &gophercloud.ProviderClient{},
+			Endpoint:       endpoint,
+		},
+		options:         options,
+		volumeTypeCache: cache.New[[]volumetypes.VolumeType](time.Hour),
 	}
 }
 
