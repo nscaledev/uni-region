@@ -149,7 +149,7 @@ func (c *BlockStorageClient) UpdateQuotas(ctx context.Context, projectID string)
 }
 
 func (p *Provider) VolumeClasses(ctx context.Context) (types.VolumeClassList, error) {
-	blockStorage, err := p.blockStorage(ctx)
+	blockStorage, err := p.openstack.blockStorage(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -162,17 +162,6 @@ func (p *Provider) VolumeClasses(ctx context.Context) (types.VolumeClassList, er
 	region, _ := p.openstack.regionSnapshot()
 
 	return convertVolumeClasses(region, resources), nil
-}
-
-func (p *Provider) blockStorage(ctx context.Context) (VolumeTypeInterface, error) {
-	region, credentials, err := p.openstack.regionRefresh(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	providerClient := NewPasswordProvider(region.Spec.Openstack.Endpoint, credentials.userID, credentials.password, credentials.projectID)
-
-	return NewBlockStorageClient(ctx, providerClient, region.Spec.Openstack.BlockStorage)
 }
 
 func convertVolumeClasses(region *unikornv1.Region, resources []volumetypes.VolumeType) types.VolumeClassList {

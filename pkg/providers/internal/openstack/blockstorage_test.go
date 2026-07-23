@@ -29,6 +29,8 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
 
@@ -107,6 +109,90 @@ func TestGetVolumeTypesAppliesSelectorVisibilityAndCache(t *testing.T) {
 	}, first)
 	require.Equal(t, first, second)
 	require.Equal(t, 1, requests)
+}
+
+func TestProviderVolumeClassesReusesBlockStorageClientCacheWithDefaultSelector(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name         string
+		blockStorage *unikornv1.RegionOpenstackBlockStorageSpec
+	}{
+		{
+			name:         "WithoutVolumeClassesConfig",
+			blockStorage: &unikornv1.RegionOpenstackBlockStorageSpec{},
+		},
+		{
+			name: "WithEmptySelector",
+			blockStorage: &unikornv1.RegionOpenstackBlockStorageSpec{
+				VolumeClasses: &unikornv1.OpenstackVolumeClassesSpec{
+					Selector: &unikornv1.VolumeClassSelector{},
+				},
+			},
+		},
+	}
+
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			ks := newFakeOpenstack(t)
+
+			region := &unikornv1.Region{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-region",
+					Namespace: "default",
+				},
+				Spec: unikornv1.RegionSpec{
+					Openstack: &unikornv1.RegionOpenstackSpec{
+						Endpoint: ks.ts.URL,
+						ServiceAccountSecret: &unikornv1.NamespacedObject{
+							Name:      "test-secret",
+							Namespace: "default",
+						},
+						BlockStorage: test.blockStorage,
+					},
+				},
+			}
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-secret",
+					Namespace: "default",
+				},
+				Data: map[string][]byte{
+					"domain-id":  []byte("domain"),
+					"user-id":    []byte("user"),
+					"password":   []byte("password"),
+					"project-id": []byte("project"),
+				},
+			}
+
+			client := newRaceTestClient(t, region, secret)
+			provider := openstack.NewTestProvider(client, region)
+
+			first, err := provider.VolumeClasses(t.Context())
+			require.NoError(t, err)
+
+			second, err := provider.VolumeClasses(t.Context())
+			require.NoError(t, err)
+
+			require.Equal(t, types.VolumeClassList{
+				{
+					ID:          "slow",
+					Name:        "slow-hdd",
+					Description: "Bulk capacity",
+				},
+				{
+					ID:          "fast",
+					Name:        "fast-nvme",
+					Description: "Latency sensitive",
+				},
+			}, first)
+			require.Equal(t, first, second)
+			require.Equal(t, int64(1), ks.volumeTypeRequests.Load())
+		})
+	}
 }
 
 func TestConvertVolumeClassesAppliesMetadata(t *testing.T) {

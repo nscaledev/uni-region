@@ -274,7 +274,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   provider-neutral `VolumeClass` values. Maximum performance metadata records
   caps rather than guaranteed reservations. `VolumeClass` is
   Region-scoped inventory configuration, not a project-owned resource or
-  lifecycle object.
+  lifecycle object. The block-storage service client is cached with the other
+  OpenStack service clients so Cinder volume-type inventory cache survives
+  repeated provider calls and is refreshed only when Region configuration or
+  credentials change.
 - Image handling is a first-class contract surface here:
   - OpenStack image properties are validated against a schema
   - public images can additionally be signature-verified
