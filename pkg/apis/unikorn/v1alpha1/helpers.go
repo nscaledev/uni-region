@@ -289,6 +289,16 @@ func (c *Server) ImageID() (regionids.ImageID, error) {
 	return c.Spec.Image.ID, nil
 }
 
+// RebuildPending reports whether the server carries any recorded rebuild
+// intent that has not settled-and-cleared: while the marker exists — in ANY
+// state, including armed-but-unaccepted Initiated — the desired image is not
+// fully realized, so read paths must report the spec as not settled (an
+// armed rebuild that Nova persistently 409s is provisioning, not
+// provisioned).
+func (c *Server) RebuildPending() bool {
+	return c.Status.Rebuild != nil
+}
+
 // OrganizationID returns the network's owning organization ID as a typed identifier.
 func (c *Network) OrganizationID() (identityids.OrganizationID, error) {
 	return organizationIDFromLabels(c.Labels)

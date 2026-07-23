@@ -103,3 +103,41 @@ func TestProviderCreateFailureUpdate(t *testing.T) {
 		}))
 	})
 }
+
+func serverWithRebuildState(state unikornv1.ServerRebuildState) *unikornv1.Server {
+	server := &unikornv1.Server{}
+	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{State: state}
+
+	return server
+}
+
+func TestRebuildSettledUpdate(t *testing.T) {
+	t.Parallel()
+
+	t.Run("PendingSettles", func(t *testing.T) {
+		t.Parallel()
+
+		require.True(t, serverRebuildSettledUpdate(event.TypedUpdateEvent[*unikornv1.Server]{
+			ObjectOld: serverWithRebuildState(unikornv1.ServerRebuildStateRebuilding),
+			ObjectNew: serverWithRebuildState(unikornv1.ServerRebuildStateSucceeded),
+		}))
+	})
+
+	t.Run("NilOld", func(t *testing.T) {
+		t.Parallel()
+
+		require.False(t, serverRebuildSettledUpdate(event.TypedUpdateEvent[*unikornv1.Server]{
+			ObjectOld: nil,
+			ObjectNew: serverWithRebuildState(unikornv1.ServerRebuildStateSucceeded),
+		}))
+	})
+
+	t.Run("NilNew", func(t *testing.T) {
+		t.Parallel()
+
+		require.False(t, serverRebuildSettledUpdate(event.TypedUpdateEvent[*unikornv1.Server]{
+			ObjectOld: serverWithRebuildState(unikornv1.ServerRebuildStateRebuilding),
+			ObjectNew: nil,
+		}))
+	})
+}

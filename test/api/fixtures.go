@@ -487,6 +487,42 @@ func (b *ServerPayloadBuilder) Build() regionopenapi.ServerV2Create {
 	return b.server
 }
 
+// ServerUpdatePayloadBuilder builds ServerV2Update payloads for testing.
+type ServerUpdatePayloadBuilder struct {
+	update regionopenapi.ServerV2Update
+}
+
+// ServerUpdateFromRead seeds an update builder from a server read, carrying the
+// immutable name and the current spec forward so a test changes only the field
+// it exercises.
+func ServerUpdateFromRead(read *regionopenapi.ServerV2Read) *ServerUpdatePayloadBuilder {
+	return &ServerUpdatePayloadBuilder{
+		update: regionopenapi.ServerV2Update{
+			Metadata: coreapi.ResourceWriteMetadata{
+				Name: read.Metadata.Name,
+			},
+			Spec: read.Spec,
+		},
+	}
+}
+
+// WithImageID sets the desired image; a changed value triggers an in-place rebuild.
+func (b *ServerUpdatePayloadBuilder) WithImageID(imageID string) *ServerUpdatePayloadBuilder {
+	b.update.Spec.ImageId = idstest.MustParseImageID(imageID)
+	return b
+}
+
+// WithFlavorID overrides the flavor, which the handler rejects as immutable.
+func (b *ServerUpdatePayloadBuilder) WithFlavorID(flavorID string) *ServerUpdatePayloadBuilder {
+	b.update.Spec.FlavorId = idstest.MustParseFlavorID(flavorID)
+	return b
+}
+
+// Build returns the typed ServerV2Update struct.
+func (b *ServerUpdatePayloadBuilder) Build() regionopenapi.ServerV2Update {
+	return b.update
+}
+
 // FileStoragePayloadBuilder builds StorageV2CreateRequest payloads for testing.
 type FileStoragePayloadBuilder struct {
 	storage regionopenapi.StorageV2CreateRequest

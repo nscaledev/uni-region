@@ -124,6 +124,8 @@ type CommonProvider interface {
 	Region(ctx context.Context) (*unikornv1.Region, error)
 	// Flavors list all available flavors.
 	Flavors(ctx context.Context) (FlavorList, error)
+	// VolumeClasses lists all available block-storage volume classes.
+	VolumeClasses(ctx context.Context) (VolumeClassList, error)
 }
 
 // Providers are expected to provide a provider agnostic manner.

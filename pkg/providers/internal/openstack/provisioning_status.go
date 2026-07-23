@@ -67,7 +67,7 @@ func baremetalBuildPhase(node *nodes.Node) unikornv1.InstanceLifecyclePhase {
 // lookup for this server. Only baremetal servers in Nova BUILD use Ironic;
 // everything else uses Nova state alone.
 func shouldCallIronicForPhase(server servers.Server, baremetal bool) bool {
-	return server.Status == "BUILD" && baremetal
+	return server.Status == novaStatusBuild && baremetal
 }
 
 func isBaremetalFlavor(region *unikornv1.Region, flavorID string) bool {

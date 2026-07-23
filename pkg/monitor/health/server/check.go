@@ -214,6 +214,13 @@ func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server, pro
 		return nil, err
 	}
 
+	// This single Status().Patch persists health, phase, MAC, and the rebuild
+	// marker advance together. Writing the marker advance and health in ONE
+	// patch per poll is a load-bearing liveness invariant: it makes every
+	// park-conflicting write itself a terminal-level wake. Split into separate
+	// patches (health first), a health-already-matching no-op patch would drop
+	// the settlement wake covering a conflict-dropped park write, and a failed
+	// rebuild would hang unparked forever.
 	if err := c.client.Status().Patch(ctx, updated, client.MergeFromWithOptions(server, &client.MergeFromWithOptimisticLock{})); err != nil {
 		return nil, err
 	}

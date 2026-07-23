@@ -39,6 +39,8 @@ type openStackClients struct {
 	_compute  *ComputeClient
 	_image    *ImageClient
 	_network  NetworkingInterface
+	// _blockStorage is the region-scoped block-storage client used for inventory.
+	_blockStorage *BlockStorageClient
 
 	// region is the current region configuration.
 	_region *unikornv1.Region
@@ -54,13 +56,14 @@ type openStackClients struct {
 // It is separate from openStackClients so bootstrap can build the derived state
 // once and then install it onto the long-lived runtime wrapper.
 type serviceClientState struct {
-	region      *unikornv1.Region
-	secret      *corev1.Secret
-	credentials *providerCredentials
-	identity    *IdentityClient
-	compute     *ComputeClient
-	image       *ImageClient
-	network     NetworkingInterface
+	region       *unikornv1.Region
+	secret       *corev1.Secret
+	credentials  *providerCredentials
+	identity     *IdentityClient
+	compute      *ComputeClient
+	image        *ImageClient
+	network      NetworkingInterface
+	blockStorage *BlockStorageClient
 }
 
 // bootstrapServiceClientState performs the direct Kubernetes reads needed to build
@@ -146,14 +149,20 @@ func newServiceClientState(ctx context.Context, region *unikornv1.Region, secret
 		return nil, err
 	}
 
+	blockStorage, err := NewBlockStorageClient(ctx, providerClient, region.Spec.Openstack.BlockStorage)
+	if err != nil {
+		return nil, err
+	}
+
 	return &serviceClientState{
-		region:      region,
-		secret:      secret,
-		credentials: credentials,
-		identity:    identity,
-		compute:     compute,
-		image:       image,
-		network:     network,
+		region:       region,
+		secret:       secret,
+		credentials:  credentials,
+		identity:     identity,
+		compute:      compute,
+		image:        image,
+		network:      network,
+		blockStorage: blockStorage,
 	}, nil
 }
 
@@ -167,6 +176,7 @@ func (c *openStackClients) install(state *serviceClientState) {
 	c._compute = state.compute
 	c._image = state.image
 	c._network = state.network
+	c._blockStorage = state.blockStorage
 }
 
 // serviceClientRefresh updates clients if they need to e.g. in the event
@@ -284,4 +294,16 @@ func (c *openStackClients) network(ctx context.Context) (NetworkingInterface, er
 	}
 
 	return c._network, nil
+}
+
+// blockStorage returns an admin-level block storage client.
+func (c *openStackClients) blockStorage(ctx context.Context) (VolumeTypeInterface, error) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	if err := c.serviceClientRefresh(ctx); err != nil {
+		return nil, err
+	}
+
+	return c._blockStorage, nil
 }
