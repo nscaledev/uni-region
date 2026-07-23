@@ -117,8 +117,8 @@ func (c *BlockStorageClient) GetVolumeTypes(ctx context.Context) ([]volumetypes.
 		}
 
 		config := openstackVolumeClassesConfig(c.options)
-		if config == nil || config.Selector == nil || len(config.Selector.IDs) == 0 {
-			return false
+		if config == nil || config.Selector == nil {
+			return true
 		}
 
 		return !slices.Contains(config.Selector.IDs, volumeType.ID)

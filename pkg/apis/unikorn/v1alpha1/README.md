@@ -44,7 +44,11 @@ stored objects rely on for linkage, migration, and operational coordination.
   inventory should be enriched; it does not create a project-owned
   `VolumeClass` CRD or any user-managed lifecycle resource. OpenStack maps this
   inventory to Cinder volume types internally, but the Region storage and
-  public/domain vocabulary remains `VolumeClass`.
+  public/domain vocabulary remains `VolumeClass`. Selection is fail-closed:
+  only provider IDs explicitly listed in
+  `openstack.blockStorage.volumeClasses.selector.ids` are eligible. Missing
+  `volumeClasses` configuration, a missing selector, or nil/empty IDs exports
+  no VolumeClasses.
 - Namespaced Kubernetes storage scope and platform tenancy scope are separate
   concerns. These objects are namespaced, but their logical visibility and
   authorization are often organization-, project-, identity-, or region-scoped

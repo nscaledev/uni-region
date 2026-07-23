@@ -111,22 +111,76 @@ func TestGetVolumeTypesAppliesSelectorVisibilityAndCache(t *testing.T) {
 	require.Equal(t, 1, requests)
 }
 
-func TestProviderVolumeClassesReusesBlockStorageClientCacheWithDefaultSelector(t *testing.T) {
+func TestProviderVolumeClassesAppliesFailClosedSelectorAndReusesBlockStorageClientCache(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
 		name         string
 		blockStorage *unikornv1.RegionOpenstackBlockStorageSpec
+		expected     types.VolumeClassList
 	}{
+		{
+			name:         "WithoutBlockStorageConfig",
+			blockStorage: nil,
+			expected:     types.VolumeClassList{},
+		},
 		{
 			name:         "WithoutVolumeClassesConfig",
 			blockStorage: &unikornv1.RegionOpenstackBlockStorageSpec{},
+			expected:     types.VolumeClassList{},
 		},
 		{
-			name: "WithEmptySelector",
+			name: "WithoutSelector",
+			blockStorage: &unikornv1.RegionOpenstackBlockStorageSpec{
+				VolumeClasses: &unikornv1.OpenstackVolumeClassesSpec{},
+			},
+			expected: types.VolumeClassList{},
+		},
+		{
+			name: "WithNilSelectorIDs",
 			blockStorage: &unikornv1.RegionOpenstackBlockStorageSpec{
 				VolumeClasses: &unikornv1.OpenstackVolumeClassesSpec{
 					Selector: &unikornv1.VolumeClassSelector{},
+				},
+			},
+			expected: types.VolumeClassList{},
+		},
+		{
+			name: "WithEmptySelectorIDs",
+			blockStorage: &unikornv1.RegionOpenstackBlockStorageSpec{
+				VolumeClasses: &unikornv1.OpenstackVolumeClassesSpec{
+					Selector: &unikornv1.VolumeClassSelector{
+						IDs: []string{},
+					},
+				},
+			},
+			expected: types.VolumeClassList{},
+		},
+		{
+			name: "WithUnmatchedSelectorIDs",
+			blockStorage: &unikornv1.RegionOpenstackBlockStorageSpec{
+				VolumeClasses: &unikornv1.OpenstackVolumeClassesSpec{
+					Selector: &unikornv1.VolumeClassSelector{
+						IDs: []string{"unmatched"},
+					},
+				},
+			},
+			expected: types.VolumeClassList{},
+		},
+		{
+			name: "WithExplicitSelectorIDs",
+			blockStorage: &unikornv1.RegionOpenstackBlockStorageSpec{
+				VolumeClasses: &unikornv1.OpenstackVolumeClassesSpec{
+					Selector: &unikornv1.VolumeClassSelector{
+						IDs: []string{"fast"},
+					},
+				},
+			},
+			expected: types.VolumeClassList{
+				{
+					ID:          "fast",
+					Name:        "fast-nvme",
+					Description: "Latency sensitive",
 				},
 			},
 		},
@@ -177,18 +231,7 @@ func TestProviderVolumeClassesReusesBlockStorageClientCacheWithDefaultSelector(t
 			second, err := provider.VolumeClasses(t.Context())
 			require.NoError(t, err)
 
-			require.Equal(t, types.VolumeClassList{
-				{
-					ID:          "slow",
-					Name:        "slow-hdd",
-					Description: "Bulk capacity",
-				},
-				{
-					ID:          "fast",
-					Name:        "fast-nvme",
-					Description: "Latency sensitive",
-				},
-			}, first)
+			require.Equal(t, test.expected, first)
 			require.Equal(t, first, second)
 			require.Equal(t, int64(1), ks.volumeTypeRequests.Load())
 		})
