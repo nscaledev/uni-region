@@ -88,18 +88,27 @@ func checkAccess(ctx context.Context, resource *unikornv1.Region) error {
 	return errors.HTTPNotFound()
 }
 
-// CheckAccess fetches the region by ID and verifies the caller's organization is
-// allowed to use it.  Returns HTTPNotFound for both missing and inaccessible regions
-// to avoid confirming region existence to unauthorized callers.
-func (c *Client) CheckAccess(ctx context.Context, regionID regionids.RegionID) error {
+func (c *Client) getRegion(ctx context.Context, regionID regionids.RegionID) (*unikornv1.Region, error) {
 	resource := &unikornv1.Region{}
 
 	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: regionID.String()}, resource); err != nil {
 		if kerrors.IsNotFound(err) {
-			return errors.HTTPNotFound().WithError(err)
+			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
-		return fmt.Errorf("%w: unable to lookup region", err)
+		return nil, fmt.Errorf("%w: unable to lookup region", err)
+	}
+
+	return resource, nil
+}
+
+// CheckAccess fetches the region by ID and verifies the caller's organization is
+// allowed to use it.  Returns HTTPNotFound for both missing and inaccessible regions
+// to avoid confirming region existence to unauthorized callers.
+func (c *Client) CheckAccess(ctx context.Context, regionID regionids.RegionID) error {
+	resource, err := c.getRegion(ctx, regionID)
+	if err != nil {
+		return err
 	}
 
 	return checkAccess(ctx, resource)
@@ -216,7 +225,7 @@ func checkVolumeClassAccess(ctx context.Context, resource *unikornv1.Region) err
 	}
 
 	organizationIDs := rbac.OrganizationIDs(ctx)
-	if resource.Spec.Security != nil && len(resource.Spec.Security.Organizations) > 0 {
+	if resource.Spec.Security != nil && resource.Spec.Security.Organizations != nil {
 		organizationIDs = make([]string, len(resource.Spec.Security.Organizations))
 
 		for i := range resource.Spec.Security.Organizations {
@@ -238,15 +247,10 @@ func checkVolumeClassAccess(ctx context.Context, resource *unikornv1.Region) err
 	return errors.HTTPNotFound()
 }
 
-func (c *Client) checkVolumeClassAccess(ctx context.Context, regionID regionids.RegionID) error {
-	resource := &unikornv1.Region{}
-
-	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: regionID.String()}, resource); err != nil {
-		if kerrors.IsNotFound(err) {
-			return errors.HTTPNotFound().WithError(err)
-		}
-
-		return fmt.Errorf("%w: unable to lookup region", err)
+func (c *Client) checkVolumeClassAccessForRegion(ctx context.Context, regionID regionids.RegionID) error {
+	resource, err := c.getRegion(ctx, regionID)
+	if err != nil {
+		return err
 	}
 
 	return checkVolumeClassAccess(ctx, resource)
@@ -267,7 +271,7 @@ func (c *Client) volumeClassRegionIDs(ctx context.Context, query *openapi.Region
 				continue
 			}
 
-			if err := c.checkVolumeClassAccess(ctx, regionID); err != nil {
+			if err := c.checkVolumeClassAccessForRegion(ctx, regionID); err != nil {
 				return nil, err
 			}
 

@@ -262,6 +262,9 @@ but we do not have transactions.”
 - `GET /api/v2/volumeclasses` is a live provider-backed inventory route rather
   than a lifecycle resource surface. A failure from any selected Region fails
   the whole request; the handler does not return partial inventory.
+- Identity roles must grant `region:volumeclasses:v2/read` before this route is
+  rolled out. Without that grant, non-global callers receive `404` for explicit
+  Region filters and an empty list for unfiltered inventory.
 
 ## TODO
 

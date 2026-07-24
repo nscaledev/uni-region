@@ -38,6 +38,9 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 // errVolumeClassProvider is returned by provider mocks to exercise error handling.
@@ -53,6 +56,59 @@ func volumeClassReadContext(ctx context.Context) context.Context {
 	return newOrganisationACLBuilder(volumeClassTestOrganizationID).
 		addEndpoint(volumeClassReadEndpoint, identityapi.Read).
 		buildContext(ctx)
+}
+
+func fakeClientWithEmptyOrganizationAllowlist(t *testing.T, namespace, regionID string) client.Client {
+	t.Helper()
+
+	region := &regionv1.Region{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      regionID,
+			Namespace: namespace,
+		},
+		Spec: regionv1.RegionSpec{
+			Security: &regionv1.RegionSecuritySpec{},
+		},
+	}
+	baseClient := fakeClientWithSchema(t, region)
+	watchClient, ok := baseClient.(client.WithWatch)
+
+	require.True(t, ok)
+
+	setEmptyOrganizationAllowlist := func(resource *regionv1.Region) {
+		if resource.Name == regionID {
+			resource.Spec.Security = &regionv1.RegionSecuritySpec{
+				Organizations: []regionv1.RegionSecurityOrganizationSpec{},
+			}
+		}
+	}
+
+	return interceptor.NewClient(watchClient, interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, object client.Object, opts ...client.GetOption) error {
+			if err := c.Get(ctx, key, object, opts...); err != nil {
+				return err
+			}
+
+			if resource, ok := object.(*regionv1.Region); ok {
+				setEmptyOrganizationAllowlist(resource)
+			}
+
+			return nil
+		},
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if err := c.List(ctx, list, opts...); err != nil {
+				return err
+			}
+
+			if resources, ok := list.(*regionv1.RegionList); ok {
+				for i := range resources.Items {
+					setEmptyOrganizationAllowlist(&resources.Items[i])
+				}
+			}
+
+			return nil
+		},
+	})
 }
 
 func TestVolumeClassV2ReturnsEmptyListWhenNoRegionsExist(t *testing.T) {
@@ -334,6 +390,122 @@ func TestVolumeClassV2RejectsRegionsWithoutEndpointPermission(t *testing.T) {
 			require.Equal(t, http.StatusNotFound, response.Code)
 		})
 	}
+}
+
+func TestVolumeClassV2FiltersAllRegionsWithoutEndpointPermission(t *testing.T) {
+	t.Parallel()
+
+	const (
+		namespace          = "volume-class-test"
+		unrestrictedID     = "26262626-2626-4262-a626-262626262626"
+		restrictedRegionID = "27272727-2727-4272-a727-272727272727"
+	)
+
+	ctrl := gomock.NewController(t)
+	providerSet := mockproviders.NewMockProviders(ctrl)
+	unrestrictedRegion := &regionv1.Region{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      unrestrictedID,
+			Namespace: namespace,
+		},
+	}
+	restrictedRegion := &regionv1.Region{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      restrictedRegionID,
+			Namespace: namespace,
+		},
+		Spec: regionv1.RegionSpec{
+			Security: &regionv1.RegionSecuritySpec{
+				Organizations: []regionv1.RegionSecurityOrganizationSpec{
+					{ID: volumeClassTestOrganizationID},
+				},
+			},
+		},
+	}
+	handler := &Handler{
+		ClientArgs: common.ClientArgs{
+			Client:    fakeClientWithSchema(t, unrestrictedRegion, restrictedRegion),
+			Namespace: namespace,
+			Providers: providerSet,
+		},
+	}
+
+	ctx := newOrganisationACLBuilder(volumeClassTestOrganizationID).buildContext(t.Context())
+	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/volumeclasses", nil)
+	response := httptest.NewRecorder()
+
+	handler.GetApiV2Volumeclasses(response, request, openapi.GetApiV2VolumeclassesParams{})
+
+	require.Equal(t, http.StatusOK, response.Code)
+
+	var result openapi.VolumeClassListV2Response
+
+	requireDeserialiseBody(t, response.Body, &result)
+	require.NotNil(t, result)
+	require.Empty(t, result)
+}
+
+func TestVolumeClassV2RejectsExplicitRegionWithEmptyOrganizationAllowlist(t *testing.T) {
+	t.Parallel()
+
+	const (
+		namespace = "volume-class-test"
+		regionID  = "28282828-2828-4282-a828-282828282828"
+	)
+
+	ctrl := gomock.NewController(t)
+	providerSet := mockproviders.NewMockProviders(ctrl)
+	handler := &Handler{
+		ClientArgs: common.ClientArgs{
+			Client:    fakeClientWithEmptyOrganizationAllowlist(t, namespace, regionID),
+			Namespace: namespace,
+			Providers: providerSet,
+		},
+	}
+
+	ctx := volumeClassReadContext(t.Context())
+	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/volumeclasses", nil)
+	response := httptest.NewRecorder()
+	params := openapi.GetApiV2VolumeclassesParams{
+		RegionID: ptr.To(openapi.RegionIDQueryParameter{regionID}),
+	}
+
+	handler.GetApiV2Volumeclasses(response, request, params)
+
+	require.Equal(t, http.StatusNotFound, response.Code)
+}
+
+func TestVolumeClassV2FiltersRegionWithEmptyOrganizationAllowlist(t *testing.T) {
+	t.Parallel()
+
+	const (
+		namespace = "volume-class-test"
+		regionID  = "29292929-2929-4292-a929-292929292929"
+	)
+
+	ctrl := gomock.NewController(t)
+	providerSet := mockproviders.NewMockProviders(ctrl)
+	handler := &Handler{
+		ClientArgs: common.ClientArgs{
+			Client:    fakeClientWithEmptyOrganizationAllowlist(t, namespace, regionID),
+			Namespace: namespace,
+			Providers: providerSet,
+		},
+	}
+
+	ctx := volumeClassReadContext(t.Context())
+	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/volumeclasses", nil)
+	response := httptest.NewRecorder()
+
+	handler.GetApiV2Volumeclasses(response, request, openapi.GetApiV2VolumeclassesParams{})
+
+	require.Equal(t, http.StatusOK, response.Code)
+
+	var result openapi.VolumeClassListV2Response
+
+	requireDeserialiseBody(t, response.Body, &result)
+	require.NotNil(t, result)
+	require.Empty(t, result)
 }
 
 func TestVolumeClassV2ReturnsNotFoundForMissingExplicitRegion(t *testing.T) {

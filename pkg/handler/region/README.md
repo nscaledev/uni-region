@@ -36,10 +36,13 @@ provider capability discovery into user-visible region catalogue data.
 - Flavor ordering is intentionally stable and user-facing.
 - VolumeClass inventory is ordered by Region, class name, and class ID. Empty
   provider inventory remains a non-nil empty API list.
-- Explicit VolumeClass `regionID` filters are deduplicated and checked for both
-  Region visibility and `region:volumeclasses:v2/read` permission before
-  provider discovery. Unfiltered inventory applies the same checks before
-  looking up providers and omits Regions that fail either check.
+- Explicit VolumeClass `regionID` filters are deduplicated and checked against
+  the Region security allowlist and `region:volumeclasses:v2/read` permission
+  before provider discovery. Unfiltered inventory applies the same checks
+  before looking up providers and omits Regions that fail either check.
+- VolumeClass access preserves the existing Region visibility distinction:
+  a nil organization allowlist is unrestricted, while a configured but empty
+  allowlist permits no organizations.
 - Region ACL checking is enforced in two places:
   - **List responses** (`FilterRegions`) — removes regions the caller cannot see
     before building the response.
