@@ -1544,6 +1544,19 @@ type VolumeClassListV2Read = []VolumeClassV2Read
 // VolumeClassV2Media The physical storage medium backing a volume class.
 type VolumeClassV2Media string
 
+// VolumeClassV2Metadata Provider-authored metadata for a VolumeClass inventory entry.
+type VolumeClassV2Metadata struct {
+	// Description The provider display description.
+	Description *string `json:"description,omitempty"`
+
+	// Id The immutable provider identifier.
+	Id string `json:"id"`
+
+	// Name A valid Kubernetes label value, typically used for resource names that can be
+	// indexed in the database.
+	Name externalRef0.KubernetesLabelValue `json:"name"`
+}
+
 // VolumeClassV2Performance Advertised performance caps; these are not guaranteed reservations.
 type VolumeClassV2Performance struct {
 	// MaxIOPS Advertised maximum input/output operations per second.
@@ -1555,10 +1568,8 @@ type VolumeClassV2Performance struct {
 
 // VolumeClassV2Read A provider-neutral block-storage volume class available in a Region.
 type VolumeClassV2Read struct {
-	// Metadata This metadata is for resources that just exist, and don't require
-	// any provisioning and health status, but benefit from a standardized
-	// metadata format.
-	Metadata externalRef0.StaticResourceMetadata `json:"metadata"`
+	// Metadata Provider-authored metadata for a VolumeClass inventory entry.
+	Metadata VolumeClassV2Metadata `json:"metadata"`
 
 	// Spec Provider-neutral capabilities advertised by a block-storage volume class.
 	Spec VolumeClassV2Spec `json:"spec"`

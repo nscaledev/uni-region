@@ -18,17 +18,22 @@ limitations under the License.
 package handler
 
 import (
-	"errors"
 	"net/http"
 
-	servererrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	"github.com/unikorn-cloud/core/pkg/server/errors"
+	"github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
 
-var errVolumeClassListNotImplemented = errors.New("volume class list handler is not implemented")
+// GetApiV2Volumeclasses returns provider-neutral inventory from Regions visible
+// to the caller.
+func (h *Handler) GetApiV2Volumeclasses(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2VolumeclassesParams) {
+	result, err := region.NewClient(h.ClientArgs).ListVolumeClasses(r.Context(), params)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
 
-// GetApiV2Volumeclasses keeps the generated server interface buildable while
-// provider-backed VolumeClass discovery remains a separate implementation task.
-func (*Handler) GetApiV2Volumeclasses(w http.ResponseWriter, r *http.Request, _ openapi.GetApiV2VolumeclassesParams) {
-	servererrors.HandleError(w, r, errVolumeClassListNotImplemented)
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
