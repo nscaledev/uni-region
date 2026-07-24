@@ -187,6 +187,27 @@ func TestRegionFilteringNoPrivate(t *testing.T) {
 	require.Equal(t, globalRegionName, regions.Items[0].Name)
 }
 
+func TestRegionFilteringEmptyOrganizationAllowlist(t *testing.T) {
+	t.Parallel()
+
+	ctx := aclFixture(t, organizationID1)
+	regions := &regionv1.RegionList{
+		Items: []regionv1.Region{
+			{
+				Spec: regionv1.RegionSpec{
+					Security: &regionv1.RegionSecuritySpec{
+						Organizations: []regionv1.RegionSecurityOrganizationSpec{},
+					},
+				},
+			},
+		},
+	}
+
+	region.FilterRegions(ctx, regions)
+
+	require.Empty(t, regions.Items)
+}
+
 // TestRegionFilteringGlobalScope tests that platform admins and services with global
 // scope see all regions including private ones.
 func TestRegionFilteringGlobalScope(t *testing.T) {

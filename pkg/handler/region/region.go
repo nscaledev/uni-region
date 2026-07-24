@@ -220,6 +220,10 @@ func (c *Client) ListVolumeClasses(ctx context.Context, params openapi.GetApiV2V
 }
 
 func checkVolumeClassAccess(ctx context.Context, resource *unikornv1.Region) error {
+	if err := checkAccess(ctx, resource); err != nil {
+		return err
+	}
+
 	if rbac.AllowGlobalScope(ctx, volumeClassReadEndpoint, identityapi.Read) == nil {
 		return nil
 	}
