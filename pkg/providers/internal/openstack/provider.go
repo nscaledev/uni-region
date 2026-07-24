@@ -2266,6 +2266,24 @@ func setServerMACAddress(ctx context.Context, server *unikornv1.Server, openstac
 	server.Status.MACAddress = &mac
 }
 
+// setServerObservedImage records the image the server was observed running,
+// from the same Nova response that drives health/phase. Monitor-owned. The
+// value is retained when the ref is unreadable (boot-from-volume, transient
+// API miss): an absent observation is not evidence of change, and consumers
+// treat the last observation as the standing fact.
+func setServerObservedImage(server *unikornv1.Server, openstackserver *servers.Server) {
+	if openstackserver == nil {
+		return
+	}
+
+	imageID, ok := openstackServerImageID(openstackserver)
+	if !ok {
+		return
+	}
+
+	server.Status.ObservedImageID = imageID
+}
+
 // buildPhase picks the right Phase for a server Nova reports as BUILD. VMs
 // and baremetal lookups that failed fall back to Building (the honest "we
 // don't know more than Nova does" answer); a successful Ironic lookup
@@ -3292,6 +3310,7 @@ func (p *Provider) updateServerStateWithClients(
 	setServerHealthStatus(server, openstackServer)
 	advanceServerRebuildState(server, openstackServer)
 	setServerMACAddress(ctx, server, openstackServer)
+	setServerObservedImage(server, openstackServer)
 
 	region, _ := p.openstack.regionSnapshot()
 	baremetal := isBaremetalFlavor(region, server.Spec.FlavorID.String())

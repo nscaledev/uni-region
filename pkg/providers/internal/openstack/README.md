@@ -317,7 +317,20 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   field, `status.macAddress`, from the Nova response once the server is `ACTIVE`
   (the port MAC rides inline in `addresses`, reused from the same `GetServer` — no
   extra call). ACTIVE is required because baremetal Ironic rebinds the port to the
-  real NIC MAC asynchronously; the value is only ever written, never cleared. The lookup is
+  real NIC MAC asynchronously; the value is only ever written, never cleared. `setServerObservedImage`
+  records a third monitor-owned field, `status.observedImageID`, from the same
+  Nova response (the live image ref), on every poll — retained, never cleared,
+  when the ref is unreadable (boot-from-volume, transient miss). It is internal
+  state, not surfaced on the API: the handler's `deriveProvisioningStatus`
+  reads it to close the rebuild stale window — the interval after an accepted
+  image update and before Nova accepts the rebuild (Nova flips the image ref at
+  accept, so the observed image lags until then), where the Available condition
+  still reads Provisioned for the old image. A stamped observed image that still
+  differs from the desired image reports the server as provisioning. Once Nova
+  accepts, drift clears and the in-flight rebuild is reported on the `Active`
+  condition (`powerState=Rebuilding`) instead, so the observed image feeds only
+  the pre-accept window. The reconciler's own rebuild idempotency does not depend
+  on it (it reads Nova fresh and gates on the durable marker). The lookup is
   filtered by `instance_uuid`. Because Ironic node ownership and visibility
   are provider infrastructure concerns rather than tenant workload operations,
   this lookup uses the Region top-level provider credentials scoped to the

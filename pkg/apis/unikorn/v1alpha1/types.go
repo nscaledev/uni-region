@@ -1170,6 +1170,12 @@ type ServerStatus struct {
 	// retry reset leaves it intact and a transient port-read miss cannot unset
 	// it, while an authoritative ACTIVE read self-heals any drift.
 	MACAddress *string `json:"macAddress,omitempty"`
+	// ObservedImageID is the image the provider last observed the server running
+	// (the Nova image ref). Monitor-owned, stamped every poll, retained when the
+	// ref is unreadable (boot-from-volume, transient miss). Internal state, not
+	// surfaced on the API: deriveProvisioningStatus compares it against the
+	// desired image to report the rebuild stale window as provisioning.
+	ObservedImageID regionids.ImageID `json:"observedImageID,omitempty"`
 	// LaunchedAt is the time the provider booted the VM. Nil until the server has
 	// been observed Running at least once.
 	LaunchedAt *metav1.Time `json:"launchedAt,omitempty"`

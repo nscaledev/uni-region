@@ -274,6 +274,15 @@ spec:
                   retry reset leaves it intact and a transient port-read miss cannot unset
                   it, while an authoritative ACTIVE read self-heals any drift.
                 type: string
+              observedImageID:
+                description: |-
+                  ObservedImageID is the image the provider last observed the server running
+                  (the Nova image ref). Monitor-owned, stamped every poll, retained when the
+                  ref is unreadable (boot-from-volume, transient miss). Internal state, not
+                  surfaced on the API: deriveProvisioningStatus compares it against the
+                  desired image to report the rebuild stale window as provisioning.
+                format: uuid
+                type: string
               privateIP:
                 description: PrivateIP is the private IP address of the server.
                 type: string
