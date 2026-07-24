@@ -296,14 +296,16 @@ type RegionOpenstackNetworkSpec struct {
 
 type RegionOpenstackBlockStorageSpec struct {
 	// VolumeClasses defines which provider volume classes are eligible for Region
-	// inventory export and what user-facing metadata is attached to them. If not
-	// defined, then all provider volume classes are eligible.
+	// inventory export and what user-facing metadata is attached to them. Provider
+	// volume classes are excluded unless their IDs are explicitly selected. If this
+	// configuration is not defined, no provider volume classes are eligible.
 	VolumeClasses *OpenstackVolumeClassesSpec `json:"volumeClasses,omitempty"`
 }
 
 type OpenstackVolumeClassesSpec struct {
-	// Selector allows provider volume classes to be manually selected for inclusion.
-	// The selected set is a boolean intersection of all defined filters in the selector.
+	// Selector explicitly selects provider volume classes for inclusion. If the
+	// selector is not defined, or its IDs are nil or empty, no provider volume
+	// classes are selected.
 	Selector *VolumeClassSelector `json:"selector,omitempty"`
 	// Metadata allows provider volume classes to be explicitly augmented with
 	// user-facing metadata. OpenStack stores these internally as Cinder volume types,
@@ -316,8 +318,8 @@ type OpenstackVolumeClassesSpec struct {
 }
 
 type VolumeClassSelector struct {
-	// IDs is an explicit list of allowed provider volume class IDs. If not
-	// specified, then all provider volume classes are considered.
+	// IDs is an explicit allowlist of provider volume class IDs. If nil or empty,
+	// no provider volume classes are selected.
 	IDs []string `json:"ids,omitempty"`
 }
 

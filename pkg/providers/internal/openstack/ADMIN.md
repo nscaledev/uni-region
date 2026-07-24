@@ -158,6 +158,13 @@ provide the user-facing metadata because encryption and QoS/performance limits
 are often configured natively on the storage backend and may not be reliably
 derivable from Cinder volume type metadata.
 
+VolumeClass selection is fail-closed. Only Cinder volume type IDs explicitly
+listed in `spec.openstack.blockStorage.volumeClasses.selector.ids` are exported.
+Missing `volumeClasses` configuration, a missing selector, or nil/empty IDs
+exports no VolumeClasses. Before rolling out a release with these semantics, add
+the curated production volume type IDs to every affected production `Region`
+resource or its VolumeClass inventory will become empty.
+
 The resulting `Region` shape is equivalent to:
 
 ```yaml

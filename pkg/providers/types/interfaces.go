@@ -124,7 +124,7 @@ type CommonProvider interface {
 	Region(ctx context.Context) (*unikornv1.Region, error)
 	// Flavors list all available flavors.
 	Flavors(ctx context.Context) (FlavorList, error)
-	// VolumeClasses lists all available block-storage volume classes.
+	// VolumeClasses lists the block-storage volume classes exposed by the Region.
 	VolumeClasses(ctx context.Context) (VolumeClassList, error)
 }
 

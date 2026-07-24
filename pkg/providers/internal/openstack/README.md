@@ -266,18 +266,21 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   can distinguish `Queued` (waiting on hardware) from `Building` (provider
   actively deploying).
 - VolumeClass configuration follows the same inventory pattern for block
-  storage: Region configuration under
-  `openstack.blockStorage.volumeClasses` selects which provider volume classes
-  are eligible for export and enriches them with user-facing metadata such as
-  media, maximum performance caps, and encryption signals. The provider
-  discovers Cinder volume types and converts the selected/enriched result into
-  provider-neutral `VolumeClass` values. Maximum performance metadata records
-  caps rather than guaranteed reservations. `VolumeClass` is
+  storage. Region configuration under
+  `openstack.blockStorage.volumeClasses.selector.ids` is a strict allowlist:
+  only Cinder volume type IDs explicitly listed there are eligible for export.
+  Missing `volumeClasses` configuration, a missing selector, or nil/empty IDs
+  exports no VolumeClasses. Selected classes can be enriched with user-facing
+  metadata such as media, maximum performance caps, and encryption signals. The
+  provider discovers Cinder volume types and converts the selected/enriched
+  result into provider-neutral `VolumeClass` values. Maximum performance
+  metadata records caps rather than guaranteed reservations. `VolumeClass` is
   Region-scoped inventory configuration, not a project-owned resource or
   lifecycle object. The block-storage service client is cached with the other
   OpenStack service clients so Cinder volume-type inventory cache survives
   repeated provider calls and is refreshed only when Region configuration or
-  credentials change.
+  credentials change. Production Region CRs must contain their curated IDs
+  before this fail-closed behavior is rolled out.
 - Image handling is a first-class contract surface here:
   - OpenStack image properties are validated against a schema
   - public images can additionally be signature-verified
