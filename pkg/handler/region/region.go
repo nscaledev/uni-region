@@ -171,6 +171,102 @@ func (c *Client) ListFlavors(ctx context.Context, organizationID identityids.Org
 	return conversion.ConvertFlavors(result), nil
 }
 
+func (c *Client) ListVolumeClasses(ctx context.Context, params openapi.GetApiV2VolumeclassesParams) (openapi.VolumeClassListV2Read, error) {
+	regionIDs, err := c.volumeClassRegionIDs(ctx, params.RegionID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := openapi.VolumeClassListV2Read{}
+
+	for _, regionID := range regionIDs {
+		provider, err := c.Providers.LookupCommon(regionID.String())
+		if err != nil {
+			return nil, providers.ProviderToServerError(err)
+		}
+
+		volumeClasses, err := provider.VolumeClasses(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%w: failed to list volume classes", err)
+		}
+
+		result = append(result, conversion.ConvertVolumeClasses(regionID, volumeClasses)...)
+	}
+
+	slices.SortStableFunc(result, func(a, b openapi.VolumeClassV2Read) int {
+		if value := cmp.Compare(a.Spec.RegionId.String(), b.Spec.RegionId.String()); value != 0 {
+			return value
+		}
+
+		if value := cmp.Compare(a.Metadata.Name, b.Metadata.Name); value != 0 {
+			return value
+		}
+
+		return cmp.Compare(a.Metadata.Id, b.Metadata.Id)
+	})
+
+	return result, nil
+}
+
+func (c *Client) volumeClassRegionIDs(ctx context.Context, query *openapi.RegionIDQueryParameter) ([]regionids.RegionID, error) {
+	if query != nil {
+		result := make([]regionids.RegionID, 0, len(*query))
+		seen := map[regionids.RegionID]struct{}{}
+
+		for _, value := range *query {
+			regionID, err := regionids.ParseRegionID(value)
+			if err != nil {
+				return nil, errors.OAuth2InvalidRequest("invalid region ID").WithError(err)
+			}
+
+			if _, ok := seen[regionID]; ok {
+				continue
+			}
+
+			if err := c.CheckAccess(ctx, regionID); err != nil {
+				return nil, err
+			}
+
+			seen[regionID] = struct{}{}
+
+			result = append(result, regionID)
+		}
+
+		sortRegionIDs(result)
+
+		return result, nil
+	}
+
+	regions := &unikornv1.RegionList{}
+
+	if err := c.Client.List(ctx, regions, &client.ListOptions{Namespace: c.Namespace}); err != nil {
+		return nil, fmt.Errorf("%w: unable to list regions", err)
+	}
+
+	FilterRegions(ctx, regions)
+
+	result := make([]regionids.RegionID, len(regions.Items))
+
+	for i := range regions.Items {
+		regionID, err := regionids.ParseRegionID(regions.Items[i].Name)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid region ID", err)
+		}
+
+		result[i] = regionID
+	}
+
+	sortRegionIDs(result)
+
+	return result, nil
+}
+
+func sortRegionIDs(regionIDs []regionids.RegionID) {
+	slices.SortFunc(regionIDs, func(a, b regionids.RegionID) int {
+		return cmp.Compare(a.String(), b.String())
+	})
+}
+
 func convertExternalNetwork(in types.ExternalNetwork) openapi.ExternalNetwork {
 	out := openapi.ExternalNetwork{
 		Id:   in.ID,

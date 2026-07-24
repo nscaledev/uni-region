@@ -14,21 +14,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//nolint:revive
-package handler
+package openapi_test
 
 import (
-	"errors"
-	"net/http"
+	"testing"
 
-	servererrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	"github.com/stretchr/testify/require"
+
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
 
-var errVolumeClassListNotImplemented = errors.New("volume class list handler is not implemented")
+func TestVolumeClassListDeclaresNotFoundResponseForRegionAccessValidation(t *testing.T) {
+	t.Parallel()
 
-// GetApiV2Volumeclasses keeps the generated server interface buildable while
-// provider-backed VolumeClass discovery remains a separate implementation task.
-func (*Handler) GetApiV2Volumeclasses(w http.ResponseWriter, r *http.Request, _ openapi.GetApiV2VolumeclassesParams) {
-	servererrors.HandleError(w, r, errVolumeClassListNotImplemented)
+	swagger, err := openapi.GetSwagger()
+	require.NoError(t, err)
+
+	path := swagger.Paths.Find("/api/v2/volumeclasses")
+	require.NotNil(t, path)
+	require.NotNil(t, path.Get)
+	require.NotNil(t, path.Get.Responses.Value("404"))
 }

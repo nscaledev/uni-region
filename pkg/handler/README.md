@@ -239,6 +239,9 @@ but we do not have transactions.”
   SSH CA records with explicit reference-blocked deletion
 - [`storage`](./storage/README.md): quota-heavy stateful resource with saga-backed
   create/update and attachment validation
+- `VolumeClass`: read-only Region-scoped provider inventory. The v2 list handler
+  validates explicit Region filters, excludes inaccessible Regions from
+  unfiltered results, and maps only provider-neutral discovery fields.
 
 ## Caveats
 
@@ -255,11 +258,9 @@ but we do not have transactions.”
 - Cross-object invariants are only best-effort. Owner references, finalizers,
   allocation records, and saga compensation improve consistency, but they do not
   turn the system into an ACID store.
-- `GET /api/v2/volumeclasses` is currently a contract-only route. The narrow
-  `handler_v2_volumeclass_contract.go` method returns the canonical internal
-  server error so the generated router remains buildable; it does not perform
-  provider discovery, conversion, or authorization and should be replaced by
-  the dedicated implementation work.
+- `GET /api/v2/volumeclasses` is a live provider-backed inventory route rather
+  than a lifecycle resource surface. A failure from any selected Region fails
+  the whole request; the handler does not return partial inventory.
 
 ## TODO
 

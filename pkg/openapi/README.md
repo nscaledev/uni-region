@@ -162,9 +162,9 @@ fully encoded here:
 - some `v2` resources are clearly documented for publication, while others such
   as many server operations remain hidden; readers should not assume version
   number alone determines visibility
-- the published VolumeClass route currently defines the wire contract only;
-  provider-backed discovery and successful list handling are implemented
-  separately
+- the published VolumeClass route is backed by provider-neutral Region
+  discovery; explicit Region filters can return `404` when the Region is
+  missing or inaccessible, while unfiltered requests omit inaccessible Regions
 - the main value of `v2` is not just shorter paths. It is the shift toward a
   relationship-driven API shape where surrounding tenancy and placement context
   can often be inferred from the addressed resource graph

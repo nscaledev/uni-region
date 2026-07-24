@@ -18,12 +18,15 @@ API in a consistent form.
 
 Today the package is deliberately narrow.
 
-It currently provides shared conversion for provider-neutral flavor data:
+It currently provides shared conversion for provider-neutral flavor and
+VolumeClass data:
 
 - `types.Architecture` -> `openapi.Architecture`
 - `types.GPUVendor` -> `openapi.GpuVendor`
 - `types.Flavor` -> `openapi.Flavor`
 - `[]types.Flavor` -> `openapi.Flavors`
+- `types.VolumeClass` -> `openapi.VolumeClassV2Read`
+- `types.VolumeClassList` -> `openapi.VolumeClassListV2Read`
 
 That is why the package may look under-populated at first glance: the
 abstraction line is broader than the current amount of code, but the shape is
@@ -46,8 +49,8 @@ coherent.
 ## Caveats
 
 - The package name is broader than the current implementation. Right now this is
-  mostly a shared flavor-conversion package plus a small amount of supporting
-  enum translation.
+  the shared conversion boundary for flavor and VolumeClass inventory plus a
+  small amount of supporting enum translation.
 - That broad name is still defensible because the intended boundary is
   meaningful: shared non-CRD type conversion belongs here, while resource-local
   conversion belongs elsewhere.
