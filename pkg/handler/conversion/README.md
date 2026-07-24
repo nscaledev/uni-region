@@ -28,6 +28,10 @@ VolumeClass data:
 - `types.VolumeClass` -> `openapi.VolumeClassV2Read`
 - `types.VolumeClassList` -> `openapi.VolumeClassListV2Read`
 
+VolumeClass metadata contains only provider-authored identity and display
+fields. The conversion does not invent lifecycle timestamps for provider
+inventory that has no creation-time source.
+
 That is why the package may look under-populated at first glance: the
 abstraction line is broader than the current amount of code, but the shape is
 coherent.

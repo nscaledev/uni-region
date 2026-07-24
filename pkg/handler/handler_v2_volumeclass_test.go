@@ -18,16 +18,17 @@ limitations under the License.
 package handler
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
+	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -41,6 +42,18 @@ import (
 
 // errVolumeClassProvider is returned by provider mocks to exercise error handling.
 var errVolumeClassProvider = errors.New("volume class provider failed")
+
+const (
+	volumeClassReadEndpoint        = "region:volumeclasses:v2"
+	volumeClassTestOrganizationID  = "10101010-1010-4010-a010-101010101010"
+	volumeClassOtherOrganizationID = "20202020-2020-4020-a020-202020202020"
+)
+
+func volumeClassReadContext(ctx context.Context) context.Context {
+	return newOrganisationACLBuilder(volumeClassTestOrganizationID).
+		addEndpoint(volumeClassReadEndpoint, identityapi.Read).
+		buildContext(ctx)
+}
 
 func TestVolumeClassV2ReturnsEmptyListWhenNoRegionsExist(t *testing.T) {
 	t.Parallel()
@@ -57,7 +70,8 @@ func TestVolumeClassV2ReturnsEmptyListWhenNoRegionsExist(t *testing.T) {
 		},
 	}
 
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v2/volumeclasses", nil)
+	ctx := volumeClassReadContext(t.Context())
+	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/volumeclasses", nil)
 	response := httptest.NewRecorder()
 
 	handler.GetApiV2Volumeclasses(response, request, openapi.GetApiV2VolumeclassesParams{})
@@ -100,7 +114,8 @@ func TestVolumeClassV2ReturnsServerErrorWhenProviderInventoryFails(t *testing.T)
 		},
 	}
 
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v2/volumeclasses", nil)
+	ctx := volumeClassReadContext(t.Context())
+	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/volumeclasses", nil)
 	response := httptest.NewRecorder()
 
 	handler.GetApiV2Volumeclasses(response, request, openapi.GetApiV2VolumeclassesParams{})
@@ -139,7 +154,8 @@ func TestVolumeClassV2ReturnsServerErrorWhenProviderLookupFails(t *testing.T) {
 		},
 	}
 
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v2/volumeclasses", nil)
+	ctx := volumeClassReadContext(t.Context())
+	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/volumeclasses", nil)
 	response := httptest.NewRecorder()
 
 	handler.GetApiV2Volumeclasses(response, request, openapi.GetApiV2VolumeclassesParams{})
@@ -196,7 +212,8 @@ func TestVolumeClassV2MapsProviderInventory(t *testing.T) {
 		},
 	}
 
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v2/volumeclasses", nil)
+	ctx := volumeClassReadContext(t.Context())
+	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/volumeclasses", nil)
 	response := httptest.NewRecorder()
 
 	handler.GetApiV2Volumeclasses(response, request, openapi.GetApiV2VolumeclassesParams{})
@@ -209,7 +226,6 @@ func TestVolumeClassV2MapsProviderInventory(t *testing.T) {
 	require.Len(t, result, 1)
 	require.Equal(t, volumeClassID, result[0].Metadata.Id)
 	require.Equal(t, "fast-nvme", result[0].Metadata.Name)
-	require.Equal(t, time.Unix(0, 0).UTC(), result[0].Metadata.CreationTime)
 	require.NotNil(t, result[0].Metadata.Description)
 	require.Equal(t, "Latency-sensitive encrypted block storage", *result[0].Metadata.Description)
 	require.Equal(t, regionID, result[0].Spec.RegionId.String())
@@ -239,7 +255,7 @@ func TestVolumeClassV2ValidatesExplicitRegionAccess(t *testing.T) {
 		Spec: regionv1.RegionSpec{
 			Security: &regionv1.RegionSecuritySpec{
 				Organizations: []regionv1.RegionSecurityOrganizationSpec{
-					{ID: "allowed-organization"},
+					{ID: volumeClassOtherOrganizationID},
 				},
 			},
 		},
@@ -252,7 +268,7 @@ func TestVolumeClassV2ValidatesExplicitRegionAccess(t *testing.T) {
 		},
 	}
 
-	ctx := newOrganisationACLBuilder("different-organization").buildContext(t.Context())
+	ctx := volumeClassReadContext(t.Context())
 	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/volumeclasses", nil)
 	response := httptest.NewRecorder()
 	params := openapi.GetApiV2VolumeclassesParams{
@@ -262,6 +278,62 @@ func TestVolumeClassV2ValidatesExplicitRegionAccess(t *testing.T) {
 	handler.GetApiV2Volumeclasses(response, request, params)
 
 	require.Equal(t, http.StatusNotFound, response.Code)
+}
+
+func TestVolumeClassV2RejectsRegionsWithoutEndpointPermission(t *testing.T) {
+	t.Parallel()
+
+	const (
+		namespace      = "volume-class-test"
+		organizationID = "24242424-2424-4242-a424-242424242424"
+		regionID       = "25252525-2525-4252-a525-252525252525"
+	)
+
+	testCases := map[string]*regionv1.RegionSecuritySpec{
+		"unrestricted Region": nil,
+		"Region restricted to caller organization": {
+			Organizations: []regionv1.RegionSecurityOrganizationSpec{
+				{ID: organizationID},
+			},
+		},
+	}
+
+	for name, security := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			ctrl := gomock.NewController(t)
+			providerSet := mockproviders.NewMockProviders(ctrl)
+
+			region := &regionv1.Region{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      regionID,
+					Namespace: namespace,
+				},
+				Spec: regionv1.RegionSpec{
+					Security: security,
+				},
+			}
+			handler := &Handler{
+				ClientArgs: common.ClientArgs{
+					Client:    fakeClientWithSchema(t, region),
+					Namespace: namespace,
+					Providers: providerSet,
+				},
+			}
+
+			ctx := newOrganisationACLBuilder(organizationID).buildContext(t.Context())
+			request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/volumeclasses", nil)
+			response := httptest.NewRecorder()
+			params := openapi.GetApiV2VolumeclassesParams{
+				RegionID: ptr.To(openapi.RegionIDQueryParameter{regionID}),
+			}
+
+			handler.GetApiV2Volumeclasses(response, request, params)
+
+			require.Equal(t, http.StatusNotFound, response.Code)
+		})
+	}
 }
 
 func TestVolumeClassV2ReturnsNotFoundForMissingExplicitRegion(t *testing.T) {
@@ -326,7 +398,7 @@ func TestVolumeClassV2FiltersInaccessibleRegions(t *testing.T) {
 		Spec: regionv1.RegionSpec{
 			Security: &regionv1.RegionSecuritySpec{
 				Organizations: []regionv1.RegionSecurityOrganizationSpec{
-					{ID: "allowed-organization"},
+					{ID: volumeClassOtherOrganizationID},
 				},
 			},
 		},
@@ -339,7 +411,7 @@ func TestVolumeClassV2FiltersInaccessibleRegions(t *testing.T) {
 		},
 	}
 
-	ctx := newOrganisationACLBuilder("different-organization").buildContext(t.Context())
+	ctx := volumeClassReadContext(t.Context())
 	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/volumeclasses", nil)
 	response := httptest.NewRecorder()
 
@@ -384,6 +456,13 @@ func TestVolumeClassV2FiltersAndDeduplicatesExplicitRegions(t *testing.T) {
 			Name:      selectedRegion,
 			Namespace: namespace,
 		},
+		Spec: regionv1.RegionSpec{
+			Security: &regionv1.RegionSecuritySpec{
+				Organizations: []regionv1.RegionSecurityOrganizationSpec{
+					{ID: volumeClassTestOrganizationID},
+				},
+			},
+		},
 	}
 	handler := &Handler{
 		ClientArgs: common.ClientArgs{
@@ -393,7 +472,8 @@ func TestVolumeClassV2FiltersAndDeduplicatesExplicitRegions(t *testing.T) {
 		},
 	}
 
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v2/volumeclasses", nil)
+	ctx := volumeClassReadContext(t.Context())
+	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/volumeclasses", nil)
 	response := httptest.NewRecorder()
 	params := openapi.GetApiV2VolumeclassesParams{
 		RegionID: ptr.To(openapi.RegionIDQueryParameter{selectedRegion, selectedRegion}),
@@ -439,7 +519,8 @@ func TestVolumeClassV2ReturnsEmptyListForEmptyProviderInventory(t *testing.T) {
 		},
 	}
 
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v2/volumeclasses", nil)
+	ctx := volumeClassReadContext(t.Context())
+	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/volumeclasses", nil)
 	response := httptest.NewRecorder()
 
 	handler.GetApiV2Volumeclasses(response, request, openapi.GetApiV2VolumeclassesParams{})
@@ -486,7 +567,8 @@ func TestVolumeClassV2SortsProviderInventoryByNameThenID(t *testing.T) {
 		},
 	}
 
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v2/volumeclasses", nil)
+	ctx := volumeClassReadContext(t.Context())
+	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v2/volumeclasses", nil)
 	response := httptest.NewRecorder()
 
 	handler.GetApiV2Volumeclasses(response, request, openapi.GetApiV2VolumeclassesParams{})

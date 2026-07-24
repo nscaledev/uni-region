@@ -164,7 +164,9 @@ fully encoded here:
   number alone determines visibility
 - the published VolumeClass route is backed by provider-neutral Region
   discovery; explicit Region filters can return `404` when the Region is
-  missing or inaccessible, while unfiltered requests omit inaccessible Regions
+  missing or inaccessible, while unfiltered requests omit inaccessible Regions;
+  its metadata deliberately excludes lifecycle timestamps because provider
+  inventory does not supply a truthful creation time
 - the main value of `v2` is not just shorter paths. It is the shift toward a
   relationship-driven API shape where surrounding tenancy and placement context
   can often be inferred from the addressed resource graph

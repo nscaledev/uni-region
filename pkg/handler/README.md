@@ -240,8 +240,9 @@ but we do not have transactions.”
 - [`storage`](./storage/README.md): quota-heavy stateful resource with saga-backed
   create/update and attachment validation
 - `VolumeClass`: read-only Region-scoped provider inventory. The v2 list handler
-  validates explicit Region filters, excludes inaccessible Regions from
-  unfiltered results, and maps only provider-neutral discovery fields.
+  requires `region:volumeclasses:v2/read`, validates explicit Region filters,
+  excludes inaccessible Regions from unfiltered results, and maps only
+  provider-neutral discovery fields.
 
 ## Caveats
 

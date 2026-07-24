@@ -49,6 +49,8 @@ var (
 	ErrRegionNotFound = goerrors.New("region doesn't exist")
 )
 
+const volumeClassReadEndpoint = "region:volumeclasses:v2"
+
 type Client struct {
 	common.ClientArgs
 }
@@ -208,6 +210,48 @@ func (c *Client) ListVolumeClasses(ctx context.Context, params openapi.GetApiV2V
 	return result, nil
 }
 
+func checkVolumeClassAccess(ctx context.Context, resource *unikornv1.Region) error {
+	if rbac.AllowGlobalScope(ctx, volumeClassReadEndpoint, identityapi.Read) == nil {
+		return nil
+	}
+
+	organizationIDs := rbac.OrganizationIDs(ctx)
+	if resource.Spec.Security != nil && len(resource.Spec.Security.Organizations) > 0 {
+		organizationIDs = make([]string, len(resource.Spec.Security.Organizations))
+
+		for i := range resource.Spec.Security.Organizations {
+			organizationIDs[i] = resource.Spec.Security.Organizations[i].ID
+		}
+	}
+
+	for _, value := range organizationIDs {
+		organizationID, err := identityids.ParseOrganizationID(value)
+		if err != nil {
+			continue
+		}
+
+		if rbac.AllowOrganizationScopeID(ctx, volumeClassReadEndpoint, identityapi.Read, organizationID) == nil {
+			return nil
+		}
+	}
+
+	return errors.HTTPNotFound()
+}
+
+func (c *Client) checkVolumeClassAccess(ctx context.Context, regionID regionids.RegionID) error {
+	resource := &unikornv1.Region{}
+
+	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: regionID.String()}, resource); err != nil {
+		if kerrors.IsNotFound(err) {
+			return errors.HTTPNotFound().WithError(err)
+		}
+
+		return fmt.Errorf("%w: unable to lookup region", err)
+	}
+
+	return checkVolumeClassAccess(ctx, resource)
+}
+
 func (c *Client) volumeClassRegionIDs(ctx context.Context, query *openapi.RegionIDQueryParameter) ([]regionids.RegionID, error) {
 	if query != nil {
 		result := make([]regionids.RegionID, 0, len(*query))
@@ -223,7 +267,7 @@ func (c *Client) volumeClassRegionIDs(ctx context.Context, query *openapi.Region
 				continue
 			}
 
-			if err := c.CheckAccess(ctx, regionID); err != nil {
+			if err := c.checkVolumeClassAccess(ctx, regionID); err != nil {
 				return nil, err
 			}
 
@@ -243,7 +287,9 @@ func (c *Client) volumeClassRegionIDs(ctx context.Context, query *openapi.Region
 		return nil, fmt.Errorf("%w: unable to list regions", err)
 	}
 
-	FilterRegions(ctx, regions)
+	regions.Items = slices.DeleteFunc(regions.Items, func(resource unikornv1.Region) bool {
+		return checkVolumeClassAccess(ctx, &resource) != nil
+	})
 
 	result := make([]regionids.RegionID, len(regions.Items))
 

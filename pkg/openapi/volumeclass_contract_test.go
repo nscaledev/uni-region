@@ -35,3 +35,20 @@ func TestVolumeClassListDeclaresNotFoundResponseForRegionAccessValidation(t *tes
 	require.NotNil(t, path.Get)
 	require.NotNil(t, path.Get.Responses.Value("404"))
 }
+
+func TestVolumeClassMetadataDoesNotDeclareCreationTime(t *testing.T) {
+	t.Parallel()
+
+	swagger, err := openapi.GetSwagger()
+	require.NoError(t, err)
+
+	metadata, ok := swagger.Components.Schemas["volumeClassV2Metadata"]
+	require.True(t, ok)
+	require.NotNil(t, metadata.Value)
+	require.NotContains(t, metadata.Value.Properties, "creationTime")
+
+	resource := swagger.Components.Schemas["volumeClassV2Read"]
+	require.NotNil(t, resource)
+	require.NotNil(t, resource.Value)
+	require.Equal(t, "#/components/schemas/volumeClassV2Metadata", resource.Value.Properties["metadata"].Ref)
+}

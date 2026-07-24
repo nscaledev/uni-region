@@ -17,9 +17,6 @@ limitations under the License.
 package conversion
 
 import (
-	"time"
-
-	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -39,10 +36,9 @@ func ConvertVolumeClasses(regionID regionids.RegionID, in types.VolumeClassList)
 
 func convertVolumeClass(regionID regionids.RegionID, in *types.VolumeClass) *openapi.VolumeClassV2Read {
 	out := &openapi.VolumeClassV2Read{
-		Metadata: coreapi.StaticResourceMetadata{
-			Id:           in.ID,
-			Name:         in.Name,
-			CreationTime: time.Unix(0, 0).UTC(),
+		Metadata: openapi.VolumeClassV2Metadata{
+			Id:   in.ID,
+			Name: in.Name,
 		},
 		Spec: openapi.VolumeClassV2Spec{
 			RegionId:  regionID,

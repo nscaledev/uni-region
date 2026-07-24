@@ -3799,6 +3799,21 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/volumeClassV2Read'
+    volumeClassV2Metadata:
+      description: Provider-authored metadata for a VolumeClass inventory entry.
+      type: object
+      required:
+      - id
+      - name
+      properties:
+        id:
+          description: The immutable provider identifier.
+          type: string
+        name:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/kubernetesLabelValue'
+        description:
+          description: The provider display description.
+          type: string
     volumeClassV2Read:
       description: A provider-neutral block-storage volume class available in a Region.
       type: object
@@ -3807,7 +3822,7 @@ components:
       - spec
       properties:
         metadata:
-          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/staticResourceMetadata'
+          $ref: '#/components/schemas/volumeClassV2Metadata'
         spec:
           $ref: '#/components/schemas/volumeClassV2Spec'
     volumeClassV2Spec:
