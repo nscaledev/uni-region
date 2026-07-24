@@ -29,6 +29,7 @@ import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/provisioninglog"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers"
@@ -94,27 +95,39 @@ func (c *Checker) recordDurationIfFirstObservation(ctx context.Context, server *
 	record(duration)
 }
 
-// onPhaseTransition logs the phase change and records provisioning histogram
-// observations on the first transition into Running from any earlier phase.
-// The Phase path is now Pending → Building → Running for VMs and
+// onPhaseTransition logs the lifecycle change and records provisioning histogram
+// observations on the first transition into Running from any earlier state. The
+// lifecycle path is now Pending → Building → Running for VMs and
 // Pending → Queued → Building → Running for baremetal, so a strict
 // "Pending → Running" predicate would silently miss every observation. The
 // per-server one-shot guarantee is preserved by recordDurationIfFirstObservation,
 // which fires only when the relevant timestamp transitions from nil to non-nil.
 // Precondition: region label validated by Check; identity label validated by checkServer.
 func (c *Checker) onPhaseTransition(ctx context.Context, server, updated *unikornv1.Server, regionID, regionName, flavorID, flavorName string) {
-	if server.Status.Phase == updated.Status.Phase {
+	newActive, err := unikornv1.GetActiveCondition(updated)
+	if err != nil {
 		return
 	}
 
-	serverLogger(ctx, server).Info("instance phase transition",
-		"from_phase", string(server.Status.Phase),
-		"to_phase", string(updated.Status.Phase),
-		"time_since_creation_ms", time.Since(server.CreationTimestamp.Time).Milliseconds(),
-	)
+	// The prior reason is empty when the server had no Active condition yet (its
+	// first observation), which still counts as a transition into the new state.
+	var oldReason unikornv1.ActiveConditionReason
+	if oldActive, oldErr := unikornv1.GetActiveCondition(server); oldErr == nil {
+		oldReason = oldActive.Reason
+	}
 
-	becameRunning := server.Status.Phase != unikornv1.InstanceLifecyclePhaseRunning &&
-		updated.Status.Phase == unikornv1.InstanceLifecyclePhaseRunning
+	if oldReason == newActive.Reason {
+		return
+	}
+
+	// Emit the lifecycle transition to the structured stream (msg == "lifecycle"),
+	// at parity with the provisioning stream. Reaching here means the Active reason
+	// actually changed, which is the edge the stream requires.
+	provisioninglog.Emit(ctx, c.client.Scheme(), server, provisioninglog.StreamLifecycle,
+		string(newActive.Status), string(newActive.Reason), newActive.Message)
+
+	becameRunning := oldReason != unikornv1.ActiveConditionReasonRunning &&
+		newActive.Reason == unikornv1.ActiveConditionReasonRunning
 
 	if !becameRunning || c.metrics == nil {
 		return
@@ -146,16 +159,16 @@ func (c *Checker) logStateTransition(ctx context.Context, server, updated *uniko
 	// Condition appeared for the first time, or its status changed.
 	durationSource := server.CreationTimestamp.Time
 
-	var fromState string
+	var fromHealth string
 
 	if oldErr == nil {
 		durationSource = oldCondition.LastTransitionTime.Time
-		fromState = string(oldCondition.Reason)
+		fromHealth = oldCondition.Reason
 	}
 
-	serverLogger(ctx, server).Info("instance state transition",
-		"from_state", fromState,
-		"to_state", string(newCondition.Reason),
+	serverLogger(ctx, server).Info("instance health transition",
+		"from_health", fromHealth,
+		"to_health", newCondition.Reason,
 		"duration_ms", newCondition.LastTransitionTime.Sub(durationSource).Milliseconds(),
 	)
 }
@@ -366,8 +379,15 @@ func (c *Checker) updateStateCounts(servers []checkedServer) {
 	counts := make(map[StateMetricsKey]int64)
 
 	for _, s := range servers {
+		// An unobserved server (no Active condition) contributes an empty state,
+		// matching the prior behaviour of an unset lifecycle phase.
+		var state unikornv1.ActiveConditionReason
+		if active, err := unikornv1.GetActiveCondition(s.server); err == nil {
+			state = active.Reason
+		}
+
 		key := StateMetricsKey{
-			State:      strings.ToLower(string(s.server.Status.Phase)),
+			State:      strings.ToLower(string(state)),
 			RegionID:   s.regionID,
 			RegionName: s.regionName,
 			FlavorID:   s.flavorID,

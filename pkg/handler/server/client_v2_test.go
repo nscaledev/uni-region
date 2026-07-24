@@ -1441,7 +1441,7 @@ func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	resource := testServerWithSSHCertificateAuthority()
-	resource.Status.Phase = regionv1.InstanceLifecyclePhaseRunning
+	resource.SetActiveCondition(regionv1.ActiveConditionReasonRunning)
 	resource.Status.PrivateIP = ptr.To("192.168.0.42")
 	resource.Status.PublicIP = ptr.To("203.0.113.10")
 	resource.Status.MACAddress = ptr.To("fa:16:3e:12:34:56")
@@ -2221,13 +2221,13 @@ func TestServerUpdateV2RejectsRename(t *testing.T) {
 // reason so the read conversion derives a provisioning status from it. The
 // condition status mirrors what the reconciler would write (True only for
 // Provisioned) but the conversion switches on the reason alone.
-func withAvailableCondition(server *regionv1.Server, reason corev1alpha1.ConditionReason) *regionv1.Server {
+func withAvailableCondition(server *regionv1.Server, reason corev1alpha1.ProvisioningConditionReason) *regionv1.Server {
 	status := corev1.ConditionFalse
 	if reason == corev1alpha1.ConditionReasonProvisioned {
 		status = corev1.ConditionTrue
 	}
 
-	server.StatusConditionWrite(corev1alpha1.ConditionAvailable, status, reason, "")
+	server.SetProvisioningCondition(status, reason, "")
 
 	return server
 }

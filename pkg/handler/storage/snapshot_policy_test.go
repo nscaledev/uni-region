@@ -29,6 +29,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
 
@@ -313,10 +314,10 @@ func TestConvertSnapshotPolicyStatuses(t *testing.T) {
 		{Name: "stale"},
 		{
 			Name: "daily",
-			Conditions: []unikorncorev1.Condition{
+			Conditions: []metav1.Condition{
 				{
-					Type:    unikorncorev1.ConditionAvailable,
-					Reason:  unikorncorev1.ConditionReasonProvisioned,
+					Type:    string(unikorncorev1.ConditionAvailable),
+					Reason:  string(unikorncorev1.ConditionReasonProvisioned),
 					Message: "snapshot policy is active",
 				},
 			},

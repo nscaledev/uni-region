@@ -35,9 +35,39 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+// requireRebuildAcceptedStamp asserts the fixed in-flight view the reconciler
+// writes on rebuild acceptance (markServerRebuildAccepted): Active Rebuilding
+// and health Unknown, matching what the monitor derives for a Nova REBUILD so
+// reconciler and monitor writes agree rather than flap.
+func requireRebuildAcceptedStamp(t *testing.T, server *unikornv1.Server) {
+	t.Helper()
+
+	active, err := server.StatusConditionRead(unikornv1core.ConditionActive)
+	require.NoError(t, err)
+	require.Equal(t, metav1.ConditionFalse, active.Status)
+	require.Equal(t, string(unikornv1.ActiveConditionReasonRebuilding), active.Reason)
+
+	health, err := server.StatusConditionRead(unikornv1core.ConditionHealthy)
+	require.NoError(t, err)
+	require.Equal(t, metav1.ConditionUnknown, health.Status)
+	require.Equal(t, string(unikornv1core.ConditionReasonUnknown), health.Reason)
+}
+
+// requireNoReconcilerStamp asserts a pre-acceptance pass wrote neither the
+// Active lifecycle condition nor the monitor-owned Healthy condition, leaving
+// both for the monitor to derive.
+func requireNoReconcilerStamp(t *testing.T, server *unikornv1.Server) {
+	t.Helper()
+
+	_, activeErr := server.StatusConditionRead(unikornv1core.ConditionActive)
+	require.Error(t, activeErr, "a pre-acceptance pass must not write a synthetic Active lifecycle condition")
+
+	_, healthErr := server.StatusConditionRead(unikornv1core.ConditionHealthy)
+	require.Error(t, healthErr, "a pre-acceptance pass must not write the monitor-owned Healthy condition")
+}
 
 const (
 	rebuildOldImageID   = "11111111-1111-4111-a111-111111111111"
@@ -106,10 +136,7 @@ func TestReconcileServerImageStartsOnce(t *testing.T) {
 	require.ErrorIs(t, err, provisioners.ErrYield)
 	require.Equal(t, idstest.MustParseImageID(rebuildNewImageID), server.Status.Rebuild.TargetImageID)
 	require.Equal(t, unikornv1.ServerRebuildStateInitiated, server.Status.Rebuild.State)
-	require.Empty(t, server.Status.Phase, "the arm pass must not write a synthetic Phase")
-
-	_, armConditionErr := server.StatusConditionRead(unikornv1core.ConditionHealthy)
-	require.Error(t, armConditionErr, "the arm pass must not write the monitor-owned Healthy condition")
+	requireNoReconcilerStamp(t, server)
 
 	// Submit pass: the durable Initiated marker authorizes one submission;
 	// acceptance advances it to Rebuilding.
@@ -119,11 +146,7 @@ func TestReconcileServerImageStartsOnce(t *testing.T) {
 	require.Equal(t, unikornv1.ServerRebuildStateRebuilding, server.Status.Rebuild.State)
 
 	// The reconcile completes after submission; pin the accepted status stamps.
-	require.Equal(t, unikornv1.InstanceLifecyclePhaseBuilding, server.Status.Phase)
-	condition, conditionErr := server.StatusConditionRead(unikornv1core.ConditionHealthy)
-	require.NoError(t, conditionErr)
-	require.Equal(t, corev1.ConditionFalse, condition.Status)
-	require.Equal(t, unikornv1core.ConditionReasonProvisioning, condition.Reason)
+	requireRebuildAcceptedStamp(t, server)
 }
 
 // TestReconcileServerRebuildOmitsGuestConfiguration pins that the rebuild call
@@ -146,7 +169,7 @@ func TestReconcileServerRebuildOmitsGuestConfiguration(t *testing.T) {
 
 	_, err := openstack.ReconcileServer(t.Context(), nil, client, server, nil, "identity-keypair")
 	require.NoError(t, err)
-	require.Equal(t, unikornv1.InstanceLifecyclePhaseBuilding, server.Status.Phase)
+	requireRebuildAcceptedStamp(t, server)
 }
 
 // TestCreateServerCopiesFullStatusBackForAugmentedServers pins that the caller's
@@ -170,7 +193,7 @@ func TestCreateServerCopiesFullStatusBackForAugmentedServers(t *testing.T) {
 	err := openstack.ReconcileServerForCreate(t.Context(), nil, client, server, options, nil, "")
 	require.NoError(t, err)
 
-	require.Equal(t, unikornv1.InstanceLifecyclePhaseBuilding, server.Status.Phase, "caller's server should observe the accepted rebuild's Phase, not just Status.Rebuild")
+	requireRebuildAcceptedStamp(t, server)
 }
 
 // TestReconcileServerImageCompletesWhileNovaRebuilds pins that with no marker, a
@@ -185,10 +208,7 @@ func TestReconcileServerImageCompletesWhileNovaRebuilds(t *testing.T) {
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("REBUILD", rebuildNewImageID))
 	require.NoError(t, err)
 	require.Nil(t, server.Status.Rebuild)
-	require.Empty(t, server.Status.Phase, "a marker-less foreign rebuild is not the reconciler's to stamp")
-
-	_, conditionErr := server.StatusConditionRead(unikornv1core.ConditionHealthy)
-	require.Error(t, conditionErr, "the reconciler must not write the monitor-owned Healthy condition for a foreign rebuild")
+	requireNoReconcilerStamp(t, server)
 }
 
 // TestReconcileServerImageObservedRebuildAdvancesMarker pins that Nova reporting
@@ -219,14 +239,9 @@ func TestReconcileServerImageCompletesWhileAcceptedRebuildConverges(t *testing.T
 	// task_state active: genuinely in flight (an empty task would be supersession).
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServerTask("ACTIVE", rebuildOldImageID, "rebuilding"))
 	require.NoError(t, err)
-	require.Equal(t, unikornv1.InstanceLifecyclePhaseBuilding, server.Status.Phase)
 	require.Equal(t, idstest.MustParseImageID(rebuildNewImageID), server.Status.Rebuild.TargetImageID)
 	require.Equal(t, unikornv1.ServerRebuildStateRebuilding, server.Status.Rebuild.State)
-
-	condition, conditionErr := server.StatusConditionRead(unikornv1core.ConditionHealthy)
-	require.NoError(t, conditionErr)
-	require.Equal(t, corev1.ConditionFalse, condition.Status)
-	require.Equal(t, unikornv1core.ConditionReasonProvisioning, condition.Reason)
+	requireRebuildAcceptedStamp(t, server)
 }
 
 // TestReconcileServerImageClearsMarkerOnSuccess pins the converged-clear (P6a)
@@ -312,7 +327,7 @@ func TestReconcileServerImageParksAcceptedFailure(t *testing.T) {
 
 			condition, conditionErr := server.StatusConditionRead(unikornv1core.ConditionHealthy)
 			require.NoError(t, conditionErr)
-			require.Equal(t, corev1.ConditionFalse, condition.Status)
+			require.Equal(t, metav1.ConditionFalse, condition.Status)
 
 			// Park pass: Failed reads back durable, so the terminal park issues.
 			_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", tc.imageID))
@@ -447,10 +462,7 @@ func TestReconcileServerImageConflictKeepsInitiated(t *testing.T) {
 	require.Equal(t, unikornv1.ServerRebuildStateInitiated, server.Status.Rebuild.State)
 
 	// The 409 is pre-acceptance: the yield is silent — no Phase, no Healthy write.
-	require.Empty(t, server.Status.Phase, "the 409 wait must not write a synthetic Phase")
-
-	_, conditionErr := server.StatusConditionRead(unikornv1core.ConditionHealthy)
-	require.Error(t, conditionErr, "the 409 wait must not write the monitor-owned Healthy condition")
+	requireNoReconcilerStamp(t, server)
 }
 
 // TestReconcileServerImageParksLostAcceptanceFailure pins the loss-window
@@ -633,10 +645,5 @@ func TestReconcileServerImageAcceptedStampIgnoresResponseBody(t *testing.T) {
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
 	require.NoError(t, err)
 	require.Equal(t, unikornv1.ServerRebuildStateRebuilding, server.Status.Rebuild.State)
-	require.Equal(t, unikornv1.InstanceLifecyclePhaseBuilding, server.Status.Phase, "the accepted stamp is fixed, never the response body's ACTIVE")
-
-	condition, conditionErr := server.StatusConditionRead(unikornv1core.ConditionHealthy)
-	require.NoError(t, conditionErr)
-	require.Equal(t, corev1.ConditionFalse, condition.Status, "the accepted stamp is False/Provisioning, not the body's Healthy/True")
-	require.Equal(t, unikornv1core.ConditionReasonProvisioning, condition.Reason)
+	requireRebuildAcceptedStamp(t, server)
 }

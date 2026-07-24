@@ -81,7 +81,7 @@ func testIdentity(ready bool) *unikornv1.Identity {
 	}
 
 	if ready {
-		identity.StatusConditionWrite(unikornv1core.ConditionAvailable, corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
+		identity.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
 	}
 
 	return identity

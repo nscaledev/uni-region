@@ -2022,9 +2022,9 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 	require.Equal(t, ptr.To(openstackFloatingIP.FloatingIP), server.Status.PublicIP, "copy-back must not revert PublicIP written by floating IP reconciliation")
 
 	// (b) the rebuild status writes must propagate back to the caller.
-	require.Equal(t, regionv1.InstanceLifecyclePhaseBuilding, server.Status.Phase)
 	require.NotNil(t, server.Status.Rebuild)
 	require.Equal(t, regionv1.ServerRebuildStateRebuilding, server.Status.Rebuild.State)
+	requireRebuildAcceptedStamp(t, server)
 }
 
 // TestImageTagRoundTrip tests the round-trip conversion of tags:

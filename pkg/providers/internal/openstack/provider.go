@@ -2153,10 +2153,16 @@ const (
 	novaStatusUnknown = "UNKNOWN"
 )
 
+// healthMessageIndeterminate is the Healthy-condition message used whenever a
+// server's health cannot be determined. markServerRebuildAccepted (reconciler)
+// and convertServerHealthStatus's REBUILD branch (monitor) MUST write the same
+// value, or the two writers churn the message on every poll.
+const healthMessageIndeterminate = "unable to determine server status"
+
 // convertServerHealthStatus translates from an OpenStack server status into a Kubernetes one.
 // See the following for all possible states (currently).
 // https://docs.openstack.org/api-guide/compute/server_concepts.html
-func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, unikornv1core.ConditionReason, string) {
+func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, unikornv1core.HealthConditionReason, string) {
 	if server == nil {
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
 	}
@@ -2165,9 +2171,17 @@ func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, 
 	case novaStatusActive:
 		return corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "server is healthy"
 	case novaStatusError:
-		return corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server is in an error state"
+		// An errored server is degraded on the health axis. The terminal failure
+		// itself is carried on the Active condition (ActiveConditionReasonError),
+		// which is the axis the provider-create-failure guard keys off; health is
+		// only an informational verdict here.
+		return corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "server is in an error state"
 	case novaStatusRebuild:
-		return corev1.ConditionFalse, unikornv1core.ConditionReasonProvisioning, "server is rebuilding"
+		// A rebuilding server's real state is a lifecycle one, carried on the
+		// Active condition (ActiveConditionReasonRebuilding); it is not serving
+		// during the reimage, so health is reported as indeterminate rather than
+		// asserting a verdict. Message shared with markServerRebuildAccepted.
+		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, healthMessageIndeterminate
 	case novaStatusUnknown:
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
 	default:
@@ -2179,7 +2193,7 @@ func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, 
 func setServerHealthStatus(server *unikornv1.Server, openstackserver *servers.Server) {
 	status, reason, message := convertServerHealthStatus(openstackserver)
 
-	server.StatusConditionWrite(unikornv1core.ConditionHealthy, status, reason, message)
+	server.SetHealthCondition(status, reason, message)
 }
 
 // novaServerAddress is a single entry in a Nova server's `addresses` map. It
@@ -2256,9 +2270,9 @@ func setServerMACAddress(ctx context.Context, server *unikornv1.Server, openstac
 // and baremetal lookups that failed fall back to Building (the honest "we
 // don't know more than Nova does" answer); a successful Ironic lookup
 // further distinguishes Queued (pre-deploy) from Building (deploy underway).
-func buildPhase(ironicNode *nodes.Node) unikornv1.InstanceLifecyclePhase {
+func buildPhase(ironicNode *nodes.Node) unikornv1.ActiveConditionReason {
 	if ironicNode == nil {
-		return unikornv1.InstanceLifecyclePhaseBuilding
+		return unikornv1.ActiveConditionReasonBuilding
 	}
 
 	return baremetalBuildPhase(ironicNode)
@@ -2271,11 +2285,12 @@ func buildPhase(ironicNode *nodes.Node) unikornv1.InstanceLifecyclePhase {
 //
 // BUILD-window branch. Breaking it up further would scatter Phase derivation.
 //
-//nolint:cyclop // Fan-out matches OpenStack's PowerState enum surface plus the BUILD branch that consults Ironic via buildPhase; collapsing it would scatter Phase derivation across helpers.
-func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserver *servers.Server, ironicNode *nodes.Node) {
-	// Default to `Pending` if the phase is not already set. This should only happen to old servers created before we had phases.
-	if server.Status.Phase == "" {
-		server.Status.Phase = unikornv1.InstanceLifecyclePhasePending
+//nolint:cyclop // Fan-out matches OpenStack's PowerState enum surface plus the BUILD branch that consults Ironic via buildPhase; collapsing it would scatter lifecycle derivation across helpers.
+func setServerActive(ctx context.Context, server *unikornv1.Server, openstackserver *servers.Server, ironicNode *nodes.Node) {
+	// Default to Pending until the provider has been observed. This should only
+	// happen for a server that has never been reconciled against the provider.
+	if _, err := unikornv1.GetActiveCondition(server); err != nil {
+		server.SetActiveCondition(unikornv1.ActiveConditionReasonPending)
 	}
 
 	if openstackserver == nil {
@@ -2307,37 +2322,50 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 		}
 	}
 
+	// Nova ERROR is a terminal lifecycle state that PowerState cannot express
+	// (it is NOSTATE for an errored server, which would otherwise leave the
+	// state untouched). Surface it explicitly so the provider-create-failure
+	// guard can key off the lifecycle axis rather than the health condition.
+	if openstackserver.Status == "ERROR" {
+		server.SetActiveCondition(unikornv1.ActiveConditionReasonError)
+
+		return
+	}
+
 	// Nova BUILD is the window where the live monitor refines the lifecycle
 	// view beyond what PowerState alone can express. PowerState is NOSTATE
 	// throughout BUILD, so we look at server.Status + the optional Ironic
 	// state to pick Queued vs Building.
 	if openstackserver.Status == novaStatusBuild {
-		server.Status.Phase = buildPhase(ironicNode)
+		server.SetActiveCondition(buildPhase(ironicNode))
 
 		return
 	}
 
+	// Nova REBUILD is an in-place reimage of an already-provisioned server: it is
+	// not usable until the reimage completes, so it is its own lifecycle state
+	// rather than whatever PowerState reports mid-rebuild.
 	if openstackserver.Status == novaStatusRebuild {
-		server.Status.Phase = unikornv1.InstanceLifecyclePhaseBuilding
+		server.SetActiveCondition(unikornv1.ActiveConditionReasonRebuilding)
 
 		return
 	}
 
 	switch openstackserver.PowerState {
 	case servers.NOSTATE:
-		// No state information available. We will keep the phase as it is.
+		// No state information available. We will keep the state as it is.
 	case servers.RUNNING:
-		server.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+		server.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 	case servers.SHUTDOWN:
 		// TODO: Stopping is only ever written by the handler in response to a
 		// user-initiated stop. If a monitor poll lands while OpenStack is
 		// already reporting SHUTOFF/SHUTDOWN (e.g. the user stopped via the
 		// OpenStack dashboard rather than the platform API, or the platform
 		// missed the transient Stopping window), this flips Stopping → Stopped
-		// without ever observing the in-flight state on Phase. Pre-existing
-		// behaviour, follow-up work in a later PR; leaving the mapping as-is
-		// here to keep the INST-921 stack scoped.
-		server.Status.Phase = unikornv1.InstanceLifecyclePhaseStopped
+		// without ever observing the in-flight state. Pre-existing behaviour,
+		// follow-up work in a later PR; leaving the mapping as-is here to keep
+		// the INST-921 stack scoped.
+		server.SetActiveCondition(unikornv1.ActiveConditionReasonStopped)
 	case servers.CRASHED:
 		// REVIEW_ME: What should we do when the server crashes?
 	case servers.PAUSED, servers.SUSPENDED:
@@ -2633,14 +2661,16 @@ func openstackServerImageID(server *servers.Server) (regionids.ImageID, bool) {
 	return imageID, true
 }
 
-// markServerRebuildAccepted stamps the post-acceptance in-flight view
-// (Building, Healthy False/Provisioning). The status matches
-// convertServerHealthStatus's REBUILD mapping so reconciler and monitor writes
-// agree rather than flap. Never call before Nova has accepted: pre-acceptance
-// waits are silent yields and the monitor owns observed state.
-func markServerRebuildAccepted(server *unikornv1.Server, message string) {
-	server.Status.Phase = unikornv1.InstanceLifecyclePhaseBuilding
-	server.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionFalse, unikornv1core.ConditionReasonProvisioning, message)
+// markServerRebuildAccepted stamps the post-acceptance in-flight view: Active
+// Rebuilding and health Unknown, byte-identical to what the monitor derives for
+// a Nova REBUILD (setServerActive + convertServerHealthStatus), including the
+// health message (healthMessageIndeterminate), so the reconciler and monitor
+// writes agree rather than churning the condition every poll. Never call before
+// Nova has accepted: pre-acceptance waits are silent yields and the monitor owns
+// observed state.
+func markServerRebuildAccepted(server *unikornv1.Server) {
+	server.SetActiveCondition(unikornv1.ActiveConditionReasonRebuilding)
+	server.SetHealthCondition(corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, healthMessageIndeterminate)
 }
 
 // reconcileServerRebuildPark runs the two-phase, write-ahead park (step P4 of
@@ -2668,7 +2698,7 @@ func reconcileServerRebuildPark(ctx context.Context, server *unikornv1.Server, o
 	// P4a: Failed read back durable — issue the confirmed terminal park.
 	if rebuild.State == unikornv1.ServerRebuildStateFailed {
 		setServerHealthStatus(server, openstackServer)
-		setServerPhase(ctx, server, openstackServer, nil)
+		setServerActive(ctx, server, openstackServer, nil)
 
 		return true, provisioners.UserActionRequired("server_rebuild_failed", "server entered an error state after a rebuild was issued; select another image or replace the server")
 	}
@@ -2676,7 +2706,7 @@ func reconcileServerRebuildPark(ctx context.Context, server *unikornv1.Server, o
 	// P4b: ERROR with acceptance evidence — stamp Failed (direct) and yield.
 	if openstackServer.Status == novaStatusError && (accepted || converged) {
 		setServerHealthStatus(server, openstackServer)
-		setServerPhase(ctx, server, openstackServer, nil)
+		setServerActive(ctx, server, openstackServer, nil)
 
 		rebuild.State = unikornv1.ServerRebuildStateFailed
 
@@ -2689,7 +2719,7 @@ func reconcileServerRebuildPark(ctx context.Context, server *unikornv1.Server, o
 	// P4c: supersession — accepted, readable ref off target, task quiesced.
 	if accepted && refReadable && !converged && !taskActive {
 		setServerHealthStatus(server, openstackServer)
-		setServerPhase(ctx, server, openstackServer, nil)
+		setServerActive(ctx, server, openstackServer, nil)
 
 		rebuild.State = unikornv1.ServerRebuildStateFailed
 
@@ -2726,7 +2756,7 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 	}
 
 	advanceRebuildState(server.Status.Rebuild, unikornv1.ServerRebuildStateRebuilding)
-	markServerRebuildAccepted(server, "Server rebuild accepted")
+	markServerRebuildAccepted(server)
 
 	if rebuilt != nil {
 		return rebuilt, nil
@@ -2841,7 +2871,7 @@ func reconcileServerImageConverged(ctx context.Context, server *unikornv1.Server
 	// advance to a terminal still exists to wake the settlement pass.
 	if serverRebuildStateRank(rebuild.State) < serverRebuildStateRank(unikornv1.ServerRebuildStateSucceeded) {
 		advanceRebuildState(rebuild, unikornv1.ServerRebuildStateRebuilding)
-		markServerRebuildAccepted(server, "Waiting for the accepted server rebuild to converge")
+		markServerRebuildAccepted(server)
 
 		return openstackServer, nil
 	}
@@ -2885,7 +2915,7 @@ func reconcileServerImagePending(ctx context.Context, client ServerInterface, se
 	case unikornv1.ServerRebuildStateRebuilding:
 		// P7c: accepted rebuild still in flight — re-assert the accepted stamp
 		// and complete; quiescence lands in P4c, a guaranteed monitor delta.
-		markServerRebuildAccepted(server, "Waiting for the accepted server rebuild to converge")
+		markServerRebuildAccepted(server)
 
 		return openstackServer, nil
 	case unikornv1.ServerRebuildStateSucceeded:
@@ -2978,8 +3008,8 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 
 	setServerHealthStatus(server, openstackServer)
 	// No Ironic lookup at create time — the live monitor's UpdateServerState
-	// refines Phase from observed Ironic state on each poll.
-	setServerPhase(ctx, server, openstackServer, nil)
+	// refines the lifecycle state from observed Ironic state on each poll.
+	setServerActive(ctx, server, openstackServer, nil)
 
 	return openstackServer, nil
 }
@@ -3219,9 +3249,9 @@ func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Id
 }
 
 // lookupIronicNodeForPhase fetches the bound Ironic node for a baremetal
-// server in Nova BUILD so setServerPhase can distinguish Queued (pre-deploy)
+// server in Nova BUILD so setServerActive can distinguish Queued (pre-deploy)
 // from Building (active deploy). All failure modes log and return nil;
-// setServerPhase then falls back to Building, matching the VM default — the
+// setServerActive then falls back to Building, matching the VM default — the
 // monitor must never error on a missing or unreachable Ironic.
 func (p *Provider) lookupIronicNodeForPhase(
 	ctx context.Context,
@@ -3272,7 +3302,7 @@ func (p *Provider) updateServerStateWithClients(
 		ironicNode = p.lookupIronicNodeForPhase(ctx, identity, server, openstackServer, baremetalForPhase)
 	}
 
-	setServerPhase(ctx, server, openstackServer, ironicNode)
+	setServerActive(ctx, server, openstackServer, ironicNode)
 
 	return nil
 }

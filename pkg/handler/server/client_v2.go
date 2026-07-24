@@ -209,29 +209,6 @@ func convertNetworkingV2(in *regionv1.Server) *openapi.ServerV2Networking {
 	return &out
 }
 
-func convertPowerStateV2(in regionv1.InstanceLifecyclePhase) *openapi.InstanceLifecyclePhase {
-	if in == "" {
-		return nil
-	}
-
-	switch in {
-	case regionv1.InstanceLifecyclePhasePending:
-		return ptr.To(openapi.InstanceLifecyclePhasePending)
-	case regionv1.InstanceLifecyclePhaseQueued:
-		return ptr.To(openapi.InstanceLifecyclePhaseQueued)
-	case regionv1.InstanceLifecyclePhaseBuilding:
-		return ptr.To(openapi.InstanceLifecyclePhaseBuilding)
-	case regionv1.InstanceLifecyclePhaseRunning:
-		return ptr.To(openapi.InstanceLifecyclePhaseRunning)
-	case regionv1.InstanceLifecyclePhaseStopping:
-		return ptr.To(openapi.InstanceLifecyclePhaseStopping)
-	case regionv1.InstanceLifecyclePhaseStopped:
-		return ptr.To(openapi.InstanceLifecyclePhaseStopped)
-	}
-
-	return nil
-}
-
 func resolveSSHInjection(in *openapi.SshInjection, sshCertificateAuthorityID *string) regionv1.ServerSSHInjection {
 	if in != nil {
 		return regionv1.ServerSSHInjection(*in)
@@ -291,7 +268,7 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 			SshCertificateAuthorityId: in.Spec.SSHCertificateAuthorityID,
 			SshInjection:              sshInjectionStatus(in),
 			InfrastructureRef:         in.Spec.InfrastructureRef,
-			PowerState:                convertPowerStateV2(in.Status.Phase),
+			PowerState:                serverPowerState(in),
 			PrivateIP:                 in.Status.PrivateIP,
 			PublicIP:                  in.Status.PublicIP,
 			MacAddress:                in.Status.MACAddress,

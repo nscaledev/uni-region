@@ -36,6 +36,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/record"
 
@@ -266,7 +267,11 @@ func (p *Provisioner) recordProviderCreateRetryEvent(ctx context.Context, eventT
 //     condition cannot serve this role — it is re-derived every reconcile and
 //     flips to a non-provisioned value when a reconcile re-runs against a flaky
 //     provider (for example on a controller restart).
-//   - The post-launch Phases are retained as further defence in depth.
+//   - The failure signal itself is the Active condition: the provider monitor sets
+//     ActiveConditionReasonError when it observes the server in a terminal error
+//     state (e.g. Nova ERROR). Active is the pertinent lifecycle axis for a single
+//     server's state; the Healthy condition is a legacy cluster-aggregate concept
+//     and nothing here depends on it.
 func ProviderCreateFailure(server *unikornv1.Server) bool {
 	if server.Status.ProvisionedAt != nil {
 		return false
@@ -276,24 +281,13 @@ func ProviderCreateFailure(server *unikornv1.Server) bool {
 		return false
 	}
 
-	switch server.Status.Phase {
-	case unikornv1.InstanceLifecyclePhaseRunning,
-		unikornv1.InstanceLifecyclePhaseStopping,
-		unikornv1.InstanceLifecyclePhaseStopped:
-		return false
-	case unikornv1.InstanceLifecyclePhasePending,
-		unikornv1.InstanceLifecyclePhaseQueued,
-		unikornv1.InstanceLifecyclePhaseBuilding,
-		"":
-	}
-
-	condition, err := server.StatusConditionRead(unikornv1core.ConditionHealthy)
+	// A missing Active condition (server never observed) is not a failure.
+	active, err := unikornv1.GetActiveCondition(server)
 	if err != nil {
 		return false
 	}
 
-	return condition.Status == corev1.ConditionFalse &&
-		condition.Reason == unikornv1core.ConditionReasonErrored
+	return active.Reason == unikornv1.ActiveConditionReasonError
 }
 
 func (p *Provisioner) providerCreateFailure() bool {
@@ -306,7 +300,7 @@ func (p *Provisioner) providerCreateFailure() bool {
 // (ErrUserActionRequired) provision result. An absent condition is not
 // parked.
 func serverParked(server *unikornv1.Server) bool {
-	condition, err := server.StatusConditionRead(unikornv1core.ConditionAvailable)
+	condition, err := unikornv1core.GetAvailableCondition(server)
 	if err != nil {
 		return false
 	}
@@ -346,15 +340,19 @@ func RebuildSettled(_, updated *unikornv1.Server) bool {
 	}
 }
 
-func (p *Provisioner) resetProviderCreateRuntimeStatus(message string) {
-	p.server.Status.Phase = unikornv1.InstanceLifecyclePhasePending
+// resetProviderCreateRuntimeStatus clears the runtime status left by a failed
+// create attempt so the next attempt starts clean. Resetting the Active condition
+// to Pending clears the terminal Error state, so ProviderCreateFailure no longer
+// fires while the retry is in flight. The Healthy condition is left alone: nothing
+// gates on it and the monitor re-derives it on the next observation.
+func (p *Provisioner) resetProviderCreateRuntimeStatus() {
+	p.server.SetActiveCondition(unikornv1.ActiveConditionReasonPending)
 	p.server.Status.PrivateIP = nil
 	p.server.Status.PublicIP = nil
 	// MACAddress is deliberately not reset: the monitor is its sole owner, and a
 	// stale value self-heals on the next ACTIVE poll rather than flickering to unset.
 	p.server.Status.LaunchedAt = nil
 	p.server.Status.ScheduledAt = nil
-	p.server.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionUnknown, unikornv1core.ConditionReasonProvisioning, message)
 }
 
 func (p *Provisioner) deleteFailedProviderServer(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, attempt, maxAttempts int32) error {
@@ -368,7 +366,7 @@ func (p *Provisioner) deleteFailedProviderServer(ctx context.Context, provider t
 		}
 
 		p.server.Status.ProviderCreateRetrying = false
-		p.resetProviderCreateRuntimeStatus("Retrying provider server create")
+		p.resetProviderCreateRuntimeStatus()
 		p.recordProviderCreateRetryEvent(
 			ctx,
 			corev1.EventTypeNormal,
@@ -383,7 +381,7 @@ func (p *Provisioner) deleteFailedProviderServer(ctx context.Context, provider t
 	}
 
 	p.server.Status.ProviderCreateRetrying = true
-	p.resetProviderCreateRuntimeStatus("Deleting failed provider server before retrying create")
+	p.resetProviderCreateRuntimeStatus()
 
 	return provisioners.ErrYield
 }
@@ -420,7 +418,10 @@ func (p *Provisioner) handleProviderCreateRetry(ctx context.Context, provider ty
 			maxAttempts,
 		)
 
-		return true, provisioners.Terminal("provider_create_failed", fmt.Sprintf("provider server create failed after %d attempts", maxAttempts))
+		// The provisioning reason is the generic Errored (provisioning state is a
+		// closed, generic vocabulary); the provider-create-failure specificity rides
+		// the Active condition (ActiveConditionReasonError) and this message.
+		return true, provisioners.Terminal(unikornv1core.ConditionReasonErrored, fmt.Sprintf("provider server create failed after %d attempts", maxAttempts))
 	}
 
 	p.server.Status.ProviderCreateFailures = attempt
@@ -436,6 +437,78 @@ func (p *Provisioner) handleProviderCreateRetry(ctx context.Context, provider ty
 	)
 
 	return true, p.deleteFailedProviderServer(ctx, provider, identity, attempt, maxAttempts)
+}
+
+// blockUntilDependenciesReady gates provider create on the readiness of the
+// server's separately-provisioned platform dependencies: its identity, networks
+// and security groups. Attempting a create before these are provisioned yields a
+// doomed provider call that the retry machinery then has to mop up; gating here
+// turns that into an explicit, self-explanatory wait.
+//
+// Only these are gated. The SSH certificate authority is synchronous spec data
+// with no readiness to wait on, and public IP capacity is not knowable ahead of
+// allocation. The identity is already fetched, so it is classified directly;
+// networks and security groups are fetched by id.
+func (p *Provisioner) blockUntilDependenciesReady(ctx context.Context, cli client.Client, identity *unikornv1.Identity) error {
+	if err := p.classifyDependency(cli, identity); err != nil {
+		return err
+	}
+
+	for _, id := range p.networkIDs() {
+		if err := p.blockUntilResourceReady(ctx, cli, id, &unikornv1.Network{}); err != nil {
+			return err
+		}
+	}
+
+	for _, id := range p.securityGroupIDs() {
+		if err := p.blockUntilResourceReady(ctx, cli, id, &unikornv1.SecurityGroup{}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// blockUntilResourceReady fetches a dependency by id and classifies it.
+//
+// A NotFound is terminal, not transient: addConsumedResourceReferences runs
+// first, rejecting unknown IDs with ErrConsistency and finalizing each
+// dependency, so a network being deleted lingers (with a deletion timestamp)
+// rather than disappearing. A referenced, finalized dependency that is
+// nonetheless gone is a consistency violation no amount of requeuing will fix —
+// parking it is correct.
+func (p *Provisioner) blockUntilResourceReady(ctx context.Context, cli client.Client, id string, resource unikornv1core.ManagableResourceInterface) error {
+	if err := cli.Get(ctx, client.ObjectKey{Namespace: p.server.Namespace, Name: id}, resource); err != nil {
+		if kerrors.IsNotFound(err) {
+			resource.SetName(id)
+
+			return provisioners.DependencyNotFound(cli.Scheme(), resource)
+		}
+
+		return err
+	}
+
+	return p.classifyDependency(cli, resource)
+}
+
+// classifyDependency maps a fetched dependency's Available condition onto a
+// disposition:
+//
+//   - Provisioned   -> nil, proceed
+//   - Errored       -> DependencyFailed: still yields (it may recover), but names
+//     the failure so the wait is not mistaken for progress
+//   - anything else -> DependencyNotReady: still coming up
+func (p *Provisioner) classifyDependency(cli client.Client, resource unikornv1core.ManagableResourceInterface) error {
+	condition, err := unikornv1core.GetAvailableCondition(resource)
+
+	switch {
+	case err == nil && condition.Reason == unikornv1core.ConditionReasonProvisioned:
+		return nil
+	case err == nil && condition.Reason == unikornv1core.ConditionReasonErrored:
+		return provisioners.DependencyFailed(cli.Scheme(), resource)
+	default:
+		return provisioners.DependencyNotReady(cli.Scheme(), resource)
+	}
 }
 
 // Provision implements the Provision interface.
@@ -460,7 +533,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
-	if err := manager.ResourceReady(ctx, identity); err != nil {
+	if err := p.blockUntilDependenciesReady(ctx, cli, identity); err != nil {
 		return err
 	}
 

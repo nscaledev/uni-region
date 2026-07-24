@@ -23,10 +23,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -34,7 +32,7 @@ import (
 
 func serverWithProviderCreateFailure() *unikornv1.Server {
 	server := &unikornv1.Server{}
-	server.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "")
+	server.SetActiveCondition(unikornv1.ActiveConditionReasonError)
 
 	return server
 }
@@ -42,7 +40,7 @@ func serverWithProviderCreateFailure() *unikornv1.Server {
 func TestProviderCreateFailureUpdate(t *testing.T) {
 	t.Parallel()
 
-	t.Run("PreLaunchHealthError", func(t *testing.T) {
+	t.Run("PreLaunchError", func(t *testing.T) {
 		t.Parallel()
 
 		require.True(t, providerCreateFailureUpdate(event.TypedUpdateEvent[*unikornv1.Server]{
@@ -79,7 +77,7 @@ func TestProviderCreateFailureUpdate(t *testing.T) {
 		t.Parallel()
 
 		server := serverWithProviderCreateFailure()
-		server.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+		server.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 
 		require.False(t, providerCreateFailureUpdate(event.TypedUpdateEvent[*unikornv1.Server]{
 			ObjectOld: &unikornv1.Server{},
@@ -88,8 +86,8 @@ func TestProviderCreateFailureUpdate(t *testing.T) {
 	})
 
 	// A server that has ever been provisioned must never re-arm the rebuild path,
-	// even if its launch timestamp and phase have been lost and a health error
-	// then appears (e.g. a flaky-provider re-reconcile after a controller restart).
+	// even if its launch timestamp has been lost and the error phase then appears
+	// (e.g. a flaky-provider re-reconcile after a controller restart).
 	t.Run("ProvisionedWithoutLaunchTimestamp", func(t *testing.T) {
 		t.Parallel()
 
