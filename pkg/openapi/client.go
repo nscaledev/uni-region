@@ -347,6 +347,9 @@ type ClientInterface interface {
 	// GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID request
 	GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID(ctx context.Context, sshCertificateAuthorityID SshCertificateAuthorityIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiV2Volumeclasses request
+	GetApiV2Volumeclasses(ctx context.Context, params *GetApiV2VolumeclassesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApiVersion request
 	GetApiVersion(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
@@ -1445,6 +1448,18 @@ func (c *Client) DeleteApiV2SshcertificateauthoritiesSshCertificateAuthorityID(c
 
 func (c *Client) GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID(ctx context.Context, sshCertificateAuthorityID SshCertificateAuthorityIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDRequest(c.Server, sshCertificateAuthorityID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiV2Volumeclasses(ctx context.Context, params *GetApiV2VolumeclassesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV2VolumeclassesRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -5148,6 +5163,55 @@ func NewGetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDRequest(server
 	return req, nil
 }
 
+// NewGetApiV2VolumeclassesRequest generates requests for GetApiV2Volumeclasses
+func NewGetApiV2VolumeclassesRequest(server string, params *GetApiV2VolumeclassesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/volumeclasses")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.RegionID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "regionID", runtime.ParamLocationQuery, *params.RegionID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetApiVersionRequest generates requests for GetApiVersion
 func NewGetApiVersionRequest(server string) (*http.Request, error) {
 	var err error
@@ -5474,6 +5538,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDWithResponse request
 	GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDWithResponse(ctx context.Context, sshCertificateAuthorityID SshCertificateAuthorityIDParameter, reqEditors ...RequestEditorFn) (*GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse, error)
+
+	// GetApiV2VolumeclassesWithResponse request
+	GetApiV2VolumeclassesWithResponse(ctx context.Context, params *GetApiV2VolumeclassesParams, reqEditors ...RequestEditorFn) (*GetApiV2VolumeclassesResponse, error)
 
 	// GetApiVersionWithResponse request
 	GetApiVersionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetApiVersionResponse, error)
@@ -7416,6 +7483,32 @@ func (r GetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse) Stat
 	return 0
 }
 
+type GetApiV2VolumeclassesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *VolumeClassListV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV2VolumeclassesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV2VolumeclassesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetApiVersionResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8247,6 +8340,15 @@ func (c *ClientWithResponses) GetApiV2SshcertificateauthoritiesSshCertificateAut
 		return nil, err
 	}
 	return ParseGetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse(rsp)
+}
+
+// GetApiV2VolumeclassesWithResponse request returning *GetApiV2VolumeclassesResponse
+func (c *ClientWithResponses) GetApiV2VolumeclassesWithResponse(ctx context.Context, params *GetApiV2VolumeclassesParams, reqEditors ...RequestEditorFn) (*GetApiV2VolumeclassesResponse, error) {
+	rsp, err := c.GetApiV2Volumeclasses(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV2VolumeclassesResponse(rsp)
 }
 
 // GetApiVersionWithResponse request returning *GetApiVersionResponse
@@ -12460,6 +12562,60 @@ func ParseGetApiV2SshcertificateauthoritiesSshCertificateAuthorityIDResponse(rsp
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiV2VolumeclassesResponse parses an HTTP response from a GetApiV2VolumeclassesWithResponse call
+func ParseGetApiV2VolumeclassesResponse(rsp *http.Response) (*GetApiV2VolumeclassesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV2VolumeclassesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest VolumeClassListV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest externalRef0.InternalServerErrorResponse

@@ -59,6 +59,13 @@ Annotations such as `x-hidden` control whether an endpoint appears in
 public-facing generated documentation. They do **not** mean the endpoint is
 outside the canonical API contract.
 
+`GET /api/v2/volumeclasses` is a published inventory endpoint. It follows the
+flat list shape used by file-storage classes: callers can supply the repeatable
+`regionID` query parameter. Each result carries its required Region binding and
+encryption flag, with provider-neutral media and advertised-performance metadata
+when the Region publishes them. The public contract deliberately contains no
+Cinder, storage-pool, or other provider-specific fields.
+
 Keeping the schema unified matters because it allows:
 
 - one generated client/server contract
@@ -155,6 +162,9 @@ fully encoded here:
 - some `v2` resources are clearly documented for publication, while others such
   as many server operations remain hidden; readers should not assume version
   number alone determines visibility
+- the published VolumeClass route currently defines the wire contract only;
+  provider-backed discovery and successful list handling are implemented
+  separately
 - the main value of `v2` is not just shorter paths. It is the shift toward a
   relationship-driven API shape where surrounding tenancy and placement context
   can often be inferred from the addressed resource graph
