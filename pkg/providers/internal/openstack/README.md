@@ -115,7 +115,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   authorization; keying off them silently dropped image changes whenever the
   monitor had not yet recorded the first `ACTIVE`, and the clean-completing
   reconcile then let the API misreport the change as settled). Before first boot
-  the desired image is a create parameter, not a rebuild target, so a pending
+  the spec image is a create parameter, not a rebuild target, so a pending
   image change on a server Nova reports with a zero `launched_at` defers: the
   reconcile yields, leaving the resource visibly `provisioning` and re-checking
   every 10s until first boot, then subsequent passes arm and submit the rebuild. A
@@ -171,7 +171,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   characterises completion. Both the monitor's `Succeeded` stamp and the
   reconciler's marker clear gate on it. This is what closes the accept-to-
   settle lag window: a stopped or errored server can display a stable
-  `SHUTOFF`/`ERROR` throughout its rebuild, so a converged-looking status
+  `SHUTOFF`/`ERROR` throughout its rebuild, so an on-target-looking status
   alone is not evidence of completion — `task_state` is the authoritative
   activity signal, and settlement is state-based rather than
   health-reason-based (`SHUTOFF` settles like any other stable status).
@@ -180,23 +180,23 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   `ERROR` → `Failed`, an active task → `Rebuilding`, otherwise quiescent →
   `Succeeded`; with a readable off-target ref and the marker already durably
   `>= Rebuilding`, an `ERROR` or a quiesced task → `Failed` (supersession — an
-  accepted rebuild whose ref has moved off the target can no longer converge);
+  accepted rebuild whose ref has moved off the target can no longer reach it);
   with an unreadable ref, only durable acceptance plus `ERROR` → `Failed`. An
   `Initiated` marker observed with `ref != target` advances nothing: an
   unattributed advance would falsely satisfy the submission gate and either
   wedge the rebuild or drive a second Nova accept.
 
   The reconciler's pass (`reconcileServerImage`) follows a fixed order. It
-  replaces a marker whose target differs from the desired image (the re-arm
+  replaces a marker whose target differs from the spec image (the re-arm
   recovery, allowed even over a parked `Failed` — a different image is the
   designed recovery), then classifies a park, then yields on an unreadable
-  ref, then converges or submits. Park classification runs *before* the
+  ref, then settles or submits. Park classification runs *before* the
   unreadable-ref yield so an attributable `ERROR` with an unverifiable ref
-  parks rather than yielding forever. On a converged read with the marker
+  parks rather than yielding forever. On an on-target read with the marker
   present and the task empty, the pass clears the marker and yields so the
   requeued pass confirms the clear by read-back (marker absent → settled;
-  marker still present → the write dropped → clear and yield again). A
-  converged read with an active task and a non-terminal marker records the
+  marker still present → the write dropped → clear and yield again). An
+  on-target read with an active task and a non-terminal marker records the
   acceptance (`Rebuilding`) and completes the pass, because a future monitor
   rank-advance to a terminal is still guaranteed to wake the settlement pass;
   but a *terminal* marker can never rank-advance again, so a pass observing one
@@ -211,7 +211,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   the usual wake. A dropped pre-park stamp is recovered by read-back: the
   requeued pass re-enters the same branch (the evidence persists) and stamps
   again until a pass reads it back and parks. The park records the fresh-read
-  health and retains the marker; the only re-arm is a different desired image
+  health and retains the marker; the only re-arm is a different spec image
   or server replacement. Failure recovery is never data restoration.
 
   The submission (`submitServerRebuild`) is the single destructive step, gated
@@ -324,7 +324,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   state, not surfaced on the API: the handler's image-drift derivation reads
   it to close the rebuild stale window for pre-upgrade servers until the
   convergence latch first catches them. A non-zero observed image that differs
-  from the desired image reports such a server as provisioning; zero remains
+  from the spec image reports such a server as provisioning; zero remains
   unknown, not drift. Once both condition stamps are set, the generation-keyed
   decision table supersedes this fallback. The reconciler's own rebuild
   idempotency does not depend on the observation (it reads Nova fresh and gates
@@ -467,7 +467,7 @@ There are a few Octavia-specific constraints worth preserving:
   both worth an integration assertion rather than assumption. First, that Nova
   flips the image ref to the target *atomically* with setting `task_state` at
   accept: if a cloud made the ref visible before `task_state`, a poll could see
-  the converged ref with an empty task inside the rebuild window and stamp a
+  the on-target ref with an empty task inside the rebuild window and stamp a
   premature `Succeeded` — the accept-to-settle lag window this design closes by
   gating settlement on `task_state` emptiness would silently reopen. Second,
   that `OS-EXT-STS:task_state` is actually visible to the region service

@@ -1224,10 +1224,15 @@ const (
 	// armed and durable, but Nova has not been asked to act.
 	ServerRebuildStateInitiated ServerRebuildState = "Initiated"
 	// ServerRebuildStateRebuilding records that Nova has accepted or been
-	// observed acting on the rebuild.
+	// observed acting on the rebuild. The label deliberately matches
+	// ActiveConditionReasonRebuilding: marker state and Active reason record
+	// the same accepted, in-flight rebuild and are stamped from the same
+	// observation — this marker as the durable episode record, the Active
+	// reason as the live lifecycle view that moves on once the rebuild ends.
 	ServerRebuildStateRebuilding ServerRebuildState = "Rebuilding"
-	// ServerRebuildStateSucceeded records an observed convergence: the image
-	// ref matches the target and the server is in a stable, non-error state.
+	// ServerRebuildStateSucceeded records an observed arrival on target: the
+	// image ref matches the target and the server is in a stable, non-error
+	// state.
 	ServerRebuildStateSucceeded ServerRebuildState = "Succeeded"
 	// ServerRebuildStateFailed records an observed failure: the server entered
 	// ERROR after Nova acted on the rebuild.

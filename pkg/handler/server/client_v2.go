@@ -290,7 +290,7 @@ func deriveProvisioningStatus(in *regionv1.Server, status coreapi.ResourceProvis
 
 // fallbackDeriveProvisioningStatus is the image-drift derivation, retained
 // verbatim as the unknown-stamp fallback: a
-// Provisioned server whose observed image differs from its desired image is
+// Provisioned server whose observed image differs from its spec image is
 // rewritten to provisioning; the zero observation is unknown, not drift
 // (fail-open), and boot-from-volume servers are skipped via the ImageID
 // error.
@@ -299,9 +299,9 @@ func fallbackDeriveProvisioningStatus(in *regionv1.Server, status coreapi.Resour
 		return status
 	}
 
-	if desired, err := in.ImageID(); err == nil {
+	if specImage, err := in.ImageID(); err == nil {
 		observed := in.Status.ObservedImageID
-		if observed != (regionids.ImageID{}) && observed != desired {
+		if observed != (regionids.ImageID{}) && observed != specImage {
 			return coreapi.ResourceProvisioningStatusProvisioning
 		}
 	}

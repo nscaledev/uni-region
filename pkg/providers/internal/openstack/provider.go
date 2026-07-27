@@ -2324,16 +2324,16 @@ func advanceServerConvergence(server *unikornv1.Server, openstackServer *servers
 		return
 	}
 
-	if desired, err := server.ImageID(); err == nil {
+	if specImage, err := server.ImageID(); err == nil {
 		if _, readable := openstackServerImageID(openstackServer); !readable {
 			return
 		}
 
-		if server.Status.ObservedImageID != desired {
+		if server.Status.ObservedImageID != specImage {
 			return
 		}
 
-		if rebuild := server.Status.Rebuild; rebuild != nil && rebuild.TargetImageID == desired &&
+		if rebuild := server.Status.Rebuild; rebuild != nil && rebuild.TargetImageID == specImage &&
 			(rebuild.State == unikornv1.ServerRebuildStateInitiated || rebuild.State == unikornv1.ServerRebuildStateRebuilding) {
 			return
 		}
@@ -2670,6 +2670,13 @@ func advanceRebuildState(rebuild *unikornv1.ServerRebuildStatus, state unikornv1
 	rebuild.State = state
 }
 
+// serverRebuildAccepted reports whether the marker durably records Nova
+// acceptance (rank >= Rebuilding). Attribution decisions — marker advance,
+// the park — key off this long after the live REBUILD observation is gone.
+func serverRebuildAccepted(rebuild *unikornv1.ServerRebuildStatus) bool {
+	return serverRebuildStateRank(rebuild.State) >= serverRebuildStateRank(unikornv1.ServerRebuildStateRebuilding)
+}
+
 // advanceServerRebuildState advances Status.Rebuild.State from a fresh Nova
 // read. It is forward-only, and advances only on evidence attributable to the
 // marker's target — by image ref, since Nova flips the ref to the target
@@ -2685,12 +2692,12 @@ func advanceServerRebuildState(server *unikornv1.Server, openstackServer *server
 	}
 
 	imageID, refReadable := openstackServerImageID(openstackServer)
-	converged := refReadable && imageID == rebuild.TargetImageID
+	onTarget := refReadable && imageID == rebuild.TargetImageID
 	taskActive := serverRebuildTaskActive(openstackServer)
-	accepted := serverRebuildStateRank(rebuild.State) >= serverRebuildStateRank(unikornv1.ServerRebuildStateRebuilding)
+	accepted := serverRebuildAccepted(rebuild)
 
 	switch {
-	case converged:
+	case onTarget:
 		switch {
 		case openstackServer.Status == novaStatusError:
 			advanceRebuildState(rebuild, unikornv1.ServerRebuildStateFailed)
@@ -2712,7 +2719,7 @@ func advanceServerRebuildState(server *unikornv1.Server, openstackServer *server
 
 // serverRebuildTaskActive reports whether a rebuild-relevant operation is in
 // flight. task_state is the authoritative signal: non-empty for the whole
-// rebuild window, empty at rest. This is what lets a converged read mean
+// rebuild window, empty at rest. This is what lets an on-target read mean
 // completion: Nova flips the image ref to the target and sets task_state
 // together at accept, so (ref == target ∧ task_state empty) is unobservable
 // while a rebuild is in flight and therefore uniquely means it is done. REBUILD
@@ -2758,7 +2765,7 @@ func markServerRebuildAccepted(server *unikornv1.Server) {
 //   - P4b: an ERROR with acceptance evidence — durably >= Rebuilding, or the ref
 //     flipped to the target — stamps Failed and yields to confirm by read-back.
 //   - P4c: supersession — an accepted rebuild whose readable ref has moved off
-//     the target while the task has quiesced can no longer converge; stamp
+//     the target while the task has quiesced can no longer reach it; stamp
 //     Failed and yield.
 //
 // P4b's stamp is by direct assignment, the one exception to the forward-only
@@ -2766,10 +2773,10 @@ func markServerRebuildAccepted(server *unikornv1.Server) {
 // arrived, or the retained Succeeded level would re-fire the settlement wake
 // forever on the parked server. P4b/P4c precede the unreadable-ref yield (P5)
 // so an ERROR with acceptance evidence parks rather than yielding forever.
-func reconcileServerRebuildPark(ctx context.Context, server *unikornv1.Server, openstackServer *servers.Server, currentImageID regionids.ImageID, refReadable, taskActive bool, desiredImageID regionids.ImageID) (bool, error) {
+func reconcileServerRebuildPark(ctx context.Context, server *unikornv1.Server, openstackServer *servers.Server, currentImageID regionids.ImageID, refReadable, taskActive bool, specImageID regionids.ImageID) (bool, error) {
 	rebuild := server.Status.Rebuild
-	accepted := serverRebuildStateRank(rebuild.State) >= serverRebuildStateRank(unikornv1.ServerRebuildStateRebuilding)
-	converged := refReadable && currentImageID == desiredImageID
+	accepted := serverRebuildAccepted(rebuild)
+	onTarget := refReadable && currentImageID == specImageID
 
 	// P4a: Failed read back durable — issue the confirmed terminal park.
 	if rebuild.State == unikornv1.ServerRebuildStateFailed {
@@ -2780,7 +2787,7 @@ func reconcileServerRebuildPark(ctx context.Context, server *unikornv1.Server, o
 	}
 
 	// P4b: ERROR with acceptance evidence — stamp Failed (direct) and yield.
-	if openstackServer.Status == novaStatusError && (accepted || converged) {
+	if openstackServer.Status == novaStatusError && (accepted || onTarget) {
 		setServerHealthStatus(server, openstackServer)
 		setServerActive(ctx, server, openstackServer, nil)
 
@@ -2793,7 +2800,7 @@ func reconcileServerRebuildPark(ctx context.Context, server *unikornv1.Server, o
 	}
 
 	// P4c: supersession — accepted, readable ref off target, task quiesced.
-	if accepted && refReadable && !converged && !taskActive {
+	if accepted && refReadable && !onTarget && !taskActive {
 		setServerHealthStatus(server, openstackServer)
 		setServerActive(ctx, server, openstackServer, nil)
 
@@ -2847,12 +2854,12 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 // this by the deprovision path):
 //
 //	P1  Spec.Image == nil        → clear any marker; done.
-//	P3  re-arm (marker target ≠ desired) → replace marker {desired, Initiated}; yield.
+//	P3  re-arm (marker target ≠ spec image) → replace marker {spec image, Initiated}; yield.
 //	P4  two-phase park (reconcileServerRebuildPark).
 //	P5  unreadable ref           → silent yield (never clean-complete over an
 //	                               unverifiable image).
-//	P6  ref == desired           → reconcileServerImageConverged.
-//	P7  ref != desired           → reconcileServerImagePending.
+//	P6  ref == spec image        → reconcileServerImageOnTarget.
+//	P7  ref != spec image        → reconcileServerImagePending.
 //
 // Arming and submitting are separate passes with a yield between them as the
 // durable commit point, so intent is persisted before Nova is asked to destroy
@@ -2865,14 +2872,14 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 		return openstackServer, nil
 	}
 
-	desiredImageID := server.Spec.Image.ID
+	specImageID := server.Spec.Image.ID
 
 	// P3: re-arm. A marker for a different target — including a parked Failed,
 	// the designed recovery — is replaced with a fresh write-ahead Initiated
 	// marker. The yield is silent: nothing has been asked of Nova.
-	if rebuild := server.Status.Rebuild; rebuild != nil && rebuild.TargetImageID != desiredImageID {
+	if rebuild := server.Status.Rebuild; rebuild != nil && rebuild.TargetImageID != specImageID {
 		server.Status.Rebuild = &unikornv1.ServerRebuildStatus{
-			TargetImageID: desiredImageID,
+			TargetImageID: specImageID,
 			State:         unikornv1.ServerRebuildStateInitiated,
 		}
 
@@ -2885,11 +2892,11 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 	currentImageID, refReadable := openstackServerImageID(openstackServer)
 	taskActive := serverRebuildTaskActive(openstackServer)
 
-	// P4: two-phase park. Any marker here targets the desired image (P3 handled
+	// P4: two-phase park. Any marker here targets the spec image (P3 handled
 	// a differing target). It precedes P5 so an attributable ERROR with an
 	// unreadable ref parks rather than yielding forever.
 	if server.Status.Rebuild != nil {
-		if handled, err := reconcileServerRebuildPark(ctx, server, openstackServer, currentImageID, refReadable, taskActive, desiredImageID); handled {
+		if handled, err := reconcileServerRebuildPark(ctx, server, openstackServer, currentImageID, refReadable, taskActive, specImageID); handled {
 			return openstackServer, err
 		}
 	}
@@ -2904,20 +2911,19 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 		return openstackServer, provisioners.ErrYield
 	}
 
-	// P6: ref converged onto the desired image.
-	if currentImageID == desiredImageID {
-		return reconcileServerImageConverged(ctx, server, openstackServer, taskActive)
+	// P6: ref on the spec image.
+	if currentImageID == specImageID {
+		return reconcileServerImageOnTarget(ctx, server, openstackServer, taskActive)
 	}
 
 	// P7: ref still pending.
-	return reconcileServerImagePending(ctx, client, server, openstackServer, desiredImageID, taskActive)
+	return reconcileServerImagePending(ctx, client, server, openstackServer, specImageID, taskActive)
 }
 
-// reconcileServerImageConverged runs the ref-converged pass (P6): the fresh
-// read shows the desired image. Any marker here is not Failed (P4a parked it)
-// nor an attributable ERROR (P4b stamped it), so ERROR with a marker is
-// unreachable.
-func reconcileServerImageConverged(ctx context.Context, server *unikornv1.Server, openstackServer *servers.Server, taskActive bool) (*servers.Server, error) {
+// reconcileServerImageOnTarget runs the on-target pass (P6): the fresh read
+// shows the spec image. Any marker here is not Failed (P4a parked it) nor an
+// attributable ERROR (P4b stamped it), so ERROR with a marker is unreachable.
+func reconcileServerImageOnTarget(ctx context.Context, server *unikornv1.Server, openstackServer *servers.Server, taskActive bool) (*servers.Server, error) {
 	rebuild := server.Status.Rebuild
 
 	// P6c: ERROR with no marker is unrelated — the monitor owns health. (With a
@@ -2926,13 +2932,13 @@ func reconcileServerImageConverged(ctx context.Context, server *unikornv1.Server
 		return openstackServer, nil
 	}
 
-	// P6a/P6b with no marker: converged and nothing pending — done.
+	// P6a/P6b with no marker: on target and nothing pending — done.
 	if rebuild == nil {
 		return openstackServer, nil
 	}
 
-	// P6a: quiescent convergence is the settlement — clear the marker and yield
-	// so the requeued pass confirms the clear by read-back.
+	// P6a: on target with a quiescent task — the rebuild has settled; clear the
+	// marker and yield so the requeued pass confirms the clear by read-back.
 	if !taskActive {
 		server.Status.Rebuild = nil
 
@@ -2960,7 +2966,7 @@ func reconcileServerImageConverged(ctx context.Context, server *unikornv1.Server
 // reconcileServerImagePending runs the ref-pending pass (P7): the fresh read
 // still shows an image other than the desired one. P4c already handled
 // supersession, so an accepted marker reaching here always has an active task.
-func reconcileServerImagePending(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, desiredImageID regionids.ImageID, taskActive bool) (*servers.Server, error) {
+func reconcileServerImagePending(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, specImageID regionids.ImageID, taskActive bool) (*servers.Server, error) {
 	// P7a: rebuild only a server Nova reports as booted. Before first boot the
 	// image is a create parameter and the server is in create-retry's domain;
 	// yield silently to stay visibly provisioning.
@@ -2977,7 +2983,7 @@ func reconcileServerImagePending(ctx context.Context, client ServerInterface, se
 	// read back later is the only submission authorization.
 	if rebuild == nil {
 		server.Status.Rebuild = &unikornv1.ServerRebuildStatus{
-			TargetImageID: desiredImageID,
+			TargetImageID: specImageID,
 			State:         unikornv1.ServerRebuildStateInitiated,
 		}
 
@@ -3008,7 +3014,7 @@ func reconcileServerImagePending(ctx context.Context, client ServerInterface, se
 		// P7e: the only destructive row. A durable Initiated marker with a
 		// quiescent server authorizes exactly one submission.
 		return submitServerRebuild(ctx, client, server, openstackServer, ServerRebuildOptions{
-			ImageID: desiredImageID,
+			ImageID: specImageID,
 		})
 	case unikornv1.ServerRebuildStateFailed:
 		// Unreachable: P4a parks a Failed marker before P7. Yield defensively.
