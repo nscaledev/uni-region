@@ -155,8 +155,7 @@ func convertSnapshotPolicyStatus(in regionv1.FileStorageSnapshotPolicyStatus) (c
 		message = ptr.To(condition.Message)
 	}
 
-	//nolint:exhaustive
-	switch condition.Reason {
+	switch condition.Reason { //nolint:exhaustive
 	case unikorncorev1.ConditionReasonProvisioning:
 		return coreopenapi.ResourceProvisioningStatusProvisioning, message
 	case unikorncorev1.ConditionReasonProvisioned:
