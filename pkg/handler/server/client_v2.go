@@ -227,14 +227,31 @@ func sshInjectionStatus(in *regionv1.Server) *openapi.SshInjection {
 	return &out
 }
 
-// deriveProvisioningStatus reports a server with a pending rebuild as
-// provisioning: consumers gate on provisioned meaning the spec is fully
-// realized, and a Nova-accepted rebuild still in flight is not. Only the
-// Provisioned case is rewritten — a parked rebuild's error, and every other
-// status, pass through so failures stay visible.
+// deriveProvisioningStatus reports the rebuild stale window as provisioning:
+// between an accepted image update and Nova accepting the rebuild, the Available
+// condition still reads Provisioned for the old image. The monitor-observed
+// image lags until Nova accepts, so a Provisioned server whose observed image
+// differs from its desired image is rewritten to provisioning.
+//
+// The in-flight rebuild is not handled here: Nova flips the image ref at accept
+// (drift clears) and reports REBUILD, surfaced as powerState=Rebuilding.
+// Consumers gate settlement on provisioningStatus==provisioned AND
+// powerState==Running.
+//
+// Only Provisioned is rewritten, so a parked rebuild's error stays visible. The
+// rewrite is gated on a non-zero observation: the zero value is not-yet-observed
+// (unknown, not drift), not a stale image. Boot-from-volume servers (no desired
+// image) are skipped via the ImageID error.
 func deriveProvisioningStatus(in *regionv1.Server, status coreapi.ResourceProvisioningStatus) coreapi.ResourceProvisioningStatus {
-	if in.RebuildPending() && status == coreapi.ResourceProvisioningStatusProvisioned {
-		return coreapi.ResourceProvisioningStatusProvisioning
+	if status != coreapi.ResourceProvisioningStatusProvisioned {
+		return status
+	}
+
+	if desired, err := in.ImageID(); err == nil {
+		observed := in.Status.ObservedImageID
+		if observed != (regionids.ImageID{}) && observed != desired {
+			return coreapi.ResourceProvisioningStatusProvisioning
+		}
 	}
 
 	return status

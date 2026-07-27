@@ -2243,16 +2243,16 @@ func withRebuildMarker(server *regionv1.Server, state regionv1.ServerRebuildStat
 	return server
 }
 
-// TestServerGetV2RebuildPendingReportsProvisioning verifies that a server with a
-// rebuild in flight (marker retained, Nova acting) whose Available condition
-// already reads Provisioned is reported as provisioning at the v2 API — the
-// rebuild's target image is not yet realized, so the server is not settled.
-func TestServerGetV2RebuildPendingReportsProvisioning(t *testing.T) {
+// TestServerGetV2RebuildInFlightReportsProvisioned pins the handoff to powerState:
+// once Nova accepts a rebuild (marker Rebuilding, observed image flipped to the
+// desired image so drift has cleared) provisioningStatus reports provisioned —
+// the in-flight rebuild is powerState=Rebuilding's concern, not the marker's.
+func TestServerGetV2RebuildInFlightReportsProvisioned(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
 
-	resource := withRebuildMarker(withAvailableCondition(testServerV2(srvServerID), corev1alpha1.ConditionReasonProvisioned), regionv1.ServerRebuildStateRebuilding)
+	resource := withObservedImage(withRebuildMarker(withAvailableCondition(testServerV2(srvServerID), corev1alpha1.ConditionReasonProvisioned), regionv1.ServerRebuildStateRebuilding), srvImageID)
 
 	k8sClient := newSrvFakeClient(t, resource).Build()
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
@@ -2269,7 +2269,8 @@ func TestServerGetV2RebuildPendingReportsProvisioning(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, coreapi.ResourceProvisioningStatusProvisioning, result.Metadata.ProvisioningStatus)
+	require.Equal(t, coreapi.ResourceProvisioningStatusProvisioned, result.Metadata.ProvisioningStatus,
+		"an accepted in-flight rebuild is a powerState concern; provisioningStatus must not be held by the marker once drift clears")
 }
 
 // TestServerGetV2NoRebuildReportsProvisioned verifies that a settled server with
@@ -2327,17 +2328,16 @@ func TestServerGetV2RebuildPendingErroredStaysError(t *testing.T) {
 	require.Equal(t, coreapi.ResourceProvisioningStatusError, result.Metadata.ProvisioningStatus)
 }
 
-// TestServerGetV2RebuildIntentNotAcceptedReportsProvisioning verifies that a
-// recorded rebuild intent Nova has not yet accepted (state Initiated) reports
-// the server as provisioning: the desired image is not realized, so the spec
-// is not settled even before Nova acts (an armed rebuild that persistently
-// 409s must not misreport as provisioned).
+// TestServerGetV2RebuildIntentNotAcceptedReportsProvisioning covers the
+// pre-accept window: a rebuild armed but not yet accepted by Nova (marker
+// Initiated, observed image still the old one) reports provisioning via the
+// drift check, not the marker.
 func TestServerGetV2RebuildIntentNotAcceptedReportsProvisioning(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
 
-	resource := withRebuildMarker(withAvailableCondition(testServerV2(srvServerID), corev1alpha1.ConditionReasonProvisioned), regionv1.ServerRebuildStateInitiated)
+	resource := withObservedImage(withRebuildMarker(withAvailableCondition(testServerV2(srvServerID), corev1alpha1.ConditionReasonProvisioned), regionv1.ServerRebuildStateInitiated), srvOtherImageID)
 
 	k8sClient := newSrvFakeClient(t, resource).Build()
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
@@ -2358,12 +2358,13 @@ func TestServerGetV2RebuildIntentNotAcceptedReportsProvisioning(t *testing.T) {
 }
 
 // TestServerListV2RebuildPendingReportsProvisioning pins that the list read path
-// shares the same derivation as get: a pending-rebuild server surfaces as
-// provisioning through ListV2 too.
+// shares the same derivation as get: a server in the pre-accept stale window
+// (observed image still lags desired) surfaces as provisioning through ListV2
+// too.
 func TestServerListV2RebuildPendingReportsProvisioning(t *testing.T) {
 	t.Parallel()
 
-	resource := withRebuildMarker(withAvailableCondition(testServerV2(srvServerID), corev1alpha1.ConditionReasonProvisioned), regionv1.ServerRebuildStateRebuilding)
+	resource := withObservedImage(withAvailableCondition(testServerV2(srvServerID), corev1alpha1.ConditionReasonProvisioned), srvOtherImageID)
 
 	k8sClient := newSrvFakeClient(t, resource).Build()
 
@@ -2379,4 +2380,84 @@ func TestServerListV2RebuildPendingReportsProvisioning(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 	require.Equal(t, coreapi.ResourceProvisioningStatusProvisioning, result[0].Metadata.ProvisioningStatus)
+}
+
+// withObservedImage stamps the monitor-owned observed image on the fixture, as
+// the health monitor records it from a Nova poll.
+func withObservedImage(srv *regionv1.Server, imageID string) *regionv1.Server {
+	srv.Status.ObservedImageID = idstest.MustParseImageID(imageID)
+
+	return srv
+}
+
+// srvOtherImageID is a stamped image distinct from the fixture's spec image
+// (srvImageID), for exercising observed-vs-desired drift.
+const srvOtherImageID = "99999999-9999-4999-a999-999999999999"
+
+// TestServerGetV2StaleImageReportsProvisioning pins the stale window: a
+// Provisioned server whose monitor-observed image still differs from the desired
+// image (pre-accept, no marker yet) must report provisioning, not provisioned.
+func TestServerGetV2StaleImageReportsProvisioning(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	// Provisioned, no rebuild marker yet, observed image (old) != spec image.
+	resource := withObservedImage(withAvailableCondition(testServerV2(srvServerID), corev1alpha1.ConditionReasonProvisioned), srvOtherImageID)
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace, Identity: mockIdentity})
+
+	result, err := c.GetV2(rbac.NewContext(t.Context(), aclWithSrvUpdate()), idstest.MustParseServerID(resource.Name))
+
+	require.NoError(t, err)
+	require.Equal(t, coreapi.ResourceProvisioningStatusProvisioning, result.Metadata.ProvisioningStatus,
+		"a provisioned server whose observed image has not caught up to the desired image must report provisioning")
+}
+
+// TestServerGetV2ConvergedImageReportsProvisioned verifies the converse: once
+// the monitor has observed the server running the desired image, a provisioned
+// server with no rebuild marker reports provisioned.
+func TestServerGetV2ConvergedImageReportsProvisioned(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	resource := withObservedImage(withAvailableCondition(testServerV2(srvServerID), corev1alpha1.ConditionReasonProvisioned), srvImageID)
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace, Identity: mockIdentity})
+
+	result, err := c.GetV2(rbac.NewContext(t.Context(), aclWithSrvUpdate()), idstest.MustParseServerID(resource.Name))
+
+	require.NoError(t, err)
+	require.Equal(t, coreapi.ResourceProvisioningStatusProvisioned, result.Metadata.ProvisioningStatus)
+}
+
+// TestServerGetV2UnobservedImageReportsProvisioned guards the non-zero gate: a
+// server the monitor has not yet observed (zero observed image — a fresh create
+// before its first poll, or an existing server on upgrade before re-stamping)
+// is unknown, not known-different, so it must NOT be forced to provisioning.
+func TestServerGetV2UnobservedImageReportsProvisioned(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	// No withObservedImage: ObservedImageID is the zero value.
+	resource := withAvailableCondition(testServerV2(srvServerID), corev1alpha1.ConditionReasonProvisioned)
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace, Identity: mockIdentity})
+
+	result, err := c.GetV2(rbac.NewContext(t.Context(), aclWithSrvUpdate()), idstest.MustParseServerID(resource.Name))
+
+	require.NoError(t, err)
+	require.Equal(t, coreapi.ResourceProvisioningStatusProvisioned, result.Metadata.ProvisioningStatus,
+		"an unobserved image (zero value) is unknown, not drift, and must not force provisioning")
 }
