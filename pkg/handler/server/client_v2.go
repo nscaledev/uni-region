@@ -227,22 +227,74 @@ func sshInjectionStatus(in *regionv1.Server) *openapi.SshInjection {
 	return &out
 }
 
-// deriveProvisioningStatus reports the rebuild stale window as provisioning:
-// between an accepted image update and Nova accepting the rebuild, the Available
-// condition still reads Provisioned for the old image. The monitor-observed
-// image lags until Nova accepts, so a Provisioned server whose observed image
-// differs from its desired image is rewritten to provisioning.
+// deriveProvisioningStatus is the generation-keyed settlement derivation, an
+// ordered decision table. Settlement is one field: provisioned ⟺ both condition
+// observedGeneration stamps equal metadata.generation (the reconciler has
+// initiated the generation and the monitor has witnessed settled arrival).
+// Unstamped conditions are unknown, not known-stale: they fall back to the
+// pre-convergence derivation, which dies per-server at first latch. Settled
+// is not live: a converged server that later errors keeps provisioned — the
+// failure rides powerState/healthStatus.
 //
-// The in-flight rebuild is not handled here: Nova flips the image ref at accept
-// (drift clears) and reports REBUILD, surfaced as powerState=Rebuilding.
-// Consumers gate settlement on provisioningStatus==provisioned AND
-// powerState==Running.
-//
-// Only Provisioned is rewritten, so a parked rebuild's error stays visible. The
-// rewrite is gated on a non-zero observation: the zero value is not-yet-observed
-// (unknown, not drift), not a stale image. Boot-from-volume servers (no desired
-// image) are skipped via the ImageID error.
+//nolint:cyclop // Fan-out mirrors the settlement decision table; collapsing it would scatter the rules.
 func deriveProvisioningStatus(in *regionv1.Server, status coreapi.ResourceProvisioningStatus) coreapi.ResourceProvisioningStatus {
+	// Deletion/deprovisioning and reconcile errors (and unknown) pass
+	// through from the core derivation untouched.
+	if status != coreapi.ResourceProvisioningStatusProvisioned && status != coreapi.ResourceProvisioningStatusProvisioning {
+		return status
+	}
+
+	availableStamp := int64(0)
+
+	if available, err := in.StatusConditionRead(corev1.ConditionAvailable); err == nil {
+		availableStamp = available.ObservedGeneration
+	}
+
+	activeStamp := int64(0)
+	activeReason := ""
+
+	if active, err := in.StatusConditionRead(corev1.ConditionActive); err == nil {
+		activeStamp = active.ObservedGeneration
+		activeReason = active.Reason
+	}
+
+	// The unknown-stamp world (pre-upgrade servers, fresh creates).
+	if availableStamp == 0 || activeStamp == 0 {
+		settled := activeReason == string(regionv1.ActiveConditionReasonRunning) ||
+			activeReason == string(regionv1.ActiveConditionReasonStopped)
+
+		switch {
+		case settled || activeReason == "":
+			return fallbackDeriveProvisioningStatus(in, status)
+		case activeReason == string(regionv1.ActiveConditionReasonError):
+			return coreapi.ResourceProvisioningStatusError
+		default:
+			return coreapi.ResourceProvisioningStatusProvisioning
+		}
+	}
+
+	// Converged — including a later runtime error with no spec change.
+	if availableStamp == in.Generation && activeStamp == in.Generation {
+		return coreapi.ResourceProvisioningStatusProvisioned
+	}
+
+	// A failure while unconverged surfaces instead of reading as an
+	// eternal provisioning.
+	if activeReason == string(regionv1.ActiveConditionReasonError) {
+		return coreapi.ResourceProvisioningStatusError
+	}
+
+	// Any generation lag — the stale window and in-flight work.
+	return coreapi.ResourceProvisioningStatusProvisioning
+}
+
+// fallbackDeriveProvisioningStatus is the image-drift derivation, retained
+// verbatim as the unknown-stamp fallback: a
+// Provisioned server whose observed image differs from its desired image is
+// rewritten to provisioning; the zero observation is unknown, not drift
+// (fail-open), and boot-from-volume servers are skipped via the ImageID
+// error.
+func fallbackDeriveProvisioningStatus(in *regionv1.Server, status coreapi.ResourceProvisioningStatus) coreapi.ResourceProvisioningStatus {
 	if status != coreapi.ResourceProvisioningStatusProvisioned {
 		return status
 	}
@@ -692,6 +744,8 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 	if err != nil {
 		return nil, err
 	}
+
+	resource.SetActiveCondition(regionv1.ActiveConditionReasonPending)
 
 	if err := c.Client.Client.Create(ctx, resource); err != nil {
 		if kerrors.IsAlreadyExists(err) {

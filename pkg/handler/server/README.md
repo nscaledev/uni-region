@@ -83,32 +83,27 @@ related dependencies rather than from nested path scope.
   create-time user data, not the updated value — applying updated user data on
   rebuild is deferred until Nova's microversion 2.57 `user_data` field is wired
   through the client library
-- settlement on an image change is split across two axes, and each covers a
-  disjoint window of the rebuild:
-  - `provisioningStatus` (control-plane / reconcile-progress axis) covers only
-    the **stale window** — between an accepted image update and the reconciler
-    arming the rebuild against Nova. Here the Available condition still reads
-    `provisioned` for the image the server currently runs, so
-    `deriveProvisioningStatus` rewrites `provisioned → provisioning` when the
-    monitor's observed image (`status.observedImageID`) still differs from the
-    desired image. The observed image is internal provider state feeding this
-    derivation, not an API field. The rewrite is gated on a non-zero observation
-    (a never-observed server is unknown, not known-different, so it is not forced
-    to provisioning). `TestServerGetV2StaleImageReportsProvisioning` pins it.
-  - `powerState` (runtime lifecycle axis, the `Active` condition) covers the
-    **in-flight rebuild**. When Nova accepts the rebuild it flips the image
-    reference to the new image — so drift clears — and reports the instance
-    `REBUILD`, which the monitor surfaces as `Active=Rebuilding`
-    (`powerState=Rebuilding`). Rebuild-in-flight is a runtime state, not a
-    control-plane provisioning gap, so `provisioningStatus` returns to
-    `provisioned` here and `deriveProvisioningStatus` does NOT consult the
-    rebuild marker. `TestServerGetV2RebuildInFlightReportsProvisioned` pins the
-    handoff.
-  - both fields are stamped from the same monitor poll, so the handoff at the
-    accept boundary has no gap. Consumers gate settlement on
-    `provisioningStatus == provisioned` AND `powerState == Running` (plus
-    `healthStatus` for guest usability). Gating on `provisioningStatus` alone
-    would read a server as settled mid-rebuild.
+- settlement is generation-keyed: `provisioningStatus` derives from the
+  Available and Active conditions' `observedGeneration` stamps —
+  `provisioned` iff both equal `metadata.generation` (the reconciler
+  initiated the generation; the monitor witnessed settled arrival). The
+  whole of a rebuild — stale window through Nova completion — reads
+  `provisioning` because the Active stamp (the convergence latch, advanced
+  only by the monitor under four gates) lags the generation throughout. A
+  failure while unconverged reads `error`; unstamped conditions
+  (pre-upgrade servers, fresh creates) fall back to the image-drift
+  derivation until the latch first catches the server. The
+  consumer contract is one field: settled ⟺ `provisioningStatus ==
+  provisioned`. `TestServerGetV2ProvisioningStatusDecisionTable` pins the
+  table.
+- settled is not live: a converged server that later errors (host death, no
+  spec change) keeps `provisioned` — the failure rides `powerState` and
+  `healthStatus`. Consumers with availability semantics (rolling-update
+  budgets) must consult the runtime axes for that question.
+- the v2 read model exposes the raw pair: `generation` (spec target) and
+  `observedGeneration` (min of the two stamps, absent while either is
+  unset), so ordered-rollout consumers can watch a PUT converge without
+  domain knowledge.
 - the image is immutable through the v1 API: a v1 update carrying a different
   `imageId` succeeds but preserves the stored image (the rest of the update
   still applies). The `imageId` on a v1 update is ignored entirely and not
@@ -126,25 +121,6 @@ related dependencies rather than from nested path scope.
   rejected with HTTP 422. An accepted rebuild destroys the previous root disk
   contents even if the rebuild subsequently fails, so failure recovery is
   choosing another image or replacing the server — never data restoration.
-- across a rebuild the two axes report in sequence: before Nova accepts (the
-  spec image changed but the reconciler has not yet armed the rebuild, or has
-  armed but Nova has not taken it) the observed image still lags, so the v2 read
-  reports `provisioningStatus=provisioning` even though the controller has
-  finished its reconcile pass and core would otherwise report `provisioned`;
-  once Nova accepts, drift clears and `provisioningStatus` returns to
-  `provisioned` while `powerState=Rebuilding` reports the in-flight rebuild;
-  on convergence `powerState=Running`. A failed rebuild stays visible, on
-  whichever axis reflects where it failed: a pre-accept failure (e.g. the target
-  image will not resolve) errors the Available condition so
-  `provisioningStatus=error` while the untouched guest stays `powerState=Running`;
-  a post-accept failure (Nova rejects the rebuild after taking it) drives the
-  instance to `ERROR` so `powerState=Error`. Either way it is never reported
-  settled. The rebuild marker
-  (`RebuildPending`) still drives the reconciler's own idempotency but no longer
-  feeds `provisioningStatus`; the in-flight state is read from Nova via
-  `powerState`. See the provider's rebuild handling in
-  [../../providers/internal/openstack/README.md](../../providers/internal/openstack/README.md).
-
 ## Invariants And Guard Rails
 
 - `v2` is the intended model; `v1` is compatibility surface only.

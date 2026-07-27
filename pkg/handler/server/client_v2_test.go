@@ -46,6 +46,7 @@ import (
 	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -1268,6 +1269,48 @@ func TestServerCreateV2AcceptsValidImage(t *testing.T) {
 	require.Equal(t, idstest.MustParseImageID(srvImageID), result.Spec.ImageId)
 }
 
+// TestServerCreateV2SeedsActiveCondition pins the create-time seed: a fresh
+// v2 server carries Active=Pending (stamp unset) from birth, the same seed
+// the v1 create path has always written, so its API read is mid-transition
+// provisioning rather than falling through to the unstamped fallback.
+func TestServerCreateV2SeedsActiveCondition(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	network := testSrvNetworkWithProject(srvProjectID)
+
+	k8sClient := newSrvFakeClient(t, network).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	mockProviders := newMockProvidersWithReadyImage(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+		Providers: mockProviders,
+	})
+
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+
+	result, err := c.CreateV2(ctx, minimalServerV2CreateRequest())
+	require.NoError(t, err)
+
+	stored := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: result.Metadata.Id}, stored))
+
+	active, err := regionv1.GetActiveCondition(stored)
+	require.NoError(t, err)
+	require.Equal(t, regionv1.ActiveConditionReasonPending, active.Reason)
+
+	cond := meta.FindStatusCondition(stored.Status.Conditions, string(corev1alpha1.ConditionActive))
+	require.NotNil(t, cond)
+	require.Equal(t, int64(0), cond.ObservedGeneration, "a create seed must not pre-advance the latch")
+}
+
 // TestServerCreateV2RejectsRetiredFlavor verifies that a create referencing a
 // flavor the region no longer offers fails loudly and identifiably with HTTP
 // 422, rather than an anonymous 404 that reads as "server not found".
@@ -2232,6 +2275,35 @@ func withAvailableCondition(server *regionv1.Server, reason corev1alpha1.Provisi
 	return server
 }
 
+// withActiveConditionStamped sets the Active condition to the given lifecycle
+// reason with the given latch stamp (0 leaves it unset).
+func withActiveConditionStamped(srv *regionv1.Server, reason regionv1.ActiveConditionReason, stamp int64) *regionv1.Server {
+	srv.SetActiveCondition(reason)
+
+	if stamp != 0 {
+		meta.FindStatusCondition(srv.Status.Conditions, string(corev1alpha1.ConditionActive)).ObservedGeneration = stamp
+	}
+
+	return srv
+}
+
+// withAvailableConditionStamped is withAvailableCondition plus an explicit
+// observedGeneration stamp on the written condition.
+func withAvailableConditionStamped(srv *regionv1.Server, reason corev1alpha1.ProvisioningConditionReason, stamp int64) *regionv1.Server {
+	srv = withAvailableCondition(srv, reason)
+	meta.FindStatusCondition(srv.Status.Conditions, string(corev1alpha1.ConditionAvailable)).ObservedGeneration = stamp
+
+	return srv
+}
+
+// withGeneration sets metadata.generation on the fixture (the fake client
+// stores objects verbatim, so the value survives the round trip).
+func withGeneration(srv *regionv1.Server, generation int64) *regionv1.Server {
+	srv.Generation = generation
+
+	return srv
+}
+
 // withRebuildMarker records a rebuild marker for the fixture image in the
 // given lifecycle state.
 func withRebuildMarker(server *regionv1.Server, state regionv1.ServerRebuildState) *regionv1.Server {
@@ -2460,4 +2532,103 @@ func TestServerGetV2UnobservedImageReportsProvisioned(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, coreapi.ResourceProvisioningStatusProvisioned, result.Metadata.ProvisioningStatus,
 		"an unobserved image (zero value) is unknown, not drift, and must not force provisioning")
+}
+
+// TestServerGetV2ProvisioningStatusDecisionTable pins the generation-keyed
+// derivation, one case per branch.
+func TestServerGetV2ProvisioningStatusDecisionTable(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		resource func() *regionv1.Server
+		want     coreapi.ResourceProvisioningStatus
+	}{
+		{
+			// Unstamped + transient reason.
+			name: "unstamped mid-transient reads provisioning",
+			resource: func() *regionv1.Server {
+				return withActiveConditionStamped(withAvailableCondition(testServerV2(srvServerID), corev1alpha1.ConditionReasonProvisioned), regionv1.ActiveConditionReasonRebuilding, 0)
+			},
+			want: coreapi.ResourceProvisioningStatusProvisioning,
+		},
+		{
+			// Unstamped + Error.
+			name: "unstamped errored reads error",
+			resource: func() *regionv1.Server {
+				return withActiveConditionStamped(withAvailableCondition(testServerV2(srvServerID), corev1alpha1.ConditionReasonProvisioned), regionv1.ActiveConditionReasonError, 0)
+			},
+			want: coreapi.ResourceProvisioningStatusError,
+		},
+		{
+			// Unstamped + settled reason falls back to the image-drift
+			// derivation (no drift here, so provisioned).
+			name: "unstamped running falls back to the image-drift derivation",
+			resource: func() *regionv1.Server {
+				return withActiveConditionStamped(withObservedImage(withAvailableCondition(testServerV2(srvServerID), corev1alpha1.ConditionReasonProvisioned), srvImageID), regionv1.ActiveConditionReasonRunning, 0)
+			},
+			want: coreapi.ResourceProvisioningStatusProvisioned,
+		},
+		{
+			// Converged.
+			name: "converged reads provisioned",
+			resource: func() *regionv1.Server {
+				return withActiveConditionStamped(withAvailableConditionStamped(withGeneration(testServerV2(srvServerID), 3), corev1alpha1.ConditionReasonProvisioned, 3), regionv1.ActiveConditionReasonRunning, 3)
+			},
+			want: coreapi.ResourceProvisioningStatusProvisioned,
+		},
+		{
+			// Converged-then-stopped stays provisioned.
+			name: "converged stopped stays provisioned",
+			resource: func() *regionv1.Server {
+				return withActiveConditionStamped(withAvailableConditionStamped(withGeneration(testServerV2(srvServerID), 3), corev1alpha1.ConditionReasonProvisioned, 3), regionv1.ActiveConditionReasonStopped, 3)
+			},
+			want: coreapi.ResourceProvisioningStatusProvisioned,
+		},
+		{
+			// Settled-is-not-live — converged then Nova ERROR with no
+			// spec change keeps provisioned (liveness rides powerState).
+			name: "converged then error stays provisioned",
+			resource: func() *regionv1.Server {
+				return withActiveConditionStamped(withAvailableConditionStamped(withGeneration(testServerV2(srvServerID), 3), corev1alpha1.ConditionReasonProvisioned, 3), regionv1.ActiveConditionReasonError, 3)
+			},
+			want: coreapi.ResourceProvisioningStatusProvisioned,
+		},
+		{
+			// Unconverged + Error surfaces the failure.
+			name: "unconverged error reads error",
+			resource: func() *regionv1.Server {
+				return withActiveConditionStamped(withAvailableConditionStamped(withGeneration(testServerV2(srvServerID), 3), corev1alpha1.ConditionReasonProvisioned, 3), regionv1.ActiveConditionReasonError, 2)
+			},
+			want: coreapi.ResourceProvisioningStatusError,
+		},
+		{
+			// The generation-keyed stale window — reconciler done,
+			// latch lagging.
+			name: "latch lag reads provisioning",
+			resource: func() *regionv1.Server {
+				return withActiveConditionStamped(withAvailableConditionStamped(withGeneration(testServerV2(srvServerID), 3), corev1alpha1.ConditionReasonProvisioned, 3), regionv1.ActiveConditionReasonRunning, 2)
+			},
+			want: coreapi.ResourceProvisioningStatusProvisioning,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctrl := gomock.NewController(t)
+			resource := tc.resource()
+
+			k8sClient := newSrvFakeClient(t, resource).Build()
+			mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+			c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace, Identity: mockIdentity})
+
+			result, err := c.GetV2(rbac.NewContext(t.Context(), aclWithSrvUpdate()), idstest.MustParseServerID(resource.Name))
+
+			require.NoError(t, err)
+			require.Equal(t, tc.want, result.Metadata.ProvisioningStatus)
+		})
+	}
 }
