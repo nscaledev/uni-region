@@ -2577,7 +2577,8 @@ components:
             DNS nameservers to use.  If empty this will use the platform's
             internal DNS server and allow hosts to resolve each other.  If it is
             populated then no internal host resolution will be possible.
-          $ref: '#/components/schemas/ipv4AddressList'
+          allOf:
+          - $ref: '#/components/schemas/ipv4AddressList'
         routes:
           $ref: '#/components/schemas/routes'
     networkV2CreateSpec:
@@ -2613,7 +2614,8 @@ components:
               Optional reservations to apply when the network is created.  If
               omitted, the platform default of a /25 reservation with a /28
               provider carve-out is applied.
-            $ref: '#/components/schemas/networkReservations'
+            allOf:
+            - $ref: '#/components/schemas/networkReservations'
     networkV2Status:
       description: Read only status about a network.
       type: object
@@ -2964,7 +2966,8 @@ components:
       properties:
         name:
           description: The listener name.
-          $ref: '#/components/schemas/loadBalancerListenerNameV2'
+          allOf:
+          - $ref: '#/components/schemas/loadBalancerListenerNameV2'
         protocol:
           $ref: '#/components/schemas/loadBalancerListenerProtocolV2'
         port:
@@ -3013,7 +3016,8 @@ components:
             $ref: '#/components/schemas/networkId'
           vipAddress:
             description: The requested virtual IP address. When provided, it must fall within the selected network CIDR.
-            $ref: '#/components/schemas/ipv4Address'
+            allOf:
+            - $ref: '#/components/schemas/ipv4Address'
     loadBalancerV2Status:
       description: Read only status information about a load balancer.
       type: object
@@ -3029,10 +3033,12 @@ components:
           type: string
         vipAddress:
           description: The provisioned virtual IP address.
-          $ref: '#/components/schemas/ipv4Address'
+          allOf:
+          - $ref: '#/components/schemas/ipv4Address'
         publicIP:
           description: The provisioned public IP address.
-          $ref: '#/components/schemas/ipv4Address'
+          allOf:
+          - $ref: '#/components/schemas/ipv4Address'
     loadBalancerV2Create:
       description: A load balancer creation request.
       type: object
@@ -3354,10 +3360,12 @@ components:
             $ref: '#/components/schemas/networkId'
           sshCertificateAuthorityId:
             description: The SSH certificate authority used to bootstrap login trust when the server is created.
-            $ref: '#/components/schemas/sshCertificateAuthorityID'
+            allOf:
+            - $ref: '#/components/schemas/sshCertificateAuthorityID'
           sshInjection:
             description: The create-time SSH access material Region should arrange for the server. If omitted, Region uses ca when sshCertificateAuthorityId is set, otherwise identityKeypair.
-            $ref: '#/components/schemas/sshInjection'
+            allOf:
+            - $ref: '#/components/schemas/sshInjection'
           infrastructureRef:
             $ref: '#/components/schemas/infrastructureRef'
     serverV2Status:
@@ -3368,17 +3376,21 @@ components:
       - networkId
       properties:
         regionId:
-          description: The region a security group belongs to.
-          $ref: '#/components/schemas/regionId'
+          description: The region the server belongs to.
+          allOf:
+          - $ref: '#/components/schemas/regionId'
         networkId:
-          description: The network a security group belongs to.
-          $ref: '#/components/schemas/networkId'
+          description: The network the server belongs to.
+          allOf:
+          - $ref: '#/components/schemas/networkId'
         sshCertificateAuthorityId:
           description: The SSH certificate authority configured when the server was created.
-          $ref: '#/components/schemas/sshCertificateAuthorityID'
+          allOf:
+          - $ref: '#/components/schemas/sshCertificateAuthorityID'
         sshInjection:
           description: The resolved create-time SSH access material Region arranged for the server.
-          $ref: '#/components/schemas/sshInjection'
+          allOf:
+          - $ref: '#/components/schemas/sshInjection'
         infrastructureRef:
           $ref: '#/components/schemas/infrastructureRef'
         powerState:
