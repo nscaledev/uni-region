@@ -28,6 +28,7 @@ import (
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
@@ -177,10 +178,20 @@ func (c *Server) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Con
 	return unikornv1core.GetCondition(c.Status.Conditions, t)
 }
 
-// SetProvisioningCondition sets the Available condition with a reason drawn from
-// the provisioning vocabulary.
+// SetProvisioningCondition sets the Available condition with a reason drawn
+// from the provisioning vocabulary, stamped with the generation of the pass
+// (standard metav1 observedGeneration semantics: the generation the condition
+// was set based upon). Core's UpdateCondition leaves the stamp unset — and
+// meta.SetStatusCondition copies an unset (zero) value over a stored one — so
+// the server writes the condition directly.
 func (c *Server) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
-	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
+	meta.SetStatusCondition(&c.Status.Conditions, metav1.Condition{
+		Type:               string(unikornv1core.ConditionAvailable),
+		Status:             metav1.ConditionStatus(status),
+		Reason:             string(reason),
+		Message:            message,
+		ObservedGeneration: c.Generation,
+	})
 }
 
 // SetHealthCondition sets the Healthy condition with a reason drawn from the
@@ -197,8 +208,39 @@ func (c *Server) SetHealthCondition(status corev1.ConditionStatus, reason unikor
 // projections of its reason (see ActiveConditionReason.ConditionStatus and
 // Message), so this setter takes only the reason and derives the rest. That makes
 // an inconsistent (status, reason) pair unrepresentable.
+//
+// The condition's observedGeneration is the convergence latch and is
+// carry-forward here: every writer (handler seeds, reconciler resets, monitor
+// rewrites) preserves the stored stamp. Only AdvanceActiveGeneration — the
+// monitor's latch advance — may raise it, and nothing may lower it.
 func (c *Server) SetActiveCondition(reason ActiveConditionReason) {
-	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionActive, reason.ConditionStatus(), string(reason), reason.Message())
+	carried := int64(0)
+	if existing := meta.FindStatusCondition(c.Status.Conditions, string(unikornv1core.ConditionActive)); existing != nil {
+		carried = existing.ObservedGeneration
+	}
+
+	meta.SetStatusCondition(&c.Status.Conditions, metav1.Condition{
+		Type:               string(unikornv1core.ConditionActive),
+		Status:             metav1.ConditionStatus(reason.ConditionStatus()),
+		Reason:             string(reason),
+		Message:            reason.Message(),
+		ObservedGeneration: carried,
+	})
+}
+
+// AdvanceActiveGeneration raises the Active condition's observedGeneration —
+// the convergence latch, the monitor's "arrived" stamp — to the server's
+// current generation. Forward-only, mirroring advanceRebuildState's monotonic
+// guard: a late or stale advance can never retreat the latch. No-op when the
+// condition is absent. Monitor-only: invoked from the poll's latch-advance
+// path, never from setServerActive, which reconciler passes also call.
+func (c *Server) AdvanceActiveGeneration() {
+	existing := meta.FindStatusCondition(c.Status.Conditions, string(unikornv1core.ConditionActive))
+	if existing == nil || existing.ObservedGeneration >= c.Generation {
+		return
+	}
+
+	existing.ObservedGeneration = c.Generation
 }
 
 // GetActiveCondition reads the Active condition, narrowing its reason to the

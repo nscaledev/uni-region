@@ -21,9 +21,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
@@ -222,4 +225,90 @@ func TestVLANSpec(t *testing.T) {
 		require.NotNil(t, got)
 		require.Equal(t, vlan, got)
 	})
+}
+
+func testStampServer(generation int64) *regionv1.Server {
+	s := &regionv1.Server{}
+	s.Generation = generation
+
+	return s
+}
+
+func activeCondition(t *testing.T, s *regionv1.Server) *metav1.Condition {
+	t.Helper()
+
+	cond := meta.FindStatusCondition(s.Status.Conditions, string(unikornv1core.ConditionActive))
+	require.NotNil(t, cond)
+
+	return cond
+}
+
+// The reconciler's Available writes carry the generation of the pass on every
+// reason — Provisioning (yield), Errored, and Provisioned alike.
+func TestServerAvailableConditionStampsGeneration(t *testing.T) {
+	t.Parallel()
+
+	for _, reason := range []unikornv1core.ProvisioningConditionReason{
+		unikornv1core.ConditionReasonProvisioning,
+		unikornv1core.ConditionReasonErrored,
+		unikornv1core.ConditionReasonProvisioned,
+	} {
+		s := testStampServer(7)
+		s.SetProvisioningCondition(corev1.ConditionTrue, reason, "")
+
+		cond := meta.FindStatusCondition(s.Status.Conditions, string(unikornv1core.ConditionAvailable))
+		require.NotNil(t, cond)
+		require.Equal(t, int64(7), cond.ObservedGeneration, "reason %s must stamp the pass generation", reason)
+	}
+}
+
+// Every non-advance Active write — handler stop/start seeds, the reconciler's
+// markServerRebuildAccepted and create-retry reset, monitor reason rewrites —
+// preserves the stored stamp: the latch never regresses through the choke
+// point.
+func TestServerActiveConditionCarriesStampForward(t *testing.T) {
+	t.Parallel()
+
+	s := testStampServer(3)
+
+	// Seed (carry-forward of nothing) leaves the stamp unset.
+	s.SetActiveCondition(regionv1.ActiveConditionReasonPending)
+	require.Equal(t, int64(0), activeCondition(t, s).ObservedGeneration)
+
+	// The monitor's advance raises it to the current generation.
+	s.AdvanceActiveGeneration()
+	require.Equal(t, int64(3), activeCondition(t, s).ObservedGeneration)
+
+	// Every subsequent write shape carries it: handler stop, monitor rewrite,
+	// rebuild-accepted, create-retry reset.
+	for _, reason := range []regionv1.ActiveConditionReason{
+		regionv1.ActiveConditionReasonStopping,
+		regionv1.ActiveConditionReasonStopped,
+		regionv1.ActiveConditionReasonRebuilding,
+		regionv1.ActiveConditionReasonPending,
+	} {
+		s.SetActiveCondition(reason)
+		require.Equal(t, int64(3), activeCondition(t, s).ObservedGeneration, "write of %s must carry the latch forward", reason)
+	}
+}
+
+// The advance is forward-only: it raises to the current generation, never
+// lowers, and is a no-op when the condition is absent.
+func TestServerAdvanceActiveGenerationForwardOnly(t *testing.T) {
+	t.Parallel()
+
+	s := testStampServer(5)
+
+	// Absent condition: no-op, no panic, nothing created.
+	s.AdvanceActiveGeneration()
+	require.Nil(t, meta.FindStatusCondition(s.Status.Conditions, string(unikornv1core.ConditionActive)))
+
+	s.SetActiveCondition(regionv1.ActiveConditionReasonRunning)
+	s.AdvanceActiveGeneration()
+	require.Equal(t, int64(5), activeCondition(t, s).ObservedGeneration)
+
+	// A stale-snapshot advance (lower generation) can never lower the stamp.
+	s.Generation = 4
+	s.AdvanceActiveGeneration()
+	require.Equal(t, int64(5), activeCondition(t, s).ObservedGeneration)
 }
