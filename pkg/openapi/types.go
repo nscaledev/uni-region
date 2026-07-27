@@ -1200,6 +1200,11 @@ type ServerV2Spec struct {
 
 // ServerV2Status Read only status information about a server.
 type ServerV2Status struct {
+	// Generation The server's current spec generation. The API server increments it on
+	// every spec change; status changes never move it. After an update, this
+	// is the target the caller watches observedGeneration reach.
+	Generation *int64 `json:"generation,omitempty"`
+
 	// InfrastructureRef A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
 	InfrastructureRef *InfrastructureRef `json:"infrastructureRef,omitempty"`
 
@@ -1208,6 +1213,21 @@ type ServerV2Status struct {
 
 	// NetworkId The network the server belongs to.
 	NetworkId NetworkId `json:"networkId"`
+
+	// ObservedGeneration The most recent generation the platform has fully converged on: the
+	// reconciler has initiated everything that generation asks for and the
+	// monitor has observed the runtime settled on it. Absent until
+	// convergence has been observed at least once — in particular, a server
+	// provisioned before this field existed reads provisioningStatus
+	// provisioned with observedGeneration absent until it first converges
+	// under the new contract. A value lagging generation is the normal
+	// in-flight state: it names the generation the server is still settled
+	// on while the current one converges. provisioningStatus is the
+	// settlement signal: provisioned always implies observedGeneration
+	// equals generation; equality does not imply provisioned (a
+	// post-convergence failure can surface error without moving either
+	// value).
+	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
 
 	// PowerState The lifecycle phase of an instance. Once provisioning_status reaches
 	// provisioned, this becomes the live readiness signal: API consumers

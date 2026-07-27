@@ -338,6 +338,8 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 			SshInjection:              sshInjectionStatus(in),
 			InfrastructureRef:         in.Spec.InfrastructureRef,
 			PowerState:                serverPowerState(in),
+			Generation:                ptr.To(in.Generation),
+			ObservedGeneration:        apiObservedGeneration(in),
 			PrivateIP:                 in.Status.PrivateIP,
 			PublicIP:                  in.Status.PublicIP,
 			MacAddress:                in.Status.MACAddress,

@@ -2287,19 +2287,19 @@ func withActiveConditionStamped(srv *regionv1.Server, reason regionv1.ActiveCond
 	return srv
 }
 
-// withAvailableConditionStamped is withAvailableCondition plus an explicit
-// observedGeneration stamp on the written condition.
-func withAvailableConditionStamped(srv *regionv1.Server, reason corev1alpha1.ProvisioningConditionReason, stamp int64) *regionv1.Server {
-	srv = withAvailableCondition(srv, reason)
-	meta.FindStatusCondition(srv.Status.Conditions, string(corev1alpha1.ConditionAvailable)).ObservedGeneration = stamp
+// withAvailableProvisionedAtGenerationThree sets Available=Provisioned with
+// observedGeneration=3 on the written condition.
+func withAvailableProvisionedAtGenerationThree(srv *regionv1.Server) *regionv1.Server {
+	srv = withAvailableCondition(srv, corev1alpha1.ConditionReasonProvisioned)
+	meta.FindStatusCondition(srv.Status.Conditions, string(corev1alpha1.ConditionAvailable)).ObservedGeneration = 3
 
 	return srv
 }
 
-// withGeneration sets metadata.generation on the fixture (the fake client
-// stores objects verbatim, so the value survives the round trip).
-func withGeneration(srv *regionv1.Server, generation int64) *regionv1.Server {
-	srv.Generation = generation
+// withGenerationThree sets metadata.generation=3 on the fixture (the fake
+// client stores objects verbatim, so the value survives the round trip).
+func withGenerationThree(srv *regionv1.Server) *regionv1.Server {
+	srv.Generation = 3
 
 	return srv
 }
@@ -2573,7 +2573,7 @@ func TestServerGetV2ProvisioningStatusDecisionTable(t *testing.T) {
 			// Converged.
 			name: "converged reads provisioned",
 			resource: func() *regionv1.Server {
-				return withActiveConditionStamped(withAvailableConditionStamped(withGeneration(testServerV2(srvServerID), 3), corev1alpha1.ConditionReasonProvisioned, 3), regionv1.ActiveConditionReasonRunning, 3)
+				return withActiveConditionStamped(withAvailableProvisionedAtGenerationThree(withGenerationThree(testServerV2(srvServerID))), regionv1.ActiveConditionReasonRunning, 3)
 			},
 			want: coreapi.ResourceProvisioningStatusProvisioned,
 		},
@@ -2581,7 +2581,7 @@ func TestServerGetV2ProvisioningStatusDecisionTable(t *testing.T) {
 			// Converged-then-stopped stays provisioned.
 			name: "converged stopped stays provisioned",
 			resource: func() *regionv1.Server {
-				return withActiveConditionStamped(withAvailableConditionStamped(withGeneration(testServerV2(srvServerID), 3), corev1alpha1.ConditionReasonProvisioned, 3), regionv1.ActiveConditionReasonStopped, 3)
+				return withActiveConditionStamped(withAvailableProvisionedAtGenerationThree(withGenerationThree(testServerV2(srvServerID))), regionv1.ActiveConditionReasonStopped, 3)
 			},
 			want: coreapi.ResourceProvisioningStatusProvisioned,
 		},
@@ -2590,7 +2590,7 @@ func TestServerGetV2ProvisioningStatusDecisionTable(t *testing.T) {
 			// spec change keeps provisioned (liveness rides powerState).
 			name: "converged then error stays provisioned",
 			resource: func() *regionv1.Server {
-				return withActiveConditionStamped(withAvailableConditionStamped(withGeneration(testServerV2(srvServerID), 3), corev1alpha1.ConditionReasonProvisioned, 3), regionv1.ActiveConditionReasonError, 3)
+				return withActiveConditionStamped(withAvailableProvisionedAtGenerationThree(withGenerationThree(testServerV2(srvServerID))), regionv1.ActiveConditionReasonError, 3)
 			},
 			want: coreapi.ResourceProvisioningStatusProvisioned,
 		},
@@ -2598,7 +2598,7 @@ func TestServerGetV2ProvisioningStatusDecisionTable(t *testing.T) {
 			// Unconverged + Error surfaces the failure.
 			name: "unconverged error reads error",
 			resource: func() *regionv1.Server {
-				return withActiveConditionStamped(withAvailableConditionStamped(withGeneration(testServerV2(srvServerID), 3), corev1alpha1.ConditionReasonProvisioned, 3), regionv1.ActiveConditionReasonError, 2)
+				return withActiveConditionStamped(withAvailableProvisionedAtGenerationThree(withGenerationThree(testServerV2(srvServerID))), regionv1.ActiveConditionReasonError, 2)
 			},
 			want: coreapi.ResourceProvisioningStatusError,
 		},
@@ -2607,7 +2607,7 @@ func TestServerGetV2ProvisioningStatusDecisionTable(t *testing.T) {
 			// latch lagging.
 			name: "latch lag reads provisioning",
 			resource: func() *regionv1.Server {
-				return withActiveConditionStamped(withAvailableConditionStamped(withGeneration(testServerV2(srvServerID), 3), corev1alpha1.ConditionReasonProvisioned, 3), regionv1.ActiveConditionReasonRunning, 2)
+				return withActiveConditionStamped(withAvailableProvisionedAtGenerationThree(withGenerationThree(testServerV2(srvServerID))), regionv1.ActiveConditionReasonRunning, 2)
 			},
 			want: coreapi.ResourceProvisioningStatusProvisioning,
 		},
@@ -2629,6 +2629,55 @@ func TestServerGetV2ProvisioningStatusDecisionTable(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Equal(t, tc.want, result.Metadata.ProvisioningStatus)
+		})
+	}
+}
+
+// TestServerGetV2GenerationProjection pins the API projection of the
+// convergence pair: generation always present; observedGeneration the min of
+// the two condition stamps and absent — never 0 — while either is unset.
+func TestServerGetV2GenerationProjection(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name         string
+		resource     func() *regionv1.Server
+		wantObserved *int64
+	}{
+		{
+			name: "absent while the latch is unset",
+			resource: func() *regionv1.Server {
+				return withActiveConditionStamped(withAvailableProvisionedAtGenerationThree(withGenerationThree(testServerV2(srvServerID))), regionv1.ActiveConditionReasonRunning, 0)
+			},
+			wantObserved: nil,
+		},
+		{
+			name: "min of the two stamps when both set",
+			resource: func() *regionv1.Server {
+				return withActiveConditionStamped(withAvailableProvisionedAtGenerationThree(withGenerationThree(testServerV2(srvServerID))), regionv1.ActiveConditionReasonRunning, 2)
+			},
+			wantObserved: ptr.To(int64(2)),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctrl := gomock.NewController(t)
+			resource := tc.resource()
+
+			k8sClient := newSrvFakeClient(t, resource).Build()
+			mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+			c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace, Identity: mockIdentity})
+
+			result, err := c.GetV2(rbac.NewContext(t.Context(), aclWithSrvUpdate()), idstest.MustParseServerID(resource.Name))
+
+			require.NoError(t, err)
+			require.NotNil(t, result.Status.Generation)
+			require.Equal(t, int64(3), *result.Status.Generation)
+			require.Equal(t, tc.wantObserved, result.Status.ObservedGeneration)
 		})
 	}
 }

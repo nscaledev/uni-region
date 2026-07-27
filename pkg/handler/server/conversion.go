@@ -190,6 +190,23 @@ func serverPowerState(in *unikornv1.Server) *openapi.InstanceLifecyclePhase {
 	return nil
 }
 
+// apiObservedGeneration projects the convergence stamps onto the API: the min
+// of the Available and Active condition observedGeneration stamps, absent
+// (nil) while either is unset — unknown is never reported as a number.
+func apiObservedGeneration(in *unikornv1.Server) *int64 {
+	available, err := in.StatusConditionRead(unikornv1core.ConditionAvailable)
+	if err != nil || available.ObservedGeneration == 0 {
+		return nil
+	}
+
+	active, err := in.StatusConditionRead(unikornv1core.ConditionActive)
+	if err != nil || active.ObservedGeneration == 0 {
+		return nil
+	}
+
+	return ptr.To(min(available.ObservedGeneration, active.ObservedGeneration))
+}
+
 type generator struct {
 	common.ClientArgs
 	// organizationID is the unique organization identifier.
