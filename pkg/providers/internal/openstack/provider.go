@@ -2284,6 +2284,64 @@ func setServerObservedImage(server *unikornv1.Server, openstackserver *servers.S
 	server.Status.ObservedImageID = imageID
 }
 
+// advanceServerConvergence evaluates the convergence latch's advance gates
+// against the same Nova read that refreshed the rebuild marker, observed
+// image, and Active reason this poll, and raises Active.observedGeneration —
+// the latch, the monitor's "arrived" stamp — to the current generation when
+// every gate passes. The write goes through the condition choke point
+// (AdvanceActiveGeneration), which is forward-only; when the gates do not
+// pass the poll has already carried the previous stamp forward via
+// setServerActive.
+//
+// Gates, in order:
+//  1. the reconciler has initiated this generation:
+//     Available=Provisioned stamped at the current generation;
+//  2. the observed power state is settled: Running or Stopped (a deliberately
+//     stopped server converges; transients and Error hold);
+//  3. no observed image drift, failing closed on unknowns: with a spec image,
+//     this poll's ref must have been readable and the observation must equal
+//     the spec image. Boot-from-volume (no spec image) passes vacuously;
+//  4. no unsettled rebuild marker for the current target (a superseded
+//     Initiated marker abandoned by a spec revert must not block).
+//
+//nolint:cyclop // Fan-out mirrors the ordered four-gate convergence sequence; collapsing it would scatter the latch rules.
+func advanceServerConvergence(server *unikornv1.Server, openstackServer *servers.Server) {
+	if openstackServer == nil {
+		return
+	}
+
+	available, err := server.StatusConditionRead(unikornv1core.ConditionAvailable)
+	if err != nil || available.Reason != string(unikornv1core.ConditionReasonProvisioned) || available.ObservedGeneration != server.Generation {
+		return
+	}
+
+	active, err := unikornv1.GetActiveCondition(server)
+	if err != nil {
+		return
+	}
+
+	if active.Reason != unikornv1.ActiveConditionReasonRunning && active.Reason != unikornv1.ActiveConditionReasonStopped {
+		return
+	}
+
+	if desired, err := server.ImageID(); err == nil {
+		if _, readable := openstackServerImageID(openstackServer); !readable {
+			return
+		}
+
+		if server.Status.ObservedImageID != desired {
+			return
+		}
+
+		if rebuild := server.Status.Rebuild; rebuild != nil && rebuild.TargetImageID == desired &&
+			(rebuild.State == unikornv1.ServerRebuildStateInitiated || rebuild.State == unikornv1.ServerRebuildStateRebuilding) {
+			return
+		}
+	}
+
+	server.AdvanceActiveGeneration()
+}
+
 // buildPhase picks the right Phase for a server Nova reports as BUILD. VMs
 // and baremetal lookups that failed fall back to Building (the honest "we
 // don't know more than Nova does" answer); a successful Ironic lookup
@@ -3322,6 +3380,8 @@ func (p *Provider) updateServerStateWithClients(
 	}
 
 	setServerActive(ctx, server, openstackServer, ironicNode)
+
+	advanceServerConvergence(server, openstackServer)
 
 	return nil
 }

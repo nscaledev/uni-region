@@ -321,21 +321,32 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   records a third monitor-owned field, `status.observedImageID`, from the same
   Nova response (the live image ref), on every poll — retained, never cleared,
   when the ref is unreadable (boot-from-volume, transient miss). It is internal
-  state, not surfaced on the API: the handler's `deriveProvisioningStatus`
-  reads it to close the rebuild stale window — the interval after an accepted
-  image update and before Nova accepts the rebuild (Nova flips the image ref at
-  accept, so the observed image lags until then), where the Available condition
-  still reads Provisioned for the old image. A stamped observed image that still
-  differs from the desired image reports the server as provisioning. Once Nova
-  accepts, drift clears and the in-flight rebuild is reported on the `Active`
-  condition (`powerState=Rebuilding`) instead, so the observed image feeds only
-  the pre-accept window. The reconciler's own rebuild idempotency does not depend
-  on it (it reads Nova fresh and gates on the durable marker). The lookup is
-  filtered by `instance_uuid`. Because Ironic node ownership and visibility
-  are provider infrastructure concerns rather than tenant workload operations,
-  this lookup uses the Region top-level provider credentials scoped to the
-  service principal's project, matching the package's other privileged client
-  patterns. Deployments must grant those credentials enough Ironic policy
+  state, not surfaced on the API: the handler's image-drift derivation reads
+  it to close the rebuild stale window for pre-upgrade servers until the
+  convergence latch first catches them. A non-zero observed image that differs
+  from the desired image reports such a server as provisioning; zero remains
+  unknown, not drift. Once both condition stamps are set, the generation-keyed
+  decision table supersedes this fallback. The reconciler's own rebuild
+  idempotency does not depend on the observation (it reads Nova fresh and gates
+  on the durable marker).
+
+  The poll also owns the convergence latch: `advanceServerConvergence` raises
+  the Active condition's `observedGeneration` to the current generation when,
+  against the same Nova read, the reconciler has stamped
+  `Available=Provisioned` at that generation, the power state is settled
+  (Running or Stopped), the observed image matches the spec image (failing
+  closed when this poll's ref was unreadable; vacuous for boot-from-volume),
+  and no unsettled rebuild marker targets the current spec image. Every other
+  Active write carries the stored stamp forward (the choke-point contract in
+  the API helpers), so the latch never regresses; the advance lives only on
+  the monitor's poll path, never in `setServerActive`, which reconciler
+  passes also call.
+
+  The lookup is filtered by `instance_uuid`. Because Ironic node ownership and
+  visibility are provider infrastructure concerns rather than tenant workload
+  operations, this lookup uses the Region top-level provider credentials scoped
+  to the service principal's project, matching the package's other privileged
+  client patterns. Deployments must grant those credentials enough Ironic policy
   visibility to list/detail nodes by instance UUID, for example through a
   narrow `bm-mapper`-style role or equivalent admin, service, or system-reader
   policy that permits `baremetal:node:list_all`/node-detail visibility. If the
