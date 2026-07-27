@@ -112,8 +112,87 @@ Commit the updated spec files, `config.yaml`, regenerated `schema.go`, and the
 `go.mod`/`go.sum` changes together in one commit so the dependency and its
 schema reference stay in sync.
 
+## Overriding A Referenced Schema's Description
+
+Shared schemas are deliberately generic, so a field that `$ref`s one often wants
+a domain-specific description in its place — `ipv4Address` says "An IPv4
+address", but `loadBalancerV2Status.vipAddress` wants "The provisioned virtual IP
+address". The obvious way to write that does **not** work:
+
+```yaml
+# WRONG: silently discarded, and fails `make validate`
+vipAddress:
+  description: The provisioned virtual IP address.
+  $ref: '#/components/schemas/ipv4Address'
+```
+
+This specification is `openapi: 3.0.3`, and in OpenAPI 3.0 a `$ref` must be the
+only key in its object. Sibling keys are not part of the data model, so
+conformant tooling drops them — `oapi-codegen` emits the *referenced* schema's
+generic description and the override never reaches generated code or published
+documentation. Worse, it fails quietly: the prose looks present in the spec and
+is simply never rendered anywhere.
+
+Since kin-openapi `v0.144.0` this is also a hard failure rather than a silent
+one, which is the behaviour to rely on:
+
+```
+failed to validate spec invalid components:
+  schema "loadBalancerListenerV2": extra sibling fields: [description]
+```
+
+Note that the validator reports only the first offending schema it encounters,
+and map ordering is not stable between runs, so the schema named in the error
+will move around. Fix every occurrence, not just the one reported.
+
+Wrap the reference in a single-member `allOf` instead:
+
+```yaml
+# RIGHT: description is a sibling of allOf, not of $ref
+vipAddress:
+  description: The provisioned virtual IP address.
+  allOf:
+  - $ref: '#/components/schemas/ipv4Address'
+```
+
+This is the standard OpenAPI 3.0 idiom for annotating a reference. It changes
+only the generated doc comment — the generated Go types are identical, because
+`allOf` with a single member resolves to the referenced type.
+
+To find every occurrence in the spec:
+
+```sh
+python3 -c '
+import yaml
+def walk(n, path):
+    if isinstance(n, dict):
+        if "$ref" in n and len(n) > 1:
+            print(".".join(path), sorted(k for k in n if k != "$ref"))
+        for k, v in n.items(): walk(v, path + [str(k)])
+    elif isinstance(n, list):
+        for i, v in enumerate(n): walk(v, path + [str(i)])
+walk(yaml.safe_load(open("pkg/openapi/server.spec.yaml")), [])'
+```
+
+OpenAPI 3.1 removes this restriction and permits `$ref` siblings directly, which
+would make the `allOf` wrapper unnecessary. Moving is blocked on the toolchain
+rather than on the spec: `oapi-codegen` and the `make validate` checker both go
+through kin-openapi, which supports 3.0 only —
+[getkin/kin-openapi#230](https://github.com/getkin/kin-openapi/issues/230) tracks
+3.1 support. When that lands, the migration is to bump `openapi:` to `3.1.0`,
+unwrap every single-member `allOf` back to a bare `$ref` with its sibling
+`description`, and regenerate.
+
+Renderer support for `allOf` varies. If the published API documentation ever
+shows a generic description where an override is expected, this section is the
+first place to look.
+
 ## Invariants And Guard Rails
 
+- a `description` may never be a sibling of a `$ref`; wrap the reference in a
+  single-member `allOf` — see
+  [Overriding A Referenced Schema's Description](#overriding-a-referenced-schemas-description)
+  above
 - `server.spec.yaml` is the source of truth; generated code is derivative
 - the service runtime depends on the embedded schema, not only on generated Go
   interfaces

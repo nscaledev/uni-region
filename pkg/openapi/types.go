@@ -471,7 +471,7 @@ type LoadBalancerListenerV2 struct {
 	// IdleTimeoutSeconds The idle timeout in seconds. Defaults to 60 for TCP listeners and is unsupported for UDP listeners.
 	IdleTimeoutSeconds *int `json:"idleTimeoutSeconds,omitempty"`
 
-	// Name A load balancer listener name. Must start with a lower-case letter and otherwise be a valid DNS label.
+	// Name The listener name.
 	Name LoadBalancerListenerNameV2 `json:"name"`
 
 	// Pool A load balancer listener pool.
@@ -523,7 +523,7 @@ type LoadBalancerV2CreateSpec struct {
 	// PublicIP Whether to allocate a public IP.
 	PublicIP *bool `json:"publicIP,omitempty"`
 
-	// VipAddress An IPv4 address.
+	// VipAddress The requested virtual IP address. When provided, it must fall within the selected network CIDR.
 	VipAddress *Ipv4Address `json:"vipAddress,omitempty"`
 }
 
@@ -553,13 +553,13 @@ type LoadBalancerV2Status struct {
 	// NetworkId The network the load balancer belongs to.
 	NetworkId string `json:"networkId"`
 
-	// PublicIP An IPv4 address.
+	// PublicIP The provisioned public IP address.
 	PublicIP *Ipv4Address `json:"publicIP,omitempty"`
 
 	// RegionId The region the load balancer belongs to.
 	RegionId string `json:"regionId"`
 
-	// VipAddress An IPv4 address.
+	// VipAddress The provisioned virtual IP address.
 	VipAddress *Ipv4Address `json:"vipAddress,omitempty"`
 }
 
@@ -665,7 +665,9 @@ type NetworkV2Create struct {
 
 // NetworkV2CreateSpec defines model for networkV2CreateSpec.
 type NetworkV2CreateSpec struct {
-	// DnsNameservers A list of IPv4 addresses.
+	// DnsNameservers DNS nameservers to use.  If empty this will use the platform's
+	// internal DNS server and allow hosts to resolve each other.  If it is
+	// populated then no internal host resolution will be possible.
 	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
 
 	// OrganizationId The organization to provision the resource in.
@@ -684,13 +686,9 @@ type NetworkV2CreateSpec struct {
 	// RegionId A region ID.
 	RegionId RegionId `json:"regionId"`
 
-	// Reservations Network reservations carve a prefix from the start of the network CIDR
-	// for infrastructure use such as file storage and internal platform
-	// services as directed by the infrastructure provider.
-	// For example, on a /24 network a reservation prefix length of 25
-	// reserves 192.168.0.0/25, leaving 192.168.0.128-192.168.0.254 for DHCP.
-	// Reservations are fixed when the network is created and are immutable
-	// afterwards.
+	// Reservations Optional reservations to apply when the network is created.  If
+	// omitted, the platform default of a /25 reservation with a /28
+	// provider carve-out is applied.
 	Reservations *NetworkReservations `json:"reservations,omitempty"`
 
 	// Routes A list of network routes.
@@ -711,7 +709,9 @@ type NetworkV2Read struct {
 
 // NetworkV2Spec A network's specification.
 type NetworkV2Spec struct {
-	// DnsNameservers A list of IPv4 addresses.
+	// DnsNameservers DNS nameservers to use.  If empty this will use the platform's
+	// internal DNS server and allow hosts to resolve each other.  If it is
+	// populated then no internal host resolution will be possible.
 	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
 
 	// Routes A list of network routes.
@@ -1127,10 +1127,10 @@ type ServerV2CreateSpec struct {
 	// Networking A server's network configuration.
 	Networking *ServerV2Networking `json:"networking,omitempty"`
 
-	// SshCertificateAuthorityId The SSH certificate authority ID.
+	// SshCertificateAuthorityId The SSH certificate authority used to bootstrap login trust when the server is created.
 	SshCertificateAuthorityId *SshCertificateAuthorityID `json:"sshCertificateAuthorityId,omitempty"`
 
-	// SshInjection The create-time SSH access material Region should arrange for a server.
+	// SshInjection The create-time SSH access material Region should arrange for the server. If omitted, Region uses ca when sshCertificateAuthorityId is set, otherwise identityKeypair.
 	SshInjection *SshInjection `json:"sshInjection,omitempty"`
 
 	// UserData Contains base64-encoded configuration information or scripts to use upon launch.
@@ -1199,7 +1199,7 @@ type ServerV2Status struct {
 	// MacAddress The MAC address of the server.
 	MacAddress *string `json:"macAddress,omitempty"`
 
-	// NetworkId A network ID.
+	// NetworkId The network the server belongs to.
 	NetworkId NetworkId `json:"networkId"`
 
 	// PowerState The lifecycle phase of an instance. Once provisioning_status reaches
@@ -1219,13 +1219,13 @@ type ServerV2Status struct {
 	// PublicIP The public IP address of the server.
 	PublicIP *string `json:"publicIP,omitempty"`
 
-	// RegionId A region ID.
+	// RegionId The region the server belongs to.
 	RegionId RegionId `json:"regionId"`
 
-	// SshCertificateAuthorityId The SSH certificate authority ID.
+	// SshCertificateAuthorityId The SSH certificate authority configured when the server was created.
 	SshCertificateAuthorityId *SshCertificateAuthorityID `json:"sshCertificateAuthorityId,omitempty"`
 
-	// SshInjection The create-time SSH access material Region should arrange for a server.
+	// SshInjection The resolved create-time SSH access material Region arranged for the server.
 	SshInjection *SshInjection `json:"sshInjection,omitempty"`
 }
 
