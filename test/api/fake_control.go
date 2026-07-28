@@ -21,11 +21,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -66,9 +63,7 @@ func SkipUnlessFakeControlConfigured(config *TestConfig) {
 // (tests run from CI runners, not the DevStack host) and rejects any request without
 // the bearer token.
 type FakeControlClient struct {
-	endpoint   string
-	token      string
-	httpClient *http.Client
+	client *coreclient.APIClient
 }
 
 func NewFakeControlClient(config *TestConfig) *FakeControlClient {
@@ -77,45 +72,15 @@ func NewFakeControlClient(config *TestConfig) *FakeControlClient {
 		timeout = fakeControlRequestTimeout
 	}
 
-	return &FakeControlClient{
-		endpoint:   strings.TrimSuffix(config.FakeControlEndpoint, "/"),
-		token:      config.FakeNodeControlToken,
-		httpClient: &http.Client{Timeout: timeout},
-	}
+	client := coreclient.NewAPIClient(config.FakeControlEndpoint, config.FakeNodeControlToken, timeout, &GinkgoLogger{})
+	client.SetLogRequests(config.LogRequests)
+	client.SetLogResponses(config.LogResponses)
+
+	return &FakeControlClient{client: client}
 }
 
 func (c *FakeControlClient) nodePath(uuid string) string {
 	return "/v1/nodes/" + url.PathEscape(uuid)
-}
-
-func (c *FakeControlClient) do(ctx context.Context, method, path string, body io.Reader, expectedStatus int) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, method, c.endpoint+path, body)
-	if err != nil {
-		return nil, fmt.Errorf("creating fake-control request: %w", err)
-	}
-
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	req.Header.Set("Authorization", "Bearer "+c.token)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("executing fake-control request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return respBody, fmt.Errorf("reading fake-control response: %w", err)
-	}
-
-	if expectedStatus != 0 && resp.StatusCode != expectedStatus {
-		return respBody, fmt.Errorf("fake-control status %d, expected %d: %w", resp.StatusCode, expectedStatus, coreclient.ErrUnexpectedStatus)
-	}
-
-	return respBody, nil
 }
 
 // ProgramNodeBehavior sets how the node behaves on the next driver op, e.g.
@@ -124,12 +89,14 @@ func (c *FakeControlClient) ProgramNodeBehavior(ctx context.Context, uuid string
 	data, err := json.Marshal(behavior)
 	Expect(err).NotTo(HaveOccurred(), "marshaling fake-control behavior")
 
-	_, err = c.do(ctx, http.MethodPut, c.nodePath(uuid)+"/behavior", bytes.NewReader(data), http.StatusOK)
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, _, err = c.client.DoRequest(ctx, http.MethodPut, c.nodePath(uuid)+"/behavior", bytes.NewReader(data), http.StatusOK)
 	Expect(err).NotTo(HaveOccurred(), "programming fake-control node behavior")
 }
 
 func (c *FakeControlClient) NodeEvents(ctx context.Context, uuid string) []FakeControlEvent {
-	body, err := c.do(ctx, http.MethodGet, c.nodePath(uuid), nil, http.StatusOK)
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, body, err := c.client.DoRequest(ctx, http.MethodGet, c.nodePath(uuid), nil, http.StatusOK)
 	Expect(err).NotTo(HaveOccurred(), "reading fake-control node events")
 
 	var state fakeControlNodeState
@@ -142,6 +109,7 @@ func (c *FakeControlClient) NodeEvents(ctx context.Context, uuid string) []FakeC
 // ResetNode clears the node's programmed behavior and event log. Mandatory in cleanup:
 // the fixture node is shared, so a lingering fail program would poison a later run.
 func (c *FakeControlClient) ResetNode(ctx context.Context, uuid string) {
-	_, err := c.do(ctx, http.MethodDelete, c.nodePath(uuid), nil, http.StatusOK)
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, _, err := c.client.DoRequest(ctx, http.MethodDelete, c.nodePath(uuid), nil, http.StatusOK)
 	Expect(err).NotTo(HaveOccurred(), "resetting fake-control node")
 }
