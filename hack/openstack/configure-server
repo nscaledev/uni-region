@@ -220,6 +220,14 @@ node_uuid() {
   fi
 }
 
+node_driver() {
+  local driver
+
+  if driver="$("${OPENSTACK_CLI}" baremetal node show "${NODE_NAME}" -f value -c driver 2>/dev/null)"; then
+    printf "%s" "${driver}"
+  fi
+}
+
 create_node() {
   local -a driver_args=(--driver "${DRIVER}")
 
@@ -249,11 +257,20 @@ create_node() {
 }
 
 ensure_node() {
-  local uuid
+  local uuid existing_driver
 
   uuid="$(node_uuid)"
   if [[ -n "${uuid}" ]]; then
-    log "Reusing fake baremetal node ${NODE_NAME} (${uuid})."
+    # The node name does not encode the driver, so a host that previously ran with
+    # the fake-hardware default would otherwise be reused verbatim under
+    # --driver fake-controllable -- yielding a node the sidecar cannot control and a
+    # fault suite that times out looking like a region-service defect.
+    existing_driver="$(node_driver)"
+    if [[ "${existing_driver}" != "${DRIVER}" ]]; then
+      fatal "node ${NODE_NAME} (${uuid}) has driver '${existing_driver}' but '${DRIVER}' was requested; delete it with 'openstack baremetal node delete ${NODE_NAME}' or pass --node-name to keep a separate fixture node per driver"
+    fi
+
+    log "Reusing fake baremetal node ${NODE_NAME} (${uuid}, driver ${DRIVER})."
     printf "%s" "${uuid}"
 
     return
