@@ -470,17 +470,14 @@ func (b *ServerPayloadBuilder) WithNetworking(networking *regionopenapi.ServerV2
 	return b
 }
 
-// WithInfrastructureRef pins the server to a provider-specific host.
+// WithInfrastructureRef pins the server to a provider-specific host. It also selects
+// sshInjection none, because the handler rejects a pinned server carrying the default
+// identityKeypair injection as a 422 -- there is no valid pinned payload that leaves
+// sshInjection unset. A pinned server needing CA injection must override it after this
+// call.
 func (b *ServerPayloadBuilder) WithInfrastructureRef(infrastructureRef string) *ServerPayloadBuilder {
 	b.server.Spec.InfrastructureRef = &infrastructureRef
-	return b
-}
-
-// WithSSHInjectionNone is required alongside WithInfrastructureRef: the handler
-// rejects a pinned server with the default identityKeypair injection as a 422.
-func (b *ServerPayloadBuilder) WithSSHInjectionNone() *ServerPayloadBuilder {
-	mode := regionopenapi.SshInjectionNone
-	b.server.Spec.SshInjection = &mode
+	b.server.Spec.SshInjection = ptr.To(regionopenapi.SshInjectionNone)
 
 	return b
 }

@@ -1,5 +1,5 @@
-//go:build integration || e2e
-// +build integration e2e
+//go:build e2e
+// +build e2e
 
 /*
 Copyright 2026 Nscale.
@@ -80,34 +80,55 @@ var _ = Describe("Server fault injection", func() {
 
 		Describe("Given the node fails every deploy", func() {
 			It("drives the pinned server to a terminal error park after retrying deploy", Label("slow"), func() {
+				// Only DELETE clears the event log; PUT /behavior does not. Resetting
+				// first makes the deploy-failure count below attributable to this spec
+				// rather than to residue from a run that died before its cleanup.
+				fakeControl.ResetNode(ctx, nodeUUID)
 				fakeControl.ProgramNodeBehavior(ctx, nodeUUID, map[string]any{"deploy": "fail"})
+
+				var serverCleanup func()
+
+				// One cleanup, so the ordering is explicit rather than a consequence of
+				// DeferCleanup's LIFO: the fail program must be cleared before the delete,
+				// or teardown of a node parked in a hard error runs against a driver still
+				// told to fail every op. Registered before the create so the node is reset
+				// even if the create itself fails.
 				DeferCleanup(func() {
 					fakeControl.ResetNode(ctx, nodeUUID)
+
+					if serverCleanup != nil {
+						serverCleanup()
+					}
 				})
 
 				createReq := api.NewServerPayload(networkID, testFlavorID(), testImageID()).
 					WithInfrastructureRef(config.ServerInfrastructureRef).
-					WithSSHInjectionNone().
 					Build()
 
 				created, cleanup := api.MustCreateServer(regionClient, ctx, createReq)
-				DeferCleanup(cleanup)
+				serverCleanup = cleanup
 
 				serverID := created.Metadata.Id
 
-				// ProvisioningStatus == error is the stable terminal park: it is set
-				// only once the retry cap is hit, and unlike health it does not flap.
+				// ProvisioningStatus == error is the stable terminal park: it is set only
+				// once the retry cap is hit. Health is asserted in the same poll because it
+				// flaps on the way there, so a single read after the fact is racy.
+				//
+				// Health accepts error or degraded because the subject here is the region
+				// API's park behaviour, not Nova's internal outcome: a failed deploy that
+				// reaches Nova ERROR reports error, one that stalls reports degraded, and
+				// both are correct reports of an unhealthy server. Healthy and unknown
+				// still fail.
 				Eventually(func(g Gomega) {
 					server, err := regionClient.GetServer(ctx, serverID)
 					g.Expect(err).NotTo(HaveOccurred())
 					g.Expect(server.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusError))
+					g.Expect(server.Metadata.HealthStatus).To(BeElementOf(
+						coreapi.ResourceHealthStatusError,
+						coreapi.ResourceHealthStatusDegraded,
+					))
 				}).WithTimeout(serverFaultTerminalTimeout).WithPolling(serverFaultPollInterval).
-					Should(Succeed(), "pinned server should reach the terminal error park")
-
-				parked, err := regionClient.GetServer(ctx, serverID)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(parked.Metadata.HealthStatus).To(Equal(coreapi.ResourceHealthStatusError),
-					"health should be errored while parked at the retry cap")
+					Should(Succeed(), "pinned server should park at provisioning=error and report unhealthy")
 
 				events := fakeControl.NodeEvents(ctx, nodeUUID)
 				Expect(countDeployFailures(events)).To(BeNumerically(">=", 2),
@@ -123,7 +144,6 @@ var _ = Describe("Server fault injection", func() {
 
 				createReq := api.NewServerPayload(networkID, testFlavorID(), testImageID()).
 					WithInfrastructureRef(config.ServerInfrastructureRef).
-					WithSSHInjectionNone().
 					Build()
 
 				created, cleanup := api.MustCreateServer(regionClient, ctx, createReq)
