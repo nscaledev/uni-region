@@ -30,14 +30,16 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// fakeSidecar is an in-test stand-in for the ironic-fake-control loopback sidecar.
-// It implements the subset of the /v1/nodes REST contract the client relies on so
-// the client's request shaping and envelope decoding can be exercised hermetically.
+// fakeSidecar implements the subset of the sidecar's /v1/nodes contract the client relies
+// on, including its bearer-token check, so request shaping and envelope decoding can be
+// exercised hermetically.
 type fakeSidecar struct {
 	mu    sync.Mutex
 	seq   int
 	nodes map[string]*fakeControlNodeState
 }
+
+const fakeSidecarToken = "test-sidecar-token"
 
 func newFakeSidecar() *fakeSidecar {
 	return &fakeSidecar{nodes: map[string]*fakeControlNodeState{}}
@@ -55,6 +57,12 @@ func (s *fakeSidecar) node(uuid string) *fakeControlNodeState {
 func (s *fakeSidecar) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if r.Header.Get("Authorization") != "Bearer "+fakeSidecarToken {
+		w.WriteHeader(http.StatusUnauthorized)
+
+		return
+	}
 
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 
@@ -87,15 +95,6 @@ func writeJSON(w http.ResponseWriter, v any) {
 }
 
 var _ = Describe("Fake control sidecar client", func() {
-	Context("When deriving the node UUID from an infrastructure ref", func() {
-		It("strips a scheme prefix and leaves a bare UUID untouched", func() {
-			bare := "b3f1c0de-0000-4000-8000-000000000001"
-			Expect(FakeControlNodeUUID(bare)).To(Equal(bare))
-			Expect(FakeControlNodeUUID("openstack-ironic://" + bare)).To(Equal(bare))
-			Expect(FakeControlNodeUUID("ironic://" + bare)).To(Equal(bare))
-		})
-	})
-
 	Context("When talking to a running sidecar", Ordered, func() {
 		var (
 			server *httptest.Server
@@ -109,7 +108,8 @@ var _ = Describe("Fake control sidecar client", func() {
 			DeferCleanup(server.Close)
 
 			client = NewFakeControlClient(&TestConfig{
-				FakeControlEndpoint: server.URL,
+				FakeControlEndpoint:  server.URL,
+				FakeNodeControlToken: fakeSidecarToken,
 			})
 			nodeID = "b3f1c0de-0000-4000-8000-000000000002"
 			reqCtx = context.Background()
@@ -120,7 +120,6 @@ var _ = Describe("Fake control sidecar client", func() {
 
 			Expect(client.NodeEvents(reqCtx, nodeID)).To(BeEmpty())
 
-			// Simulate the driver reporting two deploy ops against the node.
 			postOp(server.URL, nodeID, "deploy")
 			postOp(server.URL, nodeID, "deploy")
 
@@ -142,9 +141,14 @@ var _ = Describe("Fake control sidecar client", func() {
 	})
 
 	Context("When checking the configuration gate", func() {
-		It("reports fake control unconfigured for an empty endpoint", func() {
+		It("reports fake control configured only when both endpoint and token are set", func() {
 			Expect(fakeControlConfigured(&TestConfig{})).To(BeFalse())
-			Expect(fakeControlConfigured(&TestConfig{FakeControlEndpoint: "http://127.0.0.1:18080"})).To(BeTrue())
+			Expect(fakeControlConfigured(&TestConfig{FakeControlEndpoint: "http://sidecar.example:18080"})).To(BeFalse())
+			Expect(fakeControlConfigured(&TestConfig{FakeNodeControlToken: fakeSidecarToken})).To(BeFalse())
+			Expect(fakeControlConfigured(&TestConfig{
+				FakeControlEndpoint:  "http://sidecar.example:18080",
+				FakeNodeControlToken: fakeSidecarToken,
+			})).To(BeTrue())
 		})
 	})
 })
@@ -153,6 +157,8 @@ func postOp(baseURL, uuid, op string) {
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
 		baseURL+"/v1/nodes/"+uuid+"/ops/"+op, strings.NewReader("{}"))
 	Expect(err).NotTo(HaveOccurred())
+
+	req.Header.Set("Authorization", "Bearer "+fakeSidecarToken)
 
 	httpClient := &http.Client{Timeout: 5 * time.Second}
 

@@ -476,6 +476,15 @@ func (b *ServerPayloadBuilder) WithInfrastructureRef(infrastructureRef string) *
 	return b
 }
 
+// WithSSHInjectionNone is required alongside WithInfrastructureRef: the handler
+// rejects a pinned server with the default identityKeypair injection as a 422.
+func (b *ServerPayloadBuilder) WithSSHInjectionNone() *ServerPayloadBuilder {
+	mode := regionopenapi.SshInjectionNone
+	b.server.Spec.SshInjection = &mode
+
+	return b
+}
+
 // WithUserData sets the cloud-init user data supplied at boot.
 func (b *ServerPayloadBuilder) WithUserData(userData []byte) *ServerPayloadBuilder {
 	b.server.Spec.UserData = &userData

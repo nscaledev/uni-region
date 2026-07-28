@@ -36,9 +36,8 @@ import (
 
 const fakeControlRequestTimeout = 30 * time.Second
 
-// FakeControlEvent is one entry from a node's fake-control sidecar event log. The
-// sidecar records an event each time the driver is asked to perform an operation,
-// which is what lets a test prove the driver actually ran the op it programmed.
+// FakeControlEvent is one entry from a node's sidecar event log. The sidecar records
+// one per driver operation, which is how a test proves the driver actually ran the op.
 type FakeControlEvent struct {
 	Seq     int    `json:"seq"`
 	Op      string `json:"op"`
@@ -51,40 +50,27 @@ type fakeControlNodeState struct {
 	Events   []FakeControlEvent `json:"events"`
 }
 
-// fakeControlConfigured reports whether a fake-control endpoint is configured.
 func fakeControlConfigured(config *TestConfig) bool {
-	return config.FakeControlEndpoint != ""
+	return config.FakeControlEndpoint != "" && config.FakeNodeControlToken != ""
 }
 
-// SkipUnlessFakeControlConfigured skips the spec unless FAKE_CONTROL_ENDPOINT is set.
-// The endpoint has no default so the fault-injection suite stays strictly opt-in.
+// SkipUnlessFakeControlConfigured keeps the fault-injection suite strictly opt-in:
+// neither the endpoint nor the token has a default.
 func SkipUnlessFakeControlConfigured(config *TestConfig) {
 	if !fakeControlConfigured(config) {
-		Skip("fault-injection tests require FAKE_CONTROL_ENDPOINT (loopback fake-control sidecar)")
+		Skip("fault-injection tests require FAKE_CONTROL_ENDPOINT and FAKE_NODE_CONTROL_TOKEN (ironic-fake-control sidecar)")
 	}
 }
 
-// FakeControlNodeUUID extracts the bare Ironic node UUID the sidecar keys on from a
-// server infrastructure ref. The ref is a bare UUID today; any provider scheme prefix
-// is stripped defensively so the client keeps working if the ref format gains one.
-func FakeControlNodeUUID(infrastructureRef string) string {
-	ref := infrastructureRef
-	for _, scheme := range []string{"openstack-ironic://", "ironic://"} {
-		ref = strings.TrimPrefix(ref, scheme)
-	}
-
-	return ref
-}
-
-// FakeControlClient talks to the ironic-fake-control loopback sidecar. It mirrors the
-// shape of the internal Region API client but is unauthenticated: the sidecar binds
-// loopback-only, so reachability comes from an SSH local-forward, not credentials.
+// FakeControlClient talks to the ironic-fake-control sidecar. The sidecar is routable
+// (tests run from CI runners, not the DevStack host) and rejects any request without
+// the bearer token.
 type FakeControlClient struct {
 	endpoint   string
+	token      string
 	httpClient *http.Client
 }
 
-// NewFakeControlClient builds a client targeting config.FakeControlEndpoint.
 func NewFakeControlClient(config *TestConfig) *FakeControlClient {
 	timeout := config.RequestTimeout
 	if timeout == 0 {
@@ -93,6 +79,7 @@ func NewFakeControlClient(config *TestConfig) *FakeControlClient {
 
 	return &FakeControlClient{
 		endpoint:   strings.TrimSuffix(config.FakeControlEndpoint, "/"),
+		token:      config.FakeNodeControlToken,
 		httpClient: &http.Client{Timeout: timeout},
 	}
 }
@@ -110,6 +97,8 @@ func (c *FakeControlClient) do(ctx context.Context, method, path string, body io
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+
+	req.Header.Set("Authorization", "Bearer "+c.token)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -129,8 +118,8 @@ func (c *FakeControlClient) do(ctx context.Context, method, path string, body io
 	return respBody, nil
 }
 
-// ProgramNodeBehavior programs the sidecar to make the node behave as described on the
-// next driver op (e.g. {"deploy": "fail"}). Register ResetNode cleanup after calling.
+// ProgramNodeBehavior sets how the node behaves on the next driver op, e.g.
+// {"deploy": "fail"}. Register a ResetNode cleanup after calling.
 func (c *FakeControlClient) ProgramNodeBehavior(ctx context.Context, uuid string, behavior map[string]any) {
 	data, err := json.Marshal(behavior)
 	Expect(err).NotTo(HaveOccurred(), "marshaling fake-control behavior")
@@ -139,8 +128,6 @@ func (c *FakeControlClient) ProgramNodeBehavior(ctx context.Context, uuid string
 	Expect(err).NotTo(HaveOccurred(), "programming fake-control node behavior")
 }
 
-// NodeEvents returns the sidecar's recorded op log for the node, proving bottom-up
-// which operations the driver was actually asked to perform.
 func (c *FakeControlClient) NodeEvents(ctx context.Context, uuid string) []FakeControlEvent {
 	body, err := c.do(ctx, http.MethodGet, c.nodePath(uuid), nil, http.StatusOK)
 	Expect(err).NotTo(HaveOccurred(), "reading fake-control node events")
@@ -152,8 +139,8 @@ func (c *FakeControlClient) NodeEvents(ctx context.Context, uuid string) []FakeC
 	return state.Events
 }
 
-// ResetNode clears the node's programmed behavior and event log. Mandatory in cleanup
-// so a lingering fail program cannot poison a later run against the shared fixture node.
+// ResetNode clears the node's programmed behavior and event log. Mandatory in cleanup:
+// the fixture node is shared, so a lingering fail program would poison a later run.
 func (c *FakeControlClient) ResetNode(ctx context.Context, uuid string) {
 	_, err := c.do(ctx, http.MethodDelete, c.nodePath(uuid), nil, http.StatusOK)
 	Expect(err).NotTo(HaveOccurred(), "resetting fake-control node")

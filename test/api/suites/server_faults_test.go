@@ -30,11 +30,9 @@ import (
 	"github.com/unikorn-cloud/region/test/api"
 )
 
-// Monitor poll period defaults to ~1 min and DefaultYieldTimeout to 10s, so one
-// retry cycle is roughly 90s (<=60s detect + 2x10s yields + deploy/undeploy) and
-// three attempts land around 4-5 min. The terminal timeout allows ~12 min for the
-// retry chain to park; recovery allows ~10 min for a fresh create to become
-// Running/Healthy. Both sit comfortably under the 2h slow-lane cap.
+// One retry cycle is ~90s (<=60s monitor poll + 2x10s yields + deploy/undeploy), so
+// three attempts land around 4-5 min. Both timeouts leave headroom on that and sit
+// well under the 2h slow-lane cap.
 const (
 	serverFaultTerminalTimeout = 12 * time.Minute
 	serverFaultRecoveryTimeout = 10 * time.Minute
@@ -69,7 +67,10 @@ var _ = Describe("Server fault injection", func() {
 			api.SkipUnlessFakeControlConfigured(config)
 
 			fakeControl = api.NewFakeControlClient(config)
-			nodeUUID = api.FakeControlNodeUUID(config.ServerInfrastructureRef)
+
+			// The pinned host is enrolled as a fake-controllable Ironic node, so the
+			// ref the server pins on is also the UUID the sidecar keys on.
+			nodeUUID = config.ServerInfrastructureRef
 
 			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
 			network, cleanupNetwork := api.MustProvisionNetwork(regionClient, ctx, networkReq)
@@ -86,6 +87,7 @@ var _ = Describe("Server fault injection", func() {
 
 				createReq := api.NewServerPayload(networkID, testFlavorID(), testImageID()).
 					WithInfrastructureRef(config.ServerInfrastructureRef).
+					WithSSHInjectionNone().
 					Build()
 
 				created, cleanup := api.MustCreateServer(regionClient, ctx, createReq)
@@ -94,8 +96,7 @@ var _ = Describe("Server fault injection", func() {
 				serverID := created.Metadata.Id
 
 				// ProvisioningStatus == error is the stable terminal park: it is set
-				// only once the retry cap is hit, and the last failed Nova instance
-				// stays attached there, so it does not flap like the health signal.
+				// only once the retry cap is hit, and unlike health it does not flap.
 				Eventually(func(g Gomega) {
 					server, err := regionClient.GetServer(ctx, serverID)
 					g.Expect(err).NotTo(HaveOccurred())
@@ -122,6 +123,7 @@ var _ = Describe("Server fault injection", func() {
 
 				createReq := api.NewServerPayload(networkID, testFlavorID(), testImageID()).
 					WithInfrastructureRef(config.ServerInfrastructureRef).
+					WithSSHInjectionNone().
 					Build()
 
 				created, cleanup := api.MustCreateServer(regionClient, ctx, createReq)
