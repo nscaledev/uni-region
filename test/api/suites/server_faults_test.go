@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
+	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/test/api"
 )
 
@@ -37,22 +38,75 @@ const (
 	serverFaultTerminalTimeout = 12 * time.Minute
 	serverFaultRecoveryTimeout = 10 * time.Minute
 	serverFaultPollInterval    = 10 * time.Second
+
+	// The driver consults the sidecar on its first deploy attempt, which follows
+	// placement and the start of the Nova build rather than the create call itself.
+	serverFaultWiringTimeout = 8 * time.Minute
+
+	// Long enough to span several reconciles, so a rebuild that is wrongly reported as
+	// settled is caught rather than missed between polls.
+	serverFaultRebuildWindow = 3 * time.Minute
 )
 
-func countDeployFailures(events []api.FakeControlEvent) int {
-	failures := 0
+// Only deploy is reachable through a server's lifecycle on this fixture. The
+// fake-controllable deploy interface subclasses Ironic's FakeDeploy, whose deploy and
+// tear_down do nothing, so the conductor never drives a power action or sets a boot device
+// while provisioning, deleting or stopping a server — the node is never powered on at all,
+// and its event log carries deploy entries and nothing else. The client's power and
+// management programs are therefore covered only by the hermetic sidecar tests; reaching
+// them end to end needs a fixture whose deploy interface performs real power work.
 
-	for _, event := range events {
-		if event.Op == "deploy" && event.Outcome == "fail" {
-			failures++
-		}
-	}
+// resetAndVerifyNode clears the node's program and proves the reset landed. The fixture
+// node is shared, so a surviving program corrupts the next run rather than the run that set
+// it — the one failure mode that reports against innocent code.
+func resetAndVerifyNode(fakeControl *api.FakeControlClient, nodeUUID string) {
+	fakeControl.ResetNode(ctx, nodeUUID)
+	Expect(fakeControl.NodeBehavior(ctx, nodeUUID)).To(BeEmpty(),
+		"fault injection must leave the shared fixture node unprogrammed")
+}
 
-	return failures
+func skipUnlessFaultInjectionConfigured() {
+	api.SkipUnlessOpenStackRegion(regionClient, ctx, config)
+	api.SkipUnlessInternalAPIConfigured(regionClient)
+	api.SkipUnlessServerFixtureConfigured(config)
+	skipUnlessServerInfrastructureRefConfigured()
+	api.SkipUnlessFakeControlConfigured(config)
+}
+
+func mustCreatePinnedServer(networkID string) (*regionopenapi.ServerV2Read, func()) {
+	createReq := api.NewServerPayload(networkID, testFlavorID(), testImageID()).
+		WithInfrastructureRef(config.ServerInfrastructureRef).
+		Build()
+
+	return api.MustCreateServer(regionClient, ctx, createReq)
+}
+
+// eventuallyNodeOpFailed waits until the driver has recorded a failed op against the node.
+// It is the wiring proof, and it runs before any slow status assertion: the sidecar's node
+// store is create-on-write, so a mistyped or scheme-prefixed node UUID is accepted by every
+// endpoint, injects no fault, and reports no error. Without this gate that mistake — or an
+// undeployed driver — surfaces only as a status timeout minutes later, which reads like a
+// region API fault rather than a harness misconfiguration.
+func eventuallyNodeOpFailed(fakeControl *api.FakeControlClient, nodeUUID, op string, timeout time.Duration) {
+	Eventually(func(g Gomega) {
+		events := fakeControl.NodeEvents(ctx, nodeUUID)
+		g.Expect(api.CountEvents(events, op, api.FakeControlOutcomeFail)).To(BeNumerically(">=", 1))
+	}).WithTimeout(timeout).WithPolling(serverFaultPollInterval).
+		Should(Succeed(), "driver should have recorded a failed %s against node %s", op, nodeUUID)
+}
+
+func eventuallyServerProvisionedAndHealthy(serverID string, timeout time.Duration, description string) {
+	Eventually(func(g Gomega) {
+		server, err := regionClient.GetServer(ctx, serverID)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(server.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioned))
+		g.Expect(server.Metadata.HealthStatus).To(Equal(coreapi.ResourceHealthStatusHealthy))
+	}).WithTimeout(timeout).WithPolling(serverFaultPollInterval).
+		Should(Succeed(), description)
 }
 
 var _ = Describe("Server fault injection", func() {
-	Context("When a fake-controllable node is programmed to fail deploy", Ordered, Label("slow"), func() {
+	Context("When a fake-controllable node is programmed to fail an operation", Ordered, Label("slow"), func() {
 		var (
 			networkID   string
 			fakeControl *api.FakeControlClient
@@ -60,17 +114,13 @@ var _ = Describe("Server fault injection", func() {
 		)
 
 		BeforeAll(func() {
-			api.SkipUnlessOpenStackRegion(regionClient, ctx, config)
-			api.SkipUnlessInternalAPIConfigured(regionClient)
-			api.SkipUnlessServerFixtureConfigured(config)
-			skipUnlessServerInfrastructureRefConfigured()
-			api.SkipUnlessFakeControlConfigured(config)
+			skipUnlessFaultInjectionConfigured()
 
 			fakeControl = api.NewFakeControlClient(config)
 
 			// The pinned host is enrolled as a fake-controllable Ironic node, so the
 			// ref the server pins on is also the UUID the sidecar keys on.
-			nodeUUID = config.ServerInfrastructureRef
+			nodeUUID = api.FakeControlNodeUUID(config.ServerInfrastructureRef)
 
 			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
 			network, cleanupNetwork := api.MustProvisionNetwork(regionClient, ctx, networkReq)
@@ -80,35 +130,34 @@ var _ = Describe("Server fault injection", func() {
 
 		Describe("Given the node fails every deploy", func() {
 			It("drives the pinned server to a terminal error park after retrying deploy", Label("slow"), func() {
-				// Only DELETE clears the event log; PUT /behavior does not. Resetting
-				// first makes the deploy-failure count below attributable to this spec
-				// rather than to residue from a run that died before its cleanup.
-				fakeControl.ResetNode(ctx, nodeUUID)
-				fakeControl.ProgramNodeBehavior(ctx, nodeUUID, map[string]any{"deploy": "fail"})
-
 				var serverCleanup func()
 
 				// One cleanup, so the ordering is explicit rather than a consequence of
 				// DeferCleanup's LIFO: the fail program must be cleared before the delete,
 				// or teardown of a node parked in a hard error runs against a driver still
-				// told to fail every op. Registered before the create so the node is reset
-				// even if the create itself fails.
+				// told to fail every op. Registered before anything is programmed, so
+				// neither the program nor the create can leave the shared node faulted.
 				DeferCleanup(func() {
-					fakeControl.ResetNode(ctx, nodeUUID)
+					resetAndVerifyNode(fakeControl, nodeUUID)
 
 					if serverCleanup != nil {
 						serverCleanup()
 					}
 				})
 
-				createReq := api.NewServerPayload(networkID, testFlavorID(), testImageID()).
-					WithInfrastructureRef(config.ServerInfrastructureRef).
-					Build()
+				// Only DELETE clears the event log; PUT /behavior does not. Resetting
+				// first makes the deploy-failure count below attributable to this spec
+				// rather than to residue from a run that died before its cleanup.
+				fakeControl.ResetNode(ctx, nodeUUID)
+				fakeControl.ProgramNodeBehavior(ctx, nodeUUID, api.FailDeploy())
 
-				created, cleanup := api.MustCreateServer(regionClient, ctx, createReq)
+				created, cleanup := mustCreatePinnedServer(networkID)
 				serverCleanup = cleanup
 
 				serverID := created.Metadata.Id
+
+				By("proving the driver ran the injected deploy against the programmed node")
+				eventuallyNodeOpFailed(fakeControl, nodeUUID, api.FakeControlOpDeploy, serverFaultWiringTimeout)
 
 				// ProvisioningStatus == error is the stable terminal park: it is set only
 				// once the retry cap is hit. Health is asserted in the same poll because it
@@ -119,6 +168,7 @@ var _ = Describe("Server fault injection", func() {
 				// reaches Nova ERROR reports error, one that stalls reports degraded, and
 				// both are correct reports of an unhealthy server. Healthy and unknown
 				// still fail.
+				By("waiting for the retry budget to be spent and the server to park")
 				Eventually(func(g Gomega) {
 					server, err := regionClient.GetServer(ctx, serverID)
 					g.Expect(err).NotTo(HaveOccurred())
@@ -131,33 +181,125 @@ var _ = Describe("Server fault injection", func() {
 					Should(Succeed(), "pinned server should park at provisioning=error and report unhealthy")
 
 				events := fakeControl.NodeEvents(ctx, nodeUUID)
-				Expect(countDeployFailures(events)).To(BeNumerically(">=", 2),
-					"driver should have failed deploy across at least one retry")
+				Expect(api.CountEvents(events, api.FakeControlOpDeploy, api.FakeControlOutcomeFail)).
+					To(BeNumerically(">=", 2), "driver should have failed deploy across at least one retry")
 			})
 		})
 
-		Describe("Given the node is reset to healthy", func() {
-			It("provisions a fresh pinned server on the recovered node", Label("slow"), func() {
-				// Terminal is a hard park, so recovery cannot revive the parked server;
-				// the previous It's cleanup deleted it and returned the node to available.
+		Describe("Given the node recovers while the create is still retrying", func() {
+			It("converges the in-flight server on success instead of parking", Label("slow"), func() {
+				var serverCleanup func()
+
+				DeferCleanup(func() {
+					resetAndVerifyNode(fakeControl, nodeUUID)
+
+					if serverCleanup != nil {
+						serverCleanup()
+					}
+				})
+
 				fakeControl.ResetNode(ctx, nodeUUID)
+				fakeControl.ProgramNodeBehavior(ctx, nodeUUID, api.FailDeploy())
 
-				createReq := api.NewServerPayload(networkID, testFlavorID(), testImageID()).
-					WithInfrastructureRef(config.ServerInfrastructureRef).
-					Build()
-
-				created, cleanup := api.MustCreateServer(regionClient, ctx, createReq)
-				DeferCleanup(cleanup)
+				created, cleanup := mustCreatePinnedServer(networkID)
+				serverCleanup = cleanup
 
 				serverID := created.Metadata.Id
 
-				Eventually(func(g Gomega) {
-					server, err := regionClient.GetServer(ctx, serverID)
+				// Gated on the event log rather than a sleep, so the reset lands after at
+				// least one failure but before the retry budget is spent. That window is
+				// the whole point: the recovery spec below only proves a fresh create
+				// works on a healthy node, so without this nothing proves the retry loop
+				// can converge on success rather than only ever parking.
+				//
+				// Assumes the deployed region allows at least two create attempts, the
+				// same assumption the deploy-failure count above rests on.
+				By("clearing the fault after the first injected failure, mid-retry")
+				eventuallyNodeOpFailed(fakeControl, nodeUUID, api.FakeControlOpDeploy, serverFaultWiringTimeout)
+				fakeControl.ResetNode(ctx, nodeUUID)
+
+				eventuallyServerProvisionedAndHealthy(serverID, serverFaultRecoveryTimeout,
+					"a create that failed once should still converge once the node recovers")
+			})
+		})
+
+		Describe("Given the node has been reset to healthy", func() {
+			It("provisions a fresh pinned server on the recovered node", Label("slow"), func() {
+				// Terminal is a hard park, so recovery cannot revive a parked server; the
+				// earlier specs' cleanups deleted theirs and returned the node to available.
+				fakeControl.ResetNode(ctx, nodeUUID)
+
+				created, cleanup := mustCreatePinnedServer(networkID)
+				DeferCleanup(cleanup)
+
+				eventuallyServerProvisionedAndHealthy(created.Metadata.Id, serverFaultRecoveryTimeout,
+					"fresh pinned server should provision and become healthy on the recovered node")
+			})
+		})
+	})
+
+	Context("When a rebuild is deployed onto a node programmed to fail deploy", Ordered, Label("slow"), func() {
+		var (
+			fakeControl *api.FakeControlClient
+			nodeUUID    string
+			serverID    string
+		)
+
+		BeforeAll(func() {
+			skipUnlessFaultInjectionConfigured()
+			skipUnlessServerRebuildImageConfigured()
+
+			fakeControl = api.NewFakeControlClient(config)
+			nodeUUID = api.FakeControlNodeUUID(config.ServerInfrastructureRef)
+			fakeControl.ResetNode(ctx, nodeUUID)
+
+			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
+			network, cleanupNetwork := api.MustProvisionNetwork(regionClient, ctx, networkReq)
+			DeferCleanup(cleanupNetwork)
+
+			created, cleanupServer := mustCreatePinnedServer(network.Metadata.Id)
+
+			DeferCleanup(func() {
+				fakeControl.ResetNode(ctx, nodeUUID)
+				cleanupServer()
+			})
+
+			serverID = EventuallyServerProvisioned(created.Metadata.Id).Metadata.Id
+		})
+
+		Describe("Given the provisioned server is rebuilt while the node fails deploy", func() {
+			It("never reports the failed rebuild as settled on the new image", Label("slow"), func() {
+				fakeControl.ProgramNodeBehavior(ctx, nodeUUID, api.FailDeploy())
+
+				server, err := regionClient.GetServer(ctx, serverID)
+				Expect(err).NotTo(HaveOccurred())
+
+				update := api.ServerUpdateFromRead(server).WithImageID(rebuildImageID()).Build()
+
+				updated, err := regionClient.UpdateServer(ctx, serverID, update)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(updated.Spec.ImageId).To(Equal(update.Spec.ImageId))
+
+				By("observing the server leave provisioned once the controller arms the rebuild")
+				EventuallyServerProvisioning(serverID)
+
+				By("proving the injected fault reached the rebuild's deploy")
+				eventuallyNodeOpFailed(fakeControl, nodeUUID, api.FakeControlOpDeploy, serverFaultWiringTimeout)
+
+				// Spec.ImageId flips to the target the moment the update is accepted, so a
+				// failed rebuild that reported provisioned would be indistinguishable from
+				// a successful one — the caller would read a settled server on an image it
+				// never actually booted. The happy-path rebuild spec asserts that gate
+				// positively; injecting a deploy failure is the only way to exercise it
+				// against a rebuild that genuinely fails.
+				By("checking the failed rebuild is never reported as settled")
+				Consistently(func(g Gomega) {
+					got, err := regionClient.GetServer(ctx, serverID)
 					g.Expect(err).NotTo(HaveOccurred())
-					g.Expect(server.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioned))
-					g.Expect(server.Metadata.HealthStatus).To(Equal(coreapi.ResourceHealthStatusHealthy))
-				}).WithTimeout(serverFaultRecoveryTimeout).WithPolling(serverFaultPollInterval).
-					Should(Succeed(), "fresh pinned server should provision and become healthy on the recovered node")
+					g.Expect(got.Metadata.ProvisioningStatus).
+						NotTo(Equal(coreapi.ResourceProvisioningStatusProvisioned))
+				}).WithTimeout(serverFaultRebuildWindow).WithPolling(serverFaultPollInterval).
+					Should(Succeed(), "a failed rebuild must not read as settled on the new image")
 			})
 		})
 	})
