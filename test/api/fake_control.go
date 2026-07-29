@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -33,12 +34,77 @@ import (
 
 const fakeControlRequestTimeout = 30 * time.Second
 
+// Ops the fake-controllable driver consults the sidecar for. get_power is deliberately
+// not wired (it is polled continuously, so a per-poll lock-held HTTP call is avoided) and
+// no interface emits reboot, so neither can ever appear in an event log.
+const (
+	FakeControlOpDeploy        = "deploy"
+	FakeControlOpPowerOn       = "power_on"
+	FakeControlOpPowerOff      = "power_off"
+	FakeControlOpSetBootDevice = "set_boot_device"
+)
+
+const (
+	FakeControlOutcomeOK   = "ok"
+	FakeControlOutcomeFail = "fail"
+)
+
 // FakeControlEvent is one entry from a node's sidecar event log. The sidecar records
 // one per driver operation, which is how a test proves the driver actually ran the op.
 type FakeControlEvent struct {
 	Seq     int    `json:"seq"`
 	Op      string `json:"op"`
 	Outcome string `json:"outcome"`
+}
+
+// Behavior programs, in the sidecar's wire shape. These exist because the sidecar ignores
+// keys it does not recognise and answers "ok": a misspelled or wrongly nested program
+// injects no fault at all, so the suite silently exercises the happy path and fails much
+// later as an unexplained status timeout. Building the shapes in one tested place keeps
+// that failure mode out of the specs.
+func FailDeploy() map[string]any {
+	return map[string]any{"deploy": FakeControlOutcomeFail}
+}
+
+func FailPowerOn() map[string]any {
+	return map[string]any{"power": map[string]any{"power_on": FakeControlOutcomeFail}}
+}
+
+func FailPowerOff() map[string]any {
+	return map[string]any{"power": map[string]any{"power_off": FakeControlOutcomeFail}}
+}
+
+func FailSetBootDevice() map[string]any {
+	return map[string]any{"management": map[string]any{"set_boot_device": FakeControlOutcomeFail}}
+}
+
+// CountEvents counts event-log entries for an op and outcome. Callers assert lower bounds
+// on this, never exact counts: the driver can emit more than one call per provisioning
+// attempt, and the region's retry cap is set out-of-process.
+func CountEvents(events []FakeControlEvent, op, outcome string) int {
+	count := 0
+
+	for _, event := range events {
+		if event.Op == op && event.Outcome == outcome {
+			count++
+		}
+	}
+
+	return count
+}
+
+// FakeControlNodeUUID normalises an infrastructure ref into the bare Ironic node UUID the
+// sidecar keys on. Refs are bare UUIDs today, but a scheme-prefixed one would address a
+// node the sidecar has never seen, and because its node store is create-on-write every
+// request for that key still succeeds — injecting no fault and reporting no error.
+func FakeControlNodeUUID(infrastructureRef string) string {
+	for _, scheme := range []string{"openstack-ironic://", "ironic://"} {
+		if rest, found := strings.CutPrefix(infrastructureRef, scheme); found {
+			return rest
+		}
+	}
+
+	return infrastructureRef
 }
 
 // fakeControlNodeState mirrors the sidecar's GET envelope for a node.
@@ -94,16 +160,27 @@ func (c *FakeControlClient) ProgramNodeBehavior(ctx context.Context, uuid string
 	Expect(err).NotTo(HaveOccurred(), "programming fake-control node behavior")
 }
 
-func (c *FakeControlClient) NodeEvents(ctx context.Context, uuid string) []FakeControlEvent {
+func (c *FakeControlClient) nodeState(ctx context.Context, uuid string) fakeControlNodeState {
 	//nolint:bodyclose // DoRequest handles response body closing internally
 	_, body, err := c.client.DoRequest(ctx, http.MethodGet, c.nodePath(uuid), nil, http.StatusOK)
-	Expect(err).NotTo(HaveOccurred(), "reading fake-control node events")
+	Expect(err).NotTo(HaveOccurred(), "reading fake-control node state")
 
 	var state fakeControlNodeState
 
 	Expect(json.Unmarshal(body, &state)).To(Succeed(), "decoding fake-control node state")
 
-	return state.Events
+	return state
+}
+
+func (c *FakeControlClient) NodeEvents(ctx context.Context, uuid string) []FakeControlEvent {
+	return c.nodeState(ctx, uuid).Events
+}
+
+// NodeBehavior reads back the node's programmed behavior. Tests use it to prove a node was
+// left unprogrammed: the fixture node is shared, and a leftover fail program is the one
+// failure that silently corrupts every later run rather than the run that caused it.
+func (c *FakeControlClient) NodeBehavior(ctx context.Context, uuid string) map[string]any {
+	return c.nodeState(ctx, uuid).Behavior
 }
 
 // ResetNode clears the node's programmed behavior and event log. Mandatory in cleanup:
