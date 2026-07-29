@@ -28,10 +28,10 @@ import (
 // volumeContract pins the lifecycle boundary consumed by the Volume controller
 // and monitor without coupling those consumers to provider SDK types.
 type volumeContract interface {
-	CreateVolume(context.Context, *unikornv1.Identity, *unikornv1.Volume) error
-	FindVolume(context.Context, *unikornv1.Identity, *unikornv1.Volume) (bool, error)
-	ObserveVolume(context.Context, *unikornv1.Identity, *unikornv1.Volume) (*types.VolumeState, error)
-	DeleteVolume(context.Context, *unikornv1.Identity, *unikornv1.Volume) error
+	CreateVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
+	FindVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) (bool, error)
+	ObserveVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) (*types.VolumeState, error)
+	DeleteVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
 }
 
 var _ volumeContract = (types.Volume)(nil)
