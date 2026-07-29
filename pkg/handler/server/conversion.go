@@ -73,7 +73,7 @@ func convert(in *unikornv1.Server) (*openapi.ServerRead, error) {
 			UserData:           convertUserData(in.Spec.UserData),
 		},
 		Status: openapi.ServerStatus{
-			Phase:     convertInstanceLifecyclePhase(in.Status.Phase),
+			Phase:     serverPowerState(in),
 			PrivateIP: in.Status.PrivateIP,
 			PublicIP:  in.Status.PublicIP,
 		},
@@ -157,23 +157,37 @@ func convertUserData(in []byte) *[]byte {
 	return &in
 }
 
-func convertInstanceLifecyclePhase(in unikornv1.InstanceLifecyclePhase) *openapi.InstanceLifecyclePhase {
-	switch in {
-	case unikornv1.InstanceLifecyclePhasePending:
-		return ptr.To(openapi.InstanceLifecyclePhasePending)
-	case unikornv1.InstanceLifecyclePhaseQueued:
-		return ptr.To(openapi.InstanceLifecyclePhaseQueued)
-	case unikornv1.InstanceLifecyclePhaseBuilding:
-		return ptr.To(openapi.InstanceLifecyclePhaseBuilding)
-	case unikornv1.InstanceLifecyclePhaseRunning:
-		return ptr.To(openapi.InstanceLifecyclePhaseRunning)
-	case unikornv1.InstanceLifecyclePhaseStopping:
-		return ptr.To(openapi.InstanceLifecyclePhaseStopping)
-	case unikornv1.InstanceLifecyclePhaseStopped:
-		return ptr.To(openapi.InstanceLifecyclePhaseStopped)
-	default:
+// serverPowerState projects a server's Active condition (its lifecycle/power
+// axis) onto the API enum, shared by the v1 phase and v2 powerState fields. It
+// returns nil when the condition is absent (the server has not yet been observed)
+// or carries an unrecognised reason, so the API omits the field rather than
+// emitting a bogus value.
+func serverPowerState(in *unikornv1.Server) *openapi.InstanceLifecyclePhase {
+	active, err := unikornv1.GetActiveCondition(in)
+	if err != nil {
 		return nil
 	}
+
+	switch active.Reason {
+	case unikornv1.ActiveConditionReasonPending:
+		return ptr.To(openapi.InstanceLifecyclePhasePending)
+	case unikornv1.ActiveConditionReasonQueued:
+		return ptr.To(openapi.InstanceLifecyclePhaseQueued)
+	case unikornv1.ActiveConditionReasonBuilding:
+		return ptr.To(openapi.InstanceLifecyclePhaseBuilding)
+	case unikornv1.ActiveConditionReasonRebuilding:
+		return ptr.To(openapi.InstanceLifecyclePhaseRebuilding)
+	case unikornv1.ActiveConditionReasonRunning:
+		return ptr.To(openapi.InstanceLifecyclePhaseRunning)
+	case unikornv1.ActiveConditionReasonStopping:
+		return ptr.To(openapi.InstanceLifecyclePhaseStopping)
+	case unikornv1.ActiveConditionReasonStopped:
+		return ptr.To(openapi.InstanceLifecyclePhaseStopped)
+	case unikornv1.ActiveConditionReasonError:
+		return ptr.To(openapi.InstanceLifecyclePhaseError)
+	}
+
+	return nil
 }
 
 type generator struct {

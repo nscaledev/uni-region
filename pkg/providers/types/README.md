@@ -15,7 +15,8 @@ That makes this package a mixed abstraction layer on purpose:
 - when the thing is provider-derived, query-driven, transient, or otherwise not
   represented as a concrete CRD, this package provides the neutral shape and
   capability contract instead, for example `Flavor`, `Image`,
-  `ExternalNetwork`, `ServerCreateOptions`, and the image query interfaces
+  `VolumeClass`, `ExternalNetwork`, `ServerCreateOptions`, and the image query
+  interfaces
 
 So this package is not "all provider models". It is the intermediate
 portability layer for provider-facing concepts that higher layers still need to
@@ -44,6 +45,10 @@ continue to be passed directly through many provider interface methods.
   implementations choose to provide them.
 - `Image.Index()`, `Image.Equal()`, and `Image.DeepCopy()` are part of that
   cached-snapshot contract, not incidental helpers.
+- `VolumeClass` is Region-scoped provider inventory, not a Volume lifecycle
+  resource. It carries the immutable provider identifier and user-facing
+  metadata that Region configuration can filter or enrich before a public API
+  exposes the inventory.
 - `ServerCreateOptions` carries launch-time derived inputs without forcing them
   into the persisted `Server` CRD shape.
 - Exported errors such as `ErrImageNotReadyForUpload` and

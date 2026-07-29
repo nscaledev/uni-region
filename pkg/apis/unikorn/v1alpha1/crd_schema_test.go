@@ -40,8 +40,45 @@ import (
 
 const (
 	fileStorageCRDFile = "region.unikorn-cloud.org_filestorages.yaml"
+	serverCRDFile      = "region.unikorn-cloud.org_servers.yaml"
 	volumeCRDFile      = "region.unikorn-cloud.org_volumes.yaml"
 )
+
+func requireSchemaProperty(t *testing.T, schema *apixv1.JSONSchemaProps, path ...string) *apixv1.JSONSchemaProps {
+	t.Helper()
+
+	current := schema
+
+	for _, name := range path {
+		property, ok := current.Properties[name]
+		require.Truef(t, ok, "schema property %q is missing", name)
+
+		current = &property
+	}
+
+	return current
+}
+
+func TestServerRebuildSchema(t *testing.T) {
+	t.Parallel()
+
+	schema := crdSchema(t, serverCRDFile)
+
+	targetImageID := requireSchemaProperty(t, schema, "status", "rebuild", "targetImageID")
+	require.Equal(t, "string", targetImageID.Type)
+	require.Equal(t, "uuid", targetImageID.Format)
+
+	state := requireSchemaProperty(t, schema, "status", "rebuild", "state")
+	require.Equal(t, "string", state.Type)
+
+	want := []apixv1.JSON{
+		{Raw: []byte(`"Initiated"`)},
+		{Raw: []byte(`"Rebuilding"`)},
+		{Raw: []byte(`"Succeeded"`)},
+		{Raw: []byte(`"Failed"`)},
+	}
+	require.ElementsMatch(t, want, state.Enum, "the rebuild state enum must be validated at the CRD schema")
+}
 
 type crdValidator struct {
 	schema     *apixinternal.JSONSchemaProps

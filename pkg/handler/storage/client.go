@@ -183,7 +183,9 @@ func convertAttachmentProvisioningStatus(in regionv1.AttachmentProvisioningStatu
 	case regionv1.AttachmentDeprovisioning:
 		return coreopenapi.ResourceProvisioningStatusDeprovisioning
 	default:
-		return coreopenapi.ResourceProvisioningStatusUnknown
+		// An unset/unobserved attachment status is reported as pending (the
+		// Unknown status was dropped from the core enum).
+		return coreopenapi.ResourceProvisioningStatusPending
 	}
 }
 

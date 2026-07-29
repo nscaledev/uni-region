@@ -43,6 +43,7 @@ packages are the concrete provider implementations.
 - `types.CommonProvider` is the minimum substrate contract:
   - return the effective `Region`
   - return allocatable `Flavor` inventory
+  - return Region-scoped `VolumeClass` inventory
 - `types.Provider` extends that common base with the broader image, identity,
   network, security-group, load-balancer, server, console, and snapshot
   lifecycle surfaces.
@@ -100,6 +101,9 @@ packages are the concrete provider implementations.
   - it exposes a Kubernetes-backed region as a cloud-like substrate
   - it exports curated node-class-backed flavor inventory for higher layers that
     can consume the normal region shape
+  - it returns empty block-storage `VolumeClass` inventory because the
+    Kubernetes-backed substrate does not currently expose a Region block-storage
+    class surface
 - [./internal/simulated](./internal/simulated/README.md) implements the full
   interface in contract-shaped but deliberately incomplete form:
   - it exists to push broad integration coverage left

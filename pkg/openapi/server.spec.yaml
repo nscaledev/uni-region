@@ -1782,6 +1782,30 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/volumeclasses:
+    description: |-
+      Lists provider-neutral block-storage classes available from Regions visible to the caller. Results can be narrowed to one or more Regions.
+    get:
+      description: |-
+        Lists provider-neutral VolumeClasses from Regions visible to the caller. Repeat the regionID query parameter to narrow results to one or more Regions. Media and performance caps are returned only when published by the Region.
+      summary: List volume classes
+      tags:
+      - Volume classes
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: '#/components/parameters/regionIDQueryParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/volumeClassListV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 components:
   parameters:
     organizationIDParameter:
@@ -2577,7 +2601,8 @@ components:
             DNS nameservers to use.  If empty this will use the platform's
             internal DNS server and allow hosts to resolve each other.  If it is
             populated then no internal host resolution will be possible.
-          $ref: '#/components/schemas/ipv4AddressList'
+          allOf:
+          - $ref: '#/components/schemas/ipv4AddressList'
         routes:
           $ref: '#/components/schemas/routes'
     networkV2CreateSpec:
@@ -2613,7 +2638,8 @@ components:
               Optional reservations to apply when the network is created.  If
               omitted, the platform default of a /25 reservation with a /28
               provider carve-out is applied.
-            $ref: '#/components/schemas/networkReservations'
+            allOf:
+            - $ref: '#/components/schemas/networkReservations'
     networkV2Status:
       description: Read only status about a network.
       type: object
@@ -2964,7 +2990,8 @@ components:
       properties:
         name:
           description: The listener name.
-          $ref: '#/components/schemas/loadBalancerListenerNameV2'
+          allOf:
+          - $ref: '#/components/schemas/loadBalancerListenerNameV2'
         protocol:
           $ref: '#/components/schemas/loadBalancerListenerProtocolV2'
         port:
@@ -3013,7 +3040,8 @@ components:
             $ref: '#/components/schemas/networkId'
           vipAddress:
             description: The requested virtual IP address. When provided, it must fall within the selected network CIDR.
-            $ref: '#/components/schemas/ipv4Address'
+            allOf:
+            - $ref: '#/components/schemas/ipv4Address'
     loadBalancerV2Status:
       description: Read only status information about a load balancer.
       type: object
@@ -3029,10 +3057,12 @@ components:
           type: string
         vipAddress:
           description: The provisioned virtual IP address.
-          $ref: '#/components/schemas/ipv4Address'
+          allOf:
+          - $ref: '#/components/schemas/ipv4Address'
         publicIP:
           description: The provisioned public IP address.
-          $ref: '#/components/schemas/ipv4Address'
+          allOf:
+          - $ref: '#/components/schemas/ipv4Address'
     loadBalancerV2Create:
       description: A load balancer creation request.
       type: object
@@ -3150,7 +3180,11 @@ components:
         flavorId:
           $ref: '#/components/schemas/flavorId'
         imageId:
-          $ref: '#/components/schemas/imageId'
+          description: |-
+            The server image. On update this field is ignored: the image is
+            immutable through the v1 API and the stored value is preserved.
+          allOf:
+          - $ref: '#/components/schemas/imageId'
         securityGroups:
           $ref: '#/components/schemas/serverSecurityGroupList'
         publicIPAllocation:
@@ -3227,15 +3261,20 @@ components:
         should treat Running (not provisioned) as the "ready to use" state.
         Queued and Building are observed during create — Queued for
         baremetal servers waiting on hardware, Building for servers the
-        provider is actively bringing up.
+        provider is actively bringing up. Rebuilding means an already
+        provisioned server is being reimaged in place and is not usable until
+        it completes. Error means the provider reported the server in a
+        terminal error state.
       type: string
       enum:
       - Pending
       - Queued
       - Building
+      - Rebuilding
       - Running
       - Stopping
       - Stopped
+      - Error
     serverStatus:
       description: A server's status.
       type: object
@@ -3312,16 +3351,24 @@ components:
       - imageId
       properties:
         flavorId:
-          $ref: '#/components/schemas/flavorId'
+          description: The server flavor. This field is immutable after creation.
+          allOf:
+          - $ref: '#/components/schemas/flavorId'
         imageId:
-          $ref: '#/components/schemas/imageId'
+          description: |-
+            The desired server image. Changing this field rebuilds the server,
+            recreating the root disk and destroying its contents.
+          allOf:
+          - $ref: '#/components/schemas/imageId'
         networking:
           $ref: '#/components/schemas/serverV2Networking'
         userData:
           description: |-
             Contains base64-encoded configuration information or scripts to use upon launch.
             The format of the data is governed by the cloud-init standard, and may be a script,
-            a MIME multipart archive, etc.
+            a MIME multipart archive, etc. On update the field is replaced wholesale: omitting
+            it clears the stored value. A changed value is not applied to the running guest —
+            it takes effect only when the server is next rebuilt (image change) or recreated.
           type: string
           format: byte
     serverV2CreateSpec:
@@ -3337,10 +3384,12 @@ components:
             $ref: '#/components/schemas/networkId'
           sshCertificateAuthorityId:
             description: The SSH certificate authority used to bootstrap login trust when the server is created.
-            $ref: '#/components/schemas/sshCertificateAuthorityID'
+            allOf:
+            - $ref: '#/components/schemas/sshCertificateAuthorityID'
           sshInjection:
             description: The create-time SSH access material Region should arrange for the server. If omitted, Region uses ca when sshCertificateAuthorityId is set, otherwise identityKeypair.
-            $ref: '#/components/schemas/sshInjection'
+            allOf:
+            - $ref: '#/components/schemas/sshInjection'
           infrastructureRef:
             $ref: '#/components/schemas/infrastructureRef'
     serverV2Status:
@@ -3351,17 +3400,21 @@ components:
       - networkId
       properties:
         regionId:
-          description: The region a security group belongs to.
-          $ref: '#/components/schemas/regionId'
+          description: The region the server belongs to.
+          allOf:
+          - $ref: '#/components/schemas/regionId'
         networkId:
-          description: The network a security group belongs to.
-          $ref: '#/components/schemas/networkId'
+          description: The network the server belongs to.
+          allOf:
+          - $ref: '#/components/schemas/networkId'
         sshCertificateAuthorityId:
           description: The SSH certificate authority configured when the server was created.
-          $ref: '#/components/schemas/sshCertificateAuthorityID'
+          allOf:
+          - $ref: '#/components/schemas/sshCertificateAuthorityID'
         sshInjection:
           description: The resolved create-time SSH access material Region arranged for the server.
-          $ref: '#/components/schemas/sshInjection'
+          allOf:
+          - $ref: '#/components/schemas/sshInjection'
         infrastructureRef:
           $ref: '#/components/schemas/infrastructureRef'
         powerState:
@@ -3756,6 +3809,59 @@ components:
       enum:
       - nfsv3
       - nfsv4
+    volumeClassListV2Read:
+      description: A list of provider-neutral block-storage volume classes.
+      type: array
+      items:
+        $ref: '#/components/schemas/volumeClassV2Read'
+    volumeClassV2Read:
+      description: A provider-neutral block-storage volume class available in a Region.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/staticResourceMetadata'
+        spec:
+          $ref: '#/components/schemas/volumeClassV2Spec'
+    volumeClassV2Spec:
+      description: Provider-neutral capabilities advertised by a block-storage volume class.
+      type: object
+      required:
+      - regionId
+      - encrypted
+      properties:
+        regionId:
+          description: The Region that owns this volume class inventory entry.
+          allOf:
+          - $ref: '#/components/schemas/regionId'
+        media:
+          $ref: '#/components/schemas/volumeClassV2Media'
+        performance:
+          $ref: '#/components/schemas/volumeClassV2Performance'
+        encrypted:
+          description: Whether volumes created from this class are encrypted at rest by the provider.
+          type: boolean
+    volumeClassV2Media:
+      description: The physical storage medium backing a volume class.
+      type: string
+      enum:
+      - hdd
+      - ssd
+      - nvme
+    volumeClassV2Performance:
+      description: Advertised performance caps; these are not guaranteed reservations.
+      type: object
+      properties:
+        maxIOPS:
+          description: Advertised maximum input/output operations per second.
+          type: integer
+          minimum: 1
+        maxThroughputMiBps:
+          description: Advertised maximum throughput in mebibytes per second.
+          type: integer
+          minimum: 1
   requestBodies:
     identityRequest:
       description: A request for an identity.
@@ -4921,6 +5027,25 @@ components:
                 - nfsv3
                 - nfsv4
               parallelism: 8
+    volumeClassListV2Response:
+      description: A list of provider-neutral block-storage volume classes.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/volumeClassListV2Read'
+          example:
+          - metadata:
+              id: 44444444-4444-4444-4444-444444444444
+              name: fast-nvme
+              description: Latency-sensitive encrypted block storage
+              creationTime: 1970-01-01T00:00:00Z
+            spec:
+              regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
+              media: nvme
+              performance:
+                maxIOPS: 25000
+                maxThroughputMiBps: 500
+              encrypted: true
   securitySchemes:
     oauth2Authentication:
       description: Operation requires OAuth 2.0 bearer token authentication.

@@ -61,8 +61,9 @@ func writeKeystoneToken(w http.ResponseWriter, base string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 
-	// The provider builds identity, compute, image and network clients on auth,
-	// so all four must resolve from the catalog.
+	// The provider builds service clients on auth, so every bootstrapped service
+	// must resolve from the catalog even if the current contract only exercises
+	// image listing.
 	service := func(id, svcType, url string) map[string]any {
 		return map[string]any{
 			"id":   id,
@@ -88,6 +89,7 @@ func writeKeystoneToken(w http.ResponseWriter, base string) {
 				service("nova", "compute", base+"/compute/v2.1"),
 				service("glance", "image", base+"/image"),
 				service("neutron", "network", base+"/network"),
+				service("cinder", "block-storage", base+"/block-storage/v3"),
 			},
 		},
 	})

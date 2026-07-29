@@ -237,6 +237,24 @@ func (e *Endpoints) GetServerSSHKey(serverID string) string {
 		url.PathEscape(serverID))
 }
 
+// UpdateServer returns the endpoint for updating a specific server.
+func (e *Endpoints) UpdateServer(serverID string) string {
+	return fmt.Sprintf("/api/v2/servers/%s",
+		url.PathEscape(serverID))
+}
+
+// StopServer returns the endpoint for powering off a specific server.
+func (e *Endpoints) StopServer(serverID string) string {
+	return fmt.Sprintf("/api/v2/servers/%s/stop",
+		url.PathEscape(serverID))
+}
+
+// StartServer returns the endpoint for powering on a specific server.
+func (e *Endpoints) StartServer(serverID string) string {
+	return fmt.Sprintf("/api/v2/servers/%s/start",
+		url.PathEscape(serverID))
+}
+
 // DeleteServer returns the endpoint for deleting a specific server.
 func (e *Endpoints) DeleteServer(serverID string) string {
 	return fmt.Sprintf("/api/v2/servers/%s",

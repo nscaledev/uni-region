@@ -38,7 +38,7 @@ import (
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
-	"github.com/unikorn-cloud/region/pkg/ids/idstest"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/test/api"
 )

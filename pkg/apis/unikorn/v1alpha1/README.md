@@ -44,7 +44,11 @@ stored objects rely on for linkage, migration, and operational coordination.
   inventory should be enriched; it does not create a project-owned
   `VolumeClass` CRD or any user-managed lifecycle resource. OpenStack maps this
   inventory to Cinder volume types internally, but the Region storage and
-  public/domain vocabulary remains `VolumeClass`.
+  public/domain vocabulary remains `VolumeClass`. Selection is fail-closed:
+  only provider IDs explicitly listed in
+  `openstack.blockStorage.volumeClasses.selector.ids` are eligible. Missing
+  `volumeClasses` configuration, a missing selector, or nil/empty IDs exports
+  no VolumeClasses.
 - Namespaced Kubernetes storage scope and platform tenancy scope are separate
   concerns. These objects are namespaced, but their logical visibility and
   authorization are often organization-, project-, identity-, or region-scoped
@@ -102,6 +106,29 @@ stored objects rely on for linkage, migration, and operational coordination.
   policies plus the optional hidden `system-default` baseline — caps policy names
   at 19 characters, and validates the schedule/retention shape so direct CRD
   writes cannot persist unsupported policy combinations.
+- `Server.Spec.Image` is desired state. Nova's observed image and status
+  remain authoritative for live state. `Server.Status.Rebuild` is one struct
+  carrying the rebuild state machine. `TargetImageID` is write-ahead intent:
+  the provider persists it (by yielding an arming pass) before Nova is asked
+  to act, because it is the one fact needed to classify a failed rebuild that
+  fresh observation cannot reconstruct. `State` walks a forward-only enum —
+  `Initiated` < `Rebuilding` < `Succeeded` == `Failed`, where the terminals
+  are peers that never flip (first observation wins). The reconciler owns
+  arming (`Initiated`), clearing the struct on observed convergence, and the
+  failure park; both the reconciler and the monitor's provider poll advance
+  the state from observed Nova evidence (the reconciler stamps `Rebuilding`
+  when Nova accepts; the monitor advances from a fresh read attributed by the
+  image ref matching the target — `Rebuilding` while a rebuild is active,
+  `Succeeded`/`Failed` as its terminal observations). Lost stamps self-heal by
+  the monitor recomputing from persistent evidence each poll (a real,
+  differing patch), not by re-asserting an unchanged value.
+  The terminal states are the level the manager's wake predicate fires on.
+  The marker is not proof of provider reality, and missing or mismatched
+  bookkeeping must fail closed rather than authorize a destructive action. A
+  rebuild that fails after Nova acted parks the server, retaining the
+  `Failed` marker, until the desired image changes or the server is replaced
+  — that is the only re-arm path, since there is no longer a client-facing
+  retry generation to bump.
 
 ## Caveats
 

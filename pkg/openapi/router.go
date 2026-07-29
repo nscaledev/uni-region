@@ -233,6 +233,9 @@ type ServerInterface interface {
 	// Get SSH certificate authority
 	// (GET /api/v2/sshcertificateauthorities/{sshCertificateAuthorityID})
 	GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID(w http.ResponseWriter, r *http.Request, sshCertificateAuthorityID SshCertificateAuthorityIDParameter)
+	// List volume classes
+	// (GET /api/v2/volumeclasses)
+	GetApiV2Volumeclasses(w http.ResponseWriter, r *http.Request, params GetApiV2VolumeclassesParams)
 	// Get the deployed service version
 	// (GET /api/version)
 	GetApiVersion(w http.ResponseWriter, r *http.Request)
@@ -632,6 +635,12 @@ func (_ Unimplemented) DeleteApiV2SshcertificateauthoritiesSshCertificateAuthori
 // Get SSH certificate authority
 // (GET /api/v2/sshcertificateauthorities/{sshCertificateAuthorityID})
 func (_ Unimplemented) GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID(w http.ResponseWriter, r *http.Request, sshCertificateAuthorityID SshCertificateAuthorityIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List volume classes
+// (GET /api/v2/volumeclasses)
+func (_ Unimplemented) GetApiV2Volumeclasses(w http.ResponseWriter, r *http.Request, params GetApiV2VolumeclassesParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3633,6 +3642,39 @@ func (siw *ServerInterfaceWrapper) GetApiV2SshcertificateauthoritiesSshCertifica
 	handler.ServeHTTP(w, r)
 }
 
+// GetApiV2Volumeclasses operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV2Volumeclasses(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetApiV2VolumeclassesParams
+
+	// ------------- Optional query parameter "regionID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "regionID", r.URL.Query(), &params.RegionID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "regionID", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV2Volumeclasses(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetApiVersion operation middleware
 func (siw *ServerInterfaceWrapper) GetApiVersion(w http.ResponseWriter, r *http.Request) {
 
@@ -3984,6 +4026,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/sshcertificateauthorities/{sshCertificateAuthorityID}", wrapper.GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v2/volumeclasses", wrapper.GetApiV2Volumeclasses)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/version", wrapper.GetApiVersion)

@@ -811,9 +811,9 @@ func TestConvertAttachmentProvisioningStatus(t *testing.T) {
 			want:  corev1.ResourceProvisioningStatusDeprovisioning,
 		},
 		{
-			name:  "unknown",
+			name:  "unset",
 			input: regionv1.AttachmentProvisioningStatus(""),
-			want:  corev1.ResourceProvisioningStatusUnknown,
+			want:  corev1.ResourceProvisioningStatusPending,
 		},
 	}
 
@@ -1566,11 +1566,11 @@ func createStorageV2ForSnapshotPolicyResult(t *testing.T, configure func(*openap
 	network.Labels[coreconstants.OrganizationLabel] = testOrganizationID
 	network.Labels[coreconstants.ProjectLabel] = testProjectID
 	network.Spec.Prefix = &v1alpha1.IPv4Prefix{IPNet: *prefix}
-	network.Status.Conditions = []v1alpha1.Condition{
+	network.Status.Conditions = []metav1.Condition{
 		{
-			Type:   v1alpha1.ConditionAvailable,
-			Status: k8sv1.ConditionTrue,
-			Reason: v1alpha1.ConditionReasonProvisioned,
+			Type:   string(v1alpha1.ConditionAvailable),
+			Status: metav1.ConditionTrue,
+			Reason: string(v1alpha1.ConditionReasonProvisioned),
 		},
 	}
 
@@ -2260,12 +2260,12 @@ func TestGetProjectsSnapshotPolicyStatusOnParentRead(t *testing.T) {
 				},
 				{
 					Name: "daily",
-					Conditions: []v1alpha1.Condition{
+					Conditions: []metav1.Condition{
 						{
-							Type:               v1alpha1.ConditionAvailable,
-							Status:             k8sv1.ConditionTrue,
+							Type:               string(v1alpha1.ConditionAvailable),
+							Status:             metav1.ConditionTrue,
 							LastTransitionTime: metav1.Now(),
-							Reason:             v1alpha1.ConditionReasonProvisioned,
+							Reason:             string(v1alpha1.ConditionReasonProvisioned),
 							Message:            "snapshot policy is active",
 						},
 					},

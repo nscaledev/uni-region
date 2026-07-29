@@ -296,14 +296,16 @@ type RegionOpenstackNetworkSpec struct {
 
 type RegionOpenstackBlockStorageSpec struct {
 	// VolumeClasses defines which provider volume classes are eligible for Region
-	// inventory export and what user-facing metadata is attached to them. If not
-	// defined, then all provider volume classes are eligible.
+	// inventory export and what user-facing metadata is attached to them. Provider
+	// volume classes are excluded unless their IDs are explicitly selected. If this
+	// configuration is not defined, no provider volume classes are eligible.
 	VolumeClasses *OpenstackVolumeClassesSpec `json:"volumeClasses,omitempty"`
 }
 
 type OpenstackVolumeClassesSpec struct {
-	// Selector allows provider volume classes to be manually selected for inclusion.
-	// The selected set is a boolean intersection of all defined filters in the selector.
+	// Selector explicitly selects provider volume classes for inclusion. If the
+	// selector is not defined, or its IDs are nil or empty, no provider volume
+	// classes are selected.
 	Selector *VolumeClassSelector `json:"selector,omitempty"`
 	// Metadata allows provider volume classes to be explicitly augmented with
 	// user-facing metadata. OpenStack stores these internally as Cinder volume types,
@@ -316,8 +318,8 @@ type OpenstackVolumeClassesSpec struct {
 }
 
 type VolumeClassSelector struct {
-	// IDs is an explicit list of allowed provider volume class IDs. If not
-	// specified, then all provider volume classes are considered.
+	// IDs is an explicit allowlist of provider volume class IDs. If nil or empty,
+	// no provider volume classes are selected.
 	IDs []string `json:"ids,omitempty"`
 }
 
@@ -398,7 +400,7 @@ type VLANSegment struct {
 // RegionStatus defines the status of the region.
 type RegionStatus struct {
 	// Current service state of a region.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // IdentityList is a typed list of identities.
@@ -442,7 +444,7 @@ type IdentitySpec struct {
 
 type IdentityStatus struct {
 	// Current service state of a cluster manager.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // OpenstackIdentityList is a typed list of identities.
@@ -592,7 +594,7 @@ type NetworkStatusOpenstack struct {
 
 type NetworkStatus struct {
 	// Current service state of a cluster manager.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// TODO: delete me.
 	Openstack *NetworkStatusOpenstack `json:"openstack,omitempty"`
 }
@@ -707,7 +709,7 @@ type SecurityGroupSpec struct {
 
 type SecurityGroupStatus struct {
 	// Current service state of a security group.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=any;icmp;tcp;udp;vrrp
@@ -800,7 +802,7 @@ type LoadBalancerSpec struct {
 
 type LoadBalancerStatus struct {
 	// Current service state of a load balancer.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// VIPAddress is the provisioned virtual IP address.
 	VIPAddress *unikornv1core.IPv4Address `json:"vipAddress,omitempty"`
 	// PublicIP is the provisioned public IP address.
@@ -872,7 +874,7 @@ type VolumeStatus struct {
 	// ObservedGeneration is the most recent generation observed by the controller.
 	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
 	// Current service state of a volume.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// Size is the currently provisioned/observed size of the volume.
 	// (May differ from spec.size while provisioning.)
 	Size *resource.Quantity `json:"size,omitempty"`
@@ -1106,33 +1108,53 @@ type ServerPublicIPAllocationSpec struct {
 	Enabled bool `json:"enabled,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=Pending;Queued;Building;Running;Stopping;Stopped
-type InstanceLifecyclePhase string
+// ActiveConditionReason is the domain-owned, type-safe reason vocabulary for the
+// generic core ConditionActive (the lifecycle/power axis of a server). It is the
+// sole source of truth for a server's lifecycle state: there is no phase field,
+// the state rides the condition, per the platform specification that resource
+// state is expressed exclusively via status.conditions. The condition's Status is
+// a pure projection of the reason (True only when Running) and its message is a
+// user-facing description of the reason, so both are derived rather than supplied
+// independently (see Server.SetActiveCondition).
+type ActiveConditionReason string
 
 const (
-	// InstanceLifecyclePhasePending is the initial phase before the provider has
+	// ActiveConditionReasonPending is the initial state before the provider has
 	// been observed reporting on the server.
-	InstanceLifecyclePhasePending InstanceLifecyclePhase = "Pending"
-	// InstanceLifecyclePhaseQueued means the provider has accepted the create
-	// request but the underlying hardware has not yet started work. Used for
-	// baremetal servers Nova has admitted while Ironic has not yet entered a
-	// deploy state. From the user's perspective: "you're in line, this is expected".
-	InstanceLifecyclePhaseQueued InstanceLifecyclePhase = "Queued"
-	// InstanceLifecyclePhaseBuilding means the provider is actively provisioning
+	ActiveConditionReasonPending ActiveConditionReason = "Pending"
+	// ActiveConditionReasonQueued means the provider has accepted the create
+	// request but the underlying hardware has not yet started work: baremetal
+	// servers Nova has admitted while Ironic has not yet entered a deploy state.
+	// From the user's perspective: "you're in line, this is expected".
+	ActiveConditionReasonQueued ActiveConditionReason = "Queued"
+	// ActiveConditionReasonBuilding means the provider is actively provisioning
 	// the server: Nova reports BUILD with no Ironic pre-deploy gating (for VMs
-	// always, for baremetal once Ironic has entered a deploy state). Distinct
-	// from Queued so users know forward progress is happening.
-	InstanceLifecyclePhaseBuilding InstanceLifecyclePhase = "Building"
-	InstanceLifecyclePhaseRunning  InstanceLifecyclePhase = "Running"
-	InstanceLifecyclePhaseStopping InstanceLifecyclePhase = "Stopping"
-	InstanceLifecyclePhaseStopped  InstanceLifecyclePhase = "Stopped"
+	// always, for baremetal once Ironic has entered a deploy state). Distinct from
+	// Queued so users know forward progress is happening.
+	ActiveConditionReasonBuilding ActiveConditionReason = "Building"
+	// ActiveConditionReasonRebuilding means the provider is reimaging an already
+	// provisioned server (Nova REBUILD): it is not usable until the reimage
+	// completes. Distinct from Building (a first provision) so a rebuild is
+	// legible on the Active axis; the fine-grained rebuild progress rides
+	// Status.Rebuild.
+	ActiveConditionReasonRebuilding ActiveConditionReason = "Rebuilding"
+	// ActiveConditionReasonRunning means the server is running and usable; this is
+	// the only reason for which the Active condition Status is True.
+	ActiveConditionReasonRunning ActiveConditionReason = "Running"
+	// ActiveConditionReasonStopping means the server is being stopped.
+	ActiveConditionReasonStopping ActiveConditionReason = "Stopping"
+	// ActiveConditionReasonStopped means the server is stopped.
+	ActiveConditionReasonStopped ActiveConditionReason = "Stopped"
+	// ActiveConditionReasonError means the provider reported the server in a
+	// terminal error state (e.g. Nova ERROR). It is a lifecycle state, not a
+	// health verdict: it is the axis the provider-create-failure guard keys off to
+	// decide whether to tear down and retry a server that never booted.
+	ActiveConditionReasonError ActiveConditionReason = "Error"
 )
 
 type ServerStatus struct {
 	// Current service state of a cluster manager.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
-	// Phase is the current lifecycle phase of the server.
-	Phase InstanceLifecyclePhase `json:"phase,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// PrivateIP is the private IP address of the server.
 	PrivateIP *string `json:"privateIP,omitempty"`
 	// PublicIP is the public IP address of the server.
@@ -1170,6 +1192,15 @@ type ServerStatus struct {
 	// ProviderCreateRetrying is true while the controller is deleting a failed
 	// provider server before making another create attempt.
 	ProviderCreateRetrying bool `json:"providerCreateRetrying,omitempty"`
+	// Rebuild records the most recent Region-issued rebuild intent for a target
+	// image. It is cleared once the server converges on that image. Nova remains
+	// authoritative for the live server image and operation state; this marker is
+	// used to classify an error observed while rebuild intent is retained; an
+	// error arriving after an unobserved success is indistinguishable from a
+	// failed rebuild and is treated as one (fails closed).
+	// An accepted attempt that later fails parks the server until the desired
+	// image changes or the server is replaced.
+	Rebuild *ServerRebuildStatus `json:"rebuild,omitempty"`
 	// Volumes reflects the observed attachment state for each desired volume.
 	// +listType=map
 	// +listMapKey=id
@@ -1177,6 +1208,41 @@ type ServerStatus struct {
 	// +patchMergeKey=id
 	// +optional
 	Volumes []ServerVolumeStatus `json:"volumes,omitempty"`
+}
+
+// ServerRebuildState describes where an in-place rebuild is in its lifecycle.
+type ServerRebuildState string
+
+const (
+	// ServerRebuildStateInitiated records write-ahead intent: the rebuild is
+	// armed and durable, but Nova has not been asked to act.
+	ServerRebuildStateInitiated ServerRebuildState = "Initiated"
+	// ServerRebuildStateRebuilding records that Nova has accepted or been
+	// observed acting on the rebuild.
+	ServerRebuildStateRebuilding ServerRebuildState = "Rebuilding"
+	// ServerRebuildStateSucceeded records an observed convergence: the image
+	// ref matches the target and the server is in a stable, non-error state.
+	ServerRebuildStateSucceeded ServerRebuildState = "Succeeded"
+	// ServerRebuildStateFailed records an observed failure: the server entered
+	// ERROR after Nova acted on the rebuild.
+	ServerRebuildStateFailed ServerRebuildState = "Failed"
+)
+
+type ServerRebuildStatus struct {
+	// TargetImageID is the desired image of the rebuild Region issued. It is
+	// write-ahead intent: the provider persists it (via a yield) before Nova
+	// is asked to act, because it is the one fact a failed rebuild cannot be
+	// distinguished from an unrelated failure without.
+	TargetImageID regionids.ImageID `json:"targetImageID"`
+	// State is forward-only (Initiated < Rebuilding < Succeeded == Failed;
+	// terminals are peers and never flip — first observation wins), with one
+	// exception: the reconciler's park assigns Failed directly, even over
+	// Succeeded. It is advanced by the reconciler (Initiated at arm, Rebuilding
+	// at accept) and by the monitor's provider poll (Rebuilding/Succeeded/Failed
+	// from observed Nova evidence); only the reconciler ever clears or replaces
+	// the struct.
+	// +kubebuilder:validation:Enum=Initiated;Rebuilding;Succeeded;Failed
+	State ServerRebuildState `json:"state"`
 }
 
 type ServerVolumeStatus struct {
@@ -1351,7 +1417,7 @@ type FileStorageStatus struct {
 	// ObservedGeneration is the most recent generation observed by the controller.
 	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
 	// Current service state of a file storage.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// Size is the currently provisioned/observed size of the file storage.
 	// (May differ from spec.size while provisioning/resizing.)
 	Size *resource.Quantity `json:"size,omitempty"`
@@ -1382,7 +1448,7 @@ type FileStorageSnapshotPolicyStatus struct {
 	// +listType=map
 	// +listMapKey=type
 	// +optional
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // AttachmentProvisioningStatus describes the state of a single attachment.

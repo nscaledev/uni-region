@@ -201,44 +201,51 @@ spec:
               conditions:
                 description: Current service state of a cluster manager.
                 items:
-                  description: |-
-                    Condition is a generic condition type for use across all resource types.
-                    It's generic so that the underlying controller-manager functionality can
-                    be shared across all resources.
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
                   properties:
                     lastTransitionTime:
-                      description: Last time the condition transitioned from one status
-                        to another.
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
                       format: date-time
                       type: string
                     message:
-                      description: Human-readable message indicating details about
-                        last transition.
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
                       type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
                     reason:
-                      description: Unique, one-word, CamelCase reason for the condition's
-                        last transition.
-                      enum:
-                      - Provisioning
-                      - Provisioned
-                      - Cancelled
-                      - Errored
-                      - Deprovisioning
-                      - Deprovisioned
-                      - Unknown
-                      - Healthy
-                      - Degraded
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
                       type: string
                     status:
-                      description: |-
-                        Status is the status of the condition.
-                        Can be True, False, Unknown.
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
                       type: string
                     type:
-                      description: Type is the type of the condition.
-                      enum:
-                      - Available
-                      - Healthy
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                       type: string
                   required:
                   - lastTransitionTime
@@ -266,16 +273,6 @@ spec:
                   trustworthy. It is only ever written, never cleared: the provider-create
                   retry reset leaves it intact and a transient port-read miss cannot unset
                   it, while an authoritative ACTIVE read self-heals any drift.
-                type: string
-              phase:
-                description: Phase is the current lifecycle phase of the server.
-                enum:
-                - Pending
-                - Queued
-                - Building
-                - Running
-                - Stopping
-                - Stopped
                 type: string
               privateIP:
                 description: PrivateIP is the private IP address of the server.
@@ -307,6 +304,44 @@ spec:
               publicIP:
                 description: PublicIP is the public IP address of the server.
                 type: string
+              rebuild:
+                description: |-
+                  Rebuild records the most recent Region-issued rebuild intent for a target
+                  image. It is cleared once the server converges on that image. Nova remains
+                  authoritative for the live server image and operation state; this marker is
+                  used to classify an error observed while rebuild intent is retained; an
+                  error arriving after an unobserved success is indistinguishable from a
+                  failed rebuild and is treated as one (fails closed).
+                  An accepted attempt that later fails parks the server until the desired
+                  image changes or the server is replaced.
+                properties:
+                  state:
+                    description: |-
+                      State is forward-only (Initiated < Rebuilding < Succeeded == Failed;
+                      terminals are peers and never flip — first observation wins), with one
+                      exception: the reconciler's park assigns Failed directly, even over
+                      Succeeded. It is advanced by the reconciler (Initiated at arm, Rebuilding
+                      at accept) and by the monitor's provider poll (Rebuilding/Succeeded/Failed
+                      from observed Nova evidence); only the reconciler ever clears or replaces
+                      the struct.
+                    enum:
+                    - Initiated
+                    - Rebuilding
+                    - Succeeded
+                    - Failed
+                    type: string
+                  targetImageID:
+                    description: |-
+                      TargetImageID is the desired image of the rebuild Region issued. It is
+                      write-ahead intent: the provider persists it (via a yield) before Nova
+                      is asked to act, because it is the one fact a failed rebuild cannot be
+                      distinguished from an unrelated failure without.
+                    format: uuid
+                    type: string
+                required:
+                - state
+                - targetImageID
+                type: object
               scheduledAt:
                 description: |-
                   ScheduledAt is the time the provider accepted and processed the creation request.

@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -43,7 +44,8 @@ import (
 // It handles authentication (returning a token + service catalog) and returns a
 // single fake flavor for any other request.
 type fakeOpenstack struct {
-	ts *httptest.Server
+	ts                 *httptest.Server
+	volumeTypeRequests atomic.Int64
 }
 
 func newFakeOpenstack(t *testing.T) *fakeOpenstack {
@@ -66,7 +68,8 @@ func (f *fakeOpenstack) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			{"type":"identity","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]},
 			{"type":"compute","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]},
 			{"type":"image","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]},
-			{"type":"network","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]}
+			{"type":"network","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]},
+			{"type":"block-storage","endpoints":[{"interface":"public","url":%[1]q,"region_id":""}]}
 			],"expires_at":"2099-01-01T00:00:00.000000Z"}}`,
 			f.ts.URL)
 
@@ -86,6 +89,39 @@ func (f *fakeOpenstack) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				{"id":"v3","status":"current","links":[{"href":%q,"rel":"self"}]}
 				]}}`,
 			f.ts.URL+"/v2.1/", f.ts.URL+"/v3/")
+
+		return
+	}
+
+	if r.Method == http.MethodGet && r.URL.Path == "/types" {
+		f.volumeTypeRequests.Add(1)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+
+		fmt.Fprint(w, `{"volume_types":[
+			{
+				"id":"slow",
+				"name":"slow-hdd",
+				"description":"Bulk capacity",
+				"is_public":true,
+				"os-volume-type-access:is_public":true
+			},
+			{
+				"id":"fast",
+				"name":"fast-nvme",
+				"description":"Latency sensitive",
+				"is_public":true,
+				"os-volume-type-access:is_public":true
+			},
+			{
+				"id":"private",
+				"name":"private-nvme",
+				"description":"Provider internal",
+				"is_public":false,
+				"os-volume-type-access:is_public":false
+			}
+		]}`)
 
 		return
 	}

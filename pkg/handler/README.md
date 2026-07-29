@@ -255,6 +255,11 @@ but we do not have transactions.”
 - Cross-object invariants are only best-effort. Owner references, finalizers,
   allocation records, and saga compensation improve consistency, but they do not
   turn the system into an ACID store.
+- `GET /api/v2/volumeclasses` is currently a contract-only route. The narrow
+  `handler_v2_volumeclass_contract.go` method returns the canonical internal
+  server error so the generated router remains buildable; it does not perform
+  provider discovery, conversion, or authorization and should be replaced by
+  the dedicated implementation work.
 
 ## TODO
 

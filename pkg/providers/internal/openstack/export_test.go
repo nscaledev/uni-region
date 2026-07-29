@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumetypes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/listeners"
@@ -50,6 +51,9 @@ func NewImageQuery(listFunc func() (*cache.ListSnapshot[types.Image], error)) ty
 
 //nolint:gochecknoglobals
 var ConvertImage = convertImage
+
+//nolint:gochecknoglobals
+var ConvertVolumeClasses = convertVolumeClasses
 
 //nolint:gochecknoglobals
 var GatewayIP = gatewayIP
@@ -105,6 +109,10 @@ var MetadataKey = metadataKey
 //nolint:gochecknoglobals
 var ServerForCreate = serverForCreate
 
+func ReconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
+	return reconcileServerImage(ctx, client, server, openstackServer)
+}
+
 //nolint:gochecknoglobals
 var PlacementAPIMicroversion = placementAPIMicroversion
 
@@ -144,6 +152,17 @@ func NewTestComputeClient(endpoint string) *ComputeClient {
 			Endpoint:       endpoint,
 		},
 		flavorCache: cache.New[[]flavors.Flavor](time.Hour),
+	}
+}
+
+func NewTestBlockStorageClient(endpoint string, options *unikornv1.RegionOpenstackBlockStorageSpec) *BlockStorageClient {
+	return &BlockStorageClient{
+		client: &gophercloud.ServiceClient{
+			ProviderClient: &gophercloud.ProviderClient{},
+			Endpoint:       endpoint,
+		},
+		options:         options,
+		volumeTypeCache: cache.New[[]volumetypes.VolumeType](time.Hour),
 	}
 }
 
@@ -272,6 +291,21 @@ func ReconcileServer(ctx context.Context, p *Provider, client ServerInterface, s
 
 func ReconcileServerWithPreflight(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight func(context.Context, *unikornv1.Server) error) (*servers.Server, error) {
 	return p.reconcileServer(ctx, client, server, port, keyName, serverCreatePreflight(preflight))
+}
+
+// ReconcileServerForCreate exercises the CreateServer copy-back semantics:
+// the augmented copy is snapshotted, reconciled, and its status copied back
+// onto the caller's server whenever the two differ.
+func ReconcileServerForCreate(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, port *ports.Port, keyName string) error {
+	return p.reconcileServerForCreate(ctx, client, server, options, port, keyName, nil)
+}
+
+// CreateServerWithClients exercises the client-independent core of
+// CreateServer — port and floating IP reconciliation (which write status onto
+// the caller's server) followed by the augmented-copy reconcile and status
+// copy-back — pinning the production interleaving of those steps.
+func CreateServerWithClients(ctx context.Context, p *Provider, networking NetworkingInterface, compute ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, keyName string) error {
+	return p.createServer(ctx, networking, compute, server, options, keyName, nil)
 }
 
 func ResolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {

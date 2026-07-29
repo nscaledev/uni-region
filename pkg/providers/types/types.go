@@ -88,6 +88,42 @@ type GPU struct {
 // FlavorList allows us to attach sort functions and the like.
 type FlavorList []Flavor
 
+// VolumeClassMedia describes the physical storage medium backing a volume class.
+type VolumeClassMedia string
+
+const (
+	VolumeClassMediaHDD  VolumeClassMedia = "hdd"
+	VolumeClassMediaSSD  VolumeClassMedia = "ssd"
+	VolumeClassMediaNVMe VolumeClassMedia = "nvme"
+)
+
+// VolumeClass represents provider block-storage inventory exposed by a Region.
+type VolumeClass struct {
+	// ID is the immutable provider identifier.
+	ID string
+	// Name is the provider display name.
+	Name string
+	// Description is the provider display description.
+	Description string
+	// Media describes the backing storage medium.
+	Media VolumeClassMedia
+	// Performance describes advertised performance caps.
+	Performance *VolumeClassPerformance
+	// Encrypted indicates whether volumes provisioned from this class are encrypted at rest by the provider.
+	Encrypted bool
+}
+
+// VolumeClassPerformance describes advertised performance caps for a volume class.
+type VolumeClassPerformance struct {
+	// MaxIOPS is the advertised maximum input/output operations per second cap.
+	MaxIOPS *int
+	// MaxThroughput is the advertised maximum throughput cap in mebibytes per second.
+	MaxThroughput *int
+}
+
+// VolumeClassList is a list of provider volume classes.
+type VolumeClassList []VolumeClass
+
 type ImageVirtualization string
 
 const (

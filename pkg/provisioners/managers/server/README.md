@@ -17,6 +17,79 @@ Distinctive behaviour:
   reached it aborts terminally rather than retrying further
 - clears or updates consumed-resource references during reprovision and teardown
 
+Create recovery and image rebuild recovery deliberately use different state:
+
+| Initial create failure | Image rebuild failure |
+|---|---|
+| Server never launched | Server previously launched |
+| Delete/recreate, bounded by the existing flag | One accepted attempt per target image |
+| `ProviderCreateFailures` | `Status.Rebuild` |
+| Exhaustion is operator-terminal | User selects another image or replaces the server |
+| Edge wake: `ProviderCreateFailure` via `providerCreateFailureUpdate` | Level wake: `RebuildSettled` via `serverRebuildSettledUpdate` |
+
+The rebuild state machine lives in the OpenStack provider's existing-server
+reconciliation path. It leaves the create retry counter and predicate code
+untouched. Intent is write-ahead: an arming pass records `Status.Rebuild` and
+yields, so the marker is durable before a later pass submits to Nova (see the
+provider README for the recovery semantics this buys). During a rebuild the
+reconcile completes as soon as Nova accepts the action: it writes a fixed
+accepted stamp (`Healthy` `False`/`Provisioning` and `Phase` `Building`, never
+derived from the rebuild response body) — previously only the monitor's poll
+wrote those for an existing server, so the create retry predicate's inputs can
+now arrive a cycle earlier via the reconcile path as well — and then returns
+rather than self-polling Nova until the rebuild converges.
+
+Settlement is watch-predicate-driven for both recovery paths
+(`pkg/managers/server`), each over a helper exported from this package:
+
+- create failure rides `providerCreateFailureUpdate` over the
+  `ProviderCreateFailure` helper — it wakes the reconciler to run the bounded
+  delete-and-retry. This helper is genuinely shared: the provisioner makes the
+  delete-and-retry decision through the same function the watch predicate
+  fires on, so the trigger and the action cannot drift.
+- rebuild settlement rides `serverRebuildSettledUpdate` over
+  `RebuildSettled` — it wakes the reconciler for a settlement pass (marker
+  clear on success, `UserActionRequired` park on failure) once the monitor
+  stamps a terminal state (`Succeeded`/`Failed`) on `Status.Rebuild`. Unlike
+  `ProviderCreateFailure`, the provisioner never consults `RebuildSettled`:
+  the wake is stimulus only, and the settlement pass re-decides from its own
+  fresh provider read. The helper lives beside the settlement logic so the
+  wake condition and what it wakes are reviewed together.
+
+`RebuildSettled` is a LEVEL test on the rebuild state, evaluated on the new
+object at every non-empty status write rather than as a transition test: it
+fires whenever `Status.Rebuild.State` is `Succeeded`, or `Failed` on a server
+not yet parked (`serverParked`, which reads the core-owned `Available=Errored`
+that a park writes). Its exact shape is load-bearing, and both halves matter.
+
+It never fires for `Initiated` or `Rebuilding`. That is deliberate, not an
+optimization: a wake over `Initiated` could re-drive a submission whose
+acceptance write was lost and produce a second Nova accept, so the submission
+gate must have no wake channel. Pre-acceptance progress is instead carried by
+the arm/submit pass's own yield loop, and an in-flight `Rebuilding` has nothing
+to settle.
+
+It fires on *any* non-empty status write while a terminal marker stands, not
+only on the write that changes the marker's state. This is what lets a dropped
+write recover without leaning on re-assertion — an identical re-assertion is an
+empty patch, produces no watch event, and could never re-fire a lost wake. The
+settlement pass's own action removes the level: a `Succeeded` marker's converged
+clear deletes the marker, and a `Failed` marker's park flips `Available` to
+`Errored`, which `serverParked` then masks so a parked server's steady state
+stays quiet (its marker is retained until the user selects another image). Each
+of those settlement writes is confirmed by the pass's own yield loop, not by a
+wake event: the clearing pass reads the marker back absent, and the pre-park
+pass reads `Failed` back durable before it parks. The single write with no
+read-back confirmation is the park's `Available=Errored` itself — and the
+any-write level is exactly what covers it, because the very patch that conflicts
+that write away lands while `Failed ∧ not-parked` still stands in etcd, so it is
+itself a terminal-level wake and the woken pass re-parks. (This rests on the
+monitor writing its marker advance and health in a single patch per poll; see
+`pkg/monitor/health/server`.)
+
+The reconciler still makes every decision from its own fresh provider read; the
+monitor's stamp is stimulus, never authorization.
+
 This is the clearest controller-side expression of the lifecycle DAG model:
 
 - network/security-group/SSH-CA edges are explicit and blocking
