@@ -47,6 +47,14 @@ packages are the concrete provider implementations.
 - `types.Provider` extends that common base with the broader image, identity,
   network, security-group, load-balancer, server, console, and snapshot
   lifecycle surfaces.
+- `types.Volume` is the block-storage lifecycle capability boundary:
+  - create and delete receive the native Region `unikornv1.Volume` intent
+  - find rediscovers provider resources through stable Region naming and
+    metadata rather than mirrored provider-state records
+  - observe returns provider-neutral `types.VolumeState` size and lifecycle
+    status for controller and monitor consumers
+  - the capability remains separate from the composite `types.Provider` until
+    concrete provider lifecycle implementations are introduced
 - The provider abstraction is intentionally mixed:
   - CRD-backed lifecycle operations still speak in repo-native
     `pkg/apis/unikorn/v1alpha1` resource types
@@ -128,6 +136,9 @@ packages are the concrete provider implementations.
 - Credential handling remains one of the sharpest edges in this layer. Some
   current flows still rely on service-managed secret material and delegated
   application credentials that the wider platform would ideally stop exposing.
+- Volume lifecycle is currently a contract only. Concrete provider behavior,
+  controller/monitor integration, and server attachment operations are separate
+  implementation surfaces.
 - Some provider-specific compensating mechanisms are valuable but architectural
   debt at the same time. Caches, local allocators, and compatibility bridges are
   signs that the substrate contract is imperfect, not proof that those patterns

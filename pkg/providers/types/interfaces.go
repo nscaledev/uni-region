@@ -91,6 +91,22 @@ type LoadBalancer interface {
 	DeleteLoadBalancer(ctx context.Context, identity *unikornv1.Identity, loadBalancer *unikornv1.LoadBalancer) error
 }
 
+// Volume manages provider-backed block-storage volumes.
+type Volume interface {
+	// CreateVolume creates the provider volume described by the Region Volume.
+	CreateVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
+	// FindVolume reports whether the provider volume described by the Region
+	// Volume exists. Implementations rediscover it using stable Region naming
+	// and metadata conventions.
+	FindVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) (bool, error)
+	// ObserveVolume returns the provider-neutral observed state of the provider
+	// volume described by the Region Volume.
+	ObserveVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) (*VolumeState, error)
+	// DeleteVolume idempotently deletes the provider volume described by the
+	// Region Volume.
+	DeleteVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
+}
+
 type Server interface {
 	// CreateServer creates a new server.
 	CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, options *ServerCreateOptions) error

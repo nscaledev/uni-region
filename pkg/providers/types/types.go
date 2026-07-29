@@ -124,6 +124,26 @@ type VolumeClassPerformance struct {
 // VolumeClassList is a list of provider volume classes.
 type VolumeClassList []VolumeClass
 
+// VolumeStatus describes provider-observed block-storage lifecycle state.
+type VolumeStatus string
+
+const (
+	VolumeStatusUnknown   VolumeStatus = "unknown"
+	VolumeStatusCreating  VolumeStatus = "creating"
+	VolumeStatusAvailable VolumeStatus = "available"
+	VolumeStatusInUse     VolumeStatus = "in-use"
+	VolumeStatusDeleting  VolumeStatus = "deleting"
+	VolumeStatusError     VolumeStatus = "error"
+)
+
+// VolumeState is the provider-neutral observed state of a block-storage volume.
+type VolumeState struct {
+	// Size is the capacity currently reported by the provider.
+	Size resource.Quantity
+	// Status is the provider-neutral lifecycle state.
+	Status VolumeStatus
+}
+
 type ImageVirtualization string
 
 const (

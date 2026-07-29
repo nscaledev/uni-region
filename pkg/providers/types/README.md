@@ -49,6 +49,14 @@ continue to be passed directly through many provider interface methods.
   resource. It carries the immutable provider identifier and user-facing
   metadata that Region configuration can filter or enrich before a public API
   exposes the inventory.
+- `Volume` is a standalone provider capability for block-storage lifecycle.
+  Its create, find, observe, and idempotent delete operations take the native
+  Region `unikornv1.Volume` resource so desired lifecycle intent retains the
+  stable CRD shape and metadata conventions.
+- `VolumeState` is the provider-neutral observed projection returned by that
+  capability. It exposes the provider-reported capacity and a normalized
+  lifecycle status without leaking OpenStack/Cinder resource types to controller
+  or monitor consumers.
 - `ServerCreateOptions` carries launch-time derived inputs without forcing them
   into the persisted `Server` CRD shape.
 - Exported errors such as `ErrImageNotReadyForUpload` and
@@ -74,6 +82,9 @@ continue to be passed directly through many provider interface methods.
 - Not every concrete provider is guaranteed to support every concept equally
   well. This package standardizes the contract surface, but concrete behaviour
   still depends on provider implementation choices and limitations.
+- The `Volume` capability is intentionally not embedded in the composite
+  `Provider` yet. This keeps the contract addition independent from concrete
+  provider lifecycle work and avoids placeholder backend behavior.
 - There is stale historical scar tissue in the interface layer, especially
   around old network-detail propagation commentary. That comment block is now a
   cleanup problem more than a live contract.

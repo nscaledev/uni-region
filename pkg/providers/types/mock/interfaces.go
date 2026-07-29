@@ -435,6 +435,87 @@ func (mr *MockLoadBalancerMockRecorder) DeleteLoadBalancer(ctx, identity, loadBa
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLoadBalancer", reflect.TypeOf((*MockLoadBalancer)(nil).DeleteLoadBalancer), ctx, identity, loadBalancer)
 }
 
+// MockVolume is a mock of Volume interface.
+type MockVolume struct {
+	ctrl     *gomock.Controller
+	recorder *MockVolumeMockRecorder
+}
+
+// MockVolumeMockRecorder is the mock recorder for MockVolume.
+type MockVolumeMockRecorder struct {
+	mock *MockVolume
+}
+
+// NewMockVolume creates a new mock instance.
+func NewMockVolume(ctrl *gomock.Controller) *MockVolume {
+	mock := &MockVolume{ctrl: ctrl}
+	mock.recorder = &MockVolumeMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockVolume) EXPECT() *MockVolumeMockRecorder {
+	return m.recorder
+}
+
+// CreateVolume mocks base method.
+func (m *MockVolume) CreateVolume(ctx context.Context, identity *v1alpha1.Identity, volume *v1alpha1.Volume) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateVolume", ctx, identity, volume)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateVolume indicates an expected call of CreateVolume.
+func (mr *MockVolumeMockRecorder) CreateVolume(ctx, identity, volume any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateVolume", reflect.TypeOf((*MockVolume)(nil).CreateVolume), ctx, identity, volume)
+}
+
+// DeleteVolume mocks base method.
+func (m *MockVolume) DeleteVolume(ctx context.Context, identity *v1alpha1.Identity, volume *v1alpha1.Volume) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteVolume", ctx, identity, volume)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteVolume indicates an expected call of DeleteVolume.
+func (mr *MockVolumeMockRecorder) DeleteVolume(ctx, identity, volume any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteVolume", reflect.TypeOf((*MockVolume)(nil).DeleteVolume), ctx, identity, volume)
+}
+
+// FindVolume mocks base method.
+func (m *MockVolume) FindVolume(ctx context.Context, identity *v1alpha1.Identity, volume *v1alpha1.Volume) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindVolume", ctx, identity, volume)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FindVolume indicates an expected call of FindVolume.
+func (mr *MockVolumeMockRecorder) FindVolume(ctx, identity, volume any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindVolume", reflect.TypeOf((*MockVolume)(nil).FindVolume), ctx, identity, volume)
+}
+
+// ObserveVolume mocks base method.
+func (m *MockVolume) ObserveVolume(ctx context.Context, identity *v1alpha1.Identity, volume *v1alpha1.Volume) (*types.VolumeState, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ObserveVolume", ctx, identity, volume)
+	ret0, _ := ret[0].(*types.VolumeState)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ObserveVolume indicates an expected call of ObserveVolume.
+func (mr *MockVolumeMockRecorder) ObserveVolume(ctx, identity, volume any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ObserveVolume", reflect.TypeOf((*MockVolume)(nil).ObserveVolume), ctx, identity, volume)
+}
+
 // MockServer is a mock of Server interface.
 type MockServer struct {
 	ctrl     *gomock.Controller
