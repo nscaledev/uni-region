@@ -20,8 +20,9 @@ The useful way to read it is not as a directory tree, but as one system:
 - monitors project observed provider truth back into status and metrics
 - providers bind the region model to real or simulated clouds
 - `Volume` is an internal Region storage model today: a network-anchored,
-  quota-carrying block storage resource whose public API, controller, and
-  provider behavior are deliberately introduced by later tickets
+  quota-carrying block storage resource. OpenStack create/delete provider
+  behavior exists, while its public API, controller, and observed-state
+  projection remain later lifecycle slices
 - `Server` now carries the internal attach-existing-only block volume intent
   and observed per-volume attachment rows; public API projection and provider
   reconciliation remain separate follow-up work

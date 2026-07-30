@@ -59,6 +59,16 @@ packages are the concrete provider implementations.
     the real backing resources
   - mirrored provider-state records are not the preferred answer unless the
     state cannot be reconstructed safely enough by other means
+- `types.Volume` is currently a focused create/delete capability implemented
+  by OpenStack, separate from the full `types.Provider` composition while the
+  Volume controller and other backends do not consume that lifecycle:
+  - lifecycle intent is the native Region `Volume` CRD
+  - provider implementations rediscover their backing object internally before
+    create or delete; rediscovery is not a public existence-only contract
+  - provider-neutral observation belongs to the later read-side slice, once
+    monitor and controller consumers can exercise its shape
+  - VolumeClass inventory remains on `CommonProvider`, and server
+    attach/detach is a separate capability
 - Provider `Delete*` methods must be idempotent and must tolerate an unrealized
   identity as a no-op. Callers delegate unconditionally; the provider
   self-gates on realized identity rather than the caller gating on readiness or

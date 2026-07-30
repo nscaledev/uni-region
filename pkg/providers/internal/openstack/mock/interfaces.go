@@ -13,6 +13,7 @@ import (
 	reflect "reflect"
 
 	nodes "github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
+	volumes "github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
 	volumetypes "github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumetypes"
 	flavors "github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	remoteconsoles "github.com/gophercloud/gophercloud/v2/openstack/compute/v2/remoteconsoles"
@@ -2504,6 +2505,73 @@ func (m *MockVolumeTypeInterface) GetVolumeTypes(ctx context.Context) ([]volumet
 func (mr *MockVolumeTypeInterfaceMockRecorder) GetVolumeTypes(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVolumeTypes", reflect.TypeOf((*MockVolumeTypeInterface)(nil).GetVolumeTypes), ctx)
+}
+
+// MockVolumeInterface is a mock of VolumeInterface interface.
+type MockVolumeInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockVolumeInterfaceMockRecorder
+}
+
+// MockVolumeInterfaceMockRecorder is the mock recorder for MockVolumeInterface.
+type MockVolumeInterfaceMockRecorder struct {
+	mock *MockVolumeInterface
+}
+
+// NewMockVolumeInterface creates a new mock instance.
+func NewMockVolumeInterface(ctrl *gomock.Controller) *MockVolumeInterface {
+	mock := &MockVolumeInterface{ctrl: ctrl}
+	mock.recorder = &MockVolumeInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockVolumeInterface) EXPECT() *MockVolumeInterfaceMockRecorder {
+	return m.recorder
+}
+
+// CreateVolume mocks base method.
+func (m *MockVolumeInterface) CreateVolume(ctx context.Context, volume *v1alpha1.Volume, metadata map[string]string) (*volumes.Volume, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateVolume", ctx, volume, metadata)
+	ret0, _ := ret[0].(*volumes.Volume)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateVolume indicates an expected call of CreateVolume.
+func (mr *MockVolumeInterfaceMockRecorder) CreateVolume(ctx, volume, metadata any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateVolume", reflect.TypeOf((*MockVolumeInterface)(nil).CreateVolume), ctx, volume, metadata)
+}
+
+// DeleteVolume mocks base method.
+func (m *MockVolumeInterface) DeleteVolume(ctx context.Context, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteVolume", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteVolume indicates an expected call of DeleteVolume.
+func (mr *MockVolumeInterfaceMockRecorder) DeleteVolume(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteVolume", reflect.TypeOf((*MockVolumeInterface)(nil).DeleteVolume), ctx, id)
+}
+
+// GetVolume mocks base method.
+func (m *MockVolumeInterface) GetVolume(ctx context.Context, volume *v1alpha1.Volume) (*volumes.Volume, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetVolume", ctx, volume)
+	ret0, _ := ret[0].(*volumes.Volume)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetVolume indicates an expected call of GetVolume.
+func (mr *MockVolumeInterfaceMockRecorder) GetVolume(ctx, volume any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVolume", reflect.TypeOf((*MockVolumeInterface)(nil).GetVolume), ctx, volume)
 }
 
 // MockBaremetalInterface is a mock of BaremetalInterface interface.

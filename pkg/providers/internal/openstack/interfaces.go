@@ -23,6 +23,7 @@ import (
 	"context"
 
 	"github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
 	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumetypes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/remoteconsoles"
@@ -198,6 +199,12 @@ type PlacementInterface interface {
 
 type VolumeTypeInterface interface {
 	GetVolumeTypes(ctx context.Context) ([]volumetypes.VolumeType, error)
+}
+
+type VolumeInterface interface {
+	GetVolume(ctx context.Context, volume *unikornv1.Volume) (*volumes.Volume, error)
+	CreateVolume(ctx context.Context, volume *unikornv1.Volume, metadata map[string]string) (*volumes.Volume, error)
+	DeleteVolume(ctx context.Context, id string) error
 }
 
 // BaremetalInterface lets the live monitor look up the Ironic node bound to a

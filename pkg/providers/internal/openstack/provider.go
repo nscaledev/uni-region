@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
 	"net"
 	"net/http"
@@ -33,6 +34,7 @@ import (
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumetypes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
@@ -140,7 +142,10 @@ type Provider struct {
 	imageCache *cache.RefreshAheadCache[types.Image, *types.Image]
 }
 
-var _ types.Provider = &Provider{}
+var (
+	_ types.Provider = &Provider{}
+	_ types.Volume   = &Provider{}
+)
 
 type Options struct {
 	// WarmImageCache enables startup-time image cache initialization.
@@ -375,6 +380,24 @@ func (p *Provider) networkFromServicePrincipal(ctx context.Context, identity *un
 	return client, nil
 }
 
+// blockStorageFromServicePrincipal gets a block storage client scoped to the
+// service principal's project.
+func (p *Provider) blockStorageFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (VolumeInterface, error) {
+	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	region, _ := p.openstack.regionSnapshot()
+
+	client, err := NewBlockStorageClient(ctx, provider, region.Spec.Openstack.BlockStorage)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
 // privilegedNetworkFromServicePrincipal gets a network client scoped to the service principal's
 // project but with "manager" credentials.
 func (p *Provider) privilegedNetworkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
@@ -487,6 +510,85 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	}
 
 	return result, nil
+}
+
+func (p *Provider) VolumeClasses(ctx context.Context) (types.VolumeClassList, error) {
+	blockStorage, err := p.openstack.blockStorage(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	resources, err := blockStorage.GetVolumeTypes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	region, _ := p.openstack.regionSnapshot()
+
+	return convertVolumeClasses(region, resources), nil
+}
+
+func convertVolumeClasses(region *unikornv1.Region, resources []volumetypes.VolumeType) types.VolumeClassList {
+	var config *unikornv1.OpenstackVolumeClassesSpec
+	if region != nil && region.Spec.Openstack != nil {
+		config = openstackVolumeClassesConfig(region.Spec.Openstack.BlockStorage)
+	}
+
+	result := make(types.VolumeClassList, 0, len(resources))
+
+	for i := range resources {
+		resource := &resources[i]
+
+		class := types.VolumeClass{
+			ID:          resource.ID,
+			Name:        resource.Name,
+			Description: resource.Description,
+		}
+
+		if metadata := volumeClassMetadata(config, resource.ID); metadata != nil {
+			class.Media = types.VolumeClassMedia(metadata.Media)
+			class.Encrypted = metadata.Encrypted
+
+			class.Performance = convertVolumeClassPerformance(metadata.Performance)
+		}
+
+		result = append(result, class)
+	}
+
+	return result
+}
+
+func volumeClassMetadata(config *unikornv1.OpenstackVolumeClassesSpec, id string) *unikornv1.VolumeClassMetadata {
+	if config == nil {
+		return nil
+	}
+
+	i := slices.IndexFunc(config.Metadata, func(metadata unikornv1.VolumeClassMetadata) bool {
+		return id == metadata.ID
+	})
+	if i < 0 {
+		return nil
+	}
+
+	return &config.Metadata[i]
+}
+
+func convertVolumeClassPerformance(in *unikornv1.VolumeClassPerformanceSpec) *types.VolumeClassPerformance {
+	if in == nil {
+		return nil
+	}
+
+	out := &types.VolumeClassPerformance{}
+
+	if in.MaxIOPS != nil {
+		out.MaxIOPS = ptr.To(*in.MaxIOPS)
+	}
+
+	if in.MaxThroughput != nil {
+		out.MaxThroughput = ptr.To(*in.MaxThroughput)
+	}
+
+	return out
 }
 
 // imageOS extracts the image OS from the image properties.
@@ -1858,6 +1960,98 @@ func (p *Provider) deleteNetwork(ctx context.Context, networking NetworkingInter
 	}
 
 	return nil
+}
+
+func volumeMetadata(identity *unikornv1.Identity, volume *unikornv1.Volume) map[string]string {
+	namespacedSystemMetadata := map[string]string{
+		"region:volume_id":         volume.Name,
+		"identity:organization_id": volume.Labels[coreconstants.OrganizationLabel],
+		"identity:project_id":      volume.Labels[coreconstants.ProjectLabel],
+		"region:region_id":         volume.Labels[constants.RegionLabel],
+		"region:network_id":        volume.Spec.NetworkID,
+		"region:identity_id":       identity.Name,
+	}
+
+	metadata := make(map[string]string, len(volume.Spec.Tags)+len(namespacedSystemMetadata))
+
+	for _, tag := range volume.Spec.Tags {
+		if key, ok := metadataKey(tag.Name); ok {
+			metadata[key] = tag.Value
+		}
+	}
+
+	maps.Copy(metadata, namespacedSystemMetadata)
+
+	return metadata
+}
+
+func reconcileVolume(ctx context.Context, blockStorage VolumeInterface, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
+	logger := log.FromContext(ctx)
+
+	_, err := blockStorage.GetVolume(ctx, volume)
+	if err == nil {
+		logger.V(1).Info("volume already exists")
+
+		return nil
+	}
+
+	if !errors.Is(err, coreerrors.ErrResourceNotFound) {
+		return err
+	}
+
+	logger.V(1).Info("creating volume")
+
+	_, err = blockStorage.CreateVolume(ctx, volume, volumeMetadata(identity, volume))
+
+	return err
+}
+
+func (p *Provider) CreateVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
+	blockStorage, err := p.blockStorageFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	return reconcileVolume(ctx, blockStorage, identity, volume)
+}
+
+func deleteVolume(ctx context.Context, blockStorage VolumeInterface, volume *unikornv1.Volume) error {
+	logger := log.FromContext(ctx)
+
+	openstackVolume, err := blockStorage.GetVolume(ctx, volume)
+	if err != nil {
+		if errors.Is(err, coreerrors.ErrResourceNotFound) {
+			return nil
+		}
+
+		return err
+	}
+
+	logger.V(1).Info("deleting volume")
+
+	if err := blockStorage.DeleteVolume(ctx, openstackVolume.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+		return err
+	}
+
+	return nil
+}
+
+func (p *Provider) DeleteVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
+	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	if !provisioned {
+		return nil
+	}
+
+	blockStorage, err := p.blockStorageFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	return deleteVolume(ctx, blockStorage, volume)
 }
 
 // securityGroupRulePortRange expands a security group port into a start-end range as

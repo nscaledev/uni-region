@@ -249,6 +249,14 @@ func ReconcileNetwork(ctx context.Context, p *Provider, client NetworkInterface,
 	return p.reconcileNetwork(ctx, client, network)
 }
 
+func ReconcileVolume(ctx context.Context, client VolumeInterface, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
+	return reconcileVolume(ctx, client, identity, volume)
+}
+
+func DeleteVolumeWithClient(ctx context.Context, client VolumeInterface, volume *unikornv1.Volume) error {
+	return deleteVolume(ctx, client, volume)
+}
+
 func ReconcileSubnet(ctx context.Context, p *Provider, client SubnetInterface, network *unikornv1.Network, openstackNetwork *NetworkExt) (*subnets.Subnet, error) {
 	return p.reconcileSubnet(ctx, client, network, openstackNetwork)
 }
