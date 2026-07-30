@@ -19,6 +19,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -243,13 +244,17 @@ func TestVolumeClassV2MapsProviderInventory(t *testing.T) {
 
 	maxIOPS := 25000
 	maxThroughput := 500
+	minimumSizeGiB := int64(10)
+	maximumSizeGiB := int64(2048)
 	fixture := newVolumeClassV2TestFixture(t, newVolumeClassTestRegion(regionID, nil))
 	fixture.expectVolumeClasses(regionID, types.VolumeClassList{
 		{
-			ID:          volumeClassID,
-			Name:        "fast-nvme",
-			Description: "Latency-sensitive encrypted block storage",
-			Media:       types.VolumeClassMediaNVMe,
+			ID:             volumeClassID,
+			Name:           "fast-nvme",
+			Description:    "Latency-sensitive encrypted block storage",
+			MinimumSizeGiB: &minimumSizeGiB,
+			MaximumSizeGiB: &maximumSizeGiB,
+			Media:          types.VolumeClassMediaNVMe,
 			Performance: &types.VolumeClassPerformance{
 				MaxIOPS:       &maxIOPS,
 				MaxThroughput: &maxThroughput,
@@ -267,12 +272,43 @@ func TestVolumeClassV2MapsProviderInventory(t *testing.T) {
 	require.NotNil(t, result[0].Metadata.Description)
 	require.Equal(t, "Latency-sensitive encrypted block storage", *result[0].Metadata.Description)
 	require.Equal(t, regionID, result[0].Spec.RegionId.String())
+	require.Equal(t, &minimumSizeGiB, result[0].Spec.MinimumSizeGiB)
+	require.Equal(t, &maximumSizeGiB, result[0].Spec.MaximumSizeGiB)
 	require.NotNil(t, result[0].Spec.Media)
 	require.Equal(t, openapi.VolumeClassV2MediaNvme, *result[0].Spec.Media)
 	require.NotNil(t, result[0].Spec.Performance)
 	require.Equal(t, &maxIOPS, result[0].Spec.Performance.MaxIOPS)
 	require.Equal(t, &maxThroughput, result[0].Spec.Performance.MaxThroughputMiBps)
 	require.True(t, result[0].Spec.Encrypted)
+}
+
+func TestVolumeClassV2OmitsAbsentCapacityBounds(t *testing.T) {
+	t.Parallel()
+
+	const (
+		regionID      = "11111111-1111-4111-a111-111111111111"
+		volumeClassID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+	)
+
+	fixture := newVolumeClassV2TestFixture(t, newVolumeClassTestRegion(regionID, nil))
+	fixture.expectVolumeClasses(regionID, types.VolumeClassList{
+		{
+			ID:   volumeClassID,
+			Name: "unbounded",
+		},
+	}, nil)
+
+	response := fixture.get(volumeClassReadContext(t.Context()), openapi.GetApiV2VolumeclassesParams{})
+	require.Equal(t, http.StatusOK, response.Code)
+
+	var result []struct {
+		Spec map[string]json.RawMessage `json:"spec"`
+	}
+
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &result))
+	require.Len(t, result, 1)
+	require.NotContains(t, result[0].Spec, "minimumSizeGiB")
+	require.NotContains(t, result[0].Spec, "maximumSizeGiB")
 }
 
 func TestVolumeClassV2ReturnsEmptyListForFilteredRegions(t *testing.T) {

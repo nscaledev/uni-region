@@ -103,6 +103,20 @@ func TestFlavors(t *testing.T) {
 	require.NotNil(t, flavors[1].GPU)
 }
 
+func TestVolumeClasses(t *testing.T) {
+	t.Parallel()
+
+	provider := newProvider(t)
+
+	volumeClasses, err := provider.VolumeClasses(t.Context())
+	require.NoError(t, err)
+	require.Len(t, volumeClasses, 2)
+	require.Equal(t, ptrTo(int64(1)), volumeClasses[0].MinimumSizeGiB)
+	require.Equal(t, ptrTo(int64(16384)), volumeClasses[0].MaximumSizeGiB)
+	require.Equal(t, ptrTo(int64(10)), volumeClasses[1].MinimumSizeGiB)
+	require.Equal(t, ptrTo(int64(2048)), volumeClasses[1].MaximumSizeGiB)
+}
+
 func TestImages(t *testing.T) {
 	t.Parallel()
 

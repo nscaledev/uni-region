@@ -1586,8 +1586,14 @@ type VolumeClassV2Spec struct {
 	// Encrypted Whether volumes created from this class are encrypted at rest by the provider.
 	Encrypted bool `json:"encrypted"`
 
+	// MaximumSizeGiB Operator-configured maximum volume capacity accepted by this class, in whole GiB.
+	MaximumSizeGiB *int64 `json:"maximumSizeGiB,omitempty"`
+
 	// Media The physical storage medium backing a volume class.
 	Media *VolumeClassV2Media `json:"media,omitempty"`
+
+	// MinimumSizeGiB Operator-configured minimum volume capacity accepted by this class, in whole GiB.
+	MinimumSizeGiB *int64 `json:"minimumSizeGiB,omitempty"`
 
 	// Performance Advertised performance caps; these are not guaranteed reservations.
 	Performance *VolumeClassV2Performance `json:"performance,omitempty"`

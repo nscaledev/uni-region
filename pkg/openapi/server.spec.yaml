@@ -3840,6 +3840,16 @@ components:
           description: The Region that owns this volume class inventory entry.
           allOf:
           - $ref: '#/components/schemas/regionId'
+        minimumSizeGiB:
+          description: Operator-configured minimum volume capacity accepted by this class, in whole GiB.
+          type: integer
+          format: int64
+          minimum: 1
+        maximumSizeGiB:
+          description: Operator-configured maximum volume capacity accepted by this class, in whole GiB.
+          type: integer
+          format: int64
+          minimum: 1
         media:
           $ref: '#/components/schemas/volumeClassV2Media'
         performance:
@@ -5045,6 +5055,8 @@ components:
               creationTime: 1970-01-01T00:00:00Z
             spec:
               regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
+              minimumSizeGiB: 10
+              maximumSizeGiB: 2048
               media: nvme
               performance:
                 maxIOPS: 25000

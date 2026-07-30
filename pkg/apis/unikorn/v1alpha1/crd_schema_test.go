@@ -40,6 +40,7 @@ import (
 
 const (
 	fileStorageCRDFile = "region.unikorn-cloud.org_filestorages.yaml"
+	regionCRDFile      = "region.unikorn-cloud.org_regions.yaml"
 	serverCRDFile      = "region.unikorn-cloud.org_servers.yaml"
 	volumeCRDFile      = "region.unikorn-cloud.org_volumes.yaml"
 )

@@ -29,9 +29,11 @@ VolumeClass data:
 - `types.VolumeClassList` -> `openapi.VolumeClassListV2Read`
 
 VolumeClass uses the same core `staticResourceMetadata` shape as Flavor.
-The conversion maps provider-authored identity and display fields and, like
-Flavor, leaves the required creation timestamp at its zero value because the
-provider-neutral inventory has no creation-time source.
+The conversion maps provider-authored identity and display fields plus optional
+operator-authored capacity bounds and, like Flavor, leaves the required creation
+timestamp at its zero value because the provider-neutral inventory has no
+creation-time source. Nil capacity bounds remain nil so JSON responses omit
+them and preserve the pre-bounds response shape.
 
 That is why the package may look under-populated at first glance: the
 abstraction line is broader than the current amount of code, but the shape is

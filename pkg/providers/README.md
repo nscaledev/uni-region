@@ -43,7 +43,8 @@ packages are the concrete provider implementations.
 - `types.CommonProvider` is the minimum substrate contract:
   - return the effective `Region`
   - return allocatable `Flavor` inventory
-  - return Region-scoped `VolumeClass` inventory
+  - return Region-scoped `VolumeClass` inventory, including optional
+    operator-authored capacity bounds
 - `types.Provider` extends that common base with the broader image, identity,
   network, security-group, load-balancer, server, console, and snapshot
   lifecycle surfaces.

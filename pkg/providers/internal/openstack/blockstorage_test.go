@@ -422,3 +422,59 @@ func TestConvertVolumeClassesAppliesMetadata(t *testing.T) {
 		},
 	}, out)
 }
+
+func TestConvertVolumeClassesAppliesCapacityBoundsFromRegionMetadata(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		minimum *int64
+		maximum *int64
+	}{
+		{
+			name: "absent bounds",
+		},
+		{
+			name:    "minimum only",
+			minimum: ptr.To(int64(10)),
+		},
+		{
+			name:    "maximum only",
+			maximum: ptr.To(int64(2000)),
+		},
+		{
+			name:    "both bounds",
+			minimum: ptr.To(int64(10)),
+			maximum: ptr.To(int64(2000)),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			region := &unikornv1.Region{
+				Spec: unikornv1.RegionSpec{
+					Openstack: &unikornv1.RegionOpenstackSpec{
+						BlockStorage: &unikornv1.RegionOpenstackBlockStorageSpec{
+							VolumeClasses: &unikornv1.OpenstackVolumeClassesSpec{
+								Metadata: []unikornv1.VolumeClassMetadata{
+									{
+										ID:             "class",
+										MinimumSizeGiB: tc.minimum,
+										MaximumSizeGiB: tc.maximum,
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			out := openstack.ConvertVolumeClasses(region, []volumetypes.VolumeType{{ID: "class"}})
+			require.Len(t, out, 1)
+			require.Equal(t, tc.minimum, out[0].MinimumSizeGiB)
+			require.Equal(t, tc.maximum, out[0].MaximumSizeGiB)
+		})
+	}
+}

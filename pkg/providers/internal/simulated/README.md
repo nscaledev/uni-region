@@ -27,7 +27,9 @@ development, while keeping behaviour deterministic and cheap to run.
   coverage, not a mature simulation of the full provider surface.
 - Determinism matters more than provider fidelity. Built-in flavors,
   volume classes, images, external networks, and synthetic addresses are stable
-  by design.
+  by design. Built-in volume classes include stable minimum and maximum capacity
+  bounds so higher-layer inventory consumers can exercise the complete neutral
+  contract.
 - Custom images are stored in-memory behind a lock and merged with built-in
   images through the same query/filter contract used by real providers.
 - Unsupported operations fail explicitly with `ErrUnsupportedOperation` rather

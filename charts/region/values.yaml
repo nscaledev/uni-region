@@ -110,6 +110,8 @@ organization: nscaledev
 #         # Add user-facing metadata to selected provider volume classes.
 #         metadata:
 #         - id: cda67b98-331d-4d4f-911e-b1fd64611b0b
+#           minimumSizeGiB: 10
+#           maximumSizeGiB: 2048
 #           media: nvme
 #           performance:
 #             maxIOPS: 25000

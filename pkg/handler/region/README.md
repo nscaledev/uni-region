@@ -36,6 +36,9 @@ provider capability discovery into user-visible region catalogue data.
 - Flavor ordering is intentionally stable and user-facing.
 - VolumeClass inventory is ordered by Region, class name, and class ID. Empty
   provider inventory remains a non-nil empty API list.
+- Optional VolumeClass capacity bounds flow from Region-authored configuration
+  through the provider-neutral inventory model. The handler does not derive
+  them from provider data and leaves omitted bounds absent from the response.
 - VolumeClass listing applies the canonical Region visibility filter before
   provider discovery. Explicit `regionID` values then act as selectors over
   that visible set. Repeated selectors do not duplicate results, and missing or
