@@ -86,18 +86,27 @@ func checkAccess(ctx context.Context, resource *unikornv1.Region) error {
 	return errors.HTTPNotFound()
 }
 
-// CheckAccess fetches the region by ID and verifies the caller's organization is
-// allowed to use it.  Returns HTTPNotFound for both missing and inaccessible regions
-// to avoid confirming region existence to unauthorized callers.
-func (c *Client) CheckAccess(ctx context.Context, regionID regionids.RegionID) error {
+func (c *Client) getRegion(ctx context.Context, regionID regionids.RegionID) (*unikornv1.Region, error) {
 	resource := &unikornv1.Region{}
 
 	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: regionID.String()}, resource); err != nil {
 		if kerrors.IsNotFound(err) {
-			return errors.HTTPNotFound().WithError(err)
+			return nil, errors.HTTPNotFound().WithError(err)
 		}
 
-		return fmt.Errorf("%w: unable to lookup region", err)
+		return nil, fmt.Errorf("%w: unable to lookup region", err)
+	}
+
+	return resource, nil
+}
+
+// CheckAccess fetches the region by ID and verifies the caller's organization is
+// allowed to use it.  Returns HTTPNotFound for both missing and inaccessible regions
+// to avoid confirming region existence to unauthorized callers.
+func (c *Client) CheckAccess(ctx context.Context, regionID regionids.RegionID) error {
+	resource, err := c.getRegion(ctx, regionID)
+	if err != nil {
+		return err
 	}
 
 	return checkAccess(ctx, resource)
@@ -109,7 +118,9 @@ func FilterRegions(ctx context.Context, regions *unikornv1.RegionList) {
 	})
 }
 
-func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
+// listRegions returns Regions in the configured namespace that are visible to
+// the caller.
+func (c *Client) listRegions(ctx context.Context) (*unikornv1.RegionList, error) {
 	regions := &unikornv1.RegionList{}
 
 	if err := c.Client.List(ctx, regions, &client.ListOptions{Namespace: c.Namespace}); err != nil {
@@ -117,6 +128,15 @@ func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
 	}
 
 	FilterRegions(ctx, regions)
+
+	return regions, nil
+}
+
+func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
+	regions, err := c.listRegions(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	return convertList(regions), nil
 }
@@ -169,6 +189,72 @@ func (c *Client) ListFlavors(ctx context.Context, organizationID identityids.Org
 	})
 
 	return conversion.ConvertFlavors(result), nil
+}
+
+const volumeClassReadEndpoint = "region:volumeclasses:v2"
+
+func hasVolumeClassReadAccess(ctx context.Context) bool {
+	for _, value := range rbac.OrganizationIDs(ctx) {
+		organizationID, err := identityids.ParseOrganizationID(value)
+		if err != nil {
+			continue
+		}
+
+		if rbac.AllowOrganizationScopeID(ctx, volumeClassReadEndpoint, identityapi.Read, organizationID) == nil {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (c *Client) ListVolumeClasses(ctx context.Context, params openapi.GetApiV2VolumeclassesParams) (openapi.VolumeClassListV2Read, error) {
+	regions, err := c.listRegions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if params.RegionID != nil {
+		// Filter regions based on the query parameter
+		regions.Items = slices.DeleteFunc(regions.Items, func(region unikornv1.Region) bool {
+			return !slices.Contains(*params.RegionID, region.Name)
+		})
+	}
+
+	result := openapi.VolumeClassListV2Read{}
+
+	for _, region := range regions.Items {
+		if !hasVolumeClassReadAccess(ctx) {
+			continue
+		}
+
+		provider, err := c.Providers.LookupCommon(region.Name)
+		if err != nil {
+			return nil, providers.ProviderToServerError(err)
+		}
+
+		volumeClasses, err := provider.VolumeClasses(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%w: failed to list volume classes", err)
+		}
+
+		regionID, err := regionids.ParseRegionID(region.Name)
+		if err != nil {
+			continue
+		}
+
+		result = append(result, conversion.ConvertVolumeClasses(regionID, volumeClasses)...)
+	}
+
+	slices.SortStableFunc(result, func(a, b openapi.VolumeClassV2Read) int {
+		return cmp.Or(
+			cmp.Compare(a.Spec.RegionId.String(), b.Spec.RegionId.String()),
+			cmp.Compare(a.Metadata.Name, b.Metadata.Name),
+			cmp.Compare(a.Metadata.Id, b.Metadata.Id),
+		)
+	})
+
+	return result, nil
 }
 
 func convertExternalNetwork(in types.ExternalNetwork) openapi.ExternalNetwork {
