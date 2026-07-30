@@ -42,9 +42,9 @@ So this package should be understood primarily in `v2` terms:
 
 Most handler clients follow the same broad pattern:
 
-1. resolve logical scope and visibility — including region ACL enforcement via
-   `region.CheckAccess` for any operation that accepts a user-supplied region ID
-   (path parameter, query parameter, or request body field)
+1. resolve logical scope and visibility — direct Region references use
+   `region.CheckAccess`, while list selectors constrain an already
+   visibility-filtered working set and omit missing or inaccessible Regions
 2. load current state where mutation is involved
 3. convert API request shape into required stored or provider-facing shape
 4. merge system-owned metadata and derived context
@@ -239,6 +239,10 @@ but we do not have transactions.”
   SSH CA records with explicit reference-blocked deletion
 - [`storage`](./storage/README.md): quota-heavy stateful resource with saga-backed
   create/update and attachment validation
+- `VolumeClass`: read-only Region-scoped provider inventory. The v2 list handler
+  filters Regions through the canonical visibility policy, treats repeated
+  `regionID` values as selectors, and maps only provider-neutral discovery
+  fields. Missing and inaccessible Regions are omitted.
 
 ## Caveats
 
@@ -255,11 +259,11 @@ but we do not have transactions.”
 - Cross-object invariants are only best-effort. Owner references, finalizers,
   allocation records, and saga compensation improve consistency, but they do not
   turn the system into an ACID store.
-- `GET /api/v2/volumeclasses` is currently a contract-only route. The narrow
-  `handler_v2_volumeclass_contract.go` method returns the canonical internal
-  server error so the generated router remains buildable; it does not perform
-  provider discovery, conversion, or authorization and should be replaced by
-  the dedicated implementation work.
+- `GET /api/v2/volumeclasses` is a live provider-backed inventory route rather
+  than a lifecycle resource surface. Missing and inaccessible Region selectors
+  are omitted, allowing empty or partial results. A provider failure from any
+  visible selected Region fails the whole request; the handler does not return
+  partial provider inventory after an attempted discovery fails.
 
 ## TODO
 

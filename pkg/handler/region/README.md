@@ -11,6 +11,7 @@ mutating user-owned lifecycle resources. Its job is to expose:
 - visible regions
 - region detail
 - provider-derived flavor inventory
+- provider-derived VolumeClass inventory
 - provider-derived external network inventory
 
 So this package is where the service turns stored region configuration and
@@ -20,11 +21,11 @@ provider capability discovery into user-visible region catalogue data.
 
 - region visibility is filtered against region security constraints and the
   caller's organization scope
-- flavor and external-network reads cross the provider boundary rather than
-  reading from CRD-backed child resources
-- flavor conversion passes through the shared
-  [`conversion`](../conversion/README.md) package because flavor is a provider
-  concept rather than a first-class CRD
+- flavor, VolumeClass, and external-network reads cross the provider boundary
+  rather than reading from CRD-backed child resources
+- flavor and VolumeClass conversion passes through the shared
+  [`conversion`](../conversion/README.md) package because both are provider
+  concepts rather than first-class CRDs
 
 ## Invariants And Guard Rails
 
@@ -33,13 +34,24 @@ provider capability discovery into user-visible region catalogue data.
 - Provider-derived capability reads must resolve the correct provider for the
   selected region rather than trusting client-supplied assumptions.
 - Flavor ordering is intentionally stable and user-facing.
+- VolumeClass inventory is ordered by Region, class name, and class ID. Empty
+  provider inventory remains a non-nil empty API list.
+- VolumeClass listing applies the canonical Region visibility filter before
+  provider discovery. Explicit `regionID` values then act as selectors over
+  that visible set. Repeated selectors do not duplicate results, and missing or
+  inaccessible Regions are omitted so the response can be empty or partial.
+- VolumeClass access preserves the existing Region visibility distinction:
+  a nil organization allowlist is unrestricted, while a configured but empty
+  allowlist permits no organizations.
+- VolumeClass provider discovery requires `region:volumeclasses:v2/read` in at
+  least one organization visible to the caller. Requests without that grant
+  omit the selected Regions without performing provider lookups.
 - Region ACL checking is enforced in two places:
   - **List responses** (`FilterRegions`) — removes regions the caller cannot see
-    before building the response.
-  - **User-supplied region IDs** (`CheckAccess`) — called at the top of any
-    handler or client method that accepts a region ID as input (path parameter,
-    query parameter, or request body field). This prevents a caller who knows a
-    restricted region's ID from using it without authorization.
+    before building the response or applying list selectors such as the
+    VolumeClass `regionID` query.
+  - **Direct Region references** (`CheckAccess`) — used by read or mutation
+    operations that address or depend on one specific Region.
 - `CheckAccess` returns `HTTPNotFound` rather than `HTTPForbidden` to avoid
   confirming the existence of regions the caller cannot see.
 
@@ -57,7 +69,7 @@ provider capability discovery into user-visible region catalogue data.
 
 - [../README.md](../README.md) explains why provider-backed capability reads sit
   alongside CRD-backed handler logic in this layer
-- [../conversion](../conversion/README.md) covers the shared flavor conversion
-  boundary
+- [../conversion](../conversion/README.md) covers the shared flavor and
+  VolumeClass conversion boundary
 - [../../providers](../../providers/README.md) documents the provider capability
   contracts consumed here
