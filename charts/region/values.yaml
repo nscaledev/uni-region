@@ -238,3 +238,5 @@ identity:
 # Sets the OTLP endpoint for shipping spans.
 # otlp:
 #   endpoint: jaeger-collector.default:4318
+#   resourceAttributes:
+#     deployment.environment: dev

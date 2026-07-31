@@ -26,6 +26,7 @@ spec:
         env:
         - name: OTEL_SERVICE_NAME
           value: {{ .Release.Name }}-server-controller
+        {{- include "unikorn.otlp.env" . | nindent 8 }}
         ports:
         - name: http
           containerPort: 6080

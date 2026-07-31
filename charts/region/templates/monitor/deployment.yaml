@@ -23,6 +23,7 @@ spec:
         env:
         - name: OTEL_SERVICE_NAME
           value: {{ .Release.Name }}-monitor
+        {{- include "unikorn.otlp.env" . | nindent 8 }}
         resources:
           {{- .Values.monitor.resources | toYaml | nindent 10 }}
         securityContext:
