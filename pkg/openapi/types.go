@@ -1329,7 +1329,10 @@ type SshKey struct {
 	PrivateKey string `json:"privateKey"`
 }
 
-// StorageAttachmentListV2Status Describes the network attachments for storage
+// StorageAttachmentListV2Status Describes the network attachments for storage. This is the union of desired and
+// observed attachments, so it may contain networks that are absent from
+// spec.attachments.networkIds but are still attached pending removal. It is not
+// index-aligned with spec.attachments.networkIds.
 type StorageAttachmentListV2Status = []StorageAttachmentV2Status
 
 // StorageAttachmentV2Spec Describes the network attachment for storage
@@ -1524,7 +1527,10 @@ type StorageV2Spec struct {
 
 // StorageV2Status Read only status about storage
 type StorageV2Status struct {
-	// Attachments Describes the network attachments for storage
+	// Attachments Describes the network attachments for storage. This is the union of desired and
+	// observed attachments, so it may contain networks that are absent from
+	// spec.attachments.networkIds but are still attached pending removal. It is not
+	// index-aligned with spec.attachments.networkIds.
 	Attachments *StorageAttachmentListV2Status `json:"attachments,omitempty"`
 
 	// RegionId The region an identity is provisioned in.

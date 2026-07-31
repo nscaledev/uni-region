@@ -685,9 +685,35 @@ func TestConvertStatusAttachmentList(t *testing.T) {
 			want: &openapi.StorageAttachmentListV2Status{
 				{
 					NetworkId:          testNetworkID,
-					MountSource:        ptr.To("10.0.0.100:/export/data"),
+					MountSource:        ptr.To("192.168.20.16:/export/data"),
 					MountOptions:       ptr.To(map[string]string{"remoteports": "192.168.20.16-192.168.20.23"}),
 					ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned,
+				},
+			},
+		},
+		{
+			name: "desired IP range is used until the attachment is observed",
+			input: &regionv1.FileStorage{
+				Spec: regionv1.FileStorageSpec{
+					Attachments: []regionv1.Attachment{
+						{
+							NetworkID: testNetworkID,
+							IPRange: &regionv1.AttachmentIPRange{
+								Start: v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 100)},
+								End:   v1alpha1.IPv4Address{IP: net.IPv4(10, 0, 0, 103)},
+							},
+						},
+					},
+				},
+				Status: regionv1.FileStorageStatus{
+					MountPath: ptr.To("/export/data"),
+				},
+			},
+			want: &openapi.StorageAttachmentListV2Status{
+				{
+					NetworkId:          testNetworkID,
+					MountSource:        ptr.To("10.0.0.100:/export/data"),
+					ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 				},
 			},
 		},
@@ -741,7 +767,7 @@ func TestConvertStatusAttachmentList(t *testing.T) {
 			},
 		},
 		{
-			name: "stale observed status is not returned",
+			name: "observed attachment removed from the spec is still returned",
 			input: &regionv1.FileStorage{
 				Spec: regionv1.FileStorageSpec{
 					Attachments: []regionv1.Attachment{
@@ -768,7 +794,51 @@ func TestConvertStatusAttachmentList(t *testing.T) {
 					NetworkId:          testNetworkID,
 					ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 				},
+				{
+					NetworkId:          "net-2",
+					MountOptions:       ptr.To(map[string]string{"remoteports": "192.168.20.16-192.168.20.23"}),
+					ProvisioningStatus: corev1.ResourceProvisioningStatusProvisioned,
+				},
 			},
+		},
+		{
+			name: "all attachments removed from the spec are still returned, sorted by network ID",
+			input: &regionv1.FileStorage{
+				Status: regionv1.FileStorageStatus{
+					MountPath: ptr.To("/export/data"),
+					Attachments: []regionv1.FileStorageAttachmentStatus{
+						{
+							NetworkID:          "net-2",
+							ProvisioningStatus: regionv1.AttachmentErrored,
+						},
+						{
+							NetworkID:          "net-1",
+							ProvisioningStatus: regionv1.AttachmentDeprovisioning,
+							IPRange: &regionv1.AttachmentIPRange{
+								Start: v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 20, 16)},
+								End:   v1alpha1.IPv4Address{IP: net.IPv4(192, 168, 20, 16)},
+							},
+						},
+					},
+				},
+			},
+			want: &openapi.StorageAttachmentListV2Status{
+				{
+					NetworkId:          "net-1",
+					MountSource:        ptr.To("192.168.20.16:/export/data"),
+					MountOptions:       ptr.To(map[string]string{"remoteports": "192.168.20.16"}),
+					ProvisioningStatus: corev1.ResourceProvisioningStatusDeprovisioning,
+				},
+				{
+					NetworkId:          "net-2",
+					ProvisioningStatus: corev1.ResourceProvisioningStatusError,
+				},
+			},
+		},
+		{
+			name:  "no desired or observed attachments returns nothing",
+			input: &regionv1.FileStorage{},
+			want:  nil,
 		},
 	}
 

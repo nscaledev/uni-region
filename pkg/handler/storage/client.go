@@ -133,43 +133,84 @@ func convertUsageStatus(in *regionv1.FileStorage) *openapi.StorageUsageV2Status 
 	return out
 }
 
-// Status attachment rows follow desired attachments, then use observed status
-// to enrich matching rows with controller-projected state.
+// Status attachment rows are the union of desired and observed attachments,
+// keyed on network ID. Desired attachments come first in spec order, then
+// observed-only attachments (networks still attached but no longer desired,
+// e.g. pending or failed removal) sorted by network ID. Spec and status are
+// reconciled asynchronously, so neither list alone describes actual state.
 func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttachmentListV2Status {
-	if len(in.Spec.Attachments) == 0 {
+	if len(in.Spec.Attachments) == 0 && len(in.Status.Attachments) == 0 {
 		return nil
 	}
 
+	// observedAttachments is the observed state (status), indexed by network ID
+	// so each desired attachment can look up what the controller last saw.
 	observedAttachments := make(map[string]regionv1.FileStorageAttachmentStatus, len(in.Status.Attachments))
 	for _, status := range in.Status.Attachments {
 		observedAttachments[status.NetworkID] = status
 	}
 
-	out := make(openapi.StorageAttachmentListV2Status, len(in.Spec.Attachments))
+	out := make(openapi.StorageAttachmentListV2Status, 0, len(in.Spec.Attachments)+len(in.Status.Attachments))
 
-	for i, att := range in.Spec.Attachments {
-		var mountSource *string
+	// desired is the set of network IDs the caller currently wants attached
+	// (spec), used below to work out which observed attachments it no longer
+	// covers.
+	desired := make(map[string]struct{}, len(in.Spec.Attachments))
 
-		// Only build MountSource if all required fields are non-nil.
-		if att.IPRange != nil && in.Status.MountPath != nil {
-			mountSource = ptr.To(fmt.Sprintf("%s:%s", att.IPRange.Start, *in.Status.MountPath))
+	for _, att := range in.Spec.Attachments {
+		desired[att.NetworkID] = struct{}{}
+
+		out = append(out, newAttachmentStatus(in, att.NetworkID, att.IPRange, observedAttachments))
+	}
+
+	// undesired is the network IDs observed but no longer desired: attachments
+	// the caller has removed from spec that the controller has not finished
+	// detaching. Collected into their own slice so they can be sorted without
+	// reordering the cached resource, and appended after the desired rows.
+	undesired := make([]string, 0, len(in.Status.Attachments))
+
+	for _, status := range in.Status.Attachments {
+		if _, ok := desired[status.NetworkID]; !ok {
+			undesired = append(undesired, status.NetworkID)
 		}
+	}
 
-		attachmentStatus := openapi.StorageAttachmentV2Status{
-			NetworkId:          att.NetworkID,
-			MountSource:        mountSource,
-			ProvisioningStatus: coreopenapi.ResourceProvisioningStatusPending,
-		}
+	slices.Sort(undesired)
 
-		if observed, ok := observedAttachments[att.NetworkID]; ok {
-			attachmentStatus.ProvisioningStatus = convertAttachmentProvisioningStatus(observed.ProvisioningStatus)
-			attachmentStatus.MountOptions = mountOptionsFromAttachmentStatus(observed)
-		}
-
-		out[i] = attachmentStatus
+	for _, networkID := range undesired {
+		out = append(out, newAttachmentStatus(in, networkID, nil, observedAttachments))
 	}
 
 	return &out
+}
+
+// newAttachmentStatus projects a single attachment row. The mount source
+// prefers the observed IP range and falls back to the desired range when the
+// controller has not reported an IP range yet. Attachments with no observed
+// status are reported as pending.
+func newAttachmentStatus(in *regionv1.FileStorage, networkID string, desiredIPRange *regionv1.AttachmentIPRange, observedAttachments map[string]regionv1.FileStorageAttachmentStatus) openapi.StorageAttachmentV2Status {
+	out := openapi.StorageAttachmentV2Status{
+		NetworkId:          networkID,
+		ProvisioningStatus: coreopenapi.ResourceProvisioningStatusPending,
+	}
+
+	ipRange := desiredIPRange
+
+	if observed, ok := observedAttachments[networkID]; ok {
+		out.ProvisioningStatus = convertAttachmentProvisioningStatus(observed.ProvisioningStatus)
+		out.MountOptions = mountOptionsFromAttachmentStatus(observed)
+
+		if observed.IPRange != nil {
+			ipRange = observed.IPRange
+		}
+	}
+
+	// Only build MountSource if all required fields are non-nil.
+	if ipRange != nil && in.Status.MountPath != nil {
+		out.MountSource = ptr.To(fmt.Sprintf("%s:%s", ipRange.Start, *in.Status.MountPath))
+	}
+
+	return out
 }
 
 func convertAttachmentProvisioningStatus(in regionv1.AttachmentProvisioningStatus) coreopenapi.ResourceProvisioningStatus {
