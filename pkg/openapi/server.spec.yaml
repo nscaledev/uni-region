@@ -3526,7 +3526,11 @@ components:
         description: A network identifier
         type: string
     storageAttachmentListV2Status:
-      description: Describes the network attachments for storage
+      description: |
+        Describes the network attachments for storage. This is the union of desired and
+        observed attachments, so it may contain networks that are absent from
+        spec.attachments.networkIds but are still attached pending removal. It is not
+        index-aligned with spec.attachments.networkIds.
       type: array
       items:
         $ref: '#/components/schemas/storageAttachmentV2Status'
