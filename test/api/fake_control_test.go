@@ -208,46 +208,15 @@ var _ = Describe("Fake control sidecar client", func() {
 	})
 
 	Context("When programming node behavior", func() {
-		Describe("Given a fail program for a controllable op", func() {
-			It("sends the wire shape the sidecar reads, and that op then fails", func() {
-				cases := []struct {
-					op       string
-					behavior map[string]any
-					wire     map[string]any
-				}{
-					{
-						op:       FakeControlOpDeploy,
-						behavior: FailDeploy(),
-						wire:     map[string]any{"deploy": "fail"},
-					},
-					{
-						op:       FakeControlOpPowerOn,
-						behavior: FailPowerOn(),
-						wire:     map[string]any{"power": map[string]any{"power_on": "fail"}},
-					},
-					{
-						op:       FakeControlOpPowerOff,
-						behavior: FailPowerOff(),
-						wire:     map[string]any{"power": map[string]any{"power_off": "fail"}},
-					},
-					{
-						op:       FakeControlOpSetBootDevice,
-						behavior: FailSetBootDevice(),
-						wire:     map[string]any{"management": map[string]any{"set_boot_device": "fail"}},
-					},
-				}
+		Describe("Given a deploy fail program", func() {
+			It("sends the wire shape the sidecar reads, and deploy then fails", func() {
+				client.ProgramNodeBehavior(reqCtx, fakeSidecarNodeID, FailDeploy())
 
-				for _, testCase := range cases {
-					By("programming a " + testCase.op + " failure")
-					client.ProgramNodeBehavior(reqCtx, fakeSidecarNodeID, testCase.behavior)
-
-					Expect(client.NodeBehavior(reqCtx, fakeSidecarNodeID)).To(Equal(testCase.wire),
-						"%s program must match the shape the sidecar's decision logic reads", testCase.op)
-					Expect(postOp(sidecarURL, testCase.op)).To(Equal(FakeControlOutcomeFail),
-						"%s must actually fail once programmed", testCase.op)
-
-					client.ResetNode(reqCtx, fakeSidecarNodeID)
-				}
+				Expect(client.NodeBehavior(reqCtx, fakeSidecarNodeID)).
+					To(Equal(map[string]any{"deploy": "fail"}),
+						"deploy program must match the shape the sidecar's decision logic reads")
+				Expect(postOp(sidecarURL, FakeControlOpDeploy)).To(Equal(FakeControlOutcomeFail),
+					"deploy must actually fail once programmed")
 			})
 		})
 

@@ -57,25 +57,17 @@ type FakeControlEvent struct {
 	Outcome string `json:"outcome"`
 }
 
-// Behavior programs, in the sidecar's wire shape. These exist because the sidecar ignores
-// keys it does not recognise and answers "ok": a misspelled or wrongly nested program
-// injects no fault at all, so the suite silently exercises the happy path and fails much
-// later as an unexplained status timeout. Building the shapes in one tested place keeps
-// that failure mode out of the specs.
+// FailDeploy is the deploy fault program, in the sidecar's wire shape. It exists because
+// the sidecar ignores keys it does not recognise and answers "ok": a misspelled or wrongly
+// nested program injects no fault at all, so the suite silently exercises the happy path
+// and fails much later as an unexplained status timeout. Building the shape in one tested
+// place keeps that failure mode out of the specs.
+//
+// Deploy is the only op reachable through a server's lifecycle on the fake-control fixture,
+// so it is the only program with a constructor; the sidecar's power and management programs
+// are exercised directly by the tests below.
 func FailDeploy() map[string]any {
 	return map[string]any{"deploy": FakeControlOutcomeFail}
-}
-
-func FailPowerOn() map[string]any {
-	return map[string]any{"power": map[string]any{"power_on": FakeControlOutcomeFail}}
-}
-
-func FailPowerOff() map[string]any {
-	return map[string]any{"power": map[string]any{"power_off": FakeControlOutcomeFail}}
-}
-
-func FailSetBootDevice() map[string]any {
-	return map[string]any{"management": map[string]any{"set_boot_device": FakeControlOutcomeFail}}
 }
 
 // CountEvents counts event-log entries for an op and outcome. Callers assert lower bounds
