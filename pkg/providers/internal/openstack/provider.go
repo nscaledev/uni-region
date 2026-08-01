@@ -2143,7 +2143,7 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 }
 
 // Nova server display statuses, as compared throughout server health
-// conversion and the rebuild state machine.
+// conversion.
 // https://docs.openstack.org/api-guide/compute/server_concepts.html
 const (
 	novaStatusActive  = "ACTIVE"
@@ -2650,7 +2650,7 @@ func serverForCreate(server *unikornv1.Server, options *types.ServerCreateOption
 	return serverForCreate
 }
 
-// reconcileServerForCreate routes the create/rebuild through the (possibly
+// reconcileServerForCreate routes the create through the (possibly
 // user-data/SSH-CA augmented) copy from serverForCreate, then copies the full
 // resulting status back onto the caller's server. The copy must be taken
 // here, after port and floating IP reconciliation have written
@@ -2669,8 +2669,8 @@ func (p *Provider) reconcileServerForCreate(ctx context.Context, client ServerIn
 }
 
 // createServer reconciles the server's port and floating IP (both write
-// status onto the caller's server), then creates/rebuilds the provider
-// server via the augmented-copy path. The ordering is load-bearing; see
+// status onto the caller's server), then creates the provider server via the
+// augmented-copy path. The ordering is load-bearing; see
 // reconcileServerForCreate.
 func (p *Provider) createServer(ctx context.Context, networking NetworkingInterface, compute ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, keyName string, preflight serverCreatePreflight) error {
 	port, err := p.reconcileServerPort(ctx, networking, server)

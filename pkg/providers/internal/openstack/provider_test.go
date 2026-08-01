@@ -852,9 +852,8 @@ const (
 	rebuildNewImageID = "22222222-2222-4222-a222-222222222222"
 )
 
-// novaRebuildServer is a launched server: its Nova launched_at is non-zero, the
-// fresh signal an image-convergence check would authorize from (not the CR
-// status latches).
+// novaRebuildServer is a launched Nova server fixture: its launched_at is
+// non-zero, distinguishing it from a server still mid-launch.
 func novaRebuildServer(status, imageID string) *servers.Server {
 	return &servers.Server{
 		ID:         "server-1",

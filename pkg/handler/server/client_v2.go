@@ -758,8 +758,8 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, re
 
 	// Updates replace the persisted user-data wholesale: an omitted field clears
 	// the stored value. The value is not applied to the running guest — it is
-	// consumed by the next rebuild (image change) or recreate. Changed user-data
-	// is re-validated at the boundary; identical payloads are not.
+	// consumed by the next recreate. Changed user-data is re-validated at the
+	// boundary; identical payloads are not.
 	if err := c.validateUpdateV2Request(ctx, network, current, request); err != nil {
 		return nil, err
 	}
