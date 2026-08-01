@@ -69,14 +69,6 @@ func providerCreateFailureUpdate(e event.TypedUpdateEvent[*unikornv1.Server]) bo
 	return !server.ProviderCreateFailure(e.ObjectOld) && server.ProviderCreateFailure(e.ObjectNew)
 }
 
-func serverRebuildSettledUpdate(e event.TypedUpdateEvent[*unikornv1.Server]) bool {
-	if e.ObjectOld == nil || e.ObjectNew == nil {
-		return false
-	}
-
-	return server.RebuildSettled(e.ObjectOld, e.ObjectNew)
-}
-
 // RegisterWatches adds any watches that would trigger a reconcile.
 func (*Factory) RegisterWatches(manager manager.Manager, controller controller.Controller) error {
 	// Any changes to the server spec, trigger a reconcile.
@@ -84,9 +76,6 @@ func (*Factory) RegisterWatches(manager manager.Manager, controller controller.C
 		predicate.TypedGenerationChangedPredicate[*unikornv1.Server]{},
 		predicate.TypedFuncs[*unikornv1.Server]{
 			UpdateFunc: providerCreateFailureUpdate,
-		},
-		predicate.TypedFuncs[*unikornv1.Server]{
-			UpdateFunc: serverRebuildSettledUpdate,
 		},
 	)
 
