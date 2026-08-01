@@ -47,12 +47,6 @@ const (
 	rebuildWatchTimeout = 30 * time.Minute
 	rebuildPollInterval = 15 * time.Second
 
-	// The controller arms the rebuild asynchronously; once armed, the
-	// provisioning window lasts the whole rebuild, so a modest timeout with a
-	// tight poll reliably catches the transition without racing the arm.
-	rebuildProvisioningTimeout = 15 * time.Minute
-	rebuildProvisioningPoll    = 2 * time.Second
-
 	// One-second polling makes a violated Nova atomicity window practically
 	// observable against a rebuild that otherwise takes minutes.
 	novaProbeTimeout      = 30 * time.Minute
@@ -105,36 +99,6 @@ func EventuallyServerProvisioned(serverID string) *regionopenapi.ServerV2Read {
 	return server
 }
 
-// EventuallyServerProvisioning asserts the settled gate: an accepted rebuild
-// intent must surface as provisioning, never remain provisioned while the
-// desired image is unrealized.
-func EventuallyServerProvisioning(serverID string) {
-	Eventually(func(g Gomega) {
-		got, err := regionClient.GetServer(ctx, serverID)
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(got.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioning))
-	}).WithTimeout(rebuildProvisioningTimeout).
-		WithPolling(rebuildProvisioningPoll).
-		Should(Succeed(), "rebuild intent must read as provisioning before it settles")
-}
-
-func EventuallyServerPowerState(serverID string, phase regionopenapi.InstanceLifecyclePhase) *regionopenapi.ServerV2Read {
-	var server *regionopenapi.ServerV2Read
-
-	Eventually(func(g Gomega) {
-		var err error
-		server, err = regionClient.GetServer(ctx, serverID)
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(server.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioned))
-		g.Expect(server.Status.PowerState).NotTo(BeNil())
-		g.Expect(*server.Status.PowerState).To(Equal(phase))
-	}).WithTimeout(rebuildWatchTimeout).
-		WithPolling(rebuildPollInterval).
-		Should(Succeed(), fmt.Sprintf("server should settle at power state %s", phase))
-
-	return server
-}
-
 var _ = Describe("Server rebuild", func() {
 	Context("When changing a provisioned v2 server's image", Ordered, func() {
 		var server *regionopenapi.ServerV2Read
@@ -157,95 +121,14 @@ var _ = Describe("Server rebuild", func() {
 			})
 		})
 
-		Describe("Given the server has settled as provisioned", func() {
-			It("rebuilds in place, retaining identity and addresses, and reports provisioning until it settles", Label("slow"), func() {
-				serverID := server.Metadata.Id
-				originalPrivateIP := server.Status.PrivateIP
+		Describe("Given the server image is immutable while rebuild is excised", func() {
+			It("rejects an image change with an actionable 422", func() {
+				update := api.ServerUpdateFromRead(server).WithImageID(uuid.NewString()).Build()
 
-				update := api.ServerUpdateFromRead(server).WithImageID(rebuildImageID()).Build()
-
-				updated, err := regionClient.UpdateServer(ctx, serverID, update)
+				apiError, err := regionClient.UpdateServerExpectError(ctx, server.Metadata.Id, update, http.StatusUnprocessableEntity)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(updated.Metadata.Id).To(Equal(serverID))
-				Expect(updated.Spec.ImageId).To(Equal(update.Spec.ImageId))
-
-				By("observing the server leave provisioned while the rebuild is in flight")
-				EventuallyServerProvisioning(serverID)
-
-				By("waiting for the rebuild to settle back to provisioned on the new image")
-				var settled *regionopenapi.ServerV2Read
-				Eventually(func(g Gomega) {
-					got, err := regionClient.GetServer(ctx, serverID)
-					g.Expect(err).NotTo(HaveOccurred())
-					g.Expect(got.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioned))
-					g.Expect(got.Spec.ImageId).To(Equal(update.Spec.ImageId))
-					settled = got
-				}).WithTimeout(rebuildWatchTimeout).
-					WithPolling(rebuildPollInterval).
-					Should(Succeed(), "server should settle on the new image")
-
-				Expect(settled.Metadata.Id).To(Equal(serverID), "rebuild must retain the server identity")
-				Expect(settled.Status.NetworkId).To(Equal(server.Status.NetworkId), "rebuild must retain the server network")
-
-				if originalPrivateIP != nil {
-					Expect(settled.Status.PrivateIP).NotTo(BeNil())
-					Expect(*settled.Status.PrivateIP).To(Equal(*originalPrivateIP), "rebuild must retain the server address")
-				}
-			})
-		})
-	})
-
-	Context("When changing a stopped v2 server's image", Ordered, func() {
-		var server *regionopenapi.ServerV2Read
-
-		BeforeAll(func() {
-			skipUnlessRebuildEnvironmentConfigured()
-			server = mustProvisionServerForRebuild()
-		})
-
-		Describe("Given the server has been stopped", func() {
-			It("rebuilds the stopped server and settles it back to stopped", Label("slow"), func() {
-				serverID := server.Metadata.Id
-
-				By("waiting for the server to be running before stopping it")
-				// provisioned reflects reconcile settlement, not guest boot; Nova
-				// rejects power operations until the server reaches ACTIVE.
-				EventuallyServerPowerState(serverID, regionopenapi.InstanceLifecyclePhaseRunning)
-
-				By("stopping the server and waiting for it to settle as stopped")
-				Expect(regionClient.StopServer(ctx, serverID)).To(Succeed())
-				stopped := EventuallyServerPowerState(serverID, regionopenapi.InstanceLifecyclePhaseStopped)
-				originalPrivateIP := stopped.Status.PrivateIP
-
-				update := api.ServerUpdateFromRead(stopped).WithImageID(rebuildImageID()).Build()
-
-				updated, err := regionClient.UpdateServer(ctx, serverID, update)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(updated.Metadata.Id).To(Equal(serverID))
-
-				By("observing the stopped server enter the rebuild")
-				EventuallyServerProvisioning(serverID)
-
-				By("waiting for the stopped server to settle back to stopped on the new image")
-				var settled *regionopenapi.ServerV2Read
-				Eventually(func(g Gomega) {
-					got, err := regionClient.GetServer(ctx, serverID)
-					g.Expect(err).NotTo(HaveOccurred())
-					g.Expect(got.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioned))
-					g.Expect(got.Spec.ImageId).To(Equal(update.Spec.ImageId))
-					g.Expect(got.Status.PowerState).NotTo(BeNil())
-					g.Expect(*got.Status.PowerState).To(Equal(regionopenapi.InstanceLifecyclePhaseStopped))
-					settled = got
-				}).WithTimeout(rebuildWatchTimeout).
-					WithPolling(rebuildPollInterval).
-					Should(Succeed(), "stopped server should settle back to stopped on the new image")
-
-				Expect(settled.Metadata.Id).To(Equal(serverID))
-
-				if originalPrivateIP != nil {
-					Expect(settled.Status.PrivateIP).NotTo(BeNil())
-					Expect(*settled.Status.PrivateIP).To(Equal(*originalPrivateIP), "rebuild must retain the server address")
-				}
+				Expect(apiError.Error).To(Equal(coreapi.UnprocessableContent))
+				Expect(apiError.ErrorDescription).To(ContainSubstring("image cannot be changed"))
 			})
 		})
 	})
@@ -262,6 +145,10 @@ var _ = Describe("Server rebuild", func() {
 // projects this credential cannot list. The typed-wrapper rule governs the
 // service API under test, not the infrastructure this test observes to justify
 // the service's design.
+//
+// Kept after the rebuild excision: it probes Nova's accept-time ref semantics
+// directly, which is the evidence base for the model's RefUpdatesAtAccept
+// question and stage 3's design.
 var _ = Describe("Nova rebuild atomicity probe", func() {
 	Context("When the region is OpenStack and Nova credentials are present", func() {
 		Describe("Given a Nova server whose image is then rebuilt", func() {
