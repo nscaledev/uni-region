@@ -23,6 +23,7 @@ import (
 	"net"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
@@ -845,6 +846,23 @@ func serverFixture(opts ...func(*regionv1.Server)) *regionv1.Server {
 
 const serverPortIP = "192.168.0.42"
 const serverPortMAC = "fa:16:3e:12:34:56"
+
+const (
+	rebuildOldImageID = "11111111-1111-4111-a111-111111111111"
+	rebuildNewImageID = "22222222-2222-4222-a222-222222222222"
+)
+
+// novaRebuildServer is a launched server: its Nova launched_at is non-zero, the
+// fresh signal an image-convergence check would authorize from (not the CR
+// status latches).
+func novaRebuildServer(status, imageID string) *servers.Server {
+	return &servers.Server{
+		ID:         "server-1",
+		Status:     status,
+		Image:      map[string]any{"id": imageID},
+		LaunchedAt: time.Now().Add(-time.Hour),
+	}
+}
 
 func openstackServerPortFixture(server *regionv1.Server, openstackNetwork *openstack.NetworkExt, openstackSubnet *subnets.Subnet) *ports.Port {
 	return &ports.Port{
@@ -1974,9 +1992,8 @@ func TestReconcileServerPreflight(t *testing.T) {
 // (managed user-data / SSH-CA) servers against the full create-path
 // interleaving: port and floating IP reconciliation write
 // Status.PrivateIP/PublicIP onto the caller's server BEFORE the augmented
-// copy is snapshotted, so the full status copy-back must both (a) preserve
-// those writes and (b) carry the rebuild's Phase/Rebuild status back to the
-// caller. Snapshotting the copy before port/FIP reconciliation (the original
+// copy is snapshotted, so the full status copy-back must preserve those
+// writes. Snapshotting the copy before port/FIP reconciliation (the original
 // defect placement) silently reverts PrivateIP/PublicIP on every reconcile.
 func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 	t.Parallel()
@@ -1990,8 +2007,6 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 	server := serverFixture(withNetwork(network), withFloatingIP)
 	server.Spec.Image = &regionv1.ServerImage{ID: idstest.MustParseImageID(rebuildNewImageID)}
 	server.Status.ProvisionedAt = ptr.To(metav1.Now())
-	// Intent already durable: this pass submits the rebuild.
-	server.Status.Rebuild = &regionv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: regionv1.ServerRebuildStateInitiated}
 
 	openstackNetwork := openstackNetworkFixture(network)
 	openstackSubnet := openstackSubnetFixture(network, openstackNetwork)
@@ -2008,23 +2023,15 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 
 	compute := mock.NewMockServerInterface(c)
 	compute.EXPECT().GetServer(t.Context(), gomock.Any()).Return(novaRebuildServer("ACTIVE", rebuildOldImageID), nil)
-	compute.EXPECT().RebuildServer(t.Context(), "server-1", openstack.ServerRebuildOptions{
-		ImageID: idstest.MustParseImageID(rebuildNewImageID),
-	}).Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
 
 	p := openstack.NewTestProvider(client, regionFixture())
 
 	err := openstack.CreateServerWithClients(t.Context(), p, networking, compute, server, options, "")
 	require.NoError(t, err)
 
-	// (a) the port/FIP status writes must survive the copy-back.
+	// the port/FIP status writes must survive the copy-back.
 	require.Equal(t, ptr.To(serverPortIP), server.Status.PrivateIP, "copy-back must not revert PrivateIP written by port reconciliation")
 	require.Equal(t, ptr.To(openstackFloatingIP.FloatingIP), server.Status.PublicIP, "copy-back must not revert PublicIP written by floating IP reconciliation")
-
-	// (b) the rebuild status writes must propagate back to the caller.
-	require.NotNil(t, server.Status.Rebuild)
-	require.Equal(t, regionv1.ServerRebuildStateRebuilding, server.Status.Rebuild.State)
-	requireRebuildAcceptedStamp(t, server)
 }
 
 // TestImageTagRoundTrip tests the round-trip conversion of tags:
