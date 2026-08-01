@@ -2594,46 +2594,6 @@ func advanceRebuildState(rebuild *unikornv1.ServerRebuildStatus, state unikornv1
 	rebuild.State = state
 }
 
-// advanceServerRebuildState advances Status.Rebuild.State from a fresh Nova
-// read. It is forward-only, and advances only on evidence attributable to the
-// marker's target — by image ref, since Nova flips the ref to the target
-// atomically with task_state at accept and this protocol never resubmits once
-// the fresh ref already equals the target. It never creates, clears, or
-// retargets the marker.
-//
-//nolint:cyclop // Fan-out mirrors the rebuild observation truth table (image-ref class × status/task evidence); collapsing it would scatter the attribution rules.
-func advanceServerRebuildState(server *unikornv1.Server, openstackServer *servers.Server) {
-	rebuild := server.Status.Rebuild
-	if rebuild == nil {
-		return
-	}
-
-	imageID, refReadable := openstackServerImageID(openstackServer)
-	converged := refReadable && imageID == rebuild.TargetImageID
-	taskActive := serverRebuildTaskActive(openstackServer)
-	accepted := serverRebuildStateRank(rebuild.State) >= serverRebuildStateRank(unikornv1.ServerRebuildStateRebuilding)
-
-	switch {
-	case converged:
-		switch {
-		case openstackServer.Status == novaStatusError:
-			advanceRebuildState(rebuild, unikornv1.ServerRebuildStateFailed)
-		case taskActive:
-			advanceRebuildState(rebuild, unikornv1.ServerRebuildStateRebuilding)
-		default:
-			advanceRebuildState(rebuild, unikornv1.ServerRebuildStateSucceeded)
-		}
-	case refReadable:
-		if accepted && (openstackServer.Status == novaStatusError || !taskActive) {
-			advanceRebuildState(rebuild, unikornv1.ServerRebuildStateFailed)
-		}
-	default:
-		if accepted && openstackServer.Status == novaStatusError {
-			advanceRebuildState(rebuild, unikornv1.ServerRebuildStateFailed)
-		}
-	}
-}
-
 // serverRebuildTaskActive reports whether a rebuild-relevant operation is in
 // flight. task_state is the authoritative signal: non-empty for the whole
 // rebuild window, empty at rest. This is what lets a converged read mean
@@ -3290,7 +3250,6 @@ func (p *Provider) updateServerStateWithClients(
 	}
 
 	setServerHealthStatus(server, openstackServer)
-	advanceServerRebuildState(server, openstackServer)
 	setServerMACAddress(ctx, server, openstackServer)
 
 	region, _ := p.openstack.regionSnapshot()

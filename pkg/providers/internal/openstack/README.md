@@ -145,16 +145,15 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   destructive rebuild.
 
   Ownership is split. Only the reconciler creates, replaces, or clears the
-  marker, and only the reconciler parks; the monitor's poll only rank-advances
-  `State` from observed evidence, never creating, clearing, or retargeting it
-  (observation is stimulus, never authorization — the reconciler's settlement
-  pass always re-decides from its own fresh `GetServer`). The forward-only
+  marker, and only the reconciler parks or advances `State`. The forward-only
   rank check (`advanceRebuildState`) makes every advance monotone, so a late
   or duplicate observation, or two writers racing the same edge, can never
   retreat a state or flip a terminal. The one exception is the reconciler's
   park, which assigns `Failed` directly and may overwrite a `Succeeded`
   stamped moments before an `ERROR` arrived — a stale success left standing
   would otherwise re-fire the settlement wake forever on a parked server.
+  The monitor's poll reads and writes no rebuild state at all — see
+  `pkg/monitor/health/server/README.md`.
 
   Attribution ties a Nova observation to *this* rebuild by the image ref, not
   by spec match. Nova flips the ref to the target atomically with `task_state`
@@ -168,23 +167,12 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   stable non-error status ∧ task_state empty`: the ref flips at accept but
   `task_state` stays non-empty until the rebuild settles, so that conjunction
   is never observable while a rebuild is in flight, and it uniquely
-  characterises completion. Both the monitor's `Succeeded` stamp and the
-  reconciler's marker clear gate on it. This is what closes the accept-to-
-  settle lag window: a stopped or errored server can display a stable
-  `SHUTOFF`/`ERROR` throughout its rebuild, so a converged-looking status
-  alone is not evidence of completion — `task_state` is the authoritative
-  activity signal, and settlement is state-based rather than
-  health-reason-based (`SHUTOFF` settles like any other stable status).
-
-  The monitor (`advanceServerRebuildState`) advances: with `ref == target`,
-  `ERROR` → `Failed`, an active task → `Rebuilding`, otherwise quiescent →
-  `Succeeded`; with a readable off-target ref and the marker already durably
-  `>= Rebuilding`, an `ERROR` or a quiesced task → `Failed` (supersession — an
-  accepted rebuild whose ref has moved off the target can no longer converge);
-  with an unreadable ref, only durable acceptance plus `ERROR` → `Failed`. An
-  `Initiated` marker observed with `ref != target` advances nothing: an
-  unattributed advance would falsely satisfy the submission gate and either
-  wedge the rebuild or drive a second Nova accept.
+  characterises completion. The reconciler's marker clear gates on it. This
+  is what closes the accept-to-settle lag window: a stopped or errored server
+  can display a stable `SHUTOFF`/`ERROR` throughout its rebuild, so a
+  converged-looking status alone is not evidence of completion — `task_state`
+  is the authoritative activity signal, and settlement is state-based rather
+  than health-reason-based (`SHUTOFF` settles like any other stable status).
 
   The reconciler's pass (`reconcileServerImage`) follows a fixed order. It
   replaces a marker whose target differs from the desired image (the re-arm
@@ -439,19 +427,6 @@ There are a few Octavia-specific constraints worth preserving:
 - Some older assumptions still leak through in status fields and helper paths,
   especially where compatibility with older API or storage shapes is still being
   carried.
-- Rebuild settlement rests on two environmental facts about the target cloud,
-  both worth an integration assertion rather than assumption. First, that Nova
-  flips the image ref to the target *atomically* with setting `task_state` at
-  accept: if a cloud made the ref visible before `task_state`, a poll could see
-  the converged ref with an empty task inside the rebuild window and stamp a
-  premature `Succeeded` — the accept-to-settle lag window this design closes by
-  gating settlement on `task_state` emptiness would silently reopen. Second,
-  that `OS-EXT-STS:task_state` is actually visible to the region service
-  principal (its exposure is policy-gated, and an unexposed field decodes
-  indistinguishably from "at rest"); without that visibility the same premature
-  clear returns. A kind/devstack assertion that a just-accepted rebuild's GET
-  shows a non-empty `task_state` covers both.
-
 ## TODO
 
 - Delete the remaining mirror-state OpenStack CRD usage paths entirely:
