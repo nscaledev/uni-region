@@ -119,9 +119,15 @@ related dependencies rather than from nested path scope.
 - Servers provisioned before this mechanism was introduced have random-UUID
   names and are not covered by it; deduplication applies only to resources
   created after deployment.
-- Image rebuild automatically submits at most one Nova-accepted action for a
-  target image. A failed accepted action parks the server until a new image
-  update or server replacement re-arms it; there is no explicit retry.
+- `v2` reads report the provisioning status the core conversion produces,
+  unrewritten. There used to be a v2-only override that reported a settled
+  server as still provisioning while a rebuild marker was outstanding; with
+  the in-place rebuild plumbing excised there is no marker left to consult.
+  provisioned-means-settled holds trivially for now, because image changes
+  are rejected outright (see the update-path guard above) — there is no
+  in-flight image realization for a settled server to be lying about.
+  uni-compute's own contract is unaffected either way: it never PUTs an
+  image change to region, handling drift by delete-and-recreate instead.
 
 ## Caveats
 
