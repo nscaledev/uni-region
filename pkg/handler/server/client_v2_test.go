@@ -986,25 +986,16 @@ func TestServerUpdateV2RejectsFlavorChange(t *testing.T) {
 	require.True(t, coreerrors.IsUnprocessableContent(err))
 }
 
-func TestServerUpdateV2ValidatesChangedImage(t *testing.T) {
+func TestServerUpdateV2RejectsImageChange(t *testing.T) {
 	t.Parallel()
 
 	const newImageID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
 
-	ctrl := gomock.NewController(t)
 	resource := testServerV2(srvServerID)
 	network := testSrvNetworkWithProject(srvProjectID)
-	provider := mocktypes.NewMockProvider(ctrl)
-	provider.EXPECT().GetImage(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), idstest.MustParseImageID(newImageID)).
-		Return(&types.Image{ID: newImageID, Status: types.ImageStatusReady, Virtualization: types.Any}, nil)
-	provider.EXPECT().Flavors(gomock.Any()).Return(types.FlavorList{{ID: srvFlavorID}}, nil)
-
-	providers := mockproviders.NewMockProviders(ctrl)
-	providers.EXPECT().LookupCloud(srvRegionID).Return(provider, nil)
 	c := server.NewClientV2(common.ClientArgs{
 		Client:    newSrvFakeClient(t, network, resource).Build(),
 		Namespace: srvNamespace,
-		Providers: providers,
 	})
 	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
 	request := &openapi.ServerV2Update{
@@ -1015,9 +1006,9 @@ func TestServerUpdateV2ValidatesChangedImage(t *testing.T) {
 		},
 	}
 
-	result, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
-	require.NoError(t, err)
-	require.Equal(t, idstest.MustParseImageID(newImageID), result.Spec.ImageId)
+	_, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err))
 }
 
 // TestServerUpdateV2RejectsChangedMalformedUserData verifies that an update
@@ -1341,98 +1332,6 @@ func TestServerCreateV2RejectsUnrecognizedImageVirtualization(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
 	require.ErrorContains(t, err, "not recognized")
-}
-
-// TestServerUpdateV2AppliesImageChangeWithRetiredFlavor verifies that an image
-// update still goes through when the server's (immutable, in-use) flavor is no
-// longer offered by the region: the flavor-dependent compatibility checks are
-// skipped — the image below would fail them against any known flavor — and the
-// new image is applied, so a retired flavor cannot strand the fleet.
-func TestServerUpdateV2AppliesImageChangeWithRetiredFlavor(t *testing.T) {
-	t.Parallel()
-
-	const newImageID = "bbbbbbbb-bbbb-4bbb-abbb-bbbbbbbbbbbb"
-
-	ctrl := gomock.NewController(t)
-	resource := testServerV2(srvServerID)
-	network := testSrvNetworkWithProject(srvProjectID)
-
-	provider := mocktypes.NewMockProvider(ctrl)
-	provider.EXPECT().GetImage(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), idstest.MustParseImageID(newImageID)).
-		Return(&types.Image{ID: newImageID, Status: types.ImageStatusReady, Virtualization: types.Baremetal, Architecture: types.Aarch64}, nil)
-	provider.EXPECT().Flavors(gomock.Any()).Return(types.FlavorList{}, nil)
-
-	providers := mockproviders.NewMockProviders(ctrl)
-	providers.EXPECT().LookupCloud(srvRegionID).Return(provider, nil)
-
-	c := server.NewClientV2(common.ClientArgs{
-		Client:    newSrvFakeClient(t, network, resource).Build(),
-		Namespace: srvNamespace,
-		Providers: providers,
-	})
-
-	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
-
-	request := &openapi.ServerV2Update{
-		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
-		Spec: openapi.ServerV2Spec{
-			FlavorId: resource.Spec.FlavorID,
-			ImageId:  idstest.MustParseImageID(newImageID),
-		},
-	}
-
-	result, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, idstest.MustParseImageID(newImageID), result.Spec.ImageId)
-
-	updated, err := c.GetV2Raw(ctx, resource.Name)
-	require.NoError(t, err)
-	require.Equal(t, idstest.MustParseImageID(newImageID), updated.Spec.Image.ID)
-}
-
-// TestServerUpdateV2RetiredFlavorStillRequiresReadyImage verifies that
-// tolerating a retired flavor on update does not relax the image-only checks:
-// a not-Ready target image is still rejected with HTTP 422.
-func TestServerUpdateV2RetiredFlavorStillRequiresReadyImage(t *testing.T) {
-	t.Parallel()
-
-	const newImageID = "bbbbbbbb-bbbb-4bbb-abbb-bbbbbbbbbbbb"
-
-	ctrl := gomock.NewController(t)
-	resource := testServerV2(srvServerID)
-	network := testSrvNetworkWithProject(srvProjectID)
-
-	provider := mocktypes.NewMockProvider(ctrl)
-	provider.EXPECT().GetImage(gomock.Any(), identityids.MustParseOrganizationID(srvOrganizationID), idstest.MustParseImageID(newImageID)).
-		Return(&types.Image{ID: newImageID, Status: types.ImageStatusPending}, nil)
-	provider.EXPECT().Flavors(gomock.Any()).Return(types.FlavorList{}, nil).AnyTimes()
-
-	providers := mockproviders.NewMockProviders(ctrl)
-	providers.EXPECT().LookupCloud(srvRegionID).Return(provider, nil)
-
-	c := server.NewClientV2(common.ClientArgs{
-		Client:    newSrvFakeClient(t, network, resource).Build(),
-		Namespace: srvNamespace,
-		Providers: providers,
-	})
-
-	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
-
-	request := &openapi.ServerV2Update{
-		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
-		Spec: openapi.ServerV2Spec{
-			FlavorId: resource.Spec.FlavorID,
-			ImageId:  idstest.MustParseImageID(newImageID),
-		},
-	}
-
-	_, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
-
-	require.Error(t, err)
-	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422 unprocessable content, got: %v", err)
-	require.ErrorContains(t, err, "image is not ready")
 }
 
 func TestServerGetV2ReturnsMACAddress(t *testing.T) {

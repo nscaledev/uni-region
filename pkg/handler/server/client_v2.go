@@ -83,25 +83,18 @@ func (c *ClientV2) getProvider(regionID string) (types.Provider, error) {
 	return provider, nil
 }
 
-func (c *ClientV2) validateUpdatedImage(ctx context.Context, network *regionv1.Network, current *regionv1.Server, request *openapi.ServerV2Update) error {
+// validateUpdatedImage rejects any image change on the update path. The
+// in-place rebuild that acted on image drift has been excised; accepting a
+// new image would update the spec with nothing to realize it — a lie at
+// rest. Same-image PUTs (clients echoing current state) remain a no-op.
+// TEMPORARY: removed when the rebuild re-implementation lands (spec
+// 2026-07-31-status-observed-implementation-design.md, §4 stage 3).
+func (c *ClientV2) validateUpdatedImage(_ context.Context, _ *regionv1.Network, current *regionv1.Server, request *openapi.ServerV2Update) error {
 	if current.Spec.Image != nil && current.Spec.Image.ID == request.Spec.ImageId {
 		return nil
 	}
 
-	provider, err := c.getProvider(network.Labels[constants.RegionLabel])
-	if err != nil {
-		return err
-	}
-
-	organizationID, _, err := current.OrganizationAndProjectID()
-	if err != nil {
-		return err
-	}
-
-	// The flavor is immutable (enforced by validateServerUpdate before this
-	// runs), so the request's flavor is the server's flavor and the update-path
-	// flavor-miss policy applies.
-	return validateServerImageForUpdate(ctx, provider, organizationID, request.Spec.ImageId, request.Spec.FlavorId)
+	return errors.HTTPUnprocessableContent("server image cannot be changed: in-place rebuild is not currently supported")
 }
 
 // validateCreateImage enforces the image contract on the create path: the

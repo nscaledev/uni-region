@@ -21,22 +21,15 @@ related dependencies rather than from nested path scope.
 
 - `v1` servers are nested more explicitly under identity paths
 - `v2` servers are network-linked resources with direct ID-based access
-- create/update validate the requested image through the provider layer under a
-  single shared contract: the image must exist and be visible, be Ready, and be
-  architecture/disk/virtualization compatible with the requested flavor. The
-  two paths differ only in how a flavor the region no longer offers is treated:
-  create rejects it with HTTP 422 (a create cannot proceed on retired
-  hardware), while update tolerates it — the flavor is immutable and already in
-  use by that exact server, so a retired flavor must not block an image update
-  (e.g. a security-patch rebuild); the flavor-dependent compatibility checks
-  are skipped because the flavor's metadata is unavailable, and Nova remains
-  the backstop for a truly incompatible rebuild. An image reporting an
-  unrecognized virtualization type fails closed with HTTP 422 — an unknown
-  value is evidence of version skew or bad provider metadata, and the gate
-  fronts a destructive root-disk rebuild. Absent metadata fails open on both
-  axes: images lacking the virtualization property (out-of-band Glance
-  uploads, images predating the label) or an architecture are not rejected,
-  because absence of evidence is not evidence of incompatibility
+- create validates the requested image through the provider layer: the image
+  must exist and be visible, be Ready, and be architecture/disk/virtualization
+  compatible with the requested flavor. An image reporting an unrecognized
+  virtualization type fails closed with HTTP 422 — an unknown value is evidence
+  of version skew or bad provider metadata, and the gate fronts a destructive
+  root-disk rebuild. Absent metadata fails open on both axes: images lacking the
+  virtualization property (out-of-band Glance uploads, images predating the
+  label) or an architecture are not rejected, because absence of evidence is not
+  evidence of incompatibility
 - create/update can validate and bind an SSH certificate authority
 - create accepts an explicit SSH injection mode: `ca`, `identityKeypair`, or
   `none`. Omitted values preserve the legacy contract: requests with
@@ -79,36 +72,20 @@ related dependencies rather than from nested path scope.
   different name are rejected with HTTP 422
 - a v2 update replaces the persisted `userData` wholesale — an omitted field
   clears the stored value. The value is never applied to the running guest; it
-  is consumed by the next recreate. A rebuild (image change) re-runs the
-  create-time user data, not the updated value — applying updated user data on
-  rebuild is deferred until Nova's microversion 2.57 `user_data` field is wired
-  through the client library
+  is consumed by the next recreate
 - the image is immutable through the v1 API: a v1 update carrying a different
   `imageId` succeeds but preserves the stored image (the rest of the update
   still applies). The `imageId` on a v1 update is ignored entirely and not
   validated — the value is discarded, so even one referencing a since-deleted
-  image does not fail the update. The destructive rebuild contract below is
-  exposed — and its compatibility validation and settlement-aware status
-  reporting enforced — only by v2, so v1 must never let the stored image drift
-  from the running server. This preserves v1's historical accept-and-ignore
+  image does not fail the update. This preserves v1's historical accept-and-ignore
   behaviour for image changes, now enforced at the API boundary instead of
   falling out of the old create-only image handling in the provider.
-- changing a v2 server's `imageId` is a destructive in-place Nova rebuild. It
-  recreates the root disk and destroys its contents while retaining the server
-  UUID, ports, fixed and floating IP relationships, attached data volumes,
-  flavor, metadata, and placement. Flavor changes remain unsupported and are
-  rejected with HTTP 422. An accepted rebuild destroys the previous root disk
-  contents even if the rebuild subsequently fails, so failure recovery is
-  choosing another image or replacing the server — never data restoration.
-- while a rebuild is pending (any recorded rebuild intent that has not
-  settled-and-cleared, including one armed but not yet accepted by Nova) the
-  v2 read reports `provisioningStatus=provisioning` even though the
-  controller has finished its reconcile pass and core would otherwise report
-  `provisioned`. The target image is not yet realized, so the server is not
-  settled: `provisioned` means settled, which the sole consumer (uni-compute's
-  instance settlement gate) relies on. A parked rebuild still surfaces as
-  `error`, so a failure stays visible. See the provider's rebuild handling in
-  [../../providers/internal/openstack/README.md](../../providers/internal/openstack/README.md).
+- v2 server image updates are currently rejected with HTTP 422. The in-place
+  rebuild mechanism that would have acted on image changes is being excised
+  (spec 2026-07-31-status-observed-implementation-design.md, stage 3);
+  accepting a new image would update the spec with nothing to realize it at
+  runtime. Flavor changes remain unsupported and are rejected with HTTP 422.
+  Same-image PUTs (clients echoing current state) remain a no-op and succeed.
 
 ## Invariants And Guard Rails
 
