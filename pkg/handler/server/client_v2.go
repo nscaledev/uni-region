@@ -33,7 +33,6 @@ import (
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
-	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
@@ -83,25 +82,17 @@ func (c *ClientV2) getProvider(regionID string) (types.Provider, error) {
 	return provider, nil
 }
 
-func (c *ClientV2) validateUpdatedImage(ctx context.Context, network *regionv1.Network, current *regionv1.Server, request *openapi.ServerV2Update) error {
+// validateUpdatedImage rejects any image change on the update path. The
+// in-place rebuild that acted on image drift has been removed; accepting a
+// new image would update the spec with nothing to realize it — a lie at
+// rest. Same-image PUTs (clients echoing current state) remain a no-op.
+// The rejection lifts when in-place rebuild is reintroduced.
+func (c *ClientV2) validateUpdatedImage(_ context.Context, _ *regionv1.Network, current *regionv1.Server, request *openapi.ServerV2Update) error {
 	if current.Spec.Image != nil && current.Spec.Image.ID == request.Spec.ImageId {
 		return nil
 	}
 
-	provider, err := c.getProvider(network.Labels[constants.RegionLabel])
-	if err != nil {
-		return err
-	}
-
-	organizationID, _, err := current.OrganizationAndProjectID()
-	if err != nil {
-		return err
-	}
-
-	// The flavor is immutable (enforced by validateServerUpdate before this
-	// runs), so the request's flavor is the server's flavor and the update-path
-	// flavor-miss policy applies.
-	return validateServerImageForUpdate(ctx, provider, organizationID, request.Spec.ImageId, request.Spec.FlavorId)
+	return errors.HTTPUnprocessableContent("server image cannot be changed: in-place rebuild is not currently supported")
 }
 
 // validateCreateImage enforces the image contract on the create path: the
@@ -227,19 +218,6 @@ func sshInjectionStatus(in *regionv1.Server) *openapi.SshInjection {
 	return &out
 }
 
-// deriveProvisioningStatus reports a server with a pending rebuild as
-// provisioning: consumers gate on provisioned meaning the spec is fully
-// realized, and a Nova-accepted rebuild still in flight is not. Only the
-// Provisioned case is rewritten — a parked rebuild's error, and every other
-// status, pass through so failures stay visible.
-func deriveProvisioningStatus(in *regionv1.Server, status coreapi.ResourceProvisioningStatus) coreapi.ResourceProvisioningStatus {
-	if in.RebuildPending() && status == coreapi.ResourceProvisioningStatusProvisioned {
-		return coreapi.ResourceProvisioningStatusProvisioning
-	}
-
-	return status
-}
-
 func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 	imageID, err := in.ImageID()
 	if err != nil {
@@ -252,7 +230,6 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 	}
 
 	metadata := conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags)
-	metadata.ProvisioningStatus = deriveProvisioningStatus(in, metadata.ProvisioningStatus)
 
 	out := &openapi.ServerV2Read{
 		Metadata: metadata,
@@ -780,8 +757,8 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, re
 
 	// Updates replace the persisted user-data wholesale: an omitted field clears
 	// the stored value. The value is not applied to the running guest — it is
-	// consumed by the next rebuild (image change) or recreate. Changed user-data
-	// is re-validated at the boundary; identical payloads are not.
+	// consumed by the next recreate. Changed user-data is re-validated at the
+	// boundary; identical payloads are not.
 	if err := c.validateUpdateV2Request(ctx, network, current, request); err != nil {
 		return nil, err
 	}

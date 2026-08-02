@@ -1121,8 +1121,9 @@ type ServerV2CreateSpec struct {
 	// FlavorId The server flavor. This field is immutable after creation.
 	FlavorId FlavorId `json:"flavorId"`
 
-	// ImageId The desired server image. Changing this field rebuilds the server,
-	// recreating the root disk and destroying its contents.
+	// ImageId The desired server image, set at creation. The image is currently
+	// immutable: an update request that changes it is rejected with a 422
+	// error (in-place rebuild support is pending re-implementation).
 	ImageId ImageId `json:"imageId"`
 
 	// InfrastructureRef A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
@@ -1144,7 +1145,7 @@ type ServerV2CreateSpec struct {
 	// The format of the data is governed by the cloud-init standard, and may be a script,
 	// a MIME multipart archive, etc. On update the field is replaced wholesale: omitting
 	// it clears the stored value. A changed value is not applied to the running guest —
-	// it takes effect only when the server is next rebuilt (image change) or recreated.
+	// it takes effect only when the server is next recreated.
 	UserData *[]byte `json:"userData,omitempty"`
 }
 
@@ -1183,8 +1184,9 @@ type ServerV2Spec struct {
 	// FlavorId The server flavor. This field is immutable after creation.
 	FlavorId FlavorId `json:"flavorId"`
 
-	// ImageId The desired server image. Changing this field rebuilds the server,
-	// recreating the root disk and destroying its contents.
+	// ImageId The desired server image, set at creation. The image is currently
+	// immutable: an update request that changes it is rejected with a 422
+	// error (in-place rebuild support is pending re-implementation).
 	ImageId ImageId `json:"imageId"`
 
 	// Networking A server's network configuration.
@@ -1194,7 +1196,7 @@ type ServerV2Spec struct {
 	// The format of the data is governed by the cloud-init standard, and may be a script,
 	// a MIME multipart archive, etc. On update the field is replaced wholesale: omitting
 	// it clears the stored value. A changed value is not applied to the running guest —
-	// it takes effect only when the server is next rebuilt (image change) or recreated.
+	// it takes effect only when the server is next recreated.
 	UserData *[]byte `json:"userData,omitempty"`
 }
 

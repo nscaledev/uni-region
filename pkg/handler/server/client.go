@@ -176,10 +176,10 @@ func (c *Client) Update(ctx context.Context, organizationID identityids.Organiza
 
 	// The image is immutable through the v1 API: the request's imageId is
 	// discarded — and therefore not validated at all — in favour of the stored
-	// image. A stored image change now arms a destructive in-place rebuild in
-	// the provider (INST-920) — a contract only v2 validates and reports on —
-	// whereas v1 has always accepted and ignored image changes, so preserve the
-	// stored image and never 404 an update over a value that has no effect.
+	// image. v1 has always accepted and ignored image changes; v2, by contrast,
+	// rejects an image change outright (422) while in-place rebuild is excised.
+	// Preserve the stored image here and never 404 an update over a value that
+	// has no effect.
 	required.Spec.Image = current.Spec.Image.DeepCopy()
 
 	if err := conversion.UpdateObjectMetadata(required, current, identitycommon.IdentityMetadataMutator); err != nil {

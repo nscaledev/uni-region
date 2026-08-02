@@ -11,10 +11,10 @@ The watch is slightly broader than the other resource managers: besides server
 spec generation changes, it also wakes the controller when the monitor first
 observes a pre-launch provider server in `Healthy/Errored`. That status edge is
 the trigger for bounded delete-and-retry handling in the server provisioner.
-A third predicate, the level-based `RebuildSettled` (also exported by the
-provisioner package), wakes the controller whenever the monitor's terminal
-rebuild observation (`Status.Rebuild.State` `Succeeded`/`Failed`) awaits its
-settlement pass.
+
+A third predicate once woke the controller from a monitor-recorded terminal
+rebuild observation. In-place rebuild has been removed, so that predicate is
+gone; reintroducing the feature means reintroducing a wake for it.
 
 The "pre-launch" test is the shared `ProviderCreateFailure` predicate exported by
 [`pkg/provisioners/managers/server`](../../provisioners/managers/server/README.md),

@@ -157,31 +157,3 @@ func validateServerImageForCreate(ctx context.Context, provider types.Provider, 
 
 	return validateImageFlavorCompatibility(image, flavor)
 }
-
-// validateServerImageForUpdate enforces the update-path image contract: the
-// image-only checks (existence, readiness) always apply, but a flavor the
-// region no longer offers is tolerated. The flavor is immutable and provably
-// in use — this exact server is already running on that hardware — so a
-// retired flavor must not strand the fleet: an image update (e.g. a
-// security-patch rebuild) must still go through. On a miss the
-// flavor-dependent compatibility checks (architecture, disk size,
-// virtualization) are skipped because the flavor's metadata is unavailable;
-// Nova is the remaining backstop for a truly incompatible rebuild, and the
-// rebuild state machine parks the server on ERROR if Nova objects.
-func validateServerImageForUpdate(ctx context.Context, provider types.Provider, organizationID identityids.OrganizationID, imageID regionids.ImageID, flavorID regionids.FlavorID) error {
-	image, err := readyServerImage(ctx, provider, organizationID, imageID)
-	if err != nil {
-		return err
-	}
-
-	flavor, err := flavorByID(ctx, provider, flavorID)
-	if err != nil {
-		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
-			return nil
-		}
-
-		return err
-	}
-
-	return validateImageFlavorCompatibility(image, flavor)
-}

@@ -100,58 +100,13 @@ func TestValidateServerImageForCreate(t *testing.T) {
 	}
 }
 
-func TestValidateServerImageForUpdate(t *testing.T) {
-	t.Parallel()
-
-	// An image that would fail every flavor-dependent compatibility check
-	// against the fixture flavor, proving those checks are skipped on a miss.
-	incompatibleImage := &types.Image{
-		ID:             validationImageID,
-		Status:         types.ImageStatusReady,
-		SizeGiB:        80,
-		Virtualization: types.ImageVirtualization("paravirtualized"),
-		Architecture:   types.Aarch64,
-	}
-
-	tests := []struct {
-		name    string
-		image   *types.Image
-		flavors types.FlavorList
-		wantErr string
-	}{
-		{name: "valid", image: readyValidationImage(), flavors: validationFlavors()},
-		{name: "retired flavor skips compatibility checks", image: incompatibleImage, flavors: types.FlavorList{}},
-		{name: "retired flavor still requires ready image", image: &types.Image{Status: types.ImageStatusPending}, flavors: types.FlavorList{}, wantErr: "image is not ready"},
-		{name: "offered flavor still enforces compatibility", image: incompatibleImage, flavors: types.FlavorList{{ID: validationFlavorID, Disk: resource.NewScaledQuantity(40, resource.Giga), Architecture: types.X86_64}}, wantErr: "architecture is not compatible"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
-			ctrl := gomock.NewController(t)
-			provider := providermock.NewMockProvider(ctrl)
-			provider.EXPECT().GetImage(gomock.Any(), identityids.MustParseOrganizationID(validationOrganizationID), idstest.MustParseImageID(validationImageID)).Return(test.image, nil)
-			provider.EXPECT().Flavors(gomock.Any()).Return(test.flavors, nil).AnyTimes()
-
-			err := validateServerImageForUpdate(t.Context(), provider, identityids.MustParseOrganizationID(validationOrganizationID), idstest.MustParseImageID(validationImageID), idstest.MustParseFlavorID(validationFlavorID))
-			if test.wantErr == "" {
-				require.NoError(t, err)
-			} else {
-				require.ErrorContains(t, err, test.wantErr)
-			}
-		})
-	}
-}
-
-// TestValidateServerImageNotFound verifies both policy wrappers map a
+// TestValidateServerImageNotFound verifies that the image validator maps a
 // provider image miss onto HTTP 404 through the shared existence helper.
 func TestValidateServerImageNotFound(t *testing.T) {
 	t.Parallel()
 
 	validators := map[string]func(context.Context, types.Provider, identityids.OrganizationID, regionids.ImageID, regionids.FlavorID) error{
 		"create": validateServerImageForCreate,
-		"update": validateServerImageForUpdate,
 	}
 
 	for name, validate := range validators {
