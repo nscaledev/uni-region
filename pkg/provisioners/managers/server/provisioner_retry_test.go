@@ -96,9 +96,12 @@ func retryClient(t *testing.T, objects ...client.Object) client.Client {
 
 // withProviderCreateFailure marks a server as a terminal provider-create failure
 // via the Active condition — the axis ProviderCreateFailure now keys off (Nova
-// ERROR is surfaced as ActiveConditionReasonError by the monitor).
+// ERROR is surfaced as ActiveConditionReasonError by the monitor) — with a
+// monitor observation recorded but no boot signal, matching a server the
+// monitor has polled and found never launched.
 func withProviderCreateFailure(server *regionv1.Server) {
 	server.SetActiveCondition(regionv1.ActiveConditionReasonError)
+	server.Status.Observed = &regionv1.ServerObservedStatus{ServerGeneration: 1}
 }
 
 // activeReason reads the server's lifecycle Active condition, failing the test if
@@ -187,7 +190,7 @@ func TestProvision_ProviderCreateFailureDeletesAndYields(t *testing.T) {
 	// The MAC is owned exclusively by the monitor; the reconciler's create-failure
 	// reset must not clear it. A stale value self-heals on the next ACTIVE poll.
 	require.Equal(t, ptr.To("00:11:22:33:44:55"), server.Status.MACAddress)
-	require.Nil(t, server.Status.ScheduledAt)
+	require.NotNil(t, server.Status.ScheduledAt, "the legacy scheduledAt is monitor-owned and not the reconciler's to clear")
 
 	requireEvent(t, recorder, corev1.EventTypeNormal, "ProviderCreateRetrying", "attempt 1/3")
 	requireEvent(t, recorder, corev1.EventTypeNormal, "ProviderCreateRetryReady", "attempt 1/3")
@@ -276,7 +279,7 @@ func TestProvision_LaunchedServerHealthErrorDoesNotRetryCreate(t *testing.T) {
 
 	server := retryServer(withProviderCreateFailure)
 	launchedAt := metav1.NewTime(time.Now().Add(-time.Minute))
-	server.Status.LaunchedAt = &launchedAt
+	server.Status.Observed.LaunchedAt = &launchedAt
 
 	provider := mocktypes.NewMockProvider(ctrl)
 	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(nil)
@@ -300,7 +303,7 @@ func TestProvision_ProvisionedServerHealthErrorDoesNotRetryCreate(t *testing.T) 
 
 	server := retryServer(withProviderCreateFailure)
 	provisionedAt := metav1.NewTime(time.Now().Add(-time.Hour))
-	server.Status.ProvisionedAt = &provisionedAt
+	server.Status.Observed.ProvisionedAt = &provisionedAt
 
 	provider := mocktypes.NewMockProvider(ctrl)
 	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(nil)

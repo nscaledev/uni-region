@@ -134,11 +134,34 @@ func (c *Checker) onPhaseTransition(ctx context.Context, server, updated *unikor
 		return
 	}
 
-	c.recordDurationIfFirstObservation(ctx, server, "launched_at", server.Status.LaunchedAt, updated.Status.LaunchedAt,
+	c.recordDurationIfFirstObservation(ctx, server, "launched_at", observedLaunchedAt(server), observedLaunchedAt(updated),
 		func(d time.Duration) { c.metrics.RecordProvision(ctx, d, regionID, regionName, flavorID, flavorName) })
 
-	c.recordDurationIfFirstObservation(ctx, server, "scheduled_at", server.Status.ScheduledAt, updated.Status.ScheduledAt,
+	c.recordDurationIfFirstObservation(ctx, server, "scheduled_at", observedScheduledAt(server), observedScheduledAt(updated),
 		func(d time.Duration) { c.metrics.RecordScheduling(ctx, d, regionID, regionName, flavorID, flavorName) })
+}
+
+// The monitor's timestamp readers go through the subtree it owns, falling back to
+// the legacy field while both are written. The fallback is what preserves the
+// one-shot guarantee across the transition: a server that booted before this
+// change has a populated legacy timestamp and an empty observation, so reading
+// only the observation would see a nil-to-set transition on its first poll and
+// re-record a duration for a boot that happened long ago. Remove the fallback
+// when the legacy writes stop.
+func observedLaunchedAt(server *unikornv1.Server) *metav1.Time {
+	if server.Status.Observed != nil && server.Status.Observed.LaunchedAt != nil {
+		return server.Status.Observed.LaunchedAt
+	}
+
+	return server.Status.LaunchedAt
+}
+
+func observedScheduledAt(server *unikornv1.Server) *metav1.Time {
+	if server.Status.Observed != nil && server.Status.Observed.ScheduledAt != nil {
+		return server.Status.Observed.ScheduledAt
+	}
+
+	return server.Status.ScheduledAt
 }
 
 // logStateTransition emits a structured log entry when the server's ConditionHealthy

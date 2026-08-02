@@ -260,24 +260,32 @@ func (p *Provisioner) recordProviderCreateRetryEvent(ctx context.Context, eventT
 //     set at first boot and never cleared by Nova, so LaunchedAt != nil means the
 //     server has booted.
 //   - ProvisionedAt is a durable, write-once copy of that same launched_at signal
-//     that nothing in this package ever clears. It exists because LaunchedAt is
-//     cleared by resetProviderCreateRuntimeStatus during an in-flight retry: the
-//     latch closes that window (and any future loss of LaunchedAt) so a server
-//     that has booted cannot be re-armed for rebuild. A reconciler-owned Available
-//     condition cannot serve this role — it is re-derived every reconcile and
-//     flips to a non-provisioned value when a reconcile re-runs against a flaky
-//     provider (for example on a controller restart).
+//     that nothing clears: not this package, not the monitor. It is what makes the
+//     guard fail closed even if LaunchedAt is ever lost. A reconciler-owned
+//     Available condition cannot serve this role — it is re-derived every
+//     reconcile and flips to a non-provisioned value when a reconcile re-runs
+//     against a flaky provider (for example on a controller restart).
 //   - The failure signal itself is the Active condition: the provider monitor sets
 //     ActiveConditionReasonError when it observes the server in a terminal error
 //     state (e.g. Nova ERROR). Active is the pertinent lifecycle axis for a single
 //     server's state; the Healthy condition is a legacy cluster-aggregate concept
 //     and nothing here depends on it.
+//   - Both inputs come from the monitor's own observation, and from the same one:
+//     the Active condition only ever reaches Error via a monitor poll, and that
+//     poll evaluates launched_at in the same pass. So a missing boot latch
+//     alongside Active=Error means the server genuinely had not booted when it was
+//     observed — the guard cannot be fooled by a half-applied observation.
 func ProviderCreateFailure(server *unikornv1.Server) bool {
-	if server.Status.ProvisionedAt != nil {
+	observed := server.Status.Observed
+	if observed == nil {
 		return false
 	}
 
-	if server.Status.LaunchedAt != nil {
+	if observed.ProvisionedAt != nil {
+		return false
+	}
+
+	if observed.LaunchedAt != nil {
 		return false
 	}
 
@@ -297,16 +305,14 @@ func (p *Provisioner) providerCreateFailure() bool {
 // resetProviderCreateRuntimeStatus clears the runtime status left by a failed
 // create attempt so the next attempt starts clean. Resetting the Active condition
 // to Pending clears the terminal Error state, so ProviderCreateFailure no longer
-// fires while the retry is in flight. The Healthy condition is left alone: nothing
-// gates on it and the monitor re-derives it on the next observation.
+// fires while the retry is in flight. Only reconciler-owned fields are cleared:
+// the monitor overwrites its own observations on its next poll against the new
+// provider server, and its boot latch must survive — the retry guard keys off it
+// so a server that has booted is never destroyed.
 func (p *Provisioner) resetProviderCreateRuntimeStatus() {
 	p.server.SetActiveCondition(unikornv1.ActiveConditionReasonPending)
 	p.server.Status.PrivateIP = nil
 	p.server.Status.PublicIP = nil
-	// MACAddress is deliberately not reset: the monitor is its sole owner, and a
-	// stale value self-heals on the next ACTIVE poll rather than flickering to unset.
-	p.server.Status.LaunchedAt = nil
-	p.server.Status.ScheduledAt = nil
 }
 
 func (p *Provisioner) deleteFailedProviderServer(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, attempt, maxAttempts int32) error {
@@ -314,7 +320,13 @@ func (p *Provisioner) deleteFailedProviderServer(ctx context.Context, provider t
 		return err
 	}
 
-	if err := provider.UpdateServerState(ctx, identity, p.server); err != nil {
+	// Existence probe only: the caller inspects just the error (ErrResourceNotFound
+	// means the delete converged), never the mutations. Probing a throwaway copy
+	// keeps this out of status.observed, which UpdateServerState writes into and
+	// which only the monitor may write.
+	probe := p.server.DeepCopy()
+
+	if err := provider.UpdateServerState(ctx, identity, probe); err != nil {
 		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
 			return err
 		}

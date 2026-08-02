@@ -1011,6 +1011,94 @@ func TestServerUpdateV2RejectsImageChange(t *testing.T) {
 	require.True(t, coreerrors.IsUnprocessableContent(err))
 }
 
+// TestServerUpdateV2SameSpecPersistsIdenticalSpec pins what region owns of the
+// no-op contract the observation's freshness stamp rests on: a PUT carrying the
+// server's current spec must leave the persisted spec byte-identical, so there is
+// no spec diff for the API server to bump the generation for. (Generation
+// semantics themselves are the API server's guarantee, not region's, and the fake
+// client does not model them.)
+//
+// This pins the steady state only: Spec.SSHInjection must already be explicit.
+// A server whose SSHInjection predates the field (nil) is a documented, bounded
+// exception — see TestServerUpdateV2BackfillsLegacySSHInjectionOnce.
+func TestServerUpdateV2SameSpecPersistsIdenticalSpec(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	resource.Spec.SSHInjection = ptr.To(regionv1.ServerSSHInjectionIdentityKeypair)
+	network := testSrvNetworkWithProject(srvProjectID)
+	k8sClient := newSrvFakeClient(t, network, resource).Build()
+
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
+
+	var before regionv1.Server
+
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, &before))
+
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+		},
+	}
+
+	_, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
+	require.NoError(t, err)
+
+	var after regionv1.Server
+
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, &after))
+
+	require.Equal(t, before.Spec, after.Spec, "a PUT carrying the current spec must not alter the persisted spec")
+}
+
+// TestServerUpdateV2BackfillsLegacySSHInjectionOnce documents the one bounded
+// exception to the no-op contract above: a server whose Spec.SSHInjection
+// predates the field (nil, no CA) has it resolved and written explicitly by
+// UpdateV2 (client_v2.go, via current.ResolvedSSHInjection()) regardless of
+// the request body, because that resolution reads the current stored
+// resource, not the request. That first same-spec PUT therefore does change
+// the persisted spec. The exception is bounded, not open-ended: once
+// SSHInjection is explicit, every later same-spec PUT is a true no-op, which
+// the second update below pins.
+func TestServerUpdateV2BackfillsLegacySSHInjectionOnce(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	network := testSrvNetworkWithProject(srvProjectID)
+	k8sClient := newSrvFakeClient(t, network, resource).Build()
+
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
+
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+		},
+	}
+
+	_, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
+	require.NoError(t, err)
+
+	var afterFirst regionv1.Server
+
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, &afterFirst))
+	require.NotNil(t, afterFirst.Spec.SSHInjection, "the legacy nil field must be backfilled explicitly on first touch")
+	require.Equal(t, regionv1.ServerSSHInjectionIdentityKeypair, *afterFirst.Spec.SSHInjection)
+
+	_, err = c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
+	require.NoError(t, err)
+
+	var afterSecond regionv1.Server
+
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, &afterSecond))
+	require.Equal(t, afterFirst.Spec, afterSecond.Spec, "once explicit, a same-spec PUT must be a true no-op")
+}
+
 // TestServerUpdateV2RejectsChangedMalformedUserData verifies that an update
 // changing the persisted user-data to a malformed payload is rejected with
 // HTTP 422 at the API boundary rather than failing at the next rebuild.

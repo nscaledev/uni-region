@@ -50,6 +50,12 @@ func ServerCreateOptionsForTest(ctx context.Context, server *unikornv1.Server, c
 	return provisioner.serverCreateOptions(ctx, cli)
 }
 
+// ResetProviderCreateRuntimeStatusForTest exposes the retry reset to this
+// package's external test package.
+func ResetProviderCreateRuntimeStatusForTest(server *unikornv1.Server) {
+	(&Provisioner{server: server}).resetProviderCreateRuntimeStatus()
+}
+
 func NewForTest(server *unikornv1.Server, providers providers.Providers, options *Options, recorders ...record.EventRecorder) *Provisioner {
 	if options == nil {
 		options = NewOptions()

@@ -64,25 +64,28 @@ This is the clearest controller-side expression of the lifecycle DAG model:
   predicate, shared with the controller watch predicate
   (`pkg/managers/server`) so the trigger and the action cannot drift. It fails
   closed: a rebuild destroys data, so any signal that the server has ever booted
-  blocks it. In steady state the load-bearing guard is `launchedAt` (mirrored
-  from Nova `launched_at`, which Nova sets at first boot and never clears).
-  `Server.status.provisionedAt` is a durable, write-once copy of that same Nova
-  signal that the retry reset never clears; it closes the one window `launchedAt`
-  alone cannot — a launched server whose `launchedAt` is wiped by an in-flight
-  retry reset, or a re-reconcile against a flaky provider. A reconciler-owned
+  blocks it. Both signals it reads, `status.observed.launchedAt` and
+  `status.observed.provisionedAt`, are the monitor's own observation, not the
+  reconciler's copies — the reconciler never writes into `status.observed` (see
+  `pkg/monitor/health/server`). `provisionedAt` is a
+  durable, write-once copy of the same Nova `launched_at` signal that nothing
+  clears, not this package, not the monitor; it is what keeps the guard fail
+  closed even if `launchedAt` is ever lost. A reconciler-owned
   `Available`/Provisioned condition would be unsuitable for this: it is
   re-derived every reconcile and legitimately flips to `Errored`/`Provisioning`
   on a controller restart against a flaky provider — exactly when a rebuild would
-  be catastrophic. The post-launch phases are retained as further defence in
-  depth so losing any single status field cannot re-arm the rebuild path.
-  Existing servers predating the latch backfill it on the next poll once booted
-  and are covered by the `launchedAt` backstop until then.
-- `Server.status.macAddress` is owned exclusively by the monitor (see
-  `pkg/monitor/health/server`), not the reconciler. The reconciler no longer
-  records it at port-create time — that value is the ephemeral Neutron MAC for
-  baremetal, which Ironic later rebinds to the real NIC MAC — and the retry
-  reset deliberately leaves it intact (like `provisionedAt`) so it never
-  flickers to unset; a stale value self-heals on the next `ACTIVE` poll.
+  be catastrophic. Existing servers upgrading to this scheme carry a nil
+  `status.observed` until the monitor's first post-upgrade poll, so the guard
+  fails closed (reports no failure) for up to one poll period rather than
+  falling back to the legacy fields — a delay, not a wrong action.
+- The create-retry reset (`resetProviderCreateRuntimeStatus`) clears only
+  reconciler-owned status: it returns the Active condition to Pending and clears
+  `privateIP`/`publicIP`. It must never touch `status.observed` or the legacy
+  fields the monitor owns (`macAddress`, `launchedAt`, `scheduledAt`,
+  `provisionedAt`) — the monitor overwrites its own observations from its next
+  poll against the new provider server, and the boot latch in particular must
+  survive a reset, since the retry guard keys off it to avoid destroying a
+  server that has already booted.
 - Provider create retries also emit Kubernetes events and structured logs on
   retry start, retry readiness after delete, and retry exhaustion; avoid
   per-reconcile emissions while deletion is still converging.

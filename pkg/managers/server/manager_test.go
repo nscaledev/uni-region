@@ -33,6 +33,7 @@ import (
 func serverWithProviderCreateFailure() *unikornv1.Server {
 	server := &unikornv1.Server{}
 	server.SetActiveCondition(unikornv1.ActiveConditionReasonError)
+	server.Status.Observed = &unikornv1.ServerObservedStatus{ServerGeneration: 1}
 
 	return server
 }
@@ -65,7 +66,7 @@ func TestProviderCreateFailureUpdate(t *testing.T) {
 
 		server := serverWithProviderCreateFailure()
 		launchedAt := metav1.NewTime(time.Now())
-		server.Status.LaunchedAt = &launchedAt
+		server.Status.Observed.LaunchedAt = &launchedAt
 
 		require.False(t, providerCreateFailureUpdate(event.TypedUpdateEvent[*unikornv1.Server]{
 			ObjectOld: &unikornv1.Server{},
@@ -93,7 +94,7 @@ func TestProviderCreateFailureUpdate(t *testing.T) {
 
 		server := serverWithProviderCreateFailure()
 		provisionedAt := metav1.NewTime(time.Now().Add(-time.Hour))
-		server.Status.ProvisionedAt = &provisionedAt
+		server.Status.Observed.ProvisionedAt = &provisionedAt
 
 		require.False(t, providerCreateFailureUpdate(event.TypedUpdateEvent[*unikornv1.Server]{
 			ObjectOld: &unikornv1.Server{},

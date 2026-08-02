@@ -106,6 +106,13 @@ related dependencies rather than from nested path scope.
 - `GET /api/v2/servers/{serverID}/sshkey` only returns the identity private key
   for servers where Region requested `identityKeypair` SSH injection during
   create. It returns not found for `ca` and `none` servers.
+- A server created before `spec.sshInjection` existed has that field persisted
+  as nil. The first `v2` update resolves it explicitly — `identityKeypair`, or
+  `ca` if the server has an SSH certificate authority — even when the request
+  otherwise carries the current spec unchanged. That resolution reads the
+  stored resource, not the request body, so it mutates the persisted spec and
+  bumps `metadata.generation` on that one update. Once resolved, every later
+  same-spec update is a true no-op; the backfill fires at most once per server.
 - Power-operation errors are translated carefully from provider conflict/not-found
   states into user-facing API semantics.
 - `infrastructureRef` is create-time placement input. Updates preserve the

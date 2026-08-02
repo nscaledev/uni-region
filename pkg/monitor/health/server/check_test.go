@@ -595,10 +595,13 @@ func TestCheckServerNoHistogramOnRestartAfterFirstBoot(t *testing.T) {
 	launchedAt := metav1.NewTime(time.Now().Add(-time.Minute))
 	scheduledAt := metav1.NewTime(time.Now().Add(-2 * time.Minute))
 
-	// Server already has both timestamps from its first boot.
+	// Server already has both timestamps from its first boot, dual-written to the
+	// legacy fields and the observation as the monitor does on every poll.
 	srv := serverFixture(unikornv1.ActiveConditionReasonPending)
 	srv.Status.LaunchedAt = &launchedAt
 	srv.Status.ScheduledAt = &scheduledAt
+	srv.ObservedStatus().LaunchedAt = &launchedAt
+	srv.ObservedStatus().ScheduledAt = &scheduledAt
 
 	ctrl := gomock.NewController(t)
 
@@ -609,6 +612,8 @@ func TestCheckServerNoHistogramOnRestartAfterFirstBoot(t *testing.T) {
 			s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 			s.Status.LaunchedAt = &launchedAt
 			s.Status.ScheduledAt = &scheduledAt
+			s.ObservedStatus().LaunchedAt = &launchedAt
+			s.ObservedStatus().ScheduledAt = &scheduledAt
 
 			return nil
 		})
@@ -630,6 +635,62 @@ func TestCheckServerNoHistogramOnRestartAfterFirstBoot(t *testing.T) {
 
 	require.Empty(t, collectHistogram(t, reader))
 	require.Empty(t, collectSchedulingHistogram(t, reader))
+}
+
+// TestCheckServerHistogramsReadObservation pins the one-shot histograms onto the
+// subtree the monitor owns: a poll that populates only the observation must still
+// record the provision and scheduling durations exactly once.
+func TestCheckServerHistogramsReadObservation(t *testing.T) {
+	t.Parallel()
+
+	meter, reader := newTestMeter(t)
+
+	m, err := healthserver.NewMetrics(meter)
+	require.NoError(t, err)
+
+	scheduled := metav1.NewTime(time.Now().Add(-2 * time.Minute))
+	launched := metav1.NewTime(time.Now().Add(-time.Minute))
+
+	srv := serverFixture(unikornv1.ActiveConditionReasonPending)
+
+	ctrl := gomock.NewController(t)
+
+	mockProvider := mocktypes.NewMockProvider(ctrl)
+	mockProvider.EXPECT().
+		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
+			s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
+
+			observed := s.ObservedStatus()
+			observed.ServerGeneration = s.Generation
+			observed.ScheduledAt = &scheduled
+			observed.LaunchedAt = &launched
+
+			return nil
+		})
+	mockProvider.EXPECT().
+		Region(gomock.Any()).
+		Return(regionFixture(), nil).
+		AnyTimes()
+	mockProvider.EXPECT().
+		Flavors(gomock.Any()).
+		Return(providerTypes.FlavorList{{ID: flavorID, Name: flavorName}}, nil).
+		AnyTimes()
+
+	mockProviders := mockproviders.NewMockProviders(ctrl)
+	mockProviders.EXPECT().LookupCloud(regionID).Return(mockProvider, nil).AnyTimes()
+
+	ctx := logr.NewContext(t.Context(), logr.Discard())
+	checker := healthserver.New(newFakeClient(t, identityFixture(), srv), namespace, mockProviders, m)
+	require.NoError(t, checker.Check(ctx))
+
+	points := collectHistogram(t, reader)
+	require.Len(t, points, 1)
+	assert.Equal(t, uint64(1), points[0].Count)
+
+	schedulingPoints := collectSchedulingHistogram(t, reader)
+	require.Len(t, schedulingPoints, 1)
+	assert.Equal(t, uint64(1), schedulingPoints[0].Count)
 }
 
 // runFallbackCheck builds a Checker with the given provider mocks and runs Check
