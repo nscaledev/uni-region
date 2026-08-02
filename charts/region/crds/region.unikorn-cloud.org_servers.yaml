@@ -274,6 +274,54 @@ spec:
                   retry reset leaves it intact and a transient port-read miss cannot unset
                   it, while an authoritative ACTIVE read self-heals any drift.
                 type: string
+              observed:
+                description: |-
+                  Observed carries the provider facts recorded by the monitor as of its last
+                  poll. It is the monitor's exclusive write region — see
+                  ServerObservedStatus for the ownership rule.
+                properties:
+                  launchedAt:
+                    description: |-
+                      LaunchedAt is when the provider booted the server. Nil until the server
+                      has been observed booted at least once.
+                    format: date-time
+                    type: string
+                  macAddress:
+                    description: |-
+                      MACAddress is the MAC of the server's primary (single) network interface,
+                      recorded once the provider reports the server active: the barrier at which
+                      the port MAC is bound for VMs and baremetal alike. For baremetal, Ironic
+                      rebinds the port to the real NIC MAC asynchronously during deploy, so a
+                      value read earlier is the ephemeral Neutron MAC and is not trustworthy.
+                      Only ever written, never cleared: a transient read miss cannot unset it,
+                      and an authoritative active read self-heals drift.
+                    type: string
+                  provisionedAt:
+                    description: |-
+                      ProvisionedAt is a write-once latch recording that the server booted at
+                      least once. Nothing clears it — not a create retry, not a re-reconcile
+                      against a flaky provider. The bounded provider-create delete-and-retry
+                      guard keys off it so a server that has ever booted is never destroyed by
+                      a retry.
+                    format: date-time
+                    type: string
+                  scheduledAt:
+                    description: |-
+                      ScheduledAt is when the provider accepted and processed the creation
+                      request. Nil until the server has been observed in the provider.
+                    format: date-time
+                    type: string
+                  serverGeneration:
+                    description: |-
+                      ServerGeneration is metadata.generation as read when the provider snapshot
+                      was taken. It is the subtree's freshness stamp: a reader comparing it
+                      against the live generation can tell whether this observation postdates
+                      their own spec edit.
+                    format: int64
+                    type: integer
+                required:
+                - serverGeneration
+                type: object
               privateIP:
                 description: PrivateIP is the private IP address of the server.
                 type: string

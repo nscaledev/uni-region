@@ -934,3 +934,22 @@ func TestCheckServerNoHistogramOnIntermediatePhaseTransition(t *testing.T) {
 	require.Empty(t, collectHistogram(t, reader))
 	require.Empty(t, collectSchedulingHistogram(t, reader))
 }
+
+// TestCheckServerNoWriteWhenNothingObservedChanged pins the empty-patch guard: a
+// poll that observes exactly what is already stored must not write.
+func TestCheckServerNoWriteWhenNothingObservedChanged(t *testing.T) {
+	t.Parallel()
+
+	srv := serverFixture(unikornv1.ActiveConditionReasonRunning, healthCondition())
+
+	k8sClient, _, err := runCheckFull(t, srv, func(s *unikornv1.Server) {
+		// The provider reports precisely the stored state: no mutation at all.
+		_ = s
+	})
+	require.NoError(t, err)
+
+	var stored unikornv1.Server
+
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, &stored))
+	require.Equal(t, srv.ResourceVersion, stored.ResourceVersion, "an unchanged observation must not bump the resourceVersion")
+}

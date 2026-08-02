@@ -35,6 +35,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers"
 	providertypes "github.com/unikorn-cloud/region/pkg/providers/types"
 
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -227,12 +228,12 @@ func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server, pro
 		return nil, err
 	}
 
-	// This single Status().Patch persists health, phase, and MAC as observed on
-	// this poll. It is optimistic-locked against the server read at the top of
-	// this call: a concurrent write since then aborts the patch, and the facts
-	// it carried are simply picked up fresh on the next poll.
-	if err := c.client.Status().Patch(ctx, updated, client.MergeFromWithOptions(server, &client.MergeFromWithOptimisticLock{})); err != nil {
-		return nil, err
+	// An unchanged observation is not written: the patch would be empty, and a
+	// write with no new information costs an API round trip and a watch event.
+	if !apiequality.Semantic.DeepEqual(server.Status, updated.Status) {
+		if err := c.client.Status().Patch(ctx, updated, client.MergeFromWithOptions(server, &client.MergeFromWithOptimisticLock{})); err != nil {
+			return nil, err
+		}
 	}
 
 	c.onPhaseTransition(ctx, server, updated, regionID, regionName, flavorID, flavorName)

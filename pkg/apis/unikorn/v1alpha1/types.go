@@ -1198,6 +1198,48 @@ type ServerStatus struct {
 	// +patchMergeKey=id
 	// +optional
 	Volumes []ServerVolumeStatus `json:"volumes,omitempty"`
+	// Observed carries the provider facts recorded by the monitor as of its last
+	// poll. It is the monitor's exclusive write region — see
+	// ServerObservedStatus for the ownership rule.
+	Observed *ServerObservedStatus `json:"observed,omitempty"`
+}
+
+// ServerObservedStatus is the monitor's exclusive write region. Every field
+// under it is recorded from a single provider poll and nothing outside the
+// monitor may write any of them. An observation never authorizes an action
+// against the provider — actuation is decided from a fresh provider read — but
+// it may be read as a precondition that refuses one, which is how the
+// provider-create retry guard consumes the boot latch below.
+//
+// The Healthy and Active conditions are monitor-written but deliberately not
+// here: the API projects health from the condition, and the conditions array is
+// shared with the reconciler's Available condition either way.
+type ServerObservedStatus struct {
+	// ServerGeneration is metadata.generation as read when the provider snapshot
+	// was taken. It is the subtree's freshness stamp: a reader comparing it
+	// against the live generation can tell whether this observation postdates
+	// their own spec edit.
+	ServerGeneration int64 `json:"serverGeneration"`
+	// MACAddress is the MAC of the server's primary (single) network interface,
+	// recorded once the provider reports the server active: the barrier at which
+	// the port MAC is bound for VMs and baremetal alike. For baremetal, Ironic
+	// rebinds the port to the real NIC MAC asynchronously during deploy, so a
+	// value read earlier is the ephemeral Neutron MAC and is not trustworthy.
+	// Only ever written, never cleared: a transient read miss cannot unset it,
+	// and an authoritative active read self-heals drift.
+	MACAddress *string `json:"macAddress,omitempty"`
+	// LaunchedAt is when the provider booted the server. Nil until the server
+	// has been observed booted at least once.
+	LaunchedAt *metav1.Time `json:"launchedAt,omitempty"`
+	// ScheduledAt is when the provider accepted and processed the creation
+	// request. Nil until the server has been observed in the provider.
+	ScheduledAt *metav1.Time `json:"scheduledAt,omitempty"`
+	// ProvisionedAt is a write-once latch recording that the server booted at
+	// least once. Nothing clears it — not a create retry, not a re-reconcile
+	// against a flaky provider. The bounded provider-create delete-and-retry
+	// guard keys off it so a server that has ever booted is never destroyed by
+	// a retry.
+	ProvisionedAt *metav1.Time `json:"provisionedAt,omitempty"`
 }
 
 type ServerVolumeStatus struct {

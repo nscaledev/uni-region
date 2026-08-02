@@ -2262,6 +2262,7 @@ func setServerMACAddress(ctx context.Context, server *unikornv1.Server, openstac
 	}
 
 	server.Status.MACAddress = &mac
+	server.ObservedStatus().MACAddress = &mac
 }
 
 // buildPhase picks the right Phase for a server Nova reports as BUILD. VMs
@@ -2301,11 +2302,13 @@ func setServerActive(ctx context.Context, server *unikornv1.Server, openstackser
 	if !openstackserver.Created.IsZero() {
 		t := metav1.NewTime(openstackserver.Created)
 		server.Status.ScheduledAt = &t
+		server.ObservedStatus().ScheduledAt = &t
 	}
 
 	if !openstackserver.LaunchedAt.IsZero() {
 		t := metav1.NewTime(openstackserver.LaunchedAt)
 		server.Status.LaunchedAt = &t
+		server.ObservedStatus().LaunchedAt = &t
 
 		// ProvisionedAt is a write-once latch recording that the server has booted
 		// at least once. It mirrors the same Nova launched_at signal as LaunchedAt
@@ -2317,6 +2320,10 @@ func setServerActive(ctx context.Context, server *unikornv1.Server, openstackser
 		// destroy data.
 		if server.Status.ProvisionedAt == nil {
 			server.Status.ProvisionedAt = &t
+		}
+
+		if server.ObservedStatus().ProvisionedAt == nil {
+			server.ObservedStatus().ProvisionedAt = &t
 		}
 	}
 
@@ -2912,6 +2919,10 @@ func (p *Provider) updateServerStateWithClients(
 	if err != nil {
 		return err
 	}
+
+	// The observation's freshness stamp: the generation as read at the top of
+	// this poll, so a reader can tell whether the subtree postdates a spec edit.
+	server.ObservedStatus().ServerGeneration = server.Generation
 
 	setServerHealthStatus(server, openstackServer)
 	setServerMACAddress(ctx, server, openstackServer)

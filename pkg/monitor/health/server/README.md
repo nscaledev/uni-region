@@ -37,6 +37,12 @@ status/telemetry model.
   skipping an empty read means a transient port-read miss cannot unset a held
   value, while unconditionally writing a valid MAC self-heals drift (the status
   PATCH makes a same-value write a no-op).
+- records the MAC and the three timestamps into `status.observed` alongside
+  their legacy top-level fields, one patch per poll, optimistic-locked against
+  the server read at the top of the check. Health and phase are not part of
+  this migration and stay on the `Healthy` and `Active` conditions. A poll
+  that observes no change to either copy patches nothing, so an idle server
+  costs no API round trip or watch event.
 - logs phase and health-condition transitions
 - reads and writes no rebuild state: in-place rebuild has been removed, and
   the monitor records only what it observes of the provider

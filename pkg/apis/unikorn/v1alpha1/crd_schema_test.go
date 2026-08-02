@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	goruntime "runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -31,6 +32,7 @@ import (
 	structuralschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
 	celvalidation "k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel"
 	apixvalidation "k8s.io/apiextensions-apiserver/pkg/apiserver/validation"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	celconfig "k8s.io/apiserver/pkg/apis/cel"
@@ -41,6 +43,7 @@ import (
 const (
 	fileStorageCRDFile = "region.unikorn-cloud.org_filestorages.yaml"
 	volumeCRDFile      = "region.unikorn-cloud.org_volumes.yaml"
+	serverCRDFile      = "region.unikorn-cloud.org_servers.yaml"
 )
 
 type crdValidator struct {
@@ -128,4 +131,39 @@ func crdSchema(t *testing.T, crdFile string) *apixv1.JSONSchemaProps {
 	t.Fatalf("%s does not define schema for %s", crdFile, regionv1.GroupVersion)
 
 	return nil
+}
+
+// TestServerObservedSchema pins the monitor-owned subtree: the CRD must accept a
+// fully populated observation and reject a mistyped generation.
+func TestServerObservedSchema(t *testing.T) {
+	t.Parallel()
+
+	validator := newCRDValidator(t, serverCRDFile)
+
+	now := metav1.Now()
+
+	server := func(observed map[string]any) map[string]any {
+		return map[string]any{
+			"apiVersion": "region.unikorn-cloud.org/v1alpha1",
+			"kind":       "Server",
+			"metadata":   map[string]any{"name": "test", "namespace": "test"},
+			"spec": map[string]any{
+				"flavorID": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+				"image":    map[string]any{"id": "3f2504e0-4f89-11d3-9a0c-0305e82c3302"},
+			},
+			"status": map[string]any{"observed": observed},
+		}
+	}
+
+	require.True(t, validator.validatesUnstructured(t, server(map[string]any{
+		"serverGeneration": int64(7),
+		"macAddress":       "e0:9d:73:86:cc:18",
+		"launchedAt":       now.Format(time.RFC3339),
+		"scheduledAt":      now.Format(time.RFC3339),
+		"provisionedAt":    now.Format(time.RFC3339),
+	})), "a fully populated observation must validate")
+
+	require.False(t, validator.validatesUnstructured(t, server(map[string]any{
+		"serverGeneration": "seven",
+	})), "the generation is an integer and a string must be rejected")
 }

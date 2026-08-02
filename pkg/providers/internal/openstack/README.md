@@ -188,6 +188,13 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   the monitor logs the failure and falls back to the VM default `Building`
   `Active` state so API responses still see a coherent live signal rather than
   failing the monitor path.
+- During the transition to the monitor-owned `status.observed` subtree, each
+  state mutator (`setServerMACAddress`, `setServerActive`) records its fact in
+  both places: the legacy top-level field and its `status.observed` mirror.
+  `updateServerStateWithClients` stamps `status.observed.serverGeneration`
+  from the server generation read at the top of the poll before the mutators
+  run, so a reader can tell whether the subtree postdates a spec edit. Health
+  stays on the `Healthy` condition and is not part of this migration.
 - Some OpenStack list APIs are not safe to treat as exact lookup, notably
   server, network, and Octavia load-balancer `name` filters:
   - `name` filters behave like prefix or regular-expression matches rather than

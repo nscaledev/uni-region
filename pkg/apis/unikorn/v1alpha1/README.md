@@ -112,6 +112,15 @@ stored objects rely on for linkage, migration, and operational coordination.
   image through a forward-only state machine has been excised, and the
   handler layer rejects v2 image changes outright rather than attempting to
   realize them (see `pkg/handler/server/README.md`).
+- `Server.Status.Observed` (`ServerObservedStatus`) is a dedicated subtree for
+  the facts the monitor records from a single provider poll: the server
+  generation the poll was taken against, the primary interface's MAC address,
+  and the launched/scheduled/provisioned timestamps. The monitor is its sole
+  writer; the reconciler owns the rest of `Server.Status` and never writes
+  into this subtree. The `Healthy` and `Active` conditions remain
+  monitor-written and stay in the shared conditions array alongside the
+  reconciler's `Available` condition rather than moving into the subtree. No
+  reconcile decision reads `Observed`.
 
 ## Caveats
 

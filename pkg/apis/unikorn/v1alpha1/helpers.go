@@ -201,6 +201,17 @@ func (c *Server) SetActiveCondition(reason ActiveConditionReason) {
 	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionActive, reason.ConditionStatus(), string(reason), reason.Message())
 }
 
+// ObservedStatus returns the monitor-owned observation subtree, creating it if
+// this is the first observation. Only the monitor may call it: every field it
+// exposes is monitor-owned.
+func (c *Server) ObservedStatus() *ServerObservedStatus {
+	if c.Status.Observed == nil {
+		c.Status.Observed = &ServerObservedStatus{}
+	}
+
+	return c.Status.Observed
+}
+
 // GetActiveCondition reads the Active condition, narrowing its reason to the
 // server's domain-owned lifecycle/power vocabulary via core's generic typed
 // handling.

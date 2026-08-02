@@ -282,6 +282,76 @@ func TestUpdateServerStateWithClientsRecordsMACAddress(t *testing.T) {
 	require.Equal(t, mac, ptr.Deref(server.Status.MACAddress, ""))
 }
 
+// TestUpdateServerStateWithClientsMirrorsObservedFacts pins the dual-write: every
+// plain fact the monitor owns lands in status.observed as well as its legacy
+// field, with identical values, and the observation carries the generation it was
+// taken at.
+func TestUpdateServerStateWithClientsMirrorsObservedFacts(t *testing.T) {
+	t.Parallel()
+
+	const mac = "e0:9d:73:86:cc:18"
+
+	created := time.Date(2026, 8, 2, 10, 0, 0, 0, time.UTC)
+	launched := time.Date(2026, 8, 2, 10, 5, 0, 0, time.UTC)
+
+	compute := &stubComputeClient{server: &servers.Server{
+		ID:         "nova-id",
+		Status:     "ACTIVE",
+		Created:    created,
+		LaunchedAt: launched,
+		Addresses: map[string]any{
+			"network-ee2b52e3-a844-42bd-864d-a9ff2f39a026": []any{
+				map[string]any{
+					"OS-EXT-IPS-MAC:mac_addr": mac,
+					"OS-EXT-IPS:type":         "fixed",
+					"addr":                    "7.247.33.145",
+					"version":                 float64(4),
+				},
+			},
+		},
+	}}
+
+	identity := &unikornv1.Identity{}
+	server := &unikornv1.Server{
+		ObjectMeta: metav1.ObjectMeta{Generation: 7},
+		Spec: unikornv1.ServerSpec{
+			FlavorID: idstest.MustParseFlavorID("11111111-1111-4111-a111-111111111111"),
+			Networks: []unikornv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID("ee2b52e3-a844-42bd-864d-a9ff2f39a026")}},
+		},
+	}
+
+	provider := &Provider{
+		openstack: &openStackClients{
+			_region: &unikornv1.Region{
+				Spec: unikornv1.RegionSpec{
+					Openstack: &unikornv1.RegionOpenstackSpec{
+						Compute: &unikornv1.RegionOpenstackComputeSpec{
+							Flavors: &unikornv1.OpenstackFlavorsSpec{
+								Metadata: []unikornv1.FlavorMetadata{{ID: "11111111-1111-4111-a111-111111111111", Baremetal: false}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	err := provider.updateServerStateWithClients(t.Context(), identity, server, compute,
+		func(context.Context, *unikornv1.Identity) (BaremetalInterface, error) {
+			return nil, errIronicUnavailable
+		})
+	require.NoError(t, err)
+
+	observed := server.Status.Observed
+	require.NotNil(t, observed, "a successful observation must populate the subtree")
+
+	require.Equal(t, int64(7), observed.ServerGeneration, "the observation carries the generation it was taken at")
+	require.Equal(t, server.Status.MACAddress, observed.MACAddress, "observed MAC must mirror the legacy field")
+	require.Equal(t, server.Status.LaunchedAt, observed.LaunchedAt, "observed launchedAt must mirror the legacy field")
+	require.Equal(t, server.Status.ScheduledAt, observed.ScheduledAt, "observed scheduledAt must mirror the legacy field")
+	require.Equal(t, server.Status.ProvisionedAt, observed.ProvisionedAt, "observed provisionedAt must mirror the legacy field")
+}
+
 type stubComputeClient struct {
 	server          *servers.Server
 	requestedServer *unikornv1.Server
