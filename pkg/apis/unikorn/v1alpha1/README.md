@@ -174,6 +174,20 @@ stored objects rely on for linkage, migration, and operational coordination.
   The `Healthy` and `Active` conditions are deliberately not in this region: the API
   projects health from the condition, and the conditions array is shared with the
   reconciler either way — it writes both on create and on an accepted rebuild.
+  **What this region can never tell you.** Every field under it is provider state,
+  so it bounds at provider-level truth and stops there. A rebuild onto a
+  well-formed but unbootable image was measured settling as `ACTIVE`, on the target
+  ref, with an empty `task_state` and no fault — byte-identical at the provider
+  layer to a perfect rebuild, with a dead workload inside. No enrichment of this
+  region can distinguish the two, because the difference is not visible to the
+  provider API. So `Image` matching the desired image means "the provider reports
+  the server running that image", never "the workload works", and `Error` being nil
+  means "the provider reports no failure", never "the guest is healthy". Note also
+  that a provider's failure detail may not survive the read the monitor makes: see the
+  OpenStack provider's `GetServer` notes on list responses omitting the fault. Workload
+  liveness is a separate axis needing a signal from inside the guest; treating
+  convergence here as proof of a working workload is a misreading this region
+  cannot protect against.
 
 ## Caveats
 

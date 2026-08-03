@@ -488,18 +488,39 @@ There are a few Octavia-specific constraints worth preserving:
 - Some older assumptions still leak through in status fields and helper paths,
   especially where compatibility with older API or storage shapes is still being
   carried.
-- Rebuild settlement rests on two environmental facts about the target cloud,
-  both worth an integration assertion rather than assumption. First, that Nova
-  flips the image ref to the target *atomically* with setting `task_state` at
-  accept: if a cloud made the ref visible before `task_state`, a poll could see
-  the converged ref with an empty task inside the rebuild window and stamp a
-  premature `Succeeded` — the accept-to-settle lag window this design closes by
-  gating settlement on `task_state` emptiness would silently reopen. Second,
-  that `OS-EXT-STS:task_state` is actually visible to the region service
+- Rebuild settlement rests on two environmental facts about the target cloud.
+  First, that Nova flips the image ref to the target *atomically* with setting
+  `task_state` at accept: if a cloud made the ref visible before `task_state`, a
+  poll could see the converged ref with an empty task inside the rebuild window
+  and stamp a premature `Succeeded` — the accept-to-settle lag window this design
+  closes by gating settlement on `task_state` emptiness would silently reopen.
+  Second, that `OS-EXT-STS:task_state` is actually visible to the region service
   principal (its exposure is policy-gated, and an unexposed field decodes
   indistinguishably from "at rest"); without that visibility the same premature
-  clear returns. A kind/devstack assertion that a just-accepted rebuild's GET
-  shows a non-empty `task_state` covers both.
+  clear returns.
+  Both were measured on a kolla 2025.1 all-in-one against the **libvirt** driver
+  and held: the first GET after accept (260 ms, 1 s polling) already showed the
+  target ref together with `task_state='rebuilding'`, and the pair
+  (ref == target ∧ empty `task_state`) first became true only at completion. The
+  field was visible to a project-scoped admin credential. The failure side is
+  atomic in the same way: a rebuild that failed asynchronously moved
+  `REBUILD`→`ERROR` and cleared `task_state` within a single observation, so a
+  failed rebuild never presents as a settled one either.
+  **Still unverified for the Ironic driver**, which redeploys through Ironic
+  rather than rewriting a local disk; that remains the gate on enabling rebuild
+  for a baremetal flavor. Note also that Ironic node reads on that cloud require
+  a *system-scoped* credential — project-scoped admin lists nodes but 404s on
+  node detail — so the visibility question has an Ironic sibling that the Nova
+  result does not answer.
+- A rebuild toward a nonexistent image is rejected *synchronously* (HTTP 400,
+  "Cannot find image for rebuild") and touches nothing: the server stays on its
+  image, no wipe, no `ERROR`. Nova resolves the image before mutating anything,
+  so a bad image ID can never produce a converged-looking ref on a broken server.
+  A valid image Nova can resolve but qemu cannot use (measured with a truncated
+  qcow2, which Glance accepts as `active`) behaves the opposite way: accepted,
+  ref flipped, then an asynchronous failure to `ERROR`. Its fault carries
+  `code: 400` despite the request having been accepted, so a 4xx in a recorded
+  provider error does not imply the request was rejected.
 
 ## TODO
 
