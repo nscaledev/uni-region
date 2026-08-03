@@ -186,6 +186,14 @@ type ServerInterface interface {
 	CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error)
 }
 
+// ServerObservationInterface is the read surface of the server state monitor:
+// the listing read every poll makes, plus the per-ID fault fetch the observer
+// pays only on the transition into error.
+type ServerObservationInterface interface {
+	ServerInterface
+	GetServerFault(ctx context.Context, id string) (*servers.Fault, error)
+}
+
 type VolumeAttachmentInterface interface {
 	GetVolumeAttachment(ctx context.Context, serverID, volumeID string) (*volumeattach.VolumeAttachment, error)
 	CreateVolumeAttachment(ctx context.Context, serverID, volumeID string) (*volumeattach.VolumeAttachment, error)
@@ -197,7 +205,7 @@ type ComputeInterface interface {
 	FlavorInterface
 	ServerGroupInterface
 	ComputeQuotaInterface
-	ServerInterface
+	ServerObservationInterface
 	VolumeAttachmentInterface
 }
 

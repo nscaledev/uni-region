@@ -296,6 +296,37 @@ spec:
                   retry reset leaves it intact and a transient port-read miss cannot unset
                   it, while an authoritative ACTIVE read self-heals any drift.
                 type: string
+              observed:
+                description: |-
+                  Observed carries the provider facts recorded from a provider read, normally
+                  the monitor's poll — see ServerObservedStatus for the ownership rule.
+                properties:
+                  errored:
+                    description: |-
+                      Errored records that the provider reports the server in an error state, with
+                      no detail and no attribution to any action this service took. Unlike Image it
+                      clears when the provider stops reporting the error. It exists so a change in
+                      the provider's view is diffable (the reconciler wakes on it); it is not a
+                      diagnostic surface. The provider's own failure detail is written to the
+                      observing component's log at the moment of observation, in provider
+                      vocabulary, where operator detail belongs.
+                    type: boolean
+                  generation:
+                    description: |-
+                      Generation is metadata.generation as read when this snapshot was taken, so a
+                      reader can tell whether the observation postdates a spec edit. Stamped on
+                      every poll, so a present subtree with no image means the image was unreadable.
+                    format: int64
+                    type: integer
+                  image:
+                    description: |-
+                      Image is the image the provider reports the server running, as of the last poll
+                      that could read it. An unreadable ref preserves the previous value.
+                    format: uuid
+                    type: string
+                required:
+                - generation
+                type: object
               privateIP:
                 description: PrivateIP is the private IP address of the server.
                 type: string

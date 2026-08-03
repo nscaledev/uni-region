@@ -20,6 +20,7 @@ package openstack
 
 import (
 	"context"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -266,7 +267,36 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 		return nil, errors.ErrResourceNotFound
 	}
 
+	// The fault may be empty on a listed ERROR server (Nova up to 2025.2 can
+	// omit it from a list response); the consumer that wants it fetches it via
+	// GetServerFault on the transition into error, so every other read — and
+	// there are two per errored server per cycle, exactly when Nova is degraded —
+	// does not pay a second call.
 	return &result[index], nil
+}
+
+// GetServerFault reads a server by ID for its fault detail, which a list
+// response can omit (Nova up to 2025.2). A missing server maps to
+// ErrResourceNotFound so the caller can tell a deleted server from a failed
+// read.
+func (c *ComputeClient) GetServerFault(ctx context.Context, id string) (*servers.Fault, error) {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", id),
+	)
+
+	_, span := traceStart(ctx, "GET /compute/v2/servers/{id}", spanAttributes)
+	defer span.End()
+
+	detailed, err := servers.Get(ctx, c.client, id).Extract()
+	if err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return nil, errors.ErrResourceNotFound
+		}
+
+		return nil, err
+	}
+
+	return &detailed.Fault, nil
 }
 
 func (c *ComputeClient) GetVolumeAttachment(ctx context.Context, serverID, volumeID string) (*volumeattach.VolumeAttachment, error) {
