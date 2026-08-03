@@ -295,18 +295,18 @@ func ReconcileLoadBalancerFloatingIP(ctx context.Context, p *Provider, client Fl
 }
 
 func ReconcileServer(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
-	return p.reconcileServer(ctx, client, server, port, keyName, nil)
+	return p.reconcileServer(ctx, nil, client, server, port, keyName, nil, nil)
 }
 
 func ReconcileServerWithPreflight(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight func(context.Context, *unikornv1.Server) error) (*servers.Server, error) {
-	return p.reconcileServer(ctx, client, server, port, keyName, serverCreatePreflight(preflight))
+	return p.reconcileServer(ctx, nil, client, server, port, keyName, serverCreatePreflight(preflight), nil)
 }
 
 // ReconcileServerForCreate exercises the CreateServer copy-back semantics:
 // the augmented copy is snapshotted, reconciled, and its status copied back
 // onto the caller's server whenever the two differ.
 func ReconcileServerForCreate(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, port *ports.Port, keyName string) error {
-	return p.reconcileServerForCreate(ctx, client, server, options, port, keyName, nil)
+	return p.reconcileServerForCreate(ctx, nil, client, server, options, port, keyName, nil, nil)
 }
 
 // CreateServerWithClients exercises the client-independent core of
@@ -314,7 +314,7 @@ func ReconcileServerForCreate(ctx context.Context, p *Provider, client ServerInt
 // the caller's server) followed by the augmented-copy reconcile and status
 // copy-back — pinning the production interleaving of those steps.
 func CreateServerWithClients(ctx context.Context, p *Provider, networking NetworkingInterface, compute ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, keyName string) error {
-	return p.createServer(ctx, networking, compute, server, options, keyName, nil)
+	return p.createServer(ctx, nil, networking, compute, server, options, keyName, nil, nil)
 }
 
 func ResolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {

@@ -2573,17 +2573,52 @@ func (p *Provider) reconcileLoadBalancerFloatingIP(ctx context.Context, client F
 	return nil
 }
 
-func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight serverCreatePreflight) (*servers.Server, error) {
+// reconcileExistingServer converges an already-created server's image onto
+// its desired one, one protocol action per pass. The second channel is only
+// worth its Ironic round trip when there is a decision that needs it — an
+// outstanding marker, or the provider's image having already diverged from
+// the desired one — so a steady-state baremetal server pays for neither the
+// round trip nor the risk of an unreadable node failing a reconcile with
+// nothing to converge.
+func (p *Provider) reconcileExistingServer(
+	ctx context.Context,
+	identity *unikornv1.Identity,
+	client ServerInterface,
+	server *unikornv1.Server,
+	openstackServer *servers.Server,
+	baremetalForPhase func(context.Context, *unikornv1.Identity) (BaremetalInterface, error),
+) (*servers.Server, error) {
+	var applied *string
+
+	if rebuildNeedsAppliedImage(server, openstackServer) {
+		var err error
+
+		applied, err = p.rebuildAppliedImage(ctx, identity, server, openstackServer, baremetalForPhase)
+		if err != nil {
+			return openstackServer, err
+		}
+	}
+
+	return reconcileServerRebuild(ctx, client, server, openstackServer, applied)
+}
+
+func (p *Provider) reconcileServer(
+	ctx context.Context,
+	identity *unikornv1.Identity,
+	client ServerInterface,
+	server *unikornv1.Server,
+	port *ports.Port,
+	keyName string,
+	preflight serverCreatePreflight,
+	baremetalForPhase func(context.Context, *unikornv1.Identity) (BaremetalInterface, error),
+) (*servers.Server, error) {
 	log := log.FromContext(ctx)
 
 	openstackServer, err := client.GetServer(ctx, server)
 	if err == nil {
 		log.V(1).Info("server already exists")
 
-		// Image drift is converged in place, one protocol action per pass. The
-		// second evidence channel is not wired in yet, so the provider's word
-		// stands for what the machine is running.
-		return reconcileServerRebuild(ctx, client, server, openstackServer, nil)
+		return p.reconcileExistingServer(ctx, identity, client, server, openstackServer, baremetalForPhase)
 	}
 
 	networks := []servers.Network{
@@ -2664,10 +2699,20 @@ func serverForCreate(server *unikornv1.Server, options *types.ServerCreateOption
 // here, after port and floating IP reconciliation have written
 // PrivateIP/PublicIP onto the caller's server, so the full copy-back cannot
 // revert those fields or drop the reconcile's own Phase/Healthy writes.
-func (p *Provider) reconcileServerForCreate(ctx context.Context, client ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, port *ports.Port, keyName string, preflight serverCreatePreflight) error {
+func (p *Provider) reconcileServerForCreate(
+	ctx context.Context,
+	identity *unikornv1.Identity,
+	client ServerInterface,
+	server *unikornv1.Server,
+	options *types.ServerCreateOptions,
+	port *ports.Port,
+	keyName string,
+	preflight serverCreatePreflight,
+	baremetalForPhase func(context.Context, *unikornv1.Identity) (BaremetalInterface, error),
+) error {
 	serverForCreate := serverForCreate(server, options)
 
-	_, err := p.reconcileServer(ctx, client, serverForCreate, port, keyName, preflight)
+	_, err := p.reconcileServer(ctx, identity, client, serverForCreate, port, keyName, preflight, baremetalForPhase)
 
 	if serverForCreate != server {
 		server.Status = *serverForCreate.Status.DeepCopy()
@@ -2680,7 +2725,17 @@ func (p *Provider) reconcileServerForCreate(ctx context.Context, client ServerIn
 // status onto the caller's server), then creates the provider server via the
 // augmented-copy path. The ordering is load-bearing; see
 // reconcileServerForCreate.
-func (p *Provider) createServer(ctx context.Context, networking NetworkingInterface, compute ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, keyName string, preflight serverCreatePreflight) error {
+func (p *Provider) createServer(
+	ctx context.Context,
+	identity *unikornv1.Identity,
+	networking NetworkingInterface,
+	compute ServerInterface,
+	server *unikornv1.Server,
+	options *types.ServerCreateOptions,
+	keyName string,
+	preflight serverCreatePreflight,
+	baremetalForPhase func(context.Context, *unikornv1.Identity) (BaremetalInterface, error),
+) error {
 	port, err := p.reconcileServerPort(ctx, networking, server)
 	if err != nil {
 		return err
@@ -2690,7 +2745,7 @@ func (p *Provider) createServer(ctx context.Context, networking NetworkingInterf
 		return err
 	}
 
-	return p.reconcileServerForCreate(ctx, compute, server, options, port, keyName, preflight)
+	return p.reconcileServerForCreate(ctx, identity, compute, server, options, port, keyName, preflight, baremetalForPhase)
 }
 
 func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, options *types.ServerCreateOptions) error {
@@ -2709,7 +2764,7 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
-	return p.createServer(ctx, networking, compute, server, options, resolveServerKeyName(server, openstackIdentity), p.serverCreatePlacementPreflight(identity, compute))
+	return p.createServer(ctx, identity, networking, compute, server, options, resolveServerKeyName(server, openstackIdentity), p.serverCreatePlacementPreflight(identity, compute), p.baremetalForPhase)
 }
 
 func resolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {
@@ -2907,6 +2962,45 @@ func (p *Provider) lookupIronicNodeForPhase(
 	}
 
 	return node
+}
+
+// rebuildAppliedImage resolves the deploy layer's second opinion on what a
+// server actually runs, for reconcileServerRebuild. Nil means no second
+// channel applies at all — not baremetal, or Ironic has no node bound yet —
+// so the provider's word stands. Every other failure to get a straight answer
+// (the client factory, the node lookup, or an existing node whose
+// instance_info carries no resolvable image) is returned as an error instead
+// of nil, so the caller yields and retries rather than deciding on the
+// provider's word alone at the moment the second opinion cannot be had.
+func (p *Provider) rebuildAppliedImage(
+	ctx context.Context,
+	identity *unikornv1.Identity,
+	server *unikornv1.Server,
+	openstackServer *servers.Server,
+	baremetalForPhase func(context.Context, *unikornv1.Identity) (BaremetalInterface, error),
+) (*string, error) {
+	region, _ := p.openstack.regionSnapshot()
+
+	if !isBaremetalFlavor(region, server.Spec.FlavorID.String()) {
+		return nil, nil //nolint:nilnil // no baremetal node means no second channel, not an error.
+	}
+
+	baremetalClient, err := baremetalForPhase(ctx, identity)
+	if err != nil {
+		return nil, fmt.Errorf("rebuild second channel: %w", err)
+	}
+
+	node, err := baremetalClient.GetNodeByInstanceUUID(ctx, openstackServer.ID)
+	if err != nil {
+		return nil, fmt.Errorf("rebuild second channel: %w", err)
+	}
+
+	applied, err := appliedImageFromNode(node)
+	if err != nil {
+		return nil, fmt.Errorf("rebuild second channel: %w", err)
+	}
+
+	return applied, nil
 }
 
 func (p *Provider) updateServerStateWithClients(

@@ -18,10 +18,13 @@ package openstack
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"path"
 
 	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
@@ -31,6 +34,12 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+// errAppliedImageUnreadable means a bound Ironic node exists — the second
+// channel is there — but its instance_info does not carry a resolvable image
+// reference. This is never treated as "no second channel": the caller must
+// return it and retry, not decide on the provider's word alone.
+var errAppliedImageUnreadable = errors.New("node reports an unreadable applied image")
 
 // The park messages. Provisioning reasons are a closed, generic vocabulary that
 // the API projects through a switch, so a parked attempt reports the generic
@@ -57,6 +66,75 @@ func rebuildProviderImage(openstackServer *servers.Server) string {
 	}
 
 	return imageID.String()
+}
+
+// rebuildNeedsAppliedImage reports whether reconcileServerRebuild's decision
+// depends on the deploy layer's second opinion at all. An outstanding marker
+// always needs it; otherwise it is needed only once the provider's image has
+// diverged from the desired one, using the same normalised comparison
+// reconcileServerRebuild itself makes.
+//
+// Without this gate the second channel would be fetched on every existing-
+// server reconcile for every baremetal server, even with nothing to converge:
+// expensive (a privileged Ironic round trip per steady-state pass), and wrong,
+// because GetNodeByInstanceUUID can return a bound node before Ironic's
+// instance_info catches up, and appliedImageFromNode correctly treats that as
+// an unreadable second channel — a hard error for a server with no rebuild
+// decision to make.
+func rebuildNeedsAppliedImage(server *unikornv1.Server, openstackServer *servers.Server) bool {
+	if server.Spec.Image == nil {
+		return false
+	}
+
+	return server.Status.Rebuild != nil || rebuildProviderImage(openstackServer) != server.Spec.Image.ID.String()
+}
+
+// appliedImageFromNode reads the image the deploy layer says the machine
+// actually runs, normalised the same way rebuildProviderImage normalises
+// Nova's ref, so the two sides of a comparison are the same representation.
+//
+// A nil node is the only "no second channel" case: nothing is bound yet, which
+// mirrors how the rest of this package treats a nil node (baremetalBuildPhase,
+// GetNodeByInstanceUUID's own empty-result case). Once a node exists, an
+// absent, empty, non-string, or unresolvable image_source is a read failure,
+// not a missing channel — it is returned as errAppliedImageUnreadable so the
+// caller yields and retries instead of trusting Nova alone.
+func appliedImageFromNode(node *nodes.Node) (*string, error) {
+	if node == nil {
+		return nil, nil //nolint:nilnil // no node bound yet means no second channel, not an error.
+	}
+
+	raw, ok := node.InstanceInfo["image_source"]
+	if !ok {
+		return nil, fmt.Errorf("%w: instance_info has no image_source", errAppliedImageUnreadable)
+	}
+
+	value, ok := raw.(string)
+	if !ok || value == "" {
+		return nil, fmt.Errorf("%w: image_source is %#v, want a non-empty string", errAppliedImageUnreadable, raw)
+	}
+
+	imageID, err := resolveAppliedImageID(value)
+	if err != nil {
+		return nil, fmt.Errorf("%w: image_source %q does not resolve to an image ID: %w", errAppliedImageUnreadable, value, err)
+	}
+
+	canonical := imageID.String()
+
+	return &canonical, nil
+}
+
+// resolveAppliedImageID accepts either shape Ironic is known to carry: a bare
+// image UUID, or a Glance/HTTP href whose final path segment is one. Anything
+// else is left to the caller to report — never guessed at or string-compared
+// raw, which is exactly the mismatch that would make appliedMatches disagree
+// with every correctly-applied rebuild.
+func resolveAppliedImageID(value string) (regionids.ImageID, error) {
+	if imageID, err := regionids.ParseImageID(value); err == nil {
+		return imageID, nil
+	}
+
+	return regionids.ParseImageID(path.Base(value))
 }
 
 // rebuildProviderOp classifies a fresh Nova read for the decision procedure.
