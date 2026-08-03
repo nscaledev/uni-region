@@ -1202,6 +1202,30 @@ type ServerStatus struct {
 	// poll. It is the monitor's exclusive write region — see
 	// ServerObservedStatus for the ownership rule.
 	Observed *ServerObservedStatus `json:"observed,omitempty"`
+	// Rebuild records an in-flight rebuild attempt. Reconciler-owned; the
+	// monitor neither reads nor writes it.
+	// +optional
+	Rebuild *ServerRebuildStatus `json:"rebuild,omitempty"`
+}
+
+// ServerRebuildStatus records a rebuild attempt. It is written before the
+// provider is asked to do anything, which is what bounds destructive accepts
+// to one per user request.
+type ServerRebuildStatus struct {
+	// TargetImageID is the image this attempt converges toward.
+	TargetImageID regionids.ImageID `json:"targetImageID"`
+	// PreArmImageRef is the image the provider reported when the attempt was
+	// armed. It distinguishes a provider that has not been asked yet from one
+	// that has been rebuilt by something else.
+	PreArmImageRef string `json:"preArmImageRef"`
+	// Accepted records that we have committed to calling the provider. The
+	// call is made by a later pass, once this is durable.
+	// +optional
+	Accepted bool `json:"accepted,omitempty"`
+	// Parked records that this attempt is abandoned and awaits new user
+	// intent.
+	// +optional
+	Parked bool `json:"parked,omitempty"`
 }
 
 // ServerObservedStatus is the monitor's exclusive write region. Every field

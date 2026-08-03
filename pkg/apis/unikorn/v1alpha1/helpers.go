@@ -212,6 +212,11 @@ func (c *Server) ObservedStatus() *ServerObservedStatus {
 	return c.Status.Observed
 }
 
+// RebuildPending reports whether a rebuild attempt is outstanding.
+func (c *Server) RebuildPending() bool {
+	return c.Status.Rebuild != nil
+}
+
 // GetActiveCondition reads the Active condition, narrowing its reason to the
 // server's domain-owned lifecycle/power vocabulary via core's generic typed
 // handling.

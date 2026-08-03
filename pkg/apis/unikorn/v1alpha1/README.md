@@ -107,11 +107,13 @@ stored objects rely on for linkage, migration, and operational coordination.
   at 19 characters, and validates the schedule/retention shape so direct CRD
   writes cannot persist unsupported policy combinations.
 - `Server.Spec.Image` is desired state; Nova's observed image and status
-  remain authoritative for live state. There is no rebuild-intent marker on
-  `Server.Status`: the in-place rebuild plumbing that once tracked a target
-  image through a forward-only state machine has been excised, and the
-  handler layer rejects v2 image changes outright rather than attempting to
-  realize them (see `pkg/handler/server/README.md`).
+  remain authoritative for live state. `Server.Status.Rebuild`
+  (`ServerRebuildStatus`) records an in-flight rebuild attempt: the target
+  image, the provider's image when the attempt was armed, whether we have
+  committed to calling the provider, and whether the attempt has been
+  abandoned. The reconciler is its sole writer and the monitor never reads it.
+  Nothing acts on it yet — the handler layer still rejects v2 image changes
+  outright (see `pkg/handler/server/README.md`), so no attempt can be armed.
 - `Server.Status.Observed` (`ServerObservedStatus`) is a dedicated subtree for
   the facts the monitor records from a single provider poll: the server
   generation the poll was taken against, the primary interface's MAC address,

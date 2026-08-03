@@ -167,3 +167,40 @@ func TestServerObservedSchema(t *testing.T) {
 		"serverGeneration": "seven",
 	})), "the generation is an integer and a string must be rejected")
 }
+
+// TestServerRebuildSchema pins the reconciler-owned rebuild marker. The
+// rejection cases carry the weight: an unrecognised subtree is pruned rather
+// than refused, so only a required-field failure proves the schema has it.
+func TestServerRebuildSchema(t *testing.T) {
+	t.Parallel()
+
+	validator := newCRDValidator(t, serverCRDFile)
+
+	server := func(rebuild map[string]any) map[string]any {
+		return map[string]any{
+			"apiVersion": "region.unikorn-cloud.org/v1alpha1",
+			"kind":       "Server",
+			"metadata":   map[string]any{"name": "test", "namespace": "test"},
+			"spec": map[string]any{
+				"flavorID": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+				"image":    map[string]any{"id": "3f2504e0-4f89-11d3-9a0c-0305e82c3302"},
+			},
+			"status": map[string]any{"rebuild": rebuild},
+		}
+	}
+
+	require.True(t, validator.validatesUnstructured(t, server(map[string]any{
+		"targetImageID":  "6f1a2b3c-0000-4000-8000-000000000001",
+		"preArmImageRef": "6f1a2b3c-0000-4000-8000-000000000002",
+		"accepted":       true,
+		"parked":         false,
+	})), "a fully populated rebuild marker must validate")
+
+	require.False(t, validator.validatesUnstructured(t, server(map[string]any{
+		"preArmImageRef": "6f1a2b3c-0000-4000-8000-000000000002",
+	})), "a marker without a target must be rejected")
+
+	require.False(t, validator.validatesUnstructured(t, server(map[string]any{
+		"targetImageID": "6f1a2b3c-0000-4000-8000-000000000001",
+	})), "a marker without a pre-arm ref must be rejected")
+}

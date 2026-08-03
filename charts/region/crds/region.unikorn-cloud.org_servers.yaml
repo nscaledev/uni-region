@@ -352,6 +352,36 @@ spec:
               publicIP:
                 description: PublicIP is the public IP address of the server.
                 type: string
+              rebuild:
+                description: |-
+                  Rebuild records an in-flight rebuild attempt. Reconciler-owned; the
+                  monitor neither reads nor writes it.
+                properties:
+                  accepted:
+                    description: |-
+                      Accepted records that we have committed to calling the provider. The
+                      call is made by a later pass, once this is durable.
+                    type: boolean
+                  parked:
+                    description: |-
+                      Parked records that this attempt is abandoned and awaits new user
+                      intent.
+                    type: boolean
+                  preArmImageRef:
+                    description: |-
+                      PreArmImageRef is the image the provider reported when the attempt was
+                      armed. It distinguishes a provider that has not been asked yet from one
+                      that has been rebuilt by something else.
+                    type: string
+                  targetImageID:
+                    description: TargetImageID is the image this attempt converges
+                      toward.
+                    format: uuid
+                    type: string
+                required:
+                - preArmImageRef
+                - targetImageID
+                type: object
               scheduledAt:
                 description: |-
                   ScheduledAt is the time the provider accepted and processed the creation request.
