@@ -241,9 +241,13 @@ fully encoded here:
 - some `v2` resources are clearly documented for publication, while others such
   as many server operations remain hidden; readers should not assume version
   number alone determines visibility
-- the published VolumeClass route currently defines the wire contract only;
-  provider-backed discovery and successful list handling are implemented
-  separately
+- the published VolumeClass route is backed by provider-neutral Region
+  discovery; repeated Region filters act as selectors over the visible Region
+  set, so missing or inaccessible Regions are omitted and the response can be
+  empty or partial;
+  its metadata uses core's `staticResourceMetadata`, matching Flavor inventory;
+  because the provider model supplies no creation time, the generated response
+  retains the same zero-value timestamp behaviour as Flavor
 - the main value of `v2` is not just shorter paths. It is the shift toward a
   relationship-driven API shape where surrounding tenancy and placement context
   can often be inferred from the addressed resource graph
