@@ -44,8 +44,13 @@ status/telemetry model.
   that observes no change to either copy patches nothing, so an idle server
   costs no API round trip or watch event.
 - logs phase and health-condition transitions
-- reads and writes no rebuild state: in-place rebuild has been removed, and
-  the monitor records only what it observes of the provider
+- reads and writes no rebuild state. In-place image rebuild is real — see
+  [`pkg/providers/internal/openstack/README.md`](../../../providers/internal/openstack/README.md)
+  — but this monitor has no part in it: the rebuild decision procedure reads
+  Nova (and, for baremetal, Ironic) fresh in the same reconcile pass that
+  acts on it, rather than through anything this package observes or caches.
+  `Status.Rebuild` is written only by the reconciler; this package never
+  touches it.
 - rebuilds gauge counts from the effective server set each cycle
 
 ## Invariants And Guard Rails

@@ -29,9 +29,23 @@ helper is genuinely shared: the provisioner makes the delete-and-retry
 decision through the same function the watch predicate fires on, so the
 trigger and the action cannot drift.
 
-This package once also drove image rebuild recovery — an arm/submit pass, a
-`Status.Rebuild` marker, and a settlement wake predicate. In-place rebuild has
-been removed; only the create-failure recovery above remains.
+Image rebuild recovery is a second, independent recovery mechanism for a
+server that has already been successfully provisioned once — but it does not
+live in this package. It is driven entirely from inside the OpenStack
+provider's existing-server reconciliation path (see
+[`pkg/providers/internal/openstack/README.md`](../../../providers/internal/openstack/README.md)),
+because unlike create failure it needs a fresh provider read on every
+decision and a write-ahead marker durable in etcd before any destructive call
+— concerns this package's `ProvisionerCreate`-level create/delete flow has no
+need to carry.
+
+| | Create failure | Image rebuild |
+|---|---|---|
+| Applies to | Server never launched | Server previously launched |
+| Recovery | Delete/recreate, bounded by a retry counter | At most one accepted Nova rebuild per target image |
+| State lives in | This package (`ProviderCreateFailures`) | The provider (`Status.Rebuild`) |
+| Exhaustion | Operator-terminal | User selects another image or replaces the server |
+| Liveness | Edge wake: `ProviderCreateFailure` watch predicate | Fixed-interval requeue from the provider's own reconcile pass |
 
 The reconciler still makes every decision from its own fresh provider read; the
 monitor's stamp is stimulus, never authorization.

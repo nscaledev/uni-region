@@ -101,11 +101,15 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     mean no trait filter. A miss yields and lets the controller retry.
 - SSH injection is a create-time server decision. OpenStack receives the
   identity key name only for the resolved `identityKeypair` mode; `ca` and
-  `none` omit Nova `key_name`.
-- An existing server's image drift against spec is not acted on: in-place
-  rebuild has been removed (the write-ahead marker, the reconciler pass, and
-  the Nova rebuild call), and the API rejects image changes, so drift cannot
-  arise through it.
+  `none` omit Nova `key_name`. Image rebuild omits both `key_name` and
+  `user_data`, so Nova preserves the stored keypair and create-time user data
+  (including the managed SSH-CA cloud-init baked in at create) and rebuilt guests
+  stay create-equivalent. Updated user data therefore takes effect on server
+  replacement, not rebuild — Nova accepts `user_data` on rebuild from
+  microversion 2.57, deferred until gophercloud's `RebuildOpts` carries the field.
+- An existing server's image drift against spec (`Server.Spec.Image` differing
+  from what Nova reports) is converged in place by a Nova rebuild, one
+  protocol action per reconcile pass. See "Server Image Rebuild" below.
 - `OpenstackIdentity` is the remaining persisted provider-state anchor. It
   currently stores the secret-bearing user/project/application-credential and
   bootstrap state needed to operate on behalf of a region `Identity`.
@@ -171,7 +175,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   `launched_at` the first time a server is seen booted (write-once, never
   cleared, independent of live power state), which the controller's bounded
   provider-create delete-and-retry guard relies on (so a server that has booted
-  is never destroyed and recreated). Alongside it, `setServerMACAddress` records the other monitor-owned
+  is never destroyed and recreated). The image-rebuild arming gate (see "Server
+  Image Rebuild" below) does not read this monitor-owned latch: it authorizes
+  from Nova `launched_at` read fresh on the same pass. Alongside it, `setServerMACAddress` records the other monitor-owned
   field, `status.macAddress`, from the Nova response once the server is `ACTIVE`
   (the port MAC rides inline in `addresses`, reused from the same `GetServer` — no
   extra call). ACTIVE is required because baremetal Ironic rebinds the port to the
@@ -264,6 +270,204 @@ There are a few Octavia-specific constraints worth preserving:
 - Floating IP cleanup runs before cascade-deleting the load balancer because the
   cascade removes the VIP port that otherwise anchors the floating IP lookup.
 
+## Server Image Rebuild
+
+A desired image change on an existing server is realized as a Nova in-place
+rebuild: the root disk is recreated from the new image while the server keeps
+its UUID, ports, fixed and floating IP relationships, attached data volumes,
+flavor, metadata, and placement. It stays on the same compute host;
+evacuation is a separate operator workflow. Flavor changes remain
+unsupported. An accepted rebuild destroys the previous root disk contents
+even if the rebuild subsequently fails, so failure recovery is choosing
+another image or replacing the server — never data restoration.
+
+### The write-ahead marker and why commit precedes call
+
+The one fact fresh observation can never reconstruct is whether Region
+recently asked Nova for a destructive rebuild. That fact is recorded
+write-ahead in `Server.Status.Rebuild`, a four-field marker
+(`ServerRebuildStatus`): `TargetImageID` (the image this attempt converges
+toward), `PreArmImageRef` (the provider's image ref at the moment the attempt
+was armed), `Accepted` (the reconciler has committed to calling the
+provider), and `Parked` (the attempt is abandoned pending new user intent).
+The reconciler is the marker's sole writer; the health monitor never reads or
+writes any field of it — nothing about this protocol is observation-driven,
+because every decision below is made from a fresh `GetServer` read taken in
+the same reconcile pass, not from anything the monitor has cached.
+
+**The ordering between recording acceptance and calling the provider is the
+single most important rule in this protocol.** The pass that decides to
+commit to a rebuild sets `Accepted` and returns *without* calling Nova. A
+later pass, having read that commitment back durable from etcd, makes the
+actual call. This bounds the failure modes that matter: if the process
+crashes, or an optimistic-lock write is lost, between deciding to commit and
+that decision reaching etcd, no call was ever made — the next pass simply
+re-decides from the same fresh evidence and tries the commit again. A crash
+or a lost lock can therefore leave a rebuild request unmade, but it can never
+leave a destructive call unrecorded.
+
+The reverse ordering — call Nova first, record the acceptance afterward — is
+unsafe, and was the previous implementation's approach. Under that ordering,
+a pass that calls Nova and then dies (or loses the status write under
+optimistic lock) before the acceptance record lands leaves no trace of the
+call. The rebuild that was actually issued reads back as never having
+happened, so a later pass, seeing no record and a server that is (from the
+provider's perspective) still converging, decides to rebuild again and issues
+a second Nova rebuild — destroying the root disk twice for what the caller
+experiences as one request.
+
+### The decision procedure
+
+Every reconcile pass over an existing server takes a fresh Nova read and,
+where the server is baremetal, a fresh Ironic read (the second evidence
+channel, below), then picks exactly **one** action. The rows are evaluated in
+order — order is load-bearing, not incidental — and the first matching row
+wins:
+
+| Marker | Provider image vs. target | Provider state | Second channel | Action |
+|---|---|---|---|---|
+| parked, target changed | — | — | — | unpark |
+| parked, target unchanged | — | — | — | stay parked (noop) |
+| (any/none) | ref unreadable | not errored | — | noop — cannot decide |
+| none | ≠ desired | idle, ever launched | — | arm |
+| none | otherwise | — | — | noop |
+| unaccepted | == target | busy | — | commit |
+| unaccepted | == target | idle | agrees | clear |
+| unaccepted | == target | idle | disagrees | commit |
+| unaccepted | (any) | errored | — | commit |
+| unaccepted | ≠ target | idle | — | commit |
+| unaccepted | ≠ target | busy | — | noop |
+| accepted | == target | idle | agrees | clear |
+| accepted | == target | idle | disagrees | park |
+| accepted | (any) | errored | — | park |
+| accepted | == pre-arm ref, ≠ target | idle, not yet launched | — | noop |
+| accepted | == pre-arm ref, ≠ target | idle, launched | — | call |
+| accepted | ≠ target, ≠ pre-arm ref | idle | — | park (superseded) |
+| accepted | (any) | busy | — | noop |
+
+Reading the table:
+
+- **arm** stamps a fresh marker (`TargetImageID` = desired image,
+  `PreArmImageRef` = the provider's current image) and nothing else. Arming
+  is gated on the server having launched at least once — decided from a fresh
+  `OS-SRV-USG:launched_at` read, not from the monitor's `status.observed`
+  latch — because before first boot the image is a create parameter, not a
+  rebuild target.
+- **commit** sets `Accepted = true` and returns without calling the provider;
+  this is the durable-write half of the ordering rule above.
+- **call** issues the Nova rebuild. A `409 Conflict` (another operation holds
+  the server) is pre-acceptance and yields quietly rather than reporting a
+  failure.
+- **clear** deletes the marker: the target image is what Nova reports, the
+  server is quiescent, and the second channel (if any) agrees.
+- **park** sets `Parked = true`, retaining the marker, and reports
+  `UserActionRequired`/`Errored` on the `Available` condition. The only way
+  out is a new image or server replacement.
+- **unpark** deletes a parked marker whose target no longer matches the
+  desired image — a new image selection is the only recovery path from a
+  park, and this is where it takes effect.
+- **noop** takes no action this pass; the accepted-and-outstanding cases
+  still keep the object requeued (see "Requeue" below).
+
+`idle` and `busy` classify a fresh Nova read (`rebuildProviderOp`).
+`task_state` is the busy signal for the whole rebuild window — non-empty from
+accept until settlement, empty at rest. `idle` is an **allow-list of
+rebuild-admissible states**, not a fallback for "anything not obviously
+busy": Nova only accepts a rebuild from `ACTIVE` or `SHUTOFF`. States that are
+stable and taskless but still reject a rebuild with a 409 —
+`VERIFY_RESIZE`, `PAUSED`, `SUSPENDED`, and `SHELVED_OFFLOADED` — classify as
+busy, "not actionable right now", rather than idle. Reading them as idle was
+tried and produces an endless 409 retry loop: the pass would submit, Nova
+would refuse, and the marker would sit `Accepted` forever with the call being
+retried every pass for a request that cannot succeed until an external actor
+(e.g. confirming a resize, waking the server) changes the vm_state. `ERROR`
+is tested first and always classifies as `errored`, ahead of `task_state`,
+because Nova's error state is sticky and operator-actionable and must not be
+held off the park by a stuck task signal.
+
+**Pre-arm ref.** `PreArmImageRef` exists to answer one question an accepted
+marker cannot otherwise answer from a single fresh read: has the provider
+been asked yet? While accepted and idle, a fresh image ref equal to
+`PreArmImageRef` means Nova still shows the image it showed at arm time — no
+call has landed — so the pass calls it. A fresh image ref that differs from
+*both* the target *and* the pre-arm ref means the image moved to something
+this attempt never asked for while the attempt was still accepted-but-not-yet
+-called — a rebuild driven by something other than this protocol — and that
+is treated as superseded and parked, because this attempt can no longer
+converge toward its recorded target.
+
+### The park latch is a marker field, not a read of `Available`
+
+Parking is decided from `Marker.Parked`, a field on the marker itself, never
+by reading the core-owned `Available` condition to ask "am I already
+parked?". This matters because core writes the generic `Errored` reason for
+*any* provisioning failure, transient ones included — not only for a parked
+rebuild. If parking were inferred from seeing `Available=Errored`, a
+transient provisioning blip unrelated to this rebuild would be
+indistinguishable from a real park. And the requeue (below) stops dead at a
+parked server — its only exit is a spec edit. So misreading a blip as a park
+would freeze a genuinely recoverable rebuild attempt until an operator
+happened to edit the spec, for a failure that would otherwise have cleared on
+its own. Only `Marker.Parked`, set exactly once by this decision procedure
+under the same conditions every time, can answer that question safely.
+
+### The second evidence channel
+
+Nova's word alone is not always sufficient evidence that a rebuild converged.
+A provider can report the target image ref with an idle, quiescent server —
+the state this protocol otherwise treats as "converged" — while the physical
+machine has not actually received the new image, because on baremetal the
+image write happens through Ironic's deploy pipeline, asynchronously from
+what Nova's own record shows. Trusting Nova alone there would let the marker
+clear on a rebuild that never actually landed on disk.
+
+The second channel is Ironic's `instance_info.image_source` on the node bound
+to the server, read fresh alongside Nova on baremetal flavors only. It has
+three states, and the caller must resolve which one applies before it may
+call the decision procedure at all:
+
+- **no channel**: no baremetal node is bound to the server (not a baremetal
+  flavor, or Ironic has no node yet). The decision procedure falls back to
+  Nova's word alone — there is nothing else to ask.
+- **a channel that resolves**: the node exists and `image_source` resolves to
+  an image ID (accepting either a bare UUID or an href whose final path
+  segment is one). That resolved image is compared against the target: agreeing
+  lets a converged-looking Nova read actually clear the marker; disagreeing
+  means Nova's "converged" is not to be trusted yet, and an accepted attempt
+  parks instead of clearing.
+- **UNREACHABLE**: a node is bound, but its `instance_info` carries no
+  resolvable image reference — missing, non-string, empty, or a value that
+  does not parse. This is never treated as "no channel". The pass must yield
+  and retry rather than deciding on Nova's word alone at the moment the
+  second opinion cannot be had; deciding here would risk clearing a marker
+  on a rebuild that Ironic cannot actually confirm.
+
+### Requeue
+
+An outstanding, unparked marker — armed but not yet accepted, or accepted but
+not yet cleared — keeps the server enqueued for another reconcile pass by
+returning a fixed-interval yield rather than completing cleanly. A parked
+marker does the opposite: it returns the terminal `UserActionRequired`
+disposition and is **not** requeued.
+
+This has to be a returned-error mechanism rather than a Kubernetes watch
+event, because the commit-then-call ordering above produces a state — the
+marker committed, durable, with no provider call made yet — that a
+generation-filtered watch will never observe. The controller's watch fires on
+spec generation changes, and status writes do not bump generation, so the
+very status write that records the commitment enqueues nothing on its own.
+Nothing else about that state changes on its own either: there is no further
+Nova observation to wait for, because the provider genuinely has not been
+called yet. A wake predicate has nothing to trigger on. The reconcile's own
+yield is therefore the only thing keeping the object alive between the commit
+and the call.
+
+Parked markers are deliberately excluded from this requeue. A parked
+attempt's only exit is a spec edit selecting a different image, and a spec
+edit is exactly what does change `metadata.generation` and re-triggers the
+watch. Requeueing a parked server on a fixed interval as well would just spin
+the workqueue forever on a resource that cannot self-heal.
+
 ## Caveats
 
 - This package is the convergence point of a large amount of platform policy,
@@ -304,6 +508,28 @@ There are a few Octavia-specific constraints worth preserving:
 - Some older assumptions still leak through in status fields and helper paths,
   especially where compatibility with older API or storage shapes is still being
   carried.
+- The rebuild protocol rests on two environmental facts about the target
+  cloud that are **unverified assumptions**, not properties checked against a
+  live cloud in this work:
+  - **Accept-time atomicity.** The busy/idle classification a fresh Nova read
+    gets assumes Nova sets `task_state` inside the same API call that accepts
+    a rebuild, so an accepted rebuild is observable as busy from the instant
+    it is accepted. If a cloud could accept a rebuild while a poll still read
+    the server as idle at the old image, no classification here would be
+    safe: retrying would double-submit against a rebuild already in flight,
+    and parking on an unrelated signal would misfire on one that is actually
+    progressing. The integration suite carries a Nova rebuild-atomicity probe
+    for exactly this property, but it has not been run against a live cloud
+    in this work.
+  - **Ironic's `image_source` shape.** The second evidence channel accepts a
+    bare image UUID or an href whose final path segment is one, and treats
+    anything else as unreadable (`UNREACHABLE`). What Ironic actually writes
+    into a real deployed node's `instance_info.image_source` has not been
+    verified against a live cloud in this work. A shape outside those two
+    forms would read as `UNREACHABLE` on every poll, which stalls rebuild
+    settlement on the affected baremetal server rather than silently
+    misreporting convergence — a safe failure mode, but an unverified one.
+
 ## TODO
 
 - Delete the remaining mirror-state OpenStack CRD usage paths entirely:

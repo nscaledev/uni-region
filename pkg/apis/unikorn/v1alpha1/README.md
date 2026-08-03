@@ -23,7 +23,7 @@ carryovers from older designs.
 
 ## Links
 
-- [../../constants](../../constants/README.md)
+- [../../../constants](../../../constants/README.md)
 
 `pkg/constants` defines much of the label and annotation vocabulary that these
 stored objects rely on for linkage, migration, and operational coordination.
@@ -108,12 +108,23 @@ stored objects rely on for linkage, migration, and operational coordination.
   writes cannot persist unsupported policy combinations.
 - `Server.Spec.Image` is desired state; Nova's observed image and status
   remain authoritative for live state. `Server.Status.Rebuild`
-  (`ServerRebuildStatus`) records an in-flight rebuild attempt: the target
-  image, the provider's image when the attempt was armed, whether we have
-  committed to calling the provider, and whether the attempt has been
-  abandoned. The reconciler is its sole writer and the monitor never reads it.
-  Nothing acts on it yet — the handler layer still rejects v2 image changes
-  outright (see `pkg/handler/server/README.md`), so no attempt can be armed.
+  (`ServerRebuildStatus`) records an in-flight rebuild attempt, a four-field
+  marker: the target image (`TargetImageID`), the provider's image ref at the
+  moment the attempt was armed (`PreArmImageRef`, which exists only to tell
+  "the provider has not been asked yet" apart from "something else rebuilt
+  this machine"), whether the reconciler has committed to calling the
+  provider (`Accepted`), and whether the attempt has been abandoned pending
+  new user intent (`Parked`). The reconciler is the marker's sole writer; the
+  health monitor never reads or writes any field of it.
+  The single most important rule this marker exists to enforce: `Accepted` is
+  written and durable in etcd *before* any reconcile pass calls the provider,
+  and the call itself is made only by a later pass that reads the commitment
+  back durable. That ordering bounds a crash or a lost optimistic-lock write
+  to losing at most an unmade request — never an unrecorded destructive one.
+  See [`pkg/providers/internal/openstack/README.md`](../../../providers/internal/openstack/README.md)
+  for the decision procedure that drives the marker and
+  [`pkg/handler/server/README.md`](../../../handler/server/README.md) for how a
+  v2 image update arms it.
 - `Server.Status.Observed` (`ServerObservedStatus`) is a dedicated subtree for
   the facts the monitor records from a single provider poll: the server
   generation the poll was taken against, the primary interface's MAC address,
