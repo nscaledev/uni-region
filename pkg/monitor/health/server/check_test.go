@@ -41,6 +41,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -933,4 +934,37 @@ func TestCheckServerNoHistogramOnIntermediatePhaseTransition(t *testing.T) {
 
 	require.Empty(t, collectHistogram(t, reader))
 	require.Empty(t, collectSchedulingHistogram(t, reader))
+}
+
+// TestCheckServerPersistsObservedStatus pins that the poll's single status patch
+// carries the monitor's observed subtree through to etcd. The subtree is the
+// monitor's exclusive write region, so this is the write that makes it readable at
+// all; a patch that dropped it would leave the region permanently empty while
+// every in-memory unit test still passed.
+func TestCheckServerPersistsObservedStatus(t *testing.T) {
+	t.Parallel()
+
+	srv := serverFixture(unikornv1.ActiveConditionReasonRunning)
+	imageID := idstest.MustParseImageID("33333333-3333-4333-a333-333333333333")
+
+	k8sClient, _, err := runCheckFull(t, srv, func(s *unikornv1.Server) {
+		s.Status.Observed = &unikornv1.ServerObservedStatus{
+			Generation: 9,
+			Image:      &imageID,
+			Error: &unikornv1.ServerObservedError{
+				Code:    ptr.To(int32(500)),
+				Message: "No valid host was found",
+			},
+		}
+	})
+	require.NoError(t, err)
+
+	updated := &unikornv1.Server{}
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, updated))
+
+	require.NotNil(t, updated.Status.Observed)
+	require.Equal(t, int64(9), updated.Status.Observed.Generation)
+	require.Equal(t, &imageID, updated.Status.Observed.Image)
+	require.NotNil(t, updated.Status.Observed.Error)
+	require.Equal(t, "No valid host was found", updated.Status.Observed.Error.Message)
 }

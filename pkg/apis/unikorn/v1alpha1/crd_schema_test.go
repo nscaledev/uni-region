@@ -81,6 +81,35 @@ func TestServerRebuildSchema(t *testing.T) {
 	require.ElementsMatch(t, want, state.Enum, "the rebuild state enum must be validated at the CRD schema")
 }
 
+// TestServerObservedSchema pins the monitor's exclusive write region into the
+// published schema. The subtree is the contract that keeps the two status writers
+// off each other's fields, so its shape belongs in the CRD, not just in Go.
+func TestServerObservedSchema(t *testing.T) {
+	t.Parallel()
+
+	schema := crdSchema(t, serverCRDFile)
+
+	generation := requireSchemaProperty(t, schema, "status", "observed", "generation")
+	require.Equal(t, "integer", generation.Type)
+
+	image := requireSchemaProperty(t, schema, "status", "observed", "image")
+	require.Equal(t, "string", image.Type)
+	require.Equal(t, "uuid", image.Format)
+
+	code := requireSchemaProperty(t, schema, "status", "observed", "error", "code")
+	require.Equal(t, "integer", code.Type)
+
+	message := requireSchemaProperty(t, schema, "status", "observed", "error", "message")
+	require.Equal(t, "string", message.Type)
+
+	at := requireSchemaProperty(t, schema, "status", "observed", "error", "at")
+	require.Equal(t, "string", at.Type)
+	require.Equal(t, "date-time", at.Format)
+
+	observed := requireSchemaProperty(t, schema, "status", "observed")
+	require.Equal(t, []string{"generation"}, observed.Required, "the freshness stamp is what makes an observation readable; it must not be optional")
+}
+
 type crdValidator struct {
 	schema     *apixinternal.JSONSchemaProps
 	structural *structuralschema.Structural

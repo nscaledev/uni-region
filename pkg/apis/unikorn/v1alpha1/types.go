@@ -1221,6 +1221,46 @@ type ServerStatus struct {
 	// +patchMergeKey=id
 	// +optional
 	Volumes []ServerVolumeStatus `json:"volumes,omitempty"`
+	// Observed carries the provider facts recorded from a provider read, normally
+	// the monitor's poll — see ServerObservedStatus for the ownership rule.
+	// +optional
+	Observed *ServerObservedStatus `json:"observed,omitempty"`
+}
+
+// ServerObservedStatus is recorded from a single fresh provider read, by one
+// projection with no arbitration between its callers. An observation never
+// authorizes an action against the provider; it may only refuse one.
+type ServerObservedStatus struct {
+	// Generation is metadata.generation as read when this snapshot was taken, so a
+	// reader can tell whether the observation postdates a spec edit. Stamped on
+	// every poll, so a present subtree with no image means the image was unreadable.
+	Generation int64 `json:"generation"`
+	// Image is the image the provider reports the server running, as of the last poll
+	// that could read it. An unreadable ref preserves the previous value.
+	// +optional
+	Image *regionids.ImageID `json:"image,omitempty"`
+	// Error is the provider's failure report, present only while the provider reports
+	// the server in an error state. Unlike Image it clears.
+	// +optional
+	Error *ServerObservedError `json:"error,omitempty"`
+}
+
+// ServerObservedError is a provider failure as the provider reported it, with no
+// attribution to any action this service took.
+type ServerObservedError struct {
+	// Code is the provider's failure code. Nil when the provider reported the
+	// server failed but gave no fault detail (an OpenStack list response can omit
+	// the fault), which a code of 0 could not express.
+	// +optional
+	Code *int32 `json:"code,omitempty"`
+	// Message is the provider's user-facing failure summary. Provider internals (a
+	// stack trace, for OpenStack) are deliberately not recorded.
+	// +optional
+	Message string `json:"message,omitempty"`
+	// At is the provider's own failure timestamp, not the poll clock. Nil when the
+	// provider reported none.
+	// +optional
+	At *metav1.Time `json:"at,omitempty"`
 }
 
 // ServerRebuildState describes where an in-place rebuild is in its lifecycle.

@@ -47,9 +47,9 @@ const (
 	rebuildWatchTimeout = 30 * time.Minute
 	rebuildPollInterval = 15 * time.Second
 
-	// The controller arms the rebuild asynchronously; once armed, the
-	// provisioning window lasts the whole rebuild, so a modest timeout with a
-	// tight poll reliably catches the transition without racing the arm.
+	// The rebuild is submitted asynchronously and the provisioning window lasts the
+	// whole rebuild, so a modest timeout with a tight poll reliably catches the
+	// transition.
 	rebuildProvisioningTimeout = 15 * time.Minute
 	rebuildProvisioningPoll    = 2 * time.Second
 
@@ -105,9 +105,9 @@ func EventuallyServerProvisioned(serverID string) *regionopenapi.ServerV2Read {
 	return server
 }
 
-// EventuallyServerProvisioning asserts the settled gate: an accepted rebuild
-// intent must surface as provisioning, never remain provisioned while the
-// desired image is unrealized.
+// EventuallyServerProvisioning asserts that an accepted rebuild surfaces as
+// provisioning, never remaining provisioned while the desired image is
+// unrealized.
 func EventuallyServerProvisioning(serverID string) {
 	Eventually(func(g Gomega) {
 		got, err := regionClient.GetServer(ctx, serverID)
@@ -115,7 +115,7 @@ func EventuallyServerProvisioning(serverID string) {
 		g.Expect(got.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioning))
 	}).WithTimeout(rebuildProvisioningTimeout).
 		WithPolling(rebuildProvisioningPoll).
-		Should(Succeed(), "rebuild intent must read as provisioning before it settles")
+		Should(Succeed(), "an accepted rebuild must read as provisioning before it settles")
 }
 
 func EventuallyServerPowerState(serverID string, phase regionopenapi.InstanceLifecyclePhase) *regionopenapi.ServerV2Read {

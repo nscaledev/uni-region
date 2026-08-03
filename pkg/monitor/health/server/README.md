@@ -56,6 +56,29 @@ status/telemetry model.
   fires → reconcile → the reconciler re-decides from its own fresh provider
   read. The monitor's stamp is stimulus, not authorization — the reconciler
   never trusts the projected status to make the rebuild decision.
+- populates `status.observed` from the poll's existing `GetServer` response. The
+  region has one writer *function* rather than one caller: the reconciler's
+  create-retry existence check goes through the same `UpdateServerState`, and so the
+  same projection. One derivation with no arbitration is what removes the ordering
+  argument between the two status writers — not the monitor holding the region
+  alone. `generation` is stamped unconditionally, so the subtree exists from the
+  first poll that read the provider at all — a present subtree with no `image`
+  means "polled, image unreadable", which is not the same fact as an absent
+  subtree meaning "never successfully polled".
+  `image` tracks the live provider image, but an unreadable ref (absent, empty or
+  unparseable) preserves the previous value and never clears it, for the same
+  reason `macAddress` is never cleared: a transient read miss must not erase a
+  known fact. `error` is the opposite — live state that clears on an authoritative
+  non-error read. That is safe only because a provider that cannot be reached
+  aborts the poll before any write, so connectivity loss can never be mistaken for
+  a recovery. It is gated on the provider reporting `ERROR` rather than on Nova's
+  `fault` being populated, because Nova leaves a stale `fault` on a server that has
+  since recovered; and Nova's `fault.details` is deliberately dropped, being an
+  admin-only stack trace that must not reach projected status.
+  Nothing consumes this region yet. The rule for when something does: **an
+  observation never authorizes an action against the provider** — actuation is
+  decided from a fresh provider read, and an observation may only be read as a
+  precondition that refuses one.
 - rebuilds gauge counts from the effective server set each cycle
 
 ## Invariants And Guard Rails

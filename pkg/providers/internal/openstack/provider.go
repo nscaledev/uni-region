@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"math/big"
 	"net"
 	"net/http"
@@ -2359,8 +2360,8 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 	return nil
 }
 
-// Nova server display statuses, as compared throughout server health
-// conversion and the rebuild state machine.
+// Nova server display statuses, as compared throughout server health conversion
+// and image reconciliation.
 // https://docs.openstack.org/api-guide/compute/server_concepts.html
 const (
 	novaStatusActive  = "ACTIVE"
@@ -2876,6 +2877,66 @@ func openstackServerImageID(server *servers.Server) (regionids.ImageID, bool) {
 	}
 
 	return imageID, true
+}
+
+// setServerObservedStatus is the only writer of status.observed. Both
+// UpdateServerState callers reach it — the monitor's poll and the reconciler's
+// create-retry existence check — and neither arbitrates: both project one fresh
+// read. Only reached after that read succeeded, which is what makes clearing the
+// error safe.
+func setServerObservedStatus(server *unikornv1.Server, openstackServer *servers.Server) {
+	if server.Status.Observed == nil {
+		server.Status.Observed = &unikornv1.ServerObservedStatus{}
+	}
+
+	observed := server.Status.Observed
+	observed.Generation = server.Generation
+
+	// An unreadable ref preserves the previous image: a reader cannot tell an
+	// erased image from one never observed.
+	if imageID, ok := openstackServerImageID(openstackServer); ok {
+		observed.Image = &imageID
+	}
+
+	observed.Error = observedServerError(openstackServer)
+}
+
+// observedServerError projects a provider failure report, or nil if the provider
+// does not report the server failed. Gated on status, not on the fault being
+// populated: Nova leaves a stale fault on a recovered server. Fault details are
+// dropped as an admin-only stack trace. Every fault field is recorded only when
+// the provider supplied it, so an ERROR whose fault was invisible (a Nova list
+// can omit it) projects as an error with no detail rather than a fabricated
+// code 0.
+func observedServerError(openstackServer *servers.Server) *unikornv1.ServerObservedError {
+	if openstackServer.Status != novaStatusError {
+		return nil
+	}
+
+	observedError := &unikornv1.ServerObservedError{
+		Code:    observedErrorCode(openstackServer.Fault.Code),
+		Message: openstackServer.Fault.Message,
+	}
+
+	if !openstackServer.Fault.Created.IsZero() {
+		at := metav1.NewTime(openstackServer.Fault.Created)
+		observedError.At = &at
+	}
+
+	return observedError
+}
+
+// observedErrorCode converts a provider failure code to the recorded form, or nil
+// when the provider supplied none (0) or a value outside the schema's int32 — a
+// truncating cast would record a different code than the provider reported.
+func observedErrorCode(code int) *int32 {
+	if code <= 0 || code > math.MaxInt32 {
+		return nil
+	}
+
+	converted := int32(code)
+
+	return &converted
 }
 
 // markServerRebuildAccepted stamps the post-acceptance in-flight view: Active
@@ -3509,6 +3570,7 @@ func (p *Provider) updateServerStateWithClients(
 	setServerHealthStatus(server, openstackServer)
 	advanceServerRebuildState(server, openstackServer)
 	setServerMACAddress(ctx, server, openstackServer)
+	setServerObservedStatus(server, openstackServer)
 
 	region, _ := p.openstack.regionSnapshot()
 	baremetal := isBaremetalFlavor(region, server.Spec.FlavorID.String())

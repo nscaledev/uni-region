@@ -173,6 +173,23 @@ func (v ImageID) String() string                { return uuid.UUID(v).String() }
 func (v ImageID) MarshalText() ([]byte, error)  { return uuid.UUID(v).MarshalText() }
 func (v *ImageID) UnmarshalText(b []byte) error { return unmarshalUUID((*uuid.UUID)(v), b) }
 
+// DeepCopyInto exists because deepcopy-gen cannot synthesise a copy for a pointer
+// to a named array type from another package, and fails the whole generation run
+// when a CRD field is one. The value is a byte array, so assignment copies it.
+func (v *ImageID) DeepCopyInto(out *ImageID) { *out = *v }
+
+// DeepCopy returns an independent copy of v, or nil if v is nil.
+func (v *ImageID) DeepCopy() *ImageID {
+	if v == nil {
+		return nil
+	}
+
+	out := new(ImageID)
+	v.DeepCopyInto(out)
+
+	return out
+}
+
 // FlavorID is a UUID-backed identifier for flavors. The platform addresses flavors by
 // their provider-assigned UUID; it is a distinct named type so the compiler prevents
 // accidental interchange with any other ID type. UnmarshalText delegates to uuid.UUID,

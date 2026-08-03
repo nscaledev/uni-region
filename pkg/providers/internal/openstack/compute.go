@@ -41,6 +41,8 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 
 	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // ComputeClient wraps the generic client because gophercloud is unsafe.
@@ -265,7 +267,27 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 		return nil, errors.ErrResourceNotFound
 	}
 
-	return &result[index], nil
+	found := &result[index]
+
+	// Nova up to 2025.2 can omit fault from a list response, so a listed errored
+	// server may carry an empty one. Re-read by ID, and only for ERROR: healthy
+	// servers must not pay a second call on every read. Nova's _fault_statuses
+	// also covers DELETED, but the only fault consumer (observedServerError)
+	// gates on ERROR, so a deleted server's fault would be fetched and discarded.
+	if found.Status != novaStatusError {
+		return found, nil
+	}
+
+	detailed, err := servers.Get(ctx, c.client, found.ID).Extract()
+	if err != nil {
+		// The fault is an enrichment, so a failed re-read must not fail the lookup.
+		log.FromContext(ctx).Info("cannot re-read the errored server for its provider fault",
+			"novaServerID", found.ID, "error", err.Error())
+
+		return found, nil
+	}
+
+	return detailed, nil
 }
 
 func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Server, keyName string, networks []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {

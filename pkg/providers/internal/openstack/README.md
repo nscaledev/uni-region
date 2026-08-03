@@ -118,7 +118,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   the desired image is a create parameter, not a rebuild target, so a pending
   image change on a server Nova reports with a zero `launched_at` defers: the
   reconcile yields, leaving the resource visibly `provisioning` and re-checking
-  every 10s until first boot, then subsequent passes arm and submit the rebuild. A
+  every 10s until first boot, after which a pass submits the rebuild once the
+  server is quiescent. A
   never-booted server Nova reports in `ERROR` is likewise deferred here — the
   reconcile pass yields silently without writing a health stamp (the monitor
   owns observed state) — and absorbed by the bounded provider-create
@@ -346,7 +347,26 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   field, `status.macAddress`, from the Nova response once the server is `ACTIVE`
   (the port MAC rides inline in `addresses`, reused from the same `GetServer` — no
   extra call). ACTIVE is required because baremetal Ironic rebinds the port to the
-  real NIC MAC asynchronously; the value is only ever written, never cleared. The lookup is
+  real NIC MAC asynchronously; the value is only ever written, never cleared.
+  `GetServer` resolves by name, which forces a list, and **the list response can omit
+  `fault` entirely** on Nova up to 2025.2. A listed errored server therefore carries an
+  empty fault, which would make `status.observed.error` a failure record with no code,
+  message or timestamp, so `GetServer` re-reads the single server by ID when the listed
+  status is `ERROR`. Nova's own `_fault_statuses` also covers `DELETED`, but the only
+  fault consumer (`observedServerError`) gates on `ERROR`, so re-reading a deleted
+  server would fetch a fault only to discard it.
+  Conditional, not unconditional: healthy servers must not pay a second call on
+  every read. A failed re-read degrades to the listed record rather than failing the lookup,
+  because the fault is an enrichment and not the reason for the read.
+  `setServerObservedStatus` records the monitor's `status.observed` region from that
+  same response: `generation` unconditionally, the image via `openstackServerImageID`
+  (an unreadable ref preserves the previous value rather than clearing it), and
+  `observedServerError` when Nova reports `ERROR`. The error is gated on
+  `Status == "ERROR"` and not on `Fault` being populated, because Nova leaves a
+  stale `fault` on a recovered server, so keying off the struct would report a
+  cleared failure forever; `fault.details` is dropped as an admin-only stack trace
+  that must not reach projected status, and `fault.created` is recorded only when
+  non-zero since Nova populates it on some paths only. The Ironic lookup is
   filtered by `instance_uuid`. Because Ironic node ownership and visibility
   are provider infrastructure concerns rather than tenant workload operations,
   this lookup uses the Region top-level provider credentials scoped to the
