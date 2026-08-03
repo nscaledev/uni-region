@@ -77,10 +77,20 @@ status/telemetry model.
   projected status: it is fetched and logged once, best-effort, on the transition
   into the errored state, and `fault.details` is excluded even from the log as an
   admin-only stack trace.
-  Nothing consumes this region yet. The rule for when something does: **an
-  observation never authorizes an action against the provider** — actuation is
-  decided from a fresh provider read, and an observation may only be read as a
-  precondition that refuses one.
+  A write to this region wakes the reconciler: the server manager's
+  `serverObservedUpdate` predicate (`pkg/managers/server`) fires on any change to
+  the subtree, so the reconciler sleeps until a provider fact moves rather than
+  requeueing to re-read one. Nothing reads the region's *contents* yet.
+  Because `generation` is stamped unconditionally, the first poll after a spec edit
+  writes a real patch even when no provider fact moved, so it wakes the reconciler
+  once redundantly — the edit already woke it via the generation predicate. Harmless,
+  and cheaper than the alternative of making the stamp conditional on other fields
+  having changed, which would make the stamp mean something subtler than "the
+  generation this was observed at".
+  The rule for when something does read the contents: **an observation never
+  authorizes an action against the provider** — actuation is decided from a fresh
+  provider read, and an observation may only be read as a precondition that refuses
+  one.
 - rebuilds gauge counts from the effective server set each cycle
 
 ## Invariants And Guard Rails

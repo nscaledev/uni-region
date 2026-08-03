@@ -27,6 +27,8 @@ import (
 	"github.com/unikorn-cloud/region/pkg/managers"
 	"github.com/unikorn-cloud/region/pkg/provisioners/managers/server"
 
+	"k8s.io/apimachinery/pkg/api/equality"
+
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -77,6 +79,21 @@ func serverRebuildSettledUpdate(e event.TypedUpdateEvent[*unikornv1.Server]) boo
 	return server.RebuildSettled(e.ObjectOld, e.ObjectNew)
 }
 
+// serverObservedUpdate wakes the reconciler when the status.observed region moves.
+// Compared rather than tested for presence: a predicate sees only the old and new
+// objects, so an uncompared arm fires on every update. The reconciler's own
+// create-retry path can move the region, which self-wakes once and then converges.
+// Semantic equality so any metav1.Time a future fact adds to the region
+// compares by instant rather than by location pointer, which would wake the
+// reconciler for nothing on every re-decode.
+func serverObservedUpdate(e event.TypedUpdateEvent[*unikornv1.Server]) bool {
+	if e.ObjectOld == nil || e.ObjectNew == nil {
+		return false
+	}
+
+	return !equality.Semantic.DeepEqual(e.ObjectOld.Status.Observed, e.ObjectNew.Status.Observed)
+}
+
 // RegisterWatches adds any watches that would trigger a reconcile.
 func (*Factory) RegisterWatches(manager manager.Manager, controller controller.Controller) error {
 	// Any changes to the server spec, trigger a reconcile.
@@ -87,6 +104,9 @@ func (*Factory) RegisterWatches(manager manager.Manager, controller controller.C
 		},
 		predicate.TypedFuncs[*unikornv1.Server]{
 			UpdateFunc: serverRebuildSettledUpdate,
+		},
+		predicate.TypedFuncs[*unikornv1.Server]{
+			UpdateFunc: serverObservedUpdate,
 		},
 	)
 
