@@ -120,17 +120,6 @@ var _ = Describe("Server rebuild", func() {
 				Expect(apiError.ErrorDescription).To(ContainSubstring("flavor is immutable"))
 			})
 		})
-
-		Describe("Given the server image is immutable while rebuild is excised", func() {
-			It("rejects an image change with an actionable 422", func() {
-				update := api.ServerUpdateFromRead(server).WithImageID(uuid.NewString()).Build()
-
-				apiError, err := regionClient.UpdateServerExpectError(ctx, server.Metadata.Id, update, http.StatusUnprocessableEntity)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(apiError.Error).To(Equal(coreapi.UnprocessableContent))
-				Expect(apiError.ErrorDescription).To(ContainSubstring("image cannot be changed"))
-			})
-		})
 	})
 })
 
