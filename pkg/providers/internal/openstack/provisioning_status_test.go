@@ -32,6 +32,7 @@ import (
 
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -46,7 +47,10 @@ const (
 	flavorVMID    = "aaaaaaaa-0000-0000-0000-000000000002"
 )
 
-var errIronicUnavailable = errors.New("ironic unavailable")
+var (
+	errIronicUnavailable = errors.New("ironic unavailable")
+	errUnexpectedRebuild = errors.New("unexpected rebuild call")
+)
 
 // activeReason reads the server's lifecycle Active condition, failing the test if
 // the condition is absent. It replaces the assertions that used to read the
@@ -373,7 +377,10 @@ func (c *stubComputeClient) GetServer(_ context.Context, server *unikornv1.Serve
 func (c *stubComputeClient) CreateServer(context.Context, *unikornv1.Server, string, []servers.Network, *string, map[string]string) (*servers.Server, error) {
 	return nil, nil //nolint:nilnil // unused stub method
 }
-func (c *stubComputeClient) DeleteServer(context.Context, string) error       { return nil }
+func (c *stubComputeClient) DeleteServer(context.Context, string) error { return nil }
+func (c *stubComputeClient) RebuildServer(context.Context, string, regionids.ImageID) (*servers.Server, error) {
+	return nil, errUnexpectedRebuild
+}
 func (c *stubComputeClient) RebootServer(context.Context, string, bool) error { return nil }
 func (c *stubComputeClient) StartServer(context.Context, string) error        { return nil }
 func (c *stubComputeClient) StopServer(context.Context, string) error         { return nil }
