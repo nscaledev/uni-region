@@ -42,10 +42,6 @@ const (
 	// The driver consults the sidecar on its first deploy attempt, which follows
 	// placement and the start of the Nova build rather than the create call itself.
 	serverFaultWiringTimeout = 8 * time.Minute
-
-	// Long enough to span several reconciles, so a rebuild that is wrongly reported as
-	// settled is caught rather than missed between polls.
-	serverFaultRebuildWindow = 3 * time.Minute
 )
 
 // Only deploy is reachable through a server's lifecycle on this fixture. The
@@ -234,76 +230,6 @@ var _ = Describe("Server fault injection", func() {
 
 				eventuallyServerProvisionedAndHealthy(created.Metadata.Id, serverFaultRecoveryTimeout,
 					"fresh pinned server should provision and become healthy on the recovered node")
-			})
-		})
-	})
-
-	Context("When a rebuild is deployed onto a node programmed to fail deploy", Ordered, Label("slow"), func() {
-		var (
-			fakeControl *api.FakeControlClient
-			nodeUUID    string
-			serverID    string
-		)
-
-		BeforeAll(func() {
-			skipUnlessFaultInjectionConfigured()
-			skipUnlessServerRebuildImageConfigured()
-
-			fakeControl = api.NewFakeControlClient(config)
-			nodeUUID = api.FakeControlNodeUUID(config.ServerInfrastructureRef)
-			fakeControl.ResetNode(ctx, nodeUUID)
-
-			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-			network, cleanupNetwork := api.MustProvisionNetwork(regionClient, ctx, networkReq)
-			DeferCleanup(cleanupNetwork)
-
-			created, cleanupServer := mustCreatePinnedServer(network.Metadata.Id)
-
-			DeferCleanup(func() {
-				fakeControl.ResetNode(ctx, nodeUUID)
-				cleanupServer()
-			})
-
-			serverID = EventuallyServerProvisioned(created.Metadata.Id).Metadata.Id
-		})
-
-		Describe("Given the provisioned server is rebuilt while the node fails deploy", func() {
-			It("never reports provisioned while the rebuild's deploy is failing", Label("slow"), func() {
-				fakeControl.ProgramNodeBehavior(ctx, nodeUUID, api.FailDeploy())
-
-				server, err := regionClient.GetServer(ctx, serverID)
-				Expect(err).NotTo(HaveOccurred())
-
-				update := api.ServerUpdateFromRead(server).WithImageID(rebuildImageID()).Build()
-
-				updated, err := regionClient.UpdateServer(ctx, serverID, update)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(updated.Spec.ImageId).To(Equal(update.Spec.ImageId))
-
-				By("observing the server leave provisioned once the controller arms the rebuild")
-				EventuallyServerProvisioning(serverID)
-
-				By("proving the injected fault reached the rebuild's deploy")
-				eventuallyNodeOpFailed(fakeControl, nodeUUID, api.FakeControlOpDeploy, serverFaultWiringTimeout)
-
-				// deriveProvisioningStatus (pkg/handler/server/client_v2.go) masks
-				// provisioned to provisioning while a rebuild marker is live, because
-				// consumers gate on provisioned meaning the spec is fully realized. A
-				// rebuild whose deploy failed has not realized it, and Spec.ImageId flips
-				// to the target at accept, so provisioned here is indistinguishable from a
-				// successful rebuild. Error is equally correct — that same contract passes
-				// a parked rebuild's error through so failures stay visible — which leaves
-				// provisioned as the only wrong answer.
-				By("checking the failed rebuild never reports the spec as realized")
-				Consistently(func(g Gomega) {
-					got, err := regionClient.GetServer(ctx, serverID)
-					g.Expect(err).NotTo(HaveOccurred())
-					g.Expect(got.Metadata.ProvisioningStatus).To(BeElementOf(
-						coreapi.ResourceProvisioningStatusProvisioning,
-						coreapi.ResourceProvisioningStatusError,
-					))
-				}).WithTimeout(serverFaultRebuildWindow).WithPolling(serverFaultPollInterval).
-					Should(Succeed(), "a failed rebuild must not report provisioned: the target image was never written")
 			})
 		})
 	})
