@@ -934,3 +934,80 @@ func TestCheckServerNoHistogramOnIntermediatePhaseTransition(t *testing.T) {
 	require.Empty(t, collectHistogram(t, reader))
 	require.Empty(t, collectSchedulingHistogram(t, reader))
 }
+
+// TestCheckServerPersistsObservedStatus pins that the poll's single status patch
+// carries the monitor's observed subtree through to etcd. The subtree is the
+// monitor's exclusive write region, so this is the write that makes it readable at
+// all; a patch that dropped it would leave the region permanently empty while
+// every in-memory unit test still passed.
+func TestCheckServerPersistsObservedStatus(t *testing.T) {
+	t.Parallel()
+
+	srv := serverFixture(unikornv1.ActiveConditionReasonRunning)
+	imageID := idstest.MustParseImageID("33333333-3333-4333-a333-333333333333")
+
+	k8sClient, _, err := runCheckFull(t, srv, func(s *unikornv1.Server) {
+		s.Status.Observed = &unikornv1.ServerObservedStatus{
+			Generation: 9,
+			Image:      &imageID,
+			Errored:    true,
+		}
+	})
+	require.NoError(t, err)
+
+	updated := &unikornv1.Server{}
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, updated))
+
+	require.NotNil(t, updated.Status.Observed)
+	require.Equal(t, int64(9), updated.Status.Observed.Generation)
+	require.Equal(t, &imageID, updated.Status.Observed.Image)
+	require.True(t, updated.Status.Observed.Errored)
+}
+
+// TestCheckServerPersistsObservedStatusClearsErrored pins the un-park trigger for a
+// recovered-in-place server: a healthy ACTIVE read sets Errored to false, stamps
+// Generation from metadata.generation, and records the observed current image. The
+// observed subtree is the monitor's exclusive write region, so this is the write
+// that flips the reconciler's freshness predicate; Errored has omitempty JSON, so
+// asserting the clear survives the merge patch pins that the false value is
+// persisted (not omitted as a no-op) and the parked server is un-parked without a
+// spec edit.
+func TestCheckServerPersistsObservedStatusClearsErrored(t *testing.T) {
+	t.Parallel()
+
+	srv := serverFixture(unikornv1.ActiveConditionReasonRunning)
+	staleImageID := idstest.MustParseImageID("44444444-4444-4444-a444-444444444444")
+	currentImageID := idstest.MustParseImageID("33333333-3333-4333-a333-333333333333")
+
+	// Seed a parked server: observed.errored is true and the observed
+	// generation lags metadata.generation, so a stale observation is
+	// distinguishable from a fresh one.
+	srv.Generation = 10
+	srv.Status.Observed = &unikornv1.ServerObservedStatus{
+		Generation: 9,
+		Image:      &staleImageID,
+		Errored:    true,
+	}
+
+	k8sClient, _, err := runCheckFull(t, srv, func(s *unikornv1.Server) {
+		// Simulates a healthy ACTIVE read on a recovered-in-place server:
+		// the provider clears the errored marker, stamps the generation
+		// from metadata.generation, and records the observed current image.
+		if s.Status.Observed == nil {
+			s.Status.Observed = &unikornv1.ServerObservedStatus{}
+		}
+
+		s.Status.Observed.Generation = s.Generation
+		s.Status.Observed.Errored = false
+		s.Status.Observed.Image = &currentImageID
+	})
+	require.NoError(t, err)
+
+	updated := &unikornv1.Server{}
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, updated))
+
+	require.NotNil(t, updated.Status.Observed)
+	require.False(t, updated.Status.Observed.Errored, "the clear must survive the merge patch despite omitempty JSON")
+	require.Equal(t, updated.Generation, updated.Status.Observed.Generation)
+	require.Equal(t, &currentImageID, updated.Status.Observed.Image)
+}

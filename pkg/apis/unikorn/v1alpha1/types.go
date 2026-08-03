@@ -1251,6 +1251,33 @@ type ServerStatus struct {
 	// +patchMergeKey=id
 	// +optional
 	Volumes []ServerVolumeStatus `json:"volumes,omitempty"`
+	// Observed carries the provider facts recorded from a provider read, normally
+	// the monitor's poll — see ServerObservedStatus for the ownership rule.
+	// +optional
+	Observed *ServerObservedStatus `json:"observed,omitempty"`
+}
+
+// ServerObservedStatus is recorded from a single fresh provider read, by one
+// projection with no arbitration between its callers. An observation never
+// authorizes an action against the provider; it may only refuse one.
+type ServerObservedStatus struct {
+	// Generation is metadata.generation as read when this snapshot was taken, so a
+	// reader can tell whether the observation postdates a spec edit. Stamped on
+	// every poll, so a present subtree with no image means the image was unreadable.
+	Generation int64 `json:"generation"`
+	// Image is the image the provider reports the server running, as of the last poll
+	// that could read it. An unreadable ref preserves the previous value.
+	// +optional
+	Image *regionids.ImageID `json:"image,omitempty"`
+	// Errored records that the provider reports the server in an error state, with
+	// no detail and no attribution to any action this service took. Unlike Image it
+	// clears when the provider stops reporting the error. It exists so a change in
+	// the provider's view is diffable (the reconciler wakes on it); it is not a
+	// diagnostic surface. The provider's own failure detail is written to the
+	// observing component's log at the moment of observation, in provider
+	// vocabulary, where operator detail belongs.
+	// +optional
+	Errored bool `json:"errored,omitempty"`
 }
 
 // ServerRebuildState describes where an in-place rebuild is in its lifecycle.

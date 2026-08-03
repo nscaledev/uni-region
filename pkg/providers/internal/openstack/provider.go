@@ -2379,8 +2379,8 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 	return nil
 }
 
-// Nova server display statuses, as compared throughout server health
-// conversion and the rebuild state machine.
+// Nova server display statuses, as compared throughout server health conversion
+// and image reconciliation.
 // https://docs.openstack.org/api-guide/compute/server_concepts.html
 const (
 	novaStatusActive  = "ACTIVE"
@@ -2896,6 +2896,89 @@ func openstackServerImageID(server *servers.Server) (regionids.ImageID, bool) {
 	}
 
 	return imageID, true
+}
+
+// setServerObservedStatus is the only writer of status.observed. Both
+// UpdateServerState callers reach it — the monitor's poll and the reconciler's
+// create-retry existence check — and neither arbitrates: both project one fresh
+// read. Only reached after that read succeeded, which is what makes clearing the
+// error safe.
+//
+// The projection is pure: it performs no I/O and owns no enrichment. The caller
+// owns enrichment (e.g. the fault fetch on the false→true error transition) so a
+// hung Nova read can be bounded without stalling the projection, and so the
+// marker decision is decoupled from the fault read's success. It returns true
+// when errored transitioned false→true on this call, signalling the caller to
+// run that enrichment.
+func setServerObservedStatus(server *unikornv1.Server, openstackServer *servers.Server) bool {
+	if server.Status.Observed == nil {
+		server.Status.Observed = &unikornv1.ServerObservedStatus{}
+	}
+
+	observed := server.Status.Observed
+	observed.Generation = server.Generation
+
+	// An unreadable ref preserves the previous image: a reader cannot tell an
+	// erased image from one never observed.
+	if imageID, ok := openstackServerImageID(openstackServer); ok {
+		observed.Image = &imageID
+	}
+
+	// Errored is a neutral presence marker, gated on status rather than on the
+	// fault being populated: Nova leaves a stale fault on a recovered server.
+	// The fault detail itself is provider vocabulary and belongs in the log
+	// stream, not the API; the caller logs it once on the transition into error
+	// so the operator record exists without per-poll noise.
+	errored := openstackServer.Status == novaStatusError
+	enteredError := errored && !observed.Errored
+
+	observed.Errored = errored
+
+	return enteredError
+}
+
+// logServerFault writes the provider's fault detail to the observation log on
+// the transition into error. The list read that noticed the error can carry an
+// empty fault (Nova up to 2025.2 can omit it from a list response), so the
+// detail comes from a dedicated per-ID read here, on the edge, rather than
+// enriching every read of every errored server exactly when Nova is degraded.
+// The fetch is best-effort: the marker is already decided from the listed
+// status, so no failure here may block the status update.
+func logServerFault(ctx context.Context, client ServerObservationInterface, server *unikornv1.Server, openstackServer *servers.Server) {
+	logger := log.FromContext(ctx)
+
+	fault, err := client.GetServerFault(ctx, openstackServer.ID)
+	if err != nil {
+		// A server deleted between the list and this read is a non-event.
+		if errors.Is(err, coreerrors.ErrResourceNotFound) {
+			logger.Info("errored server disappeared before its provider fault could be read",
+				"server", server.Name, "novaServerID", openstackServer.ID)
+
+			return
+		}
+
+		logger.Error(err, "cannot read the errored server for its provider fault",
+			"server", server.Name, "novaServerID", openstackServer.ID)
+
+		return
+	}
+
+	// GetServerFault returns a value-struct pointer, so an errored server
+	// without fault detail yields a zero struct: code 0 and an empty message.
+	// Logging that verbatim is misleading, so report the absence instead.
+	if fault.Code == 0 && fault.Message == "" {
+		logger.Info("the provider reported no fault detail for the errored server",
+			"server", server.Name, "novaServerID", openstackServer.ID)
+
+		return
+	}
+
+	logger.Info("provider reports server in an error state",
+		"server", server.Name,
+		"novaServerID", openstackServer.ID,
+		"faultCode", fault.Code,
+		"faultMessage", fault.Message,
+		"faultCreated", fault.Created)
 }
 
 // markServerRebuildAccepted stamps the post-acceptance in-flight view: Active
@@ -3518,7 +3601,7 @@ func (p *Provider) updateServerStateWithClients(
 	ctx context.Context,
 	identity *unikornv1.Identity,
 	server *unikornv1.Server,
-	serverClient ServerInterface,
+	serverClient ServerObservationInterface,
 	baremetalForPhase func(context.Context, *unikornv1.Identity) (BaremetalInterface, error),
 ) error {
 	openstackServer, err := serverClient.GetServer(ctx, server)
@@ -3529,6 +3612,14 @@ func (p *Provider) updateServerStateWithClients(
 	setServerHealthStatus(server, openstackServer)
 	advanceServerRebuildState(server, openstackServer)
 	setServerMACAddress(ctx, server, openstackServer)
+
+	if enteredError := setServerObservedStatus(server, openstackServer); enteredError {
+		// The enrichment is best-effort and bounded so a hung Nova read cannot
+		// stall the whole poll cycle.
+		faultCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		logServerFault(faultCtx, serverClient, server, openstackServer)
+	}
 
 	region, _ := p.openstack.regionSnapshot()
 	baremetal := isBaremetalFlavor(region, server.Spec.FlavorID.String())

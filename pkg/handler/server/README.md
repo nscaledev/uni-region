@@ -94,8 +94,8 @@ related dependencies rather than from nested path scope.
   still applies). The `imageId` on a v1 update is ignored entirely and not
   validated — the value is discarded, so even one referencing a since-deleted
   image does not fail the update. The destructive rebuild contract below is
-  exposed — and its compatibility validation and settlement-aware status
-  reporting enforced — only by v2, so v1 must never let the stored image drift
+  exposed — and its compatibility validation enforced — only by v2, so v1 must never
+  let the stored image drift
   from the running server. This preserves v1's historical accept-and-ignore
   behaviour for image changes, now enforced at the API boundary instead of
   falling out of the old create-only image handling in the provider.

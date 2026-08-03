@@ -286,6 +286,9 @@ func TestUpdateServerStateWithClientsRecordsMACAddress(t *testing.T) {
 type stubComputeClient struct {
 	server          *servers.Server
 	requestedServer *unikornv1.Server
+	fault           *servers.Fault
+	faultErr        error
+	faultReads      int
 }
 
 func (c *stubComputeClient) CreateKeypair(context.Context, string, string) error  { return nil }
@@ -300,6 +303,19 @@ func (c *stubComputeClient) GetServer(_ context.Context, server *unikornv1.Serve
 	c.requestedServer = server
 
 	return c.server, nil
+}
+func (c *stubComputeClient) GetServerFault(context.Context, string) (*servers.Fault, error) {
+	c.faultReads++
+
+	if c.faultErr != nil {
+		return nil, c.faultErr
+	}
+
+	if c.fault == nil {
+		return &servers.Fault{}, nil
+	}
+
+	return c.fault, nil
 }
 func (c *stubComputeClient) CreateServer(context.Context, *unikornv1.Server, string, []servers.Network, *string, map[string]string) (*servers.Server, error) {
 	return nil, nil //nolint:nilnil // unused stub method

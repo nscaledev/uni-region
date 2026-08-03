@@ -155,6 +155,46 @@ stored objects rely on for linkage, migration, and operational coordination.
   `Failed` marker, until the desired image changes or the server is replaced
   — that is the only re-arm path, since there is no longer a client-facing
   retry generation to bump.
+- `Server.Status.Observed` is the partition that lets the two status writers stop
+  arbitrating. `Server` status has two writers: the reconciler drives the provider
+  toward spec, the monitor polls the provider and records what it saw. Anything they
+  share needs an ordering argument between them; anything derived exactly one way
+  does not. Every field under `Observed` comes from a single projection of one fresh
+  provider read. The monitor's poll is the normal caller but not the only one — the
+  reconciler's create-retry existence check reaches the same projection through the
+  same provider method — and that costs nothing because there is nothing to
+  arbitrate: both callers write the same derivation of the same kind of read, neither
+  advances a state, and a losing race loses on `resourceVersion` rather than
+  reverting a field. The retired `Status.Rebuild` marker failed on exactly the
+  opposite property: two writers holding different models of one field.
+  The governing rule is that **an observation never authorizes an action against
+  the provider**. Actuation is decided from a fresh provider read in the acting
+  pass, because an observation is stale by up to one poll interval and acting on
+  one would let a read taken before an operation landed authorize a second one —
+  which for a destructive operation means doing it twice. An observation may be
+  read as a precondition that *refuses* an action. This is the platform
+  specification's rule for projected status, not a local convention.
+  `Generation` is the freshness stamp: `metadata.generation` as read when the
+  snapshot was taken, so a reader can tell whether an observation postdates a spec
+  edit. It is stamped on every poll, which means the subtree exists from the first
+  poll that read the provider at all — a present subtree with no `Image` means
+  "polled, image unreadable", a different fact from an absent subtree meaning
+  "never successfully polled". The monitor patches with an optimistic lock, so a
+  write whose object moved underneath it is rejected outright and the recorded
+  generation is the one in force at write time.
+  `Image` tracks the live provider image rather than latching, but an unreadable
+  ref preserves the previous value and never clears it: a transient read miss must
+  not erase a known image, because a reader cannot tell an erased image from one
+  never observed. `Errored` is a neutral presence marker — "the provider reports
+  the server in an error state" — carrying no provider vocabulary; the provider's
+  own fault detail is written to the observing component's log at the moment of
+  observation, where operator detail belongs. It is live state and does clear on
+  an authoritative non-error read, which is safe only because an unreachable
+  provider aborts the poll without writing at all — connectivity loss can never
+  be mistaken for a recovery.
+  The `Healthy` and `Active` conditions are deliberately not in this region: the API
+  projects health from the condition, and the conditions array is shared with the
+  reconciler either way — it writes both on create and on an accepted rebuild.
 
 ## Caveats
 

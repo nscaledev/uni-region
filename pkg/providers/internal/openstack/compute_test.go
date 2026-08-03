@@ -18,6 +18,7 @@ package openstack_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
@@ -111,11 +113,13 @@ func TestRebuildServerSendsOnlyImage(t *testing.T) {
 	assert.False(t, hasUserData, "user_data must be omitted so Nova keeps the create-time user data")
 }
 
-func newServerFixture(name string) *unikornv1.Server {
+// newServerFixture is a server named test-server, matching the name the fake
+// Nova handlers list.
+func newServerFixture() *unikornv1.Server {
 	return &unikornv1.Server{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
-				coreconstants.NameLabel: name,
+				coreconstants.NameLabel: "test-server",
 			},
 		},
 		Spec: unikornv1.ServerSpec{
@@ -156,7 +160,7 @@ func TestCreateServer_HypervisorHostname(t *testing.T) {
 
 			client := openstack.NewTestComputeClient(srv.URL + "/")
 
-			server := newServerFixture("test-server")
+			server := newServerFixture()
 			server.Spec.InfrastructureRef = c.infrastructureRef
 
 			_, err := client.CreateServer(t.Context(), server, "keypair", nil, nil, nil)
@@ -171,4 +175,123 @@ func TestCreateServer_HypervisorHostname(t *testing.T) {
 			assert.Equal(t, c.wantHypervisorHost, got)
 		})
 	}
+}
+
+// faultReadNovaServer serves a fixed one-server list and a per-ID read, counting
+// the per-ID reads so tests can pin exactly when the fault fetch happens. The
+// list response never carries a fault, mirroring the Nova behaviour (up to
+// 2025.2) the dedicated per-ID fetch exists for.
+type faultReadNovaServer struct {
+	listStatus       string
+	detailHTTPStatus int
+	detailReads      int
+}
+
+func (f *faultReadNovaServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet && r.URL.Path == "/servers/detail" {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"servers":[{"id":"server-id","name":"test-server","status":%q}]}`, f.listStatus)
+
+		return
+	}
+
+	if r.Method == http.MethodGet && r.URL.Path == "/servers/server-id" {
+		f.detailReads++
+
+		if f.detailHTTPStatus != http.StatusOK {
+			http.Error(w, "boom", f.detailHTTPStatus)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"server":{"id":"server-id","name":"test-server","status":%q,`+
+			`"fault":{"code":500,"message":"No valid host was found","created":"2026-08-03T12:00:00Z"}}}`, f.listStatus)
+
+		return
+	}
+
+	http.NotFound(w, r)
+}
+
+// TestGetServerDoesNotReRead pins that GetServer is one Nova call, whatever the
+// listed status. The fault enrichment is deliberately not folded into GetServer:
+// the per-ID fault read belongs to the errored transition alone, so list reads
+// stay one call on both the monitor and reconciler paths, exactly when Nova is
+// degraded.
+func TestGetServerDoesNotReRead(t *testing.T) {
+	t.Parallel()
+
+	for _, status := range []string{"ACTIVE", "ERROR", "DELETED"} {
+		t.Run(status, func(t *testing.T) {
+			t.Parallel()
+
+			fake := &faultReadNovaServer{listStatus: status, detailHTTPStatus: http.StatusOK}
+
+			srv := httptest.NewServer(fake)
+			defer srv.Close()
+
+			client := openstack.NewTestComputeClient(srv.URL + "/")
+
+			got, err := client.GetServer(t.Context(), newServerFixture())
+			require.NoError(t, err)
+			require.Equal(t, status, got.Status)
+			assert.Zero(t, fake.detailReads, "GetServer must be served from the list alone")
+		})
+	}
+}
+
+// TestGetServerFaultReadsByID pins the enrichment itself: the fault comes from a
+// per-ID read, which carries it even where a list response omits it (Nova up to
+// 2025.2).
+func TestGetServerFaultReadsByID(t *testing.T) {
+	t.Parallel()
+
+	fake := &faultReadNovaServer{listStatus: "ERROR", detailHTTPStatus: http.StatusOK}
+
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+
+	client := openstack.NewTestComputeClient(srv.URL + "/")
+
+	fault, err := client.GetServerFault(t.Context(), "server-id")
+	require.NoError(t, err)
+	assert.Equal(t, 1, fake.detailReads)
+	assert.Equal(t, 500, fault.Code)
+	assert.Equal(t, "No valid host was found", fault.Message)
+}
+
+// TestGetServerFaultMissingServerIsNotFound pins the deleted-server mapping: the
+// caller treats a server that vanished between the list and this read as a
+// non-event, so it must be able to tell that apart from a failed read.
+func TestGetServerFaultMissingServerIsNotFound(t *testing.T) {
+	t.Parallel()
+
+	fake := &faultReadNovaServer{listStatus: "ERROR", detailHTTPStatus: http.StatusNotFound}
+
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+
+	client := openstack.NewTestComputeClient(srv.URL + "/")
+
+	_, err := client.GetServerFault(t.Context(), "server-id")
+	require.ErrorIs(t, err, coreerrors.ErrResourceNotFound)
+	assert.Equal(t, 1, fake.detailReads)
+}
+
+// TestGetServerFaultReadFailureSurfaces pins that any other failure surfaces
+// as-is: the caller degrades it to a log line, but that is the caller's call.
+func TestGetServerFaultReadFailureSurfaces(t *testing.T) {
+	t.Parallel()
+
+	fake := &faultReadNovaServer{listStatus: "ERROR", detailHTTPStatus: http.StatusInternalServerError}
+
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+
+	client := openstack.NewTestComputeClient(srv.URL + "/")
+
+	_, err := client.GetServerFault(t.Context(), "server-id")
+	require.Error(t, err)
+	require.NotErrorIs(t, err, coreerrors.ErrResourceNotFound)
+	assert.Equal(t, 1, fake.detailReads)
 }
