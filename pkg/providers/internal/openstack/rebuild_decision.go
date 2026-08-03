@@ -45,6 +45,12 @@ type rebuildInputs struct {
 	Marker         *unikornv1.ServerRebuildStatus
 	ProviderImage  string
 	ProviderOp     providerOp
+	// ProviderLaunched reports whether the provider has ever booted this server.
+	// Before first boot the image is a create parameter rather than something to
+	// converge, so this gates arming and calling — and only those. A marker that
+	// already exists must still be able to settle, park, and retarget, or a
+	// pre-boot attempt could never be retired.
+	ProviderLaunched bool
 	// AppliedImage is the deploy layer's answer to "what is actually running".
 	// Nil where no second channel applies (no baremetal node). A caller that
 	// cannot reach the second channel must not call this function at all: it
@@ -66,13 +72,16 @@ func rebuildDecision(in rebuildInputs) rebuildAction {
 		return rebuildNoop
 	}
 
-	// An empty provider image ref means we cannot decide.
-	if in.ProviderImage == "" {
+	// An empty provider image ref means we cannot decide — except from an errored
+	// provider, which is decidable on evidence that does not need the ref at all.
+	// Masking that behind the guard would leave a live marker on a terminally
+	// errored server yielding for ever instead of parking.
+	if in.ProviderImage == "" && in.ProviderOp != providerErrored {
 		return rebuildNoop
 	}
 
 	if in.Marker == nil {
-		if in.ProviderImage != in.DesiredImageID && in.ProviderOp == providerIdle {
+		if in.ProviderImage != in.DesiredImageID && in.ProviderOp == providerIdle && in.ProviderLaunched {
 			return rebuildArm
 		}
 
@@ -108,6 +117,12 @@ func rebuildDecision(in rebuildInputs) rebuildAction {
 	case in.ProviderOp == providerErrored:
 		return rebuildPark
 	case in.ProviderOp == providerIdle && in.ProviderImage == in.Marker.PreArmImageRef:
+		// Not-launched returns here rather than falling through: the rows below
+		// would park an attempt the provider was never asked to make.
+		if !in.ProviderLaunched {
+			return rebuildNoop
+		}
+
 		return rebuildCall
 	case in.ProviderOp == providerIdle:
 		return rebuildPark

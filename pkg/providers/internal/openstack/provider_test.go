@@ -1991,8 +1991,10 @@ func TestReconcileServerPreflight(t *testing.T) {
 // (managed user-data / SSH-CA) servers against the full create-path
 // interleaving: port and floating IP reconciliation write
 // Status.PrivateIP/PublicIP onto the caller's server BEFORE the augmented
-// copy is snapshotted, so the full status copy-back must preserve those
-// writes. Snapshotting the copy before port/FIP reconciliation (the original
+// copy is snapshotted, so the full status copy-back must both (a) preserve
+// those writes and (b) carry the rebuild marker back to the caller — without
+// that, the acceptance record never reaches etcd and the destructive call is
+// unbounded. Snapshotting the copy before port/FIP reconciliation (the original
 // defect placement) silently reverts PrivateIP/PublicIP on every reconcile.
 func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 	t.Parallel()
@@ -2025,12 +2027,19 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 
 	p := openstack.NewTestProvider(client, regionFixture())
 
+	// The image drift arms an attempt, which requeues rather than completing.
 	err := openstack.CreateServerWithClients(t.Context(), p, networking, compute, server, options, "")
-	require.NoError(t, err)
+	require.ErrorIs(t, err, provisioners.ErrYield)
 
-	// the port/FIP status writes must survive the copy-back.
+	// (a) the port/FIP status writes must survive the copy-back.
 	require.Equal(t, ptr.To(serverPortIP), server.Status.PrivateIP, "copy-back must not revert PrivateIP written by port reconciliation")
 	require.Equal(t, ptr.To(openstackFloatingIP.FloatingIP), server.Status.PublicIP, "copy-back must not revert PublicIP written by floating IP reconciliation")
+
+	// (b) the rebuild marker must propagate back to the caller.
+	require.NotNil(t, server.Status.Rebuild)
+	require.Equal(t, idstest.MustParseImageID(rebuildNewImageID), server.Status.Rebuild.TargetImageID)
+	require.Equal(t, rebuildOldImageID, server.Status.Rebuild.PreArmImageRef)
+	require.False(t, server.Status.Rebuild.Accepted)
 }
 
 // TestImageTagRoundTrip tests the round-trip conversion of tags:

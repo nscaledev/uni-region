@@ -2150,6 +2150,7 @@ const (
 	novaStatusBuild   = "BUILD"
 	novaStatusError   = "ERROR"
 	novaStatusRebuild = "REBUILD"
+	novaStatusShutoff = "SHUTOFF"
 	novaStatusUnknown = "UNKNOWN"
 )
 
@@ -2579,10 +2580,10 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 	if err == nil {
 		log.V(1).Info("server already exists")
 
-		// Image drift is not acted on: in-place rebuild has been removed and
-		// the API rejects image changes, so spec and provider cannot diverge
-		// here.
-		return openstackServer, nil
+		// Image drift is converged in place, one protocol action per pass. The
+		// second evidence channel is not wired in yet, so the provider's word
+		// stands for what the machine is running.
+		return reconcileServerRebuild(ctx, client, server, openstackServer, nil)
 	}
 
 	networks := []servers.Network{

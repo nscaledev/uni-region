@@ -109,6 +109,19 @@ var MetadataKey = metadataKey
 //nolint:gochecknoglobals
 var ServerForCreate = serverForCreate
 
+func ReconcileServerRebuild(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, applied *string) (*servers.Server, error) {
+	return reconcileServerRebuild(ctx, client, server, openstackServer, applied)
+}
+
+// The park messages, so the tests can pin which fresh evidence the pass cited.
+//
+//nolint:gochecknoglobals
+var (
+	RebuildParkMessageErrored    = rebuildParkMessageErrored
+	RebuildParkMessageNotApplied = rebuildParkMessageNotApplied
+	RebuildParkMessageSuperseded = rebuildParkMessageSuperseded
+)
+
 //nolint:gochecknoglobals
 var PlacementAPIMicroversion = placementAPIMicroversion
 
