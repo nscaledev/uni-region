@@ -207,6 +207,12 @@ type ServerInterface interface {
 	// (POST /api/v2/servers/{serverID}/hardreboot)
 	PostApiV2ServersServerIDHardreboot(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter)
 
+	// (DELETE /api/v2/servers/{serverID}/references/{reference})
+	DeleteApiV2ServersServerIDReferencesReference(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter, reference ReferenceParameter)
+
+	// (PUT /api/v2/servers/{serverID}/references/{reference})
+	PutApiV2ServersServerIDReferencesReference(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter, reference ReferenceParameter)
+
 	// (POST /api/v2/servers/{serverID}/snapshot)
 	PostApiV2ServersServerIDSnapshot(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter)
 
@@ -586,6 +592,16 @@ func (_ Unimplemented) GetApiV2ServersServerIDConsolesessions(w http.ResponseWri
 
 // (POST /api/v2/servers/{serverID}/hardreboot)
 func (_ Unimplemented) PostApiV2ServersServerIDHardreboot(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /api/v2/servers/{serverID}/references/{reference})
+func (_ Unimplemented) DeleteApiV2ServersServerIDReferencesReference(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter, reference ReferenceParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PUT /api/v2/servers/{serverID}/references/{reference})
+func (_ Unimplemented) PutApiV2ServersServerIDReferencesReference(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter, reference ReferenceParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3356,6 +3372,86 @@ func (siw *ServerInterfaceWrapper) PostApiV2ServersServerIDHardreboot(w http.Res
 	handler.ServeHTTP(w, r)
 }
 
+// DeleteApiV2ServersServerIDReferencesReference operation middleware
+func (siw *ServerInterfaceWrapper) DeleteApiV2ServersServerIDReferencesReference(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "serverID" -------------
+	var serverID ServerIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverID", chi.URLParam(r, "serverID"), &serverID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "reference" -------------
+	var reference ReferenceParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "reference", chi.URLParam(r, "reference"), &reference, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "reference", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteApiV2ServersServerIDReferencesReference(w, r, serverID, reference)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutApiV2ServersServerIDReferencesReference operation middleware
+func (siw *ServerInterfaceWrapper) PutApiV2ServersServerIDReferencesReference(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "serverID" -------------
+	var serverID ServerIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverID", chi.URLParam(r, "serverID"), &serverID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "reference" -------------
+	var reference ReferenceParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "reference", chi.URLParam(r, "reference"), &reference, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "reference", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutApiV2ServersServerIDReferencesReference(w, r, serverID, reference)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PostApiV2ServersServerIDSnapshot operation middleware
 func (siw *ServerInterfaceWrapper) PostApiV2ServersServerIDSnapshot(w http.ResponseWriter, r *http.Request) {
 
@@ -3999,6 +4095,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v2/servers/{serverID}/hardreboot", wrapper.PostApiV2ServersServerIDHardreboot)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v2/servers/{serverID}/references/{reference}", wrapper.DeleteApiV2ServersServerIDReferencesReference)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v2/servers/{serverID}/references/{reference}", wrapper.PutApiV2ServersServerIDReferencesReference)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v2/servers/{serverID}/snapshot", wrapper.PostApiV2ServersServerIDSnapshot)

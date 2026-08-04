@@ -316,6 +316,12 @@ type ClientInterface interface {
 	// PostApiV2ServersServerIDHardreboot request
 	PostApiV2ServersServerIDHardreboot(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// DeleteApiV2ServersServerIDReferencesReference request
+	DeleteApiV2ServersServerIDReferencesReference(ctx context.Context, serverID ServerIDParameter, reference ReferenceParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutApiV2ServersServerIDReferencesReference request
+	PutApiV2ServersServerIDReferencesReference(ctx context.Context, serverID ServerIDParameter, reference ReferenceParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PostApiV2ServersServerIDSnapshotWithBody request with any body
 	PostApiV2ServersServerIDSnapshotWithBody(ctx context.Context, serverID ServerIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1316,6 +1322,30 @@ func (c *Client) GetApiV2ServersServerIDConsolesessions(ctx context.Context, ser
 
 func (c *Client) PostApiV2ServersServerIDHardreboot(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostApiV2ServersServerIDHardrebootRequest(c.Server, serverID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteApiV2ServersServerIDReferencesReference(ctx context.Context, serverID ServerIDParameter, reference ReferenceParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApiV2ServersServerIDReferencesReferenceRequest(c.Server, serverID, reference)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiV2ServersServerIDReferencesReference(ctx context.Context, serverID ServerIDParameter, reference ReferenceParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiV2ServersServerIDReferencesReferenceRequest(c.Server, serverID, reference)
 	if err != nil {
 		return nil, err
 	}
@@ -4791,6 +4821,88 @@ func NewPostApiV2ServersServerIDHardrebootRequest(server string, serverID Server
 	return req, nil
 }
 
+// NewDeleteApiV2ServersServerIDReferencesReferenceRequest generates requests for DeleteApiV2ServersServerIDReferencesReference
+func NewDeleteApiV2ServersServerIDReferencesReferenceRequest(server string, serverID ServerIDParameter, reference ReferenceParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "serverID", runtime.ParamLocationPath, serverID)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "reference", runtime.ParamLocationPath, reference)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/servers/%s/references/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutApiV2ServersServerIDReferencesReferenceRequest generates requests for PutApiV2ServersServerIDReferencesReference
+func NewPutApiV2ServersServerIDReferencesReferenceRequest(server string, serverID ServerIDParameter, reference ReferenceParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "serverID", runtime.ParamLocationPath, serverID)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "reference", runtime.ParamLocationPath, reference)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/servers/%s/references/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewPostApiV2ServersServerIDSnapshotRequest calls the generic PostApiV2ServersServerIDSnapshot builder with application/json body
 func NewPostApiV2ServersServerIDSnapshotRequest(server string, serverID ServerIDParameter, body PostApiV2ServersServerIDSnapshotJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -5507,6 +5619,12 @@ type ClientWithResponsesInterface interface {
 
 	// PostApiV2ServersServerIDHardrebootWithResponse request
 	PostApiV2ServersServerIDHardrebootWithResponse(ctx context.Context, serverID ServerIDParameter, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDHardrebootResponse, error)
+
+	// DeleteApiV2ServersServerIDReferencesReferenceWithResponse request
+	DeleteApiV2ServersServerIDReferencesReferenceWithResponse(ctx context.Context, serverID ServerIDParameter, reference ReferenceParameter, reqEditors ...RequestEditorFn) (*DeleteApiV2ServersServerIDReferencesReferenceResponse, error)
+
+	// PutApiV2ServersServerIDReferencesReferenceWithResponse request
+	PutApiV2ServersServerIDReferencesReferenceWithResponse(ctx context.Context, serverID ServerIDParameter, reference ReferenceParameter, reqEditors ...RequestEditorFn) (*PutApiV2ServersServerIDReferencesReferenceResponse, error)
 
 	// PostApiV2ServersServerIDSnapshotWithBodyWithResponse request with any body
 	PostApiV2ServersServerIDSnapshotWithBodyWithResponse(ctx context.Context, serverID ServerIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDSnapshotResponse, error)
@@ -7245,6 +7363,57 @@ func (r PostApiV2ServersServerIDHardrebootResponse) StatusCode() int {
 	return 0
 }
 
+type DeleteApiV2ServersServerIDReferencesReferenceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteApiV2ServersServerIDReferencesReferenceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteApiV2ServersServerIDReferencesReferenceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PutApiV2ServersServerIDReferencesReferenceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r PutApiV2ServersServerIDReferencesReferenceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutApiV2ServersServerIDReferencesReferenceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type PostApiV2ServersServerIDSnapshotResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8243,6 +8412,24 @@ func (c *ClientWithResponses) PostApiV2ServersServerIDHardrebootWithResponse(ctx
 		return nil, err
 	}
 	return ParsePostApiV2ServersServerIDHardrebootResponse(rsp)
+}
+
+// DeleteApiV2ServersServerIDReferencesReferenceWithResponse request returning *DeleteApiV2ServersServerIDReferencesReferenceResponse
+func (c *ClientWithResponses) DeleteApiV2ServersServerIDReferencesReferenceWithResponse(ctx context.Context, serverID ServerIDParameter, reference ReferenceParameter, reqEditors ...RequestEditorFn) (*DeleteApiV2ServersServerIDReferencesReferenceResponse, error) {
+	rsp, err := c.DeleteApiV2ServersServerIDReferencesReference(ctx, serverID, reference, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteApiV2ServersServerIDReferencesReferenceResponse(rsp)
+}
+
+// PutApiV2ServersServerIDReferencesReferenceWithResponse request returning *PutApiV2ServersServerIDReferencesReferenceResponse
+func (c *ClientWithResponses) PutApiV2ServersServerIDReferencesReferenceWithResponse(ctx context.Context, serverID ServerIDParameter, reference ReferenceParameter, reqEditors ...RequestEditorFn) (*PutApiV2ServersServerIDReferencesReferenceResponse, error) {
+	rsp, err := c.PutApiV2ServersServerIDReferencesReference(ctx, serverID, reference, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiV2ServersServerIDReferencesReferenceResponse(rsp)
 }
 
 // PostApiV2ServersServerIDSnapshotWithBodyWithResponse request with arbitrary body returning *PostApiV2ServersServerIDSnapshotResponse
@@ -12016,6 +12203,107 @@ func ParsePostApiV2ServersServerIDHardrebootResponse(rsp *http.Response) (*PostA
 	}
 
 	response := &PostApiV2ServersServerIDHardrebootResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteApiV2ServersServerIDReferencesReferenceResponse parses an HTTP response from a DeleteApiV2ServersServerIDReferencesReferenceWithResponse call
+func ParseDeleteApiV2ServersServerIDReferencesReferenceResponse(rsp *http.Response) (*DeleteApiV2ServersServerIDReferencesReferenceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteApiV2ServersServerIDReferencesReferenceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutApiV2ServersServerIDReferencesReferenceResponse parses an HTTP response from a PutApiV2ServersServerIDReferencesReferenceWithResponse call
+func ParsePutApiV2ServersServerIDReferencesReferenceResponse(rsp *http.Response) (*PutApiV2ServersServerIDReferencesReferenceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutApiV2ServersServerIDReferencesReferenceResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

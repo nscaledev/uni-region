@@ -106,6 +106,26 @@ func (h *ServerV2Handler) DeleteApiV2ServersServerID(w http.ResponseWriter, r *h
 	w.WriteHeader(http.StatusAccepted)
 }
 
+func (h *ServerV2Handler) PutApiV2ServersServerIDReferencesReference(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter, reference openapi.ReferenceParameter) {
+	if err := h.serverV2Client().ReferenceCreateV2(r.Context(), serverID, reference); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	setUncacheable(w)
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (h *ServerV2Handler) DeleteApiV2ServersServerIDReferencesReference(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter, reference openapi.ReferenceParameter) {
+	if err := h.serverV2Client().ReferenceDeleteV2(r.Context(), serverID, reference); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	setUncacheable(w)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *ServerV2Handler) GetApiV2ServersServerIDSshkey(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	result, err := h.serverV2Client().SSHKey(r.Context(), serverID)
 	if err != nil {

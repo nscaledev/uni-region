@@ -52,6 +52,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
@@ -1908,6 +1909,83 @@ func TestServerDeleteV2_NoDeletePermission(t *testing.T) {
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
+}
+
+// aclWithSrvReferences grants region:servers read/delete and
+// region:servers/references create/delete at organization scope.
+func aclWithSrvReferences() *identityapi.Acl {
+	return &identityapi.Acl{
+		Organizations: &identityapi.AclOrganizationList{
+			{
+				Id: srvOrganizationID,
+				Endpoints: &identityapi.AclEndpoints{
+					{
+						Name:       "region:servers",
+						Operations: identityapi.AclOperations{identityapi.Read, identityapi.Delete},
+					},
+					{
+						Name:       "region:servers/references",
+						Operations: identityapi.AclOperations{identityapi.Create, identityapi.Delete},
+					},
+				},
+			},
+		},
+	}
+}
+
+// TestServerReferences proves reference creation and deletion works, is
+// idempotent, and that a present reference blocks server deletion until it is
+// removed.
+func TestServerReferences(t *testing.T) {
+	t.Parallel()
+
+	const reference = "cat"
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	resource := testServerV2(srvServerID)
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvReferences())
+
+	require.NoError(t, c.ReferenceCreateV2(ctx, idstest.MustParseServerID(srvServerID), reference))
+
+	got := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: srvServerID}, got))
+	require.Len(t, got.Finalizers, 1)
+	require.True(t, controllerutil.ContainsFinalizer(got, reference))
+
+	// Adding the same reference again is idempotent.
+	require.NoError(t, c.ReferenceCreateV2(ctx, idstest.MustParseServerID(srvServerID), reference))
+
+	got = &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: srvServerID}, got))
+	require.Len(t, got.Finalizers, 1)
+
+	// A referenced server cannot be deleted.
+	err := c.DeleteV2(ctx, idstest.MustParseServerID(srvServerID))
+	require.Error(t, err)
+	require.True(t, coreerrors.IsForbidden(err), "expected forbidden while referenced, got: %v", err)
+
+	require.NoError(t, c.ReferenceDeleteV2(ctx, idstest.MustParseServerID(srvServerID), reference))
+
+	got = &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: srvServerID}, got))
+	require.Empty(t, got.Finalizers)
+
+	// Removing the same reference again is idempotent.
+	require.NoError(t, c.ReferenceDeleteV2(ctx, idstest.MustParseServerID(srvServerID), reference))
+
+	// With the reference removed, deletion succeeds.
+	require.NoError(t, c.DeleteV2(ctx, idstest.MustParseServerID(srvServerID)))
 }
 
 // srvProjectACL grants the given region:servers operations at project scope, which

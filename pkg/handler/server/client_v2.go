@@ -33,6 +33,7 @@ import (
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/manager"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
@@ -813,12 +814,65 @@ func (c *ClientV2) DeleteV2(ctx context.Context, serverID regionids.ServerID) er
 		return err
 	}
 
+	if len(manager.GetResourceReferences(resource)) > 0 {
+		return errors.HTTPForbidden("server is in use and cannot be deleted")
+	}
+
 	if err := c.Client.Client.Delete(ctx, resource); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
 		}
 
 		return fmt.Errorf("%w: unable to delete server", err)
+	}
+
+	return nil
+}
+
+// ReferenceCreateV2 adds an external reference to the server that blocks
+// deletion until it has been removed.
+func (c *ClientV2) ReferenceCreateV2(ctx context.Context, serverID regionids.ServerID, reference string) error {
+	resource, err := c.GetV2Raw(ctx, serverID.String())
+	if err != nil {
+		return err
+	}
+
+	if err := rbac.AllowProjectScopeReader(ctx, "region:servers/references", identityapi.Create, resource); err != nil {
+		return err
+	}
+
+	if resource.DeletionTimestamp != nil {
+		return errors.OAuth2InvalidRequest("unable to add reference, resource is being deleted")
+	}
+
+	if ok := controllerutil.AddFinalizer(resource, reference); !ok {
+		return nil
+	}
+
+	if err := c.Client.Client.Update(ctx, resource); err != nil {
+		return fmt.Errorf("%w: failed to update server", err)
+	}
+
+	return nil
+}
+
+// ReferenceDeleteV2 removes an external reference from the server.
+func (c *ClientV2) ReferenceDeleteV2(ctx context.Context, serverID regionids.ServerID, reference string) error {
+	resource, err := c.GetV2Raw(ctx, serverID.String())
+	if err != nil {
+		return err
+	}
+
+	if err := rbac.AllowProjectScopeReader(ctx, "region:servers/references", identityapi.Delete, resource); err != nil {
+		return err
+	}
+
+	if ok := controllerutil.RemoveFinalizer(resource, reference); !ok {
+		return nil
+	}
+
+	if err := c.Client.Client.Update(ctx, resource); err != nil {
+		return fmt.Errorf("%w: failed to update server", err)
 	}
 
 	return nil
