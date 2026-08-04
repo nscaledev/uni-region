@@ -71,14 +71,6 @@ func providerCreateFailureUpdate(e event.TypedUpdateEvent[*unikornv1.Server]) bo
 	return !server.ProviderCreateFailure(e.ObjectOld) && server.ProviderCreateFailure(e.ObjectNew)
 }
 
-func serverRebuildSettledUpdate(e event.TypedUpdateEvent[*unikornv1.Server]) bool {
-	if e.ObjectOld == nil || e.ObjectNew == nil {
-		return false
-	}
-
-	return server.RebuildSettled(e.ObjectOld, e.ObjectNew)
-}
-
 // serverObservedUpdate wakes the reconciler when the status.observed region moves.
 // Compared rather than tested for presence: a predicate sees only the old and new
 // objects, so an uncompared arm fires on every update. The reconciler's own
@@ -101,9 +93,6 @@ func (*Factory) RegisterWatches(manager manager.Manager, controller controller.C
 		predicate.TypedGenerationChangedPredicate[*unikornv1.Server]{},
 		predicate.TypedFuncs[*unikornv1.Server]{
 			UpdateFunc: providerCreateFailureUpdate,
-		},
-		predicate.TypedFuncs[*unikornv1.Server]{
-			UpdateFunc: serverRebuildSettledUpdate,
 		},
 		predicate.TypedFuncs[*unikornv1.Server]{
 			UpdateFunc: serverObservedUpdate,

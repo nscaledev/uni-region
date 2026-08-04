@@ -2805,86 +2805,6 @@ func (p *Provider) reconcileLoadBalancerFloatingIP(ctx context.Context, client F
 	return nil
 }
 
-// serverRebuildStateRank orders the rebuild states for the forward-only
-// advancement rule: Initiated < Rebuilding < Succeeded == Failed. The two
-// terminals share a rank, so neither can supersede the other.
-func serverRebuildStateRank(state unikornv1.ServerRebuildState) int {
-	switch state {
-	case unikornv1.ServerRebuildStateInitiated:
-		return 1
-	case unikornv1.ServerRebuildStateRebuilding:
-		return 2
-	case unikornv1.ServerRebuildStateSucceeded, unikornv1.ServerRebuildStateFailed:
-		return 3
-	default:
-		return 0
-	}
-}
-
-// advanceRebuildState advances the marker to state unless the forward-only rank
-// check makes it a no-op. Every reconciler- and monitor-side advance goes
-// through here, so a late or duplicate observation can never retreat a state.
-func advanceRebuildState(rebuild *unikornv1.ServerRebuildStatus, state unikornv1.ServerRebuildState) {
-	if serverRebuildStateRank(state) <= serverRebuildStateRank(rebuild.State) {
-		return
-	}
-
-	rebuild.State = state
-}
-
-// advanceServerRebuildState advances Status.Rebuild.State from a fresh Nova
-// read. It is forward-only, and advances only on evidence attributable to the
-// marker's target — by image ref, since Nova flips the ref to the target
-// atomically with task_state at accept and this protocol never resubmits once
-// the fresh ref already equals the target. It never creates, clears, or
-// retargets the marker.
-//
-//nolint:cyclop // Fan-out mirrors the rebuild observation truth table (image-ref class × status/task evidence); collapsing it would scatter the attribution rules.
-func advanceServerRebuildState(server *unikornv1.Server, openstackServer *servers.Server) {
-	rebuild := server.Status.Rebuild
-	if rebuild == nil {
-		return
-	}
-
-	imageID, refReadable := openstackServerImageID(openstackServer)
-	converged := refReadable && imageID == rebuild.TargetImageID
-	taskActive := serverRebuildTaskActive(openstackServer)
-	accepted := serverRebuildStateRank(rebuild.State) >= serverRebuildStateRank(unikornv1.ServerRebuildStateRebuilding)
-
-	switch {
-	case converged:
-		switch {
-		case openstackServer.Status == novaStatusError:
-			advanceRebuildState(rebuild, unikornv1.ServerRebuildStateFailed)
-		case taskActive:
-			advanceRebuildState(rebuild, unikornv1.ServerRebuildStateRebuilding)
-		default:
-			advanceRebuildState(rebuild, unikornv1.ServerRebuildStateSucceeded)
-		}
-	case refReadable:
-		if accepted && (openstackServer.Status == novaStatusError || !taskActive) {
-			advanceRebuildState(rebuild, unikornv1.ServerRebuildStateFailed)
-		}
-	default:
-		if accepted && openstackServer.Status == novaStatusError {
-			advanceRebuildState(rebuild, unikornv1.ServerRebuildStateFailed)
-		}
-	}
-}
-
-// serverRebuildTaskActive reports whether a rebuild-relevant operation is in
-// flight. task_state is the authoritative signal: non-empty for the whole
-// rebuild window, empty at rest. This is what lets a converged read mean
-// completion: Nova flips the image ref to the target and sets task_state
-// together at accept, so (ref == target ∧ task_state empty) is unobservable
-// while a rebuild is in flight and therefore uniquely means it is done. REBUILD
-// is folded in defensively — Nova projects it only from an active rebuild task,
-// so REBUILD with an empty task_state is unreachable, and if seen is treated as
-// active, never as quiescence.
-func serverRebuildTaskActive(openstackServer *servers.Server) bool {
-	return openstackServer.TaskState != "" || openstackServer.Status == novaStatusRebuild
-}
-
 // Nova's rebuild_states tuple is "rebuilding", "rebuild_block_device_mapping"
 // and "rebuild_spawning". A rebuild keeps vm_state ACTIVE and rides task_state,
 // so this family identifies one, not the vm_state. It is matched by prefix, not
@@ -3543,7 +3463,6 @@ func (p *Provider) updateServerStateWithClients(
 	}
 
 	setServerHealthStatus(server, openstackServer)
-	advanceServerRebuildState(server, openstackServer)
 	setServerMACAddress(ctx, server, openstackServer)
 
 	if enteredError := setServerObservedStatus(server, openstackServer); enteredError {
