@@ -1485,6 +1485,37 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/servers/{serverID}/conditions/{condition}:
+    description: |-
+      Manages externally-driven status conditions on a server. A condition set
+      here is written to the server's status; naming it in the server's
+      readiness gates blocks provider create until it reports True.
+    parameters:
+    - $ref: '#/components/parameters/serverIDParameter'
+    - $ref: '#/components/parameters/conditionParameter'
+    put:
+      x-hidden: true
+      description: |
+        Idempotent set of a single status condition on a server.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/serverConditionWriteRequest'
+      responses:
+        '200':
+          description: Condition successfully updated.
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/servers/{serverID}/sshkey:
     description: |-
       Manages servers.
@@ -1928,6 +1959,13 @@ components:
       name: reference
       in: path
       description: A resource reference.
+      required: true
+      schema:
+        type: string
+    conditionParameter:
+      name: condition
+      in: path
+      description: The name of a status condition type.
       required: true
       schema:
         type: string
@@ -3514,6 +3552,26 @@ components:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/serverV2Spec'
+    serverConditionWrite:
+      description: A single status condition to set on a server.
+      type: object
+      required:
+      - status
+      - reason
+      properties:
+        status:
+          description: The condition status.
+          type: string
+          enum:
+          - "True"
+          - "False"
+          - "Unknown"
+        reason:
+          description: A one-word CamelCase reason for the condition's status.
+          type: string
+        message:
+          description: A human readable message describing the condition.
+          type: string
     consoleSession:
       description: A console session response.
       type: object
@@ -4249,6 +4307,16 @@ components:
                 allowedSourceAddresses:
                 - 192.168.192.0/24
               userData: I2Nsb3VkLWNvbmZpZwpib290Y21kOgogLSBlY2hvIDE5Mi4xNjguMi45OSBteWhvc3QgPj4gL2V0Yy9ob3N0cwpwYWNrYWdlX3VwZ3JhZGU6IHRydWUKcGFja2FnZXM6CiAtIHZpbQo=
+    serverConditionWriteRequest:
+      description: A request to set a server status condition.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/serverConditionWrite'
+          example:
+            status: "True"
+            reason: Provisioned
+            message: InfiniBand partition ready
 
     snapshotServerRequest:
       description: A request to create an image by snapshoting a server.

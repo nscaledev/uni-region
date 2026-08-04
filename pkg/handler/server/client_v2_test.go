@@ -46,6 +46,7 @@ import (
 	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -75,7 +76,7 @@ func newSrvFakeClient(t *testing.T, objects ...runtime.Object) *fake.ClientBuild
 	scheme := runtime.NewScheme()
 	require.NoError(t, regionv1.AddToScheme(scheme))
 
-	builder := fake.NewClientBuilder().WithScheme(scheme)
+	builder := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&regionv1.Server{})
 
 	for _, o := range objects {
 		builder = builder.WithRuntimeObjects(o)
@@ -1986,6 +1987,96 @@ func TestServerReferences(t *testing.T) {
 
 	// With the reference removed, deletion succeeds.
 	require.NoError(t, c.DeleteV2(ctx, idstest.MustParseServerID(srvServerID)))
+}
+
+// aclWithSrvConditions grants region:servers read and region:servers/conditions
+// update at organization scope.
+func aclWithSrvConditions() *identityapi.Acl {
+	return &identityapi.Acl{
+		Organizations: &identityapi.AclOrganizationList{
+			{
+				Id: srvOrganizationID,
+				Endpoints: &identityapi.AclEndpoints{
+					{
+						Name:       "region:servers",
+						Operations: identityapi.AclOperations{identityapi.Read},
+					},
+					{
+						Name:       "region:servers/conditions",
+						Operations: identityapi.AclOperations{identityapi.Update},
+					},
+				},
+			},
+		},
+	}
+}
+
+// TestServerSetCondition proves SetConditionV2 writes an idempotent status
+// condition to the server's status subresource, and that transitioning the
+// status updates the existing condition rather than appending a new one.
+func TestServerSetCondition(t *testing.T) {
+	t.Parallel()
+
+	const conditionType = "InfiniBandReady"
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	resource := testServerV2(srvServerID)
+
+	k8sClient := newSrvFakeClient(t, resource).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvConditions())
+
+	message := "InfiniBand partition ready"
+
+	require.NoError(t, c.SetConditionV2(ctx, idstest.MustParseServerID(srvServerID), conditionType, &openapi.ServerConditionWrite{
+		Status:  openapi.ServerConditionWriteStatusTrue,
+		Reason:  "Provisioned",
+		Message: &message,
+	}))
+
+	got := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: srvServerID}, got))
+
+	condition := meta.FindStatusCondition(got.Status.Conditions, conditionType)
+	require.NotNil(t, condition)
+	require.Equal(t, metav1.ConditionTrue, condition.Status)
+	require.Equal(t, "Provisioned", condition.Reason)
+	require.Equal(t, message, condition.Message)
+
+	// Setting the same condition type again is idempotent: it transitions the
+	// existing condition rather than appending a new one.
+	require.NoError(t, c.SetConditionV2(ctx, idstest.MustParseServerID(srvServerID), conditionType, &openapi.ServerConditionWrite{
+		Status: openapi.ServerConditionWriteStatusFalse,
+		Reason: "Deprovisioned",
+	}))
+
+	got = &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: srvServerID}, got))
+
+	require.Len(t, got.Status.Conditions, 1)
+
+	condition = meta.FindStatusCondition(got.Status.Conditions, conditionType)
+	require.NotNil(t, condition)
+	require.Equal(t, metav1.ConditionFalse, condition.Status)
+	require.Equal(t, "Deprovisioned", condition.Reason)
+
+	// An unauthorized caller (no region:servers/conditions scope) is rejected.
+	unauthorizedCtx := rbac.NewContext(t.Context(), aclWithSrvReadOnly(srvOrganizationID))
+
+	err := c.SetConditionV2(unauthorizedCtx, idstest.MustParseServerID(srvServerID), conditionType, &openapi.ServerConditionWrite{
+		Status: openapi.ServerConditionWriteStatusTrue,
+		Reason: "Provisioned",
+	})
+	require.Error(t, err)
+	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
 }
 
 // srvProjectACL grants the given region:servers operations at project scope, which

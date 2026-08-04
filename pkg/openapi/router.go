@@ -198,6 +198,9 @@ type ServerInterface interface {
 	// (PUT /api/v2/servers/{serverID})
 	PutApiV2ServersServerID(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter)
 
+	// (PUT /api/v2/servers/{serverID}/conditions/{condition})
+	PutApiV2ServersServerIDConditionsCondition(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter, condition ConditionParameter)
+
 	// (GET /api/v2/servers/{serverID}/consoleoutput)
 	GetApiV2ServersServerIDConsoleoutput(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter, params GetApiV2ServersServerIDConsoleoutputParams)
 
@@ -577,6 +580,11 @@ func (_ Unimplemented) GetApiV2ServersServerID(w http.ResponseWriter, r *http.Re
 
 // (PUT /api/v2/servers/{serverID})
 func (_ Unimplemented) PutApiV2ServersServerID(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PUT /api/v2/servers/{serverID}/conditions/{condition})
+func (_ Unimplemented) PutApiV2ServersServerIDConditionsCondition(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter, condition ConditionParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3268,6 +3276,46 @@ func (siw *ServerInterfaceWrapper) PutApiV2ServersServerID(w http.ResponseWriter
 	handler.ServeHTTP(w, r)
 }
 
+// PutApiV2ServersServerIDConditionsCondition operation middleware
+func (siw *ServerInterfaceWrapper) PutApiV2ServersServerIDConditionsCondition(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "serverID" -------------
+	var serverID ServerIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverID", chi.URLParam(r, "serverID"), &serverID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "condition" -------------
+	var condition ConditionParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "condition", chi.URLParam(r, "condition"), &condition, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "condition", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutApiV2ServersServerIDConditionsCondition(w, r, serverID, condition)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetApiV2ServersServerIDConsoleoutput operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV2ServersServerIDConsoleoutput(w http.ResponseWriter, r *http.Request) {
 
@@ -4086,6 +4134,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v2/servers/{serverID}", wrapper.PutApiV2ServersServerID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v2/servers/{serverID}/conditions/{condition}", wrapper.PutApiV2ServersServerIDConditionsCondition)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/servers/{serverID}/consoleoutput", wrapper.GetApiV2ServersServerIDConsoleoutput)

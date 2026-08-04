@@ -87,6 +87,13 @@ const (
 	RegionTypeSimulated  RegionType = "simulated"
 )
 
+// Defines values for ServerConditionWriteStatus.
+const (
+	ServerConditionWriteStatusFalse   ServerConditionWriteStatus = "False"
+	ServerConditionWriteStatusTrue    ServerConditionWriteStatus = "True"
+	ServerConditionWriteStatusUnknown ServerConditionWriteStatus = "Unknown"
+)
+
 // Defines values for SshInjection.
 const (
 	SshInjectionCa              SshInjection = "ca"
@@ -1011,6 +1018,21 @@ type SecurityGroupsRead = []SecurityGroupRead
 // SecurityGroupsV2Read A list of security groups.
 type SecurityGroupsV2Read = []SecurityGroupV2Read
 
+// ServerConditionWrite A single status condition to set on a server.
+type ServerConditionWrite struct {
+	// Message A human readable message describing the condition.
+	Message *string `json:"message,omitempty"`
+
+	// Reason A one-word CamelCase reason for the condition's status.
+	Reason string `json:"reason"`
+
+	// Status The condition status.
+	Status ServerConditionWriteStatus `json:"status"`
+}
+
+// ServerConditionWriteStatus The condition status.
+type ServerConditionWriteStatus string
+
 // ServerId A server ID.
 type ServerId = regionids.ServerID
 
@@ -1602,6 +1624,9 @@ type VolumeClassV2Spec struct {
 	RegionId RegionId `json:"regionId"`
 }
 
+// ConditionParameter defines model for conditionParameter.
+type ConditionParameter = string
+
 // FilestorageIDParameter A file storage ID.
 type FilestorageIDParameter = FileStorageId
 
@@ -1781,6 +1806,9 @@ type SecurityGroupV2CreateRequest = SecurityGroupV2Create
 
 // SecurityGroupV2UpdateRequest A security group request.
 type SecurityGroupV2UpdateRequest = SecurityGroupV2Update
+
+// ServerConditionWriteRequest A single status condition to set on a server.
+type ServerConditionWriteRequest = ServerConditionWrite
 
 // ServerRequest A server request.
 type ServerRequest = ServerWrite
@@ -2008,6 +2036,9 @@ type PostApiV2ServersJSONRequestBody = ServerV2Create
 
 // PutApiV2ServersServerIDJSONRequestBody defines body for PutApiV2ServersServerID for application/json ContentType.
 type PutApiV2ServersServerIDJSONRequestBody = ServerV2Update
+
+// PutApiV2ServersServerIDConditionsConditionJSONRequestBody defines body for PutApiV2ServersServerIDConditionsCondition for application/json ContentType.
+type PutApiV2ServersServerIDConditionsConditionJSONRequestBody = ServerConditionWrite
 
 // PostApiV2ServersServerIDSnapshotJSONRequestBody defines body for PostApiV2ServersServerIDSnapshot for application/json ContentType.
 type PostApiV2ServersServerIDSnapshotJSONRequestBody = SnapshotCreate

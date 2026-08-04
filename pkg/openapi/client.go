@@ -307,6 +307,11 @@ type ClientInterface interface {
 
 	PutApiV2ServersServerID(ctx context.Context, serverID ServerIDParameter, body PutApiV2ServersServerIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PutApiV2ServersServerIDConditionsConditionWithBody request with any body
+	PutApiV2ServersServerIDConditionsConditionWithBody(ctx context.Context, serverID ServerIDParameter, condition ConditionParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PutApiV2ServersServerIDConditionsCondition(ctx context.Context, serverID ServerIDParameter, condition ConditionParameter, body PutApiV2ServersServerIDConditionsConditionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApiV2ServersServerIDConsoleoutput request
 	GetApiV2ServersServerIDConsoleoutput(ctx context.Context, serverID ServerIDParameter, params *GetApiV2ServersServerIDConsoleoutputParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1286,6 +1291,30 @@ func (c *Client) PutApiV2ServersServerIDWithBody(ctx context.Context, serverID S
 
 func (c *Client) PutApiV2ServersServerID(ctx context.Context, serverID ServerIDParameter, body PutApiV2ServersServerIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPutApiV2ServersServerIDRequest(c.Server, serverID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiV2ServersServerIDConditionsConditionWithBody(ctx context.Context, serverID ServerIDParameter, condition ConditionParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiV2ServersServerIDConditionsConditionRequestWithBody(c.Server, serverID, condition, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiV2ServersServerIDConditionsCondition(ctx context.Context, serverID ServerIDParameter, condition ConditionParameter, body PutApiV2ServersServerIDConditionsConditionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiV2ServersServerIDConditionsConditionRequest(c.Server, serverID, condition, body)
 	if err != nil {
 		return nil, err
 	}
@@ -4697,6 +4726,60 @@ func NewPutApiV2ServersServerIDRequestWithBody(server string, serverID ServerIDP
 	return req, nil
 }
 
+// NewPutApiV2ServersServerIDConditionsConditionRequest calls the generic PutApiV2ServersServerIDConditionsCondition builder with application/json body
+func NewPutApiV2ServersServerIDConditionsConditionRequest(server string, serverID ServerIDParameter, condition ConditionParameter, body PutApiV2ServersServerIDConditionsConditionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutApiV2ServersServerIDConditionsConditionRequestWithBody(server, serverID, condition, "application/json", bodyReader)
+}
+
+// NewPutApiV2ServersServerIDConditionsConditionRequestWithBody generates requests for PutApiV2ServersServerIDConditionsCondition with any type of body
+func NewPutApiV2ServersServerIDConditionsConditionRequestWithBody(server string, serverID ServerIDParameter, condition ConditionParameter, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "serverID", runtime.ParamLocationPath, serverID)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "condition", runtime.ParamLocationPath, condition)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/servers/%s/conditions/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetApiV2ServersServerIDConsoleoutputRequest generates requests for GetApiV2ServersServerIDConsoleoutput
 func NewGetApiV2ServersServerIDConsoleoutputRequest(server string, serverID ServerIDParameter, params *GetApiV2ServersServerIDConsoleoutputParams) (*http.Request, error) {
 	var err error
@@ -5610,6 +5693,11 @@ type ClientWithResponsesInterface interface {
 	PutApiV2ServersServerIDWithBodyWithResponse(ctx context.Context, serverID ServerIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiV2ServersServerIDResponse, error)
 
 	PutApiV2ServersServerIDWithResponse(ctx context.Context, serverID ServerIDParameter, body PutApiV2ServersServerIDJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiV2ServersServerIDResponse, error)
+
+	// PutApiV2ServersServerIDConditionsConditionWithBodyWithResponse request with any body
+	PutApiV2ServersServerIDConditionsConditionWithBodyWithResponse(ctx context.Context, serverID ServerIDParameter, condition ConditionParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiV2ServersServerIDConditionsConditionResponse, error)
+
+	PutApiV2ServersServerIDConditionsConditionWithResponse(ctx context.Context, serverID ServerIDParameter, condition ConditionParameter, body PutApiV2ServersServerIDConditionsConditionJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiV2ServersServerIDConditionsConditionResponse, error)
 
 	// GetApiV2ServersServerIDConsoleoutputWithResponse request
 	GetApiV2ServersServerIDConsoleoutputWithResponse(ctx context.Context, serverID ServerIDParameter, params *GetApiV2ServersServerIDConsoleoutputParams, reqEditors ...RequestEditorFn) (*GetApiV2ServersServerIDConsoleoutputResponse, error)
@@ -7283,6 +7371,33 @@ func (r PutApiV2ServersServerIDResponse) StatusCode() int {
 	return 0
 }
 
+type PutApiV2ServersServerIDConditionsConditionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON422      *externalRef0.UnprocessableContentResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r PutApiV2ServersServerIDConditionsConditionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutApiV2ServersServerIDConditionsConditionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetApiV2ServersServerIDConsoleoutputResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8385,6 +8500,23 @@ func (c *ClientWithResponses) PutApiV2ServersServerIDWithResponse(ctx context.Co
 		return nil, err
 	}
 	return ParsePutApiV2ServersServerIDResponse(rsp)
+}
+
+// PutApiV2ServersServerIDConditionsConditionWithBodyWithResponse request with arbitrary body returning *PutApiV2ServersServerIDConditionsConditionResponse
+func (c *ClientWithResponses) PutApiV2ServersServerIDConditionsConditionWithBodyWithResponse(ctx context.Context, serverID ServerIDParameter, condition ConditionParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiV2ServersServerIDConditionsConditionResponse, error) {
+	rsp, err := c.PutApiV2ServersServerIDConditionsConditionWithBody(ctx, serverID, condition, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiV2ServersServerIDConditionsConditionResponse(rsp)
+}
+
+func (c *ClientWithResponses) PutApiV2ServersServerIDConditionsConditionWithResponse(ctx context.Context, serverID ServerIDParameter, condition ConditionParameter, body PutApiV2ServersServerIDConditionsConditionJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiV2ServersServerIDConditionsConditionResponse, error) {
+	rsp, err := c.PutApiV2ServersServerIDConditionsCondition(ctx, serverID, condition, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiV2ServersServerIDConditionsConditionResponse(rsp)
 }
 
 // GetApiV2ServersServerIDConsoleoutputWithResponse request returning *GetApiV2ServersServerIDConsoleoutputResponse
@@ -12025,6 +12157,67 @@ func ParsePutApiV2ServersServerIDResponse(rsp *http.Response) (*PutApiV2ServersS
 		}
 		response.JSON202 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest externalRef0.UnprocessableContentResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutApiV2ServersServerIDConditionsConditionResponse parses an HTTP response from a PutApiV2ServersServerIDConditionsConditionWithResponse call
+func ParsePutApiV2ServersServerIDConditionsConditionResponse(rsp *http.Response) (*PutApiV2ServersServerIDConditionsConditionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutApiV2ServersServerIDConditionsConditionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest externalRef0.BadRequestResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

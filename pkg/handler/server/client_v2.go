@@ -57,6 +57,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"github.com/unikorn-cloud/region/pkg/userdata"
 
+	k8score "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
@@ -873,6 +874,34 @@ func (c *ClientV2) ReferenceDeleteV2(ctx context.Context, serverID regionids.Ser
 
 	if err := c.Client.Client.Update(ctx, resource); err != nil {
 		return fmt.Errorf("%w: failed to update server", err)
+	}
+
+	return nil
+}
+
+// SetConditionV2 sets a single status condition on the server. It is the write
+// path behind readiness gates: an external controller (e.g. ib-manager) drives
+// a named condition True once its out-of-band prerequisite is satisfied,
+// releasing the server provisioner's readiness-gate wait.
+func (c *ClientV2) SetConditionV2(ctx context.Context, serverID regionids.ServerID, condition string, request *openapi.ServerConditionWrite) error {
+	resource, err := c.GetV2Raw(ctx, serverID.String())
+	if err != nil {
+		return err
+	}
+
+	if err := rbac.AllowProjectScopeReader(ctx, "region:servers/conditions", identityapi.Update, resource); err != nil {
+		return err
+	}
+
+	message := ""
+	if request.Message != nil {
+		message = *request.Message
+	}
+
+	corev1.UpdateCondition(&resource.Status.Conditions, corev1.ConditionType(condition), k8score.ConditionStatus(request.Status), request.Reason, message)
+
+	if err := c.Client.Client.Status().Update(ctx, resource); err != nil {
+		return fmt.Errorf("%w: failed to update server condition", err)
 	}
 
 	return nil

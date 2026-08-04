@@ -126,6 +126,23 @@ func (h *ServerV2Handler) DeleteApiV2ServersServerIDReferencesReference(w http.R
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *ServerV2Handler) PutApiV2ServersServerIDConditionsCondition(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter, condition openapi.ConditionParameter) {
+	request := &openapi.ServerConditionWrite{}
+
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	if err := h.serverV2Client().SetConditionV2(r.Context(), serverID, condition, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	setUncacheable(w)
+	w.WriteHeader(http.StatusOK)
+}
+
 func (h *ServerV2Handler) GetApiV2ServersServerIDSshkey(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	result, err := h.serverV2Client().SSHKey(r.Context(), serverID)
 	if err != nil {
