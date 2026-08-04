@@ -1174,8 +1174,7 @@ const (
 	// ActiveConditionReasonRebuilding means the provider is reimaging an already
 	// provisioned server (Nova REBUILD): it is not usable until the reimage
 	// completes. Distinct from Building (a first provision) so a rebuild is
-	// legible on the Active axis; the fine-grained rebuild progress rides
-	// Status.Rebuild.
+	// legible on the Active axis.
 	ActiveConditionReasonRebuilding ActiveConditionReason = "Rebuilding"
 	// ActiveConditionReasonRunning means the server is running and usable; this is
 	// the only reason for which the Active condition Status is True.
@@ -1235,15 +1234,6 @@ type ServerStatus struct {
 	// ProviderCreateRetrying is true while the controller is deleting a failed
 	// provider server before making another create attempt.
 	ProviderCreateRetrying bool `json:"providerCreateRetrying,omitempty"`
-	// Rebuild records the most recent Region-issued rebuild intent for a target
-	// image. It is cleared once the server converges on that image. Nova remains
-	// authoritative for the live server image and operation state; this marker is
-	// used to classify an error observed while rebuild intent is retained; an
-	// error arriving after an unobserved success is indistinguishable from a
-	// failed rebuild and is treated as one (fails closed).
-	// An accepted attempt that later fails parks the server until the desired
-	// image changes or the server is replaced.
-	Rebuild *ServerRebuildStatus `json:"rebuild,omitempty"`
 	// Volumes reflects the observed attachment state for each desired volume.
 	// +listType=map
 	// +listMapKey=id
@@ -1278,41 +1268,6 @@ type ServerObservedStatus struct {
 	// vocabulary, where operator detail belongs.
 	// +optional
 	Errored bool `json:"errored,omitempty"`
-}
-
-// ServerRebuildState describes where an in-place rebuild is in its lifecycle.
-type ServerRebuildState string
-
-const (
-	// ServerRebuildStateInitiated records write-ahead intent: the rebuild is
-	// armed and durable, but Nova has not been asked to act.
-	ServerRebuildStateInitiated ServerRebuildState = "Initiated"
-	// ServerRebuildStateRebuilding records that Nova has accepted or been
-	// observed acting on the rebuild.
-	ServerRebuildStateRebuilding ServerRebuildState = "Rebuilding"
-	// ServerRebuildStateSucceeded records an observed convergence: the image
-	// ref matches the target and the server is in a stable, non-error state.
-	ServerRebuildStateSucceeded ServerRebuildState = "Succeeded"
-	// ServerRebuildStateFailed records an observed failure: the server entered
-	// ERROR after Nova acted on the rebuild.
-	ServerRebuildStateFailed ServerRebuildState = "Failed"
-)
-
-type ServerRebuildStatus struct {
-	// TargetImageID is the desired image of the rebuild Region issued. It is
-	// write-ahead intent: the provider persists it (via a yield) before Nova
-	// is asked to act, because it is the one fact a failed rebuild cannot be
-	// distinguished from an unrelated failure without.
-	TargetImageID regionids.ImageID `json:"targetImageID"`
-	// State is forward-only (Initiated < Rebuilding < Succeeded == Failed;
-	// terminals are peers and never flip — first observation wins), with one
-	// exception: the reconciler's park assigns Failed directly, even over
-	// Succeeded. It is advanced by the reconciler (Initiated at arm, Rebuilding
-	// at accept) and by the monitor's provider poll (Rebuilding/Succeeded/Failed
-	// from observed Nova evidence); only the reconciler ever clears or replaces
-	// the struct.
-	// +kubebuilder:validation:Enum=Initiated;Rebuilding;Succeeded;Failed
-	State ServerRebuildState `json:"state"`
 }
 
 type ServerVolumeStatus struct {

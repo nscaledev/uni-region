@@ -133,7 +133,6 @@ func TestReconcileServerImageSubmitsOnFirstPass(t *testing.T) {
 
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
 	require.ErrorIs(t, err, provisioners.ErrYield, "an accepted rebuild is in flight, so the pass must not report the server settled")
-	require.Nil(t, server.Status.Rebuild, "the fresh-read design persists no rebuild marker")
 	requireRebuildAcceptedStamp(t, server)
 }
 
@@ -386,24 +385,6 @@ func TestReconcileServerImageRejectionSurfaces(t *testing.T) {
 		"a 5xx can heal without a generation bump, so parking it would strand the server")
 	require.False(t, provisioners.IsTerminal(err))
 	requireNoReconcilerStamp(t, server)
-}
-
-// TestReconcileServerImageRetiresStaleMarker pins the upgrade migration: a server
-// carrying a marker from the state-machine design has it cleared, so nothing is left
-// that RebuildPending would report as provisioning forever.
-func TestReconcileServerImageRetiresStaleMarker(t *testing.T) {
-	t.Parallel()
-
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	server := desiredRebuildServer()
-	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{
-		TargetImageID: idstest.MustParseImageID(rebuildNewImageID),
-		State:         unikornv1.ServerRebuildStateRebuilding,
-	}
-
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildNewImageID))
-	require.NoError(t, err)
-	require.Nil(t, server.Status.Rebuild)
 }
 
 // TestReconcileServerImageNotFoundBadRequestParks pins that Nova's synchronous

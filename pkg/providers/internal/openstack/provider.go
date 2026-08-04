@@ -3042,12 +3042,6 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 //	R4′  ref != desired, task in flight  → yield; something else holds the server.
 //	R4″  ref != desired, quiescent       → submit. The one destructive row.
 func reconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
-	// Retire the rebuild marker this pass replaces. Clearing it here rather than in
-	// the schema change means a server mid-rebuild across the upgrade does not keep
-	// a marker nothing will ever clear, which RebuildPending would otherwise report
-	// as provisioning forever.
-	server.Status.Rebuild = nil
-
 	// R1: the spec names no image. Image is in the CRD's required list, so this
 	// is dead code in practice, but completing would report a server provisioned
 	// onto no image. The only remedy is a spec edit, which is the park contract.
