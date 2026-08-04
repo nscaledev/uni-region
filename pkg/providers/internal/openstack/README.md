@@ -279,7 +279,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     attach/detach are intentionally outside this lifecycle slice
 - Flavor export is a hybrid model: OpenStack discovers the flavor inventory, but
   region configuration can enrich or override user-facing flavor metadata such
-  as architecture, baremetal status, and GPU semantics. The baremetal flag is
+  as architecture, baremetal status, and GPU semantics. Architecture resolves
+  from per-flavor `cpu.architecture`, then `openstack.defaultArchitecture`,
+  then the legacy `x86_64` fallback for objects that bypass CRD defaulting. The
+  baremetal flag is
   also operationally meaningful for live lifecycle (`Active` condition) reporting:
   a Nova `BUILD` server with a baremetal flavor is disambiguated through Ironic so the API
   can distinguish `Queued` (waiting on hardware) from `Building` (provider
@@ -309,6 +312,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - public images can additionally be signature-verified
   - image properties are translated into provider-neutral OS, package, GPU,
     ownership, virtualization, and tag metadata
+  - an explicit Glance `architecture` property wins; otherwise image conversion
+    uses `openstack.defaultArchitecture`, with the same defensive legacy
+    `x86_64` fallback as flavor conversion
   - an optional refresh-ahead cache exists because raw image API latency is too
     expensive to expose directly to every caller
 - Quota and role behaviour are not purely discovered from OpenStack defaults.

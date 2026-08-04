@@ -34,6 +34,10 @@ organization: nscaledev
 #       # Defaults to the release namespace if not specified.
 #       namespace: default
 #       name: openstack-admin-secret
+#     # Fallback for flavors without per-ID cpu.architecture metadata and images
+#     # without an explicit Glance architecture property. Explicit metadata wins.
+#     # Defaults to x86_64.
+#     defaultArchitecture: x86_64
 #     # Identity service configuration.
 #     identity:
 #       # Roles to be assigned to application credentials that are used for

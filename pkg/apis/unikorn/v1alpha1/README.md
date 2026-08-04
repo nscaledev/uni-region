@@ -39,6 +39,11 @@ stored objects rely on for linkage, migration, and operational coordination.
   region. It carries provider type, provider-specific configuration, stored
   visibility inputs, flavor/image/network/volume-class selection rules, and
   helper methods that downstream code actively depends on.
+- `Region.Spec.Openstack.DefaultArchitecture` controls the Region-scoped
+  fallback used when OpenStack flavor or image inventory lacks explicit
+  architecture metadata. CRD admission defaults omission to `x86_64` and
+  accepts only `x86_64` or `aarch64`; per-flavor `cpu.architecture` and the
+  Glance `architecture` property remain authoritative when present.
 - OpenStack `VolumeClass` configuration is Region-scoped inventory metadata. It
   records which provider volume classes are eligible for export and how that
   inventory should be enriched; it does not create a project-owned

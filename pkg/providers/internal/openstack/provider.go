@@ -35,6 +35,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
 	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumetypes"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
@@ -451,20 +452,33 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	}
 
 	region, _ := p.openstack.regionSnapshot()
+
+	return convertFlavors(resources, region), nil
+}
+
+// openstackDefaultArchitecture resolves the Region-configured fallback while
+// retaining the legacy x86_64 behavior for objects that bypass CRD defaulting.
+func openstackDefaultArchitecture(region *unikornv1.Region) types.Architecture {
+	if region == nil || region.Spec.Openstack == nil || region.Spec.Openstack.DefaultArchitecture == nil {
+		return types.X86_64
+	}
+
+	return types.Architecture(*region.Spec.Openstack.DefaultArchitecture)
+}
+
+func convertFlavors(resources []flavors.Flavor, region *unikornv1.Region) types.FlavorList {
 	result := make(types.FlavorList, len(resources))
+	defaultArchitecture := openstackDefaultArchitecture(region)
 
 	for i := range resources {
 		flavor := &resources[i]
 
-		// API memory is in MiB, disk is in GB. Architecture defaults to
-		// x86_64 when region metadata does not override it below: the API
-		// schema requires an enum value and existing consumers compare
-		// architectures strictly, so an honest "unknown" cannot reach the
-		// wire without coordinated schema and consumer changes.
+		// API memory is in MiB and disk is in GB. Per-flavor metadata below
+		// takes precedence over the Region-level architecture fallback.
 		f := types.Flavor{
 			ID:           flavor.ID,
 			Name:         flavor.Name,
-			Architecture: types.X86_64,
+			Architecture: defaultArchitecture,
 			CPUs:         flavor.VCPUs,
 			Memory:       resource.NewQuantity(int64(flavor.RAM)<<20, resource.BinarySI),
 			Disk:         resource.NewScaledQuantity(int64(flavor.Disk), resource.Giga),
@@ -473,7 +487,7 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 		// Apply any extra metadata to the flavor.
 		//
 		//nolint:nestif
-		if region.Spec.Openstack.Compute != nil && region.Spec.Openstack.Compute.Flavors != nil {
+		if region != nil && region.Spec.Openstack != nil && region.Spec.Openstack.Compute != nil && region.Spec.Openstack.Compute.Flavors != nil {
 			i := slices.IndexFunc(region.Spec.Openstack.Compute.Flavors.Metadata, func(metadata unikornv1.FlavorMetadata) bool {
 				return flavor.ID == metadata.ID
 			})
@@ -509,7 +523,7 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 		result[i] = f
 	}
 
-	return result, nil
+	return result
 }
 
 func (p *Provider) VolumeClasses(ctx context.Context) (types.VolumeClassList, error) {
@@ -678,15 +692,12 @@ func imageStatus(image *images.Image) types.ImageStatus {
 	return status
 }
 
-func imageArchitecture(image *images.Image) types.Architecture {
+func imageArchitecture(image *images.Image, defaultArchitecture types.Architecture) types.Architecture {
 	if v, ok := image.Properties[imageArchitectureProperty].(string); ok && v != "" {
 		return types.Architecture(v)
 	}
 
-	// Default images without the Glance architecture property to x86_64,
-	// matching the flavor default above, so the strict-equality consumers
-	// of the API keep their pre-existing behaviour.
-	return types.X86_64
+	return defaultArchitecture
 }
 
 func imageTags(image *images.Image) map[string]string {
@@ -708,7 +719,7 @@ func imageTags(image *images.Image) map[string]string {
 	return tags
 }
 
-func convertImage(image *images.Image) (*types.Image, error) {
+func convertImage(image *images.Image, defaultArchitecture types.Architecture) (*types.Image, error) {
 	var organizationID *string
 	if temp, _ := image.Properties[organizationIDLabel].(string); temp != "" {
 		organizationID = &temp
@@ -734,7 +745,7 @@ func convertImage(image *images.Image) (*types.Image, error) {
 		OrganizationID: organizationID,
 		Created:        image.CreatedAt,
 		Modified:       image.UpdatedAt,
-		Architecture:   imageArchitecture(image),
+		Architecture:   imageArchitecture(image, defaultArchitecture),
 		SizeGiB:        size,
 		Virtualization: types.ImageVirtualization(virtualization),
 		OS:             imageOS(image),
@@ -840,9 +851,11 @@ func (p *Provider) imageRefresh(ctx context.Context) ([]*types.Image, error) {
 	}
 
 	items := make([]*types.Image, len(resources))
+	region, _ := p.openstack.regionSnapshot()
+	defaultArchitecture := openstackDefaultArchitecture(region)
 
 	for i := range resources {
-		item, err := convertImage(&resources[i])
+		item, err := convertImage(&resources[i], defaultArchitecture)
 		if err != nil {
 			return nil, err
 		}
@@ -993,7 +1006,9 @@ func (p *Provider) CreateImage(ctx context.Context, image *types.Image, uri stri
 	// This seeds the cache from the pre-import Glance response, so callers may observe
 	// an intermediate queued/importing status until the next background refresh
 	// converges on the fully updated image state.
-	syntheticImage, err := convertImage(resource)
+	region, _ := p.openstack.regionSnapshot()
+
+	syntheticImage, err := convertImage(resource, openstackDefaultArchitecture(region))
 	if err != nil {
 		return nil, err
 	}
@@ -3635,7 +3650,9 @@ func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Ident
 		return nil, err
 	}
 
-	imageSnapshot, err := convertImage(updatedImage)
+	region, _ := p.openstack.regionSnapshot()
+
+	imageSnapshot, err := convertImage(updatedImage, openstackDefaultArchitecture(region))
 	if err != nil {
 		return nil, err
 	}
