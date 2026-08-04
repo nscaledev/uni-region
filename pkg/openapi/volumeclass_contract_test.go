@@ -17,6 +17,7 @@ limitations under the License.
 package openapi_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -50,4 +51,26 @@ func TestVolumeClassMetadataUsesStaticResourceMetadata(t *testing.T) {
 	require.NotNil(t, flavor)
 	require.NotNil(t, flavor.Value)
 	require.Equal(t, flavor.Value.Properties["metadata"].Ref, resource.Value.Properties["metadata"].Ref)
+}
+
+func TestVolumeClassCapacityBoundsAreOptionalPositiveInt64Values(t *testing.T) {
+	t.Parallel()
+
+	swagger, err := openapi.GetSwagger()
+	require.NoError(t, err)
+
+	spec := swagger.Components.Schemas["volumeClassV2Spec"]
+	require.NotNil(t, spec)
+	require.NotNil(t, spec.Value)
+
+	for _, name := range []string{"minimumSizeGiB", "maximumSizeGiB"} {
+		property := spec.Value.Properties[name]
+		require.NotNilf(t, property, "%s is missing", name)
+		require.NotNil(t, property.Value)
+		require.True(t, property.Value.Type.Is("integer"))
+		require.Equal(t, "int64", property.Value.Format)
+		require.NotNil(t, property.Value.Min)
+		require.InDelta(t, 1, *property.Value.Min, 0)
+		require.False(t, slices.Contains(spec.Value.Required, name), "%s must remain optional", name)
+	}
 }

@@ -42,8 +42,10 @@ func convertVolumeClass(regionID regionids.RegionID, in *types.VolumeClass) *ope
 			Name: in.Name,
 		},
 		Spec: openapi.VolumeClassV2Spec{
-			RegionId:  regionID,
-			Encrypted: in.Encrypted,
+			RegionId:       regionID,
+			MinimumSizeGiB: in.MinimumSizeGiB,
+			MaximumSizeGiB: in.MaximumSizeGiB,
+			Encrypted:      in.Encrypted,
 		},
 	}
 

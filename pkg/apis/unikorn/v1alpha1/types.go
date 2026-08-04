@@ -332,10 +332,19 @@ const (
 	VolumeClassMediaNVMe VolumeClassMedia = "nvme"
 )
 
+// +kubebuilder:validation:XValidation:rule="!has(self.minimumSizeGiB) || !has(self.maximumSizeGiB) || self.maximumSizeGiB >= self.minimumSizeGiB",message="maximumSizeGiB must be greater than or equal to minimumSizeGiB"
 type VolumeClassMetadata struct {
 	// ID is the immutable provider identifier for the volume class. For OpenStack,
 	// this is the Cinder volume type ID.
 	ID string `json:"id"`
+	// MinimumSizeGiB is the minimum volume capacity accepted by the class, in
+	// whole GiB.
+	// +kubebuilder:validation:Minimum=1
+	MinimumSizeGiB *int64 `json:"minimumSizeGiB,omitempty"`
+	// MaximumSizeGiB is the maximum volume capacity accepted by the class, in
+	// whole GiB.
+	// +kubebuilder:validation:Minimum=1
+	MaximumSizeGiB *int64 `json:"maximumSizeGiB,omitempty"`
 	// Media describes the backing storage medium.
 	Media VolumeClassMedia `json:"media,omitempty"`
 	// Performance describes advertised performance characteristics.

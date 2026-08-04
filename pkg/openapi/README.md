@@ -63,8 +63,10 @@ outside the canonical API contract.
 flat list shape used by file-storage classes: callers can supply the repeatable
 `regionID` query parameter. Each result carries its required Region binding and
 encryption flag, with provider-neutral media and advertised-performance metadata
-when the Region publishes them. The public contract deliberately contains no
-Cinder, storage-pool, or other provider-specific fields.
+when the Region publishes them. Optional minimum and maximum size bounds are
+returned in whole GiB only when configured by the Region operator. The public
+contract deliberately contains no Cinder, storage-pool, or other
+provider-specific fields.
 
 Keeping the schema unified matters because it allows:
 
@@ -245,6 +247,8 @@ fully encoded here:
   discovery; repeated Region filters act as selectors over the visible Region
   set, so missing or inaccessible Regions are omitted and the response can be
   empty or partial;
+  capacity bounds are independently optional and omitted from responses when
+  the Region operator has not configured them;
   its metadata uses core's `staticResourceMetadata`, matching Flavor inventory;
   because the provider model supplies no creation time, the generated response
   retains the same zero-value timestamp behaviour as Flavor

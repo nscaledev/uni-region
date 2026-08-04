@@ -241,8 +241,9 @@ but we do not have transactions.”
   create/update and attachment validation
 - `VolumeClass`: read-only Region-scoped provider inventory. The v2 list handler
   filters Regions through the canonical visibility policy, treats repeated
-  `regionID` values as selectors, and maps only provider-neutral discovery
-  fields. Missing and inaccessible Regions are omitted.
+  `regionID` values as selectors, and maps only provider-neutral inventory
+  fields, including optional operator-authored capacity bounds. Missing and
+  inaccessible Regions are omitted.
 
 ## Caveats
 

@@ -105,6 +105,12 @@ type VolumeClass struct {
 	Name string
 	// Description is the provider display description.
 	Description string
+	// MinimumSizeGiB is the operator-configured minimum volume capacity accepted
+	// by the class, in whole GiB.
+	MinimumSizeGiB *int64
+	// MaximumSizeGiB is the operator-configured maximum volume capacity accepted
+	// by the class, in whole GiB.
+	MaximumSizeGiB *int64
 	// Media describes the backing storage medium.
 	Media VolumeClassMedia
 	// Performance describes advertised performance caps.

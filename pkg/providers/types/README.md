@@ -48,7 +48,9 @@ continue to be passed directly through many provider interface methods.
 - `VolumeClass` is Region-scoped provider inventory, not a Volume lifecycle
   resource. It carries the immutable provider identifier and user-facing
   metadata that Region configuration can filter or enrich before a public API
-  exposes the inventory.
+  exposes the inventory. Optional minimum and maximum capacity bounds are
+  operator-authored Region configuration propagated through this neutral
+  model; they are not provider-discovered values.
 - `Volume` is a focused create/delete capability that accepts the native
   `unikornv1.Volume` lifecycle intent. It is deliberately separate from the
   full `Provider` composition during the staged rollout, and it does not expose

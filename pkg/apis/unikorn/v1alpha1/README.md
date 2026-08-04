@@ -48,7 +48,10 @@ stored objects rely on for linkage, migration, and operational coordination.
   only provider IDs explicitly listed in
   `openstack.blockStorage.volumeClasses.selector.ids` are eligible. Missing
   `volumeClasses` configuration, a missing selector, or nil/empty IDs exports
-  no VolumeClasses.
+  no VolumeClasses. Metadata may independently publish `minimumSizeGiB` and
+  `maximumSizeGiB` as positive whole GiB values. When both are present, the
+  maximum must be greater than or equal to the minimum; CRD admission enforces
+  these invariants.
 - Namespaced Kubernetes storage scope and platform tenancy scope are separate
   concerns. These objects are namespaced, but their logical visibility and
   authorization are often organization-, project-, identity-, or region-scoped

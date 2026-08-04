@@ -511,6 +511,14 @@
                             "id": {
                               "type": "string"
                             },
+                            "minimumSizeGiB": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "maximumSizeGiB": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
                             "media": {
                               "type": "string",
                               "enum": [

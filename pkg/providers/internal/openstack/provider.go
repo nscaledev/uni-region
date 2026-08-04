@@ -546,6 +546,14 @@ func convertVolumeClasses(region *unikornv1.Region, resources []volumetypes.Volu
 		}
 
 		if metadata := volumeClassMetadata(config, resource.ID); metadata != nil {
+			if metadata.MinimumSizeGiB != nil {
+				class.MinimumSizeGiB = ptr.To(*metadata.MinimumSizeGiB)
+			}
+
+			if metadata.MaximumSizeGiB != nil {
+				class.MaximumSizeGiB = ptr.To(*metadata.MaximumSizeGiB)
+			}
+
 			class.Media = types.VolumeClassMedia(metadata.Media)
 			class.Encrypted = metadata.Encrypted
 

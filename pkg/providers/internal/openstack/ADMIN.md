@@ -156,7 +156,11 @@ internally. A `VolumeClass` is provider inventory owned by a Region, not a
 project-owned resource and not something users create or delete. Operators
 provide the user-facing metadata because encryption and QoS/performance limits
 are often configured natively on the storage backend and may not be reliably
-derivable from Cinder volume type metadata.
+derivable from Cinder volume type metadata. Operators may also publish
+`minimumSizeGiB` and `maximumSizeGiB` independently. Each configured bound must
+be a positive whole number of GiB; when both are present, the maximum must be
+greater than or equal to the minimum. These are Region configuration metadata,
+not values discovered from Cinder.
 
 VolumeClass selection is fail-closed. Only Cinder volume type IDs explicitly
 listed in `spec.openstack.blockStorage.volumeClasses.selector.ids` are exported.
@@ -193,6 +197,8 @@ spec:
           - cda67b98-331d-4d4f-911e-b1fd64611b0b
         metadata:
         - id: cda67b98-331d-4d4f-911e-b1fd64611b0b
+          minimumSizeGiB: 10
+          maximumSizeGiB: 2048
           media: nvme
           performance:
             maxIOPS: 25000

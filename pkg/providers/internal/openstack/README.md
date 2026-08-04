@@ -290,16 +290,20 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   only Cinder volume type IDs explicitly listed there are eligible for export.
   Missing `volumeClasses` configuration, a missing selector, or nil/empty IDs
   exports no VolumeClasses. Selected classes can be enriched with user-facing
-  metadata such as media, maximum performance caps, and encryption signals. The
-  provider discovers Cinder volume types and converts the selected/enriched
-  result into provider-neutral `VolumeClass` values. Maximum performance
-  metadata records caps rather than guaranteed reservations. `VolumeClass` is
-  Region-scoped inventory configuration, not a project-owned resource or
-  lifecycle object. The block-storage service client is cached with the other
-  OpenStack service clients so Cinder volume-type inventory cache survives
-  repeated provider calls and is refreshed only when Region configuration or
-  credentials change. Production Region CRs must contain their curated IDs
-  before this fail-closed behavior is rolled out.
+  metadata such as optional minimum/maximum capacity bounds, media, maximum
+  performance caps, and encryption signals. Capacity bounds are
+  operator-authored positive whole GiB values; either may be omitted, and when
+  both are present the maximum must be at least the minimum. The provider
+  discovers Cinder volume types and combines them with this Region-authored
+  metadata into provider-neutral `VolumeClass` values. It does not discover
+  capacity bounds from Cinder. Maximum performance metadata records caps rather
+  than guaranteed reservations. `VolumeClass` is Region-scoped inventory
+  configuration, not a project-owned resource or lifecycle object. The
+  block-storage service client is cached with the other OpenStack service
+  clients so Cinder volume-type inventory cache survives repeated provider
+  calls and is refreshed only when Region configuration or credentials change.
+  Production Region CRs must contain their curated IDs before this fail-closed
+  behavior is rolled out.
 - Image handling is a first-class contract surface here:
   - OpenStack image properties are validated against a schema
   - public images can additionally be signature-verified
