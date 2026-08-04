@@ -2416,6 +2416,15 @@ components:
         logicalCount:
           description: The logical number of GPUs available as seen in the OS.
           type: integer
+    ibSpec:
+      description: InfiniBand specification.
+      type: object
+      required:
+      - portCount
+      properties:
+        portCount:
+          description: The number of InfiniBand ports available to the flavor.
+          type: integer
     flavorSpec:
       description: A flavor.
       type: object
@@ -2444,6 +2453,8 @@ components:
           $ref: '#/components/schemas/architecture'
         gpu:
           $ref: '#/components/schemas/gpuSpec'
+        ib:
+          $ref: '#/components/schemas/ibSpec'
         pinnedOnly:
           description: When true, a server using this flavor must specify an infrastructureRef to identify the target host.
           type: boolean

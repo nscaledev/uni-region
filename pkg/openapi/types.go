@@ -221,6 +221,9 @@ type FlavorSpec struct {
 	// Gpu GPU specification.
 	Gpu *GpuSpec `json:"gpu,omitempty"`
 
+	// Ib InfiniBand specification.
+	Ib *IbSpec `json:"ib,omitempty"`
+
 	// Memory The amount of memory in GiB.
 	Memory int `json:"memory"`
 
@@ -257,6 +260,12 @@ type GpuSpec struct {
 
 // GpuVendor The GPU vendor.
 type GpuVendor string
+
+// IbSpec InfiniBand specification.
+type IbSpec struct {
+	// PortCount The number of InfiniBand ports available to the flavor.
+	PortCount int `json:"portCount"`
+}
 
 // IdentitiesRead A list of provider specific identities.
 type IdentitiesRead = []IdentityRead

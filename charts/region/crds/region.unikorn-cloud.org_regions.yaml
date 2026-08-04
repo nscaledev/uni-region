@@ -378,6 +378,18 @@ spec:
                                   description: ID is the immutable Openstack identifier
                                     for the flavor.
                                   type: string
+                                infiniBand:
+                                  description: |-
+                                    InfiniBand defines additional InfiniBand metadata. When provided it enables
+                                    InfiniBand partition isolation for servers using this flavor.
+                                  properties:
+                                    portCount:
+                                      description: PortCount is the number of InfiniBand
+                                        ports (HCAs) the flavor exposes.
+                                      type: integer
+                                  required:
+                                  - portCount
+                                  type: object
                                 memory:
                                   anyOf:
                                   - type: integer

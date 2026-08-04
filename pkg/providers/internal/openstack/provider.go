@@ -503,6 +503,12 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 						LogicalCount:  metadata.GPU.LogicalCount,
 					}
 				}
+
+				if metadata.InfiniBand != nil {
+					f.InfiniBand = &types.InfiniBand{
+						PortCount: metadata.InfiniBand.PortCount,
+					}
+				}
 			}
 		}
 

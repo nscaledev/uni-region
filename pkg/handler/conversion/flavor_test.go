@@ -99,6 +99,7 @@ func TestConvertFlavor(t *testing.T) {
 		require.Equal(t, 4, out.Spec.Memory)
 		require.Equal(t, 100, out.Spec.Disk)
 		require.Nil(t, out.Spec.Gpu)
+		require.Nil(t, out.Spec.Ib)
 		require.Nil(t, out.Spec.Baremetal)
 	})
 
@@ -151,6 +152,27 @@ func TestConvertFlavor(t *testing.T) {
 		require.Equal(t, 16, out.Spec.Gpu.Memory)
 		require.Equal(t, 2, out.Spec.Gpu.PhysicalCount)
 		require.Equal(t, 2, out.Spec.Gpu.LogicalCount)
+	})
+
+	t.Run("InfiniBand flavor populates ib spec", func(t *testing.T) {
+		t.Parallel()
+
+		in := &types.Flavor{
+			ID:           "flavor-ib",
+			Name:         "ib1.xlarge",
+			Architecture: types.X86_64,
+			CPUs:         16,
+			Memory:       &baseMemory,
+			Disk:         &baseDisk,
+			InfiniBand: &types.InfiniBand{
+				PortCount: 8,
+			},
+		}
+
+		out := conversion.ConvertFlavor(in)
+
+		require.NotNil(t, out.Spec.Ib)
+		require.Equal(t, 8, out.Spec.Ib.PortCount)
 	})
 
 	t.Run("baremetal GPU flavor sets both flags", func(t *testing.T) {

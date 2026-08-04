@@ -80,6 +80,12 @@ func ConvertFlavor(in *types.Flavor) *openapi.Flavor {
 		}
 	}
 
+	if in.InfiniBand != nil {
+		out.Spec.Ib = &openapi.IbSpec{
+			PortCount: in.InfiniBand.PortCount,
+		}
+	}
+
 	return out
 }
 
