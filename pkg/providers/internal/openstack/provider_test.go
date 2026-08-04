@@ -2119,8 +2119,6 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 	server := serverFixture(withNetwork(network), withFloatingIP)
 	server.Spec.Image = &regionv1.ServerImage{ID: idstest.MustParseImageID(rebuildNewImageID)}
 	server.Status.ProvisionedAt = ptr.To(metav1.Now())
-	// Intent already durable: this pass submits the rebuild.
-	server.Status.Rebuild = &regionv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: regionv1.ServerRebuildStateInitiated}
 
 	openstackNetwork := openstackNetworkFixture(network)
 	openstackSubnet := openstackSubnetFixture(network, openstackNetwork)
@@ -2144,15 +2142,13 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 	p := openstack.NewTestProvider(client, regionFixture())
 
 	err := openstack.CreateServerWithClients(t.Context(), p, networking, compute, server, options, "")
-	require.NoError(t, err)
+	require.ErrorIs(t, err, provisioners.ErrYield, "the accepted rebuild is in flight, so the pass yields")
 
 	// (a) the port/FIP status writes must survive the copy-back.
 	require.Equal(t, ptr.To(serverPortIP), server.Status.PrivateIP, "copy-back must not revert PrivateIP written by port reconciliation")
 	require.Equal(t, ptr.To(openstackFloatingIP.FloatingIP), server.Status.PublicIP, "copy-back must not revert PublicIP written by floating IP reconciliation")
 
-	// (b) the rebuild status writes must propagate back to the caller.
-	require.NotNil(t, server.Status.Rebuild)
-	require.Equal(t, regionv1.ServerRebuildStateRebuilding, server.Status.Rebuild.State)
+	// (b) the rebuild's accepted status stamp must propagate back to the caller.
 	requireRebuildAcceptedStamp(t, server)
 }
 

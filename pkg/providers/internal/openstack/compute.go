@@ -67,6 +67,10 @@ func NewComputeClient(ctx context.Context, provider CredentialProvider, options 
 
 	// Need at least 2.15 for soft-anti-affinity policy.
 	// Need at least 2.64 for new server group interface.
+	// Must stay below 2.93: from there Nova sets reimage_boot_volume on every
+	// rebuild and the Ironic driver refuses the flag outright, so every baremetal
+	// rebuild fails — an upstream defect, unfixed as of 2025.1 and measured there
+	// (https://bugs.launchpad.net/nova/+bug/2127017). See the README's rebuild caveats.
 	client.Microversion = "2.90"
 
 	c := &ComputeClient{
