@@ -60,27 +60,6 @@ func requireSchemaProperty(t *testing.T, schema *apixv1.JSONSchemaProps, path ..
 	return current
 }
 
-func TestServerRebuildSchema(t *testing.T) {
-	t.Parallel()
-
-	schema := crdSchema(t, serverCRDFile)
-
-	targetImageID := requireSchemaProperty(t, schema, "status", "rebuild", "targetImageID")
-	require.Equal(t, "string", targetImageID.Type)
-	require.Equal(t, "uuid", targetImageID.Format)
-
-	state := requireSchemaProperty(t, schema, "status", "rebuild", "state")
-	require.Equal(t, "string", state.Type)
-
-	want := []apixv1.JSON{
-		{Raw: []byte(`"Initiated"`)},
-		{Raw: []byte(`"Rebuilding"`)},
-		{Raw: []byte(`"Succeeded"`)},
-		{Raw: []byte(`"Failed"`)},
-	}
-	require.ElementsMatch(t, want, state.Enum, "the rebuild state enum must be validated at the CRD schema")
-}
-
 // TestServerObservedSchema pins the monitor's exclusive write region into the
 // published schema. The subtree is the contract that keeps the two status writers
 // off each other's fields, so its shape belongs in the CRD, not just in Go.

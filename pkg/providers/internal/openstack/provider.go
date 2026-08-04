@@ -2944,12 +2944,6 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 //	R4′  ref != desired, task in flight  → yield; something else holds the server.
 //	R4″  ref != desired, quiescent       → submit. The one destructive row.
 func reconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
-	// Retire the rebuild marker this pass replaces. Clearing it here rather than in
-	// the schema change means a server mid-rebuild across the upgrade does not keep
-	// a marker nothing will ever clear, which RebuildPending would otherwise report
-	// as provisioning forever.
-	server.Status.Rebuild = nil
-
 	// R1: no desired image, so nothing to converge onto.
 	if server.Spec.Image == nil {
 		return openstackServer, nil
