@@ -53,6 +53,17 @@ type ComputeClient struct {
 	flavorCache *cache.TimeoutCache[[]flavors.Flavor]
 }
 
+// computeMicroversion is the Nova API microversion every compute call is made
+// at. Need at least 2.15 for soft-anti-affinity policy, and at least 2.64 for
+// the new server group interface. Must stay below 2.93: from there Nova sets
+// reimage_boot_volume on every rebuild and the Ironic driver refuses the flag
+// outright, so every baremetal rebuild fails — an upstream defect, unfixed as
+// of 2025.1 and measured there
+// (https://bugs.launchpad.net/nova/+bug/2127017). See the README's rebuild
+// caveats. Pinned by TestComputeMicroversionPin; do not bump without reading
+// both.
+const computeMicroversion = "2.90"
+
 // NewComputeClient provides a simple one-liner to start computing.
 func NewComputeClient(ctx context.Context, provider CredentialProvider, options *unikornv1.RegionOpenstackComputeSpec) (*ComputeClient, error) {
 	providerClient, err := provider.Client(ctx)
@@ -65,9 +76,7 @@ func NewComputeClient(ctx context.Context, provider CredentialProvider, options 
 		return nil, err
 	}
 
-	// Need at least 2.15 for soft-anti-affinity policy.
-	// Need at least 2.64 for new server group interface.
-	client.Microversion = "2.90"
+	client.Microversion = computeMicroversion
 
 	c := &ComputeClient{
 		options:     options,

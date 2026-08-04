@@ -18,6 +18,7 @@ limitations under the License.
 package openstack
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -2884,6 +2885,32 @@ func serverRebuildTaskActive(openstackServer *servers.Server) bool {
 	return openstackServer.TaskState != "" || openstackServer.Status == novaStatusRebuild
 }
 
+// Nova's rebuild_states tuple is "rebuilding", "rebuild_block_device_mapping"
+// and "rebuild_spawning". A rebuild keeps vm_state ACTIVE and rides task_state,
+// so this family identifies one, not the vm_state. It is matched by prefix, not
+// enumeration: a rebuild substate a newer Nova adds must read as in flight, not
+// as settled over a root disk that is still being rewritten.
+const novaTaskStateRebuildPrefix = "rebuild"
+
+// serverRebuildInFlight reports whether a rebuild specifically is in flight. Not
+// serverTaskActive: an unrelated task on a converged server, such as a user's
+// reboot, must not be reported as a rebuild. The projected REBUILD status is
+// matched as well as the task family — Nova derives that status from the same
+// family, so each match covers rebuild states the other has never heard of.
+func serverRebuildInFlight(openstackServer *servers.Server) bool {
+	if strings.HasPrefix(openstackServer.TaskState, novaTaskStateRebuildPrefix) {
+		return true
+	}
+
+	return openstackServer.Status == novaStatusRebuild
+}
+
+// serverTaskActive reports whether any operation holds the server. Nova refuses a
+// rebuild unless task_state is NULL.
+func serverTaskActive(openstackServer *servers.Server) bool {
+	return openstackServer.TaskState != "" || openstackServer.Status == novaStatusRebuild
+}
+
 func openstackServerImageID(server *servers.Server) (regionids.ImageID, bool) {
 	value, ok := server.Image["id"].(string)
 	if !ok || value == "" {
@@ -2993,75 +3020,46 @@ func markServerRebuildAccepted(server *unikornv1.Server) {
 	server.SetHealthCondition(corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, healthMessageIndeterminate)
 }
 
-// reconcileServerRebuildPark runs the two-phase, write-ahead park (step P4 of
-// reconcileServerImage's pass order), for a marker whose target is the desired
-// image. It returns handled=true when it owns the pass.
-//
-//   - P4a: a marker read back durably Failed issues the terminal
-//     UserActionRequired park (core turns this into Available=Errored).
-//   - P4b: an ERROR with acceptance evidence — durably >= Rebuilding, or the ref
-//     flipped to the target — stamps Failed and yields to confirm by read-back.
-//   - P4c: supersession — an accepted rebuild whose readable ref has moved off
-//     the target while the task has quiesced can no longer converge; stamp
-//     Failed and yield.
-//
-// P4b's stamp is by direct assignment, the one exception to the forward-only
-// rank rule: it must overwrite a Succeeded stamped moments before the ERROR
-// arrived, or the retained Succeeded level would re-fire the settlement wake
-// forever on the parked server. P4b/P4c precede the unreadable-ref yield (P5)
-// so an ERROR with acceptance evidence parks rather than yielding forever.
-func reconcileServerRebuildPark(ctx context.Context, server *unikornv1.Server, openstackServer *servers.Server, currentImageID regionids.ImageID, refReadable, taskActive bool, desiredImageID regionids.ImageID) (bool, error) {
-	rebuild := server.Status.Rebuild
-	accepted := serverRebuildStateRank(rebuild.State) >= serverRebuildStateRank(unikornv1.ServerRebuildStateRebuilding)
-	converged := refReadable && currentImageID == desiredImageID
+// novaRebuildImageNotFoundMessage is the fixed explanation Nova's rebuild
+// action returns when the target image no longer exists (nova
+// api/openstack/compute/servers.py, the ImageNotFound catch). The literal has
+// been frozen upstream for over a decade; if it ever drifts, the match below
+// fails toward retry, never toward a wrong park.
+const novaRebuildImageNotFoundMessage = "Cannot find image for rebuild"
 
-	// P4a: Failed read back durable — issue the confirmed terminal park.
-	if rebuild.State == unikornv1.ServerRebuildStateFailed {
-		setServerHealthStatus(server, openstackServer)
-		setServerActive(ctx, server, openstackServer, nil)
+// isRebuildImageNotFound reports whether err is Nova's synchronous rebuild
+// rejection for a deleted target image — the one 400 class that provably
+// cannot self-heal, and therefore the only one that may park. Nova 400s are
+// not homogeneous: ImageNotActive (a deactivated Glance image) is also a 400,
+// but an operator reactivating the image bumps no generation and moves no
+// observed field, so parking it would strand the server with no recovery
+// path. Matching is deliberately a narrow substring of the response body:
+// anything unrecognized — another 400 class, a reworded message, a proxy that
+// strips bodies — falls back to surfacing the error for the ordinary requeue
+// (retry-forever, the status quo ante), which a later spec edit or provider
+// change resolves without operator action.
+func isRebuildImageNotFound(err error) bool {
+	var responseErr gophercloud.ErrUnexpectedResponseCode
 
-		return true, provisioners.UserActionRequired("server_rebuild_failed", "server entered an error state after a rebuild was issued; select another image or replace the server")
+	if !errors.As(err, &responseErr) || responseErr.Actual != http.StatusBadRequest {
+		return false
 	}
 
-	// P4b: ERROR with acceptance evidence — stamp Failed (direct) and yield.
-	if openstackServer.Status == novaStatusError && (accepted || converged) {
-		setServerHealthStatus(server, openstackServer)
-		setServerActive(ctx, server, openstackServer, nil)
-
-		rebuild.State = unikornv1.ServerRebuildStateFailed
-
-		log.FromContext(ctx).Info("recording the server rebuild failure",
-			"server", server.Name, "novaServerID", openstackServer.ID)
-
-		return true, provisioners.ErrYield
-	}
-
-	// P4c: supersession — accepted, readable ref off target, task quiesced.
-	if accepted && refReadable && !converged && !taskActive {
-		setServerHealthStatus(server, openstackServer)
-		setServerActive(ctx, server, openstackServer, nil)
-
-		rebuild.State = unikornv1.ServerRebuildStateFailed
-
-		log.FromContext(ctx).Info("recording the superseded server rebuild failure",
-			"server", server.Name, "novaServerID", openstackServer.ID)
-
-		return true, provisioners.ErrYield
-	}
-
-	return false, nil
+	return bytes.Contains(responseErr.Body, []byte(novaRebuildImageNotFoundMessage))
 }
 
-// submitServerRebuild issues the Nova rebuild and, on acceptance, advances the
-// marker to Rebuilding (step P7e of reconcileServerImagePending). A 409 is
-// pre-acceptance: it yields for a short retry with the state left at Initiated,
-// silently — the server is still running untouched, so no Phase/Healthy write
-// fights the monitor's observed state.
-//
-// On acceptance it writes the fixed accepted stamp (markServerRebuildAccepted)
-// and never derives Phase/Healthy from the rebuild response body: a 202 body
-// can still read ACTIVE for the pre-destruction server and would falsely stamp
-// the just-accepted destructive rebuild as running.
+// submitServerRebuild issues the Nova rebuild. Rejections are synchronous and
+// leave the server untouched, so a 409 yields for a short retry, a 400 parks
+// only on Nova's image-not-found signature (the image is gone and
+// only a spec edit can name another, exactly the R3′ argument), while every
+// other 400 surfaces and retries: the class is not homogeneous — a
+// deactivated image (ImageNotActive) is a 400 an operator can clear by
+// reactivating it, which bumps no generation and moves no observed field, so
+// parking it would strand the server —
+// and anything else surfaces for the ordinary requeue: quota freeing or a provider
+// recovery bumps no generation, so parking a 403 or a 5xx would strand the
+// server. The accepted stamp is fixed, never derived from the response body: a
+// 202 can still describe the pre-destruction server as ACTIVE.
 func submitServerRebuild(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, options ServerRebuildOptions) (*servers.Server, error) {
 	rebuilt, err := client.RebuildServer(ctx, openstackServer.ID, options)
 	if err != nil {
@@ -3072,142 +3070,115 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 			return openstackServer, provisioners.ErrYield
 		}
 
+		log.FromContext(ctx).Info("the provider rejected the server rebuild",
+			"server", server.Name, "novaServerID", openstackServer.ID, "error", err.Error())
+
+		// The message is ours, never Nova's: the raw rejection body is provider
+		// vocabulary and belongs in the log line above, not the API (CWE-209).
+		if isRebuildImageNotFound(err) {
+			return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
+				"the desired image no longer exists at the provider; select a different image or replace the server")
+		}
+
 		return nil, err
 	}
 
-	advanceRebuildState(server.Status.Rebuild, unikornv1.ServerRebuildStateRebuilding)
 	markServerRebuildAccepted(server)
 
-	if rebuilt != nil {
-		return rebuilt, nil
+	// An accepted rebuild is in flight, so completing here would report the server
+	// provisioned while its root disk is being rewritten.
+	if rebuilt == nil {
+		rebuilt = openstackServer
 	}
 
-	return openstackServer, nil
+	return rebuilt, provisioners.ErrYield
 }
 
-// reconcileServerImage converges the server onto its desired image, deciding
-// only from the fresh openstackServer plus the durable marker read back at pass
-// start. It implements the normative pass order (P0 deletion is handled before
-// this by the deprovision path):
+// reconcileServerImage converges the server onto its desired image, deciding only
+// from the fresh openstackServer. Nova commits the image ref and task_state together
+// under a compare-and-swap, above the driver.
 //
-//	P1  Spec.Image == nil        → clear any marker; done.
-//	P3  re-arm (marker target ≠ desired) → replace marker {desired, Initiated}; yield.
-//	P4  two-phase park (reconcileServerRebuildPark).
-//	P5  unreadable ref           → silent yield (never clean-complete over an
-//	                               unverifiable image).
-//	P6  ref == desired           → reconcileServerImageConverged.
-//	P7  ref != desired           → reconcileServerImagePending.
-//
-// Arming and submitting are separate passes with a yield between them as the
-// durable commit point, so intent is persisted before Nova is asked to destroy
-// the root disk; settlement writes are confirmed by read-back, never assumed.
+//	R1   Spec.Image == nil              → park; the spec names no image, so the only
+//	                                      remedy is a spec edit.
+//	R2   ref unreadable                 → park; never report success over an image
+//	                                      that cannot be verified.
+//	R3   ref == desired, rebuilding      → yield; our own rebuild is mid-flight.
+//	R3′  ref == desired, ERROR, launched → park; Nova moves the ref at accept, not
+//	                                      on a successful write, so a quiesced
+//	                                      ERROR on the desired ref cannot certify
+//	                                      the image was realized. (It may well be
+//	                                      running — a failed live-migration also
+//	                                      lands here — so the park is cause-neutral
+//	                                      and diagnoses nothing.) The outcome of a
+//	                                      submission belongs to the reconciler's
+//	                                      axis; ambient health of a settled server
+//	                                      remains the monitor's. Never-launched
+//	                                      servers are excluded: an ERROR before
+//	                                      first boot is create-retry's to own.
+//	R3″  ref == desired, otherwise       → done.
+//	R4   ref != desired, never launched  → yield; a server that has never booted
+//	                                      belongs to create-retry, and Nova refuses
+//	                                      a rebuild before first boot regardless.
+//	R4′  ref != desired, task in flight  → yield; something else holds the server.
+//	R4″  ref != desired, quiescent       → submit. The one destructive row.
 func reconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
-	// P1: no desired image — retire any marker.
-	if server.Spec.Image == nil {
-		server.Status.Rebuild = nil
+	// Retire the rebuild marker this pass replaces. Clearing it here rather than in
+	// the schema change means a server mid-rebuild across the upgrade does not keep
+	// a marker nothing will ever clear, which RebuildPending would otherwise report
+	// as provisioning forever.
+	server.Status.Rebuild = nil
 
-		return openstackServer, nil
+	// R1: the spec names no image. Image is in the CRD's required list, so this
+	// is dead code in practice, but completing would report a server provisioned
+	// onto no image. The only remedy is a spec edit, which is the park contract.
+	if server.Spec.Image == nil {
+		return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
+			"the server specifies no image to converge onto; set an image in the specification")
 	}
 
 	desiredImageID := server.Spec.Image.ID
 
-	// P3: re-arm. A marker for a different target — including a parked Failed,
-	// the designed recovery — is replaced with a fresh write-ahead Initiated
-	// marker. The yield is silent: nothing has been asked of Nova.
-	if rebuild := server.Status.Rebuild; rebuild != nil && rebuild.TargetImageID != desiredImageID {
-		server.Status.Rebuild = &unikornv1.ServerRebuildStatus{
-			TargetImageID: desiredImageID,
-			State:         unikornv1.ServerRebuildStateInitiated,
-		}
-
-		log.FromContext(ctx).Info("recording the server rebuild intent",
-			"server", server.Name, "novaServerID", openstackServer.ID)
-
-		return openstackServer, provisioners.ErrYield
-	}
-
 	currentImageID, refReadable := openstackServerImageID(openstackServer)
-	taskActive := serverRebuildTaskActive(openstackServer)
 
-	// P4: two-phase park. Any marker here targets the desired image (P3 handled
-	// a differing target). It precedes P5 so an attributable ERROR with an
-	// unreadable ref parks rather than yielding forever.
-	if server.Status.Rebuild != nil {
-		if handled, err := reconcileServerRebuildPark(ctx, server, openstackServer, currentImageID, refReadable, taskActive, desiredImageID); handled {
-			return openstackServer, err
-		}
-	}
-
-	// P5: every server this provider creates is image-booted, so an unparseable
-	// image ref is abnormal. Yield visibly rather than report success over an
-	// unverifiable image change.
+	// R2: every server this provider creates is image-booted, so an unreadable ref
+	// is abnormal and must not be reported as success. The park is re-derived per
+	// pass, so a later readable ref un-parks it without any spec change.
 	if !refReadable {
 		log.FromContext(ctx).Info("cannot read the server image from the provider, image convergence cannot be checked",
 			"server", server.Name, "novaServerID", openstackServer.ID)
 
-		return openstackServer, provisioners.ErrYield
+		return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
+			"the provider cannot report the server's image, so the desired image cannot be verified; replace the server")
 	}
 
-	// P6: ref converged onto the desired image.
 	if currentImageID == desiredImageID {
-		return reconcileServerImageConverged(ctx, server, openstackServer, taskActive)
-	}
+		// R3: accepted but unfinished.
+		if serverRebuildInFlight(openstackServer) {
+			markServerRebuildAccepted(server)
 
-	// P7: ref still pending.
-	return reconcileServerImagePending(ctx, client, server, openstackServer, desiredImageID, taskActive)
-}
+			return openstackServer, provisioners.ErrYield
+		}
 
-// reconcileServerImageConverged runs the ref-converged pass (P6): the fresh
-// read shows the desired image. Any marker here is not Failed (P4a parked it)
-// nor an attributable ERROR (P4b stamped it), so ERROR with a marker is
-// unreachable.
-func reconcileServerImageConverged(ctx context.Context, server *unikornv1.Server, openstackServer *servers.Server, taskActive bool) (*servers.Server, error) {
-	rebuild := server.Status.Rebuild
+		// R3′: converged onto a quiesced ERROR. The ref alone cannot certify the
+		// write (it moved at accept), so this must not read as provisioned. Park
+		// on the provisioning axis, exactly as create-retry does when its
+		// attempts are exhausted. The remedy is a spec edit — a new image choice
+		// or a replacement server — which is ErrUserActionRequired's contract:
+		// recovery is generation-driven, and there is no retry bookkeeping to
+		// clear here, so the sentinel alone suffices. The park is also
+		// re-derived per pass, so a monitor observed-write after a silent
+		// provider recovery un-parks it without any spec change.
+		if openstackServer.Status == novaStatusError && !openstackServer.LaunchedAt.IsZero() {
+			return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
+				"the provider reports the server in an error state; select another image or replace the server")
+		}
 
-	// P6c: ERROR with no marker is unrelated — the monitor owns health. (With a
-	// marker this is unreachable, see above.)
-	if openstackServer.Status == novaStatusError {
+		// R3″: converged. Any other task is the monitor's axis.
 		return openstackServer, nil
 	}
 
-	// P6a/P6b with no marker: converged and nothing pending — done.
-	if rebuild == nil {
-		return openstackServer, nil
-	}
-
-	// P6a: quiescent convergence is the settlement — clear the marker and yield
-	// so the requeued pass confirms the clear by read-back.
-	if !taskActive {
-		server.Status.Rebuild = nil
-
-		log.FromContext(ctx).Info("clearing the settled server rebuild marker",
-			"server", server.Name, "novaServerID", openstackServer.ID)
-
-		return openstackServer, provisioners.ErrYield
-	}
-
-	// P6b: target ref, active task. Record the observed acceptance (advance
-	// Rebuilding), re-assert the accepted stamp, and complete — a future monitor
-	// advance to a terminal still exists to wake the settlement pass.
-	if serverRebuildStateRank(rebuild.State) < serverRebuildStateRank(unikornv1.ServerRebuildStateSucceeded) {
-		advanceRebuildState(rebuild, unikornv1.ServerRebuildStateRebuilding)
-		markServerRebuildAccepted(server)
-
-		return openstackServer, nil
-	}
-
-	// A Succeeded marker cannot rank-advance again, so no monitor delta is
-	// guaranteed: yield to carry liveness rather than clean-complete.
-	return openstackServer, provisioners.ErrYield
-}
-
-// reconcileServerImagePending runs the ref-pending pass (P7): the fresh read
-// still shows an image other than the desired one. P4c already handled
-// supersession, so an accepted marker reaching here always has an active task.
-func reconcileServerImagePending(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, desiredImageID regionids.ImageID, taskActive bool) (*servers.Server, error) {
-	// P7a: rebuild only a server Nova reports as booted. Before first boot the
-	// image is a create parameter and the server is in create-retry's domain;
-	// yield silently to stay visibly provisioning.
+	// R4: before first boot the image is a create parameter, so this belongs to
+	// create-retry. Nova refuses it anyway (must_have_launched).
 	if openstackServer.LaunchedAt.IsZero() {
 		log.FromContext(ctx).Info("image change deferred until first launch",
 			"server", server.Name, "novaServerID", openstackServer.ID)
@@ -3215,53 +3186,15 @@ func reconcileServerImagePending(ctx context.Context, client ServerInterface, se
 		return openstackServer, provisioners.ErrYield
 	}
 
-	rebuild := server.Status.Rebuild
-
-	// P7b: no marker — arm write-ahead intent and yield. The Initiated marker
-	// read back later is the only submission authorization.
-	if rebuild == nil {
-		server.Status.Rebuild = &unikornv1.ServerRebuildStatus{
-			TargetImageID: desiredImageID,
-			State:         unikornv1.ServerRebuildStateInitiated,
-		}
-
-		log.FromContext(ctx).Info("recording the server rebuild intent",
-			"server", server.Name, "novaServerID", openstackServer.ID)
-
+	// R4′: a foreign operation holds the server; Nova would refuse the rebuild.
+	if serverTaskActive(openstackServer) {
 		return openstackServer, provisioners.ErrYield
 	}
 
-	switch rebuild.State {
-	case unikornv1.ServerRebuildStateRebuilding:
-		// P7c: accepted rebuild still in flight — re-assert the accepted stamp
-		// and complete; quiescence lands in P4c, a guaranteed monitor delta.
-		markServerRebuildAccepted(server)
-
-		return openstackServer, nil
-	case unikornv1.ServerRebuildStateSucceeded:
-		// P7c′: a terminal marker guarantees no monitor delta; yield to carry
-		// liveness to P4c.
-		return openstackServer, provisioners.ErrYield
-	case unikornv1.ServerRebuildStateInitiated:
-		// P7d: a task in flight is a foreign/blocking op — yield rather than
-		// clean-complete, or the Initiated marker would have no wake channel.
-		if taskActive {
-			return openstackServer, provisioners.ErrYield
-		}
-
-		// P7e: the only destructive row. A durable Initiated marker with a
-		// quiescent server authorizes exactly one submission.
-		return submitServerRebuild(ctx, client, server, openstackServer, ServerRebuildOptions{
-			ImageID: desiredImageID,
-		})
-	case unikornv1.ServerRebuildStateFailed:
-		// Unreachable: P4a parks a Failed marker before P7. Yield defensively.
-		return openstackServer, provisioners.ErrYield
-	}
-
-	// A state this version does not recognize (version skew during a rolling
-	// upgrade) must never clean-complete as provisioned.
-	return openstackServer, provisioners.ErrYield
+	// R4″: the one destructive row.
+	return submitServerRebuild(ctx, client, server, openstackServer, ServerRebuildOptions{
+		ImageID: desiredImageID,
+	})
 }
 
 func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight serverCreatePreflight) (*servers.Server, error) {
