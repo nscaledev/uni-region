@@ -2023,6 +2023,7 @@ func TestServerSetCondition(t *testing.T) {
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 
 	resource := testServerV2(srvServerID)
+	resource.Spec.ReadinessGates = []string{conditionType}
 
 	k8sClient := newSrvFakeClient(t, resource).Build()
 
@@ -2072,6 +2073,17 @@ func TestServerSetCondition(t *testing.T) {
 	unauthorizedCtx := rbac.NewContext(t.Context(), aclWithSrvReadOnly(srvOrganizationID))
 
 	err := c.SetConditionV2(unauthorizedCtx, idstest.MustParseServerID(srvServerID), conditionType, &openapi.ServerConditionWrite{
+		Status: openapi.ServerConditionWriteStatusTrue,
+		Reason: "Provisioned",
+	})
+	require.Error(t, err)
+	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
+
+	// A condition that is not one of the server's declared readiness gates is
+	// rejected, even for an otherwise-authorized caller: the endpoint's sole
+	// purpose is releasing readiness gates, so it must not accept arbitrary
+	// (e.g. core-reconciler-owned) condition types.
+	err = c.SetConditionV2(ctx, idstest.MustParseServerID(srvServerID), "Available", &openapi.ServerConditionWrite{
 		Status: openapi.ServerConditionWriteStatusTrue,
 		Reason: "Provisioned",
 	})

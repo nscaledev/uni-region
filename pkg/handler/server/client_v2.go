@@ -893,6 +893,10 @@ func (c *ClientV2) SetConditionV2(ctx context.Context, serverID regionids.Server
 		return err
 	}
 
+	if !slices.Contains(resource.Spec.ReadinessGates, condition) {
+		return errors.HTTPForbidden("condition is not a declared readiness gate for this server")
+	}
+
 	message := ""
 	if request.Message != nil {
 		message = *request.Message
@@ -901,6 +905,10 @@ func (c *ClientV2) SetConditionV2(ctx context.Context, serverID regionids.Server
 	corev1.UpdateCondition(&resource.Status.Conditions, corev1.ConditionType(condition), k8score.ConditionStatus(request.Status), request.Reason, message)
 
 	if err := c.Client.Client.Status().Update(ctx, resource); err != nil {
+		if kerrors.IsConflict(err) {
+			return errors.HTTPConflict()
+		}
+
 		return fmt.Errorf("%w: failed to update server condition", err)
 	}
 
