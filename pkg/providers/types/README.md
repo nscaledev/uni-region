@@ -49,6 +49,11 @@ continue to be passed directly through many provider interface methods.
   resource. It carries the immutable provider identifier and user-facing
   metadata that Region configuration can filter or enrich before a public API
   exposes the inventory.
+- `Volume` is a focused create/delete capability that accepts the native
+  `unikornv1.Volume` lifecycle intent. It is deliberately separate from the
+  full `Provider` composition during the staged rollout, and it does not expose
+  discovery, observed state, VolumeClass inventory, or server attachment
+  operations.
 - `ServerCreateOptions` carries launch-time derived inputs without forcing them
   into the persisted `Server` CRD shape.
 - Exported errors such as `ErrImageNotReadyForUpload` and

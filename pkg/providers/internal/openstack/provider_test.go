@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/listeners"
@@ -56,6 +57,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -632,6 +634,19 @@ func TestDeleteServerNoopsWhenIdentityUnrealized(t *testing.T) {
 	require.NoError(t, p.DeleteServer(t.Context(), identity, server))
 }
 
+func TestDeleteVolumeNoopsWhenIdentityUnrealized(t *testing.T) {
+	t.Parallel()
+
+	region := providerNetworkRegionFixture()
+	identity := identityFixture()
+	volume := volumeFixture()
+
+	k8sClient := getClient(t, []client.Object{unrealizedOpenstackIdentityFixture(identity)})
+	p := openstack.NewTestProvider(k8sClient, region)
+
+	require.NoError(t, p.DeleteVolume(t.Context(), identity, volume))
+}
+
 // TestDeleteLoadBalancerNoopsWhenIdentityUnrealized verifies the delete is a
 // clean no-op when the backing identity has no project allocated yet.
 func TestDeleteLoadBalancerNoopsWhenIdentityUnrealized(t *testing.T) {
@@ -819,6 +834,35 @@ func withNetwork(network *regionv1.Network) func(*regionv1.Server) {
 func withTags(tags ...corev1.Tag) func(*regionv1.Server) {
 	return func(s *regionv1.Server) {
 		s.Spec.Tags = append(s.Spec.Tags, tags...)
+	}
+}
+
+func volumeFixture() *regionv1.Volume {
+	return &regionv1.Volume{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      string(uuid.NewUUID()),
+			Labels: map[string]string{
+				coreconstants.OrganizationLabel: organizationID,
+				coreconstants.ProjectLabel:      projectID,
+				constants.RegionLabel:           regionID,
+			},
+		},
+		Spec: regionv1.VolumeSpec{
+			Tags: corev1.TagList{
+				{
+					Name:  "example.unikorn-cloud.org/owner",
+					Value: "storage-team",
+				},
+				{
+					Name:  "region.unikorn-cloud.org/volume-id",
+					Value: "must-be-overwritten",
+				},
+			},
+			NetworkID:     "22222222-2222-2222-2222-222222222222",
+			VolumeClassID: "fast",
+			Size:          resource.MustParse("20Gi"),
+		},
 	}
 }
 
@@ -1799,6 +1843,91 @@ func TestReconcileLoadBalancerFloatingIP(t *testing.T) {
 		err := openstack.ReconcileLoadBalancerFloatingIP(t.Context(), p, networking, lb, vipPortID)
 		require.ErrorIs(t, err, coreerrors.ErrConsistency)
 		require.Nil(t, lb.Status.PublicIP)
+	})
+}
+
+func TestReconcileVolume(t *testing.T) {
+	t.Parallel()
+
+	identity := identityFixture()
+	volume := volumeFixture()
+	openstackVolume := &volumes.Volume{
+		ID:   "provider-volume-id",
+		Name: "volume-" + volume.Name,
+	}
+	metadata := map[string]string{
+		"example:owner":            "storage-team",
+		"region:volume_id":         volume.Name,
+		"identity:organization_id": organizationID,
+		"identity:project_id":      projectID,
+		"region:region_id":         regionID,
+		"region:network_id":        volume.Spec.NetworkID,
+		"region:identity_id":       identity.Name,
+	}
+
+	t.Run("ItDoesNotExist", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(nil, coreerrors.ErrResourceNotFound)
+		blockStorage.EXPECT().CreateVolume(t.Context(), volume, metadata).Return(openstackVolume, nil)
+
+		require.NoError(t, openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume))
+	})
+
+	t.Run("ItExists", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(openstackVolume, nil)
+
+		require.NoError(t, openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume))
+	})
+}
+
+func TestDeleteVolumeWithClient(t *testing.T) {
+	t.Parallel()
+
+	volume := volumeFixture()
+	openstackVolume := &volumes.Volume{
+		ID:   "provider-volume-id",
+		Name: "volume-" + volume.Name,
+	}
+
+	t.Run("ItDoesNotExist", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(nil, coreerrors.ErrResourceNotFound)
+
+		require.NoError(t, openstack.DeleteVolumeWithClient(t.Context(), blockStorage, volume))
+	})
+
+	t.Run("ItExists", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(openstackVolume, nil)
+		blockStorage.EXPECT().DeleteVolume(t.Context(), openstackVolume.ID).Return(nil)
+
+		require.NoError(t, openstack.DeleteVolumeWithClient(t.Context(), blockStorage, volume))
+	})
+
+	t.Run("ItDisappearsBeforeDelete", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(openstackVolume, nil)
+		blockStorage.EXPECT().DeleteVolume(t.Context(), openstackVolume.ID).Return(gophercloud.ErrUnexpectedResponseCode{
+			Actual: http.StatusNotFound,
+		})
+
+		require.NoError(t, openstack.DeleteVolumeWithClient(t.Context(), blockStorage, volume))
 	})
 }
 

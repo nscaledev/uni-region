@@ -254,10 +254,29 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   re-find cloud-side resources. This is a convention-heavy contract, not magic:
   - identity-scoped resources use fixed generated names
   - network lookups rely on deterministic names
+  - Cinder volumes use `volume-{Region Volume UUID}` inside the service
+    principal's project; create and delete both rediscover that exact name
   - server metadata is written deliberately as both a control-plane lookup aid
     and an in-guest linkage surface exposed through the metadata service
   - legacy camelCase server metadata keys remain frozen for backwards
     compatibility while newer namespaced keys provide the upgrade path
+- Cinder Volume create/delete is a project-scoped lifecycle slice:
+  - the native Region `Volume` CRD supplies the requested size and
+    `VolumeClassID`, which becomes the Cinder volume type
+  - create lists by the stable generated name and exact-matches the result
+    before submitting a create, so controller retries adopt an existing volume
+    rather than duplicating it
+  - user tags are translated with the package's normal namespaced metadata
+    convention; namespaced system linkage keys are written last so user input
+    cannot override identity, organization, project, region, network, or Volume
+    IDs; Volume metadata does not emit the legacy camelCase compatibility keys
+    retained by older resource types
+  - delete uses the same rediscovery path, treats a missing Cinder volume as
+    success, and treats an absent or not-yet-project-backed
+    `OpenstackIdentity` as proof that no provider volume could have been
+    created
+  - observed size/status mapping, VolumeClass inventory, and Nova
+    attach/detach are intentionally outside this lifecycle slice
 - Flavor export is a hybrid model: OpenStack discovers the flavor inventory, but
   region configuration can enrich or override user-facing flavor metadata such
   as architecture, baremetal status, and GPU semantics. The baremetal flag is
@@ -292,7 +311,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   The package assumes and applies a managed-role model, including default role
   names such as `manager`, `member`, and `load-balancer_member`, unless region
   configuration overrides parts of that behaviour.
-- Network, security group, and server resources are re-found in OpenStack by
+- Network, security group, server, and Volume resources are re-found in OpenStack by
   deterministic lookup rather than relying on mirrored `OpenstackNetwork`,
   `OpenstackSecurityGroup`, or `OpenstackServer` CRDs as authoritative state.
 - Baremetal server progress uses Ironic as an additional provider truth source

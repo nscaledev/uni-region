@@ -27,14 +27,20 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack"
 	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/availabilityzones"
 	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/quotasets"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
 	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumetypes"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"k8s.io/utils/ptr"
 )
+
+func volumeName(volume *unikornv1.Volume) string {
+	return "volume-" + volume.Name
+}
 
 // BlockStorageClient wraps the generic client because gophercloud is unsafe.
 type BlockStorageClient struct {
@@ -90,6 +96,55 @@ func (c *BlockStorageClient) AvailabilityZones(ctx context.Context) ([]availabil
 	}
 
 	return filtered, nil
+}
+
+func (c *BlockStorageClient) GetVolume(ctx context.Context, volume *unikornv1.Volume) (*volumes.Volume, error) {
+	_, span := traceStart(ctx, "GET /block-storage/v3/volumes/detail")
+	defer span.End()
+
+	name := volumeName(volume)
+
+	pages, err := volumes.List(c.client, &volumes.ListOpts{
+		Name: name,
+	}).AllPages(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := volumes.ExtractVolumes(pages)
+	if err != nil {
+		return nil, err
+	}
+
+	return findExactResource(result, name, "volume", func(resource *volumes.Volume) string {
+		return resource.Name
+	})
+}
+
+func (c *BlockStorageClient) CreateVolume(ctx context.Context, volume *unikornv1.Volume, metadata map[string]string) (*volumes.Volume, error) {
+	_, span := traceStart(ctx, "POST /block-storage/v3/volumes")
+	defer span.End()
+
+	opts := &volumes.CreateOpts{
+		Name:        volumeName(volume),
+		Description: "unikorn managed block storage volume",
+		Size:        int(volume.Spec.Size.Value() / (1 << 30)),
+		VolumeType:  volume.Spec.VolumeClassID,
+		Metadata:    metadata,
+	}
+
+	return volumes.Create(ctx, c.client, opts, nil).Extract()
+}
+
+func (c *BlockStorageClient) DeleteVolume(ctx context.Context, id string) error {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("block_storage.volume.id", id),
+	)
+
+	_, span := traceStart(ctx, "DELETE /block-storage/v3/volumes/{id}", spanAttributes)
+	defer span.End()
+
+	return volumes.Delete(ctx, c.client, id, nil).ExtractErr()
 }
 
 func (c *BlockStorageClient) GetVolumeTypes(ctx context.Context) ([]volumetypes.VolumeType, error) {
@@ -148,52 +203,6 @@ func (c *BlockStorageClient) UpdateQuotas(ctx context.Context, projectID string)
 	return quotasets.Update(ctx, c.client, projectID, opts).Err
 }
 
-func (p *Provider) VolumeClasses(ctx context.Context) (types.VolumeClassList, error) {
-	blockStorage, err := p.openstack.blockStorage(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	resources, err := blockStorage.GetVolumeTypes(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	region, _ := p.openstack.regionSnapshot()
-
-	return convertVolumeClasses(region, resources), nil
-}
-
-func convertVolumeClasses(region *unikornv1.Region, resources []volumetypes.VolumeType) types.VolumeClassList {
-	var config *unikornv1.OpenstackVolumeClassesSpec
-	if region != nil && region.Spec.Openstack != nil {
-		config = openstackVolumeClassesConfig(region.Spec.Openstack.BlockStorage)
-	}
-
-	result := make(types.VolumeClassList, 0, len(resources))
-
-	for i := range resources {
-		resource := &resources[i]
-
-		class := types.VolumeClass{
-			ID:          resource.ID,
-			Name:        resource.Name,
-			Description: resource.Description,
-		}
-
-		if metadata := volumeClassMetadata(config, resource.ID); metadata != nil {
-			class.Media = types.VolumeClassMedia(metadata.Media)
-			class.Encrypted = metadata.Encrypted
-
-			class.Performance = convertVolumeClassPerformance(metadata.Performance)
-		}
-
-		result = append(result, class)
-	}
-
-	return result
-}
-
 func volumeTypeIsPublic(volumeType volumetypes.VolumeType) bool {
 	return volumeType.IsPublic || volumeType.PublicAccess
 }
@@ -204,37 +213,4 @@ func openstackVolumeClassesConfig(blockStorage *unikornv1.RegionOpenstackBlockSt
 	}
 
 	return blockStorage.VolumeClasses
-}
-
-func volumeClassMetadata(config *unikornv1.OpenstackVolumeClassesSpec, id string) *unikornv1.VolumeClassMetadata {
-	if config == nil {
-		return nil
-	}
-
-	i := slices.IndexFunc(config.Metadata, func(metadata unikornv1.VolumeClassMetadata) bool {
-		return id == metadata.ID
-	})
-	if i < 0 {
-		return nil
-	}
-
-	return &config.Metadata[i]
-}
-
-func convertVolumeClassPerformance(in *unikornv1.VolumeClassPerformanceSpec) *types.VolumeClassPerformance {
-	if in == nil {
-		return nil
-	}
-
-	out := &types.VolumeClassPerformance{}
-
-	if in.MaxIOPS != nil {
-		out.MaxIOPS = ptr.To(*in.MaxIOPS)
-	}
-
-	if in.MaxThroughput != nil {
-		out.MaxThroughput = ptr.To(*in.MaxThroughput)
-	}
-
-	return out
 }
