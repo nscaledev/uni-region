@@ -435,6 +435,15 @@ spec:
                           scheduling cluster nodes.  Defaults to "soft-anti-affinity".
                         type: string
                     type: object
+                  defaultArchitecture:
+                    default: x86_64
+                    description: |-
+                      DefaultArchitecture is the fallback architecture for flavors and images
+                      that do not define one explicitly.
+                    enum:
+                    - x86_64
+                    - aarch64
+                    type: string
                   endpoint:
                     description: Endpoint is the Keystone URL e.g. https://foo.bar:5000.
                     type: string

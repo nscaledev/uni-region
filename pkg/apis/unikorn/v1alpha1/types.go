@@ -133,6 +133,10 @@ type RegionOpenstackSpec struct {
 	// ServiceAccountSecretName points to the secret containing credentials
 	// required to perform the tasks the provider needs to perform.
 	ServiceAccountSecret *NamespacedObject `json:"serviceAccountSecret"`
+	// DefaultArchitecture is the fallback architecture for flavors and images
+	// that do not define one explicitly.
+	// +kubebuilder:default=x86_64
+	DefaultArchitecture *Architecture `json:"defaultArchitecture,omitempty"`
 	// Identity is configuration for the identity service.
 	Identity *RegionOpenstackIdentitySpec `json:"identity,omitempty"`
 	// Compute is configuration for the compute service.

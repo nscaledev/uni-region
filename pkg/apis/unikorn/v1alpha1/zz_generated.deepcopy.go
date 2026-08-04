@@ -2083,6 +2083,11 @@ func (in *RegionOpenstackSpec) DeepCopyInto(out *RegionOpenstackSpec) {
 		*out = new(NamespacedObject)
 		**out = **in
 	}
+	if in.DefaultArchitecture != nil {
+		in, out := &in.DefaultArchitecture, &out.DefaultArchitecture
+		*out = new(Architecture)
+		**out = **in
+	}
 	if in.Identity != nil {
 		in, out := &in.Identity, &out.Identity
 		*out = new(RegionOpenstackIdentitySpec)

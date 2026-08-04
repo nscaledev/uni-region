@@ -26,6 +26,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumetypes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
+	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/listeners"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/loadbalancers"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/monitors"
@@ -49,8 +50,17 @@ func NewImageQuery(listFunc func() (*cache.ListSnapshot[types.Image], error)) ty
 	return &imageQuery{listFunc: listFunc}
 }
 
-//nolint:gochecknoglobals
-var ConvertImage = convertImage
+func ConvertImage(image *images.Image) (*types.Image, error) {
+	return convertImage(image, types.X86_64)
+}
+
+func ConvertImageForRegion(image *images.Image, region *unikornv1.Region) (*types.Image, error) {
+	return convertImage(image, openstackDefaultArchitecture(region))
+}
+
+func ConvertFlavors(resources []flavors.Flavor, region *unikornv1.Region) types.FlavorList {
+	return convertFlavors(resources, region)
+}
 
 //nolint:gochecknoglobals
 var ConvertVolumeClasses = convertVolumeClasses
