@@ -42,6 +42,12 @@ func BlockUntilResourceReadyForTest(ctx context.Context, server *unikornv1.Serve
 	return (&Provisioner{server: server}).blockUntilResourceReady(ctx, cli, id, resource)
 }
 
+// BlockUntilReadinessGatesReadyForTest exposes blockUntilReadinessGatesReady
+// (the readiness-gate arm) for unit testing.
+func BlockUntilReadinessGatesReadyForTest(server *unikornv1.Server) error {
+	return (&Provisioner{server: server}).blockUntilReadinessGatesReady()
+}
+
 func ServerCreateOptionsForTest(ctx context.Context, server *unikornv1.Server, cli client.Client) (*types.ServerCreateOptions, error) {
 	provisioner := &Provisioner{
 		server: server,

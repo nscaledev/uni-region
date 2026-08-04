@@ -118,3 +118,88 @@ func TestBlockUntilResourceReadyNotFound(t *testing.T) {
 	require.Equal(t, unikornv1core.ConditionReasonDependencyNotFound, perr.Reason())
 	require.True(t, provisioners.IsTerminal(err), "a missing referenced dependency is terminal")
 }
+
+// serverWithGates returns a Server whose Spec.ReadinessGates names the given
+// gates, with the given conditions pre-set on its status (name -> True/False).
+// A gate with no matching entry in conditions is left absent.
+func serverWithGates(gates []string, conditions map[string]corev1.ConditionStatus) *regionv1.Server {
+	server := &regionv1.Server{}
+	server.Spec.ReadinessGates = gates
+
+	for name, status := range conditions {
+		unikornv1core.UpdateCondition(&server.Status.Conditions, unikornv1core.ConditionType(name), status, "Test", "")
+	}
+
+	return server
+}
+
+// TestBlockUntilReadinessGatesReady pins how the readiness-gate arm maps
+// Spec.ReadinessGates onto the server's own status conditions: every named
+// gate must be present and True for the create to proceed; an absent gate or
+// one reporting False yields DependencyNotReady rather than erroring, since
+// the external controller driving it may simply not have observed the server
+// yet.
+func TestBlockUntilReadinessGatesReady(t *testing.T) {
+	t.Parallel()
+
+	testCases := map[string]struct {
+		gates      []string
+		conditions map[string]corev1.ConditionStatus
+		wantErr    bool
+	}{
+		"no gates": {
+			gates:      nil,
+			conditions: nil,
+			wantErr:    false,
+		},
+		"single gate present and true": {
+			gates:      []string{"InfiniBandReady"},
+			conditions: map[string]corev1.ConditionStatus{"InfiniBandReady": corev1.ConditionTrue},
+			wantErr:    false,
+		},
+		"single gate present but false": {
+			gates:      []string{"InfiniBandReady"},
+			conditions: map[string]corev1.ConditionStatus{"InfiniBandReady": corev1.ConditionFalse},
+			wantErr:    true,
+		},
+		"single gate absent": {
+			gates:      []string{"InfiniBandReady"},
+			conditions: map[string]corev1.ConditionStatus{},
+			wantErr:    true,
+		},
+		"two gates, one true one false": {
+			gates: []string{"InfiniBandReady", "OtherGate"},
+			conditions: map[string]corev1.ConditionStatus{
+				"InfiniBandReady": corev1.ConditionTrue,
+				"OtherGate":       corev1.ConditionFalse,
+			},
+			wantErr: true,
+		},
+		"two gates both true": {
+			gates: []string{"InfiniBandReady", "OtherGate"},
+			conditions: map[string]corev1.ConditionStatus{
+				"InfiniBandReady": corev1.ConditionTrue,
+				"OtherGate":       corev1.ConditionTrue,
+			},
+			wantErr: false,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			server := serverWithGates(tc.gates, tc.conditions)
+
+			err := serverprovisioner.BlockUntilReadinessGatesReadyForTest(server)
+
+			if !tc.wantErr {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.ErrorIs(t, err, provisioners.ErrYield)
+		})
+	}
+}

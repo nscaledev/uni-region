@@ -37,6 +37,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/record"
 
@@ -441,9 +442,10 @@ func (p *Provisioner) handleProviderCreateRetry(ctx context.Context, provider ty
 
 // blockUntilDependenciesReady gates provider create on the readiness of the
 // server's separately-provisioned platform dependencies: its identity, networks
-// and security groups. Attempting a create before these are provisioned yields a
-// doomed provider call that the retry machinery then has to mop up; gating here
-// turns that into an explicit, self-explanatory wait.
+// and security groups, followed by the server's own readiness-gate conditions.
+// Attempting a create before these are provisioned yields a doomed provider
+// call that the retry machinery then has to mop up; gating here turns that
+// into an explicit, self-explanatory wait.
 //
 // Only these are gated. The SSH certificate authority is synchronous spec data
 // with no readiness to wait on, and public IP capacity is not knowable ahead of
@@ -463,6 +465,28 @@ func (p *Provisioner) blockUntilDependenciesReady(ctx context.Context, cli clien
 	for _, id := range p.securityGroupIDs() {
 		if err := p.blockUntilResourceReady(ctx, cli, id, &unikornv1.SecurityGroup{}); err != nil {
 			return err
+		}
+	}
+
+	// Finally, gate on the server's own readiness-gate conditions (isolation
+	// and other out-of-band prerequisites signalled by external controllers).
+	return p.blockUntilReadinessGatesReady()
+}
+
+// blockUntilReadinessGatesReady gates provider create on the server's own
+// readiness-gate conditions. Each entry in Spec.ReadinessGates names a status
+// condition type that an external controller (e.g. ib-manager, which sets an
+// InfiniBand-ready condition once the partition is provisioned) is responsible
+// for driving True. Until every named condition is present and True, this
+// yields so the create is deferred rather than racing ahead of an isolation or
+// similar out-of-band prerequisite. An absent gate condition is treated as
+// not-yet-ready (yield), not an error: the external controller may not have
+// observed the server yet.
+func (p *Provisioner) blockUntilReadinessGatesReady() error {
+	for _, gate := range p.server.Spec.ReadinessGates {
+		condition, err := unikornv1core.GetCondition(p.server.Status.Conditions, unikornv1core.ConditionType(gate))
+		if err != nil || condition.Status != metav1.ConditionTrue {
+			return provisioners.Yield(unikornv1core.ConditionReasonDependencyNotReady, fmt.Sprintf("readiness gate %q is not satisfied", gate))
 		}
 	}
 
