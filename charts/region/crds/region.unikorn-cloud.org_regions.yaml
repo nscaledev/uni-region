@@ -563,6 +563,14 @@ spec:
                 - simulated
                 maxLength: 63
                 type: string
+              readinessGates:
+                description: |-
+                  ReadinessGates lists status condition types that servers provisioned in
+                  this region must satisfy (report True) before they are treated as ready.
+                  Propagated onto each Server's spec by an upstream controller.
+                items:
+                  type: string
+                type: array
               security:
                 description: Security controls region visibility.
                 properties:

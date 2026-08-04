@@ -81,6 +81,11 @@ type RegionSpec struct {
 	Kubernetes *RegionKubernetesSpec `json:"kubernetes,omitempty"`
 	// Openstack is provider specific configuration for the region.
 	Openstack *RegionOpenstackSpec `json:"openstack,omitempty"`
+	// ReadinessGates lists status condition types that servers provisioned in
+	// this region must satisfy (report True) before they are treated as ready.
+	// Propagated onto each Server's spec by an upstream controller.
+	// +optional
+	ReadinessGates []string `json:"readinessGates,omitempty"`
 }
 
 // NOTE: Organizations deliberately doesn't define just a slice of IDs, even though
@@ -1081,6 +1086,12 @@ type ServerSpec struct {
 	// the provider bypasses its scheduler and provisions directly onto the
 	// identified host.
 	InfrastructureRef *string `json:"infrastructureRef,omitempty"`
+	// ReadinessGates lists status condition types that must be True before the
+	// server is treated as ready. The server provisioner blocks (yields) until
+	// every gated condition reports True. Gates are typically populated from the
+	// region's ReadinessGates by an upstream controller.
+	// +optional
+	ReadinessGates []string `json:"readinessGates,omitempty"`
 }
 
 type ServerSecurityGroupSpec struct {

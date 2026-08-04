@@ -2181,6 +2181,11 @@ func (in *RegionSpec) DeepCopyInto(out *RegionSpec) {
 		*out = new(RegionOpenstackSpec)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.ReadinessGates != nil {
+		in, out := &in.ReadinessGates, &out.ReadinessGates
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 
@@ -2721,6 +2726,11 @@ func (in *ServerSpec) DeepCopyInto(out *ServerSpec) {
 		in, out := &in.InfrastructureRef, &out.InfrastructureRef
 		*out = new(string)
 		**out = **in
+	}
+	if in.ReadinessGates != nil {
+		in, out := &in.ReadinessGates, &out.ReadinessGates
+		*out = make([]string, len(*in))
+		copy(*out, *in)
 	}
 	return
 }

@@ -123,6 +123,15 @@ spec:
                     description: Enabled is a flag to enable public IP allocation.
                     type: boolean
                 type: object
+              readinessGates:
+                description: |-
+                  ReadinessGates lists status condition types that must be True before the
+                  server is treated as ready. The server provisioner blocks (yields) until
+                  every gated condition reports True. Gates are typically populated from the
+                  region's ReadinessGates by an upstream controller.
+                items:
+                  type: string
+                type: array
               securityGroups:
                 description: SecurityGroups is the server security groups.
                 items:
