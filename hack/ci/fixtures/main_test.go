@@ -17,6 +17,8 @@ limitations under the License.
 package main
 
 import (
+	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -27,9 +29,49 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/yaml"
 )
 
 const testRegionNamespace = "unikorn-region"
+
+type identityTestValues struct {
+	Roles map[string]identityTestRole `json:"roles"`
+}
+
+type identityTestRole struct {
+	Scopes identityTestRoleScopes `json:"scopes"`
+}
+
+type identityTestRoleScopes struct {
+	Global       map[string][]string `json:"global"`
+	Organization map[string][]string `json:"organization"`
+}
+
+func TestIdentityTestAdministratorRoleIsGrantableByPlatformAdministrator(t *testing.T) {
+	t.Parallel()
+
+	data, err := os.ReadFile("../identity-test-values.yaml")
+	if err != nil {
+		t.Fatalf("reading Identity test values: %v", err)
+	}
+
+	var values identityTestValues
+	if err := yaml.Unmarshal(data, &values); err != nil {
+		t.Fatalf("decoding Identity test values: %v", err)
+	}
+
+	administrator := values.Roles["administrator"]
+	platformAdministrator := values.Roles["platform-administrator"]
+
+	for endpoint, operations := range administrator.Scopes.Organization {
+		platformOperations := platformAdministrator.Scopes.Global[endpoint]
+		for _, operation := range operations {
+			if !slices.Contains(platformOperations, operation) {
+				t.Errorf("platform-administrator cannot grant administrator permission %s/%s", endpoint, operation)
+			}
+		}
+	}
+}
 
 func TestFirstEnv(t *testing.T) {
 	t.Setenv("FIXTURE_TEST_FIRST_EMPTY", "")

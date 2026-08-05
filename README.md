@@ -291,10 +291,12 @@ valid with at least 15 minutes remaining. The certificate lifetime must also
 cover the requested fixture certificate duration. Otherwise it removes the
 stale Secret so cert-manager issues a replacement before writing `test/.env`.
 
-The Region integration install also overlays the pinned Identity chart's
-organization `administrator` role with read access to the public VolumeClass
-endpoint. This test-only grant lets the bearer-token API suite exercise live
-provider discovery; it does not add global permission or change production
+The Region integration install also overlays the pinned Identity chart with
+organization `administrator` read access to the public VolumeClass endpoint.
+It mirrors that permission at global scope for the bootstrap
+`platform-administrator`, preserving Identity's role-grant hierarchy. The API
+suite itself uses the organization administrator token, so this test-only
+configuration does not exercise global authorization or change production
 Identity values.
 
 Fixture generation creates a private simulated Region with deterministic,
