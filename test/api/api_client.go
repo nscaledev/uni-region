@@ -1006,6 +1006,24 @@ func (c *APIClient) GetServerSSHKey(ctx context.Context, serverID string) (*regi
 	return &key, nil
 }
 
+// SatisfyServerProviderCreateGate records a configured provider-create gate as satisfied.
+func (c *APIClient) SatisfyServerProviderCreateGate(ctx context.Context, serverID string, request regionopenapi.ServerProviderCreateGateAction) error {
+	path := c.endpoints.SatisfyServerProviderCreateGate(serverID)
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return fmt.Errorf("marshaling provider-create gate request: %w", err)
+	}
+
+	//nolint:bodyclose // DoInternalRegionRequest handles response body closing internally
+	_, _, err = c.DoInternalRegionRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusNoContent)
+	if err != nil {
+		return fmt.Errorf("satisfying provider-create gate: %w", err)
+	}
+
+	return nil
+}
+
 // UpdateServer updates a server. Changing the image ID triggers an in-place rebuild.
 func (c *APIClient) UpdateServer(ctx context.Context, serverID string, request regionopenapi.ServerV2Update) (*regionopenapi.ServerV2Read, error) {
 	path := c.endpoints.UpdateServer(serverID)
