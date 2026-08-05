@@ -32,6 +32,7 @@ type TestConfig struct {
 	RegionCACertPath        string
 	RegionID                string
 	PrivateRegionID         string
+	EmptyClassRegionID      string
 	SecondaryOrgID          string
 	SecondaryProjectID      string
 	SecondaryAuthToken      string
@@ -96,6 +97,7 @@ func LoadTestConfig() (*TestConfig, error) {
 		ProjectID:               v.GetString("TEST_PROJECT_ID"),
 		RegionID:                v.GetString("TEST_REGION_ID"),
 		PrivateRegionID:         v.GetString("TEST_PRIVATE_REGION_ID"),
+		EmptyClassRegionID:      v.GetString("TEST_EMPTY_VOLUMECLASS_REGION_ID"),
 		SecondaryOrgID:          v.GetString("TEST_SECONDARY_ORG_ID"),
 		SecondaryProjectID:      v.GetString("TEST_SECONDARY_PROJECT_ID"),
 		SecondaryAuthToken:      v.GetString("TEST_SECONDARY_AUTH_TOKEN"),

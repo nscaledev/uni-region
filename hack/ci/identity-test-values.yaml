@@ -1,0 +1,7 @@
+# Helm value overrides applied to the pinned Identity dependency during Region
+# integration testing.
+roles:
+  administrator:
+    scopes:
+      organization:
+        region:volumeclasses:v2: [read]

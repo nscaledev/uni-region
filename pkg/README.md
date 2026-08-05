@@ -23,6 +23,10 @@ The useful way to read it is not as a directory tree, but as one system:
   quota-carrying block storage resource. OpenStack create/delete provider
   behavior exists, while its public API, controller, and observed-state
   projection remain later lifecycle slices
+- `VolumeClass` is a separate read-only inventory surface: Regions configure
+  and providers discover the classes they expose, then the public
+  `GET /api/v2/volumeclasses` endpoint returns provider-neutral metadata for
+  Regions visible to the caller. It has no CRD or create/update/delete lifecycle
 - `Server` now carries the internal attach-existing-only block volume intent
   and observed per-volume attachment rows; public API projection and provider
   reconciliation remain separate follow-up work
@@ -62,6 +66,22 @@ These packages define the mixed provider boundary:
 
 OpenStack is the real heavyweight implementation. Kubernetes and simulated are
 alternative substrates shaped to fit the same broad service model.
+
+For VolumeClass inventory, the path through those layers is deliberately
+one-way:
+
+- [`apis/unikorn/v1alpha1`](./apis/unikorn/v1alpha1/README.md) owns the
+  Region-authored OpenStack selector and optional enrichment metadata
+- [`providers`](./providers/README.md) discovers provider inventory through
+  `CommonProvider.VolumeClasses`; OpenStack filters Cinder volume types,
+  Kubernetes returns an empty list, and simulated returns deterministic classes
+- [`handler`](./handler/README.md) filters visible Regions and maps discovered
+  classes through its provider-to-API conversion boundary
+- [`openapi`](./openapi/README.md) defines the public v2 list contract for the
+  resulting provider-neutral, Region-bound metadata
+
+This is discovery, not storage lifecycle: no VolumeClass object is persisted,
+and listing classes does not create provider resources.
 
 ### Handler And Server Layer
 

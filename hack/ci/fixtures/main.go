@@ -61,8 +61,9 @@ const (
 
 	// Region IDs (the Region CRD name, exposed as the API region ID) are UUIDs
 	// like every other ID in the API.
-	publicRegion  = "e71f2dd2-0bc9-4601-8f3b-9696a1fa90a7"
-	privateRegion = "fae390a7-9af3-43e3-9a63-02baa1a16680"
+	publicRegion           = "e71f2dd2-0bc9-4601-8f3b-9696a1fa90a7"
+	privateRegion          = "fae390a7-9af3-43e3-9a63-02baa1a16680"
+	emptyVolumeClassRegion = "ec7a356d-ab90-454f-ae2b-4d167cb66541"
 
 	internalAPICertificateName = "ci-region-api-tests"
 	internalAPISystemAccountCN = "unikorn-compute"
@@ -531,7 +532,7 @@ func createSecondaryFixtures(ctx context.Context, ac *identityopenapi.ClientWith
 	return orgID, token
 }
 
-func upsertRegion(ctx context.Context, k8s client.Client, regionNamespace, name string, organizationIDs []string) {
+func upsertRegion(ctx context.Context, k8s client.Client, regionNamespace, name string, spec regionv1.RegionSpec, organizationIDs []string) {
 	region := &regionv1.Region{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -540,9 +541,7 @@ func upsertRegion(ctx context.Context, k8s client.Client, regionNamespace, name 
 				coreconstants.NameLabel: name,
 			},
 		},
-		Spec: regionv1.RegionSpec{
-			Provider: regionv1.ProviderSimulated,
-		},
+		Spec: spec,
 	}
 
 	if len(organizationIDs) > 0 {
@@ -824,6 +823,7 @@ func emitEnv(opts options, primary primaryFixture, secondaryOrgID, secondaryToke
 	fmt.Printf("ADMIN_AUTH_TOKEN=%s\n", primary.adminToken)
 	fmt.Printf("USER_AUTH_TOKEN=%s\n", primary.userToken)
 	fmt.Printf("TEST_REGION_ID=%s\n", testRegionID)
+	fmt.Printf("TEST_EMPTY_VOLUMECLASS_REGION_ID=%s\n", emptyVolumeClassRegion)
 	fmt.Printf("TEST_SERVER_FLAVOR_ID=%s\n", opts.serverFlavorID)
 	fmt.Printf("TEST_SERVER_IMAGE_ID=%s\n", opts.serverImageID)
 	fmt.Printf("TEST_SERVER_INFRASTRUCTURE_REF=%s\n", opts.serverInfrastructureRef)
@@ -868,11 +868,22 @@ func run(opts options) {
 
 	if provider == regionv1.ProviderSimulated && !existingRegion {
 		logf("Creating simulated public region fixture in namespace %s...", opts.regionNamespace)
-		upsertRegion(ctx, k8s, opts.regionNamespace, publicRegion, nil)
+		upsertRegion(ctx, k8s, opts.regionNamespace, publicRegion, regionv1.RegionSpec{Provider: regionv1.ProviderSimulated}, nil)
 	}
 
 	logf("Creating simulated private region fixture in namespace %s...", opts.regionNamespace)
-	upsertRegion(ctx, k8s, opts.regionNamespace, privateRegion, []string{primary.orgID})
+	upsertRegion(ctx, k8s, opts.regionNamespace, privateRegion, regionv1.RegionSpec{Provider: regionv1.ProviderSimulated}, []string{primary.orgID})
+
+	logf("Creating empty VolumeClass region fixture in namespace %s...", opts.regionNamespace)
+	upsertRegion(ctx, k8s, opts.regionNamespace, emptyVolumeClassRegion, regionv1.RegionSpec{
+		Provider: regionv1.ProviderKubernetes,
+		Kubernetes: &regionv1.RegionKubernetesSpec{
+			KubeconfigSecret: &regionv1.NamespacedObject{
+				Namespace: opts.regionNamespace,
+				Name:      "unused-volumeclass-kubeconfig",
+			},
+		},
+	}, []string{primary.orgID})
 
 	emitEnv(opts, primary, secondaryOrgID, secondaryToken, testRegionID, internalAPI)
 }

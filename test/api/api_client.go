@@ -595,6 +595,21 @@ func (c *APIClient) ListFileStorageClasses(ctx context.Context, regionID string)
 	)
 }
 
+// ListVolumeClasses lists provider-neutral volume classes, optionally filtered
+// by one or more regions.
+func (c *APIClient) ListVolumeClasses(ctx context.Context, regionIDs ...string) (regionopenapi.VolumeClassListV2Read, error) {
+	path := c.endpoints.ListVolumeClasses(regionIDs...)
+
+	return coreclient.ListResource[regionopenapi.VolumeClassV2Read](
+		ctx,
+		c.regionClient,
+		path,
+		coreclient.ResponseHandlerConfig{
+			ResourceType: "volumeclasses",
+		},
+	)
+}
+
 // ListNetworks lists all networks for a project in a region.
 func (c *APIClient) ListNetworks(ctx context.Context, orgID, projectID, regionID string) (regionopenapi.NetworksV2Read, error) {
 	path := c.endpoints.ListNetworks(orgID, projectID, regionID)

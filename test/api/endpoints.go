@@ -96,6 +96,22 @@ func (e *Endpoints) ListFileStorageClasses(regionID string) string {
 		url.QueryEscape(regionID))
 }
 
+// ListVolumeClasses returns the endpoint for listing available volume classes,
+// optionally filtered by one or more regions.
+func (e *Endpoints) ListVolumeClasses(regionIDs ...string) string {
+	values := url.Values{}
+	for _, regionID := range regionIDs {
+		values.Add("regionID", regionID)
+	}
+
+	path := "/api/v2/volumeclasses"
+	if len(values) == 0 {
+		return path
+	}
+
+	return fmt.Sprintf("%s?%s", path, values.Encode())
+}
+
 // ListNetworks returns the endpoint for listing networks in a project.
 func (e *Endpoints) ListNetworks(orgID, projectID, regionID string) string {
 	return fmt.Sprintf("/api/v2/networks?organizationID=%s&projectID=%s&regionID=%s",

@@ -133,6 +133,7 @@ IDENTITY_ARGS=(
 if [[ -f "${IDENTITY_TMP}/hack/ci/test-values.yaml" ]]; then
   IDENTITY_ARGS+=(--values "${IDENTITY_TMP}/hack/ci/test-values.yaml")
 fi
+IDENTITY_ARGS+=(--values "${SCRIPT_DIR}/identity-test-values.yaml")
 
 PATH="${IDENTITY_TOOL_TMP}:$PATH" bash "${IDENTITY_TMP}/hack/ci/install" "${IDENTITY_ARGS[@]}" > "${IDENTITY_ENV_FILE}"
 # shellcheck disable=SC1090

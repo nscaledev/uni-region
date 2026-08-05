@@ -103,6 +103,20 @@ regions:
     serviceAccountSecret:
       namespace: unikorn-region
       name: gb-north-1-credentials # See the provider setup section
+    blockStorage:
+      volumeClasses:
+        selector:
+          ids:
+          - cda67b98-331d-4d4f-911e-b1fd64611b0b
+        metadata:
+        - id: cda67b98-331d-4d4f-911e-b1fd64611b0b
+          minimumSizeGiB: 10
+          maximumSizeGiB: 2048
+          media: nvme
+          performance:
+            maxIOPS: 25000
+            maxThroughputMiBps: 500
+          encrypted: true
 ```
 
 This configures the service to be exposed on the specified host using an ingress
@@ -115,6 +129,40 @@ The `provider` field in the Helm values remains required installation
 configuration. The test fixture provider inference described below only controls
 which existing Region CR `make integration-fixtures` uses for generated test
 data.
+
+### VolumeClass Discovery
+
+`VolumeClass` is read-only, Region-scoped provider inventory. It describes the
+block-storage classes from which later Volume APIs can provision storage; it is
+not a resource that users create, update, or delete. Clients list the classes
+visible to them through the public v2 API:
+
+```http
+GET /api/v2/volumeclasses?regionID=c7e8492f-c320-4278-8201-48cd38fed38b
+```
+
+Repeat `regionID` to select multiple Regions. Omitting it lists inventory from
+all visible Regions. A selected Region that is missing or inaccessible is
+omitted rather than reported as not found, so the response can be an empty or
+partial JSON list.
+Each result includes the provider class ID and name plus its Region ID and
+encryption flag. Description, media, whole-GiB minimum and maximum capacities,
+and advertised performance caps are present only when the Region publishes
+them.
+
+OpenStack discovers Cinder volume types but exports only IDs in
+`openstack.blockStorage.volumeClasses.selector.ids`. Selection is fail-closed:
+omitting `volumeClasses`, omitting its selector, or supplying an empty ID list
+exports no OpenStack VolumeClasses. The optional `metadata` entries enrich
+selected classes with operator-authored user-facing capabilities; they do not
+change Cinder configuration. Kubernetes-backed Regions currently return no
+VolumeClasses, while the simulated provider exposes deterministic classes for
+development and integration testing.
+
+See the [OpenStack provider administration guide](pkg/providers/internal/openstack/ADMIN.md)
+for the complete Region resource shape and rollout guidance, and
+[pkg/README.md](pkg/README.md) for the configuration-to-provider-to-API package
+flow.
 
 ## Running Tests
 
@@ -242,6 +290,18 @@ certificate Common Name matches `ci-fixtures`, and the certificate is currently
 valid with at least 15 minutes remaining. The certificate lifetime must also
 cover the requested fixture certificate duration. Otherwise it removes the
 stale Secret so cert-manager issues a replacement before writing `test/.env`.
+
+The Region integration install also overlays the pinned Identity chart's
+organization `administrator` role with read access to the public VolumeClass
+endpoint. This test-only grant lets the bearer-token API suite exercise live
+provider discovery; it does not add global permission or change production
+Identity values.
+
+Fixture generation creates a private simulated Region with deterministic,
+enriched VolumeClasses and a private Kubernetes-backed Region whose provider
+advertises an empty VolumeClass list. The latter carries only the minimal Region
+configuration required by the CRD; VolumeClass discovery never resolves its
+placeholder kubeconfig Secret reference.
 
 Fixture certificates last one hour by default. For longer local sessions,
 override the duration when generating fixtures:
