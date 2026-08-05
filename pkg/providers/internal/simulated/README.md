@@ -34,6 +34,9 @@ development, while keeping behaviour deterministic and cheap to run.
   images through the same query/filter contract used by real providers.
 - Unsupported operations fail explicitly with `ErrUnsupportedOperation` rather
   than pretending to succeed.
+- Server volume attach/detach participates in the full interface contract but
+  is currently unsupported; attachment fidelity belongs to the OpenStack
+  provider until a higher-level simulated workflow requires it.
 - Some mutable operations intentionally act by mutating service-side resource
   status deterministically, for example network status and load balancer VIP or
   public IP assignment.

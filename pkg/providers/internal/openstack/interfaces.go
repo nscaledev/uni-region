@@ -29,6 +29,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/remoteconsoles"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/volumeattach"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/listeners"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/loadbalancers"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/monitors"
@@ -185,12 +186,19 @@ type ServerInterface interface {
 	CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error)
 }
 
+type VolumeAttachmentInterface interface {
+	GetVolumeAttachment(ctx context.Context, serverID, volumeID string) (*volumeattach.VolumeAttachment, error)
+	CreateVolumeAttachment(ctx context.Context, serverID, volumeID string) (*volumeattach.VolumeAttachment, error)
+	DeleteVolumeAttachment(ctx context.Context, serverID, volumeID string) error
+}
+
 type ComputeInterface interface {
 	KeypairInterface
 	FlavorInterface
 	ServerGroupInterface
 	ComputeQuotaInterface
 	ServerInterface
+	VolumeAttachmentInterface
 }
 
 type PlacementInterface interface {
