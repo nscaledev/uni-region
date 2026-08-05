@@ -46,9 +46,12 @@ provider capability discovery into user-visible region catalogue data.
 - VolumeClass access preserves the existing Region visibility distinction:
   a nil organization allowlist is unrestricted, while a configured but empty
   allowlist permits no organizations.
-- VolumeClass provider discovery requires `region:volumeclasses:v2/read` in at
-  least one organization visible to the caller. Requests without that grant
-  omit the selected Regions without performing provider lookups.
+- VolumeClass provider discovery requires global
+  `region:volumeclasses:v2/read` or that grant in at least one organization
+  visible to the caller. Global VolumeClass permission applies only to Regions
+  retained by the canonical Region visibility filter; it does not expand the
+  visible Region set. Requests without either grant omit the selected Regions
+  without performing provider lookups.
 - Region ACL checking is enforced in two places:
   - **List responses** (`FilterRegions`) — removes regions the caller cannot see
     before building the response or applying list selectors such as the

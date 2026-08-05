@@ -382,6 +382,43 @@ func TestVolumeClassV2ReturnsEmptyListForFilteredRegions(t *testing.T) {
 	}
 }
 
+func TestVolumeClassV2DiscoversVisibleRegionWithGlobalPermissionAndNoOrganizations(t *testing.T) {
+	t.Parallel()
+
+	const (
+		regionID      = "30303030-3030-4030-a030-303030303030"
+		volumeClassID = "31313131-3131-4131-a131-313131313131"
+	)
+
+	fixture := newVolumeClassV2TestFixture(
+		t,
+		newVolumeClassTestRegion(
+			regionID,
+			newVolumeClassTestSecurity(volumeClassOtherOrganizationID),
+		),
+	)
+	fixture.expectVolumeClasses(regionID, types.VolumeClassList{
+		{ID: volumeClassID, Name: "globally-visible-class"},
+	}, nil)
+
+	ctx := rbac.NewContext(t.Context(), &identityapi.Acl{
+		Global: &identityapi.AclEndpoints{
+			{Name: "region:regions", Operations: identityapi.AclOperations{identityapi.Read}},
+			{Name: volumeClassReadEndpoint, Operations: identityapi.AclOperations{identityapi.Read}},
+		},
+	})
+	params := openapi.GetApiV2VolumeclassesParams{
+		RegionID: ptr.To(openapi.RegionIDQueryParameter{regionID}),
+	}
+
+	response := fixture.get(ctx, params)
+	result := requireVolumeClassListResponse(t, response)
+
+	require.Len(t, result, 1)
+	require.Equal(t, volumeClassID, result[0].Metadata.Id)
+	require.Equal(t, regionID, result[0].Spec.RegionId.String())
+}
+
 func TestVolumeClassV2ReturnsEmptyProviderInventory(t *testing.T) {
 	t.Parallel()
 
