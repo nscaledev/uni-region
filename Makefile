@@ -17,6 +17,7 @@ CONTROLLERS = \
   unikorn-network-controller \
   unikorn-security-group-controller \
   unikorn-load-balancer-controller \
+  unikorn-volume-controller \
   unikorn-server-controller \
   unikorn-region-monitor
 

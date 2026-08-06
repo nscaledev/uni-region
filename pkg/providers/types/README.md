@@ -56,9 +56,11 @@ continue to be passed directly through many provider interface methods.
   model; they are not provider-discovered values.
 - `Volume` is a focused create/delete capability that accepts the native
   `unikornv1.Volume` lifecycle intent. It is deliberately separate from the
-  full `Provider` composition during the staged rollout, and it does not expose
-  discovery, observed state, VolumeClass inventory, or server attachment
-  operations.
+  full `Provider` composition and is resolved through
+  `providers.LookupVolume`, allowing the Volume controller to consume it
+  without requiring unsupported providers to implement block storage. It does
+  not expose discovery, observed state, VolumeClass inventory, or server
+  attachment operations.
 - `ServerCreateOptions` carries launch-time derived inputs without forcing them
   into the persisted `Server` CRD shape.
 - `ServerVolumeAttachment` contains only provider-neutral observation needed by

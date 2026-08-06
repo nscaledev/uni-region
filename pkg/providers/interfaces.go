@@ -28,4 +28,6 @@ type Providers interface {
 	// LookupCloud returns a provider as identified by the region ID and must be
 	// a cloud type.
 	LookupCloud(regionID string) (types.Provider, error)
+	// LookupVolume returns a provider that implements Volume lifecycle.
+	LookupVolume(regionID string) (types.Volume, error)
 }

@@ -262,6 +262,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - legacy camelCase server metadata keys remain frozen for backwards
     compatibility while newer namespaced keys provide the upgrade path
 - Cinder Volume create/delete is a project-scoped lifecycle slice:
+  - the Region Volume controller drives this focused capability after the
+    service-principal Identity is ready
   - the native Region `Volume` CRD supplies the requested size and
     `VolumeClassID`, which becomes the Cinder volume type
   - create lists by the stable generated name and exact-matches the result
@@ -275,7 +277,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - delete uses the same rediscovery path, treats a missing Cinder volume as
     success, and treats an absent or not-yet-project-backed
     `OpenstackIdentity` as proof that no provider volume could have been
-    created
+    created; this lets controller deletion delegate unconditionally before
+    releasing any Identity allocation
   - observed size/status mapping and VolumeClass inventory are intentionally
     outside this lifecycle slice; Nova attach/detach is the separate
     server-owned provider slice described below

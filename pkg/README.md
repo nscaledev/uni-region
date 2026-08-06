@@ -20,9 +20,10 @@ The useful way to read it is not as a directory tree, but as one system:
 - monitors project observed provider truth back into status and metrics
 - providers bind the region model to real or simulated clouds
 - `Volume` is an internal Region storage model today: a network-anchored,
-  quota-carrying block storage resource. OpenStack create/delete and server
-  attachment provider behavior exists, while its public API, controller, and
-  observed-state projection remain later lifecycle slices
+  quota-carrying block storage resource. Its deployable controller now drives
+  idempotent OpenStack create/delete lifecycle and releases an annotated
+  Identity allocation after provider deletion; quota admission, its public API,
+  and observed-state projection remain later lifecycle slices
 - `Server` now carries the internal attach-existing-only block volume intent
   and observed per-volume attachment rows. The provider boundary and OpenStack
   Nova attach/detach implementation exist; public API projection and

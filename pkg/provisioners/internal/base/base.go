@@ -62,3 +62,16 @@ func (b *Base) ProviderAndIdentity(ctx context.Context, object client.Object) (t
 
 	return prov, id, err
 }
+
+// VolumeProviderAndIdentity resolves the focused Volume lifecycle capability
+// and the provider-scoped Identity for a resource.
+func (b *Base) VolumeProviderAndIdentity(ctx context.Context, object client.Object) (types.Volume, *unikornv1.Identity, error) {
+	id, err := getIdentity(ctx, object)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	prov, err := b.Providers.LookupVolume(object.GetLabels()[constants.RegionLabel])
+
+	return prov, id, err
+}

@@ -7,6 +7,7 @@
 It provides the common lookup logic for:
 
 - resolving a cloud provider from a resource's `region` label
+- resolving the optional Volume lifecycle capability through the same label
 - resolving the backing `Identity` from a resource's `identity` label
 - returning both together when a provisioner needs project-scoped provider access
 
@@ -19,7 +20,9 @@ package keeps that resolution logic consistent.
 - The package assumes label discipline is correct. Missing or wrong
   `RegionLabel`/`IdentityLabel` values are consistency failures, not normal
   business cases.
-- Provider lookup is region-based, identity lookup is label-based.
+- Provider lookup is region-based, identity lookup is label-based. Volume
+  provisioners use the focused capability lookup rather than assuming every
+  full cloud provider supports block storage.
 - This package is not where provisioning policy lives; it only resolves the
   inputs that provisioners need.
 

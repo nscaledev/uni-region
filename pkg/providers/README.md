@@ -35,11 +35,13 @@ packages are the concrete provider implementations.
 
 ## Invariants And Guard Rails
 
-- The package exposes two lookup surfaces:
+- The package exposes three lookup surfaces:
   - `LookupCommon` returns a `types.CommonProvider` for region-level capability
     discovery that every provider must support
   - `LookupCloud` returns a full `types.Provider` for regions that implement the
     full cloud lifecycle surface
+  - `LookupVolume` returns the focused `types.Volume` capability only for
+    providers that implement block-storage lifecycle
 - `types.CommonProvider` is the minimum substrate contract:
   - return the effective `Region`
   - return allocatable `Flavor` inventory
@@ -62,13 +64,14 @@ packages are the concrete provider implementations.
   - mirrored provider-state records are not the preferred answer unless the
     state cannot be reconstructed safely enough by other means
 - `types.Volume` is currently a focused create/delete capability implemented
-  by OpenStack, separate from the full `types.Provider` composition while the
-  Volume controller and other backends do not consume that lifecycle:
+  by OpenStack and consumed through `LookupVolume` by the Volume controller. It
+  remains separate from the full `types.Provider` composition so providers
+  without block-storage lifecycle are not forced to implement it:
   - lifecycle intent is the native Region `Volume` CRD
   - provider implementations rediscover their backing object internally before
     create or delete; rediscovery is not a public existence-only contract
-  - provider-neutral observation belongs to the later read-side slice, once
-    monitor and controller consumers can exercise its shape
+  - provider-neutral observation belongs to the later read-side slice and is
+    not implied by controller create/delete support
   - VolumeClass inventory remains on `CommonProvider`, and server
     attach/detach is a separate capability
 - Provider `Delete*` methods must be idempotent and must tolerate an unrealized
