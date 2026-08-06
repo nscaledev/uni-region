@@ -194,6 +194,10 @@ func (c *Client) ListFlavors(ctx context.Context, organizationID identityids.Org
 const volumeClassReadEndpoint = "region:volumeclasses:v2"
 
 func hasVolumeClassReadAccess(ctx context.Context) bool {
+	if rbac.AllowGlobalScope(ctx, volumeClassReadEndpoint, identityapi.Read) == nil {
+		return true
+	}
+
 	for _, value := range rbac.OrganizationIDs(ctx) {
 		organizationID, err := identityids.ParseOrganizationID(value)
 		if err != nil {
