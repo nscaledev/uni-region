@@ -84,8 +84,8 @@ var _ = Describe("Server Management", func() {
 				Expect(created.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusPending))
 				Expect(created.Spec.FlavorId).To(Equal(createReq.Spec.FlavorId))
 				Expect(created.Spec.ImageId).To(Equal(createReq.Spec.ImageId))
-				Expect(created.Status.RegionId).To(Equal(config.RegionID))
-				Expect(created.Status.NetworkId).To(Equal(networkID))
+				Expect(created.Status.RegionId.String()).To(Equal(config.RegionID))
+				Expect(created.Status.NetworkId.String()).To(Equal(networkID))
 
 				// List and single-resource GETs are served from the controller-runtime
 				// cache, so a just-created server can briefly be absent or stale.
@@ -109,7 +109,7 @@ var _ = Describe("Server Management", func() {
 					g.Expect(got.Metadata.Id).To(Equal(serverID))
 					g.Expect(got.Spec.FlavorId).To(Equal(createReq.Spec.FlavorId))
 					g.Expect(got.Spec.ImageId).To(Equal(createReq.Spec.ImageId))
-					g.Expect(got.Status.NetworkId).To(Equal(networkID))
+					g.Expect(got.Status.NetworkId.String()).To(Equal(networkID))
 				}).WithTimeout(5 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
 			})
 		})
