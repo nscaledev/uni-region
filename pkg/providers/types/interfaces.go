@@ -99,6 +99,8 @@ type Volume interface {
 	CreateVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
 	// DeleteVolume idempotently deletes the provider volume described by the Region Volume.
 	DeleteVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
+	// ObserveVolume rediscovers and reports current provider state for the Region Volume.
+	ObserveVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) (*VolumeObservation, error)
 }
 
 type Server interface {

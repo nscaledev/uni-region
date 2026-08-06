@@ -255,13 +255,14 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - identity-scoped resources use fixed generated names
   - network lookups rely on deterministic names
   - Cinder volumes use `volume-{Region Volume UUID}` inside the service
-    principal's project; create, delete, attach, and detach rediscover that
-    exact name
+    principal's project; create, delete, observation, attach, and detach
+    rediscover that exact name
   - server metadata is written deliberately as both a control-plane lookup aid
     and an in-guest linkage surface exposed through the metadata service
   - legacy camelCase server metadata keys remain frozen for backwards
     compatibility while newer namespaced keys provide the upgrade path
-- Cinder Volume create/delete is a project-scoped lifecycle slice:
+- Cinder Volume create/delete and observation are project-scoped lifecycle
+  operations:
   - the Region Volume controller resolves the full cloud provider and drives
     its Volume capability after the service-principal Identity is ready
   - the native Region `Volume` CRD supplies the requested size and
@@ -288,10 +289,37 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     `OpenstackIdentity` as proof that no provider volume could have been
     created; this lets controller deletion delegate unconditionally before
     releasing any Identity allocation
-  - general observed size/status mapping and VolumeClass inventory are outside
-    this lifecycle slice; the narrow status classification above exists only to
-    determine create convergence, while Nova attach/detach is the separate
-    server-owned provider slice described below
+  - observation creates an ephemeral Cinder client in the identity's project,
+    exact-matches the stable name `volume-{Region Volume UUID}` after Cinder's
+    fuzzy name filter, and fails closed on duplicate exact matches
+  - after discovery it validates all six system linkage keys written at create:
+    `region:volume_id`, `identity:organization_id`, `identity:project_id`,
+    `region:region_id`, `region:network_id`, and `region:identity_id`.
+    An empty Region-side linkage anchor or missing/conflicting Cinder linkage is
+    `ErrConsistency`, not a successful observation or a not-found result;
+    mutable user tag metadata is not part of this validation
+  - Cinder's whole-GiB capacity becomes a binary `resource.Quantity` by
+    multiplying by one GiB. Negative capacity or a value that cannot be
+    represented in bytes as an `int64` is `ErrConsistency`, not a neutral
+    observation. Cinder lifecycle values map to neutral values as follows:
+    `creating` and `available` retain their names; `reserved` and
+    `attaching` become `attaching`; `in-use` becomes `attached`; `detaching`
+    and `deleting` retain their names; `managing`, `maintenance`,
+    `restoring-backup`, `awaiting-transfer`, `backing-up`, `downloading`,
+    `uploading`, `retyping`, and `extending` become `updating`; and `error`,
+    `error_deleting`, `error_managing`, `error_restoring`, `error_backing-up`,
+    and `error_extending` become `error`. Empty or unrecognized values become
+    `unknown`.
+  - no exact match returns `ErrResourceNotFound`, while Cinder request,
+    decoding, and client-construction failures remain errors. A recognized
+    Cinder error lifecycle and an unknown lifecycle are successful neutral
+    observations, not Go errors.
+  - observation returns only the neutral size and lifecycle result. It neither
+    writes `Volume.Status` nor introduces a mirrored provider-state CRD. The
+    later monitor projects observed provider size and lifecycle into Volume
+    status; the Volume controller separately owns create/delete intent and
+    generic provisioning conditions. VolumeClass inventory and Nova
+    attach/detach remain separate capabilities
 - Flavor export is a hybrid model: OpenStack discovers the flavor inventory, but
   region configuration can enrich or override user-facing flavor metadata such
   as architecture, baremetal status, and GPU semantics. Architecture resolves
@@ -331,12 +359,13 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   compute and block-storage clients from the service principal, rediscovers the
   Nova server and detailed Cinder volume, and uses Cinder's attachment rows as
   the normal-path observation before calling Nova's volume-attachment
-  create/delete API. Cinder volume lifecycle observation is not part of this
-  slice. The Cinder name filter is treated as fuzzy and is post-filtered against
-  the exact stable name `volume-{Volume.Name}`; duplicate exact matches fail
-  closed with `ErrConsistency`. Only the optional guest device name crosses the
-  provider-neutral boundary; Nova and Cinder IDs and Gophercloud objects remain
-  internal.
+  create/delete API. Cinder volume lifecycle observation is a separate
+  capability from this attachment slice. The Cinder name filter is treated as
+  fuzzy and post-filtered against the exact stable name
+  `volume-{Volume.Name}`; duplicate
+  exact matches fail closed with `ErrConsistency`. Only the optional guest
+  device name crosses the provider-neutral boundary; Nova and Cinder IDs and
+  Gophercloud objects remain internal.
 
   Attachment behavior is deliberately asymmetric:
   - attach requires both the server and volume; either missing resource maps to

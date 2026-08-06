@@ -486,6 +486,21 @@ func (mr *MockVolumeMockRecorder) DeleteVolume(ctx, identity, volume any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteVolume", reflect.TypeOf((*MockVolume)(nil).DeleteVolume), ctx, identity, volume)
 }
 
+// ObserveVolume mocks base method.
+func (m *MockVolume) ObserveVolume(ctx context.Context, identity *v1alpha1.Identity, volume *v1alpha1.Volume) (*types.VolumeObservation, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ObserveVolume", ctx, identity, volume)
+	ret0, _ := ret[0].(*types.VolumeObservation)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ObserveVolume indicates an expected call of ObserveVolume.
+func (mr *MockVolumeMockRecorder) ObserveVolume(ctx, identity, volume any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ObserveVolume", reflect.TypeOf((*MockVolume)(nil).ObserveVolume), ctx, identity, volume)
+}
+
 // MockServer is a mock of Server interface.
 type MockServer struct {
 	ctrl     *gomock.Controller
@@ -1118,6 +1133,21 @@ func (m *MockProvider) ListExternalNetworks(ctx context.Context) (types.External
 func (mr *MockProviderMockRecorder) ListExternalNetworks(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListExternalNetworks", reflect.TypeOf((*MockProvider)(nil).ListExternalNetworks), ctx)
+}
+
+// ObserveVolume mocks base method.
+func (m *MockProvider) ObserveVolume(ctx context.Context, identity *v1alpha1.Identity, volume *v1alpha1.Volume) (*types.VolumeObservation, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ObserveVolume", ctx, identity, volume)
+	ret0, _ := ret[0].(*types.VolumeObservation)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ObserveVolume indicates an expected call of ObserveVolume.
+func (mr *MockProviderMockRecorder) ObserveVolume(ctx, identity, volume any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ObserveVolume", reflect.TypeOf((*MockProvider)(nil).ObserveVolume), ctx, identity, volume)
 }
 
 // QueryImages mocks base method.

@@ -61,13 +61,14 @@ packages are the concrete provider implementations.
     the real backing resources
   - mirrored provider-state records are not the preferred answer unless the
     state cannot be reconstructed safely enough by other means
-- `types.Volume` is the focused create/delete capability embedded in the full
+- `types.Volume` is the focused create/delete/observation capability embedded in the full
   `types.Provider` contract and consumed through `LookupCloud` by the Volume
   controller. Discovery-only providers remain on `types.CommonProvider` and do
   not implement workload lifecycle:
   - lifecycle intent is the native Region `Volume` CRD
   - provider implementations rediscover their backing object internally before
-    create or delete; rediscovery is not a public existence-only contract
+    create, delete, or observation; observation returns a `types.VolumeObservation`
+    rather than writing the CRD
   - create success means the rediscovered backing volume is usable, not merely
     that an asynchronous provider request was accepted. Providers return
     `provisioners.ErrYield` while creation is still converging and a safe typed
@@ -77,9 +78,14 @@ packages are the concrete provider implementations.
     merely that an asynchronous provider request was accepted. Accepted delete
     requests return `provisioners.ErrYield` so allocation cleanup and finalizer
     removal wait for provider convergence
-  - provider-neutral observation belongs to the later read-side slice and is
-    not implied by the provider-internal state check required to converge
-    controller create/delete support
+  - its `resource.Quantity` size and one of the nine neutral lifecycle values
+    (`creating`, `available`, `attaching`, `attached`, `detaching`, `updating`,
+    `deleting`, `error`, or `unknown`) let later consumers observe backing truth
+    without importing a provider SDK
+  - no backing resource maps to the shared `ErrResourceNotFound` sentinel;
+    client/request failures remain Go errors, while successfully observed
+    provider `error` and unrecognized/empty `unknown` lifecycle values remain
+    successful observations
   - VolumeClass inventory remains on `CommonProvider`, and server
     attach/detach is a separate capability
 - Provider `Delete*` methods must be idempotent and must tolerate an unrealized

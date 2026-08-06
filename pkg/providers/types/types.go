@@ -134,6 +134,25 @@ type VolumeClassPerformance struct {
 // VolumeClassList is a list of provider volume classes.
 type VolumeClassList []VolumeClass
 
+type VolumeStatus string
+
+const (
+	VolumeStatusCreating  VolumeStatus = "creating"
+	VolumeStatusAvailable VolumeStatus = "available"
+	VolumeStatusAttaching VolumeStatus = "attaching"
+	VolumeStatusAttached  VolumeStatus = "attached"
+	VolumeStatusDetaching VolumeStatus = "detaching"
+	VolumeStatusUpdating  VolumeStatus = "updating"
+	VolumeStatusDeleting  VolumeStatus = "deleting"
+	VolumeStatusError     VolumeStatus = "error"
+	VolumeStatusUnknown   VolumeStatus = "unknown"
+)
+
+type VolumeObservation struct {
+	Size   resource.Quantity
+	Status VolumeStatus
+}
+
 type ImageVirtualization string
 
 const (

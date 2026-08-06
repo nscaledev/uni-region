@@ -96,10 +96,13 @@ stored objects rely on for linkage, migration, and operational coordination.
   kind and Region resource ID of the resource that owns the volume's attachment
   claim; a nil claim means the volume is available for claiming. `Server` is the
   current supported claim kind. Attachment realization remains outside
-  `Volume.Status`, which is conditions-first and also reserves observed size for
-  later observation work. The Volume controller drives provider create/delete,
-  but provider-side volume identity is rediscovered by stable provider lookup
-  rather than mirrored into status.
+  `Volume.Status`, which is conditions-first. The Volume controller drives
+  provider create/delete and generic provisioning conditions.
+  `Volume.Status.Size` remains a later persisted projection: provider
+  observation returns neutral observed size and lifecycle to its caller, but
+  does not write this CRD. The later monitor projects that provider truth into
+  Volume status. Provider-side volume identity is rediscovered by stable
+  provider lookup rather than mirrored into status.
 - `Server.Spec.Volumes` is the attach-existing-only desired state for block
   storage. Each row names an existing Region `Volume` by ID; inline
   server-created volume templates are deliberately excluded from the first

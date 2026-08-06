@@ -55,17 +55,27 @@ continue to be passed directly through many provider interface methods.
   operator-authored Region configuration propagated through this neutral
   model; they are not provider-discovered values. The same model carries an
   optional typed Region Flavor allowlist; nil or empty means unrestricted.
-- `Volume` is the focused create/delete capability embedded in the full
-  `Provider` composition. It accepts the native `unikornv1.Volume` lifecycle
-  intent and does not expose discovery, observed state, VolumeClass inventory,
-  or server attachment operations. `CreateVolume` is a reconciliation
-  operation rather than a one-shot request: implementations return
-  `provisioners.ErrYield` until the backing resource is usable, return `nil`
-  only after convergence, and may return a typed terminal provisioning error
-  for an unrecoverable provider state. `DeleteVolume` likewise yields after an
-  accepted asynchronous delete and succeeds only when provider absence is
-  confirmed. Discovery-only substrates implement `CommonProvider` instead of
-  the full workload lifecycle contract.
+- `Volume` is a focused create/delete/observation capability that accepts the
+  native `unikornv1.Volume` lifecycle intent and is embedded in the full
+  `Provider` composition. `CreateVolume` is a reconciliation operation rather
+  than a one-shot request: implementations return `provisioners.ErrYield` until
+  the backing resource is usable, return `nil` only after convergence, and may
+  return a typed terminal provisioning error for an unrecoverable provider
+  state. `DeleteVolume` likewise yields after an accepted asynchronous delete
+  and succeeds only when provider absence is confirmed. `ObserveVolume` returns
+  a `VolumeObservation` containing the provider-neutral observed
+  `resource.Quantity` size and a `VolumeStatus`, rather than a provider SDK
+  object or a CRD write.
+  Its nine lowercase lifecycle values are `creating`, `available`, `attaching`,
+  `attached`, `detaching`, `updating`, `deleting`, `error`, and `unknown`.
+  VolumeClass inventory and server attachment remain separate operations.
+  Discovery-only substrates implement `CommonProvider` instead of the full
+  workload lifecycle contract.
+- `ObserveVolume` distinguishes absence, failed reads, and observed lifecycle
+  truth: no backing resource returns the shared `ErrResourceNotFound` sentinel;
+  request, decoding, and client-construction failures remain errors; a
+  successfully read provider error state returns `VolumeStatusError`, and an
+  empty or unrecognized provider state returns `VolumeStatusUnknown`.
 - `ServerCreateOptions` carries launch-time derived inputs without forcing them
   into the persisted `Server` CRD shape.
 - `ServerVolumeAttachment` contains only provider-neutral observation needed by
