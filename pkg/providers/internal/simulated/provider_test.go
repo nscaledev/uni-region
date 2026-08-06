@@ -24,6 +24,8 @@ import (
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	unikorncoreclient "github.com/unikorn-cloud/core/pkg/client"
+	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/provisioners"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -31,6 +33,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/internal/simulated"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -303,6 +306,182 @@ func TestCreateLoadBalancerFailsWhenNetworkMissing(t *testing.T) {
 	err := provider.CreateLoadBalancer(t.Context(), &unikornv1.Identity{}, loadBalancer)
 	require.Error(t, err)
 	require.Nil(t, loadBalancer.Status.VIPAddress)
+}
+
+// Image IDs are UUIDs; these stand in for a server's original and replacement image.
+const (
+	serverImageID        = "bbbbbbbb-0000-0000-0000-000000000001"
+	serverRebuildImageID = "bbbbbbbb-0000-0000-0000-000000000002"
+)
+
+func serverFixture(name string) *unikornv1.Server {
+	return &unikornv1.Server{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       name,
+			Namespace:  "default",
+			Generation: 1,
+		},
+		Spec: unikornv1.ServerSpec{
+			Image: &unikornv1.ServerImage{
+				ID: idstest.MustParseImageID(serverImageID),
+			},
+		},
+	}
+}
+
+func createServer(t *testing.T, provider *simulated.Provider, server *unikornv1.Server) error {
+	t.Helper()
+
+	return provider.CreateServer(t.Context(), &unikornv1.Identity{}, server, &types.ServerCreateOptions{})
+}
+
+func updateServerState(t *testing.T, provider *simulated.Provider, server *unikornv1.Server) error {
+	t.Helper()
+
+	return provider.UpdateServerState(t.Context(), &unikornv1.Identity{}, server)
+}
+
+func activeReason(t *testing.T, server *unikornv1.Server) unikornv1.ActiveConditionReason {
+	t.Helper()
+
+	active, err := unikornv1.GetActiveCondition(server)
+	require.NoError(t, err)
+
+	return active.Reason
+}
+
+func healthCondition(t *testing.T, server *unikornv1.Server) *unikornv1core.TypedCondition[unikornv1core.HealthConditionReason] {
+	t.Helper()
+
+	health, err := unikornv1core.GetHealthyCondition(server)
+	require.NoError(t, err)
+
+	return health
+}
+
+// requireRunningView asserts the settled view the monitor projection writes for a
+// converged, quiescent simulated server.
+func requireRunningView(t *testing.T, server *unikornv1.Server) {
+	t.Helper()
+
+	require.Equal(t, unikornv1.ActiveConditionReasonRunning, activeReason(t, server))
+
+	health := healthCondition(t, server)
+	require.Equal(t, corev1.ConditionTrue, health.Status)
+	require.Equal(t, unikornv1core.ConditionReasonHealthy, health.Reason)
+}
+
+// requireRebuildingView asserts the in-flight rebuild view both writers stamp
+// while the window is open: Active Rebuilding, health indeterminate.
+func requireRebuildingView(t *testing.T, server *unikornv1.Server) {
+	t.Helper()
+
+	require.Equal(t, unikornv1.ActiveConditionReasonRebuilding, activeReason(t, server))
+
+	health := healthCondition(t, server)
+	require.Equal(t, corev1.ConditionUnknown, health.Status)
+	require.Equal(t, unikornv1core.ConditionReasonUnknown, health.Reason)
+}
+
+func TestCreateServerFirstCreateCompletes(t *testing.T) {
+	t.Parallel()
+
+	provider := newProvider(t)
+	server := serverFixture("server-create")
+
+	// The create pass itself stamps the settled view: the record is
+	// process-local, so no separate monitor process can ever do it.
+	require.NoError(t, createServer(t, provider, server))
+	requireRunningView(t, server)
+
+	require.NotNil(t, server.Status.Observed)
+	require.Equal(t, server.Generation, server.Status.Observed.Generation)
+	require.Equal(t, ptrTo(idstest.MustParseImageID(serverImageID)), server.Status.Observed.Image)
+	require.Nil(t, server.Status.Observed.Error)
+
+	// The in-process monitor projection agrees with the reconcile stamp.
+	require.NoError(t, updateServerState(t, provider, server))
+	requireRunningView(t, server)
+}
+
+func TestCreateServerWithoutImageCompletes(t *testing.T) {
+	t.Parallel()
+
+	provider := newProvider(t)
+	server := serverFixture("server-no-image")
+	server.Spec.Image = nil
+
+	require.NoError(t, createServer(t, provider, server))
+
+	// Nothing was recorded, so there is nothing for the monitor to observe.
+	require.ErrorIs(t, updateServerState(t, provider, server), coreerrors.ErrResourceNotFound)
+}
+
+func TestCreateServerImageChangeConvergesThroughWindow(t *testing.T) {
+	t.Parallel()
+
+	provider := newProvider(t)
+	server := serverFixture("server-image-change")
+
+	require.NoError(t, createServer(t, provider, server))
+	require.NoError(t, updateServerState(t, provider, server))
+
+	// A spec edit bumps the generation, as an API update would.
+	server.Generation = 2
+	server.Spec.Image.ID = idstest.MustParseImageID(serverRebuildImageID)
+
+	// The accepting pass and the pass after it yield with the rebuild view
+	// stamped, and the monitor keeps reporting the old image while the window
+	// is open: an in-flight rebuild must not read as settled.
+	for pass := range 2 {
+		require.ErrorIs(t, createServer(t, provider, server), provisioners.ErrYield, "pass %d must hold the window open", pass)
+		requireRebuildingView(t, server)
+
+		require.NoError(t, updateServerState(t, provider, server))
+		requireRebuildingView(t, server)
+		require.Equal(t, ptrTo(idstest.MustParseImageID(serverImageID)), server.Status.Observed.Image)
+	}
+
+	// The converging pass completes and stamps the settled view itself — in a
+	// deployment no other process can, so the API's return to Running and the
+	// new observed image must not depend on a monitor poll.
+	require.NoError(t, createServer(t, provider, server))
+	requireRunningView(t, server)
+	require.Equal(t, int64(2), server.Status.Observed.Generation)
+	require.Equal(t, ptrTo(idstest.MustParseImageID(serverRebuildImageID)), server.Status.Observed.Image)
+	require.Nil(t, server.Status.Observed.Error)
+
+	// The in-process monitor projection agrees with the reconcile stamp.
+	require.NoError(t, updateServerState(t, provider, server))
+	requireRunningView(t, server)
+	require.Equal(t, ptrTo(idstest.MustParseImageID(serverRebuildImageID)), server.Status.Observed.Image)
+}
+
+func TestDeleteServerIdempotent(t *testing.T) {
+	t.Parallel()
+
+	provider := newProvider(t)
+	server := serverFixture("server-delete")
+
+	require.NoError(t, createServer(t, provider, server))
+	require.NoError(t, updateServerState(t, provider, server))
+
+	require.NoError(t, provider.DeleteServer(t.Context(), &unikornv1.Identity{}, server))
+	require.ErrorIs(t, updateServerState(t, provider, server), coreerrors.ErrResourceNotFound)
+
+	require.NoError(t, provider.DeleteServer(t.Context(), &unikornv1.Identity{}, server))
+}
+
+func TestUpdateServerStateUnknownServer(t *testing.T) {
+	t.Parallel()
+
+	provider := newProvider(t)
+	server := serverFixture("server-never-created")
+
+	err := updateServerState(t, provider, server)
+	require.ErrorIs(t, err, coreerrors.ErrResourceNotFound)
+	require.ErrorContains(t, err, "server-never-created")
+	require.Nil(t, server.Status.Observed)
 }
 
 func ptrTo[T any](v T) *T {
