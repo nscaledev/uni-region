@@ -403,6 +403,13 @@ func (c *Client) UpdateV2(ctx context.Context, securityGroupID regionids.Securit
 	updated.Spec = required.Spec
 
 	if err := c.Client.Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
+		// The controller actively reconciles a fresh security group, so the
+		// resourceVersion can move between the read and the patch: that is the
+		// caller's retry, not an internal error.
+		if kerrors.IsConflict(err) {
+			return nil, errors.HTTPConflict().WithError(err)
+		}
+
 		return nil, fmt.Errorf("%w: unable to update security group", err)
 	}
 
