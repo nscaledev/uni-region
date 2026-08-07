@@ -473,6 +473,14 @@ func (p *Provider) CreateServer(_ context.Context, _ *unikornv1.Identity, _ *uni
 	return unsupported("CreateServer")
 }
 
+func (p *Provider) AttachVolume(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ *unikornv1.Volume) (*types.ServerVolumeAttachment, error) {
+	return nil, unsupported("AttachVolume")
+}
+
+func (p *Provider) DetachVolume(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ *unikornv1.Volume) error {
+	return unsupported("DetachVolume")
+}
+
 func (p *Provider) RebootServer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ bool) error {
 	return unsupported("RebootServer")
 }

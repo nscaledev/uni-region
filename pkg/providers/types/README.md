@@ -15,8 +15,8 @@ That makes this package a mixed abstraction layer on purpose:
 - when the thing is provider-derived, query-driven, transient, or otherwise not
   represented as a concrete CRD, this package provides the neutral shape and
   capability contract instead, for example `Flavor`, `Image`,
-  `VolumeClass`, `ExternalNetwork`, `ServerCreateOptions`, and the image query
-  interfaces
+  `VolumeClass`, `ExternalNetwork`, `ServerCreateOptions`,
+  `ServerVolumeAttachment`, and the image query interfaces
 
 So this package is not "all provider models". It is the intermediate
 portability layer for provider-facing concepts that higher layers still need to
@@ -34,6 +34,9 @@ continue to be passed directly through many provider interface methods.
 - `Provider` is a capability composition interface, not one monolithic "SDK"
   wrapper. It embeds smaller contracts such as `ImageRead`, `ImageWrite`,
   `Network`, `Server`, `ServerConsole`, and `ServerSnapshot`.
+- The `Server` capability owns both ends of the existing-volume attachment
+  boundary. `AttachVolume` and `DetachVolume` receive the repo-native
+  `Server` and `Volume` resources; `Volume` does not own attachment intent.
 - CRD-backed lifecycle operations continue to use repo-native
   `unikornv1.*` resource types where those are the stable service contract.
 - Provider-derived or non-CRD concepts use the intermediate types defined in
@@ -58,6 +61,9 @@ continue to be passed directly through many provider interface methods.
   operations.
 - `ServerCreateOptions` carries launch-time derived inputs without forcing them
   into the persisted `Server` CRD shape.
+- `ServerVolumeAttachment` contains only provider-neutral observation needed by
+  higher layers: the optional guest device name. Provider IDs and SDK-native
+  attachment objects remain inside the concrete provider.
 - Exported errors such as `ErrImageNotReadyForUpload` and
   `ErrImageStillInUse` are semantic contract values used to communicate provider
   behaviour upward.

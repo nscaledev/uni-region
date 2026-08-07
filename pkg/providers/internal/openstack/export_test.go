@@ -326,6 +326,14 @@ func CreateServerWithClients(ctx context.Context, p *Provider, networking Networ
 	return p.createServer(ctx, networking, compute, server, options, keyName, nil)
 }
 
+func AttachVolumeWithClients(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, server *unikornv1.Server, volume *unikornv1.Volume) (*types.ServerVolumeAttachment, error) {
+	return attachVolume(ctx, compute, blockStorage, server, volume)
+}
+
+func DetachVolumeWithClients(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, server *unikornv1.Server, volume *unikornv1.Volume) error {
+	return detachVolume(ctx, compute, blockStorage, server, volume)
+}
+
 func ResolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {
 	return resolveServerKeyName(server, identity)
 }
