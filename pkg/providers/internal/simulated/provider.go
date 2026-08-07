@@ -29,6 +29,7 @@ import (
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/provisioners"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -36,6 +37,7 @@ import (
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -99,17 +101,19 @@ type Provider struct {
 	client client.Client
 	region *unikornv1.Region
 
-	lock         sync.RWMutex
-	customImages map[string]types.Image
+	lock             sync.RWMutex
+	customImages     map[string]types.Image
+	simulatedServers map[string]*simulatedServer
 }
 
 var _ types.Provider = &Provider{}
 
 func New(_ context.Context, cli client.Client, region *unikornv1.Region) (*Provider, error) {
 	return &Provider{
-		client:       cli,
-		region:       region,
-		customImages: map[string]types.Image{},
+		client:           cli,
+		region:           region,
+		customImages:     map[string]types.Image{},
+		simulatedServers: map[string]*simulatedServer{},
 	}, nil
 }
 
@@ -469,8 +473,108 @@ func (p *Provider) DeleteLoadBalancer(_ context.Context, _ *unikornv1.Identity, 
 	return nil
 }
 
-func (p *Provider) CreateServer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ *types.ServerCreateOptions) error {
-	return unsupported("CreateServer")
+// simulatedServer is the process-local provider-side record of a simulated server.
+type simulatedServer struct {
+	image regionids.ImageID
+	// rebuildPassesRemaining is the number of reconcile passes an accepted image
+	// change still needs before it converges. Nonzero means a rebuild is in flight.
+	rebuildPassesRemaining int
+}
+
+// serverRebuildConvergePasses is how many reconcile passes an accepted image
+// change yields for before converging. Two passes hold the window open across
+// two requeue intervals — long enough for a polling API client to observe it,
+// short enough not to drag the integration lane.
+const serverRebuildConvergePasses = 2
+
+// serverRebuildHealthMessage is written by both the accept stamp (reconciler
+// pass) and the in-flight monitor projection, byte-identical so the two writers
+// do not churn the condition, mirroring the OpenStack provider's convention.
+const serverRebuildHealthMessage = "unable to determine server status"
+
+// markServerRebuildInFlight stamps the in-flight view: Active Rebuilding and
+// health indeterminate, the same shape the OpenStack provider writes for an
+// accepted rebuild, so the API projects the documented Rebuilding phase for the
+// whole window.
+func markServerRebuildInFlight(server *unikornv1.Server) {
+	server.SetActiveCondition(unikornv1.ActiveConditionReasonRebuilding)
+	server.SetHealthCondition(corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, serverRebuildHealthMessage)
+}
+
+// markServerSettled stamps the settled view (Active Running, healthy) and the
+// observed region. Against a real provider the monitor owns this projection, but
+// the simulated record is process-local: the monitor runs in a separate process
+// whose provider instance has never seen the server, so the reconcile pass is
+// the only writer that can ever report the simulation's steady state.
+func markServerSettled(server *unikornv1.Server, record *simulatedServer) {
+	server.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
+	server.SetHealthCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "server is healthy")
+
+	setServerObservedStatus(server, record)
+}
+
+// CreateServer creates a simulated server and thereafter converges it onto its
+// desired image. Create is instantaneous, but an image change opens a bounded
+// in-flight window: the pass that accepts it stamps the rebuild view and yields,
+// and the change converges only serverRebuildConvergePasses passes later. The
+// window exists to make the region's own rebuild lifecycle (reconciler yield →
+// provisioning status → settle) observable to API-level tests; provider-contract
+// behaviour (Nova's ref-flip, failure presentation) is deliberately not modelled
+// here and must be tested against the real provider.
+//
+// Every non-yield return stamps the settled view and every yield stamps the
+// in-flight view, because no other process can (see markServerSettled).
+func (p *Provider) CreateServer(_ context.Context, _ *unikornv1.Identity, server *unikornv1.Server, _ *types.ServerCreateOptions) error {
+	// No desired image, so there is nothing to converge onto.
+	if server.Spec.Image == nil {
+		return nil
+	}
+
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	record, ok := p.simulatedServers[server.Name]
+	if !ok {
+		record = &simulatedServer{
+			image: server.Spec.Image.ID,
+		}
+		p.simulatedServers[server.Name] = record
+
+		markServerSettled(server, record)
+
+		return nil
+	}
+
+	// Settled and quiescent.
+	if record.rebuildPassesRemaining == 0 && record.image == server.Spec.Image.ID {
+		markServerSettled(server, record)
+
+		return nil
+	}
+
+	// Accept the image change: open the window and report the in-flight view.
+	if record.rebuildPassesRemaining == 0 {
+		record.rebuildPassesRemaining = serverRebuildConvergePasses
+
+		markServerRebuildInFlight(server)
+
+		return provisioners.ErrYield
+	}
+
+	record.rebuildPassesRemaining--
+	if record.rebuildPassesRemaining > 0 {
+		markServerRebuildInFlight(server)
+
+		return provisioners.ErrYield
+	}
+
+	// Converge onto the current desired image — a change made mid-window wins,
+	// the way a re-submitted rebuild would.
+	record.image = server.Spec.Image.ID
+
+	markServerSettled(server, record)
+
+	return nil
 }
 
 func (p *Provider) RebootServer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ bool) error {
@@ -485,12 +589,60 @@ func (p *Provider) StopServer(_ context.Context, _ *unikornv1.Identity, _ *uniko
 	return unsupported("StopServer")
 }
 
-func (p *Provider) DeleteServer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server) error {
-	return unsupported("DeleteServer")
+// DeleteServer forgets the simulated server. Deleting one that is already absent
+// succeeds: deprovisioning is idempotent.
+func (p *Provider) DeleteServer(_ context.Context, _ *unikornv1.Identity, server *unikornv1.Server) error {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	delete(p.simulatedServers, server.Name)
+
+	return nil
 }
 
-func (p *Provider) UpdateServerState(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server) error {
-	return unsupported("UpdateServerState")
+// UpdateServerState projects the simulated server onto the resource the way the
+// monitor's poll does against a real provider: it observes and never acts. It
+// writes the same views the reconcile pass stamps, byte-identical so in-process
+// callers (the create-retry existence check, unit tests) never churn conditions.
+// In a deployment it returns not-found for every server: the record is
+// process-local and the monitor's provider instance has never seen it, which is
+// why CreateServer stamps the settled view itself.
+func (p *Provider) UpdateServerState(_ context.Context, _ *unikornv1.Identity, server *unikornv1.Server) error {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	record, ok := p.simulatedServers[server.Name]
+	if !ok {
+		return fmt.Errorf("%w: server %s", coreerrors.ErrResourceNotFound, server.Name)
+	}
+
+	if record.rebuildPassesRemaining > 0 {
+		markServerRebuildInFlight(server)
+
+		setServerObservedStatus(server, record)
+
+		return nil
+	}
+
+	markServerSettled(server, record)
+
+	return nil
+}
+
+// setServerObservedStatus writes status.observed under the same single-projection
+// ownership rule as the OpenStack provider's function of the same name: one
+// fresh read, no arbitration between callers, and an observation that authorizes
+// nothing. The simulated ref is always readable so it always overwrites, and the
+// simulation has no failed state so the error always clears.
+func setServerObservedStatus(server *unikornv1.Server, record *simulatedServer) {
+	if server.Status.Observed == nil {
+		server.Status.Observed = &unikornv1.ServerObservedStatus{}
+	}
+
+	observed := server.Status.Observed
+	observed.Generation = server.Generation
+	observed.Image = ptr(record.image)
+	observed.Error = nil
 }
 
 func (p *Provider) CreateConsoleSession(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server) (string, error) {

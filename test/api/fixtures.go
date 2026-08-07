@@ -655,6 +655,23 @@ func WaitForNetworkProvisioned(c *APIClient, ctx context.Context, networkID stri
 		Should(Equal(coreapi.ResourceProvisioningStatusProvisioned), "network should be provisioned")
 }
 
+// WaitForServerProvisioned polls until the server reaches the provisioned state.
+// The window suits providers that create synchronously (simulated); a real cloud
+// boots in minutes, so OpenStack-backed suites need their own longer watch.
+func WaitForServerProvisioned(c *APIClient, ctx context.Context, serverID string) {
+	Eventually(func() coreapi.ResourceProvisioningStatus {
+		server, err := c.GetServer(ctx, serverID)
+		if err != nil {
+			GinkgoWriter.Printf("Error retrieving server %s: %v\n", serverID, err)
+			return ""
+		}
+
+		return server.Metadata.ProvisioningStatus
+	}).WithTimeout(2*time.Minute).
+		WithPolling(time.Second).
+		Should(Equal(coreapi.ResourceProvisioningStatusProvisioned), "server should be provisioned")
+}
+
 // errResourceStillExists signals a resource is still present during a deletion wait.
 var errResourceStillExists = errors.New("resource still exists")
 
@@ -700,9 +717,9 @@ func WaitForNetworkGone(c *APIClient, ctx context.Context, networkID string) {
 	})
 }
 
-// SkipUnlessOpenStackRegion skips the spec unless the configured region is visible
-// and backed by OpenStack.
-func SkipUnlessOpenStackRegion(c *APIClient, ctx context.Context, config *TestConfig) {
+// skipUnlessRegionType skips the spec unless the configured region is visible and
+// backed by the given provider, reporting wrongProviderMessage when it is not.
+func skipUnlessRegionType(c *APIClient, ctx context.Context, config *TestConfig, regionType regionopenapi.RegionType, wrongProviderMessage string) {
 	regions, err := c.ListRegions(ctx, config.OrgID)
 	Expect(err).NotTo(HaveOccurred(), "failed to resolve region provider")
 
@@ -711,14 +728,26 @@ func SkipUnlessOpenStackRegion(c *APIClient, ctx context.Context, config *TestCo
 			continue
 		}
 
-		if region.Spec.Type != regionopenapi.RegionTypeOpenstack {
-			Skip("tests require an OpenStack-backed region")
+		if region.Spec.Type != regionType {
+			Skip(wrongProviderMessage)
 		}
 
 		return
 	}
 
 	Skip("tests require TEST_REGION_ID to be visible")
+}
+
+// SkipUnlessOpenStackRegion skips the spec unless the configured region is visible
+// and backed by OpenStack.
+func SkipUnlessOpenStackRegion(c *APIClient, ctx context.Context, config *TestConfig) {
+	skipUnlessRegionType(c, ctx, config, regionopenapi.RegionTypeOpenstack, "tests require an OpenStack-backed region")
+}
+
+// SkipUnlessSimulatedRegion skips the spec unless the configured region is visible
+// and backed by the simulated provider.
+func SkipUnlessSimulatedRegion(c *APIClient, ctx context.Context, config *TestConfig) {
+	skipUnlessRegionType(c, ctx, config, regionopenapi.RegionTypeSimulated, "tests require a simulated region")
 }
 
 // SkipUnlessInternalAPIConfigured skips the spec unless internal API mTLS credentials
