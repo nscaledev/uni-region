@@ -482,6 +482,17 @@ func (b *ServerPayloadBuilder) WithUserData(userData []byte) *ServerPayloadBuild
 	return b
 }
 
+// WithProviderCreateGate adds a provider-create gate to the server create request.
+func (b *ServerPayloadBuilder) WithProviderCreateGate(conditionType string) *ServerPayloadBuilder {
+	gates := regionopenapi.ServerProviderCreateGates{
+		{ConditionType: conditionType},
+	}
+
+	b.server.Spec.ProviderCreateGates = &gates
+
+	return b
+}
+
 // Build returns the typed ServerV2Create struct.
 func (b *ServerPayloadBuilder) Build() regionopenapi.ServerV2Create {
 	return b.server

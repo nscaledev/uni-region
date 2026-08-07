@@ -130,6 +130,11 @@ func withRuntimeStatus(server *regionv1.Server) {
 	server.Status.ScheduledAt = &scheduledAt
 }
 
+func withSatisfiedProviderCreateGate(server *regionv1.Server) {
+	server.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{{ConditionType: "test/gate"}}
+	server.ProviderCreateGateStatusWrite("test/gate", corev1.ConditionTrue, "ib-manager", "Programmed", "satisfied on the first attempt")
+}
+
 func retryProvisioner(t *testing.T, server *regionv1.Server, options *serverprovisioner.Options, provider *mocktypes.MockProvider, recorders ...record.EventRecorder) *serverprovisioner.Provisioner {
 	t.Helper()
 
@@ -167,7 +172,7 @@ func TestProvision_ProviderCreateFailureDeletesAndYields(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 
-	server := retryServer(withProviderCreateFailure, withRuntimeStatus)
+	server := retryServer(withProviderCreateFailure, withRuntimeStatus, withSatisfiedProviderCreateGate)
 
 	provider := mocktypes.NewMockProvider(ctrl)
 	provider.EXPECT().DeleteServer(gomock.Any(), gomock.Any(), server).Return(nil)
@@ -188,6 +193,12 @@ func TestProvision_ProviderCreateFailureDeletesAndYields(t *testing.T) {
 	// reset must not clear it. A stale value self-heals on the next ACTIVE poll.
 	require.Equal(t, ptr.To("00:11:22:33:44:55"), server.Status.MACAddress)
 	require.Nil(t, server.Status.ScheduledAt)
+	// The gate satisfied on the first attempt is reset to Unknown so external
+	// services re-run their pre-create work before the retry.
+	gate, ok := server.ProviderCreateGateStatusRead("test/gate")
+	require.True(t, ok)
+	require.Equal(t, corev1.ConditionUnknown, gate.Status)
+	require.Equal(t, "ProviderCreateRetry", gate.Reason)
 
 	requireEvent(t, recorder, corev1.EventTypeNormal, "ProviderCreateRetrying", "attempt 1/3")
 	requireEvent(t, recorder, corev1.EventTypeNormal, "ProviderCreateRetryReady", "attempt 1/3")
@@ -221,6 +232,42 @@ func TestProvision_ProviderCreateRetryKeepsDeleting(t *testing.T) {
 	// The runtime reset ran, clearing the terminal Error phase back to Pending.
 	require.Equal(t, regionv1.ActiveConditionReasonPending, activeReason(t, server))
 	requireNoEvent(t, recorder)
+}
+
+// TestProvision_ProviderCreateRetryKeepsDeletingWithGate proves a satisfied gate
+// carried over from the initial create does not block the delete mop-up: while
+// ProviderCreateRetrying is true the reconcile short-circuits into the delete and
+// can never reach CreateServer, so the gate is only reset once deletion is
+// confirmed (branch a) — never on a still-deleting pass. The DeleteServer mock
+// expectation demanding a call is itself the proof the mop-up was not gated.
+func TestProvision_ProviderCreateRetryKeepsDeletingWithGate(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	server := retryServer(withProviderCreateRetrying, withRuntimeStatus, withSatisfiedProviderCreateGate)
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().DeleteServer(gomock.Any(), gomock.Any(), server).Return(nil)
+	provider.EXPECT().
+		UpdateServerState(gomock.Any(), gomock.Any(), server).
+		DoAndReturn(func(_ context.Context, _ *regionv1.Identity, s *regionv1.Server) error {
+			withProviderCreateFailure(s)
+
+			return nil
+		})
+
+	cli := retryClient(t, retryIdentity(), server)
+	prov := retryProvisioner(t, server, nil, provider, record.NewFakeRecorder(1))
+
+	err := prov.Provision(coreclient.NewContext(t.Context(), cli))
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	require.True(t, server.Status.ProviderCreateRetrying)
+	// The gate stays satisfied while the delete is in flight — it is not reset
+	// until the deletion-confirmed branch runs.
+	gate, ok := server.ProviderCreateGateStatusRead("test/gate")
+	require.True(t, ok)
+	require.Equal(t, corev1.ConditionTrue, gate.Status)
 }
 
 func TestProvision_ProviderCreateFailureStopsAtAttemptLimit(t *testing.T) {
