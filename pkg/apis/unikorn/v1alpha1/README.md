@@ -100,9 +100,11 @@ stored objects rely on for linkage, migration, and operational coordination.
   server-created volume templates are deliberately excluded from the first
   implementation. `Server.Status.Volumes` is keyed by the same Volume ID and
   reports per-volume attachment reconciliation state and the observed guest
-  device name for later controller and monitor work. This package only defines
-  the persisted shape; Nova calls, reference placement, and public API projection
-  live in later layers/tickets.
+  device name for later controller and monitor work. The provider layer now
+  supplies a server-owned attach/detach boundary and the OpenStack provider
+  realizes it with Nova, but this package still only owns the persisted shape;
+  reference placement, claim/locking behavior, controller reconciliation, and
+  public API projection live in later layers/tickets.
 - The `Network -> Volume` graph edge is declared as containment for future
   behavior: Network scope propagates to Volume; co-location is implicit; Volume
   holds a reverse deletion-blocking relationship to Network for its lifetime;

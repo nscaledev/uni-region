@@ -3498,10 +3498,10 @@ func (p *Provider) updateServerStateWithClients(
 	ctx context.Context,
 	identity *unikornv1.Identity,
 	server *unikornv1.Server,
-	compute ComputeInterface,
+	serverClient ServerInterface,
 	baremetalForPhase func(context.Context, *unikornv1.Identity) (BaremetalInterface, error),
 ) error {
-	openstackServer, err := compute.GetServer(ctx, server)
+	openstackServer, err := serverClient.GetServer(ctx, server)
 	if err != nil {
 		return err
 	}

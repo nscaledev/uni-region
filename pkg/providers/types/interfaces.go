@@ -102,6 +102,10 @@ type Volume interface {
 type Server interface {
 	// CreateServer creates a new server.
 	CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, options *ServerCreateOptions) error
+	// AttachVolume attaches an existing Region volume to a server.
+	AttachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume) (*ServerVolumeAttachment, error)
+	// DetachVolume detaches an existing Region volume from a server.
+	DetachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume) error
 	// RebootServer soft reboots a server.
 	RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error
 	// StartServer starts a server.

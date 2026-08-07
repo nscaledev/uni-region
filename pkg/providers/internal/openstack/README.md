@@ -255,7 +255,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - identity-scoped resources use fixed generated names
   - network lookups rely on deterministic names
   - Cinder volumes use `volume-{Region Volume UUID}` inside the service
-    principal's project; create and delete both rediscover that exact name
+    principal's project; create, delete, attach, and detach rediscover that
+    exact name
   - server metadata is written deliberately as both a control-plane lookup aid
     and an in-guest linkage surface exposed through the metadata service
   - legacy camelCase server metadata keys remain frozen for backwards
@@ -275,8 +276,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     success, and treats an absent or not-yet-project-backed
     `OpenstackIdentity` as proof that no provider volume could have been
     created
-  - observed size/status mapping, VolumeClass inventory, and Nova
-    attach/detach are intentionally outside this lifecycle slice
+  - observed size/status mapping and VolumeClass inventory are intentionally
+    outside this lifecycle slice; Nova attach/detach is the separate
+    server-owned provider slice described below
 - Flavor export is a hybrid model: OpenStack discovers the flavor inventory, but
   region configuration can enrich or override user-facing flavor metadata such
   as architecture, baremetal status, and GPU semantics. Architecture resolves
@@ -307,6 +309,41 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   calls and is refreshed only when Region configuration or credentials change.
   Production Region CRs must contain their curated IDs before this fail-closed
   behavior is rolled out.
+- Existing-volume server attachments are a separate, project-scoped write path
+  from Region-scoped `VolumeClass` inventory. The provider creates ephemeral
+  compute and block-storage clients from the service principal, rediscovers the
+  Nova server and detailed Cinder volume, and uses Cinder's attachment rows as
+  the normal-path observation before calling Nova's volume-attachment
+  create/delete API. Cinder volume lifecycle observation is not part of this
+  slice. The Cinder name filter is treated as fuzzy and is post-filtered against
+  the exact stable name `volume-{Volume.Name}`; duplicate exact matches fail
+  closed with `ErrConsistency`. Only the optional guest device name crosses the
+  provider-neutral boundary; Nova and Cinder IDs and Gophercloud objects remain
+  internal.
+
+  Attachment behavior is deliberately asymmetric:
+  - attach requires both the server and volume; either missing resource maps to
+    `ErrResourceNotFound`
+  - a Cinder attachment already present on the requested server is successful
+    and returns its observed device without a Nova read
+  - an attachment to any other server maps to `ErrConflict`; Region does not
+    support multi-attach even when the Cinder volume is multiattach-capable
+  - when Cinder reports no attachment, attach calls Nova create directly; a
+    create `409 Conflict` is followed by one Nova attachment read so concurrent
+    creation of the same desired attachment becomes success, while an
+    unresolved conflict maps to `ErrConflict`
+  - detach calls Nova delete only when Cinder reports an attachment to the
+    requested server; a missing server, volume, requested-server attachment, or
+    Nova delete `404` is success because detached state already holds, including
+    when the volume remains attached only to another server
+  - a Nova delete `409 Conflict` maps to `ErrConflict`; other provider failures
+    are preserved
+  - detach also no-ops when the backing OpenStack identity was never realized,
+    matching the provider's other teardown contracts
+
+  Attachment intent and observed rows remain on `Server.Spec.Volumes` and
+  `Server.Status.Volumes`; this provider slice does not mirror attachments into
+  `Volume.Status`, claim volumes, or reconcile server controllers.
 - Image handling is a first-class contract surface here:
   - OpenStack image properties are validated against a schema
   - public images can additionally be signature-verified
@@ -360,7 +397,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   `Active` state so API responses still see a coherent live signal rather than
   failing the monitor path.
 - Some OpenStack list APIs are not safe to treat as exact lookup, notably
-  server, network, and Octavia load-balancer `name` filters:
+  server, network, Cinder volume, and Octavia load-balancer `name` filters:
   - `name` filters behave like prefix or regular-expression matches rather than
     strict equality
   - this package therefore re-checks exact names after listing to avoid aliasing

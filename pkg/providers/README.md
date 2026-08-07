@@ -47,7 +47,8 @@ packages are the concrete provider implementations.
     operator-authored capacity bounds
 - `types.Provider` extends that common base with the broader image, identity,
   network, security-group, load-balancer, server, console, and snapshot
-  lifecycle surfaces.
+  lifecycle surfaces. The server surface includes attaching and detaching an
+  existing Region `Volume`; attachment intent remains owned by the `Server`.
 - The provider abstraction is intentionally mixed:
   - CRD-backed lifecycle operations still speak in repo-native
     `pkg/apis/unikorn/v1alpha1` resource types
@@ -83,6 +84,12 @@ packages are the concrete provider implementations.
     consumers are gone: at delete time it is either realized-and-complete or
     never realized. Callers must therefore never gate a delete on identity
     readiness or recorded status — that belongs to this layer.
+- `DetachVolume` follows the same absent-means-converged teardown rule: a
+  missing provider server, volume, or attachment is success. `AttachVolume`
+  instead requires both backing resources and reports semantic not-found when
+  either is absent. Concrete provider conflicts are normalized to the shared
+  conflict sentinel; provider failures that are neither not-found nor conflict
+  remain available to callers for diagnosis.
 - Providers must tolerate changing backing credentials and region state rather
   than assuming client material is static for process lifetime.
   Credential rotation, secret refresh, and region configuration refresh are part
@@ -105,6 +112,8 @@ packages are the concrete provider implementations.
   - it implements the full `types.Provider` contract
   - it prefers deterministic lookup against OpenStack over broad mirrored CRD
     state
+  - it resolves existing Cinder volumes and realizes server-owned attachment
+    intent through Nova volume-attachment create/delete operations
   - it still carries a shrinking amount of persisted provider state via
     `OpenstackIdentity`
 - [./internal/kubernetes](./internal/kubernetes/README.md) currently implements
@@ -120,6 +129,7 @@ packages are the concrete provider implementations.
   - it exists to push broad integration coverage left
   - it is useful for deterministic load, race, and bottleneck testing at higher
     layers without requiring a real cloud deployment
+  - server volume attach/detach is currently explicit unsupported behavior
 
 ## Caveats
 

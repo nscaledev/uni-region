@@ -281,3 +281,10 @@ type ServerCreateOptions struct {
 	// UserData overrides the user data passed to the provider when specified.
 	UserData []byte
 }
+
+// ServerVolumeAttachment is the provider-neutral result of attaching a volume
+// to a server.
+type ServerVolumeAttachment struct {
+	// Device is the guest OS device name reported by the provider, when known.
+	Device *string
+}
