@@ -269,6 +269,14 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - create lists by the stable generated name and exact-matches the result
     before submitting a create, so controller retries adopt an existing volume
     rather than duplicating it
+  - an accepted Cinder create is partial progress rather than success: the
+    provider yields after submission and on subsequent rediscovery until the
+    volume reports `available`; all unrecognized non-error states also yield so
+    an unfamiliar provider state cannot be mistaken for convergence
+  - a Cinder status beginning with `error` returns a typed terminal
+    `Available=False`, `Reason=Errored` result with the user-safe message
+    `provider volume entered an error state`; provider IDs, scheduler failures,
+    host details, and other raw Cinder diagnostics remain operator-only
   - user tags are translated with the package's normal namespaced metadata
     convention; namespaced system linkage keys are written last so user input
     cannot override identity, organization, project, region, network, or Volume
@@ -279,8 +287,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     `OpenstackIdentity` as proof that no provider volume could have been
     created; this lets controller deletion delegate unconditionally before
     releasing any Identity allocation
-  - observed size/status mapping and VolumeClass inventory are intentionally
-    outside this lifecycle slice; Nova attach/detach is the separate
+  - general observed size/status mapping and VolumeClass inventory are outside
+    this lifecycle slice; the narrow status classification above exists only to
+    determine create convergence, while Nova attach/detach is the separate
     server-owned provider slice described below
 - Flavor export is a hybrid model: OpenStack discovers the flavor inventory, but
   region configuration can enrich or override user-facing flavor metadata such

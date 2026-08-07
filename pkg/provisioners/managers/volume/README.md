@@ -5,9 +5,13 @@ for Region `Volume` resources.
 
 Provisioning resolves the focused provider `Volume` capability and the backing
 service-principal `Identity`, waits for that Identity to be ready, then delegates
-idempotent provider creation. It does not check quota or create/promote an
-Identity allocation; admission and allocation creation belong to the HTTP create
-handler.
+idempotent provider creation. Provider `ErrYield` results keep the Volume
+`Available=False` with reason `Provisioning` and schedule another reconcile;
+only provider convergence allows `Provisioned`. A typed terminal provider
+failure is surfaced as the provider's safe reason/message and parked until
+deletion or operator intervention. This package does not check quota or
+create/promote an Identity allocation; admission and allocation creation belong
+to the HTTP create handler.
 
 Deprovisioning deliberately has stricter ordering:
 
@@ -33,9 +37,10 @@ the finalizer can converge. Missing regions and other provider lookup failures
 remain errors: they preserve the allocation and finalizer for retry rather than
 assuming cleanup is safe.
 
-Provider observation/status mapping, quota admission, Network graph-edge
-reconciliation, HTTP handlers, and server attachment reconciliation are outside
-this package.
+General provider observation/status mapping, quota admission, Network
+graph-edge reconciliation, HTTP handlers, and server attachment reconciliation
+are outside this package. The provider-specific state classification needed to
+decide whether create has converged remains inside the provider implementation.
 
 ## Cross-Package Context
 

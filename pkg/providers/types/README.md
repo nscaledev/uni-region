@@ -60,7 +60,11 @@ continue to be passed directly through many provider interface methods.
   `providers.LookupVolume`, allowing the Volume controller to consume it
   without requiring unsupported providers to implement block storage. It does
   not expose discovery, observed state, VolumeClass inventory, or server
-  attachment operations.
+  attachment operations. `CreateVolume` is a reconciliation operation rather
+  than a one-shot request: implementations return `provisioners.ErrYield` until
+  the backing resource is usable, return `nil` only after convergence, and may
+  return a typed terminal provisioning error for an unrecoverable provider
+  state.
 - `ServerCreateOptions` carries launch-time derived inputs without forcing them
   into the persisted `Server` CRD shape.
 - `ServerVolumeAttachment` contains only provider-neutral observation needed by

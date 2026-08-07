@@ -93,7 +93,9 @@ type LoadBalancer interface {
 
 // Volume manages provider-backed block-storage volume lifecycle.
 type Volume interface {
-	// CreateVolume creates the provider volume described by the Region Volume.
+	// CreateVolume reconciles the provider volume described by the Region Volume.
+	// It returns success only after the backing volume is usable; asynchronous
+	// progress and terminal provider states use the shared provisioning errors.
 	CreateVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
 	// DeleteVolume idempotently deletes the provider volume described by the Region Volume.
 	DeleteVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
