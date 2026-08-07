@@ -18,6 +18,7 @@ package volume
 
 import (
 	"context"
+	"errors"
 
 	"github.com/spf13/pflag"
 
@@ -132,10 +133,16 @@ func (p *Provisioner) deletionIdentity(ctx context.Context) (*unikornv1.Identity
 	return identity, nil
 }
 
-// Deprovision removes provider state before releasing any Identity allocation.
-func (p *Provisioner) Deprovision(ctx context.Context) error {
+func (p *Provisioner) deleteProviderVolume(ctx context.Context) error {
 	provider, err := p.Providers.LookupVolume(p.volume.Labels[constants.RegionLabel])
 	if err != nil {
+		// Capability absence proves this controller could not have created a
+		// provider volume. Treat it as already absent so allocation cleanup and
+		// finalizer removal can converge; all other lookup errors remain retryable.
+		if errors.Is(err, providers.ErrRegionWrongKind) {
+			return nil
+		}
+
 		return err
 	}
 
@@ -147,7 +154,12 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 	// Provider cleanup is unconditional and idempotent. The provider owns
 	// authoritative rediscovery and already-absent handling, so readiness and
 	// best-effort status must never gate this call.
-	if err := provider.DeleteVolume(ctx, identity, p.volume); err != nil {
+	return provider.DeleteVolume(ctx, identity, p.volume)
+}
+
+// Deprovision removes provider state before releasing any Identity allocation.
+func (p *Provisioner) Deprovision(ctx context.Context) error {
+	if err := p.deleteProviderVolume(ctx); err != nil {
 		return err
 	}
 

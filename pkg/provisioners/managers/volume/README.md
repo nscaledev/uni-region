@@ -26,6 +26,13 @@ cleanup; provider deletion is idempotent by contract. If the referenced Region
 its stable namespace/name to the provider so absence can converge before the
 allocation is released from Volume metadata.
 
+If provider lookup reports `ErrRegionWrongKind`, the focused Volume capability
+is absent and therefore could not have created provider state. Deprovisioning
+treats that case as already absent and continues annotated allocation cleanup so
+the finalizer can converge. Missing regions and other provider lookup failures
+remain errors: they preserve the allocation and finalizer for retry rather than
+assuming cleanup is safe.
+
 Provider observation/status mapping, quota admission, Network graph-edge
 reconciliation, HTTP handlers, and server attachment reconciliation are outside
 this package.

@@ -34,6 +34,7 @@ import (
 	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/providers"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
@@ -59,6 +60,7 @@ const (
 var (
 	errProviderCreate   = errors.New("provider create failed")
 	errProviderDelete   = errors.New("provider delete failed")
+	errProviderLookup   = errors.New("provider lookup failed")
 	errAllocationDelete = errors.New("allocation delete failed")
 )
 
@@ -246,6 +248,35 @@ func TestDeprovisionProviderAlreadyAbsentReleasesAllocation(t *testing.T) {
 
 	provisioner := volume.NewForTest(resource, providerSet, mockIdentity)
 	require.NoError(t, provisioner.Deprovision(controllerContext(t, resource, identity)))
+}
+
+func TestDeprovisionUnsupportedProviderReleasesAllocation(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	providerSet := mockproviders.NewMockProviders(ctrl)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	resource := testVolume(true)
+
+	providerSet.EXPECT().LookupVolume(testRegionID).Return(nil, providers.ErrRegionWrongKind)
+	expectAllocationDelete(mockIdentity, http.StatusAccepted)
+
+	provisioner := volume.NewForTest(resource, providerSet, mockIdentity)
+	require.NoError(t, provisioner.Deprovision(controllerContext(t, resource)))
+}
+
+func TestDeprovisionProviderLookupFailurePreservesAllocation(t *testing.T) {
+	t.Parallel()
+
+	_, providerSet := volumeMocks(t)
+	resource := testVolume(true)
+
+	providerSet.EXPECT().LookupVolume(testRegionID).Return(nil, errProviderLookup)
+
+	provisioner := volume.NewForTest(resource, providerSet, nil)
+	err := provisioner.Deprovision(controllerContext(t, resource))
+	require.ErrorIs(t, err, errProviderLookup)
+	require.Equal(t, testAllocationID, resource.Annotations[coreconstants.AllocationAnnotation])
 }
 
 func TestDeprovisionAllocationAlreadyGone(t *testing.T) {
