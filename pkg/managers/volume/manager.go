@@ -27,7 +27,6 @@ import (
 	volumeprovisioner "github.com/unikorn-cloud/region/pkg/provisioners/managers/volume"
 
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -60,28 +59,13 @@ func (f *Factory) Reconciler(options *options.Options, controllerOptions coreman
 	return coremanager.NewReconciler(options, controllerOptions, manager, f.ProvisionerCreate(volumeprovisioner.New))
 }
 
-func volumeDeletionRequested(e event.TypedUpdateEvent[*unikornv1.Volume]) bool {
-	if e.ObjectOld == nil || e.ObjectNew == nil {
-		return false
-	}
-
-	return e.ObjectOld.DeletionTimestamp == nil && e.ObjectNew.DeletionTimestamp != nil
-}
-
 // RegisterWatches registers the Volume desired-state watch.
 func (*Factory) RegisterWatches(manager manager.Manager, controller controller.Controller) error {
-	volumePredicate := predicate.Or(
-		predicate.TypedGenerationChangedPredicate[*unikornv1.Volume]{},
-		predicate.TypedFuncs[*unikornv1.Volume]{
-			UpdateFunc: volumeDeletionRequested,
-		},
-	)
-
 	return controller.Watch(source.Kind(
 		manager.GetCache(),
 		&unikornv1.Volume{},
 		&handler.TypedEnqueueRequestForObject[*unikornv1.Volume]{},
-		volumePredicate,
+		&predicate.TypedGenerationChangedPredicate[*unikornv1.Volume]{},
 	))
 }
 

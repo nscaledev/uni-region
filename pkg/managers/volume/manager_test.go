@@ -27,10 +27,7 @@ import (
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
 	volumeprovisioner "github.com/unikorn-cloud/region/pkg/provisioners/managers/volume"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-
-	"sigs.k8s.io/controller-runtime/pkg/event"
 )
 
 func TestFactoryWiresVolumeProvisioner(t *testing.T) {
@@ -52,22 +49,4 @@ func TestFactoryWiresVolumeProvisioner(t *testing.T) {
 	providerSet := mockproviders.NewMockProviders(gomock.NewController(t))
 	provisioner := volumeprovisioner.New(options, providerSet)
 	require.IsType(t, &unikornv1.Volume{}, provisioner.Object())
-}
-
-func TestVolumeDeletionRequested(t *testing.T) {
-	t.Parallel()
-
-	oldVolume := &unikornv1.Volume{}
-	deletingVolume := oldVolume.DeepCopy()
-	now := metav1.Now()
-	deletingVolume.DeletionTimestamp = &now
-
-	require.True(t, volume.VolumeDeletionRequestedForTest(event.TypedUpdateEvent[*unikornv1.Volume]{
-		ObjectOld: oldVolume,
-		ObjectNew: deletingVolume,
-	}))
-	require.False(t, volume.VolumeDeletionRequestedForTest(event.TypedUpdateEvent[*unikornv1.Volume]{
-		ObjectOld: oldVolume,
-		ObjectNew: oldVolume.DeepCopy(),
-	}))
 }
