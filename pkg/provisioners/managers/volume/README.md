@@ -29,13 +29,7 @@ absent from Identity. A retry repeats provider deletion before allocation
 cleanup; provider deletion is idempotent by contract. Finalizer ordering keeps
 the referenced Region `Identity` available through this cleanup; a missing
 Identity remains an error and preserves the Volume finalizer.
-
-If provider lookup reports `ErrRegionWrongKind`, the region is not a full cloud
-provider and therefore could not have created provider state. Deprovisioning
-treats that case as already absent and continues annotated allocation cleanup
-so the finalizer can converge. Missing regions and other provider lookup
-failures remain errors: they preserve the allocation and finalizer for retry
-rather than assuming cleanup is safe.
+Provider lookup errors also preserve the allocation and finalizer for retry.
 
 General provider observation/status mapping, quota admission, Network
 graph-edge reconciliation, HTTP handlers, and server attachment reconciliation

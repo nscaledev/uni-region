@@ -250,20 +250,20 @@ func TestDeprovisionProviderAlreadyAbsentReleasesAllocation(t *testing.T) {
 	require.NoError(t, provisioner.Deprovision(controllerContext(t, resource, identity)))
 }
 
-func TestDeprovisionUnsupportedProviderReleasesAllocation(t *testing.T) {
+func TestDeprovisionUnsupportedProviderPreservesAllocation(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
 	providerSet := mockproviders.NewMockProviders(ctrl)
-	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	resource := testVolume(true)
 	identity := testIdentity(false)
 
 	providerSet.EXPECT().LookupCloud(testRegionID).Return(nil, providers.ErrRegionWrongKind)
-	expectAllocationDelete(mockIdentity, http.StatusAccepted)
 
-	provisioner := volume.NewForTest(resource, providerSet, mockIdentity)
-	require.NoError(t, provisioner.Deprovision(controllerContext(t, resource, identity)))
+	provisioner := volume.NewForTest(resource, providerSet, nil)
+	err := provisioner.Deprovision(controllerContext(t, resource, identity))
+	require.ErrorIs(t, err, providers.ErrRegionWrongKind)
+	require.Equal(t, testAllocationID, resource.Annotations[coreconstants.AllocationAnnotation])
 }
 
 func TestDeprovisionProviderLookupFailurePreservesAllocation(t *testing.T) {

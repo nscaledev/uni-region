@@ -18,7 +18,6 @@ package volume
 
 import (
 	"context"
-	"errors"
 
 	"github.com/spf13/pflag"
 
@@ -101,19 +100,15 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 // Deprovision removes provider state before releasing any Identity allocation.
 func (p *Provisioner) Deprovision(ctx context.Context) error {
 	provider, identity, err := p.ProviderAndIdentity(ctx, p.volume)
-	if err != nil && !errors.Is(err, providers.ErrRegionWrongKind) {
+	if err != nil {
 		return err
 	}
 
 	// Provider cleanup is unconditional and idempotent. The provider owns
 	// authoritative rediscovery and already-absent handling, so readiness and
-	// best-effort status must never gate this call. A provider without Volume
-	// capability could not have created backing state, so continue to allocation
-	// cleanup in that case.
-	if err == nil {
-		if err := provider.DeleteVolume(ctx, identity, p.volume); err != nil {
-			return err
-		}
+	// best-effort status must never gate this call.
+	if err := provider.DeleteVolume(ctx, identity, p.volume); err != nil {
+		return err
 	}
 
 	if p.volume.Annotations[coreconstants.AllocationAnnotation] == "" {
