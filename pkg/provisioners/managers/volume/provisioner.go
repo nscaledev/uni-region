@@ -92,7 +92,7 @@ func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 
 // Provision reconciles the desired provider Volume.
 func (p *Provisioner) Provision(ctx context.Context) error {
-	provider, identity, err := p.VolumeProviderAndIdentity(ctx, p.volume)
+	provider, identity, err := p.ProviderAndIdentity(ctx, p.volume)
 	if err != nil {
 		return err
 	}
@@ -134,7 +134,7 @@ func (p *Provisioner) deletionIdentity(ctx context.Context) (*unikornv1.Identity
 }
 
 func (p *Provisioner) deleteProviderVolume(ctx context.Context) error {
-	provider, err := p.Providers.LookupVolume(p.volume.Labels[constants.RegionLabel])
+	provider, err := p.Providers.LookupCloud(p.volume.Labels[constants.RegionLabel])
 	if err != nil {
 		// Capability absence proves this controller could not have created a
 		// provider volume. Treat it as already absent so allocation cleanup and

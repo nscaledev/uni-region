@@ -35,20 +35,18 @@ packages are the concrete provider implementations.
 
 ## Invariants And Guard Rails
 
-- The package exposes three lookup surfaces:
+- The package exposes two lookup surfaces:
   - `LookupCommon` returns a `types.CommonProvider` for region-level capability
     discovery that every provider must support
   - `LookupCloud` returns a full `types.Provider` for regions that implement the
     full cloud lifecycle surface
-  - `LookupVolume` returns the focused `types.Volume` capability only for
-    providers that implement block-storage lifecycle
 - `types.CommonProvider` is the minimum substrate contract:
   - return the effective `Region`
   - return allocatable `Flavor` inventory
   - return Region-scoped `VolumeClass` inventory, including optional
     operator-authored capacity bounds
 - `types.Provider` extends that common base with the broader image, identity,
-  network, security-group, load-balancer, server, console, and snapshot
+  network, security-group, load-balancer, volume, server, console, and snapshot
   lifecycle surfaces. The server surface includes attaching and detaching an
   existing Region `Volume`; attachment intent remains owned by the `Server`.
 - The provider abstraction is intentionally mixed:
@@ -63,10 +61,10 @@ packages are the concrete provider implementations.
     the real backing resources
   - mirrored provider-state records are not the preferred answer unless the
     state cannot be reconstructed safely enough by other means
-- `types.Volume` is currently a focused create/delete capability implemented
-  by OpenStack and consumed through `LookupVolume` by the Volume controller. It
-  remains separate from the full `types.Provider` composition so providers
-  without block-storage lifecycle are not forced to implement it:
+- `types.Volume` is the focused create/delete capability embedded in the full
+  `types.Provider` contract and consumed through `LookupCloud` by the Volume
+  controller. Discovery-only providers remain on `types.CommonProvider` and do
+  not implement workload lifecycle:
   - lifecycle intent is the native Region `Volume` CRD
   - provider implementations rediscover their backing object internally before
     create or delete; rediscovery is not a public existence-only contract
@@ -138,7 +136,9 @@ packages are the concrete provider implementations.
   - it exists to push broad integration coverage left
   - it is useful for deterministic load, race, and bottleneck testing at higher
     layers without requiring a real cloud deployment
-  - server volume attach/detach is currently explicit unsupported behavior
+  - volume create and server volume attach/detach are currently explicit
+    unsupported behavior; volume delete is an idempotent no-op because the
+    simulated provider cannot create backing volume state
 
 ## Caveats
 

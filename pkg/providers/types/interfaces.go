@@ -145,7 +145,7 @@ type CommonProvider interface {
 // Providers are expected to provide a provider agnostic manner.
 // They are also expected to provide any caching or memoization required
 // to provide high performance and a decent UX.
-type Provider interface {
+type Provider interface { //nolint:interfacebloat // This is the full workload-lifecycle contract.
 	CommonProvider
 	ImageRead
 	ImageWrite
@@ -153,6 +153,7 @@ type Provider interface {
 	Network
 	SecurityGroup
 	LoadBalancer
+	Volume
 	Server
 	ServerConsole
 	ServerSnapshot

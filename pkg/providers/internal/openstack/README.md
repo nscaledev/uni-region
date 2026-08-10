@@ -262,8 +262,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - legacy camelCase server metadata keys remain frozen for backwards
     compatibility while newer namespaced keys provide the upgrade path
 - Cinder Volume create/delete is a project-scoped lifecycle slice:
-  - the Region Volume controller drives this focused capability after the
-    service-principal Identity is ready
+  - the Region Volume controller resolves the full cloud provider and drives
+    its Volume capability after the service-principal Identity is ready
   - the native Region `Volume` CRD supplies the requested size and
     `VolumeClassID`, which becomes the Cinder volume type
   - create lists by the stable generated name and exact-matches the result

@@ -3,9 +3,9 @@
 `pkg/provisioners/managers/volume` owns controller-side create/delete lifecycle
 for Region `Volume` resources.
 
-Provisioning resolves the focused provider `Volume` capability and the backing
-service-principal `Identity`, waits for that Identity to be ready, then delegates
-idempotent provider creation. Provider `ErrYield` results keep the Volume
+Provisioning resolves the full cloud provider and backing service-principal
+`Identity`, waits for that Identity to be ready, then delegates idempotent
+Volume creation. Provider `ErrYield` results keep the Volume
 `Available=False` with reason `Provisioning` and schedule another reconcile;
 only provider convergence allows `Provisioned`. A typed terminal provider
 failure is surfaced as the provider's safe reason/message and parked until
@@ -30,12 +30,12 @@ cleanup; provider deletion is idempotent by contract. If the referenced Region
 its stable namespace/name to the provider so absence can converge before the
 allocation is released from Volume metadata.
 
-If provider lookup reports `ErrRegionWrongKind`, the focused Volume capability
-is absent and therefore could not have created provider state. Deprovisioning
-treats that case as already absent and continues annotated allocation cleanup so
-the finalizer can converge. Missing regions and other provider lookup failures
-remain errors: they preserve the allocation and finalizer for retry rather than
-assuming cleanup is safe.
+If provider lookup reports `ErrRegionWrongKind`, the region is not a full cloud
+provider and therefore could not have created provider state. Deprovisioning
+treats that case as already absent and continues annotated allocation cleanup
+so the finalizer can converge. Missing regions and other provider lookup
+failures remain errors: they preserve the allocation and finalizer for retry
+rather than assuming cleanup is safe.
 
 General provider observation/status mapping, quota admission, Network
 graph-edge reconciliation, HTTP handlers, and server attachment reconciliation
@@ -44,8 +44,8 @@ decide whether create has converged remains inside the provider implementation.
 
 ## Cross-Package Context
 
-- [../../../providers](../../../providers/README.md) defines capability lookup
-  and the provider lifecycle contract
+- [../../../providers](../../../providers/README.md) defines provider lookup and
+  the lifecycle contract
 - [../../../providers/internal/openstack](../../../providers/internal/openstack/README.md)
   implements Cinder rediscovery, creation, and deletion
 - [../../../managers/volume](../../../managers/volume/README.md) wires this

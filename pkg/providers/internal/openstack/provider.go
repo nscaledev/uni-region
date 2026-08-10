@@ -143,10 +143,7 @@ type Provider struct {
 	imageCache *cache.RefreshAheadCache[types.Image, *types.Image]
 }
 
-var (
-	_ types.Provider = &Provider{}
-	_ types.Volume   = &Provider{}
-)
+var _ types.Provider = &Provider{}
 
 type Options struct {
 	// WarmImageCache enables startup-time image cache initialization.

@@ -149,22 +149,6 @@ func (p *providersImpl) LookupCloud(regionID string) (types.Provider, error) {
 	return cloudProvider, nil
 }
 
-// LookupVolume returns a provider as identified by the region ID that supports
-// the focused Volume lifecycle capability.
-func (p *providersImpl) LookupVolume(regionID string) (types.Volume, error) {
-	provider, err := p.lookup(context.Background(), regionID)
-	if err != nil {
-		return nil, err
-	}
-
-	volumeProvider, ok := provider.(types.Volume)
-	if !ok {
-		return nil, ErrRegionWrongKind
-	}
-
-	return volumeProvider, nil
-}
-
 // lookup returns a provider for the given region.
 func (p *providersImpl) lookup(ctx context.Context, regionID string) (types.CommonProvider, error) {
 	p.mu.RLock()

@@ -934,6 +934,20 @@ func (mr *MockProviderMockRecorder) CreateSnapshot(ctx, identity, server, image 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSnapshot", reflect.TypeOf((*MockProvider)(nil).CreateSnapshot), ctx, identity, server, image)
 }
 
+// CreateVolume mocks base method.
+func (m *MockProvider) CreateVolume(ctx context.Context, identity *v1alpha1.Identity, volume *v1alpha1.Volume) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateVolume", ctx, identity, volume)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateVolume indicates an expected call of CreateVolume.
+func (mr *MockProviderMockRecorder) CreateVolume(ctx, identity, volume any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateVolume", reflect.TypeOf((*MockProvider)(nil).CreateVolume), ctx, identity, volume)
+}
+
 // DeleteIdentity mocks base method.
 func (m *MockProvider) DeleteIdentity(ctx context.Context, identity *v1alpha1.Identity) error {
 	m.ctrl.T.Helper()
@@ -1016,6 +1030,20 @@ func (m *MockProvider) DeleteServer(ctx context.Context, identity *v1alpha1.Iden
 func (mr *MockProviderMockRecorder) DeleteServer(ctx, identity, server any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteServer", reflect.TypeOf((*MockProvider)(nil).DeleteServer), ctx, identity, server)
+}
+
+// DeleteVolume mocks base method.
+func (m *MockProvider) DeleteVolume(ctx context.Context, identity *v1alpha1.Identity, volume *v1alpha1.Volume) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteVolume", ctx, identity, volume)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteVolume indicates an expected call of DeleteVolume.
+func (mr *MockProviderMockRecorder) DeleteVolume(ctx, identity, volume any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteVolume", reflect.TypeOf((*MockProvider)(nil).DeleteVolume), ctx, identity, volume)
 }
 
 // DetachVolume mocks base method.

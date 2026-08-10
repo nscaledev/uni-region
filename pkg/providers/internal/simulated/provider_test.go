@@ -117,6 +117,18 @@ func TestVolumeClasses(t *testing.T) {
 	require.Equal(t, ptrTo(int64(2048)), volumeClasses[1].MaximumSizeGiB)
 }
 
+func TestVolumeLifecycle(t *testing.T) {
+	t.Parallel()
+
+	provider := newProvider(t)
+	identity := &unikornv1.Identity{}
+	volume := &unikornv1.Volume{}
+
+	require.ErrorIs(t, provider.CreateVolume(t.Context(), identity, volume), simulated.ErrUnsupportedOperation)
+	require.NoError(t, provider.DeleteVolume(t.Context(), identity, volume))
+	require.NoError(t, provider.DeleteVolume(t.Context(), identity, volume))
+}
+
 func TestImages(t *testing.T) {
 	t.Parallel()
 

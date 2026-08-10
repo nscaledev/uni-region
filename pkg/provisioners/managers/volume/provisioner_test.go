@@ -36,7 +36,6 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
-	"github.com/unikorn-cloud/region/pkg/providers/types"
 	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 	volume "github.com/unikorn-cloud/region/pkg/provisioners/managers/volume"
 
@@ -113,11 +112,11 @@ func controllerContext(t *testing.T, objects ...client.Object) context.Context {
 	return coreclient.NewContext(t.Context(), cli)
 }
 
-func volumeMocks(t *testing.T) (*mocktypes.MockVolume, *mockproviders.MockProviders) {
+func volumeMocks(t *testing.T) (*mocktypes.MockProvider, *mockproviders.MockProviders) {
 	t.Helper()
 
 	ctrl := gomock.NewController(t)
-	provider := mocktypes.NewMockVolume(ctrl)
+	provider := mocktypes.NewMockProvider(ctrl)
 	providerSet := mockproviders.NewMockProviders(ctrl)
 
 	return provider, providerSet
@@ -149,7 +148,7 @@ func TestProvisionCreatesVolume(t *testing.T) {
 	resource := testVolume(false)
 	identity := testIdentity(true)
 
-	providerSet.EXPECT().LookupVolume(testRegionID).Return(provider, nil)
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
 	provider.EXPECT().CreateVolume(gomock.Any(), identityNamed(), resource).Return(nil)
 
 	provisioner := volume.NewForTest(resource, providerSet, nil)
@@ -163,7 +162,7 @@ func TestProvisionWaitsForIdentity(t *testing.T) {
 	resource := testVolume(false)
 	identity := testIdentity(false)
 
-	providerSet.EXPECT().LookupVolume(testRegionID).Return(provider, nil)
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
 
 	provisioner := volume.NewForTest(resource, providerSet, nil)
 	err := provisioner.Provision(controllerContext(t, resource, identity))
@@ -177,7 +176,7 @@ func TestProvisionReturnsProviderYield(t *testing.T) {
 	resource := testVolume(false)
 	identity := testIdentity(true)
 
-	providerSet.EXPECT().LookupVolume(testRegionID).Return(provider, nil)
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
 	provider.EXPECT().CreateVolume(gomock.Any(), identityNamed(), resource).Return(provisioners.ErrYield)
 
 	provisioner := volume.NewForTest(resource, providerSet, nil)
@@ -192,7 +191,7 @@ func TestProvisionReturnsProviderError(t *testing.T) {
 	resource := testVolume(false)
 	identity := testIdentity(true)
 
-	providerSet.EXPECT().LookupVolume(testRegionID).Return(provider, nil)
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
 	provider.EXPECT().CreateVolume(gomock.Any(), identityNamed(), resource).Return(errProviderCreate)
 
 	provisioner := volume.NewForTest(resource, providerSet, nil)
@@ -207,7 +206,7 @@ func TestDeprovisionDeletesProviderForUnreadyIdentity(t *testing.T) {
 	resource := testVolume(false)
 	identity := testIdentity(false)
 
-	providerSet.EXPECT().LookupVolume(testRegionID).Return(provider, nil)
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
 	provider.EXPECT().DeleteVolume(gomock.Any(), identityNamed(), resource).Return(nil)
 
 	provisioner := volume.NewForTest(resource, providerSet, nil)
@@ -221,7 +220,7 @@ func TestDeprovisionProviderFailurePreservesAllocation(t *testing.T) {
 	resource := testVolume(true)
 	identity := testIdentity(false)
 
-	providerSet.EXPECT().LookupVolume(testRegionID).Return(provider, nil)
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
 	provider.EXPECT().DeleteVolume(gomock.Any(), identityNamed(), resource).Return(errProviderDelete)
 
 	provisioner := volume.NewForTest(resource, providerSet, nil)
@@ -234,13 +233,13 @@ func TestDeprovisionProviderAlreadyAbsentReleasesAllocation(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
-	provider := mocktypes.NewMockVolume(ctrl)
+	provider := mocktypes.NewMockProvider(ctrl)
 	providerSet := mockproviders.NewMockProviders(ctrl)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	resource := testVolume(true)
 	identity := testIdentity(false)
 
-	providerSet.EXPECT().LookupVolume(testRegionID).Return(provider, nil)
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
 	gomock.InOrder(
 		provider.EXPECT().DeleteVolume(gomock.Any(), identityNamed(), resource).Return(nil),
 		expectAllocationDelete(mockIdentity, http.StatusAccepted),
@@ -258,7 +257,7 @@ func TestDeprovisionUnsupportedProviderReleasesAllocation(t *testing.T) {
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	resource := testVolume(true)
 
-	providerSet.EXPECT().LookupVolume(testRegionID).Return(nil, providers.ErrRegionWrongKind)
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(nil, providers.ErrRegionWrongKind)
 	expectAllocationDelete(mockIdentity, http.StatusAccepted)
 
 	provisioner := volume.NewForTest(resource, providerSet, mockIdentity)
@@ -271,7 +270,7 @@ func TestDeprovisionProviderLookupFailurePreservesAllocation(t *testing.T) {
 	_, providerSet := volumeMocks(t)
 	resource := testVolume(true)
 
-	providerSet.EXPECT().LookupVolume(testRegionID).Return(nil, errProviderLookup)
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(nil, errProviderLookup)
 
 	provisioner := volume.NewForTest(resource, providerSet, nil)
 	err := provisioner.Deprovision(controllerContext(t, resource))
@@ -283,13 +282,13 @@ func TestDeprovisionAllocationAlreadyGone(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
-	provider := mocktypes.NewMockVolume(ctrl)
+	provider := mocktypes.NewMockProvider(ctrl)
 	providerSet := mockproviders.NewMockProviders(ctrl)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	resource := testVolume(true)
 	identity := testIdentity(false)
 
-	providerSet.EXPECT().LookupVolume(testRegionID).Return(provider, nil)
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
 	gomock.InOrder(
 		provider.EXPECT().DeleteVolume(gomock.Any(), identityNamed(), resource).Return(nil),
 		expectAllocationDelete(mockIdentity, http.StatusNotFound),
@@ -306,7 +305,7 @@ func TestDeprovisionMissingAllocationMetadata(t *testing.T) {
 	resource := testVolume(false)
 	identity := testIdentity(false)
 
-	providerSet.EXPECT().LookupVolume(testRegionID).Return(provider, nil)
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
 	provider.EXPECT().DeleteVolume(gomock.Any(), identityNamed(), resource).Return(nil)
 
 	provisioner := volume.NewForTest(resource, providerSet, nil)
@@ -317,12 +316,12 @@ func TestDeprovisionMissingIdentityStillCleansProviderAndAllocation(t *testing.T
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
-	provider := mocktypes.NewMockVolume(ctrl)
+	provider := mocktypes.NewMockProvider(ctrl)
 	providerSet := mockproviders.NewMockProviders(ctrl)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	resource := testVolume(true)
 
-	providerSet.EXPECT().LookupVolume(testRegionID).Return(provider, nil)
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
 	gomock.InOrder(
 		provider.EXPECT().DeleteVolume(gomock.Any(), identityNamed(), resource).Return(nil),
 		expectAllocationDelete(mockIdentity, http.StatusAccepted),
@@ -336,7 +335,7 @@ func TestDeprovisionRetriesAllocationCleanupAfterProviderCleanup(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
-	provider := mocktypes.NewMockVolume(ctrl)
+	provider := mocktypes.NewMockProvider(ctrl)
 	providerSet := mockproviders.NewMockProviders(ctrl)
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	resource := testVolume(true)
@@ -352,10 +351,10 @@ func TestDeprovisionRetriesAllocationCleanupAfterProviderCleanup(t *testing.T) {
 		Return(nil, errAllocationDelete)
 
 	gomock.InOrder(
-		providerSet.EXPECT().LookupVolume(testRegionID).Return(provider, nil),
+		providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil),
 		provider.EXPECT().DeleteVolume(gomock.Any(), identityNamed(), resource).Return(nil),
 		firstAllocationDelete,
-		providerSet.EXPECT().LookupVolume(testRegionID).Return(provider, nil),
+		providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil),
 		provider.EXPECT().DeleteVolume(gomock.Any(), identityNamed(), resource).Return(nil),
 		expectAllocationDelete(mockIdentity, http.StatusAccepted),
 	)
@@ -369,5 +368,3 @@ func TestDeprovisionRetriesAllocationCleanupAfterProviderCleanup(t *testing.T) {
 
 	require.NoError(t, provisioner.Deprovision(ctx))
 }
-
-var _ types.Volume = (*mocktypes.MockVolume)(nil)

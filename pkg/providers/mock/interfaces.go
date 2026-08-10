@@ -67,18 +67,3 @@ func (mr *MockProvidersMockRecorder) LookupCommon(regionID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LookupCommon", reflect.TypeOf((*MockProviders)(nil).LookupCommon), regionID)
 }
-
-// LookupVolume mocks base method.
-func (m *MockProviders) LookupVolume(regionID string) (types.Volume, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "LookupVolume", regionID)
-	ret0, _ := ret[0].(types.Volume)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// LookupVolume indicates an expected call of LookupVolume.
-func (mr *MockProvidersMockRecorder) LookupVolume(regionID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LookupVolume", reflect.TypeOf((*MockProviders)(nil).LookupVolume), regionID)
-}

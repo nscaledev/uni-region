@@ -469,6 +469,14 @@ func (p *Provider) DeleteLoadBalancer(_ context.Context, _ *unikornv1.Identity, 
 	return nil
 }
 
+func (p *Provider) CreateVolume(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Volume) error {
+	return unsupported("CreateVolume")
+}
+
+func (p *Provider) DeleteVolume(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Volume) error {
+	return nil
+}
+
 func (p *Provider) CreateServer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ *types.ServerCreateOptions) error {
 	return unsupported("CreateServer")
 }
