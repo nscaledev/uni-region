@@ -1949,7 +1949,7 @@ func TestDeleteVolumeWithClient(t *testing.T) {
 		Name: "volume-" + volume.Name,
 	}
 
-	t.Run("ItDoesNotExist", func(t *testing.T) {
+	t.Run("AlreadyAbsentSucceeds", func(t *testing.T) {
 		t.Parallel()
 
 		c := gomock.NewController(t)
@@ -1959,7 +1959,7 @@ func TestDeleteVolumeWithClient(t *testing.T) {
 		require.NoError(t, openstack.DeleteVolumeWithClient(t.Context(), blockStorage, volume))
 	})
 
-	t.Run("ItExists", func(t *testing.T) {
+	t.Run("AcceptedDeleteYields", func(t *testing.T) {
 		t.Parallel()
 
 		c := gomock.NewController(t)
@@ -1967,10 +1967,10 @@ func TestDeleteVolumeWithClient(t *testing.T) {
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(openstackVolume, nil)
 		blockStorage.EXPECT().DeleteVolume(t.Context(), openstackVolume.ID).Return(nil)
 
-		require.NoError(t, openstack.DeleteVolumeWithClient(t.Context(), blockStorage, volume))
+		require.ErrorIs(t, openstack.DeleteVolumeWithClient(t.Context(), blockStorage, volume), provisioners.ErrYield)
 	})
 
-	t.Run("ItDisappearsBeforeDelete", func(t *testing.T) {
+	t.Run("DisappearsBeforeDeleteSucceeds", func(t *testing.T) {
 		t.Parallel()
 
 		c := gomock.NewController(t)

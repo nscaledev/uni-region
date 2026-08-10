@@ -61,8 +61,10 @@ continue to be passed directly through many provider interface methods.
   operation rather than a one-shot request: implementations return
   `provisioners.ErrYield` until the backing resource is usable, return `nil`
   only after convergence, and may return a typed terminal provisioning error
-  for an unrecoverable provider state. Discovery-only substrates implement
-  `CommonProvider` instead of the full workload lifecycle contract.
+  for an unrecoverable provider state. `DeleteVolume` likewise yields after an
+  accepted asynchronous delete and succeeds only when provider absence is
+  confirmed. Discovery-only substrates implement `CommonProvider` instead of
+  the full workload lifecycle contract.
 - `ServerCreateOptions` carries launch-time derived inputs without forcing them
   into the persisted `Server` CRD shape.
 - `ServerVolumeAttachment` contains only provider-neutral observation needed by

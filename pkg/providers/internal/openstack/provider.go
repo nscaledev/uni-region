@@ -2064,11 +2064,15 @@ func deleteVolume(ctx context.Context, blockStorage VolumeInterface, volume *uni
 
 	logger.V(1).Info("deleting volume")
 
-	if err := blockStorage.DeleteVolume(ctx, openstackVolume.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-		return err
+	if err := blockStorage.DeleteVolume(ctx, openstackVolume.ID); err != nil {
+		if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return err
+		}
+
+		return nil
 	}
 
-	return nil
+	return provisioners.ErrYield
 }
 
 func (p *Provider) DeleteVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error {

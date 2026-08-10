@@ -23,10 +23,10 @@ The useful way to read it is not as a directory tree, but as one system:
   quota-carrying block storage resource. Its deployable controller now drives
   idempotent OpenStack create/delete lifecycle, keeps creation provisioning
   until Cinder reports the backing volume `available`, and releases an
-  annotated Identity allocation after provider deletion. A Cinder error is
-  surfaced through a safe typed provisioning condition; quota admission, the
-  public API, and general observed-state projection remain later lifecycle
-  slices
+  annotated Identity allocation only after Cinder confirms provider deletion.
+  A Cinder error is surfaced through a safe typed provisioning condition; quota
+  admission, the public API, and general observed-state projection remain later
+  lifecycle slices
 - `Server` now carries the internal attach-existing-only block volume intent
   and observed per-volume attachment rows. The provider boundary and OpenStack
   Nova attach/detach implementation exist; public API projection and

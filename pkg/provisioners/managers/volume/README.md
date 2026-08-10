@@ -17,9 +17,9 @@ Deprovisioning deliberately has stricter ordering:
 
 1. call provider deletion unconditionally, without consulting Identity
    readiness or best-effort Volume status;
-2. only after provider deletion succeeds or converges with an already-absent
-   provider resource, delete the Identity allocation named by the allocation
-   annotation;
+2. retain the finalizer while an accepted asynchronous provider deletion
+   yields, and only after rediscovery confirms the provider resource is absent,
+   delete the Identity allocation named by the allocation annotation;
 3. return any provider or allocation error so the generic reconciler retains
    the finalizer and retries.
 

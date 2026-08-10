@@ -283,7 +283,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     IDs; Volume metadata does not emit the legacy camelCase compatibility keys
     retained by older resource types
   - delete uses the same rediscovery path, treats a missing Cinder volume as
-    success, and treats an absent or not-yet-project-backed
+    success, yields after Cinder accepts an asynchronous delete until a later
+    rediscovery confirms absence, and treats an absent or not-yet-project-backed
     `OpenstackIdentity` as proof that no provider volume could have been
     created; this lets controller deletion delegate unconditionally before
     releasing any Identity allocation

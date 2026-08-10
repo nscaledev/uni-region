@@ -73,6 +73,10 @@ packages are the concrete provider implementations.
     `provisioners.ErrYield` while creation is still converging and a safe typed
     terminal provisioning error when the backing object has entered an
     unrecoverable error state
+  - delete success means rediscovery confirms the backing volume is absent, not
+    merely that an asynchronous provider request was accepted. Accepted delete
+    requests return `provisioners.ErrYield` so allocation cleanup and finalizer
+    removal wait for provider convergence
   - provider-neutral observation belongs to the later read-side slice and is
     not implied by the provider-internal state check required to converge
     controller create/delete support
