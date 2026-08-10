@@ -29,14 +29,8 @@ import (
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
-
-	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Options allows access to CLI options in the provisioner.
@@ -104,63 +98,22 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 	return provider.CreateVolume(ctx, identity, p.volume)
 }
 
-func (p *Provisioner) deletionIdentity(ctx context.Context) (*unikornv1.Identity, error) {
-	cli, err := coreclient.FromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	key := client.ObjectKey{
-		Namespace: p.volume.Namespace,
-		Name:      p.volume.Labels[constants.IdentityLabel],
-	}
-	identity := &unikornv1.Identity{}
-
-	if err := cli.Get(ctx, key, identity); err != nil {
-		if !kerrors.IsNotFound(err) {
-			return nil, err
-		}
-
-		// Finalizer ordering normally keeps Identity alive, but provider cleanup
-		// only needs its stable namespace/name to prove an unrealized backing
-		// identity is already absent.
-		identity.ObjectMeta = metav1.ObjectMeta{
-			Namespace: key.Namespace,
-			Name:      key.Name,
-		}
-	}
-
-	return identity, nil
-}
-
-func (p *Provisioner) deleteProviderVolume(ctx context.Context) error {
-	provider, err := p.Providers.LookupCloud(p.volume.Labels[constants.RegionLabel])
-	if err != nil {
-		// Capability absence proves this controller could not have created a
-		// provider volume. Treat it as already absent so allocation cleanup and
-		// finalizer removal can converge; all other lookup errors remain retryable.
-		if errors.Is(err, providers.ErrRegionWrongKind) {
-			return nil
-		}
-
-		return err
-	}
-
-	identity, err := p.deletionIdentity(ctx)
-	if err != nil {
+// Deprovision removes provider state before releasing any Identity allocation.
+func (p *Provisioner) Deprovision(ctx context.Context) error {
+	provider, identity, err := p.ProviderAndIdentity(ctx, p.volume)
+	if err != nil && !errors.Is(err, providers.ErrRegionWrongKind) {
 		return err
 	}
 
 	// Provider cleanup is unconditional and idempotent. The provider owns
 	// authoritative rediscovery and already-absent handling, so readiness and
-	// best-effort status must never gate this call.
-	return provider.DeleteVolume(ctx, identity, p.volume)
-}
-
-// Deprovision removes provider state before releasing any Identity allocation.
-func (p *Provisioner) Deprovision(ctx context.Context) error {
-	if err := p.deleteProviderVolume(ctx); err != nil {
-		return err
+	// best-effort status must never gate this call. A provider without Volume
+	// capability could not have created backing state, so continue to allocation
+	// cleanup in that case.
+	if err == nil {
+		if err := provider.DeleteVolume(ctx, identity, p.volume); err != nil {
+			return err
+		}
 	}
 
 	if p.volume.Annotations[coreconstants.AllocationAnnotation] == "" {

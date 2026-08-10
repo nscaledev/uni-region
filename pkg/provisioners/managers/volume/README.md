@@ -15,8 +15,9 @@ to the HTTP create handler.
 
 Deprovisioning deliberately has stricter ordering:
 
-1. call provider deletion unconditionally, without consulting Identity
-   readiness or best-effort Volume status;
+1. resolve the provider and Identity through the shared provisioner lookup, then
+   call provider deletion without consulting Identity readiness or best-effort
+   Volume status;
 2. retain the finalizer while an accepted asynchronous provider deletion
    yields, and only after rediscovery confirms the provider resource is absent,
    delete the Identity allocation named by the allocation annotation;
@@ -25,10 +26,9 @@ Deprovisioning deliberately has stricter ordering:
 
 Missing allocation metadata is a successful no-op, as is an allocation already
 absent from Identity. A retry repeats provider deletion before allocation
-cleanup; provider deletion is idempotent by contract. If the referenced Region
-`Identity` is already absent despite finalizer ordering, deletion still passes
-its stable namespace/name to the provider so absence can converge before the
-allocation is released from Volume metadata.
+cleanup; provider deletion is idempotent by contract. Finalizer ordering keeps
+the referenced Region `Identity` available through this cleanup; a missing
+Identity remains an error and preserves the Volume finalizer.
 
 If provider lookup reports `ErrRegionWrongKind`, the region is not a full cloud
 provider and therefore could not have created provider state. Deprovisioning
