@@ -316,9 +316,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     observations, not Go errors.
   - observation returns only the neutral size and lifecycle result. It neither
     writes `Volume.Status` nor introduces a mirrored provider-state CRD. The
-    later monitor projects observed provider size and lifecycle into Volume
-    status; the Volume controller separately owns create/delete intent and
-    generic provisioning conditions. VolumeClass inventory and Nova
+    Volume monitor projects observed provider size, lifecycle, and coarse
+    health into Volume status; the Volume controller separately owns
+    create/delete intent and the generic `Available` provisioning condition.
+    VolumeClass inventory and Nova
     attach/detach remain separate capabilities
 - Flavor export is a hybrid model: OpenStack discovers the flavor inventory, but
   region configuration can enrich or override user-facing flavor metadata such

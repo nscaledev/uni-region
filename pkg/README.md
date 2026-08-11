@@ -27,10 +27,11 @@ The useful way to read it is not as a directory tree, but as one system:
   A Cinder error is surfaced through a safe typed provisioning condition. Its
   public v2 Volume lifecycle contract and core CRUD handlers are published;
   creation allocates requested capacity through Identity before persisting the
-  Volume. Its provider capability also exposes neutral backing discovery, observed
-  size, and lifecycle state, while OpenStack supports server attachment
-  behavior. Attachment projection, monitor integration, and observed-state
-  projection into the CRD remain later lifecycle slices
+  Volume. Its provider capability exposes neutral backing discovery, observed
+  size, and lifecycle state. The monitor projects that truth into observed
+  size, coarse health, and a domain-typed `Active` phase without taking over
+  the controller-owned `Available` condition. OpenStack also supports server
+  attachment behavior. Attachment projection remains a later lifecycle slice
 - `Server` now carries the internal attach-existing-only block volume intent
   and observed per-volume attachment rows. The provider boundary and OpenStack
   Nova attach/detach implementation exist; public API projection and
@@ -102,6 +103,7 @@ relationships.
 
 - [monitor](./monitor/README.md)
 - [monitor/health/server](./monitor/health/server/README.md)
+- [monitor/health/volume](./monitor/health/volume/README.md)
 
 These packages cover the part of the system that is intentionally observational
 rather than declarative.

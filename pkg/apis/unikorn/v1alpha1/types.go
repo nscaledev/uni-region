@@ -897,6 +897,23 @@ const (
 	VolumeClaimKindServer VolumeClaimKind = "Server"
 )
 
+// VolumePhaseReason is the domain-owned observed lifecycle vocabulary for the
+// generic core Active condition on a Volume.
+type VolumePhaseReason string
+
+const (
+	VolumePhaseReasonCreating  VolumePhaseReason = "Creating"
+	VolumePhaseReasonAvailable VolumePhaseReason = "Available"
+	VolumePhaseReasonAttaching VolumePhaseReason = "Attaching"
+	VolumePhaseReasonAttached  VolumePhaseReason = "Attached"
+	VolumePhaseReasonDetaching VolumePhaseReason = "Detaching"
+	VolumePhaseReasonUpdating  VolumePhaseReason = "Updating"
+	VolumePhaseReasonDeleting  VolumePhaseReason = "Deleting"
+	VolumePhaseReasonError     VolumePhaseReason = "Error"
+	VolumePhaseReasonUnknown   VolumePhaseReason = "Unknown"
+	VolumePhaseReasonMissing   VolumePhaseReason = "Missing"
+)
+
 type VolumeStatus struct {
 	// ObservedGeneration is the most recent generation observed by the controller.
 	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`

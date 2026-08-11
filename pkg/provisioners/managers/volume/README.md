@@ -31,10 +31,12 @@ the referenced Region `Identity` available through this cleanup; a missing
 Identity remains an error and preserves the Volume finalizer.
 Provider lookup errors also preserve the allocation and finalizer for retry.
 
-General provider observation/status mapping, quota policy, Network
-graph-edge reconciliation, HTTP handlers, and server attachment reconciliation
-are outside this package. The provider-specific state classification needed to
-decide whether create has converged remains inside the provider implementation.
+Provider observation/status projection lives in
+[`pkg/monitor/health/volume`](../../../monitor/health/volume/README.md). Quota
+policy, Network graph-edge reconciliation, HTTP handlers, and server
+attachment reconciliation remain outside this package. The provider-specific
+state classification needed to decide whether create has converged remains
+inside the provider implementation.
 
 ## Cross-Package Context
 

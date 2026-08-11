@@ -159,6 +159,60 @@ func (c *Volume) SetProvisioningCondition(status corev1.ConditionStatus, reason 
 	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
 }
 
+// SetHealthCondition sets the provider-observed health of a Volume.
+func (c *Volume) SetHealthCondition(status corev1.ConditionStatus, reason unikornv1core.HealthConditionReason, message string) {
+	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionHealthy, status, string(reason), message)
+}
+
+// SetVolumePhase sets the provider-observed Volume lifecycle phase.
+func (c *Volume) SetVolumePhase(reason VolumePhaseReason) {
+	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionActive, reason.ConditionStatus(), string(reason), reason.Message())
+}
+
+// GetVolumePhase reads the provider-observed Volume lifecycle phase.
+func GetVolumePhase(r unikornv1core.StatusConditionReader) (*unikornv1core.TypedCondition[VolumePhaseReason], error) {
+	return unikornv1core.GetTypedCondition[VolumePhaseReason](r, unikornv1core.ConditionActive)
+}
+
+// ConditionStatus reports whether the observed phase is currently usable.
+func (r VolumePhaseReason) ConditionStatus() corev1.ConditionStatus {
+	if r == VolumePhaseReasonAvailable || r == VolumePhaseReasonAttached {
+		return corev1.ConditionTrue
+	}
+
+	return corev1.ConditionFalse
+}
+
+// Message returns a user-facing description of the observed phase.
+//
+//nolint:cyclop // The branches exhaustively define the user-facing phase vocabulary.
+func (r VolumePhaseReason) Message() string {
+	switch r {
+	case VolumePhaseReasonCreating:
+		return "the volume is being created"
+	case VolumePhaseReasonAvailable:
+		return "the volume is available"
+	case VolumePhaseReasonAttaching:
+		return "the volume is being attached"
+	case VolumePhaseReasonAttached:
+		return "the volume is attached"
+	case VolumePhaseReasonDetaching:
+		return "the volume is being detached"
+	case VolumePhaseReasonUpdating:
+		return "the volume is being updated"
+	case VolumePhaseReasonDeleting:
+		return "the volume is being deleted"
+	case VolumePhaseReasonError:
+		return "the provider reported the volume in an error state"
+	case VolumePhaseReasonMissing:
+		return "the provider volume is missing"
+	case VolumePhaseReasonUnknown:
+		return "the provider volume state is unknown"
+	}
+
+	return "the provider volume state is unknown"
+}
+
 // ResourceLabels generates a set of labels to uniquely identify the resource
 // if it were to be placed in a single global namespace.
 func (c *Volume) ResourceLabels() (labels.Set, error) {
