@@ -1852,8 +1852,9 @@ func TestReconcileVolume(t *testing.T) {
 	identity := identityFixture()
 	volume := volumeFixture()
 	openstackVolume := &volumes.Volume{
-		ID:   "provider-volume-id",
-		Name: "volume-" + volume.Name,
+		ID:     "provider-volume-id",
+		Name:   "volume-" + volume.Name,
+		Status: "available",
 	}
 	metadata := map[string]string{
 		"example:owner":            "storage-team",
@@ -1873,10 +1874,11 @@ func TestReconcileVolume(t *testing.T) {
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(nil, coreerrors.ErrResourceNotFound)
 		blockStorage.EXPECT().CreateVolume(t.Context(), volume, metadata).Return(openstackVolume, nil)
 
-		require.NoError(t, openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume))
+		err := openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume)
+		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
 
-	t.Run("ItExists", func(t *testing.T) {
+	t.Run("ItIsAvailable", func(t *testing.T) {
 		t.Parallel()
 
 		c := gomock.NewController(t)
@@ -1884,6 +1886,57 @@ func TestReconcileVolume(t *testing.T) {
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(openstackVolume, nil)
 
 		require.NoError(t, openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume))
+	})
+
+	t.Run("ItIsCreating", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(&volumes.Volume{
+			ID:     openstackVolume.ID,
+			Name:   openstackVolume.Name,
+			Status: "creating",
+		}, nil)
+
+		err := openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume)
+		require.ErrorIs(t, err, provisioners.ErrYield)
+	})
+
+	t.Run("ItIsErrored", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(&volumes.Volume{
+			ID:     openstackVolume.ID,
+			Name:   openstackVolume.Name,
+			Status: "error",
+		}, nil)
+
+		err := openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume)
+		require.ErrorIs(t, err, provisioners.ErrTerminal)
+
+		var provisioningError *provisioners.Error
+
+		require.ErrorAs(t, err, &provisioningError)
+		require.Equal(t, corev1.ConditionReasonErrored, provisioningError.Reason())
+		require.Equal(t, "provider volume entered an error state", provisioningError.Message())
+	})
+
+	t.Run("ItHasAnUnknownProviderStatus", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(&volumes.Volume{
+			ID:     openstackVolume.ID,
+			Name:   openstackVolume.Name,
+			Status: "unexpected",
+		}, nil)
+
+		err := openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume)
+		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
 }
 
@@ -1896,7 +1949,7 @@ func TestDeleteVolumeWithClient(t *testing.T) {
 		Name: "volume-" + volume.Name,
 	}
 
-	t.Run("ItDoesNotExist", func(t *testing.T) {
+	t.Run("AlreadyAbsentSucceeds", func(t *testing.T) {
 		t.Parallel()
 
 		c := gomock.NewController(t)
@@ -1906,7 +1959,7 @@ func TestDeleteVolumeWithClient(t *testing.T) {
 		require.NoError(t, openstack.DeleteVolumeWithClient(t.Context(), blockStorage, volume))
 	})
 
-	t.Run("ItExists", func(t *testing.T) {
+	t.Run("AcceptedDeleteYields", func(t *testing.T) {
 		t.Parallel()
 
 		c := gomock.NewController(t)
@@ -1914,10 +1967,10 @@ func TestDeleteVolumeWithClient(t *testing.T) {
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(openstackVolume, nil)
 		blockStorage.EXPECT().DeleteVolume(t.Context(), openstackVolume.ID).Return(nil)
 
-		require.NoError(t, openstack.DeleteVolumeWithClient(t.Context(), blockStorage, volume))
+		require.ErrorIs(t, openstack.DeleteVolumeWithClient(t.Context(), blockStorage, volume), provisioners.ErrYield)
 	})
 
-	t.Run("ItDisappearsBeforeDelete", func(t *testing.T) {
+	t.Run("DisappearsBeforeDeleteSucceeds", func(t *testing.T) {
 		t.Parallel()
 
 		c := gomock.NewController(t)

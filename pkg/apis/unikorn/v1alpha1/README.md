@@ -93,8 +93,9 @@ stored objects rely on for linkage, migration, and operational coordination.
   claim; a nil claim means the volume is available for claiming. `Server` is the
   current supported claim kind. Attachment realization remains outside
   `Volume.Status`, which is conditions-first and also reserves observed size for
-  later controller/provider work. Provider-side volume identity is expected to
-  be rediscovered by stable provider lookup rather than mirrored into status.
+  later observation work. The Volume controller drives provider create/delete,
+  but provider-side volume identity is rediscovered by stable provider lookup
+  rather than mirrored into status.
 - `Server.Spec.Volumes` is the attach-existing-only desired state for block
   storage. Each row names an existing Region `Volume` by ID; inline
   server-created volume templates are deliberately excluded from the first
@@ -108,8 +109,8 @@ stored objects rely on for linkage, migration, and operational coordination.
 - The `Network -> Volume` graph edge is declared as containment for future
   behavior: Network scope propagates to Volume; co-location is implicit; Volume
   holds a reverse deletion-blocking relationship to Network for its lifetime;
-  Network deletion may cascade to Volumes once controller/API behavior exists;
-  Volume status does not propagate upward to Network.
+  Network deletion may cascade to Volumes once dedicated graph-edge
+  reconciliation exists; Volume status does not propagate upward to Network.
 - `FileStorage.Spec.SnapshotPolicies` is an optional inline desired-state list
   keyed by policy `name`. In persisted storage, omitted and empty lists both mean
   no user-managed snapshot policies are desired. Default snapshot protection is

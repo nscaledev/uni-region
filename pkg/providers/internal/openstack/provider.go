@@ -143,10 +143,7 @@ type Provider struct {
 	imageCache *cache.RefreshAheadCache[types.Image, *types.Image]
 }
 
-var (
-	_ types.Provider = &Provider{}
-	_ types.Volume   = &Provider{}
-)
+var _ types.Provider = &Provider{}
 
 type Options struct {
 	// WarmImageCache enables startup-time image cache initialization.
@@ -2008,12 +2005,25 @@ func volumeMetadata(identity *unikornv1.Identity, volume *unikornv1.Volume) map[
 	return metadata
 }
 
+const (
+	volumeStatusAvailable   = "available"
+	volumeStatusErrorPrefix = "error"
+)
+
 func reconcileVolume(ctx context.Context, blockStorage VolumeInterface, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
 	logger := log.FromContext(ctx)
 
-	_, err := blockStorage.GetVolume(ctx, volume)
+	openstackVolume, err := blockStorage.GetVolume(ctx, volume)
 	if err == nil {
 		logger.V(1).Info("volume already exists")
+
+		if strings.HasPrefix(openstackVolume.Status, volumeStatusErrorPrefix) {
+			return provisioners.Terminal(unikornv1core.ConditionReasonErrored, "provider volume entered an error state")
+		}
+
+		if openstackVolume.Status != volumeStatusAvailable {
+			return provisioners.ErrYield
+		}
 
 		return nil
 	}
@@ -2024,9 +2034,11 @@ func reconcileVolume(ctx context.Context, blockStorage VolumeInterface, identity
 
 	logger.V(1).Info("creating volume")
 
-	_, err = blockStorage.CreateVolume(ctx, volume, volumeMetadata(identity, volume))
+	if _, err = blockStorage.CreateVolume(ctx, volume, volumeMetadata(identity, volume)); err != nil {
+		return err
+	}
 
-	return err
+	return provisioners.ErrYield
 }
 
 func (p *Provider) CreateVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
@@ -2052,11 +2064,15 @@ func deleteVolume(ctx context.Context, blockStorage VolumeInterface, volume *uni
 
 	logger.V(1).Info("deleting volume")
 
-	if err := blockStorage.DeleteVolume(ctx, openstackVolume.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-		return err
+	if err := blockStorage.DeleteVolume(ctx, openstackVolume.ID); err != nil {
+		if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return err
+		}
+
+		return nil
 	}
 
-	return nil
+	return provisioners.ErrYield
 }
 
 func (p *Provider) DeleteVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error {

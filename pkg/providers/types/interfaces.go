@@ -93,7 +93,9 @@ type LoadBalancer interface {
 
 // Volume manages provider-backed block-storage volume lifecycle.
 type Volume interface {
-	// CreateVolume creates the provider volume described by the Region Volume.
+	// CreateVolume reconciles the provider volume described by the Region Volume.
+	// It returns success only after the backing volume is usable; asynchronous
+	// progress and terminal provider states use the shared provisioning errors.
 	CreateVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
 	// DeleteVolume idempotently deletes the provider volume described by the Region Volume.
 	DeleteVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
@@ -143,7 +145,7 @@ type CommonProvider interface {
 // Providers are expected to provide a provider agnostic manner.
 // They are also expected to provide any caching or memoization required
 // to provide high performance and a decent UX.
-type Provider interface {
+type Provider interface { //nolint:interfacebloat // This is the full workload-lifecycle contract.
 	CommonProvider
 	ImageRead
 	ImageWrite
@@ -151,6 +153,7 @@ type Provider interface {
 	Network
 	SecurityGroup
 	LoadBalancer
+	Volume
 	Server
 	ServerConsole
 	ServerSnapshot

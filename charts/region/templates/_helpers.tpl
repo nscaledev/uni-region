@@ -33,6 +33,10 @@ v{{ .Chart.Version }}
 {{- .Values.loadBalancerController.image | default (printf "%s/unikorn-load-balancer-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default (include "unikorn.defaultTag" .))) }}
 {{- end }}
 
+{{- define "unikorn.volumeControllerImage" -}}
+{{- .Values.volumeController.image | default (printf "%s/unikorn-volume-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default (include "unikorn.defaultTag" .))) }}
+{{- end }}
+
 {{- define "unikorn.securityGroupRuleControllerImage" -}}
 {{- .Values.securityGroupRuleController.image | default (printf "%s/unikorn-security-group-rule-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default (include "unikorn.defaultTag" .))) }}
 {{- end }}

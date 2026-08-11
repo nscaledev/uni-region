@@ -46,7 +46,7 @@ packages are the concrete provider implementations.
   - return Region-scoped `VolumeClass` inventory, including optional
     operator-authored capacity bounds
 - `types.Provider` extends that common base with the broader image, identity,
-  network, security-group, load-balancer, server, console, and snapshot
+  network, security-group, load-balancer, volume, server, console, and snapshot
   lifecycle surfaces. The server surface includes attaching and detaching an
   existing Region `Volume`; attachment intent remains owned by the `Server`.
 - The provider abstraction is intentionally mixed:
@@ -61,14 +61,25 @@ packages are the concrete provider implementations.
     the real backing resources
   - mirrored provider-state records are not the preferred answer unless the
     state cannot be reconstructed safely enough by other means
-- `types.Volume` is currently a focused create/delete capability implemented
-  by OpenStack, separate from the full `types.Provider` composition while the
-  Volume controller and other backends do not consume that lifecycle:
+- `types.Volume` is the focused create/delete capability embedded in the full
+  `types.Provider` contract and consumed through `LookupCloud` by the Volume
+  controller. Discovery-only providers remain on `types.CommonProvider` and do
+  not implement workload lifecycle:
   - lifecycle intent is the native Region `Volume` CRD
   - provider implementations rediscover their backing object internally before
     create or delete; rediscovery is not a public existence-only contract
-  - provider-neutral observation belongs to the later read-side slice, once
-    monitor and controller consumers can exercise its shape
+  - create success means the rediscovered backing volume is usable, not merely
+    that an asynchronous provider request was accepted. Providers return
+    `provisioners.ErrYield` while creation is still converging and a safe typed
+    terminal provisioning error when the backing object has entered an
+    unrecoverable error state
+  - delete success means rediscovery confirms the backing volume is absent, not
+    merely that an asynchronous provider request was accepted. Accepted delete
+    requests return `provisioners.ErrYield` so allocation cleanup and finalizer
+    removal wait for provider convergence
+  - provider-neutral observation belongs to the later read-side slice and is
+    not implied by the provider-internal state check required to converge
+    controller create/delete support
   - VolumeClass inventory remains on `CommonProvider`, and server
     attach/detach is a separate capability
 - Provider `Delete*` methods must be idempotent and must tolerate an unrealized
@@ -129,7 +140,9 @@ packages are the concrete provider implementations.
   - it exists to push broad integration coverage left
   - it is useful for deterministic load, race, and bottleneck testing at higher
     layers without requiring a real cloud deployment
-  - server volume attach/detach is currently explicit unsupported behavior
+  - volume create and server volume attach/detach are currently explicit
+    unsupported behavior; volume delete is an idempotent no-op because the
+    simulated provider cannot create backing volume state
 
 ## Caveats
 

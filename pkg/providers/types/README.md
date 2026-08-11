@@ -33,7 +33,7 @@ continue to be passed directly through many provider interface methods.
 
 - `Provider` is a capability composition interface, not one monolithic "SDK"
   wrapper. It embeds smaller contracts such as `ImageRead`, `ImageWrite`,
-  `Network`, `Server`, `ServerConsole`, and `ServerSnapshot`.
+  `Network`, `Volume`, `Server`, `ServerConsole`, and `ServerSnapshot`.
 - The `Server` capability owns both ends of the existing-volume attachment
   boundary. `AttachVolume` and `DetachVolume` receive the repo-native
   `Server` and `Volume` resources; `Volume` does not own attachment intent.
@@ -54,11 +54,17 @@ continue to be passed directly through many provider interface methods.
   exposes the inventory. Optional minimum and maximum capacity bounds are
   operator-authored Region configuration propagated through this neutral
   model; they are not provider-discovered values.
-- `Volume` is a focused create/delete capability that accepts the native
-  `unikornv1.Volume` lifecycle intent. It is deliberately separate from the
-  full `Provider` composition during the staged rollout, and it does not expose
-  discovery, observed state, VolumeClass inventory, or server attachment
-  operations.
+- `Volume` is the focused create/delete capability embedded in the full
+  `Provider` composition. It accepts the native `unikornv1.Volume` lifecycle
+  intent and does not expose discovery, observed state, VolumeClass inventory,
+  or server attachment operations. `CreateVolume` is a reconciliation
+  operation rather than a one-shot request: implementations return
+  `provisioners.ErrYield` until the backing resource is usable, return `nil`
+  only after convergence, and may return a typed terminal provisioning error
+  for an unrecoverable provider state. `DeleteVolume` likewise yields after an
+  accepted asynchronous delete and succeeds only when provider absence is
+  confirmed. Discovery-only substrates implement `CommonProvider` instead of
+  the full workload lifecycle contract.
 - `ServerCreateOptions` carries launch-time derived inputs without forcing them
   into the persisted `Server` CRD shape.
 - `ServerVolumeAttachment` contains only provider-neutral observation needed by

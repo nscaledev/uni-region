@@ -211,6 +211,15 @@ loadBalancerController:
       cpu: 100m
       memory: 100Mi
 
+volumeController:
+  # Allow override of the controller image.
+  image: ~
+  # Allows resource limits to be set.
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
+
 # Sets the DNS hosts/X.509 Certs.
 region:
   host: region.unikorn-cloud.org
