@@ -28,6 +28,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/volumeattach"
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 )
@@ -184,7 +185,7 @@ func detachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 		return err
 	}
 
-	return nil
+	return provisioners.ErrYield
 }
 
 func (p *Provider) AttachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume) (*types.ServerVolumeAttachment, error) {

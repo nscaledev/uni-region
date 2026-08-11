@@ -6,6 +6,13 @@ Distinctive behaviour:
 
 - maintains explicit reference edges from a server to consumed networks,
   security groups, and optional SSH certificate authority
+- claims each desired Volume with an optimistic write and a finalizer-backed
+  deletion reference before provider attach, then projects the provider-neutral
+  device and attachment state into `Server.status.volumes`
+- detaches claimed Volumes before releasing their claims and finalizer-backed
+  references, both when desired attachments are removed and before Server deletion
+- checks Volume readiness after provider server creation because readiness gates
+  attachment, not creation of the Server itself
 - blocks on identity readiness before provider create/delete
 - blocks provider create while any configured `providerCreateGates` remain
   unsatisfied
@@ -17,6 +24,8 @@ Distinctive behaviour:
   deleting the failed provider server before a bounded re-attempt, but only for
   servers that have never been successfully provisioned; once the attempt cap is
   reached it aborts terminally rather than retrying further
+- retries Volume attachment convergence independently and idempotently; attachment
+  failures never trigger destructive provider server delete-and-recreate recovery
 - clears or updates consumed-resource references during reprovision and teardown
 
 Create recovery and image rebuild recovery deliberately use different state:
@@ -98,6 +107,8 @@ This is the clearest controller-side expression of the lifecycle DAG model:
 - provider-create gates are pre-provider-create coordination points; they delay
   provider create but are not deletion blockers
 - provider-side server lifecycle is delegated
+- provider-side Volume attach/detach is delegated while claim and status
+  ownership remains in this controller
 - cloud-init augmentation translates higher-level SSH CA semantics into machine
   bootstrap material
 

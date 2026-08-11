@@ -68,8 +68,9 @@ packages are the concrete provider implementations.
   - lifecycle intent is the native Region `Volume` CRD
   - provider implementations rediscover their backing object internally before
     create or delete; rediscovery is not a public existence-only contract
-  - create success means the rediscovered backing volume is usable, not merely
-    that an asynchronous provider request was accepted. Providers return
+  - create success means the rediscovered backing volume is usable (`available`
+    or already `in-use`), not merely that an asynchronous provider request was
+    accepted. Providers return
     `provisioners.ErrYield` while creation is still converging and a safe typed
     terminal provisioning error when the backing object has entered an
     unrecoverable error state
@@ -96,7 +97,8 @@ packages are the concrete provider implementations.
     never realized. Callers must therefore never gate a delete on identity
     readiness or recorded status — that belongs to this layer.
 - `DetachVolume` follows the same absent-means-converged teardown rule: a
-  missing provider server, volume, or attachment is success. `AttachVolume`
+  missing provider server, volume, or attachment is success, while an accepted
+  detach yields until a later read confirms convergence. `AttachVolume`
   instead requires both backing resources and reports semantic not-found when
   either is absent. Concrete provider conflicts are normalized to the shared
   conflict sentinel; provider failures that are neither not-found nor conflict

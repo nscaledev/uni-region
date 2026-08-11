@@ -104,8 +104,8 @@ stored objects rely on for linkage, migration, and operational coordination.
   device name for later controller and monitor work. The provider layer now
   supplies a server-owned attach/detach boundary and the OpenStack provider
   realizes it with Nova, but this package still only owns the persisted shape;
-  reference placement, claim/locking behavior, controller reconciliation, and
-  public API projection live in later layers/tickets.
+  reference placement, claim/locking behavior, and attachment reconciliation
+  are owned by the Server controller. Public API projection remains deferred.
 - The `Network -> Volume` graph edge is declared as containment for future
   behavior: Network scope propagates to Volume; co-location is implicit; Volume
   holds a reverse deletion-blocking relationship to Network for its lifetime;

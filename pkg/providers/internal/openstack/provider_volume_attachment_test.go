@@ -29,6 +29,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/provisioners"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack/mock"
@@ -272,7 +273,8 @@ func TestDetachVolume(t *testing.T) {
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(attachedVolume, nil)
 		compute.EXPECT().DeleteVolumeAttachment(t.Context(), openstackServer.ID, cinderVolume.ID).Return(nil)
 
-		require.NoError(t, openstack.DetachVolumeWithClients(t.Context(), compute, blockStorage, server, volume))
+		err := openstack.DetachVolumeWithClients(t.Context(), compute, blockStorage, server, volume)
+		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
 
 	t.Run("AlreadyDetachedIsIdempotent", func(t *testing.T) {

@@ -41,6 +41,7 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -131,6 +132,225 @@ func (p *Provisioner) securityGroupIDs() []string {
 	}
 
 	return ids
+}
+
+func (p *Provisioner) volumeClaim() unikornv1.VolumeClaimRef {
+	return unikornv1.VolumeClaimRef{
+		Kind: unikornv1.VolumeClaimKindServer,
+		ID:   p.server.Name,
+	}
+}
+
+func (p *Provisioner) volumeClaimedByServer(volume *unikornv1.Volume) bool {
+	claim := p.volumeClaim()
+
+	return volume.Spec.ClaimRef != nil && *volume.Spec.ClaimRef == claim
+}
+
+func (p *Provisioner) setVolumeStatus(id string, status unikornv1.AttachmentProvisioningStatus, device *string, message string) {
+	for i := range p.server.Status.Volumes {
+		if p.server.Status.Volumes[i].ID == id {
+			p.server.Status.Volumes[i].ProvisioningStatus = status
+			p.server.Status.Volumes[i].Device = device
+			p.server.Status.Volumes[i].Message = message
+
+			return
+		}
+	}
+
+	p.server.Status.Volumes = append(p.server.Status.Volumes, unikornv1.ServerVolumeStatus{
+		ID:                 id,
+		ProvisioningStatus: status,
+		Device:             device,
+		Message:            message,
+	})
+}
+
+func (p *Provisioner) removeVolumeStatus(id string) {
+	for i := range p.server.Status.Volumes {
+		if p.server.Status.Volumes[i].ID == id {
+			p.server.Status.Volumes = append(p.server.Status.Volumes[:i], p.server.Status.Volumes[i+1:]...)
+
+			return
+		}
+	}
+}
+
+func (p *Provisioner) claimVolume(ctx context.Context, cli client.Client, volume *unikornv1.Volume, reference string) error {
+	claim := p.volumeClaim()
+
+	if volume.Spec.ClaimRef != nil && *volume.Spec.ClaimRef != claim {
+		return fmt.Errorf(
+			"%w: %w: volume %s is claimed by %s %s",
+			provisioners.Yield(unikornv1core.ConditionReasonDependencyNotReady, "volume is claimed by another server"),
+			coreerrors.ErrConflict,
+			volume.Name,
+			volume.Spec.ClaimRef.Kind,
+			volume.Spec.ClaimRef.ID,
+		)
+	}
+
+	if volume.DeletionTimestamp != nil && volume.Spec.ClaimRef == nil {
+		return fmt.Errorf("%w: volume %s is being deleted", coreerrors.ErrConflict, volume.Name)
+	}
+
+	updated := controllerutil.AddFinalizer(volume, reference)
+
+	if volume.Spec.ClaimRef == nil {
+		volume.Spec.ClaimRef = &claim
+		updated = true
+	}
+
+	if !updated {
+		return nil
+	}
+
+	if err := cli.Update(ctx, volume); err != nil {
+		if kerrors.IsConflict(err) {
+			return provisioners.ErrYield
+		}
+
+		return err
+	}
+
+	return nil
+}
+
+func (p *Provisioner) releaseVolume(ctx context.Context, cli client.Client, volume *unikornv1.Volume, reference string) error {
+	if volume.Spec.ClaimRef != nil && !p.volumeClaimedByServer(volume) {
+		return fmt.Errorf("%w: volume %s claim changed ownership", coreerrors.ErrConflict, volume.Name)
+	}
+
+	updated := controllerutil.RemoveFinalizer(volume, reference)
+
+	if volume.Spec.ClaimRef != nil {
+		volume.Spec.ClaimRef = nil
+		updated = true
+	}
+
+	if !updated {
+		return nil
+	}
+
+	if err := cli.Update(ctx, volume); err != nil {
+		if kerrors.IsNotFound(err) {
+			return nil
+		}
+
+		if kerrors.IsConflict(err) {
+			return provisioners.ErrYield
+		}
+
+		return err
+	}
+
+	return nil
+}
+
+func (p *Provisioner) detachUndesiredVolumes(ctx context.Context, cli client.Client, provider types.Provider, identity *unikornv1.Identity, reference string, volumes []unikornv1.Volume, desiredIDs map[string]struct{}) error {
+	for i := range volumes {
+		volume := &volumes[i]
+		if !p.volumeClaimedByServer(volume) {
+			continue
+		}
+
+		if _, ok := desiredIDs[volume.Name]; ok {
+			continue
+		}
+
+		p.setVolumeStatus(volume.Name, unikornv1.AttachmentDeprovisioning, nil, "detaching volume")
+
+		if err := provider.DetachVolume(ctx, identity, p.server, volume); err != nil {
+			if !errors.Is(err, provisioners.ErrYield) {
+				p.setVolumeStatus(volume.Name, unikornv1.AttachmentErrored, nil, "failed to detach volume")
+			}
+
+			return err
+		}
+
+		if err := p.releaseVolume(ctx, cli, volume, reference); err != nil {
+			return err
+		}
+
+		p.removeVolumeStatus(volume.Name)
+	}
+
+	return nil
+}
+
+func (p *Provisioner) attachDesiredVolumes(ctx context.Context, cli client.Client, provider types.Provider, identity *unikornv1.Identity, reference string, desired []unikornv1.ServerVolumeSpec, byID map[string]*unikornv1.Volume) error {
+	for _, attachment := range desired {
+		volume, ok := byID[attachment.ID]
+		if !ok {
+			p.setVolumeStatus(attachment.ID, unikornv1.AttachmentErrored, nil, "volume does not exist in the server identity")
+
+			return fmt.Errorf("%w: attempt to attach unknown volume ID %s", coreerrors.ErrConsistency, attachment.ID)
+		}
+
+		if err := p.claimVolume(ctx, cli, volume, reference); err != nil {
+			if errors.Is(err, provisioners.ErrYield) {
+				p.setVolumeStatus(attachment.ID, unikornv1.AttachmentProvisioning, nil, "waiting for volume claim")
+			} else {
+				p.setVolumeStatus(attachment.ID, unikornv1.AttachmentErrored, nil, "volume is claimed by another server")
+			}
+
+			return err
+		}
+
+		if err := p.classifyDependency(cli, volume); err != nil {
+			p.setVolumeStatus(attachment.ID, unikornv1.AttachmentProvisioning, nil, "waiting for volume to be provisioned")
+
+			return err
+		}
+
+		result, err := provider.AttachVolume(ctx, identity, p.server, volume)
+		if err != nil {
+			if errors.Is(err, provisioners.ErrYield) {
+				p.setVolumeStatus(attachment.ID, unikornv1.AttachmentProvisioning, nil, "attaching volume")
+			} else {
+				p.setVolumeStatus(attachment.ID, unikornv1.AttachmentErrored, nil, "failed to attach volume")
+			}
+
+			return err
+		}
+
+		if result == nil {
+			p.setVolumeStatus(attachment.ID, unikornv1.AttachmentErrored, nil, "provider returned an empty volume attachment")
+
+			return fmt.Errorf("%w: provider returned an empty volume attachment", coreerrors.ErrConsistency)
+		}
+
+		p.setVolumeStatus(attachment.ID, unikornv1.AttachmentProvisioned, result.Device, "volume attached")
+	}
+
+	return nil
+}
+
+func (p *Provisioner) reconcileVolumeAttachments(ctx context.Context, cli client.Client, provider types.Provider, identity *unikornv1.Identity, reference string, desired []unikornv1.ServerVolumeSpec) error {
+	volumes := &unikornv1.VolumeList{}
+	if err := cli.List(ctx, volumes, p.identityListOptions()); err != nil {
+		return err
+	}
+
+	byID := make(map[string]*unikornv1.Volume, len(volumes.Items))
+	for i := range volumes.Items {
+		byID[volumes.Items[i].Name] = &volumes.Items[i]
+	}
+
+	desiredIDs := make(map[string]struct{}, len(desired))
+	p.server.Status.Volumes = make([]unikornv1.ServerVolumeStatus, 0, len(desired))
+
+	for _, attachment := range desired {
+		desiredIDs[attachment.ID] = struct{}{}
+
+		p.setVolumeStatus(attachment.ID, unikornv1.AttachmentProvisioning, nil, "attaching volume")
+	}
+
+	if err := p.detachUndesiredVolumes(ctx, cli, provider, identity, reference, volumes.Items, desiredIDs); err != nil {
+		return err
+	}
+
+	return p.attachDesiredVolumes(ctx, cli, provider, identity, reference, desired, byID)
 }
 
 func (p *Provisioner) sshCertificateAuthorityKey() *client.ObjectKey {
@@ -562,12 +782,12 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
-	// Release any references to any resources we no longer consume.
-	if err := p.removeConsumedResourceReferences(ctx, cli, reference); err != nil {
+	if err := p.reconcileVolumeAttachments(ctx, cli, provider, identity, reference, p.server.Spec.Volumes); err != nil {
 		return err
 	}
 
-	return nil
+	// Release any references to any resources we no longer consume.
+	return p.removeConsumedResourceReferences(ctx, cli, reference)
 }
 
 // Deprovision implements the Provision interface.
@@ -582,16 +802,20 @@ func (p *Provisioner) Deprovision(ctx context.Context) error {
 		return err
 	}
 
-	if err := provider.DeleteServer(ctx, identity, p.server); err != nil {
-		return err
-	}
-
-	// Once we know the server is gone, allow deletion of the security group.
 	reference, err := manager.GenerateResourceReference(cli, p.server)
 	if err != nil {
 		return err
 	}
 
+	if err := p.reconcileVolumeAttachments(ctx, cli, provider, identity, reference, nil); err != nil {
+		return err
+	}
+
+	if err := provider.DeleteServer(ctx, identity, p.server); err != nil {
+		return err
+	}
+
+	// Once we know the server is gone, allow deletion of the security group.
 	if err := p.clearConsumedResourceReferences(ctx, cli, reference); err != nil {
 		return err
 	}

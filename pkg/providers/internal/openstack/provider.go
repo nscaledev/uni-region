@@ -2007,6 +2007,7 @@ func volumeMetadata(identity *unikornv1.Identity, volume *unikornv1.Volume) map[
 
 const (
 	volumeStatusAvailable   = "available"
+	volumeStatusInUse       = "in-use"
 	volumeStatusErrorPrefix = "error"
 )
 
@@ -2021,7 +2022,7 @@ func reconcileVolume(ctx context.Context, blockStorage VolumeInterface, identity
 			return provisioners.Terminal(unikornv1core.ConditionReasonErrored, "provider volume entered an error state")
 		}
 
-		if openstackVolume.Status != volumeStatusAvailable {
+		if openstackVolume.Status != volumeStatusAvailable && openstackVolume.Status != volumeStatusInUse {
 			return provisioners.ErrYield
 		}
 

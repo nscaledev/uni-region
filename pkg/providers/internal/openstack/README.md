@@ -271,8 +271,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     rather than duplicating it
   - an accepted Cinder create is partial progress rather than success: the
     provider yields after submission and on subsequent rediscovery until the
-    volume reports `available`; all unrecognized non-error states also yield so
-    an unfamiliar provider state cannot be mistaken for convergence
+    volume reports `available` or `in-use`; `in-use` remains converged when the
+    Server controller's durable claim update requeues the Volume controller.
+    All unrecognized non-error states yield so an unfamiliar provider state
+    cannot be mistaken for convergence
   - a Cinder status beginning with `error` returns a typed terminal
     `Available=False`, `Reason=Errored` result with the user-safe message
     `provider volume entered an error state`; provider IDs, scheduler failures,
@@ -346,9 +348,11 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     creation of the same desired attachment becomes success, while an
     unresolved conflict maps to `ErrConflict`
   - detach calls Nova delete only when Cinder reports an attachment to the
-    requested server; a missing server, volume, requested-server attachment, or
-    Nova delete `404` is success because detached state already holds, including
-    when the volume remains attached only to another server
+    requested server; an accepted delete yields so the caller retains its claim
+    until a later read confirms convergence. A missing server, volume,
+    requested-server attachment, or Nova delete `404` is success because
+    detached state already holds, including when the volume remains attached
+    only to another server
   - a Nova delete `409 Conflict` maps to `ErrConflict`; other provider failures
     are preserved
   - detach also no-ops when the backing OpenStack identity was never realized,

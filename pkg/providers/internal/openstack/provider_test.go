@@ -1888,6 +1888,20 @@ func TestReconcileVolume(t *testing.T) {
 		require.NoError(t, openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume))
 	})
 
+	t.Run("ItIsInUse", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(&volumes.Volume{
+			ID:     openstackVolume.ID,
+			Name:   openstackVolume.Name,
+			Status: "in-use",
+		}, nil)
+
+		require.NoError(t, openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume))
+	})
+
 	t.Run("ItIsCreating", func(t *testing.T) {
 		t.Parallel()
 

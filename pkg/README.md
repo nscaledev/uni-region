@@ -27,10 +27,11 @@ The useful way to read it is not as a directory tree, but as one system:
   A Cinder error is surfaced through a safe typed provisioning condition; quota
   admission, the public API, and general observed-state projection remain later
   lifecycle slices
-- `Server` now carries the internal attach-existing-only block volume intent
-  and observed per-volume attachment rows. The provider boundary and OpenStack
-  Nova attach/detach implementation exist; public API projection and
-  server-controller reconciliation remain separate follow-up work
+- `Server` carries attach-existing-only block volume intent and observed
+  per-volume attachment rows. Its controller atomically claims each Volume and
+  places its finalizer-backed deletion reference before provider attach, detaches
+  before releasing that ownership, and performs the same cleanup before Server
+  deletion. Public API projection remains separate follow-up work
 
 ## Recommended Reading Order
 
