@@ -62,7 +62,12 @@ type Checker interface {
 func Run(ctx context.Context, c client.Client, o *Options) error {
 	log := log.FromContext(ctx)
 
-	providerCache, err := providers.New(ctx, c, c, o.CoreOptions.Namespace, providers.Options{})
+	// A single region with a broken provider (e.g. an expired or invalid TLS
+	// certificate) must not take the whole monitor process down: unlike the API
+	// server or controller manager, this process has no in-flight traffic to
+	// protect by failing fast, and the broken region should instead show up as a
+	// logged, retried-on-poll problem for that region alone.
+	providerCache, err := providers.New(ctx, c, c, o.CoreOptions.Namespace, providers.Options{TolerateRegionInitErrors: true})
 	if err != nil {
 		log.Error(err, "failed to initialize providers")
 

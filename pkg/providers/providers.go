@@ -31,6 +31,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 var (
@@ -70,16 +71,28 @@ type providersImpl struct {
 type Options struct {
 	// WarmImageCache enables startup-time image cache initialization.
 	WarmImageCache bool
+
+	// TolerateRegionInitErrors changes how New reacts to a single region failing
+	// to initialize (e.g. an expired or otherwise invalid provider TLS certificate).
+	// When false (the default) that failure aborts the entire call. When true, the
+	// failure is logged and that region is simply omitted from the initial cache;
+	// it is retried on demand the next time it's looked up (see load), so a single
+	// broken region degrades to "unavailable until fixed" rather than taking the
+	// whole process down.
+	TolerateRegionInitErrors bool
 }
 
 // New creates and synchronously initializes all region providers. Startup-time region
 // discovery and provider construction use initClient so bootstrap reads can happen
 // before a controller manager cache has started, while the returned provider set retains
-// runtimeClient for normal cached operation after startup. The chosen behaviour is to
+// runtimeClient for normal cached operation after startup. By default the behaviour is to
 // fail on initialization failure, the reasoning is that during upgrade an old version of
 // the service should be running to handle traffic, and we'd rather not have something
-// put into production that is known to be broken. Regions discovered after startup are
-// loaded on demand and then shared for subsequent lookups.
+// put into production that is known to be broken. Callers that instead want the process
+// to stay up and treat a broken region as a per-region problem (e.g. a poll-only monitor
+// that has no traffic to protect) should set Options.TolerateRegionInitErrors. Regions
+// discovered after startup, or skipped at startup under that option, are loaded on demand
+// and then shared for subsequent lookups.
 func New(ctx context.Context, initClient client.Client, runtimeClient client.Client, namespace string, opts Options) (Providers, error) {
 	var regions unikornv1.RegionList
 
@@ -94,7 +107,13 @@ func New(ctx context.Context, initClient client.Client, runtimeClient client.Cli
 	for i := range regions.Items {
 		provider, err := newProvider(ctx, initClient, runtimeClient, &regions.Items[i], opts)
 		if err != nil {
-			return nil, err
+			if !opts.TolerateRegionInitErrors {
+				return nil, err
+			}
+
+			log.FromContext(ctx).Error(err, "failed to initialize region provider, region will be unavailable until this is resolved", "region", regions.Items[i].Name)
+
+			continue
 		}
 
 		cache[regions.Items[i].Name] = provider

@@ -30,4 +30,11 @@ intended to allow additional monitor classes later.
 
 - This is polling by design. That makes it simpler and more decoupled, but also
   means timeliness and overhead are governed by poll period rather than watches.
-- Provider/cache readiness is part of monitor startup.
+- Provider/cache readiness is part of monitor startup, but unlike the API server
+  and controller manager this process opts into
+  `providers.Options.TolerateRegionInitErrors`. A single region with a broken
+  provider (e.g. an expired or invalid TLS certificate) is logged and skipped at
+  startup instead of crash-looping the whole process; that region is retried on
+  every subsequent lookup until it initializes cleanly. Servers in an
+  unavailable region are simply absent from that poll's checks, per
+  [health/server](./health/server/README.md).

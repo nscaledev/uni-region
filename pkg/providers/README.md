@@ -105,6 +105,16 @@ packages are the concrete provider implementations.
   than assuming client material is static for process lifetime.
   Credential rotation, secret refresh, and region configuration refresh are part
   of the provider contract, not incidental operational concerns.
+- `New` synchronously initializes every region's provider at startup and, by
+  default, fails entirely if any single region fails to initialize (e.g. an
+  expired or invalid TLS certificate). This is deliberate for the API server and
+  controller manager: during a rollout, an old pod that can still serve traffic
+  is preferable to a new one known to be partially broken. Callers with no
+  traffic to protect, such as the poll-only [region-monitor](../monitor/README.md),
+  should set `Options.TolerateRegionInitErrors` so a single broken region is
+  logged and skipped rather than taking the whole process down. A region skipped
+  this way, like one discovered after startup, is retried on demand the next
+  time it's looked up.
 - The provider layer is allowed to carry compensating local mechanisms where the
   underlying substrate is insufficient on its own:
   - OpenStack image caching exists because raw image API behaviour is too slow
