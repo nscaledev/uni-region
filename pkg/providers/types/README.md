@@ -53,7 +53,8 @@ continue to be passed directly through many provider interface methods.
   metadata that Region configuration can filter or enrich before a public API
   exposes the inventory. Optional minimum and maximum capacity bounds are
   operator-authored Region configuration propagated through this neutral
-  model; they are not provider-discovered values.
+  model; they are not provider-discovered values. The same model carries an
+  optional typed Region Flavor allowlist; nil or empty means unrestricted.
 - `Volume` is the focused create/delete capability embedded in the full
   `Provider` composition. It accepts the native `unikornv1.Volume` lifecycle
   intent and does not expose discovery, observed state, VolumeClass inventory,

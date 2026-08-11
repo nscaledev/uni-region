@@ -259,6 +259,23 @@ spec:
                                       minimum: 1
                                       type: integer
                                   type: object
+                                supportedFlavors:
+                                  description: |-
+                                    SupportedFlavors optionally restricts this volume class to selected Region
+                                    flavors. An undefined selector or nil or empty IDs means no compatibility
+                                    restriction.
+                                  properties:
+                                    ids:
+                                      description: |-
+                                        IDs is an explicit allowlist of Region flavors. If nil or empty, all
+                                        flavors are considered compatible.
+                                      items:
+                                        format: uuid
+                                        pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: set
+                                  type: object
                               required:
                               - id
                               type: object

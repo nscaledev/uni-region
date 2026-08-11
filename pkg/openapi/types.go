@@ -1633,6 +1633,9 @@ type VolumeClassV2Spec struct {
 
 	// RegionId The Region that owns this volume class inventory entry.
 	RegionId RegionId `json:"regionId"`
+
+	// SupportedFlavorIds Optional allowlist of Region flavors compatible with this volume class. Omitted or empty means no compatibility restriction.
+	SupportedFlavorIds *[]FlavorId `json:"supportedFlavorIds,omitempty"`
 }
 
 // FilestorageIDParameter A file storage ID.

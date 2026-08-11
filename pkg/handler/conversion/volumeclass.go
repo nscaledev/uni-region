@@ -53,6 +53,10 @@ func convertVolumeClass(regionID regionids.RegionID, in *types.VolumeClass) *ope
 		out.Metadata.Description = ptr.To(in.Description)
 	}
 
+	if len(in.SupportedFlavorIDs) > 0 {
+		out.Spec.SupportedFlavorIds = ptr.To(in.SupportedFlavorIDs)
+	}
+
 	if in.Media != "" {
 		out.Spec.Media = ptr.To(openapi.VolumeClassV2Media(in.Media))
 	}

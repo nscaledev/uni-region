@@ -328,6 +328,15 @@ type VolumeClassSelector struct {
 	IDs []string `json:"ids,omitempty"`
 }
 
+type VolumeClassFlavorSelector struct {
+	// IDs is an explicit allowlist of Region flavors. If nil or empty, all
+	// flavors are considered compatible.
+	// +kubebuilder:validation:items:Type=string
+	// +kubebuilder:validation:items:Pattern=`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
+	// +listType=set
+	IDs []regionids.FlavorID `json:"ids,omitempty"`
+}
+
 // +kubebuilder:validation:Enum=hdd;ssd;nvme
 type VolumeClassMedia string
 
@@ -342,6 +351,10 @@ type VolumeClassMetadata struct {
 	// ID is the immutable provider identifier for the volume class. For OpenStack,
 	// this is the Cinder volume type ID.
 	ID string `json:"id"`
+	// SupportedFlavors optionally restricts this volume class to selected Region
+	// flavors. An undefined selector or nil or empty IDs means no compatibility
+	// restriction.
+	SupportedFlavors *VolumeClassFlavorSelector `json:"supportedFlavors,omitempty"`
 	// MinimumSizeGiB is the minimum volume capacity accepted by the class, in
 	// whole GiB.
 	// +kubebuilder:validation:Minimum=1

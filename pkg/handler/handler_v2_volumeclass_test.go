@@ -33,6 +33,8 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
+	"github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -246,15 +248,20 @@ func TestVolumeClassV2MapsProviderInventory(t *testing.T) {
 	maxThroughput := 500
 	minimumSizeGiB := int64(10)
 	maximumSizeGiB := int64(2048)
+	supportedFlavorIDs := []regionids.FlavorID{
+		idstest.MustParseFlavorID("22222222-2222-4222-a222-222222222222"),
+		idstest.MustParseFlavorID("33333333-3333-4333-a333-333333333333"),
+	}
 	fixture := newVolumeClassV2TestFixture(t, newVolumeClassTestRegion(regionID, nil))
 	fixture.expectVolumeClasses(regionID, types.VolumeClassList{
 		{
-			ID:             volumeClassID,
-			Name:           "fast-nvme",
-			Description:    "Latency-sensitive encrypted block storage",
-			MinimumSizeGiB: &minimumSizeGiB,
-			MaximumSizeGiB: &maximumSizeGiB,
-			Media:          types.VolumeClassMediaNVMe,
+			ID:                 volumeClassID,
+			Name:               "fast-nvme",
+			Description:        "Latency-sensitive encrypted block storage",
+			MinimumSizeGiB:     &minimumSizeGiB,
+			MaximumSizeGiB:     &maximumSizeGiB,
+			SupportedFlavorIDs: supportedFlavorIDs,
+			Media:              types.VolumeClassMediaNVMe,
 			Performance: &types.VolumeClassPerformance{
 				MaxIOPS:       &maxIOPS,
 				MaxThroughput: &maxThroughput,
@@ -274,6 +281,7 @@ func TestVolumeClassV2MapsProviderInventory(t *testing.T) {
 	require.Equal(t, regionID, result[0].Spec.RegionId.String())
 	require.Equal(t, &minimumSizeGiB, result[0].Spec.MinimumSizeGiB)
 	require.Equal(t, &maximumSizeGiB, result[0].Spec.MaximumSizeGiB)
+	require.Equal(t, supportedFlavorIDs, *result[0].Spec.SupportedFlavorIds)
 	require.NotNil(t, result[0].Spec.Media)
 	require.Equal(t, openapi.VolumeClassV2MediaNvme, *result[0].Spec.Media)
 	require.NotNil(t, result[0].Spec.Performance)
@@ -309,6 +317,7 @@ func TestVolumeClassV2OmitsAbsentCapacityBounds(t *testing.T) {
 	require.Len(t, result, 1)
 	require.NotContains(t, result[0].Spec, "minimumSizeGiB")
 	require.NotContains(t, result[0].Spec, "maximumSizeGiB")
+	require.NotContains(t, result[0].Spec, "supportedFlavorIds")
 }
 
 func TestVolumeClassV2ReturnsEmptyListForFilteredRegions(t *testing.T) {

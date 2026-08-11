@@ -39,6 +39,9 @@ provider capability discovery into user-visible region catalogue data.
 - Optional VolumeClass capacity bounds flow from Region-authored configuration
   through the provider-neutral inventory model. The handler does not derive
   them from provider data and leaves omitted bounds absent from the response.
+- Optional supported Flavor IDs follow the same path as a typed allowlist. Nil
+  or empty values mean unrestricted compatibility and are omitted from the
+  response.
 - VolumeClass listing applies the canonical Region visibility filter before
   provider discovery. Explicit `regionID` values then act as selectors over
   that visible set. Repeated selectors do not duplicate results, and missing or

@@ -55,8 +55,12 @@ stored objects rely on for linkage, migration, and operational coordination.
   `volumeClasses` configuration, a missing selector, or nil/empty IDs exports
   no VolumeClasses. Metadata may independently publish `minimumSizeGiB` and
   `maximumSizeGiB` as positive whole GiB values. When both are present, the
-  maximum must be greater than or equal to the minimum; CRD admission enforces
-  these invariants.
+  maximum must be greater than or equal to the minimum. Metadata may also carry
+  a `supportedFlavors` selector whose `ids` are a unique typed Region Flavor
+  allowlist. An omitted selector or omitted/empty IDs means the VolumeClass is
+  compatible with every Flavor. Flavor IDs must use canonical lowercase,
+  hyphenated UUID spelling. CRD admission enforces that static UUID shape,
+  uniqueness, and the capacity invariants without provider lookups.
 - Namespaced Kubernetes storage scope and platform tenancy scope are separate
   concerns. These objects are namespaced, but their logical visibility and
   authorization are often organization-, project-, identity-, or region-scoped

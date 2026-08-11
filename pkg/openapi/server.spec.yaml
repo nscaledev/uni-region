@@ -3922,6 +3922,12 @@ components:
           type: integer
           format: int64
           minimum: 1
+        supportedFlavorIds:
+          description: Optional allowlist of Region flavors compatible with this volume class. Omitted or empty means no compatibility restriction.
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/flavorId'
         media:
           $ref: '#/components/schemas/volumeClassV2Media'
         performance:

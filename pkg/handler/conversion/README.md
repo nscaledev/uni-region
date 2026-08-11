@@ -30,10 +30,10 @@ VolumeClass data:
 
 VolumeClass uses the same core `staticResourceMetadata` shape as Flavor.
 The conversion maps provider-authored identity and display fields plus optional
-operator-authored capacity bounds and, like Flavor, leaves the required creation
-timestamp at its zero value because the provider-neutral inventory has no
-creation-time source. Nil capacity bounds remain nil so JSON responses omit
-them and preserve the pre-bounds response shape.
+operator-authored capacity bounds and supported Flavor allowlists and, like
+Flavor, leaves the required creation timestamp at its zero value because the
+provider-neutral inventory has no creation-time source. Nil capacity bounds and
+empty Flavor allowlists remain absent from JSON responses.
 
 That is why the package may look under-populated at first glance: the
 abstraction line is broader than the current amount of code, but the shape is

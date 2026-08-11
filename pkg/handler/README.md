@@ -242,8 +242,8 @@ but we do not have transactions.”
 - `VolumeClass`: read-only Region-scoped provider inventory. The v2 list handler
   filters Regions through the canonical visibility policy, treats repeated
   `regionID` values as selectors, and maps only provider-neutral inventory
-  fields, including optional operator-authored capacity bounds. Missing and
-  inaccessible Regions are omitted.
+  fields, including optional operator-authored capacity bounds and supported
+  Flavor allowlists. Missing and inaccessible Regions are omitted.
 
 ## Caveats
 

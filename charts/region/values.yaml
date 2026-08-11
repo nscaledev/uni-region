@@ -114,6 +114,11 @@ organization: nscaledev
 #         # Add user-facing metadata to selected provider volume classes.
 #         metadata:
 #         - id: cda67b98-331d-4d4f-911e-b1fd64611b0b
+#           # Optional Region Flavor compatibility allowlist using canonical
+#           # lowercase, hyphenated UUIDs. Omit or leave empty when unrestricted.
+#           supportedFlavors:
+#             ids:
+#             - 967b535a-9445-4864-a3f2-518b3a4f21df
 #           minimumSizeGiB: 10
 #           maximumSizeGiB: 2048
 #           media: nvme

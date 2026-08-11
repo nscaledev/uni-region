@@ -100,6 +100,43 @@ func TestVolumeClassCapacityBoundsValidation(t *testing.T) {
 	}
 }
 
+func TestVolumeClassSupportedFlavorsValidation(t *testing.T) {
+	t.Parallel()
+
+	validFlavorID := "11111111-1111-4111-a111-111111111111"
+	otherFlavorID := "22222222-2222-4222-a222-222222222222"
+
+	cases := []struct {
+		name     string
+		selector any
+		set      bool
+		expected bool
+	}{
+		{name: "omitted", expected: true},
+		{name: "empty selector with omitted IDs", selector: map[string]any{}, set: true, expected: true},
+		{name: "empty IDs", selector: map[string]any{"ids": []any{}}, set: true, expected: true},
+		{name: "populated", selector: map[string]any{"ids": []any{validFlavorID, otherFlavorID}}, set: true, expected: true},
+		{name: "duplicate", selector: map[string]any{"ids": []any{validFlavorID, validFlavorID}}, set: true},
+		{name: "duplicate uppercase spelling", selector: map[string]any{"ids": []any{validFlavorID, "11111111-1111-4111-A111-111111111111"}}, set: true},
+		{name: "duplicate unhyphenated spelling", selector: map[string]any{"ids": []any{validFlavorID, "1111111111114111a111111111111111"}}, set: true},
+		{name: "invalid ID", selector: map[string]any{"ids": []any{"not-a-uuid"}}, set: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			metadata := map[string]any{"id": "volume-class"}
+			if tc.set {
+				metadata["supportedFlavors"] = tc.selector
+			}
+
+			valid := newCRDValidator(t, regionCRDFile).validatesUnstructured(t, regionWithVolumeClassMetadata(metadata))
+			require.Equal(t, tc.expected, valid)
+		})
+	}
+}
+
 func regionWithVolumeClassCapacityBounds(minimum, maximum any) map[string]any {
 	metadata := map[string]any{
 		"id": "volume-class",
@@ -113,6 +150,10 @@ func regionWithVolumeClassCapacityBounds(minimum, maximum any) map[string]any {
 		metadata["maximumSizeGiB"] = maximum
 	}
 
+	return regionWithVolumeClassMetadata(metadata)
+}
+
+func regionWithVolumeClassMetadata(metadata map[string]any) map[string]any {
 	return map[string]any{
 		"apiVersion": "region.unikorn-cloud.org/v1alpha1",
 		"kind":       "Region",
