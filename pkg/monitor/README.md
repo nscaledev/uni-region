@@ -30,4 +30,9 @@ intended to allow additional monitor classes later.
 
 - This is polling by design. That makes it simpler and more decoupled, but also
   means timeliness and overhead are governed by poll period rather than watches.
-- Provider/cache readiness is part of monitor startup.
+- Provider/cache readiness is part of monitor startup, but a region whose
+  provider cannot be initialized is skipped rather than taking the process down;
+  see [providers](../providers/README.md). Servers in an unavailable region are
+  absent from that poll's checks and from the state gauge, and keep their last
+  known condition rather than being written to a wrong one, per
+  [health/server](./health/server/README.md).
