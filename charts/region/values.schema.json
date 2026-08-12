@@ -588,6 +588,17 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "simulated"
+                ]
+              }
+            }
           }
         ]
       }
