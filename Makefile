@@ -564,6 +564,12 @@ IDENTITY_NAMESPACE ?= unikorn-identity
 IDENTITY_RELEASE   ?= identity
 FIXTURE_CERT_DURATION ?= 1h
 
+# Extra Helm values files for the region chart, layered in the order given so a later file
+# wins. Space separated, e.g.
+#   make integration-install EXTRA_VALUES="$$HOME/.config/unikorn/local/region.yaml"
+EXTRA_VALUES      ?=
+EXTRA_VALUES_ARGS := $(foreach f,$(EXTRA_VALUES),--values $(f))
+
 .PHONY: kind-cluster
 kind-cluster:  ## Create KinD cluster (skips if KIND_CLUSTER already exists)
 	@IDENTITY_DIR=$$(go list -m -f '{{.Dir}}' github.com/unikorn-cloud/identity) && \
@@ -582,6 +588,7 @@ integration-install:  ## Deploy identity dependency and region into the current 
 	  --identity-release-name $(IDENTITY_RELEASE) \
 	  --namespace $(KIND_NAMESPACE) \
 	  --release-name $(KIND_RELEASE) \
+	  $(EXTRA_VALUES_ARGS) \
 	  > test/.env.install
 
 .PHONY: integration-fixtures
