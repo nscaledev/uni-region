@@ -105,6 +105,25 @@ packages are the concrete provider implementations.
   than assuming client material is static for process lifetime.
   Credential rotation, secret refresh, and region configuration refresh are part
   of the provider contract, not incidental operational concerns.
+- Substrate health is a per-region concern, never a process-wide one. `New`
+  initializes every region's provider at startup, but a region that fails to
+  initialize is logged and skipped rather than failing the call:
+  - provider construction authenticates against a remote cloud, so failing the
+    call would let one region's outage decide whether the process runs at all,
+    taking every healthy region down with it and blocking deploys until somebody
+    else's substrate was repaired
+  - a startup check is also the wrong moment to establish substrate health,
+    because it is a runtime property: credentials and certificates can expire
+    while the process is up, where construction-time validation neither prevents
+    nor detects the failure
+  - a skipped region is in the same state as one created after startup: absent
+    from the cache, and retried on demand at the next lookup, so it recovers
+    without a restart
+  - the failure is not remembered, so a region whose substrate is permanently
+    misconfigured is re-initialized on every lookup. That is the accepted cost
+    of self-healing without a restart
+  - callers that want startup to gate on more than this own that policy
+    themselves; see `Options.WarmImageCache`
 - The provider layer is allowed to carry compensating local mechanisms where the
   underlying substrate is insufficient on its own:
   - OpenStack image caching exists because raw image API behaviour is too slow
