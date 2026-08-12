@@ -557,6 +557,10 @@ func convertVolumeClasses(region *unikornv1.Region, resources []volumetypes.Volu
 		}
 
 		if metadata := volumeClassMetadata(config, resource.ID); metadata != nil {
+			if metadata.SupportedFlavors != nil {
+				class.SupportedFlavorIDs = slices.Clone(metadata.SupportedFlavors.IDs)
+			}
+
 			if metadata.MinimumSizeGiB != nil {
 				class.MinimumSizeGiB = ptr.To(*metadata.MinimumSizeGiB)
 			}

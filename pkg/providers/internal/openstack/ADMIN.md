@@ -160,7 +160,11 @@ derivable from Cinder volume type metadata. Operators may also publish
 `minimumSizeGiB` and `maximumSizeGiB` independently. Each configured bound must
 be a positive whole number of GiB; when both are present, the maximum must be
 greater than or equal to the minimum. These are Region configuration metadata,
-not values discovered from Cinder.
+not values discovered from Cinder. Operators may additionally set
+`supportedFlavors.ids` to a unique list of Region Flavor UUIDs. A non-empty list
+is a compatibility allowlist; an omitted selector or omitted/empty IDs permits
+every Flavor. Admission validates UUID shape and uniqueness but does not check
+that the Flavors currently exist in the provider.
 
 VolumeClass selection is fail-closed. Only Cinder volume type IDs explicitly
 listed in `spec.openstack.blockStorage.volumeClasses.selector.ids` are exported.
@@ -197,6 +201,9 @@ spec:
           - cda67b98-331d-4d4f-911e-b1fd64611b0b
         metadata:
         - id: cda67b98-331d-4d4f-911e-b1fd64611b0b
+          supportedFlavors:
+            ids:
+            - 967b535a-9445-4864-a3f2-518b3a4f21df
           minimumSizeGiB: 10
           maximumSizeGiB: 2048
           media: nvme

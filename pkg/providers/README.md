@@ -44,7 +44,7 @@ packages are the concrete provider implementations.
   - return the effective `Region`
   - return allocatable `Flavor` inventory
   - return Region-scoped `VolumeClass` inventory, including optional
-    operator-authored capacity bounds
+    operator-authored capacity bounds and supported Flavor allowlists
 - `types.Provider` extends that common base with the broader image, identity,
   network, security-group, load-balancer, volume, server, console, and snapshot
   lifecycle surfaces. The server surface includes attaching and detaching an

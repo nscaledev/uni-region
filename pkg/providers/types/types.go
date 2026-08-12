@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/unikorn-cloud/core/pkg/util/cache"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -105,6 +106,9 @@ type VolumeClass struct {
 	Name string
 	// Description is the provider display description.
 	Description string
+	// SupportedFlavorIDs optionally restricts this class to the listed Region
+	// flavors. Nil or empty means no compatibility restriction.
+	SupportedFlavorIDs []regionids.FlavorID
 	// MinimumSizeGiB is the operator-configured minimum volume capacity accepted
 	// by the class, in whole GiB.
 	MinimumSizeGiB *int64

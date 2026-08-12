@@ -74,3 +74,23 @@ func TestVolumeClassCapacityBoundsAreOptionalPositiveInt64Values(t *testing.T) {
 		require.False(t, slices.Contains(spec.Value.Required, name), "%s must remain optional", name)
 	}
 }
+
+func TestVolumeClassSupportedFlavorIDsAreOptionalTypedAndUnique(t *testing.T) {
+	t.Parallel()
+
+	swagger, err := openapi.GetSwagger()
+	require.NoError(t, err)
+
+	spec := swagger.Components.Schemas["volumeClassV2Spec"]
+	require.NotNil(t, spec)
+	require.NotNil(t, spec.Value)
+
+	property := spec.Value.Properties["supportedFlavorIds"]
+	require.NotNil(t, property)
+	require.NotNil(t, property.Value)
+	require.True(t, property.Value.Type.Is("array"))
+	require.True(t, property.Value.UniqueItems)
+	require.NotNil(t, property.Value.Items)
+	require.Equal(t, "#/components/schemas/flavorId", property.Value.Items.Ref)
+	require.False(t, slices.Contains(spec.Value.Required, "supportedFlavorIds"))
+}
