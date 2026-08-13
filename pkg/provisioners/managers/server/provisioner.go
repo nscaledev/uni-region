@@ -511,22 +511,36 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
+	return p.createServerAndReleaseReferences(ctx, cli, provider, identity, reference)
+}
+
+// createServerAndReleaseReferences reconciles the provider server and then
+// releases references to resources the spec no longer consumes. The release
+// must happen on three dispositions: a successful pass (provisionErr is nil),
+// a yielding pass (ErrYield), and a parked pass (an error satisfying
+// provisioners.IsTerminal, i.e. ErrTerminal or ErrUserActionRequired). A park
+// persists until a spec edit — longer-lived than any yield — so a security
+// group dropped from the spec in the same update whose rebuild then parks must
+// not keep this server's finalizer and block the group's deletion indefinitely.
+// The provider detaches dropped groups from the Neutron port before the image
+// row runs, so releasing on a park is safe. Genuine unclassified errors return
+// early: the provider state is unknown and reference release is not safe.
+func (p *Provisioner) createServerAndReleaseReferences(ctx context.Context, cli client.Client, provider types.Provider, identity *unikornv1.Identity, reference string) error {
 	options, err := p.serverCreateOptions(ctx, cli)
 	if err != nil {
 		return err
 	}
 
-	// Do the provisioning.
-	if err := provider.CreateServer(ctx, identity, p.server, options); err != nil {
-		return err
+	provisionErr := provider.CreateServer(ctx, identity, p.server, options)
+	if provisionErr != nil && !errors.Is(provisionErr, provisioners.ErrYield) && !provisioners.IsTerminal(provisionErr) {
+		return provisionErr
 	}
 
-	// Release any references to any resources we no longer consume.
 	if err := p.removeConsumedResourceReferences(ctx, cli, reference); err != nil {
 		return err
 	}
 
-	return nil
+	return provisionErr
 }
 
 // Deprovision implements the Provision interface.
