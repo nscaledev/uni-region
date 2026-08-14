@@ -33,6 +33,11 @@ shared layer that:
 The preferred API direction is `v2`. Older `v1` shapes remain as deprecated
 compatibility surface and should be migrated away from as quickly as practical.
 
+Proposed lifecycle designs:
+
+- [Server–Volume attachments](./docs/specifications/server-volume-attachments.md)
+  and its [architecture decision](./docs/adr/0001-controller-managed-server-volume-attachments.md)
+
 ### A Note on Security
 
 At present this service is still monolithic. It combines region discovery and
