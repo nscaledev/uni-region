@@ -3138,6 +3138,14 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 		return reconcileServerImage(ctx, client, server, openstackServer)
 	}
 
+	// Fail closed on an ambiguous provider read before a creating action — only
+	// a positive not-found may create. GetServer resolves by name via a list, so
+	// a transient list failure or a mis-scoped credential must not fall through
+	// to CreateServer, or a duplicate server would result.
+	if !errors.Is(err, coreerrors.ErrResourceNotFound) {
+		return nil, err
+	}
+
 	networks := []servers.Network{
 		{
 			Port: port.ID,

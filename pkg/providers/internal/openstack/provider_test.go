@@ -70,6 +70,7 @@ import (
 var (
 	errNeutronConflict    = errors.New("409 Conflict: port still attached")
 	errNeutronServerError = errors.New("500 Internal Server Error")
+	errNovaListFailed     = errors.New("503 Service Unavailable")
 )
 
 func mustConvertImage(t *testing.T, in *images.Image) *types.Image {
@@ -2056,6 +2057,22 @@ func TestReconcileServer(t *testing.T) {
 
 		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
 		require.NoError(t, err)
+	})
+
+	// An ambiguous read must fail closed: GetServer resolves by name via a
+	// list, so any failure other than a positive not-found must surface rather
+	// than fall through to CreateServer and mint a duplicate. No CreateServer
+	// expectation is set, so a fall-through fails the mock.
+	t.Run("AmbiguousReadDoesNotCreate", func(t *testing.T) {
+		t.Parallel()
+
+		compute := mock.NewMockServerInterface(c)
+		compute.EXPECT().GetServer(t.Context(), server).Return(nil, errNovaListFailed)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
+		require.ErrorIs(t, err, errNovaListFailed)
 	})
 }
 
