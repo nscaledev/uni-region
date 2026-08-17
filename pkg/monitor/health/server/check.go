@@ -223,8 +223,13 @@ func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server, pro
 
 	updated := server.DeepCopy()
 
-	if err := provider.UpdateServerState(ctx, identity, updated); err != nil {
-		return nil, err
+	// A not-found does not abort the check: the provider records the absent
+	// observation (errored cleared, generation stamped, image sticky) before
+	// surfacing the error, and that observation must still be persisted so the
+	// observed wake fires and the reconciler recreates the server.
+	stateErr := provider.UpdateServerState(ctx, identity, updated)
+	if stateErr != nil && !goerrors.Is(stateErr, errors.ErrResourceNotFound) {
+		return nil, stateErr
 	}
 
 	// One patch for health, phase, MAC and the observed region together, under an
@@ -232,6 +237,15 @@ func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server, pro
 	// than write a projection built from a stale base.
 	if err := c.client.Status().Patch(ctx, updated, client.MergeFromWithOptions(server, &client.MergeFromWithOptimisticLock{})); err != nil {
 		return nil, err
+	}
+
+	if stateErr != nil {
+		// The absent server was patched but is propagated as not-found so the
+		// caller keeps it out of the state gauge for this cycle, exactly as
+		// the skip did before the absent observation existed: there is no
+		// provider state to count, and phase/health transitions cannot have
+		// moved on a read of nothing.
+		return nil, stateErr
 	}
 
 	c.onPhaseTransition(ctx, server, updated, regionID, regionName, flavorID, flavorName)
@@ -327,7 +341,9 @@ func (c *Checker) processServer(ctx context.Context, srv *unikornv1.Server, regi
 		}
 
 		if goerrors.Is(err, errors.ErrResourceNotFound) {
-			log.FromContext(ctx).Info("server not found in provider, skipping", "server", srv.Name)
+			// checkServer already persisted the absent observation; the server
+			// is only excluded from the state gauge for this cycle.
+			log.FromContext(ctx).Info("server not found in provider, absent observation persisted", "server", srv.Name)
 		} else {
 			log.FromContext(ctx).Error(err, "failed to check server, skipping", "server", srv.Name)
 		}
@@ -366,7 +382,9 @@ func (c *Checker) Check(ctx context.Context) error {
 // updateStateCounts rebuilds unikorn_region_server_state from the effective server list.
 // Servers skipped due to region resolution or provider errors are absent from the gauge for
 // that cycle; a provider outage affecting a whole region will drop those servers entirely
-// rather than showing them as unknown.
+// rather than showing them as unknown. A server whose provider instance is gone
+// (not-found) is likewise excluded even though its absent observation is patched —
+// there is no provider state to count.
 func (c *Checker) updateStateCounts(servers []checkedServer) {
 	if c.metrics == nil {
 		return

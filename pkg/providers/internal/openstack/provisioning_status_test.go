@@ -284,6 +284,7 @@ func TestUpdateServerStateWithClientsRecordsMACAddress(t *testing.T) {
 
 type stubComputeClient struct {
 	server          *servers.Server
+	serverErr       error
 	requestedServer *unikornv1.Server
 	fault           *servers.Fault
 	faultErr        error
@@ -300,6 +301,10 @@ func (c *stubComputeClient) DeleteServerGroup(context.Context, string) error { r
 func (c *stubComputeClient) UpdateQuotas(context.Context, string) error      { return nil }
 func (c *stubComputeClient) GetServer(_ context.Context, server *unikornv1.Server) (*servers.Server, error) {
 	c.requestedServer = server
+
+	if c.serverErr != nil {
+		return nil, c.serverErr
+	}
 
 	return c.server, nil
 }
