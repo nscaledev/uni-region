@@ -36,7 +36,10 @@ const (
 	observedOldImageID = "44444444-4444-4444-a444-444444444444"
 )
 
-var errFaultReadFailed = errors.New("fault read failed")
+var (
+	errFaultReadFailed = errors.New("fault read failed")
+	errServerRead      = errors.New("nova unavailable")
+)
 
 func observedImagePointer(s string) *regionids.ImageID {
 	id := idstest.MustParseImageID(s)
@@ -276,6 +279,31 @@ func TestUpdateServerStateWithClientsDoesNotRefetchFaultWhenAlreadyErrored(t *te
 	require.Zero(t, compute.faultReads, "an already-errored server must not refetch the fault")
 }
 
+// TestUpdateServerStateWithClientsNoFaultFetchOnAbsent pins that an absent
+// Nova server never triggers a fault fetch — there is no server to read one for.
+func TestUpdateServerStateWithClientsNoFaultFetchOnAbsent(t *testing.T) {
+	t.Parallel()
+
+	compute := &stubComputeClient{serverErr: errServerRead}
+	identity := &unikornv1.Identity{}
+	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{
+		FlavorID: idstest.MustParseFlavorID("11111111-1111-4111-a111-111111111111"),
+	}}
+
+	provider := &Provider{
+		openstack: &openStackClients{
+			_region: &unikornv1.Region{},
+		},
+	}
+
+	_ = provider.updateServerStateWithClients(t.Context(), identity, server, compute,
+		func(context.Context, *unikornv1.Identity) (BaremetalInterface, error) {
+			return nil, errIronicUnavailable
+		})
+
+	require.Zero(t, compute.faultReads, "a read failure that aborts the poll must not fetch a fault")
+}
+
 // TestUpdateServerStateWithClientsFaultFetch404DoesNotBlockStatus pins that a
 // server deleted between the list and the per-ID fault read still records the
 // errored marker — the fetch is best-effort, so a 404 during it cannot block the
@@ -382,6 +410,85 @@ func TestUpdateServerStateWithClientsZeroValuedFaultCompletes(t *testing.T) {
 	require.NotNil(t, server.Status.Observed)
 	require.True(t, server.Status.Observed.Errored)
 	require.Equal(t, 1, compute.faultReads)
+}
+
+// TestUpdateServerStateWithClientsRecordsAbsentOnNotFound pins the not-found
+// branch: a GetServer failure of coreerrors.ErrResourceNotFound records an absent
+// observation (errored cleared, generation stamped from metadata.generation, image
+// preserved as the last-known value) and still surfaces the error — the
+// create-retry provisioner's "confirmed gone" gate depends on it. The observation
+// is recorded for callers that choose to persist status anyway (the monitor does).
+// No fault fetch happens — there is no server to read one for — so the observation
+// client is never touched on this path.
+func TestUpdateServerStateWithClientsRecordsAbsentOnNotFound(t *testing.T) {
+	t.Parallel()
+
+	compute := &stubComputeClient{serverErr: coreerrors.ErrResourceNotFound}
+	identity := &unikornv1.Identity{}
+	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{
+		FlavorID: idstest.MustParseFlavorID("11111111-1111-4111-a111-111111111111"),
+	}}
+	server.Generation = 4
+	server.Status.Observed = &unikornv1.ServerObservedStatus{
+		Generation: 3,
+		Image:      observedImagePointer(observedImageID),
+		Errored:    true,
+	}
+
+	provider := &Provider{
+		openstack: &openStackClients{
+			_region: &unikornv1.Region{},
+		},
+	}
+
+	err := provider.updateServerStateWithClients(t.Context(), identity, server, compute,
+		func(context.Context, *unikornv1.Identity) (BaremetalInterface, error) {
+			return nil, errIronicUnavailable
+		})
+
+	require.ErrorIs(t, err, coreerrors.ErrResourceNotFound, "the error must surface for the create-retry confirmed-gone gate")
+	require.NotNil(t, server.Status.Observed)
+	require.False(t, server.Status.Observed.Errored, "absence is not a provider error, so the marker must clear")
+	require.Equal(t, int64(4), server.Status.Observed.Generation, "generation must be stamped from metadata.generation as on every successful read")
+	require.Equal(t, observedImagePointer(observedImageID), server.Status.Observed.Image, "the last-known image is sticky on the absent path")
+	require.Zero(t, compute.faultReads, "no fault fetch happens when there is no server to read one for")
+}
+
+// TestUpdateServerStateWithClientsSurfacesNonNotFound pins the negative half of
+// the not-found branch: any other GetServer error still returns that error and
+// leaves the observed subtree untouched, so a transient read failure cannot
+// silently clear the errored marker or stamp a fresh generation over a stale one.
+func TestUpdateServerStateWithClientsSurfacesNonNotFound(t *testing.T) {
+	t.Parallel()
+
+	compute := &stubComputeClient{serverErr: errServerRead}
+	identity := &unikornv1.Identity{}
+	server := &unikornv1.Server{Spec: unikornv1.ServerSpec{
+		FlavorID: idstest.MustParseFlavorID("11111111-1111-4111-a111-111111111111"),
+	}}
+	server.Generation = 4
+	server.Status.Observed = &unikornv1.ServerObservedStatus{
+		Generation: 3,
+		Image:      observedImagePointer(observedImageID),
+		Errored:    true,
+	}
+
+	provider := &Provider{
+		openstack: &openStackClients{
+			_region: &unikornv1.Region{},
+		},
+	}
+
+	err := provider.updateServerStateWithClients(t.Context(), identity, server, compute,
+		func(context.Context, *unikornv1.Identity) (BaremetalInterface, error) {
+			return nil, errIronicUnavailable
+		})
+
+	require.ErrorIs(t, err, errServerRead)
+	require.Equal(t, int64(3), server.Status.Observed.Generation, "a non-not-found error must not stamp the generation")
+	require.Equal(t, observedImagePointer(observedImageID), server.Status.Observed.Image, "a non-not-found error must not touch the image")
+	require.True(t, server.Status.Observed.Errored, "a non-not-found error must not clear the errored marker")
+	require.Zero(t, compute.faultReads, "no fault fetch happens on a read failure that aborts the poll")
 }
 
 // TestSetServerObservedGeneration pins the freshness stamp. Without it an

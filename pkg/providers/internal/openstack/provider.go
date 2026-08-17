@@ -2884,6 +2884,23 @@ func setServerObservedStatus(server *unikornv1.Server, openstackServer *servers.
 	return enteredError
 }
 
+// recordAbsentServerObservation is the not-found analogue of
+// setServerObservedStatus: it stamps the observed subtree for a server whose
+// Nova instance is gone. Generation is taken from metadata.generation as on
+// every successful read; errored is cleared (the absence is not a provider
+// error); the image is preserved as the last-known value. Unlike
+// setServerObservedStatus it takes no observation client and performs no fault
+// fetch — there is no server to read one for.
+func recordAbsentServerObservation(server *unikornv1.Server) {
+	if server.Status.Observed == nil {
+		server.Status.Observed = &unikornv1.ServerObservedStatus{}
+	}
+
+	observed := server.Status.Observed
+	observed.Generation = server.Generation
+	observed.Errored = false
+}
+
 // logServerFault writes the provider's fault detail to the observation log on
 // the transition into error. The list read that noticed the error can carry an
 // empty fault (Nova up to 2025.2 can omit it from a list response), so the
@@ -3453,6 +3470,24 @@ func (p *Provider) updateServerStateWithClients(
 ) error {
 	openstackServer, err := serverClient.GetServer(ctx, server)
 	if err != nil {
+		// A server whose Nova instance is gone (deleted out-of-band, e.g. a
+		// parked server whose backing instance was removed) still gets the
+		// observed subtree stamped: errored is cleared (the absence is not a
+		// provider error), generation is stamped as on every successful read,
+		// and the image is preserved as the documented sticky last-known
+		// value. No fault fetch happens — there is no server to read one for
+		// — so this path never touches the observation client. The recording
+		// lets a caller that chooses to persist status on the absent path do
+		// so (the monitor does, firing the observed wake that lets the
+		// reconciler recreate the server), but the error still surfaces
+		// rather than being swallowed: the create-retry provisioner's
+		// "confirmed gone" gate depends on UpdateServerState returning
+		// ErrResourceNotFound (deleteFailedProviderServer,
+		// pkg/provisioners/managers/server/provisioner.go).
+		if errors.Is(err, coreerrors.ErrResourceNotFound) {
+			recordAbsentServerObservation(server)
+		}
+
 		return err
 	}
 

@@ -117,6 +117,10 @@ type Server interface {
 	// DeleteServer deletes a server.
 	DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
 	// UpdateServerState checks a server's state and modifies the resource in place.
+	// Implementations MUST return ErrResourceNotFound when the provider server is
+	// absent (after recording any observation they wish to persist): the server
+	// provisioner's create-retry "confirmed gone" gate and the health monitor's
+	// absent-server handling both depend on it.
 	UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
 }
 

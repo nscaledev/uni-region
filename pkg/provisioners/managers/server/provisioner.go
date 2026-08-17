@@ -319,6 +319,10 @@ func (p *Provisioner) deleteFailedProviderServer(ctx context.Context, provider t
 		return err
 	}
 
+	// Provider contract: UpdateServerState must surface ErrResourceNotFound for
+	// an absent provider server — it is the "confirmed gone" signal this gate
+	// depends on. The OpenStack implementation records the absent observation
+	// first and then returns the error (see updateServerStateWithClients).
 	if err := provider.UpdateServerState(ctx, identity, p.server); err != nil {
 		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
 			return err

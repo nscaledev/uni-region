@@ -194,13 +194,22 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   park (an `ERROR` before first boot is a failed create, owned by the
   provisioner's bounded retry machinery).
 
-  A parked server has no requeue, so it un-parks on exactly two paths. The user
+  A parked server has no requeue, so it un-parks on exactly three paths. The user
   edits the spec — the remedy the message advertises — and the generation-change
   wake resumes reconciliation, monitor-independent. Or the provider recovers
   without a spec change, in which case the un-park rides the monitor's
   `status.observed` write firing the observed wake: the park is re-derived per
   pass, so the woken pass walks to R3″ and reads `provisioned` again (the same
-  measured path as a foreign recovery, below — within one monitor period).
+  measured path as a foreign recovery, below — within one monitor period). Or
+  the provider server disappears entirely — deleted out-of-band — in which case
+  the monitor's `GetServer` returns not-found and `updateServerStateWithClients`
+  records an absent observation (errored cleared, generation stamped, image
+  sticky) before surfacing the not-found error — surfaced, not swallowed,
+  because the create-retry provisioner's confirmed-gone gate depends on
+  `UpdateServerState` returning `ErrResourceNotFound`. The monitor persists the
+  recorded observation anyway, firing the same observed wake; the reconciler's
+  own fresh read then routes not-found to the create path and recreates the
+  server.
 
   The provisioning axis reports *spec-realization*, not attribution. A
   rebuild-class operation this provider did not submit — `nova evacuate` is

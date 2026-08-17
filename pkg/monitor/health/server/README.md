@@ -43,7 +43,14 @@ status/telemetry model.
   create-retry existence check goes through the same `UpdateServerState`, and so the
   same projection. One derivation with no arbitration is what removes the ordering
   argument between the two status writers — not the monitor holding the region
-  alone. `generation` is stamped unconditionally, so the subtree exists from the
+  alone. That shared derivation also means a provider not-found is *surfaced* by
+  `UpdateServerState` — the create-retry path reads it as "confirmed gone" — but
+  the absent observation (errored cleared, generation stamped, image sticky) is
+  recorded on the server first, and this monitor persists it despite the error:
+  the observed wake is what lets the reconciler notice the out-of-band deletion
+  and recreate the server. The absent server is excluded from the state gauge for
+  that cycle, as the skip was before — there is no provider state to count.
+  `generation` is stamped unconditionally, so the subtree exists from the
   first poll that read the provider at all — a present subtree with no `image`
   means "polled, image unreadable", which is not the same fact as an absent
   subtree meaning "never successfully polled".
