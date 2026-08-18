@@ -29,6 +29,26 @@ import (
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
 
+func (h *Handler) GetApiV2Volumes(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2VolumesParams) {
+	openapi.Unimplemented{}.GetApiV2Volumes(w, r, params)
+}
+
+func (h *Handler) PostApiV2Volumes(w http.ResponseWriter, r *http.Request) {
+	openapi.Unimplemented{}.PostApiV2Volumes(w, r)
+}
+
+func (h *Handler) GetApiV2VolumesVolumeID(w http.ResponseWriter, r *http.Request, volumeID openapi.VolumeIDParameter) {
+	openapi.Unimplemented{}.GetApiV2VolumesVolumeID(w, r, volumeID)
+}
+
+func (h *Handler) PutApiV2VolumesVolumeID(w http.ResponseWriter, r *http.Request, volumeID openapi.VolumeIDParameter) {
+	openapi.Unimplemented{}.PutApiV2VolumesVolumeID(w, r, volumeID)
+}
+
+func (h *Handler) DeleteApiV2VolumesVolumeID(w http.ResponseWriter, r *http.Request, volumeID openapi.VolumeIDParameter) {
+	openapi.Unimplemented{}.DeleteApiV2VolumesVolumeID(w, r, volumeID)
+}
+
 func (h *Handler) GetApiV2Networks(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2NetworksParams) {
 	result, err := h.networkClient().ListV2(r.Context(), params)
 	if err != nil {

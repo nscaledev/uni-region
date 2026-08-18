@@ -355,6 +355,25 @@ type ClientInterface interface {
 	// GetApiV2Volumeclasses request
 	GetApiV2Volumeclasses(ctx context.Context, params *GetApiV2VolumeclassesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiV2Volumes request
+	GetApiV2Volumes(ctx context.Context, params *GetApiV2VolumesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApiV2VolumesWithBody request with any body
+	PostApiV2VolumesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostApiV2Volumes(ctx context.Context, body PostApiV2VolumesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteApiV2VolumesVolumeID request
+	DeleteApiV2VolumesVolumeID(ctx context.Context, volumeID VolumeIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiV2VolumesVolumeID request
+	GetApiV2VolumesVolumeID(ctx context.Context, volumeID VolumeIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutApiV2VolumesVolumeIDWithBody request with any body
+	PutApiV2VolumesVolumeIDWithBody(ctx context.Context, volumeID VolumeIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PutApiV2VolumesVolumeID(ctx context.Context, volumeID VolumeIDParameter, body PutApiV2VolumesVolumeIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApiVersion request
 	GetApiVersion(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
@@ -1489,6 +1508,90 @@ func (c *Client) GetApiV2SshcertificateauthoritiesSshCertificateAuthorityID(ctx 
 
 func (c *Client) GetApiV2Volumeclasses(ctx context.Context, params *GetApiV2VolumeclassesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiV2VolumeclassesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiV2Volumes(ctx context.Context, params *GetApiV2VolumesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV2VolumesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiV2VolumesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV2VolumesRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiV2Volumes(ctx context.Context, body PostApiV2VolumesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV2VolumesRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteApiV2VolumesVolumeID(ctx context.Context, volumeID VolumeIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApiV2VolumesVolumeIDRequest(c.Server, volumeID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiV2VolumesVolumeID(ctx context.Context, volumeID VolumeIDParameter, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiV2VolumesVolumeIDRequest(c.Server, volumeID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiV2VolumesVolumeIDWithBody(ctx context.Context, volumeID VolumeIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiV2VolumesVolumeIDRequestWithBody(c.Server, volumeID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiV2VolumesVolumeID(ctx context.Context, volumeID VolumeIDParameter, body PutApiV2VolumesVolumeIDJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiV2VolumesVolumeIDRequest(c.Server, volumeID, body)
 	if err != nil {
 		return nil, err
 	}
@@ -5288,6 +5391,274 @@ func NewGetApiV2VolumeclassesRequest(server string, params *GetApiV2Volumeclasse
 	return req, nil
 }
 
+// NewGetApiV2VolumesRequest generates requests for GetApiV2Volumes
+func NewGetApiV2VolumesRequest(server string, params *GetApiV2VolumesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/volumes")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Tag != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "tag", runtime.ParamLocationQuery, *params.Tag); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.OrganizationID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "organizationID", runtime.ParamLocationQuery, *params.OrganizationID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.ProjectID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "projectID", runtime.ParamLocationQuery, *params.ProjectID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RegionID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "regionID", runtime.ParamLocationQuery, *params.RegionID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.NetworkID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "networkID", runtime.ParamLocationQuery, *params.NetworkID); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostApiV2VolumesRequest calls the generic PostApiV2Volumes builder with application/json body
+func NewPostApiV2VolumesRequest(server string, body PostApiV2VolumesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApiV2VolumesRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostApiV2VolumesRequestWithBody generates requests for PostApiV2Volumes with any type of body
+func NewPostApiV2VolumesRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/volumes")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteApiV2VolumesVolumeIDRequest generates requests for DeleteApiV2VolumesVolumeID
+func NewDeleteApiV2VolumesVolumeIDRequest(server string, volumeID VolumeIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "volumeID", runtime.ParamLocationPath, volumeID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/volumes/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiV2VolumesVolumeIDRequest generates requests for GetApiV2VolumesVolumeID
+func NewGetApiV2VolumesVolumeIDRequest(server string, volumeID VolumeIDParameter) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "volumeID", runtime.ParamLocationPath, volumeID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/volumes/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutApiV2VolumesVolumeIDRequest calls the generic PutApiV2VolumesVolumeID builder with application/json body
+func NewPutApiV2VolumesVolumeIDRequest(server string, volumeID VolumeIDParameter, body PutApiV2VolumesVolumeIDJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutApiV2VolumesVolumeIDRequestWithBody(server, volumeID, "application/json", bodyReader)
+}
+
+// NewPutApiV2VolumesVolumeIDRequestWithBody generates requests for PutApiV2VolumesVolumeID with any type of body
+func NewPutApiV2VolumesVolumeIDRequestWithBody(server string, volumeID VolumeIDParameter, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "volumeID", runtime.ParamLocationPath, volumeID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/volumes/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetApiVersionRequest generates requests for GetApiVersion
 func NewGetApiVersionRequest(server string) (*http.Request, error) {
 	var err error
@@ -5622,6 +5993,25 @@ type ClientWithResponsesInterface interface {
 
 	// GetApiV2VolumeclassesWithResponse request
 	GetApiV2VolumeclassesWithResponse(ctx context.Context, params *GetApiV2VolumeclassesParams, reqEditors ...RequestEditorFn) (*GetApiV2VolumeclassesResponse, error)
+
+	// GetApiV2VolumesWithResponse request
+	GetApiV2VolumesWithResponse(ctx context.Context, params *GetApiV2VolumesParams, reqEditors ...RequestEditorFn) (*GetApiV2VolumesResponse, error)
+
+	// PostApiV2VolumesWithBodyWithResponse request with any body
+	PostApiV2VolumesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2VolumesResponse, error)
+
+	PostApiV2VolumesWithResponse(ctx context.Context, body PostApiV2VolumesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV2VolumesResponse, error)
+
+	// DeleteApiV2VolumesVolumeIDWithResponse request
+	DeleteApiV2VolumesVolumeIDWithResponse(ctx context.Context, volumeID VolumeIDParameter, reqEditors ...RequestEditorFn) (*DeleteApiV2VolumesVolumeIDResponse, error)
+
+	// GetApiV2VolumesVolumeIDWithResponse request
+	GetApiV2VolumesVolumeIDWithResponse(ctx context.Context, volumeID VolumeIDParameter, reqEditors ...RequestEditorFn) (*GetApiV2VolumesVolumeIDResponse, error)
+
+	// PutApiV2VolumesVolumeIDWithBodyWithResponse request with any body
+	PutApiV2VolumesVolumeIDWithBodyWithResponse(ctx context.Context, volumeID VolumeIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiV2VolumesVolumeIDResponse, error)
+
+	PutApiV2VolumesVolumeIDWithResponse(ctx context.Context, volumeID VolumeIDParameter, body PutApiV2VolumesVolumeIDJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiV2VolumesVolumeIDResponse, error)
 
 	// GetApiVersionWithResponse request
 	GetApiVersionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetApiVersionResponse, error)
@@ -7617,6 +8007,142 @@ func (r GetApiV2VolumeclassesResponse) StatusCode() int {
 	return 0
 }
 
+type GetApiV2VolumesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *VolumesV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV2VolumesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV2VolumesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostApiV2VolumesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *VolumeV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON422      *externalRef0.UnprocessableContentResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApiV2VolumesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApiV2VolumesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteApiV2VolumesVolumeIDResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON409      *externalRef0.ConflictResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteApiV2VolumesVolumeIDResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteApiV2VolumesVolumeIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetApiV2VolumesVolumeIDResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *VolumeV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiV2VolumesVolumeIDResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiV2VolumesVolumeIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PutApiV2VolumesVolumeIDResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *VolumeV2Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON409      *externalRef0.ConflictResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r PutApiV2VolumesVolumeIDResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutApiV2VolumesVolumeIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetApiVersionResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8474,6 +9000,67 @@ func (c *ClientWithResponses) GetApiV2VolumeclassesWithResponse(ctx context.Cont
 		return nil, err
 	}
 	return ParseGetApiV2VolumeclassesResponse(rsp)
+}
+
+// GetApiV2VolumesWithResponse request returning *GetApiV2VolumesResponse
+func (c *ClientWithResponses) GetApiV2VolumesWithResponse(ctx context.Context, params *GetApiV2VolumesParams, reqEditors ...RequestEditorFn) (*GetApiV2VolumesResponse, error) {
+	rsp, err := c.GetApiV2Volumes(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV2VolumesResponse(rsp)
+}
+
+// PostApiV2VolumesWithBodyWithResponse request with arbitrary body returning *PostApiV2VolumesResponse
+func (c *ClientWithResponses) PostApiV2VolumesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2VolumesResponse, error) {
+	rsp, err := c.PostApiV2VolumesWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiV2VolumesResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostApiV2VolumesWithResponse(ctx context.Context, body PostApiV2VolumesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV2VolumesResponse, error) {
+	rsp, err := c.PostApiV2Volumes(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiV2VolumesResponse(rsp)
+}
+
+// DeleteApiV2VolumesVolumeIDWithResponse request returning *DeleteApiV2VolumesVolumeIDResponse
+func (c *ClientWithResponses) DeleteApiV2VolumesVolumeIDWithResponse(ctx context.Context, volumeID VolumeIDParameter, reqEditors ...RequestEditorFn) (*DeleteApiV2VolumesVolumeIDResponse, error) {
+	rsp, err := c.DeleteApiV2VolumesVolumeID(ctx, volumeID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteApiV2VolumesVolumeIDResponse(rsp)
+}
+
+// GetApiV2VolumesVolumeIDWithResponse request returning *GetApiV2VolumesVolumeIDResponse
+func (c *ClientWithResponses) GetApiV2VolumesVolumeIDWithResponse(ctx context.Context, volumeID VolumeIDParameter, reqEditors ...RequestEditorFn) (*GetApiV2VolumesVolumeIDResponse, error) {
+	rsp, err := c.GetApiV2VolumesVolumeID(ctx, volumeID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiV2VolumesVolumeIDResponse(rsp)
+}
+
+// PutApiV2VolumesVolumeIDWithBodyWithResponse request with arbitrary body returning *PutApiV2VolumesVolumeIDResponse
+func (c *ClientWithResponses) PutApiV2VolumesVolumeIDWithBodyWithResponse(ctx context.Context, volumeID VolumeIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiV2VolumesVolumeIDResponse, error) {
+	rsp, err := c.PutApiV2VolumesVolumeIDWithBody(ctx, volumeID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiV2VolumesVolumeIDResponse(rsp)
+}
+
+func (c *ClientWithResponses) PutApiV2VolumesVolumeIDWithResponse(ctx context.Context, volumeID VolumeIDParameter, body PutApiV2VolumesVolumeIDJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiV2VolumesVolumeIDResponse, error) {
+	rsp, err := c.PutApiV2VolumesVolumeID(ctx, volumeID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiV2VolumesVolumeIDResponse(rsp)
 }
 
 // GetApiVersionWithResponse request returning *GetApiVersionResponse
@@ -12802,6 +13389,318 @@ func ParseGetApiV2VolumeclassesResponse(rsp *http.Response) (*GetApiV2Volumeclas
 			return nil, err
 		}
 		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiV2VolumesResponse parses an HTTP response from a GetApiV2VolumesWithResponse call
+func ParseGetApiV2VolumesResponse(rsp *http.Response) (*GetApiV2VolumesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV2VolumesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest VolumesV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostApiV2VolumesResponse parses an HTTP response from a PostApiV2VolumesWithResponse call
+func ParsePostApiV2VolumesResponse(rsp *http.Response) (*PostApiV2VolumesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApiV2VolumesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest VolumeV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest externalRef0.UnprocessableContentResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteApiV2VolumesVolumeIDResponse parses an HTTP response from a DeleteApiV2VolumesVolumeIDWithResponse call
+func ParseDeleteApiV2VolumesVolumeIDResponse(rsp *http.Response) (*DeleteApiV2VolumesVolumeIDResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteApiV2VolumesVolumeIDResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest externalRef0.ConflictResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiV2VolumesVolumeIDResponse parses an HTTP response from a GetApiV2VolumesVolumeIDWithResponse call
+func ParseGetApiV2VolumesVolumeIDResponse(rsp *http.Response) (*GetApiV2VolumesVolumeIDResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiV2VolumesVolumeIDResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest VolumeV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutApiV2VolumesVolumeIDResponse parses an HTTP response from a PutApiV2VolumesVolumeIDWithResponse call
+func ParsePutApiV2VolumesVolumeIDResponse(rsp *http.Response) (*PutApiV2VolumesVolumeIDResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutApiV2VolumesVolumeIDResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest VolumeV2Response
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest externalRef0.ConflictResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest externalRef0.InternalServerErrorResponse
