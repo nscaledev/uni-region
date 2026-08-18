@@ -380,7 +380,7 @@ def scaffold(region_env: RegionEnv, region_session: requests.Session) -> Scaffol
                 "organizationId": region_env.org,
                 "projectId": region_env.project,
                 "regionId": region_env.region,
-                "prefix": "10.128.0.0/24",
+                "prefix": "172.28.0.0/24",
                 "dnsNameservers": [],
             },
         },

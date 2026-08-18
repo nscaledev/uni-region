@@ -495,7 +495,7 @@ var _ = Describe("File Storage Management", func() {
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
 						RegionId:       idstest.MustParseRegionID(config.RegionID),
-						Prefix:         "10.0.1.0/24",
+						Prefix:         "172.29.0.0/24",
 						DnsNameservers: []string{"8.8.8.8", "8.8.4.4"},
 					},
 				}

@@ -19,56 +19,87 @@ package api
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
 )
 
-// StaleTestNetworkTTL is how old a test-prefixed network must be before the
+// StaleTestResourceTTL is how old a test-prefixed resource must be before the
 // pre-suite sweep reclaims it. Suites complete well within an hour, so a 6-hour
 // floor guarantees the sweep never races a concurrent or in-flight run and only
 // ever removes orphans left behind by a previously killed runner.
-const StaleTestNetworkTTL = 6 * time.Hour
+const StaleTestResourceTTL = 6 * time.Hour
 
-// SweepStaleTestNetworks deletes test-prefixed networks in the configured
-// org/project/region that are older than StaleTestNetworkTTL.
+// SweepStaleTestResources deletes test-prefixed servers, file storage, and
+// networks in the configured org/project/region that are older than
+// StaleTestResourceTTL.
 //
 // A killed CI runner (timeout/OOM/SIGKILL) never runs in-process cleanup, so the
-// networks it created — and their scarce VLANs — leak until reclaimed by hand.
+// resources it created — and their scarce VLANs — leak until reclaimed by hand.
 // Running this before the suite means each run reclaims the previous run's
 // orphans, which is the only mechanism that survives a hard process kill.
 //
-// It is best-effort: list and delete failures are logged and tolerated so a
-// sweep problem can never fail the suite under test.
-func SweepStaleTestNetworks(c *APIClient, ctx context.Context, config *TestConfig) {
-	networks, err := c.ListNetworks(ctx, config.OrgID, config.ProjectID, config.RegionID)
-	if err != nil {
-		GinkgoWriter.Printf("Sweep: skipping, failed to list networks: %v\n", err)
-		return
+// Servers are deleted before file storage, and file storage before networks,
+// because both dependents can block network deletion. Cleanup failures
+// intentionally fail BeforeSuite: starting a new run while stale resources still
+// hold VLANs would compound the leak.
+func SweepStaleTestResources(c *APIClient, ctx context.Context, config *TestConfig) {
+	if c.InternalAPIConfigured() {
+		servers, err := c.ListServers(ctx, config.OrgID, config.ProjectID, config.RegionID, "")
+		Expect(err).NotTo(HaveOccurred(), "sweep should list servers")
+
+		for i := range servers {
+			server := &servers[i]
+			sweepStaleTestResource("server", server.Metadata.Id, server.Metadata.Name,
+				server.Metadata.CreationTime, server.Metadata.DeletionTime,
+				func() error { return c.DeleteServer(ctx, server.Metadata.Id) },
+				func() { WaitForServerGone(c, ctx, server.Metadata.Id) })
+		}
 	}
+
+	fileStorage, err := c.ListFileStorage(ctx, config.OrgID, config.ProjectID, config.RegionID)
+	Expect(err).NotTo(HaveOccurred(), "sweep should list file storage")
+
+	for i := range fileStorage {
+		storage := &fileStorage[i]
+		sweepStaleTestResource("file storage", storage.Metadata.Id, storage.Metadata.Name,
+			storage.Metadata.CreationTime, storage.Metadata.DeletionTime,
+			func() error { return c.DeleteFileStorage(ctx, storage.Metadata.Id) },
+			func() { WaitForFileStorageGone(c, ctx, storage.Metadata.Id) })
+	}
+
+	networks, err := c.ListNetworks(ctx, config.OrgID, config.ProjectID, config.RegionID)
+	Expect(err).NotTo(HaveOccurred(), "sweep should list networks")
 
 	for i := range networks {
 		network := &networks[i]
-
-		if !IsTestResourceName(network.Metadata.Name) {
-			continue
-		}
-
-		// Skip resources already being torn down.
-		if network.Metadata.DeletionTime != nil {
-			continue
-		}
-
-		age := time.Since(network.Metadata.CreationTime)
-		if age < StaleTestNetworkTTL {
-			continue
-		}
-
-		GinkgoWriter.Printf("Sweep: deleting stale test network %s (%s), age %s\n",
-			network.Metadata.Name, network.Metadata.Id, age.Round(time.Minute))
-
-		if err := c.DeleteNetwork(ctx, network.Metadata.Id); err != nil {
-			GinkgoWriter.Printf("Sweep: failed to delete network %s: %v\n", network.Metadata.Id, err)
-		}
+		sweepStaleTestResource("network", network.Metadata.Id, network.Metadata.Name,
+			network.Metadata.CreationTime, network.Metadata.DeletionTime,
+			func() error { return c.DeleteNetwork(ctx, network.Metadata.Id) },
+			func() { WaitForNetworkGone(c, ctx, network.Metadata.Id) })
 	}
+}
+
+func sweepStaleTestResource(resourceType, id, name string, creationTime time.Time, deletionTime *time.Time,
+	deleteResource func() error, waitForGone func(),
+) {
+	age := time.Since(creationTime)
+	if !IsTestResourceName(name) || age < StaleTestResourceTTL {
+		return
+	}
+
+	if deletionTime == nil {
+		GinkgoWriter.Printf("Sweep: deleting stale test %s %s (%s), age %s\n",
+			resourceType, name, id, age.Round(time.Minute))
+
+		err := deleteResource()
+		ExpectWithOffset(1, err == nil || errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue(),
+			"sweep should delete stale %s %s: %v", resourceType, id, err)
+	}
+
+	waitForGone()
 }

@@ -37,6 +37,29 @@ import (
 	"github.com/unikorn-cloud/region/test/api"
 )
 
+func deferLoadBalancerFixtureCleanup(networkID string, loadBalancerID *string) {
+	// Separate cleanup nodes ensure a failed load-balancer wait cannot skip the
+	// network delete. Register the network first so Ginkgo runs it last.
+	DeferCleanup(func() {
+		api.MustDeleteNetwork(regionClient, ctx, networkID)
+	})
+	DeferCleanup(func() {
+		if *loadBalancerID == "" {
+			return
+		}
+
+		err := regionClient.DeleteLoadBalancer(ctx, *loadBalancerID)
+		switch {
+		case err == nil:
+			api.WaitForLoadBalancerGone(regionClient, ctx, *loadBalancerID)
+		case errors.Is(err, coreclient.ErrResourceNotFound):
+			// Already gone; nothing to wait for.
+		default:
+			Expect(err).NotTo(HaveOccurred(), "cleanup delete load balancer %s", *loadBalancerID)
+		}
+	})
+}
+
 var _ = Describe("LoadBalancer", func() {
 	Context("When managing load balancer lifecycle", Ordered, func() {
 		var (
@@ -52,26 +75,17 @@ var _ = Describe("LoadBalancer", func() {
 			Expect(network).NotTo(BeNil())
 			networkID = network.Metadata.Id
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
+			deferLoadBalancerFixtureCleanup(networkID, &lbID)
 
 			// Reads are served from the controller-runtime cache, so the
 			// load balancer create below can resolve the network reference
 			// against a stale cache and 404. Await visibility first.
 			api.WaitForNetworkVisible(regionClient, ctx, networkID)
-
-			DeferCleanup(func() {
-				if lbID != "" {
-					if err := regionClient.DeleteLoadBalancer(ctx, lbID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-						GinkgoWriter.Printf("Warning: cleanup delete load balancer %s: %v\n", lbID, err)
-					}
-					api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
-				}
-				api.MustDeleteNetwork(regionClient, ctx, networkID)
-			})
 		})
 
 		Describe("Given a backend member and publicIP=true", func() {
 			members := []regionopenapi.LoadBalancerMemberV2{
-				{Address: "10.0.1.10", Port: 8080},
+				{Address: "172.30.1.10", Port: 8080},
 			}
 			var originalVIP *regionopenapi.Ipv4Address
 			var deletedLBID string
@@ -158,10 +172,10 @@ var _ = Describe("LoadBalancer", func() {
 				current, err := regionClient.GetLoadBalancer(ctx, lbID)
 				Expect(err).NotTo(HaveOccurred())
 
-				allowedCidrs := []string{"10.0.0.0/8"}
+				allowedCidrs := []string{"172.30.0.0/16"}
 				updatedMembers := []regionopenapi.LoadBalancerMemberV2{
-					{Address: "10.0.1.20", Port: 8080},
-					{Address: "10.0.1.21", Port: 8080},
+					{Address: "172.30.1.20", Port: 8080},
+					{Address: "172.30.1.21", Port: 8080},
 				}
 
 				spec := current.Spec
@@ -246,21 +260,12 @@ var _ = Describe("LoadBalancer", func() {
 			Expect(network).NotTo(BeNil())
 			networkID = network.Metadata.Id
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
+			deferLoadBalancerFixtureCleanup(networkID, &lbID)
 
 			// Reads are served from the controller-runtime cache, so the
 			// load balancer create below can resolve the network reference
 			// against a stale cache and 404. Await visibility first.
 			api.WaitForNetworkVisible(regionClient, ctx, networkID)
-
-			DeferCleanup(func() {
-				if lbID != "" {
-					if err := regionClient.DeleteLoadBalancer(ctx, lbID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-						GinkgoWriter.Printf("Warning: cleanup delete load balancer %s: %v\n", lbID, err)
-					}
-					api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
-				}
-				api.MustDeleteNetwork(regionClient, ctx, networkID)
-			})
 		})
 
 		Describe("Given a UDP listener on port 53 with idleTimeoutSeconds omitted", func() {
@@ -273,7 +278,7 @@ var _ = Describe("LoadBalancer", func() {
 							Port:     53,
 							Pool: regionopenapi.LoadBalancerPoolV2{
 								Members: []regionopenapi.LoadBalancerMemberV2{
-									{Address: "10.0.1.10", Port: 53},
+									{Address: "172.30.1.10", Port: 53},
 								},
 							},
 						},
@@ -310,21 +315,12 @@ var _ = Describe("LoadBalancer", func() {
 			Expect(network).NotTo(BeNil())
 			networkID = network.Metadata.Id
 			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
+			deferLoadBalancerFixtureCleanup(networkID, &lbID)
 
 			// Reads are served from the controller-runtime cache, so the
 			// load balancer create below can resolve the network reference
 			// against a stale cache and 404. Await visibility first.
 			api.WaitForNetworkVisible(regionClient, ctx, networkID)
-
-			DeferCleanup(func() {
-				if lbID != "" {
-					if err := regionClient.DeleteLoadBalancer(ctx, lbID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-						GinkgoWriter.Printf("Warning: cleanup delete load balancer %s: %v\n", lbID, err)
-					}
-					api.WaitForLoadBalancerGone(regionClient, ctx, lbID)
-				}
-				api.MustDeleteNetwork(regionClient, ctx, networkID)
-			})
 		})
 
 		Describe("Given a provisioned load balancer", func() {

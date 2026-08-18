@@ -80,8 +80,7 @@ func skipUnlessRebuildEnvironmentConfigured() {
 // their cleanup, and returns the server once it has settled as provisioned.
 func mustProvisionServerForRebuild() *regionopenapi.ServerV2Read {
 	networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-	network, cleanupNetwork := api.MustProvisionNetwork(regionClient, ctx, networkReq)
-	DeferCleanup(cleanupNetwork)
+	network := api.MustProvisionNetwork(regionClient, ctx, networkReq)
 
 	createReq := api.NewServerPayload(network.Metadata.Id, config.ServerFlavorID, config.ServerImageID).Build()
 	created, cleanupServer := api.MustCreateServer(regionClient, ctx, createReq)

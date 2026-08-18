@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -30,6 +31,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
 	coreconfig "github.com/unikorn-cloud/core/pkg/testing/config"
 	identityopenapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/principal"
@@ -145,6 +147,36 @@ var _ = Describe("Network fixture cleanup", func() {
 				MustDeleteNetwork(client, context.Background(), networkID)
 
 				Expect(deleteCalls.Load()).To(Equal(int32(1)))
+			})
+		})
+	})
+})
+
+var _ = Describe("File storage API client", func() {
+	Context("When deleting file storage", func() {
+		Describe("Given the resource does not exist", func() {
+			It("returns the typed not-found error", func() {
+				const fileStorageID = "filestorage-1"
+
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					defer GinkgoRecover()
+
+					Expect(r.Method).To(Equal(http.MethodDelete))
+					Expect(r.URL.Path).To(Equal("/api/v2/filestorage/" + fileStorageID))
+					w.WriteHeader(http.StatusNotFound)
+				}))
+				DeferCleanup(server.Close)
+
+				client := NewAPIClientWithConfig(&TestConfig{
+					BaseConfig: coreconfig.BaseConfig{
+						BaseURL:        server.URL,
+						RequestTimeout: time.Second,
+					},
+					RegionBaseURL: server.URL,
+				})
+
+				err := client.DeleteFileStorage(context.Background(), fileStorageID)
+				Expect(errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue())
 			})
 		})
 	})
