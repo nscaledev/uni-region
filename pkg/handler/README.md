@@ -239,6 +239,8 @@ but we do not have transactions.”
   SSH CA records with explicit reference-blocked deletion
 - [`storage`](./storage/README.md): quota-heavy stateful resource with saga-backed
   create/update and attachment validation
+- [`volume`](./volume/README.md): Network-scoped block Volume CRUD with immutable
+  class/size, observed-size projection, and attached-delete blocking
 - `VolumeClass`: read-only Region-scoped provider inventory. The v2 list handler
   filters Regions through the canonical visibility policy, treats repeated
   `regionID` values as selectors, and maps only provider-neutral inventory

@@ -76,9 +76,8 @@ immutable through this API; updates contain resource metadata and tags only.
 Reads expose the requested inputs alongside the Region the volume was
 provisioned in, provider-observed size, and the standard provisioning and
 health metadata.
-Attachment-derived state is not part of this base contract. The generated
-unimplemented server methods remain in use until the Volume handlers are added
-separately.
+Attachment-derived state is not part of this base contract. The Region handler
+implements this lifecycle surface.
 
 Keeping the schema unified matters because it allows:
 
