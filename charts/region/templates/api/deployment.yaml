@@ -21,10 +21,19 @@ spec:
         {{- include "unikorn.core.flags" . | nindent 8 }}
         {{- include "unikorn.cors.flags" . | nindent 8 }}
         {{- include "unikorn.otlp.flags" . | nindent 8 }}
+        {{- if not .Values.spiffe.enabled }}
         {{- include "unikorn.mtls.flags" . | nindent 8 }}
+        {{- end }}
         {{- include "unikorn.identity.flags" . | nindent 8 }}
+        {{- if .Values.spiffe.enabled }}
+        {{- include "unikorn.spiffe.flags" . | nindent 8 }}
+        {{- end }}
         {{- range $i, $arg := .Values.server.extraFlags }}
         - {{ $arg }}
+        {{- end }}
+        {{- if .Values.spiffe.enabled }}
+        env:
+          {{- include "unikorn.spiffe.env" . | nindent 8 }}
         {{- end }}
         ports:
         - name: http
@@ -41,6 +50,14 @@ spec:
             port: 6080
         securityContext:
           readOnlyRootFilesystem: true
+        {{- if .Values.spiffe.enabled }}
+        volumeMounts:
+          {{- include "unikorn.spiffe.volumeMounts" . | nindent 8 }}
+        {{- end }}
       serviceAccountName: {{ .Release.Name }}-server
       securityContext:
         runAsNonRoot: true
+      {{- if .Values.spiffe.enabled }}
+      volumes:
+        {{- include "unikorn.spiffe.volumes" . | nindent 6 }}
+      {{- end }}

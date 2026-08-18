@@ -40,3 +40,44 @@ v{{ .Chart.Version }}
 {{- define "unikorn.serverControllerImage" -}}
 {{- .Values.serverController.image | default (printf "%s/unikorn-server-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default (include "unikorn.defaultTag" .))) }}
 {{- end }}
+
+{{/*
+SPIFFE client credential flags.  unikorn.mtls.flags hardcodes a Secret name, which is
+why these are separate rather than an option on it.
+*/}}
+{{- define "unikorn.spiffe.flags" -}}
+{{- if .Values.spiffe.enabled }}
+- --client-certificate-source=spiffe
+- --spiffe-server-id={{ required "spiffe.serverID is required when spiffe.enabled is true: uni-core refuses to start without it, because the alternative authorizes any attested workload to pose as the identity service" .Values.spiffe.serverID }}
+{{- end }}
+{{- end }}
+
+{{/*
+The socket path is required in both of the templates below rather than defaulted,
+because empty renders SPIFFE_ENDPOINT_SOCKET as unix://, which go-spiffe rejects, and a
+mountPath of '.', which the kubelet refuses -- both of which fail at container creation
+rather than at render.
+*/}}
+{{- define "unikorn.spiffe.env" -}}
+{{- if .Values.spiffe.enabled }}
+- name: SPIFFE_ENDPOINT_SOCKET
+  value: unix://{{ required "spiffe.workloadAPISocketPath is required when spiffe.enabled is true" .Values.spiffe.workloadAPISocketPath }}
+{{- end }}
+{{- end }}
+
+{{- define "unikorn.spiffe.volumeMounts" -}}
+{{- if .Values.spiffe.enabled }}
+- name: spiffe-workload-api
+  mountPath: {{ dir (required "spiffe.workloadAPISocketPath is required when spiffe.enabled is true" .Values.spiffe.workloadAPISocketPath) }}
+  readOnly: true
+{{- end }}
+{{- end }}
+
+{{- define "unikorn.spiffe.volumes" -}}
+{{- if .Values.spiffe.enabled }}
+- name: spiffe-workload-api
+  csi:
+    driver: csi.spiffe.io
+    readOnly: true
+{{- end }}
+{{- end }}

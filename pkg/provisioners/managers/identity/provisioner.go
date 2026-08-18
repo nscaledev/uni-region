@@ -19,6 +19,7 @@ package identity
 
 import (
 	"context"
+	"io"
 
 	"github.com/spf13/pflag"
 
@@ -59,6 +60,20 @@ func (o *Options) AddFlags(f *pflag.FlagSet) {
 
 	o.identityOptions.AddFlags(f)
 	o.clientOptions.AddFlags(f)
+}
+
+// This is an optional interface, and it could fail invisibly -- a controller whose
+// options do not implement it gets no credential initialization at all, which in SPIFFE
+// mode fails every reconcile -- so here is a guard that we implement the right thing.
+var _ coremanager.CredentialInitializer = &Options{}
+
+// InitSPIFFE opens the client credential this controller talks to identity with.
+// manager.Run calls it once at start up, with the process's root context.  Opening it
+// there rather than lazily is what makes a misconfiguration fail at start up instead of
+// on every reconcile; see manager.CredentialInitializer for why the context is the root
+// one rather than a shorter-lived one.
+func (o *Options) InitSPIFFE(ctx context.Context) (io.Closer, error) {
+	return o.clientOptions.InitSPIFFE(ctx)
 }
 
 // Provisioner encapsulates control plane provisioning.

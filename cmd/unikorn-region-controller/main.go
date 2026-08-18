@@ -69,6 +69,23 @@ func start() {
 		return
 	}
 
+	// Initialize the client credential before anything that uses it is built, so a
+	// misconfiguration fails here rather than at the first call to identity.  The context
+	// is the root one created above: at the go-spiffe v2.8.1 pin the rotation watch runs
+	// on a background context of the library's own, so a shorter-lived context would not
+	// stop the SVID refreshing -- but the root context is the conservative choice against
+	// that changing, and it is the lifetime the returned closer wants.  A no-op closer
+	// comes back when the credential is a Kubernetes Secret, so this needs no guard on
+	// the mode.
+	closer, err := s.ClientOptions.InitSPIFFE(ctx)
+	if err != nil {
+		logger.Error(err, "failed to initialize the client credential")
+
+		return
+	}
+
+	defer closer.Close()
+
 	server, err := s.GetServer(ctx, client)
 	if err != nil {
 		logger.Error(err, "failed to setup Handler")

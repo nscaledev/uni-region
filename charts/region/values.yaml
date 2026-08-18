@@ -244,3 +244,26 @@ identity:
 # Sets the OTLP endpoint for shipping spans.
 # otlp:
 #   endpoint: jaeger-collector.default:4318
+
+# spiffe moves this service's client credential from a Kubernetes Secret to the
+# SPIFFE Workload API.  It does NOT change where that credential is presented: the
+# rendered --identity-host is untouched, and a SPIFFE-mode client can only talk to a
+# SPIFFE-serving endpoint, so the operator must repoint identity.host separately at the
+# host whose TLS uni-identity terminates itself.  Enabling this alone leaves the
+# credential and the target host out of step, and calls to identity fail.
+#
+# Only applies to the four deployments that call uni-identity's API and therefore need this
+# credential: api, identity-controller, network-controller, load-balancer-controller (the
+# same four that render unikorn.mtls.flags today). The other four deployments -- monitor,
+# project-consumer, security-group-controller, server-controller -- read the region-owned
+# Identity custom resource directly from Kubernetes and never call uni-identity's API, and
+# their binaries do not register --client-certificate-source/--spiffe-server-id at all, so
+# passing those flags to them would fail at startup rather than do nothing. Do not add the
+# SPIFFE includes to those four without first giving their binaries a reason to call uni-identity.
+spiffe:
+  enabled: false
+  workloadAPISocketPath: /spiffe-workload-api/spire-agent.sock
+  # serverID is the SPIFFE ID uni-identity must present.  Mandatory when spiffe.enabled
+  # is true: uni-core refuses to start without it, because the alternative authorizes
+  # any attested workload in the trust domain to pose as the identity service.
+  serverID: ""
