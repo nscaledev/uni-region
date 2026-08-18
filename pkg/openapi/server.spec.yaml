@@ -1810,6 +1810,128 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/volumes:
+    description: Manages project-scoped block storage volumes anchored to a Network.
+    get:
+      description: List volumes visible to the caller, optionally narrowed by scope, Region, or Network.
+      summary: List volumes
+      tags:
+      - Volumes
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      - $ref: '#/components/parameters/organizationIDQueryParameter'
+      - $ref: '#/components/parameters/projectIDQueryParameter'
+      - $ref: '#/components/parameters/regionIDQueryParameter'
+      - $ref: '#/components/parameters/networkIDQueryParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/volumesV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    post:
+      description: |-
+        Create a volume on the Region and project implied by its Network. The
+        VolumeClass and requested capacity are immutable after creation.
+      summary: Create volume
+      tags:
+      - Volumes
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/volumeV2CreateRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/volumeV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/volumes/{volumeID}:
+    description: Manages a project-scoped block storage volume.
+    parameters:
+    - $ref: '#/components/parameters/volumeIDParameter'
+    get:
+      description: Get a volume, including its desired capacity and provider-observed state.
+      summary: Get volume
+      tags:
+      - Volumes
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/volumeV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    put:
+      description: Update a volume's mutable metadata and tags.
+      summary: Update volume
+      tags:
+      - Volumes
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/volumeV2UpdateRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/volumeV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    delete:
+      description: Delete a volume. A volume in use must be detached before deletion.
+      summary: Delete volume
+      tags:
+      - Volumes
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/volumeclasses:
     description: |-
       Lists provider-neutral block-storage classes available from Regions visible to the caller. Results can be narrowed to one or more Regions.
@@ -1907,6 +2029,13 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/serverId'
+    volumeIDParameter:
+      name: volumeID
+      in: path
+      description: The volume ID.
+      required: true
+      schema:
+        $ref: '#/components/schemas/volumeId'
     referenceParameter:
       name: reference
       in: path
@@ -2028,6 +2157,14 @@ components:
       type: string
       format: uuid
       x-go-type: regionids.ServerID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    volumeId:
+      description: A volume ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.VolumeID
       x-go-type-import:
         name: regionids
         path: github.com/unikorn-cloud/region/pkg/ids
@@ -3541,6 +3678,79 @@ components:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
           $ref: '#/components/schemas/serverV2Spec'
+    volumeV2Spec:
+      description: A volume's immutable desired Network anchor and capacity.
+      type: object
+      required:
+      - networkId
+      - volumeClassId
+      - sizeGiB
+      properties:
+        networkId:
+          description: The Network that determines the volume's Region and project association.
+          allOf:
+          - $ref: '#/components/schemas/networkId'
+        volumeClassId:
+          description: The provider-neutral VolumeClass used to provision the volume.
+          type: string
+        sizeGiB:
+          description: The requested volume capacity in whole GiB.
+          type: integer
+          format: int64
+          minimum: 1
+    volumeV2Status:
+      description: Provider-observed volume state.
+      type: object
+      required:
+      - regionId
+      properties:
+        regionId:
+          description: The Region in which the volume is provisioned.
+          allOf:
+          - $ref: '#/components/schemas/regionId'
+        sizeGiB:
+          description: The provider-observed volume capacity in whole GiB.
+          type: integer
+          format: int64
+          minimum: 1
+    volumeV2Create:
+      description: A volume creation request.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/volumeV2Spec'
+    volumeV2Update:
+      description: A volume metadata update request. Network, VolumeClass, and capacity are immutable.
+      type: object
+      required:
+      - metadata
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+    volumeV2Read:
+      description: A block storage volume.
+      type: object
+      required:
+      - metadata
+      - spec
+      - status
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+        spec:
+          $ref: '#/components/schemas/volumeV2Spec'
+        status:
+          $ref: '#/components/schemas/volumeV2Status'
+    volumesV2Read:
+      description: A list of volumes.
+      type: array
+      items:
+        $ref: '#/components/schemas/volumeV2Read'
     consoleSession:
       description: A console session response.
       type: object
@@ -4293,6 +4503,37 @@ components:
             reason: ExternalStatePrepared
             message: External state required before provider create is ready.
 
+    volumeV2CreateRequest:
+      description: A request to create a volume.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/volumeV2Create'
+          example:
+            metadata:
+              name: database-data
+              description: Persistent database storage
+              tags:
+              - name: environment
+                value: production
+            spec:
+              networkId: 61f0ad85-3001-41cb-824a-e6a047668dfe
+              volumeClassId: 44444444-4444-4444-4444-444444444444
+              sizeGiB: 200
+    volumeV2UpdateRequest:
+      description: A request to update a volume's metadata and tags.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/volumeV2Update'
+          example:
+            metadata:
+              name: database-data
+              description: Persistent production database storage
+              tags:
+              - name: environment
+                value: production
+
     snapshotServerRequest:
       description: A request to create an image by snapshoting a server.
       content:
@@ -4989,6 +5230,58 @@ components:
               privateIP: 192.168.1.50
               publicIP: 142.250.66.196
               macAddress: fa:16:3e:12:34:56
+    volumeV2Response:
+      description: A volume.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/volumeV2Read'
+          example:
+            metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: database-data
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2026-08-10T12:00:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: provisioned
+              healthStatus: healthy
+              tags:
+              - name: environment
+                value: production
+            spec:
+              networkId: 61f0ad85-3001-41cb-824a-e6a047668dfe
+              volumeClassId: 44444444-4444-4444-4444-444444444444
+              sizeGiB: 200
+            status:
+              regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
+              sizeGiB: 200
+    volumesV2Response:
+      description: A list of volumes.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/volumesV2Read'
+          example:
+          - metadata:
+              id: a64f9269-36e0-4312-b8d1-52d93d569b7b
+              name: database-data
+              organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+              projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+              creationTime: 2026-08-10T12:00:00Z
+              createdBy: john.doe@acme.com
+              provisioningStatus: provisioned
+              healthStatus: healthy
+              tags:
+              - name: environment
+                value: production
+            spec:
+              networkId: 61f0ad85-3001-41cb-824a-e6a047668dfe
+              volumeClassId: 44444444-4444-4444-4444-444444444444
+              sizeGiB: 200
+            status:
+              regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
+              sizeGiB: 200
     consoleSessionResponse:
       description: A console session response.
       content:

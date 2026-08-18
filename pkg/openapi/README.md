@@ -69,6 +69,17 @@ returned in whole GiB only when configured by the Region operator. A non-empty
 omitted or empty means unrestricted. The public contract deliberately contains
 no Cinder, storage-pool, or other provider-specific fields.
 
+`/api/v2/volumes` is the published lifecycle contract for project-scoped block
+storage. Creation is anchored to a Network and requires a provider-neutral
+VolumeClass ID plus a positive whole-GiB size. Network, class, and size are
+immutable through this API; updates contain resource metadata and tags only.
+Reads expose the requested inputs alongside the Region the volume was
+provisioned in, provider-observed size, and the standard provisioning and
+health metadata.
+Attachment-derived state is not part of this base contract. The generated
+unimplemented server methods remain in use until the Volume handlers are added
+separately.
+
 Keeping the schema unified matters because it allows:
 
 - one generated client/server contract
@@ -259,6 +270,9 @@ fully encoded here:
 - preserving read/modify/write ergonomics in `v2` does not mean every field is
   always mutable. Some create-time choices are intentionally immutable later and
   are reflected back through read-only/status fields instead
+- the Volume lifecycle routes are published before their handlers; generated
+  unimplemented methods return `501 Not Implemented` until the handler slice is
+  added
 - because generated code dominates the package by line count, it is easy to
   under-document the package even though it is architecturally central
 - if higher-level documentation drifts from the schema, this package is where

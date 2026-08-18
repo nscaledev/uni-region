@@ -1638,6 +1638,60 @@ type VolumeClassV2Spec struct {
 	SupportedFlavorIds *[]FlavorId `json:"supportedFlavorIds,omitempty"`
 }
 
+// VolumeId A volume ID.
+type VolumeId = regionids.VolumeID
+
+// VolumeV2Create A volume creation request.
+type VolumeV2Create struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A volume's immutable desired Network anchor and capacity.
+	Spec VolumeV2Spec `json:"spec"`
+}
+
+// VolumeV2Read A block storage volume.
+type VolumeV2Read struct {
+	// Metadata Metadata required by project scoped resource reads.
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+
+	// Spec A volume's immutable desired Network anchor and capacity.
+	Spec VolumeV2Spec `json:"spec"`
+
+	// Status Provider-observed volume state.
+	Status VolumeV2Status `json:"status"`
+}
+
+// VolumeV2Spec A volume's immutable desired Network anchor and capacity.
+type VolumeV2Spec struct {
+	// NetworkId The Network that determines the volume's Region and project association.
+	NetworkId NetworkId `json:"networkId"`
+
+	// SizeGiB The requested volume capacity in whole GiB.
+	SizeGiB int64 `json:"sizeGiB"`
+
+	// VolumeClassId The provider-neutral VolumeClass used to provision the volume.
+	VolumeClassId string `json:"volumeClassId"`
+}
+
+// VolumeV2Status Provider-observed volume state.
+type VolumeV2Status struct {
+	// RegionId The Region in which the volume is provisioned.
+	RegionId RegionId `json:"regionId"`
+
+	// SizeGiB The provider-observed volume capacity in whole GiB.
+	SizeGiB *int64 `json:"sizeGiB,omitempty"`
+}
+
+// VolumeV2Update A volume metadata update request. Network, VolumeClass, and capacity are immutable.
+type VolumeV2Update struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+}
+
+// VolumesV2Read A list of volumes.
+type VolumesV2Read = []VolumeV2Read
+
 // FilestorageIDParameter A file storage ID.
 type FilestorageIDParameter = FileStorageId
 
@@ -1694,6 +1748,9 @@ type ServerIDParameter = ServerId
 
 // SshCertificateAuthorityIDParameter An SSH certificate authority ID.
 type SshCertificateAuthorityIDParameter = SshCertificateAuthorityId
+
+// VolumeIDParameter A volume ID.
+type VolumeIDParameter = VolumeId
 
 // ConsoleOutputResponse Console output
 type ConsoleOutputResponse = ConsoleOutput
@@ -1788,6 +1845,12 @@ type StorageV2Response = StorageV2Read
 // VolumeClassListV2Response A list of provider-neutral block-storage volume classes.
 type VolumeClassListV2Response = VolumeClassListV2Read
 
+// VolumeV2Response A block storage volume.
+type VolumeV2Response = VolumeV2Read
+
+// VolumesV2Response A list of volumes.
+type VolumesV2Response = VolumesV2Read
+
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
 
@@ -1841,6 +1904,12 @@ type StorageV2CreateRequest = StorageV2Create
 
 // StorageV2UpdateRequest A storage update request. Omitted spec.defaultSnapshotProtectionEnabled preserves the current Default Snapshot Protection setting, and explicit null is invalid. Omitted spec.snapshotPolicies preserves existing desired user-managed Snapshot Policies, an empty list clears them, and a non-empty list replaces the full list.
 type StorageV2UpdateRequest = StorageV2Update
+
+// VolumeV2CreateRequest A volume creation request.
+type VolumeV2CreateRequest = VolumeV2Create
+
+// VolumeV2UpdateRequest A volume metadata update request. Network, VolumeClass, and capacity are immutable.
+type VolumeV2UpdateRequest = VolumeV2Update
 
 // GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams defines parameters for GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutput.
 type GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams struct {
@@ -1997,6 +2066,25 @@ type GetApiV2VolumeclassesParams struct {
 	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
 }
 
+// GetApiV2VolumesParams defines parameters for GetApiV2Volumes.
+type GetApiV2VolumesParams struct {
+	// Tag A set of tags to match against resources in the form "name=value",
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+
+	// OrganizationID Allows resources to be filtered by organization.
+	OrganizationID *OrganizationIDQueryParameter `form:"organizationID,omitempty" json:"organizationID,omitempty"`
+
+	// ProjectID Allows resources to be filtered by project.
+	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+
+	// NetworkID Allows resources to be filtered by network.
+	NetworkID *NetworkIDQueryParameter `form:"networkID,omitempty" json:"networkID,omitempty"`
+}
+
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody = IdentityWrite
 
@@ -2056,3 +2144,9 @@ type PostApiV2ServersServerIDSnapshotJSONRequestBody = SnapshotCreate
 
 // PostApiV2SshcertificateauthoritiesJSONRequestBody defines body for PostApiV2Sshcertificateauthorities for application/json ContentType.
 type PostApiV2SshcertificateauthoritiesJSONRequestBody = SshCertificateAuthorityV2Create
+
+// PostApiV2VolumesJSONRequestBody defines body for PostApiV2Volumes for application/json ContentType.
+type PostApiV2VolumesJSONRequestBody = VolumeV2Create
+
+// PutApiV2VolumesVolumeIDJSONRequestBody defines body for PutApiV2VolumesVolumeID for application/json ContentType.
+type PutApiV2VolumesVolumeIDJSONRequestBody = VolumeV2Update
