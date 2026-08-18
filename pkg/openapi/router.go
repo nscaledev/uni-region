@@ -239,6 +239,21 @@ type ServerInterface interface {
 	// List volume classes
 	// (GET /api/v2/volumeclasses)
 	GetApiV2Volumeclasses(w http.ResponseWriter, r *http.Request, params GetApiV2VolumeclassesParams)
+	// List volumes
+	// (GET /api/v2/volumes)
+	GetApiV2Volumes(w http.ResponseWriter, r *http.Request, params GetApiV2VolumesParams)
+	// Create volume
+	// (POST /api/v2/volumes)
+	PostApiV2Volumes(w http.ResponseWriter, r *http.Request)
+	// Delete volume
+	// (DELETE /api/v2/volumes/{volumeID})
+	DeleteApiV2VolumesVolumeID(w http.ResponseWriter, r *http.Request, volumeID VolumeIDParameter)
+	// Get volume
+	// (GET /api/v2/volumes/{volumeID})
+	GetApiV2VolumesVolumeID(w http.ResponseWriter, r *http.Request, volumeID VolumeIDParameter)
+	// Update volume
+	// (PUT /api/v2/volumes/{volumeID})
+	PutApiV2VolumesVolumeID(w http.ResponseWriter, r *http.Request, volumeID VolumeIDParameter)
 	// Get the deployed service version
 	// (GET /api/version)
 	GetApiVersion(w http.ResponseWriter, r *http.Request)
@@ -649,6 +664,36 @@ func (_ Unimplemented) GetApiV2SshcertificateauthoritiesSshCertificateAuthorityI
 // List volume classes
 // (GET /api/v2/volumeclasses)
 func (_ Unimplemented) GetApiV2Volumeclasses(w http.ResponseWriter, r *http.Request, params GetApiV2VolumeclassesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List volumes
+// (GET /api/v2/volumes)
+func (_ Unimplemented) GetApiV2Volumes(w http.ResponseWriter, r *http.Request, params GetApiV2VolumesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create volume
+// (POST /api/v2/volumes)
+func (_ Unimplemented) PostApiV2Volumes(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Delete volume
+// (DELETE /api/v2/volumes/{volumeID})
+func (_ Unimplemented) DeleteApiV2VolumesVolumeID(w http.ResponseWriter, r *http.Request, volumeID VolumeIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get volume
+// (GET /api/v2/volumes/{volumeID})
+func (_ Unimplemented) GetApiV2VolumesVolumeID(w http.ResponseWriter, r *http.Request, volumeID VolumeIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Update volume
+// (PUT /api/v2/volumes/{volumeID})
+func (_ Unimplemented) PutApiV2VolumesVolumeID(w http.ResponseWriter, r *http.Request, volumeID VolumeIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3714,6 +3759,184 @@ func (siw *ServerInterfaceWrapper) GetApiV2Volumeclasses(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// GetApiV2Volumes operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV2Volumes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetApiV2VolumesParams
+
+	// ------------- Optional query parameter "tag" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "tag", r.URL.Query(), &params.Tag)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "organizationID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "organizationID", r.URL.Query(), &params.OrganizationID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organizationID", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "projectID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "projectID", r.URL.Query(), &params.ProjectID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "regionID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "regionID", r.URL.Query(), &params.RegionID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "regionID", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "networkID" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "networkID", r.URL.Query(), &params.NetworkID)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "networkID", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV2Volumes(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostApiV2Volumes operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV2Volumes(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiV2Volumes(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteApiV2VolumesVolumeID operation middleware
+func (siw *ServerInterfaceWrapper) DeleteApiV2VolumesVolumeID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "volumeID" -------------
+	var volumeID VolumeIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "volumeID", chi.URLParam(r, "volumeID"), &volumeID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "volumeID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteApiV2VolumesVolumeID(w, r, volumeID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetApiV2VolumesVolumeID operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV2VolumesVolumeID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "volumeID" -------------
+	var volumeID VolumeIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "volumeID", chi.URLParam(r, "volumeID"), &volumeID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "volumeID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV2VolumesVolumeID(w, r, volumeID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutApiV2VolumesVolumeID operation middleware
+func (siw *ServerInterfaceWrapper) PutApiV2VolumesVolumeID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "volumeID" -------------
+	var volumeID VolumeIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "volumeID", chi.URLParam(r, "volumeID"), &volumeID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "volumeID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutApiV2VolumesVolumeID(w, r, volumeID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetApiVersion operation middleware
 func (siw *ServerInterfaceWrapper) GetApiVersion(w http.ResponseWriter, r *http.Request) {
 
@@ -4071,6 +4294,21 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/volumeclasses", wrapper.GetApiV2Volumeclasses)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v2/volumes", wrapper.GetApiV2Volumes)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v2/volumes", wrapper.PostApiV2Volumes)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v2/volumes/{volumeID}", wrapper.DeleteApiV2VolumesVolumeID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v2/volumes/{volumeID}", wrapper.GetApiV2VolumesVolumeID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v2/volumes/{volumeID}", wrapper.PutApiV2VolumesVolumeID)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/version", wrapper.GetApiVersion)
