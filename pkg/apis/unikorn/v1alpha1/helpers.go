@@ -487,6 +487,11 @@ func (c *Volume) OrganizationAndProjectID() (identityids.OrganizationID, identit
 	return organizationAndProjectIDFromLabels(c.Labels)
 }
 
+// RegionID returns the volume's owning region ID as a typed identifier.
+func (c *Volume) RegionID() (regionids.RegionID, error) {
+	return regionIDFromLabels(c.Labels)
+}
+
 // NetworkID returns the volume's anchoring network ID as a typed identifier.
 func (c *Volume) NetworkID() (regionids.NetworkID, error) {
 	id, err := regionids.ParseNetworkID(c.Spec.NetworkID)
