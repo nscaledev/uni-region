@@ -29,7 +29,6 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
-	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
@@ -271,14 +270,14 @@ type createSaga struct {
 }
 
 func (s *createSaga) createAllocation(ctx context.Context) error {
-	return identityclient.NewAllocations(s.client.Client, s.client.Identity).Create(ctx, s.volume, identityapi.ResourceAllocationList{{
+	return s.client.CreateAllocation(ctx, s.volume, identityapi.ResourceAllocationList{{
 		Kind:      "volumes",
 		Committed: int(s.volume.Spec.Size.Value()),
 	}})
 }
 
 func (s *createSaga) deleteAllocation(ctx context.Context) error {
-	return identityclient.NewAllocations(s.client.Client, s.client.Identity).Delete(ctx, s.volume)
+	return s.client.DeleteAllocation(ctx, s.volume)
 }
 
 func (s *createSaga) createVolume(ctx context.Context) error {
