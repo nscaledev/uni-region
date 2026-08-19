@@ -50,7 +50,9 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	mockprovider "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -67,7 +69,10 @@ func fakeClientWithSchema(t *testing.T, objects ...client.Object) client.Client 
 	require.NoError(t, identityv1.AddToScheme(scheme))
 	require.NoError(t, regionv1.AddToScheme(scheme))
 
-	b := fake.NewClientBuilder().WithScheme(scheme)
+	restMapper := apimeta.NewDefaultRESTMapper([]schema.GroupVersion{regionv1.SchemeGroupVersion})
+	restMapper.Add(regionv1.SchemeGroupVersion.WithKind("Volume"), apimeta.RESTScopeNamespace)
+
+	b := fake.NewClientBuilder().WithScheme(scheme).WithRESTMapper(restMapper)
 	if len(objects) > 0 {
 		b = b.WithObjects(objects...)
 	}

@@ -25,9 +25,10 @@ The useful way to read it is not as a directory tree, but as one system:
   until Cinder reports the backing volume `available`, and releases an
   annotated Identity allocation only after Cinder confirms provider deletion.
   A Cinder error is surfaced through a safe typed provisioning condition. Its
-  public v2 Volume lifecycle contract and core CRUD handlers are published,
-  while quota admission, attachment projection, and general observed-state
-  projection remain later lifecycle slices
+  public v2 Volume lifecycle contract and core CRUD handlers are published;
+  creation allocates requested capacity through Identity before persisting the
+  Volume, while attachment projection and general observed-state projection
+  remain later lifecycle slices
 - `Server` now carries the internal attach-existing-only block volume intent
   and observed per-volume attachment rows. The provider boundary and OpenStack
   Nova attach/detach implementation exist; public API projection and

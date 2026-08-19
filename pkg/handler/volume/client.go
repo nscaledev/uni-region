@@ -27,7 +27,9 @@ import (
 	"github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
+	"github.com/unikorn-cloud/core/pkg/server/saga"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
@@ -263,6 +265,37 @@ func (c *Client) generate(ctx context.Context, organizationID identityids.Organi
 	return out, nil
 }
 
+type createSaga struct {
+	client *Client
+	volume *regionv1.Volume
+}
+
+func (s *createSaga) createAllocation(ctx context.Context) error {
+	return identityclient.NewAllocations(s.client.Client, s.client.Identity).Create(ctx, s.volume, identityapi.ResourceAllocationList{{
+		Kind:      "volumes",
+		Committed: int(s.volume.Spec.Size.Value()),
+	}})
+}
+
+func (s *createSaga) deleteAllocation(ctx context.Context) error {
+	return identityclient.NewAllocations(s.client.Client, s.client.Identity).Delete(ctx, s.volume)
+}
+
+func (s *createSaga) createVolume(ctx context.Context) error {
+	if err := s.client.Client.Create(ctx, s.volume); err != nil {
+		return fmt.Errorf("%w: unable to create volume", err)
+	}
+
+	return nil
+}
+
+func (s *createSaga) Actions() []saga.Action {
+	return []saga.Action{
+		saga.NewAction("create quota allocation", s.createAllocation, s.deleteAllocation),
+		saga.NewAction("create volume", s.createVolume, nil),
+	}
+}
+
 // CreateV2 creates a v2 Volume from Network-derived scope.
 func (c *Client) CreateV2(ctx context.Context, request *openapi.VolumeV2Create) (*openapi.VolumeV2Read, error) {
 	network, err := network.New(c.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId.String())
@@ -301,8 +334,8 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.VolumeV2Create) 
 	// Add the finalizer before the controller can observe the resource, as required by specification §7.2.
 	resource.Finalizers = []string{coreconstants.Finalizer}
 
-	if err := c.Client.Create(ctx, resource); err != nil {
-		return nil, fmt.Errorf("%w: unable to create volume", err)
+	if err := saga.Run(ctx, &createSaga{client: c, volume: resource}); err != nil {
+		return nil, err
 	}
 
 	return convertV2(resource)
