@@ -60,8 +60,7 @@ var _ = Describe("Server provider-create gates", func() {
 			imageID = config.ServerImageID
 
 			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-			network, cleanupNetwork := api.MustProvisionNetwork(regionClient, ctx, networkReq)
-			DeferCleanup(cleanupNetwork)
+			network := api.MustProvisionNetwork(regionClient, ctx, networkReq)
 			networkID = network.Metadata.Id
 		})
 

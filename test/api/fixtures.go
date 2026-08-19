@@ -268,7 +268,7 @@ func NewNetworkPayload(orgID, projectID, regionID string) *NetworkPayloadBuilder
 				OrganizationId: orgID,
 				ProjectId:      projectID,
 				RegionId:       idstest.MustParseRegionID(regionID),
-				Prefix:         "10.0.0.0/16",
+				Prefix:         "172.30.0.0/16",
 				DnsNameservers: []regionopenapi.Ipv4Address{"8.8.8.8"},
 			},
 		},
@@ -310,7 +310,7 @@ func NewLoadBalancerPayload(networkID string) *LoadBalancerPayloadBuilder {
 						Port:     80,
 						Pool: regionopenapi.LoadBalancerPoolV2{
 							Members: []regionopenapi.LoadBalancerMemberV2{
-								{Address: "10.0.1.10", Port: 8080},
+								{Address: "172.30.1.10", Port: 8080},
 							},
 						},
 					},
@@ -747,22 +747,21 @@ func SkipUnlessServerFixtureConfigured(config *TestConfig) {
 	}
 }
 
-// MustProvisionNetwork creates a network from createReq and waits for it to become
-// visible and provisioned. It returns the network and a cleanup func the caller should
-// register (e.g. DeferCleanup(cleanup)).
-func MustProvisionNetwork(c *APIClient, ctx context.Context, createReq regionopenapi.NetworkV2Create) (*regionopenapi.NetworkV2Read, func()) {
+// MustProvisionNetwork creates a network from createReq, registers cleanup
+// immediately, and waits for it to become visible and provisioned.
+func MustProvisionNetwork(c *APIClient, ctx context.Context, createReq regionopenapi.NetworkV2Create) *regionopenapi.NetworkV2Read {
 	network, err := c.CreateNetwork(ctx, createReq)
 	Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
 	Expect(network).NotTo(BeNil())
 
-	cleanup := func() {
+	DeferCleanup(func() {
 		MustDeleteNetwork(c, ctx, network.Metadata.Id)
-	}
+	})
 
 	WaitForNetworkVisible(c, ctx, network.Metadata.Id)
 	WaitForNetworkProvisioned(c, ctx, network.Metadata.Id)
 
-	return network, cleanup
+	return network
 }
 
 // MustDeleteNetwork deletes the network and waits for it to disappear. A missing network
@@ -812,6 +811,6 @@ func MustDeleteServer(c *APIClient, ctx context.Context, serverID string) {
 	case errors.Is(err, coreclient.ErrResourceNotFound):
 		// Already gone; nothing to wait for.
 	default:
-		GinkgoWriter.Printf("Warning: cleanup delete server %s: %v\n", serverID, err)
+		Expect(err).NotTo(HaveOccurred(), "cleanup delete server %s", serverID)
 	}
 }

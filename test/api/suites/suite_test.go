@@ -54,10 +54,10 @@ var _ = BeforeSuite(func() {
 		secondaryClient = api.NewAPIClientWithConfig(&secondaryConfig)
 	}
 
-	// Reclaim networks (and their VLANs) leaked by a previously killed run
+	// Reclaim resources (and their VLANs) leaked by a previously killed run
 	// before any specs execute. Runs irrespective of spec randomization; the
 	// 6-hour age floor keeps it clear of concurrent or in-flight runs.
-	api.SweepStaleTestNetworks(regionClient, ctx, config)
+	api.SweepStaleTestResources(regionClient, ctx, config)
 })
 
 var _ = BeforeEach(func() {
