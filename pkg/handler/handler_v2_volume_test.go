@@ -31,6 +31,7 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	regionconstants "github.com/unikorn-cloud/region/pkg/constants"
@@ -103,13 +104,22 @@ func TestVolumeV2Handlers(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	providers := mockproviders.NewMockProviders(ctrl)
 	provider := mockprovider.NewMockCommonProvider(ctrl)
+	identity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
 	providers.EXPECT().LookupCommon(volumeHandlerRegionID).Return(provider, nil)
 	provider.EXPECT().VolumeClasses(gomock.Any()).Return(providertypes.VolumeClassList{{ID: volumeHandlerClassID}}, nil)
+	identity.EXPECT().
+		PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsWithResponse(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&identityapi.PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusCreated},
+			JSON201:      &identityapi.AllocationRead{Metadata: coreapi.ProjectScopedResourceReadMetadata{Id: "86666666-6666-4666-a666-666666666666"}},
+		}, nil)
 
 	handler := &Handler{ClientArgs: common.ClientArgs{
 		Client:    fakeClientWithSchema(t, network),
 		Namespace: volumeHandlerNamespace,
 		Providers: providers,
+		Identity:  identity,
 	}}
 	ctx := volumeHandlerContext(t.Context())
 

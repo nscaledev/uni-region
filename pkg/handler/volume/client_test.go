@@ -19,6 +19,7 @@ package volume_test
 import (
 	"context"
 	"math"
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -28,8 +29,10 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
 	"github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -43,13 +46,16 @@ import (
 	mockprovider "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 const (
@@ -65,19 +71,35 @@ const (
 	volumeEndpoint     = "region:volumes:v2"
 )
 
-func testClient(t *testing.T, providers *mockproviders.MockProviders, objects ...client.Object) (*volume.Client, client.Client) {
+func testClient(t *testing.T, objects ...client.Object) (*volume.Client, client.Client) {
 	t.Helper()
 
-	scheme := runtime.NewScheme()
-	require.NoError(t, regionv1.AddToScheme(scheme))
+	return testClientWithIdentity(t, nil, nil, objects...)
+}
 
-	cli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+func testClientWithIdentity(t *testing.T, providers *mockproviders.MockProviders, identity identityapi.ClientWithResponsesInterface, objects ...client.Object) (*volume.Client, client.Client) {
+	t.Helper()
+
+	cli := testClientBuilder(t, objects...).Build()
 
 	return volume.New(common.ClientArgs{
 		Client:    cli,
 		Namespace: testNamespace,
 		Providers: providers,
+		Identity:  identity,
 	}), cli
+}
+
+func testClientBuilder(t *testing.T, objects ...client.Object) *fake.ClientBuilder {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, regionv1.AddToScheme(scheme))
+
+	restMapper := apimeta.NewDefaultRESTMapper([]schema.GroupVersion{regionv1.SchemeGroupVersion})
+	restMapper.Add(regionv1.SchemeGroupVersion.WithKind("Volume"), apimeta.RESTScopeNamespace)
+
+	return fake.NewClientBuilder().WithScheme(scheme).WithRESTMapper(restMapper).WithObjects(objects...)
 }
 
 func testNetwork() *regionv1.Network {
@@ -146,14 +168,48 @@ func expectVolumeClasses(ctrl *gomock.Controller, providers *mockproviders.MockP
 	provider.EXPECT().VolumeClasses(gomock.Any()).Return(classes, nil)
 }
 
+func expectAllocationCreate(t *testing.T, mockIdentity *identitymock.MockClientWithResponsesInterface, expected identityapi.ResourceAllocationList) *gomock.Call {
+	t.Helper()
+
+	return mockIdentity.EXPECT().
+		PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsWithResponse(gomock.Any(), identityids.MustParseOrganizationID(testOrganizationID), identityids.MustParseProjectID(testProjectID), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ identityids.OrganizationID, _ identityids.ProjectID, body identityapi.AllocationWrite, _ ...identityapi.RequestEditorFn) (*identityapi.PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsResponse, error) {
+			require.Equal(t, expected, body.Spec.Allocations)
+
+			return &identityapi.PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsResponse{
+				HTTPResponse: &http.Response{StatusCode: http.StatusCreated},
+				JSON201: &identityapi.AllocationRead{Metadata: coreapi.ProjectScopedResourceReadMetadata{
+					Id:             "88888888-8888-4888-a888-888888888888",
+					OrganizationId: testOrganizationID,
+					ProjectId:      testProjectID,
+				}},
+			}, nil
+		})
+}
+
+func expectAllocationDelete(mockIdentity *identitymock.MockClientWithResponsesInterface) *gomock.Call {
+	return mockIdentity.EXPECT().
+		DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDWithResponse(
+			gomock.Any(),
+			identityids.MustParseOrganizationID(testOrganizationID),
+			identityids.MustParseProjectID(testProjectID),
+			identityids.MustParseAllocationID("88888888-8888-4888-a888-888888888888"),
+		).
+		Return(&identityapi.DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusAccepted},
+		}, nil)
+}
+
 func TestCreateV2DerivesScopeAndPersistsCapacity(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
 	providers := mockproviders.NewMockProviders(ctrl)
+	identity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	expectVolumeClasses(ctrl, providers, providertypes.VolumeClassList{{ID: testVolumeClassID}})
+	expectAllocationCreate(t, identity, identityapi.ResourceAllocationList{{Kind: "volumes", Committed: 20 * (1 << 30)}})
 
-	volumeClient, cli := testClient(t, providers, testNetwork())
+	volumeClient, cli := testClientWithIdentity(t, providers, identity, testNetwork())
 	tags := coreapi.TagList{{Name: "environment", Value: "test"}}
 
 	result, err := volumeClient.CreateV2(testContext(t, identityapi.Read, identityapi.Create), &openapi.VolumeV2Create{
@@ -190,7 +246,72 @@ func TestCreateV2DerivesScopeAndPersistsCapacity(t *testing.T) {
 		Name:               testNetworkID,
 		BlockOwnerDeletion: ptr.To(true),
 	}}, stored.OwnerReferences)
-	require.NotContains(t, stored.Annotations, coreconstants.AllocationAnnotation)
+	require.Equal(t, "88888888-8888-4888-a888-888888888888", stored.Annotations[coreconstants.AllocationAnnotation])
+}
+
+func TestCreateV2QuotaRejectionDoesNotPersistVolume(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	providers := mockproviders.NewMockProviders(ctrl)
+	identity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectVolumeClasses(ctrl, providers, providertypes.VolumeClassList{{ID: testVolumeClassID}})
+	identity.EXPECT().
+		PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsWithResponse(gomock.Any(), identityids.MustParseOrganizationID(testOrganizationID), identityids.MustParseProjectID(testProjectID), gomock.Any()).
+		Return(&identityapi.PostApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusConflict},
+			JSON409:      &coreapi.ConflictResponse{Error: coreapi.Conflict, ErrorDescription: "volume quota exceeded"},
+		}, nil)
+
+	volumeClient, cli := testClientWithIdentity(t, providers, identity, testNetwork())
+	_, err := volumeClient.CreateV2(testContext(t, identityapi.Read, identityapi.Create), &openapi.VolumeV2Create{
+		Metadata: coreapi.ResourceWriteMetadata{Name: "data"},
+		Spec: openapi.VolumeV2Spec{
+			NetworkId:     idstest.MustParseNetworkID(testNetworkID),
+			VolumeClassId: testVolumeClassID,
+			SizeGiB:       20,
+		},
+	})
+	require.True(t, coreerrors.IsConflict(err))
+
+	volumes := &regionv1.VolumeList{}
+	require.NoError(t, cli.List(t.Context(), volumes, client.InNamespace(testNamespace)))
+	require.Empty(t, volumes.Items)
+}
+
+func TestCreateV2PersistenceFailureDeletesAllocation(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	providers := mockproviders.NewMockProviders(ctrl)
+	identity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectVolumeClasses(ctrl, providers, providertypes.VolumeClassList{{ID: testVolumeClassID}})
+	gomock.InOrder(
+		expectAllocationCreate(t, identity, identityapi.ResourceAllocationList{{Kind: "volumes", Committed: 20 * (1 << 30)}}),
+		expectAllocationDelete(identity),
+	)
+
+	cli := testClientBuilder(t, testNetwork()).WithInterceptorFuncs(interceptor.Funcs{
+		Create: func(_ context.Context, _ client.WithWatch, object client.Object, _ ...client.CreateOption) error {
+			return kerrors.NewConflict(schema.GroupResource{Group: regionv1.GroupName, Resource: "volumes"}, object.GetName(), nil)
+		},
+	}).Build()
+	volumeClient := volume.New(common.ClientArgs{
+		Client:    cli,
+		Namespace: testNamespace,
+		Providers: providers,
+		Identity:  identity,
+	})
+
+	_, err := volumeClient.CreateV2(testContext(t, identityapi.Read, identityapi.Create), &openapi.VolumeV2Create{
+		Metadata: coreapi.ResourceWriteMetadata{Name: "data"},
+		Spec: openapi.VolumeV2Spec{
+			NetworkId:     idstest.MustParseNetworkID(testNetworkID),
+			VolumeClassId: testVolumeClassID,
+			SizeGiB:       20,
+		},
+	})
+	require.Error(t, err)
 }
 
 func TestCreateV2ValidatesVolumeClass(t *testing.T) {
@@ -257,7 +378,15 @@ func TestCreateV2ValidatesVolumeClass(t *testing.T) {
 			providers := mockproviders.NewMockProviders(ctrl)
 			expectVolumeClasses(ctrl, providers, test.classes)
 
-			volumeClient, _ := testClient(t, providers, testNetwork())
+			var identity identityapi.ClientWithResponsesInterface
+
+			if !test.wantError {
+				mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+				expectAllocationCreate(t, mockIdentity, identityapi.ResourceAllocationList{{Kind: "volumes", Committed: int(test.size * (1 << 30))}})
+				identity = mockIdentity
+			}
+
+			volumeClient, _ := testClientWithIdentity(t, providers, identity, testNetwork())
 			_, err := volumeClient.CreateV2(testContext(t, identityapi.Read, identityapi.Create), &openapi.VolumeV2Create{
 				Metadata: coreapi.ResourceWriteMetadata{Name: "data"},
 				Spec: openapi.VolumeV2Spec{
@@ -290,7 +419,7 @@ func TestListAndGetV2ProjectBaseStatusWithoutAttachments(t *testing.T) {
 		Reason: string(corev1.ConditionReasonProvisioned),
 	}}
 
-	volumeClient, _ := testClient(t, nil, resource)
+	volumeClient, _ := testClient(t, resource)
 	ctx := testContext(t, identityapi.Read)
 	tag := coreapi.TagSelectorParameter{"environment=test"}
 
@@ -319,7 +448,7 @@ func TestUpdateV2ChangesOnlyMetadataAndTags(t *testing.T) {
 	resource.Annotations = map[string]string{coreconstants.AllocationAnnotation: "allocation-id"}
 	resource.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: testServerID}
 
-	volumeClient, cli := testClient(t, nil, testNetwork(), resource)
+	volumeClient, cli := testClient(t, testNetwork(), resource)
 	tags := coreapi.TagList{{Name: "environment", Value: "updated"}}
 	description := "updated description"
 
@@ -368,7 +497,7 @@ func TestDeleteV2RejectsAttachedVolumes(t *testing.T) {
 
 			resource := testVolume("attached")
 			test.mutate(resource)
-			volumeClient, cli := testClient(t, nil, resource)
+			volumeClient, cli := testClient(t, resource)
 
 			err := volumeClient.DeleteV2(testContext(t, identityapi.Read, identityapi.Delete), idstest.MustParseVolumeID(testVolumeID))
 			require.True(t, coreerrors.IsForbidden(err))
@@ -381,7 +510,7 @@ func TestDeleteV2RejectsAttachedVolumes(t *testing.T) {
 func TestCreateV2RequiresCreatePermission(t *testing.T) {
 	t.Parallel()
 
-	volumeClient, cli := testClient(t, nil, testNetwork())
+	volumeClient, cli := testClient(t, testNetwork())
 	_, err := volumeClient.CreateV2(testContext(t, identityapi.Read), &openapi.VolumeV2Create{
 		Metadata: coreapi.ResourceWriteMetadata{Name: "data"},
 		Spec: openapi.VolumeV2Spec{
@@ -402,7 +531,7 @@ func TestGetV2RejectsCrossProjectAccess(t *testing.T) {
 
 	resource := testVolume("hidden")
 	resource.Labels[coreconstants.ProjectLabel] = "88888888-8888-4888-a888-888888888888"
-	volumeClient, _ := testClient(t, nil, resource)
+	volumeClient, _ := testClient(t, resource)
 
 	_, err := volumeClient.GetV2(testContext(t, identityapi.Read), idstest.MustParseVolumeID(testVolumeID))
 	require.True(t, coreerrors.IsForbidden(err))
@@ -415,7 +544,7 @@ func TestListV2ExcludesCrossProjectVolumes(t *testing.T) {
 	hidden := testVolume("hidden")
 	hidden.Name = "99999999-9999-4999-a999-999999999999"
 	hidden.Labels[coreconstants.ProjectLabel] = "88888888-8888-4888-a888-888888888888"
-	volumeClient, _ := testClient(t, nil, visible, hidden)
+	volumeClient, _ := testClient(t, visible, hidden)
 
 	result, err := volumeClient.ListV2(testContext(t, identityapi.Read), openapi.GetApiV2VolumesParams{})
 	require.NoError(t, err)
@@ -426,7 +555,7 @@ func TestListV2ExcludesCrossProjectVolumes(t *testing.T) {
 func TestDeleteV2DeletesUnattachedVolume(t *testing.T) {
 	t.Parallel()
 
-	volumeClient, cli := testClient(t, nil, testVolume("available"))
+	volumeClient, cli := testClient(t, testVolume("available"))
 	require.NoError(t, volumeClient.DeleteV2(testContext(t, identityapi.Read, identityapi.Delete), idstest.MustParseVolumeID(testVolumeID)))
 
 	err := cli.Get(t.Context(), client.ObjectKey{Namespace: testNamespace, Name: testVolumeID}, &regionv1.Volume{})
