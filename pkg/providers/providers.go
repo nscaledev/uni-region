@@ -31,6 +31,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 var (
@@ -75,11 +76,11 @@ type Options struct {
 // New creates and synchronously initializes all region providers. Startup-time region
 // discovery and provider construction use initClient so bootstrap reads can happen
 // before a controller manager cache has started, while the returned provider set retains
-// runtimeClient for normal cached operation after startup. The chosen behaviour is to
-// fail on initialization failure, the reasoning is that during upgrade an old version of
-// the service should be running to handle traffic, and we'd rather not have something
-// put into production that is known to be broken. Regions discovered after startup are
-// loaded on demand and then shared for subsequent lookups.
+// runtimeClient for normal cached operation after startup. A region whose provider fails
+// to initialize is logged and skipped rather than failing the call: provider construction
+// authenticates against a remote cloud, so the health of one region's substrate would
+// otherwise decide whether this process runs at all. Skipped regions, like regions
+// discovered after startup, are loaded on demand and then shared for subsequent lookups.
 func New(ctx context.Context, initClient client.Client, runtimeClient client.Client, namespace string, opts Options) (Providers, error) {
 	var regions unikornv1.RegionList
 
@@ -94,7 +95,9 @@ func New(ctx context.Context, initClient client.Client, runtimeClient client.Cli
 	for i := range regions.Items {
 		provider, err := newProvider(ctx, initClient, runtimeClient, &regions.Items[i], opts)
 		if err != nil {
-			return nil, err
+			log.FromContext(ctx).Error(err, "region provider initialization failed, region unavailable until it recovers", "region", regions.Items[i].Name)
+
+			continue
 		}
 
 		cache[regions.Items[i].Name] = provider

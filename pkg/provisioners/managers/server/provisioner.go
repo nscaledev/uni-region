@@ -367,6 +367,13 @@ func (p *Provisioner) deleteFailedProviderServer(ctx context.Context, provider t
 
 		p.server.Status.ProviderCreateRetrying = false
 		p.resetProviderCreateRuntimeStatus()
+		// Reset the provider-create gates only once the failed server is confirmed
+		// gone. While ProviderCreateRetrying is true the reconcile short-circuits
+		// into the delete above and never reaches CreateServer, so the mop-up is
+		// safe on the stale True gates; resetting here gives external services a
+		// single re-satisfy against a cleaned-up server rather than one burned
+		// against the still-dying server.
+		p.server.ProviderCreateGatesReset("region", "ProviderCreateRetry", "provider create will retry")
 		p.recordProviderCreateRetryEvent(
 			ctx,
 			corev1.EventTypeNormal,
@@ -464,6 +471,10 @@ func (p *Provisioner) blockUntilDependenciesReady(ctx context.Context, cli clien
 		if err := p.blockUntilResourceReady(ctx, cli, id, &unikornv1.SecurityGroup{}); err != nil {
 			return err
 		}
+	}
+
+	if !p.server.ProviderCreateGatesReady() {
+		return fmt.Errorf("%w: provider create gates remaining %v", provisioners.ErrYield, p.server.RemainingProviderCreateGates())
 	}
 
 	return nil

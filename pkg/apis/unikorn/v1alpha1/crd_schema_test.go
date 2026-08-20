@@ -30,6 +30,7 @@ import (
 	apixv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	structuralschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
 	celvalidation "k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel"
+	listtypevalidation "k8s.io/apiextensions-apiserver/pkg/apiserver/schema/listtype"
 	apixvalidation "k8s.io/apiextensions-apiserver/pkg/apiserver/validation"
 	kruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -40,6 +41,7 @@ import (
 
 const (
 	fileStorageCRDFile = "region.unikorn-cloud.org_filestorages.yaml"
+	regionCRDFile      = "region.unikorn-cloud.org_regions.yaml"
 	serverCRDFile      = "region.unikorn-cloud.org_servers.yaml"
 	volumeCRDFile      = "region.unikorn-cloud.org_volumes.yaml"
 )
@@ -98,6 +100,11 @@ func (v crdValidator) validatesUnstructured(t *testing.T, obj map[string]any) bo
 	require.NoError(t, err)
 
 	if validator.Validate(obj).HasErrors() {
+		return false
+	}
+
+	listErrors := listtypevalidation.ValidateListSetsAndMaps(field.NewPath("root"), v.structural, obj)
+	if len(listErrors) != 0 {
 		return false
 	}
 

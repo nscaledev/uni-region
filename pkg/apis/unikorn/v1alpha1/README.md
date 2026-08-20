@@ -39,6 +39,11 @@ stored objects rely on for linkage, migration, and operational coordination.
   region. It carries provider type, provider-specific configuration, stored
   visibility inputs, flavor/image/network/volume-class selection rules, and
   helper methods that downstream code actively depends on.
+- `Region.Spec.Openstack.DefaultArchitecture` controls the Region-scoped
+  fallback used when OpenStack flavor or image inventory lacks explicit
+  architecture metadata. CRD admission defaults omission to `x86_64` and
+  accepts only `x86_64` or `aarch64`; per-flavor `cpu.architecture` and the
+  Glance `architecture` property remain authoritative when present.
 - OpenStack `VolumeClass` configuration is Region-scoped inventory metadata. It
   records which provider volume classes are eligible for export and how that
   inventory should be enriched; it does not create a project-owned
@@ -48,7 +53,14 @@ stored objects rely on for linkage, migration, and operational coordination.
   only provider IDs explicitly listed in
   `openstack.blockStorage.volumeClasses.selector.ids` are eligible. Missing
   `volumeClasses` configuration, a missing selector, or nil/empty IDs exports
-  no VolumeClasses.
+  no VolumeClasses. Metadata may independently publish `minimumSizeGiB` and
+  `maximumSizeGiB` as positive whole GiB values. When both are present, the
+  maximum must be greater than or equal to the minimum. Metadata may also carry
+  a `supportedFlavors` selector whose `ids` are a unique typed Region Flavor
+  allowlist. An omitted selector or omitted/empty IDs means the VolumeClass is
+  compatible with every Flavor. Flavor IDs must use canonical lowercase,
+  hyphenated UUID spelling. CRD admission enforces that static UUID shape,
+  uniqueness, and the capacity invariants without provider lookups.
 - Namespaced Kubernetes storage scope and platform tenancy scope are separate
   concerns. These objects are namespaced, but their logical visibility and
   authorization are often organization-, project-, identity-, or region-scoped
@@ -65,6 +77,12 @@ stored objects rely on for linkage, migration, and operational coordination.
   `StatusConditionRead()`, and `StatusConditionWrite()` because this package
   also satisfies generic controller contracts. It should not be described as
   schema-only.
+- `Server.Spec.ProviderCreateGates` is immutable create-time desired state used
+  by the server controller to pause before provider create. Matching
+  `Server.Status.ProviderCreateGates` entries record the condition status,
+  actor, reason, message, and transition time for operator diagnostics. The
+  generic `Server.Status.Conditions` list remains reserved for Region-owned
+  lifecycle conditions.
 - `FileStorage` carries a more explicit observed-state model than the older
   resource types. Attachment-level provisioning state, observed size, usage
   reporting, and per-policy snapshot status are part of the stored
@@ -79,21 +97,24 @@ stored objects rely on for linkage, migration, and operational coordination.
   claim; a nil claim means the volume is available for claiming. `Server` is the
   current supported claim kind. Attachment realization remains outside
   `Volume.Status`, which is conditions-first and also reserves observed size for
-  later controller/provider work. Provider-side volume identity is expected to
-  be rediscovered by stable provider lookup rather than mirrored into status.
+  later observation work. The Volume controller drives provider create/delete,
+  but provider-side volume identity is rediscovered by stable provider lookup
+  rather than mirrored into status.
 - `Server.Spec.Volumes` is the attach-existing-only desired state for block
   storage. Each row names an existing Region `Volume` by ID; inline
   server-created volume templates are deliberately excluded from the first
   implementation. `Server.Status.Volumes` is keyed by the same Volume ID and
   reports per-volume attachment reconciliation state and the observed guest
-  device name for later controller and monitor work. This package only defines
-  the persisted shape; Nova calls, reference placement, and public API projection
-  live in later layers/tickets.
+  device name for later controller and monitor work. The provider layer now
+  supplies a server-owned attach/detach boundary and the OpenStack provider
+  realizes it with Nova, but this package still only owns the persisted shape;
+  reference placement, claim/locking behavior, controller reconciliation, and
+  public API projection live in later layers/tickets.
 - The `Network -> Volume` graph edge is declared as containment for future
   behavior: Network scope propagates to Volume; co-location is implicit; Volume
   holds a reverse deletion-blocking relationship to Network for its lifetime;
-  Network deletion may cascade to Volumes once controller/API behavior exists;
-  Volume status does not propagate upward to Network.
+  Network deletion may cascade to Volumes once dedicated graph-edge
+  reconciliation exists; Volume status does not propagate upward to Network.
 - `FileStorage.Spec.SnapshotPolicies` is an optional inline desired-state list
   keyed by policy `name`. In persisted storage, omitted and empty lists both mean
   no user-managed snapshot policies are desired. Default snapshot protection is

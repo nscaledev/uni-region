@@ -17,22 +17,159 @@ limitations under the License.
 package openstack_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
 	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumetypes"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
+	"github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
+
+func TestCreateVolumeUsesRegionIntentAndMetadata(t *testing.T) {
+	t.Parallel()
+
+	volume := &unikornv1.Volume{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "11111111-1111-1111-1111-111111111111",
+		},
+		Spec: unikornv1.VolumeSpec{
+			VolumeClassID: "fast",
+			Size:          resource.MustParse("20Gi"),
+		},
+	}
+	metadata := map[string]string{
+		"region:volume_id": volume.Name,
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/volumes", r.URL.Path)
+
+		var body map[string]any
+
+		decoder := json.NewDecoder(r.Body)
+		decoder.UseNumber()
+
+		if !assert.NoError(t, decoder.Decode(&body)) {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+
+			return
+		}
+
+		volumeBody, ok := body["volume"].(map[string]any)
+		if !assert.True(t, ok) {
+			http.Error(w, "missing volume body", http.StatusBadRequest)
+
+			return
+		}
+
+		assert.Equal(t, "volume-"+volume.Name, volumeBody["name"])
+		assert.Equal(t, json.Number("20"), volumeBody["size"])
+		assert.Equal(t, volume.Spec.VolumeClassID, volumeBody["volume_type"])
+		assert.Equal(t, map[string]any{
+			"region:volume_id": volume.Name,
+		}, volumeBody["metadata"])
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+
+		fmt.Fprintf(w, `{"volume":{"id":"provider-id","name":"volume-%s"}}`, volume.Name)
+	}))
+	t.Cleanup(srv.Close)
+
+	client := openstack.NewTestBlockStorageClient(srv.URL+"/", nil)
+
+	result, err := client.CreateVolume(t.Context(), volume, metadata)
+	require.NoError(t, err)
+	require.Equal(t, "provider-id", result.ID)
+}
+
+func TestDeleteVolumeUsesProviderID(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodDelete, r.Method)
+		assert.Equal(t, "/volumes/provider-id", r.URL.Path)
+
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(srv.Close)
+
+	client := openstack.NewTestBlockStorageClient(srv.URL+"/", nil)
+
+	require.NoError(t, client.DeleteVolume(t.Context(), "provider-id"))
+}
+
+func TestGetVolumeUsesStableNameAndExactMatch(t *testing.T) {
+	t.Parallel()
+
+	volume := &unikornv1.Volume{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "11111111-1111-1111-1111-111111111111",
+		},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/volumes/detail", r.URL.Path)
+		assert.Equal(t, "volume-"+volume.Name, r.URL.Query().Get("name"))
+
+		w.Header().Set("Content-Type", "application/json")
+
+		fmt.Fprintf(w, `{"volumes":[
+			{"id":"prefix","name":"volume-%s-extra"},
+			{"id":"exact","name":"volume-%s"}
+		]}`, volume.Name, volume.Name)
+	}))
+	t.Cleanup(srv.Close)
+
+	client := openstack.NewTestBlockStorageClient(srv.URL+"/", nil)
+
+	result, err := client.GetVolume(t.Context(), volume)
+	require.NoError(t, err)
+	require.Equal(t, &volumes.Volume{
+		ID:   "exact",
+		Name: "volume-" + volume.Name,
+	}, result)
+}
+
+func TestGetVolumeReturnsResourceNotFound(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		fmt.Fprint(w, `{"volumes":[]}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	client := openstack.NewTestBlockStorageClient(srv.URL+"/", nil)
+	volume := &unikornv1.Volume{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "11111111-1111-1111-1111-111111111111",
+		},
+	}
+
+	result, err := client.GetVolume(t.Context(), volume)
+	require.Nil(t, result)
+	require.ErrorIs(t, err, coreerrors.ErrResourceNotFound)
+}
 
 func TestGetVolumeTypesAppliesSelectorVisibilityAndCache(t *testing.T) {
 	t.Parallel()
@@ -241,6 +378,11 @@ func TestProviderVolumeClassesAppliesFailClosedSelectorAndReusesBlockStorageClie
 func TestConvertVolumeClassesAppliesMetadata(t *testing.T) {
 	t.Parallel()
 
+	supportedFlavorIDs := []regionids.FlavorID{
+		idstest.MustParseFlavorID("11111111-1111-4111-a111-111111111111"),
+		idstest.MustParseFlavorID("22222222-2222-4222-a222-222222222222"),
+	}
+
 	region := &unikornv1.Region{
 		Spec: unikornv1.RegionSpec{
 			Openstack: &unikornv1.RegionOpenstackSpec{
@@ -248,7 +390,10 @@ func TestConvertVolumeClassesAppliesMetadata(t *testing.T) {
 					VolumeClasses: &unikornv1.OpenstackVolumeClassesSpec{
 						Metadata: []unikornv1.VolumeClassMetadata{
 							{
-								ID:    "fast",
+								ID: "fast",
+								SupportedFlavors: &unikornv1.VolumeClassFlavorSelector{
+									IDs: supportedFlavorIDs,
+								},
 								Media: unikornv1.VolumeClassMediaNVMe,
 								Performance: &unikornv1.VolumeClassPerformanceSpec{
 									MaxIOPS:       ptr.To(25000),
@@ -275,10 +420,11 @@ func TestConvertVolumeClassesAppliesMetadata(t *testing.T) {
 
 	require.Equal(t, types.VolumeClassList{
 		{
-			ID:          "fast",
-			Name:        "fast-nvme",
-			Description: "Latency sensitive",
-			Media:       types.VolumeClassMediaNVMe,
+			ID:                 "fast",
+			Name:               "fast-nvme",
+			Description:        "Latency sensitive",
+			SupportedFlavorIDs: supportedFlavorIDs,
+			Media:              types.VolumeClassMediaNVMe,
 			Performance: &types.VolumeClassPerformance{
 				MaxIOPS:       ptr.To(25000),
 				MaxThroughput: ptr.To(500),
@@ -286,4 +432,98 @@ func TestConvertVolumeClassesAppliesMetadata(t *testing.T) {
 			Encrypted: true,
 		},
 	}, out)
+}
+
+func TestConvertVolumeClassesTreatsEmptySupportedFlavorsAsUnrestricted(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		selector *unikornv1.VolumeClassFlavorSelector
+	}{
+		{name: "omitted selector"},
+		{name: "empty selector", selector: &unikornv1.VolumeClassFlavorSelector{}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			region := &unikornv1.Region{
+				Spec: unikornv1.RegionSpec{
+					Openstack: &unikornv1.RegionOpenstackSpec{
+						BlockStorage: &unikornv1.RegionOpenstackBlockStorageSpec{
+							VolumeClasses: &unikornv1.OpenstackVolumeClassesSpec{
+								Metadata: []unikornv1.VolumeClassMetadata{{
+									ID:               "class",
+									SupportedFlavors: tc.selector,
+								}},
+							},
+						},
+					},
+				},
+			}
+
+			out := openstack.ConvertVolumeClasses(region, []volumetypes.VolumeType{{ID: "class"}})
+
+			require.Len(t, out, 1)
+			require.Empty(t, out[0].SupportedFlavorIDs)
+		})
+	}
+}
+
+func TestConvertVolumeClassesAppliesCapacityBoundsFromRegionMetadata(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		minimum *int64
+		maximum *int64
+	}{
+		{
+			name: "absent bounds",
+		},
+		{
+			name:    "minimum only",
+			minimum: ptr.To(int64(10)),
+		},
+		{
+			name:    "maximum only",
+			maximum: ptr.To(int64(2000)),
+		},
+		{
+			name:    "both bounds",
+			minimum: ptr.To(int64(10)),
+			maximum: ptr.To(int64(2000)),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			region := &unikornv1.Region{
+				Spec: unikornv1.RegionSpec{
+					Openstack: &unikornv1.RegionOpenstackSpec{
+						BlockStorage: &unikornv1.RegionOpenstackBlockStorageSpec{
+							VolumeClasses: &unikornv1.OpenstackVolumeClassesSpec{
+								Metadata: []unikornv1.VolumeClassMetadata{
+									{
+										ID:             "class",
+										MinimumSizeGiB: tc.minimum,
+										MaximumSizeGiB: tc.maximum,
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			out := openstack.ConvertVolumeClasses(region, []volumetypes.VolumeType{{ID: "class"}})
+			require.Len(t, out, 1)
+			require.Equal(t, tc.minimum, out[0].MinimumSizeGiB)
+			require.Equal(t, tc.maximum, out[0].MaximumSizeGiB)
+		})
+	}
 }

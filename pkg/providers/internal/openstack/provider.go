@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
 	"net"
 	"net/http"
@@ -33,6 +34,8 @@ import (
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumetypes"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
@@ -375,6 +378,24 @@ func (p *Provider) networkFromServicePrincipal(ctx context.Context, identity *un
 	return client, nil
 }
 
+// blockStorageFromServicePrincipal gets a block storage client scoped to the
+// service principal's project.
+func (p *Provider) blockStorageFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (VolumeInterface, error) {
+	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	region, _ := p.openstack.regionSnapshot()
+
+	client, err := NewBlockStorageClient(ctx, provider, region.Spec.Openstack.BlockStorage)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
 // privilegedNetworkFromServicePrincipal gets a network client scoped to the service principal's
 // project but with "manager" credentials.
 func (p *Provider) privilegedNetworkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
@@ -428,20 +449,33 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	}
 
 	region, _ := p.openstack.regionSnapshot()
+
+	return convertFlavors(resources, region), nil
+}
+
+// openstackDefaultArchitecture resolves the Region-configured fallback while
+// retaining the legacy x86_64 behavior for objects that bypass CRD defaulting.
+func openstackDefaultArchitecture(region *unikornv1.Region) types.Architecture {
+	if region == nil || region.Spec.Openstack == nil || region.Spec.Openstack.DefaultArchitecture == nil {
+		return types.X86_64
+	}
+
+	return types.Architecture(*region.Spec.Openstack.DefaultArchitecture)
+}
+
+func convertFlavors(resources []flavors.Flavor, region *unikornv1.Region) types.FlavorList {
 	result := make(types.FlavorList, len(resources))
+	defaultArchitecture := openstackDefaultArchitecture(region)
 
 	for i := range resources {
 		flavor := &resources[i]
 
-		// API memory is in MiB, disk is in GB. Architecture defaults to
-		// x86_64 when region metadata does not override it below: the API
-		// schema requires an enum value and existing consumers compare
-		// architectures strictly, so an honest "unknown" cannot reach the
-		// wire without coordinated schema and consumer changes.
+		// API memory is in MiB and disk is in GB. Per-flavor metadata below
+		// takes precedence over the Region-level architecture fallback.
 		f := types.Flavor{
 			ID:           flavor.ID,
 			Name:         flavor.Name,
-			Architecture: types.X86_64,
+			Architecture: defaultArchitecture,
 			CPUs:         flavor.VCPUs,
 			Memory:       resource.NewQuantity(int64(flavor.RAM)<<20, resource.BinarySI),
 			Disk:         resource.NewScaledQuantity(int64(flavor.Disk), resource.Giga),
@@ -450,7 +484,7 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 		// Apply any extra metadata to the flavor.
 		//
 		//nolint:nestif
-		if region.Spec.Openstack.Compute != nil && region.Spec.Openstack.Compute.Flavors != nil {
+		if region != nil && region.Spec.Openstack != nil && region.Spec.Openstack.Compute != nil && region.Spec.Openstack.Compute.Flavors != nil {
 			i := slices.IndexFunc(region.Spec.Openstack.Compute.Flavors.Metadata, func(metadata unikornv1.FlavorMetadata) bool {
 				return flavor.ID == metadata.ID
 			})
@@ -486,7 +520,98 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 		result[i] = f
 	}
 
-	return result, nil
+	return result
+}
+
+func (p *Provider) VolumeClasses(ctx context.Context) (types.VolumeClassList, error) {
+	blockStorage, err := p.openstack.blockStorage(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	resources, err := blockStorage.GetVolumeTypes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	region, _ := p.openstack.regionSnapshot()
+
+	return convertVolumeClasses(region, resources), nil
+}
+
+func convertVolumeClasses(region *unikornv1.Region, resources []volumetypes.VolumeType) types.VolumeClassList {
+	var config *unikornv1.OpenstackVolumeClassesSpec
+	if region != nil && region.Spec.Openstack != nil {
+		config = openstackVolumeClassesConfig(region.Spec.Openstack.BlockStorage)
+	}
+
+	result := make(types.VolumeClassList, 0, len(resources))
+
+	for i := range resources {
+		resource := &resources[i]
+
+		class := types.VolumeClass{
+			ID:          resource.ID,
+			Name:        resource.Name,
+			Description: resource.Description,
+		}
+
+		if metadata := volumeClassMetadata(config, resource.ID); metadata != nil {
+			if metadata.SupportedFlavors != nil {
+				class.SupportedFlavorIDs = slices.Clone(metadata.SupportedFlavors.IDs)
+			}
+
+			if metadata.MinimumSizeGiB != nil {
+				class.MinimumSizeGiB = ptr.To(*metadata.MinimumSizeGiB)
+			}
+
+			if metadata.MaximumSizeGiB != nil {
+				class.MaximumSizeGiB = ptr.To(*metadata.MaximumSizeGiB)
+			}
+
+			class.Media = types.VolumeClassMedia(metadata.Media)
+			class.Encrypted = metadata.Encrypted
+
+			class.Performance = convertVolumeClassPerformance(metadata.Performance)
+		}
+
+		result = append(result, class)
+	}
+
+	return result
+}
+
+func volumeClassMetadata(config *unikornv1.OpenstackVolumeClassesSpec, id string) *unikornv1.VolumeClassMetadata {
+	if config == nil {
+		return nil
+	}
+
+	i := slices.IndexFunc(config.Metadata, func(metadata unikornv1.VolumeClassMetadata) bool {
+		return id == metadata.ID
+	})
+	if i < 0 {
+		return nil
+	}
+
+	return &config.Metadata[i]
+}
+
+func convertVolumeClassPerformance(in *unikornv1.VolumeClassPerformanceSpec) *types.VolumeClassPerformance {
+	if in == nil {
+		return nil
+	}
+
+	out := &types.VolumeClassPerformance{}
+
+	if in.MaxIOPS != nil {
+		out.MaxIOPS = ptr.To(*in.MaxIOPS)
+	}
+
+	if in.MaxThroughput != nil {
+		out.MaxThroughput = ptr.To(*in.MaxThroughput)
+	}
+
+	return out
 }
 
 // imageOS extracts the image OS from the image properties.
@@ -568,15 +693,12 @@ func imageStatus(image *images.Image) types.ImageStatus {
 	return status
 }
 
-func imageArchitecture(image *images.Image) types.Architecture {
+func imageArchitecture(image *images.Image, defaultArchitecture types.Architecture) types.Architecture {
 	if v, ok := image.Properties[imageArchitectureProperty].(string); ok && v != "" {
 		return types.Architecture(v)
 	}
 
-	// Default images without the Glance architecture property to x86_64,
-	// matching the flavor default above, so the strict-equality consumers
-	// of the API keep their pre-existing behaviour.
-	return types.X86_64
+	return defaultArchitecture
 }
 
 func imageTags(image *images.Image) map[string]string {
@@ -598,7 +720,7 @@ func imageTags(image *images.Image) map[string]string {
 	return tags
 }
 
-func convertImage(image *images.Image) (*types.Image, error) {
+func convertImage(image *images.Image, defaultArchitecture types.Architecture) (*types.Image, error) {
 	var organizationID *string
 	if temp, _ := image.Properties[organizationIDLabel].(string); temp != "" {
 		organizationID = &temp
@@ -624,7 +746,7 @@ func convertImage(image *images.Image) (*types.Image, error) {
 		OrganizationID: organizationID,
 		Created:        image.CreatedAt,
 		Modified:       image.UpdatedAt,
-		Architecture:   imageArchitecture(image),
+		Architecture:   imageArchitecture(image, defaultArchitecture),
 		SizeGiB:        size,
 		Virtualization: types.ImageVirtualization(virtualization),
 		OS:             imageOS(image),
@@ -730,9 +852,11 @@ func (p *Provider) imageRefresh(ctx context.Context) ([]*types.Image, error) {
 	}
 
 	items := make([]*types.Image, len(resources))
+	region, _ := p.openstack.regionSnapshot()
+	defaultArchitecture := openstackDefaultArchitecture(region)
 
 	for i := range resources {
-		item, err := convertImage(&resources[i])
+		item, err := convertImage(&resources[i], defaultArchitecture)
 		if err != nil {
 			return nil, err
 		}
@@ -883,7 +1007,9 @@ func (p *Provider) CreateImage(ctx context.Context, image *types.Image, uri stri
 	// This seeds the cache from the pre-import Glance response, so callers may observe
 	// an intermediate queued/importing status until the next background refresh
 	// converges on the fully updated image state.
-	syntheticImage, err := convertImage(resource)
+	region, _ := p.openstack.regionSnapshot()
+
+	syntheticImage, err := convertImage(resource, openstackDefaultArchitecture(region))
 	if err != nil {
 		return nil, err
 	}
@@ -1858,6 +1984,117 @@ func (p *Provider) deleteNetwork(ctx context.Context, networking NetworkingInter
 	}
 
 	return nil
+}
+
+func volumeMetadata(identity *unikornv1.Identity, volume *unikornv1.Volume) map[string]string {
+	namespacedSystemMetadata := map[string]string{
+		"region:volume_id":         volume.Name,
+		"identity:organization_id": volume.Labels[coreconstants.OrganizationLabel],
+		"identity:project_id":      volume.Labels[coreconstants.ProjectLabel],
+		"region:region_id":         volume.Labels[constants.RegionLabel],
+		"region:network_id":        volume.Spec.NetworkID,
+		"region:identity_id":       identity.Name,
+	}
+
+	metadata := make(map[string]string, len(volume.Spec.Tags)+len(namespacedSystemMetadata))
+
+	for _, tag := range volume.Spec.Tags {
+		if key, ok := metadataKey(tag.Name); ok {
+			metadata[key] = tag.Value
+		}
+	}
+
+	maps.Copy(metadata, namespacedSystemMetadata)
+
+	return metadata
+}
+
+const (
+	volumeStatusAvailable   = "available"
+	volumeStatusErrorPrefix = "error"
+)
+
+func reconcileVolume(ctx context.Context, blockStorage VolumeInterface, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
+	logger := log.FromContext(ctx)
+
+	openstackVolume, err := blockStorage.GetVolume(ctx, volume)
+	if err == nil {
+		logger.V(1).Info("volume already exists")
+
+		if strings.HasPrefix(openstackVolume.Status, volumeStatusErrorPrefix) {
+			return provisioners.Terminal(unikornv1core.ConditionReasonErrored, "provider volume entered an error state")
+		}
+
+		if openstackVolume.Status != volumeStatusAvailable {
+			return provisioners.ErrYield
+		}
+
+		return nil
+	}
+
+	if !errors.Is(err, coreerrors.ErrResourceNotFound) {
+		return err
+	}
+
+	logger.V(1).Info("creating volume")
+
+	if _, err = blockStorage.CreateVolume(ctx, volume, volumeMetadata(identity, volume)); err != nil {
+		return err
+	}
+
+	return provisioners.ErrYield
+}
+
+func (p *Provider) CreateVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
+	blockStorage, err := p.blockStorageFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	return reconcileVolume(ctx, blockStorage, identity, volume)
+}
+
+func deleteVolume(ctx context.Context, blockStorage VolumeInterface, volume *unikornv1.Volume) error {
+	logger := log.FromContext(ctx)
+
+	openstackVolume, err := blockStorage.GetVolume(ctx, volume)
+	if err != nil {
+		if errors.Is(err, coreerrors.ErrResourceNotFound) {
+			return nil
+		}
+
+		return err
+	}
+
+	logger.V(1).Info("deleting volume")
+
+	if err := blockStorage.DeleteVolume(ctx, openstackVolume.ID); err != nil {
+		if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return err
+		}
+
+		return nil
+	}
+
+	return provisioners.ErrYield
+}
+
+func (p *Provider) DeleteVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
+	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	if !provisioned {
+		return nil
+	}
+
+	blockStorage, err := p.blockStorageFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	return deleteVolume(ctx, blockStorage, volume)
 }
 
 // securityGroupRulePortRange expands a security group port into a start-end range as
@@ -3281,10 +3518,10 @@ func (p *Provider) updateServerStateWithClients(
 	ctx context.Context,
 	identity *unikornv1.Identity,
 	server *unikornv1.Server,
-	compute ComputeInterface,
+	serverClient ServerInterface,
 	baremetalForPhase func(context.Context, *unikornv1.Identity) (BaremetalInterface, error),
 ) error {
-	openstackServer, err := compute.GetServer(ctx, server)
+	openstackServer, err := serverClient.GetServer(ctx, server)
 	if err != nil {
 		return err
 	}
@@ -3433,7 +3670,9 @@ func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Ident
 		return nil, err
 	}
 
-	imageSnapshot, err := convertImage(updatedImage)
+	region, _ := p.openstack.regionSnapshot()
+
+	imageSnapshot, err := convertImage(updatedImage, openstackDefaultArchitecture(region))
 	if err != nil {
 		return nil, err
 	}

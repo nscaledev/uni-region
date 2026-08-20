@@ -32,6 +32,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/remoteconsoles"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/volumeattach"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
@@ -266,6 +267,46 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 	}
 
 	return &result[index], nil
+}
+
+func (c *ComputeClient) GetVolumeAttachment(ctx context.Context, serverID, volumeID string) (*volumeattach.VolumeAttachment, error) {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", serverID),
+		attribute.String("block_storage.volume.id", volumeID),
+	)
+
+	_, span := traceStart(ctx, "GET /compute/v2/servers/{serverID}/os-volume_attachments/{volumeID}", spanAttributes)
+	defer span.End()
+
+	return volumeattach.Get(ctx, c.client, serverID, volumeID).Extract()
+}
+
+func (c *ComputeClient) CreateVolumeAttachment(ctx context.Context, serverID, volumeID string) (*volumeattach.VolumeAttachment, error) {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", serverID),
+		attribute.String("block_storage.volume.id", volumeID),
+	)
+
+	_, span := traceStart(ctx, "POST /compute/v2/servers/{serverID}/os-volume_attachments", spanAttributes)
+	defer span.End()
+
+	opts := volumeattach.CreateOpts{
+		VolumeID: volumeID,
+	}
+
+	return volumeattach.Create(ctx, c.client, serverID, opts).Extract()
+}
+
+func (c *ComputeClient) DeleteVolumeAttachment(ctx context.Context, serverID, volumeID string) error {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", serverID),
+		attribute.String("block_storage.volume.id", volumeID),
+	)
+
+	_, span := traceStart(ctx, "DELETE /compute/v2/servers/{serverID}/os-volume_attachments/{volumeID}", spanAttributes)
+	defer span.End()
+
+	return volumeattach.Delete(ctx, c.client, serverID, volumeID).ExtractErr()
 }
 
 func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Server, keyName string, networks []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {

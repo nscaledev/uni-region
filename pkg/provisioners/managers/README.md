@@ -27,4 +27,5 @@ graph edges they maintain:
 - [network](./network/README.md)
 - [security-group](./security-group/README.md)
 - [load-balancer](./load-balancer/README.md)
+- [volume](./volume/README.md)
 - [server](./server/README.md)

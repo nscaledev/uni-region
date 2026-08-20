@@ -34,6 +34,10 @@ organization: nscaledev
 #       # Defaults to the release namespace if not specified.
 #       namespace: default
 #       name: openstack-admin-secret
+#     # Fallback for flavors without per-ID cpu.architecture metadata and images
+#     # without an explicit Glance architecture property. Explicit metadata wins.
+#     # Defaults to x86_64.
+#     defaultArchitecture: x86_64
 #     # Identity service configuration.
 #     identity:
 #       # Roles to be assigned to application credentials that are used for
@@ -110,6 +114,13 @@ organization: nscaledev
 #         # Add user-facing metadata to selected provider volume classes.
 #         metadata:
 #         - id: cda67b98-331d-4d4f-911e-b1fd64611b0b
+#           # Optional Region Flavor compatibility allowlist using canonical
+#           # lowercase, hyphenated UUIDs. Omit or leave empty when unrestricted.
+#           supportedFlavors:
+#             ids:
+#             - 967b535a-9445-4864-a3f2-518b3a4f21df
+#           minimumSizeGiB: 10
+#           maximumSizeGiB: 2048
 #           media: nvme
 #           performance:
 #             maxIOPS: 25000
@@ -197,6 +208,15 @@ serverController:
       memory: 100Mi
 
 loadBalancerController:
+  # Allow override of the controller image.
+  image: ~
+  # Allows resource limits to be set.
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
+
+volumeController:
   # Allow override of the controller image.
   image: ~
   # Allows resource limits to be set.

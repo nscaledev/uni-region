@@ -567,16 +567,24 @@ func (c *APIClient) UpdateFileStorage(ctx context.Context, filestorageID string,
 }
 
 // DeleteFileStorage deletes a file storage resource.
+// Returns ErrResourceNotFound if the file storage does not exist.
 func (c *APIClient) DeleteFileStorage(ctx context.Context, filestorageID string) error {
 	path := c.endpoints.DeleteFileStorage(filestorageID)
 
 	//nolint:bodyclose // DoRequest handles response body closing internally
-	_, _, err := c.regionClient.DoRequest(ctx, http.MethodDelete, path, nil, http.StatusAccepted)
+	resp, _, err := c.regionClient.DoRequest(ctx, http.MethodDelete, path, nil, 0)
 	if err != nil {
 		return fmt.Errorf("deleting filestorage: %w", err)
 	}
 
-	return nil
+	switch resp.StatusCode {
+	case http.StatusAccepted:
+		return nil
+	case http.StatusNotFound:
+		return fmt.Errorf("filestorage '%s': %w", filestorageID, coreclient.ErrResourceNotFound)
+	default:
+		return fmt.Errorf("deleting filestorage: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
 }
 
 // ListFileStorageClasses lists all available file storage classes for a region.
@@ -1004,6 +1012,24 @@ func (c *APIClient) GetServerSSHKey(ctx context.Context, serverID string) (*regi
 	}
 
 	return &key, nil
+}
+
+// SatisfyServerProviderCreateGate records a configured provider-create gate as satisfied.
+func (c *APIClient) SatisfyServerProviderCreateGate(ctx context.Context, serverID string, request regionopenapi.ServerProviderCreateGateAction) error {
+	path := c.endpoints.SatisfyServerProviderCreateGate(serverID)
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return fmt.Errorf("marshaling provider-create gate request: %w", err)
+	}
+
+	//nolint:bodyclose // DoInternalRegionRequest handles response body closing internally
+	_, _, err = c.DoInternalRegionRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusNoContent)
+	if err != nil {
+		return fmt.Errorf("satisfying provider-create gate: %w", err)
+	}
+
+	return nil
 }
 
 // UpdateServer updates a server. Changing the image ID triggers an in-place rebuild.

@@ -220,6 +220,13 @@ spec:
                                     ID is the immutable provider identifier for the volume class. For OpenStack,
                                     this is the Cinder volume type ID.
                                   type: string
+                                maximumSizeGiB:
+                                  description: |-
+                                    MaximumSizeGiB is the maximum volume capacity accepted by the class, in
+                                    whole GiB.
+                                  format: int64
+                                  minimum: 1
+                                  type: integer
                                 media:
                                   description: Media describes the backing storage
                                     medium.
@@ -228,6 +235,13 @@ spec:
                                   - ssd
                                   - nvme
                                   type: string
+                                minimumSizeGiB:
+                                  description: |-
+                                    MinimumSizeGiB is the minimum volume capacity accepted by the class, in
+                                    whole GiB.
+                                  format: int64
+                                  minimum: 1
+                                  type: integer
                                 performance:
                                   description: Performance describes advertised performance
                                     characteristics.
@@ -245,9 +259,31 @@ spec:
                                       minimum: 1
                                       type: integer
                                   type: object
+                                supportedFlavors:
+                                  description: |-
+                                    SupportedFlavors optionally restricts this volume class to selected Region
+                                    flavors. An undefined selector or nil or empty IDs means no compatibility
+                                    restriction.
+                                  properties:
+                                    ids:
+                                      description: |-
+                                        IDs is an explicit allowlist of Region flavors. If nil or empty, all
+                                        flavors are considered compatible.
+                                      items:
+                                        format: uuid
+                                        pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: set
+                                  type: object
                               required:
                               - id
                               type: object
+                              x-kubernetes-validations:
+                              - message: maximumSizeGiB must be greater than or equal
+                                  to minimumSizeGiB
+                                rule: '!has(self.minimumSizeGiB) || !has(self.maximumSizeGiB)
+                                  || self.maximumSizeGiB >= self.minimumSizeGiB'
                             type: array
                             x-kubernetes-list-map-keys:
                             - id
@@ -416,6 +452,15 @@ spec:
                           scheduling cluster nodes.  Defaults to "soft-anti-affinity".
                         type: string
                     type: object
+                  defaultArchitecture:
+                    default: x86_64
+                    description: |-
+                      DefaultArchitecture is the fallback architecture for flavors and images
+                      that do not define one explicitly.
+                    enum:
+                    - x86_64
+                    - aarch64
+                    type: string
                   endpoint:
                     description: Endpoint is the Keystone URL e.g. https://foo.bar:5000.
                     type: string

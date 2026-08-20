@@ -237,6 +237,12 @@ func (e *Endpoints) GetServerSSHKey(serverID string) string {
 		url.PathEscape(serverID))
 }
 
+// SatisfyServerProviderCreateGate returns the endpoint for satisfying a server provider-create gate.
+func (e *Endpoints) SatisfyServerProviderCreateGate(serverID string) string {
+	return fmt.Sprintf("/api/v2/servers/%s/provider-create-gates",
+		url.PathEscape(serverID))
+}
+
 // UpdateServer returns the endpoint for updating a specific server.
 func (e *Endpoints) UpdateServer(serverID string) string {
 	return fmt.Sprintf("/api/v2/servers/%s",

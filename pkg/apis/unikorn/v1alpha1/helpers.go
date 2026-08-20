@@ -253,6 +253,74 @@ func (r ActiveConditionReason) Message() string {
 	return ""
 }
 
+func (c *Server) ProviderCreateGateConfigured(conditionType string) bool {
+	for _, gate := range c.Spec.ProviderCreateGates {
+		if gate.ConditionType == conditionType {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (c *Server) ProviderCreateGateStatusRead(conditionType string) (*ServerProviderCreateGateStatus, bool) {
+	for i := range c.Status.ProviderCreateGates {
+		if c.Status.ProviderCreateGates[i].ConditionType == conditionType {
+			return &c.Status.ProviderCreateGates[i], true
+		}
+	}
+
+	return nil, false
+}
+
+func (c *Server) ProviderCreateGateStatusWrite(conditionType string, status corev1.ConditionStatus, actor, reason, message string) {
+	now := metav1.Now()
+	gate := ServerProviderCreateGateStatus{
+		ConditionType:      conditionType,
+		Status:             status,
+		LastTransitionTime: now,
+		Actor:              actor,
+		Reason:             reason,
+		Message:            message,
+	}
+
+	existing, ok := c.ProviderCreateGateStatusRead(conditionType)
+	if !ok {
+		c.Status.ProviderCreateGates = append(c.Status.ProviderCreateGates, gate)
+
+		return
+	}
+
+	if existing.Status == status {
+		gate.LastTransitionTime = existing.LastTransitionTime
+	}
+
+	*existing = gate
+}
+
+func (c *Server) RemainingProviderCreateGates() []string {
+	out := make([]string, 0, len(c.Spec.ProviderCreateGates))
+
+	for _, gate := range c.Spec.ProviderCreateGates {
+		status, ok := c.ProviderCreateGateStatusRead(gate.ConditionType)
+		if !ok || status.Status != corev1.ConditionTrue {
+			out = append(out, gate.ConditionType)
+		}
+	}
+
+	return out
+}
+
+func (c *Server) ProviderCreateGatesReady() bool {
+	return len(c.RemainingProviderCreateGates()) == 0
+}
+
+func (c *Server) ProviderCreateGatesReset(actor, reason, message string) {
+	for _, gate := range c.Spec.ProviderCreateGates {
+		c.ProviderCreateGateStatusWrite(gate.ConditionType, corev1.ConditionUnknown, actor, reason, message)
+	}
+}
+
 // ResourceLabels generates a set of labels to uniquely identify the resource
 // if it were to be placed in a single global namespace.
 func (c *Server) ResourceLabels() (labels.Set, error) {
@@ -417,6 +485,11 @@ func (c *Volume) OrganizationID() (identityids.OrganizationID, error) {
 // IDs as typed identifiers.
 func (c *Volume) OrganizationAndProjectID() (identityids.OrganizationID, identityids.ProjectID, error) {
 	return organizationAndProjectIDFromLabels(c.Labels)
+}
+
+// RegionID returns the volume's owning region ID as a typed identifier.
+func (c *Volume) RegionID() (regionids.RegionID, error) {
+	return regionIDFromLabels(c.Labels)
 }
 
 // NetworkID returns the volume's anchoring network ID as a typed identifier.

@@ -188,6 +188,8 @@ type FlavorID uuid.UUID
 func (v FlavorID) String() string                { return uuid.UUID(v).String() }
 func (v FlavorID) MarshalText() ([]byte, error)  { return uuid.UUID(v).MarshalText() }
 func (v *FlavorID) UnmarshalText(b []byte) error { return unmarshalUUID((*uuid.UUID)(v), b) }
+func (v FlavorID) DeepCopy() FlavorID            { return v }
+func (v FlavorID) DeepCopyInto(out *FlavorID)    { *out = v }
 
 // unmarshalUUID is the shared implementation for all UnmarshalText methods.
 func unmarshalUUID(dst *uuid.UUID, text []byte) error {

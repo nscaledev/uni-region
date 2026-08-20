@@ -110,7 +110,7 @@ func EventuallySecurityGroupVisible(securityGroupID string) {
 		Should(Succeed(), "security group should become visible at the API")
 }
 
-func MustCreateSecurityGroup(networkID string) (*regionopenapi.SecurityGroupV2Read, func()) {
+func MustCreateSecurityGroup(networkID string) *regionopenapi.SecurityGroupV2Read {
 	sshPort := 22
 	securityGroupRequest := api.NewSecurityGroupPayload(networkID).
 		WithRules(regionopenapi.SecurityGroupRuleV2List{
@@ -130,15 +130,15 @@ func MustCreateSecurityGroup(networkID string) (*regionopenapi.SecurityGroupV2Re
 	Expect(err).NotTo(HaveOccurred(), "failed to create security group fixture")
 	Expect(securityGroup).NotTo(BeNil())
 
-	cleanup := func() {
-		if err := regionClient.DeleteSecurityGroup(ctx, securityGroup.Metadata.Id); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-			GinkgoWriter.Printf("Warning: cleanup delete security group %s: %v\n", securityGroup.Metadata.Id, err)
-		}
-	}
+	DeferCleanup(func() {
+		err := regionClient.DeleteSecurityGroup(ctx, securityGroup.Metadata.Id)
+		Expect(err == nil || errors.Is(err, coreclient.ErrResourceNotFound)).To(BeTrue(),
+			"cleanup delete security group %s: %v", securityGroup.Metadata.Id, err)
+	})
 
 	EventuallySecurityGroupVisible(securityGroup.Metadata.Id)
 
-	return securityGroup, cleanup
+	return securityGroup
 }
 
 func buildHourlySnapshotPolicy() regionopenapi.StorageSnapshotPolicyListV2Spec {
@@ -155,9 +155,8 @@ func buildHourlySnapshotPolicy() regionopenapi.StorageSnapshotPolicyListV2Spec {
 
 // MustProvisionFileStorage creates NFS file storage attached to networkID, waits for a
 // mountable attachment, and — when snapshotPolicies is set — waits for the snapshot
-// policy to be provisioned. It returns the storage, its attachment, and a cleanup func
-// the caller should register (e.g. DeferCleanup(cleanup)).
-func MustProvisionFileStorage(storageClassID, networkID string, snapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec) (*regionopenapi.StorageV2Read, regionopenapi.StorageAttachmentV2Status, func()) {
+// policy to be provisioned. Cleanup is registered immediately after creation.
+func MustProvisionFileStorage(storageClassID, networkID string, snapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec) (*regionopenapi.StorageV2Read, regionopenapi.StorageAttachmentV2Status) {
 	request := api.NewFileStoragePayload(config.OrgID, config.ProjectID, config.RegionID, storageClassID, networkID).
 		WithSizeGiB(storageSizeGiB).
 		WithSnapshotPolicies(snapshotPolicies).
@@ -167,14 +166,17 @@ func MustProvisionFileStorage(storageClassID, networkID string, snapshotPolicies
 	Expect(err).NotTo(HaveOccurred(), "failed to create file storage fixture")
 	Expect(storage).NotTo(BeNil())
 
-	cleanup := func() {
-		if err := regionClient.DeleteFileStorage(ctx, storage.Metadata.Id); err != nil {
-			GinkgoWriter.Printf("Warning: cleanup delete file storage %s: %v\n", storage.Metadata.Id, err)
-			return
+	DeferCleanup(func() {
+		err := regionClient.DeleteFileStorage(ctx, storage.Metadata.Id)
+		switch {
+		case err == nil:
+			api.WaitForFileStorageGone(regionClient, ctx, storage.Metadata.Id)
+		case errors.Is(err, coreclient.ErrResourceNotFound):
+			// Already gone; nothing to wait for.
+		default:
+			Expect(err).NotTo(HaveOccurred(), "cleanup delete file storage %s", storage.Metadata.Id)
 		}
-
-		api.WaitForFileStorageGone(regionClient, ctx, storage.Metadata.Id)
-	}
+	})
 
 	var attachment regionopenapi.StorageAttachmentV2Status
 
@@ -206,7 +208,7 @@ func MustProvisionFileStorage(storageClassID, networkID string, snapshotPolicies
 		EventuallyProvisionSnapshotPolicy(storage.Metadata.Id)
 	}
 
-	return storage, attachment, cleanup
+	return storage, attachment
 }
 
 func EventuallyProvisionSnapshotPolicy(storageID string) {
@@ -232,9 +234,9 @@ func EventuallyProvisionSnapshotPolicy(storageID string) {
 }
 
 // MustProvisionServer creates a server on the network with the given security group and
-// waits until it is running with a public IP for SSH. It returns the server and a cleanup
-// func the caller should register (e.g. DeferCleanup(cleanup)).
-func MustProvisionServer(networkID, securityGroupID string) (*regionopenapi.ServerV2Read, func()) {
+// waits until it is running with a public IP for SSH. Cleanup is registered
+// immediately after creation.
+func MustProvisionServer(networkID, securityGroupID string) *regionopenapi.ServerV2Read {
 	securityGroups := regionopenapi.ServerV2SecurityGroupIDList{idstest.MustParseSecurityGroupID(securityGroupID)}
 	request := api.NewServerPayload(networkID, config.ServerFlavorID, config.ServerImageID).
 		WithNetworking(&regionopenapi.ServerV2Networking{
@@ -244,6 +246,7 @@ func MustProvisionServer(networkID, securityGroupID string) (*regionopenapi.Serv
 		Build()
 
 	created, cleanup := api.MustCreateServer(regionClient, ctx, request)
+	DeferCleanup(cleanup)
 
 	var server *regionopenapi.ServerV2Read
 
@@ -260,7 +263,7 @@ func MustProvisionServer(networkID, securityGroupID string) (*regionopenapi.Serv
 		WithPolling(15*time.Second).
 		Should(Succeed(), "server should become running and reachable by public IP")
 
-	return server, cleanup
+	return server
 }
 
 func EventuallyDialSSHConn(ctx context.Context, host, privateKey string) *ssh.Client {
@@ -403,18 +406,14 @@ func EventuallyProvisionMountedFilesystem(snapshotPolicies *regionopenapi.Storag
 
 	By("provisioning a network and an SSH-ingress security group")
 	networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-	network, cleanupNetwork := api.MustProvisionNetwork(regionClient, ctx, networkReq)
-	DeferCleanup(cleanupNetwork)
-	securityGroup, cleanupSecurityGroup := MustCreateSecurityGroup(network.Metadata.Id)
-	DeferCleanup(cleanupSecurityGroup)
+	network := api.MustProvisionNetwork(regionClient, ctx, networkReq)
+	securityGroup := MustCreateSecurityGroup(network.Metadata.Id)
 
 	By("creating the NFS file storage and waiting for a mountable attachment")
-	storage, attachment, cleanupStorage := MustProvisionFileStorage(storageClassID, network.Metadata.Id, snapshotPolicies)
-	DeferCleanup(cleanupStorage)
+	storage, attachment := MustProvisionFileStorage(storageClassID, network.Metadata.Id, snapshotPolicies)
 
 	By("provisioning a server and waiting for it to run with a public IP")
-	server, cleanupServer := MustProvisionServer(network.Metadata.Id, securityGroup.Metadata.Id)
-	DeferCleanup(cleanupServer)
+	server := MustProvisionServer(network.Metadata.Id, securityGroup.Metadata.Id)
 
 	By("retrieving the server's generated SSH key")
 	key, err := regionClient.GetServerSSHKey(ctx, server.Metadata.Id)

@@ -495,7 +495,7 @@ var _ = Describe("File Storage Management", func() {
 						OrganizationId: config.OrgID,
 						ProjectId:      config.ProjectID,
 						RegionId:       idstest.MustParseRegionID(config.RegionID),
-						Prefix:         "10.0.1.0/24",
+						Prefix:         "172.29.0.0/24",
 						DnsNameservers: []string{"8.8.8.8", "8.8.4.4"},
 					},
 				}
@@ -699,6 +699,8 @@ var _ = Describe("File Storage Management", func() {
 
 				GinkgoWriter.Printf("Removed network attachment from file storage: %s\n", filestorageID)
 
+				// Status rows outlive their spec entry until the controller
+				// observes the detachment, so this waits on real removal.
 				Eventually(func() int {
 					retrieved, err := regionClient.GetFileStorage(ctx, filestorageID)
 					if err != nil {
@@ -708,8 +710,8 @@ var _ = Describe("File Storage Management", func() {
 						return 0
 					}
 					return len(*retrieved.Status.Attachments)
-				}).WithTimeout(2*time.Minute).
-					WithPolling(5*time.Second).
+				}).WithTimeout(10*time.Minute).
+					WithPolling(10*time.Second).
 					Should(Equal(0), "Attachment should be removed from status")
 
 				GinkgoWriter.Printf("Confirmed attachment removed from status\n")

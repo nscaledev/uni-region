@@ -157,16 +157,20 @@ func (p *Provider) Flavors(_ context.Context) (types.FlavorList, error) {
 func (p *Provider) VolumeClasses(_ context.Context) (types.VolumeClassList, error) {
 	return types.VolumeClassList{
 		{
-			ID:          "33333333-3333-3333-3333-333333333333",
-			Name:        "sim-standard-volume",
-			Description: "Simulated SSD block storage",
-			Media:       types.VolumeClassMediaSSD,
+			ID:             "33333333-3333-3333-3333-333333333333",
+			Name:           "sim-standard-volume",
+			Description:    "Simulated SSD block storage",
+			MinimumSizeGiB: ptr(int64(1)),
+			MaximumSizeGiB: ptr(int64(16384)),
+			Media:          types.VolumeClassMediaSSD,
 		},
 		{
-			ID:          "44444444-4444-4444-4444-444444444444",
-			Name:        "sim-fast-volume",
-			Description: "Simulated NVMe block storage",
-			Media:       types.VolumeClassMediaNVMe,
+			ID:             "44444444-4444-4444-4444-444444444444",
+			Name:           "sim-fast-volume",
+			Description:    "Simulated NVMe block storage",
+			MinimumSizeGiB: ptr(int64(10)),
+			MaximumSizeGiB: ptr(int64(2048)),
+			Media:          types.VolumeClassMediaNVMe,
 			Performance: &types.VolumeClassPerformance{
 				MaxIOPS:       ptr(25000),
 				MaxThroughput: ptr(500),
@@ -465,8 +469,24 @@ func (p *Provider) DeleteLoadBalancer(_ context.Context, _ *unikornv1.Identity, 
 	return nil
 }
 
+func (p *Provider) CreateVolume(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Volume) error {
+	return unsupported("CreateVolume")
+}
+
+func (p *Provider) DeleteVolume(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Volume) error {
+	return nil
+}
+
 func (p *Provider) CreateServer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ *types.ServerCreateOptions) error {
 	return unsupported("CreateServer")
+}
+
+func (p *Provider) AttachVolume(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ *unikornv1.Volume) (*types.ServerVolumeAttachment, error) {
+	return nil, unsupported("AttachVolume")
+}
+
+func (p *Provider) DetachVolume(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ *unikornv1.Volume) error {
+	return unsupported("DetachVolume")
 }
 
 func (p *Provider) RebootServer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ bool) error {

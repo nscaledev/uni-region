@@ -119,6 +119,13 @@ const (
 	StorageSnapshotScheduleIntervalV2Weekly  StorageSnapshotScheduleIntervalV2 = "weekly"
 )
 
+// Defines values for VolumeClassV2Media.
+const (
+	VolumeClassV2MediaHdd  VolumeClassV2Media = "hdd"
+	VolumeClassV2MediaNvme VolumeClassV2Media = "nvme"
+	VolumeClassV2MediaSsd  VolumeClassV2Media = "ssd"
+)
+
 // Defines values for ImageScopeQueryParameter.
 const (
 	ImageScopeQueryParameterAvailable ImageScopeQueryParameter = "available"
@@ -1031,6 +1038,30 @@ type ServerNetworkAllowedAddressPairList = []ServerNetworkAllowedAddressPair
 // ServerNetworkList A list of networks.
 type ServerNetworkList = []ServerNetwork
 
+// ServerProviderCreateGate A gate that must be satisfied before provider create starts.
+type ServerProviderCreateGate struct {
+	// ConditionType A provider-create gate condition type.
+	ConditionType ServerProviderCreateGateType `json:"conditionType"`
+}
+
+// ServerProviderCreateGateAction Request to satisfy a configured provider-create gate.
+type ServerProviderCreateGateAction struct {
+	// ConditionType A provider-create gate condition type.
+	ConditionType ServerProviderCreateGateType `json:"conditionType"`
+
+	// Message Human-readable details for operators.
+	Message string `json:"message"`
+
+	// Reason Machine-readable reason for satisfying the gate.
+	Reason string `json:"reason"`
+}
+
+// ServerProviderCreateGateType A provider-create gate condition type.
+type ServerProviderCreateGateType = string
+
+// ServerProviderCreateGates Provider-create gates requested at server creation time.
+type ServerProviderCreateGates = []ServerProviderCreateGate
+
 // ServerPublicIPAllocation The server's public IP allocation.
 type ServerPublicIPAllocation struct {
 	// Enabled Whether to allocate a public IP.
@@ -1048,6 +1079,9 @@ type ServerRead struct {
 	// Status A server's status.
 	Status ServerStatus `json:"status"`
 }
+
+// ServerRemainingProviderCreateGates Configured provider-create gates that are not currently satisfied.
+type ServerRemainingProviderCreateGates = []ServerProviderCreateGateType
 
 // ServerSecurityGroup A security group.
 type ServerSecurityGroup struct {
@@ -1126,6 +1160,9 @@ type ServerV2CreateSpec struct {
 
 	// Networking A server's network configuration.
 	Networking *ServerV2Networking `json:"networking,omitempty"`
+
+	// ProviderCreateGates Provider-create gates requested at server creation time.
+	ProviderCreateGates *ServerProviderCreateGates `json:"providerCreateGates,omitempty"`
 
 	// SshCertificateAuthorityId The SSH certificate authority used to bootstrap login trust when the server is created.
 	SshCertificateAuthorityId *SshCertificateAuthorityID `json:"sshCertificateAuthorityId,omitempty"`
@@ -1221,6 +1258,9 @@ type ServerV2Status struct {
 
 	// RegionId The region the server belongs to.
 	RegionId RegionId `json:"regionId"`
+
+	// RemainingProviderCreateGates Configured provider-create gates that are not currently satisfied.
+	RemainingProviderCreateGates *ServerRemainingProviderCreateGates `json:"remainingProviderCreateGates,omitempty"`
 
 	// SshCertificateAuthorityId The SSH certificate authority configured when the server was created.
 	SshCertificateAuthorityId *SshCertificateAuthorityID `json:"sshCertificateAuthorityId,omitempty"`
@@ -1322,7 +1362,10 @@ type SshKey struct {
 	PrivateKey string `json:"privateKey"`
 }
 
-// StorageAttachmentListV2Status Describes the network attachments for storage
+// StorageAttachmentListV2Status Describes the network attachments for storage. This is the union of desired and
+// observed attachments, so it may contain networks that are absent from
+// spec.attachments.networkIds but are still attached pending removal. It is not
+// index-aligned with spec.attachments.networkIds.
 type StorageAttachmentListV2Status = []StorageAttachmentV2Status
 
 // StorageAttachmentV2Spec Describes the network attachment for storage
@@ -1517,7 +1560,10 @@ type StorageV2Spec struct {
 
 // StorageV2Status Read only status about storage
 type StorageV2Status struct {
-	// Attachments Describes the network attachments for storage
+	// Attachments Describes the network attachments for storage. This is the union of desired and
+	// observed attachments, so it may contain networks that are absent from
+	// spec.attachments.networkIds but are still attached pending removal. It is not
+	// index-aligned with spec.attachments.networkIds.
 	Attachments *StorageAttachmentListV2Status `json:"attachments,omitempty"`
 
 	// RegionId The region an identity is provisioned in.
@@ -1541,6 +1587,110 @@ type StorageV2Update struct {
 	// Spec A storage's specification.
 	Spec StorageV2Spec `json:"spec"`
 }
+
+// VolumeClassListV2Read A list of provider-neutral block-storage volume classes.
+type VolumeClassListV2Read = []VolumeClassV2Read
+
+// VolumeClassV2Media The physical storage medium backing a volume class.
+type VolumeClassV2Media string
+
+// VolumeClassV2Performance Advertised performance caps; these are not guaranteed reservations.
+type VolumeClassV2Performance struct {
+	// MaxIOPS Advertised maximum input/output operations per second.
+	MaxIOPS *int `json:"maxIOPS,omitempty"`
+
+	// MaxThroughputMiBps Advertised maximum throughput in mebibytes per second.
+	MaxThroughputMiBps *int `json:"maxThroughputMiBps,omitempty"`
+}
+
+// VolumeClassV2Read A provider-neutral block-storage volume class available in a Region.
+type VolumeClassV2Read struct {
+	// Metadata This metadata is for resources that just exist, and don't require
+	// any provisioning and health status, but benefit from a standardized
+	// metadata format.
+	Metadata externalRef0.StaticResourceMetadata `json:"metadata"`
+
+	// Spec Provider-neutral capabilities advertised by a block-storage volume class.
+	Spec VolumeClassV2Spec `json:"spec"`
+}
+
+// VolumeClassV2Spec Provider-neutral capabilities advertised by a block-storage volume class.
+type VolumeClassV2Spec struct {
+	// Encrypted Whether volumes created from this class are encrypted at rest by the provider.
+	Encrypted bool `json:"encrypted"`
+
+	// MaximumSizeGiB Operator-configured maximum volume capacity accepted by this class, in whole GiB.
+	MaximumSizeGiB *int64 `json:"maximumSizeGiB,omitempty"`
+
+	// Media The physical storage medium backing a volume class.
+	Media *VolumeClassV2Media `json:"media,omitempty"`
+
+	// MinimumSizeGiB Operator-configured minimum volume capacity accepted by this class, in whole GiB.
+	MinimumSizeGiB *int64 `json:"minimumSizeGiB,omitempty"`
+
+	// Performance Advertised performance caps; these are not guaranteed reservations.
+	Performance *VolumeClassV2Performance `json:"performance,omitempty"`
+
+	// RegionId The Region that owns this volume class inventory entry.
+	RegionId RegionId `json:"regionId"`
+
+	// SupportedFlavorIds Optional allowlist of Region flavors compatible with this volume class. Omitted or empty means no compatibility restriction.
+	SupportedFlavorIds *[]FlavorId `json:"supportedFlavorIds,omitempty"`
+}
+
+// VolumeId A volume ID.
+type VolumeId = regionids.VolumeID
+
+// VolumeV2Create A volume creation request.
+type VolumeV2Create struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A volume's immutable desired Network anchor and capacity.
+	Spec VolumeV2Spec `json:"spec"`
+}
+
+// VolumeV2Read A block storage volume.
+type VolumeV2Read struct {
+	// Metadata Metadata required by project scoped resource reads.
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+
+	// Spec A volume's immutable desired Network anchor and capacity.
+	Spec VolumeV2Spec `json:"spec"`
+
+	// Status Provider-observed volume state.
+	Status VolumeV2Status `json:"status"`
+}
+
+// VolumeV2Spec A volume's immutable desired Network anchor and capacity.
+type VolumeV2Spec struct {
+	// NetworkId The Network that determines the volume's Region and project association.
+	NetworkId NetworkId `json:"networkId"`
+
+	// SizeGiB The requested volume capacity in whole GiB.
+	SizeGiB int64 `json:"sizeGiB"`
+
+	// VolumeClassId The provider-neutral VolumeClass used to provision the volume.
+	VolumeClassId string `json:"volumeClassId"`
+}
+
+// VolumeV2Status Provider-observed volume state.
+type VolumeV2Status struct {
+	// RegionId The Region in which the volume is provisioned.
+	RegionId RegionId `json:"regionId"`
+
+	// SizeGiB The provider-observed volume capacity in whole GiB.
+	SizeGiB *int64 `json:"sizeGiB,omitempty"`
+}
+
+// VolumeV2Update A volume metadata update request. Network, VolumeClass, and capacity are immutable.
+type VolumeV2Update struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+}
+
+// VolumesV2Read A list of volumes.
+type VolumesV2Read = []VolumeV2Read
 
 // FilestorageIDParameter A file storage ID.
 type FilestorageIDParameter = FileStorageId
@@ -1598,6 +1748,9 @@ type ServerIDParameter = ServerId
 
 // SshCertificateAuthorityIDParameter An SSH certificate authority ID.
 type SshCertificateAuthorityIDParameter = SshCertificateAuthorityId
+
+// VolumeIDParameter A volume ID.
+type VolumeIDParameter = VolumeId
 
 // ConsoleOutputResponse Console output
 type ConsoleOutputResponse = ConsoleOutput
@@ -1689,6 +1842,15 @@ type StorageListV2Response = StorageV2List
 // StorageV2Response A storage read only group.
 type StorageV2Response = StorageV2Read
 
+// VolumeClassListV2Response A list of provider-neutral block-storage volume classes.
+type VolumeClassListV2Response = VolumeClassListV2Read
+
+// VolumeV2Response A block storage volume.
+type VolumeV2Response = VolumeV2Read
+
+// VolumesV2Response A list of volumes.
+type VolumesV2Response = VolumesV2Read
+
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
 
@@ -1719,6 +1881,9 @@ type SecurityGroupV2CreateRequest = SecurityGroupV2Create
 // SecurityGroupV2UpdateRequest A security group request.
 type SecurityGroupV2UpdateRequest = SecurityGroupV2Update
 
+// ServerProviderCreateGateRequest Request to satisfy a configured provider-create gate.
+type ServerProviderCreateGateRequest = ServerProviderCreateGateAction
+
 // ServerRequest A server request.
 type ServerRequest = ServerWrite
 
@@ -1739,6 +1904,12 @@ type StorageV2CreateRequest = StorageV2Create
 
 // StorageV2UpdateRequest A storage update request. Omitted spec.defaultSnapshotProtectionEnabled preserves the current Default Snapshot Protection setting, and explicit null is invalid. Omitted spec.snapshotPolicies preserves existing desired user-managed Snapshot Policies, an empty list clears them, and a non-empty list replaces the full list.
 type StorageV2UpdateRequest = StorageV2Update
+
+// VolumeV2CreateRequest A volume creation request.
+type VolumeV2CreateRequest = VolumeV2Create
+
+// VolumeV2UpdateRequest A volume metadata update request. Network, VolumeClass, and capacity are immutable.
+type VolumeV2UpdateRequest = VolumeV2Update
 
 // GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams defines parameters for GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutput.
 type GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams struct {
@@ -1889,6 +2060,31 @@ type GetApiV2SshcertificateauthoritiesParams struct {
 	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
 }
 
+// GetApiV2VolumeclassesParams defines parameters for GetApiV2Volumeclasses.
+type GetApiV2VolumeclassesParams struct {
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+}
+
+// GetApiV2VolumesParams defines parameters for GetApiV2Volumes.
+type GetApiV2VolumesParams struct {
+	// Tag A set of tags to match against resources in the form "name=value",
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+
+	// OrganizationID Allows resources to be filtered by organization.
+	OrganizationID *OrganizationIDQueryParameter `form:"organizationID,omitempty" json:"organizationID,omitempty"`
+
+	// ProjectID Allows resources to be filtered by project.
+	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+
+	// NetworkID Allows resources to be filtered by network.
+	NetworkID *NetworkIDQueryParameter `form:"networkID,omitempty" json:"networkID,omitempty"`
+}
+
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody = IdentityWrite
 
@@ -1940,8 +2136,17 @@ type PostApiV2ServersJSONRequestBody = ServerV2Create
 // PutApiV2ServersServerIDJSONRequestBody defines body for PutApiV2ServersServerID for application/json ContentType.
 type PutApiV2ServersServerIDJSONRequestBody = ServerV2Update
 
+// PostApiV2ServersServerIDProviderCreateGatesJSONRequestBody defines body for PostApiV2ServersServerIDProviderCreateGates for application/json ContentType.
+type PostApiV2ServersServerIDProviderCreateGatesJSONRequestBody = ServerProviderCreateGateAction
+
 // PostApiV2ServersServerIDSnapshotJSONRequestBody defines body for PostApiV2ServersServerIDSnapshot for application/json ContentType.
 type PostApiV2ServersServerIDSnapshotJSONRequestBody = SnapshotCreate
 
 // PostApiV2SshcertificateauthoritiesJSONRequestBody defines body for PostApiV2Sshcertificateauthorities for application/json ContentType.
 type PostApiV2SshcertificateauthoritiesJSONRequestBody = SshCertificateAuthorityV2Create
+
+// PostApiV2VolumesJSONRequestBody defines body for PostApiV2Volumes for application/json ContentType.
+type PostApiV2VolumesJSONRequestBody = VolumeV2Create
+
+// PutApiV2VolumesVolumeIDJSONRequestBody defines body for PutApiV2VolumesVolumeID for application/json ContentType.
+type PutApiV2VolumesVolumeIDJSONRequestBody = VolumeV2Update

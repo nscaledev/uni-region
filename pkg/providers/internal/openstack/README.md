@@ -254,13 +254,50 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   re-find cloud-side resources. This is a convention-heavy contract, not magic:
   - identity-scoped resources use fixed generated names
   - network lookups rely on deterministic names
+  - Cinder volumes use `volume-{Region Volume UUID}` inside the service
+    principal's project; create, delete, attach, and detach rediscover that
+    exact name
   - server metadata is written deliberately as both a control-plane lookup aid
     and an in-guest linkage surface exposed through the metadata service
   - legacy camelCase server metadata keys remain frozen for backwards
     compatibility while newer namespaced keys provide the upgrade path
+- Cinder Volume create/delete is a project-scoped lifecycle slice:
+  - the Region Volume controller resolves the full cloud provider and drives
+    its Volume capability after the service-principal Identity is ready
+  - the native Region `Volume` CRD supplies the requested size and
+    `VolumeClassID`, which becomes the Cinder volume type
+  - create lists by the stable generated name and exact-matches the result
+    before submitting a create, so controller retries adopt an existing volume
+    rather than duplicating it
+  - an accepted Cinder create is partial progress rather than success: the
+    provider yields after submission and on subsequent rediscovery until the
+    volume reports `available`; all unrecognized non-error states also yield so
+    an unfamiliar provider state cannot be mistaken for convergence
+  - a Cinder status beginning with `error` returns a typed terminal
+    `Available=False`, `Reason=Errored` result with the user-safe message
+    `provider volume entered an error state`; provider IDs, scheduler failures,
+    host details, and other raw Cinder diagnostics remain operator-only
+  - user tags are translated with the package's normal namespaced metadata
+    convention; namespaced system linkage keys are written last so user input
+    cannot override identity, organization, project, region, network, or Volume
+    IDs; Volume metadata does not emit the legacy camelCase compatibility keys
+    retained by older resource types
+  - delete uses the same rediscovery path, treats a missing Cinder volume as
+    success, yields after Cinder accepts an asynchronous delete until a later
+    rediscovery confirms absence, and treats an absent or not-yet-project-backed
+    `OpenstackIdentity` as proof that no provider volume could have been
+    created; this lets controller deletion delegate unconditionally before
+    releasing any Identity allocation
+  - general observed size/status mapping and VolumeClass inventory are outside
+    this lifecycle slice; the narrow status classification above exists only to
+    determine create convergence, while Nova attach/detach is the separate
+    server-owned provider slice described below
 - Flavor export is a hybrid model: OpenStack discovers the flavor inventory, but
   region configuration can enrich or override user-facing flavor metadata such
-  as architecture, baremetal status, and GPU semantics. The baremetal flag is
+  as architecture, baremetal status, and GPU semantics. Architecture resolves
+  from per-flavor `cpu.architecture`, then `openstack.defaultArchitecture`,
+  then the legacy `x86_64` fallback for objects that bypass CRD defaulting. The
+  baremetal flag is
   also operationally meaningful for live lifecycle (`Active` condition) reporting:
   a Nova `BUILD` server with a baremetal flavor is disambiguated through Ironic so the API
   can distinguish `Queued` (waiting on hardware) from `Building` (provider
@@ -271,28 +308,74 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   only Cinder volume type IDs explicitly listed there are eligible for export.
   Missing `volumeClasses` configuration, a missing selector, or nil/empty IDs
   exports no VolumeClasses. Selected classes can be enriched with user-facing
-  metadata such as media, maximum performance caps, and encryption signals. The
-  provider discovers Cinder volume types and converts the selected/enriched
-  result into provider-neutral `VolumeClass` values. Maximum performance
-  metadata records caps rather than guaranteed reservations. `VolumeClass` is
-  Region-scoped inventory configuration, not a project-owned resource or
-  lifecycle object. The block-storage service client is cached with the other
-  OpenStack service clients so Cinder volume-type inventory cache survives
-  repeated provider calls and is refreshed only when Region configuration or
-  credentials change. Production Region CRs must contain their curated IDs
-  before this fail-closed behavior is rolled out.
+  metadata such as optional minimum/maximum capacity bounds, a
+  `supportedFlavors` selector, media, maximum performance caps, and encryption
+  signals. Omitted selectors and omitted or empty selector IDs mean unrestricted
+  compatibility; the provider resolves this operator-authored selector to the
+  neutral Flavor ID allowlist and does not infer it from Cinder volume types.
+  Capacity bounds are
+  operator-authored positive whole GiB values; either may be omitted, and when
+  both are present the maximum must be at least the minimum. The provider
+  discovers Cinder volume types and combines them with this Region-authored
+  metadata into provider-neutral `VolumeClass` values. It does not discover
+  capacity bounds from Cinder. Maximum performance metadata records caps rather
+  than guaranteed reservations. `VolumeClass` is Region-scoped inventory
+  configuration, not a project-owned resource or lifecycle object. The
+  block-storage service client is cached with the other OpenStack service
+  clients so Cinder volume-type inventory cache survives repeated provider
+  calls and is refreshed only when Region configuration or credentials change.
+  Production Region CRs must contain their curated IDs before this fail-closed
+  behavior is rolled out.
+- Existing-volume server attachments are a separate, project-scoped write path
+  from Region-scoped `VolumeClass` inventory. The provider creates ephemeral
+  compute and block-storage clients from the service principal, rediscovers the
+  Nova server and detailed Cinder volume, and uses Cinder's attachment rows as
+  the normal-path observation before calling Nova's volume-attachment
+  create/delete API. Cinder volume lifecycle observation is not part of this
+  slice. The Cinder name filter is treated as fuzzy and is post-filtered against
+  the exact stable name `volume-{Volume.Name}`; duplicate exact matches fail
+  closed with `ErrConsistency`. Only the optional guest device name crosses the
+  provider-neutral boundary; Nova and Cinder IDs and Gophercloud objects remain
+  internal.
+
+  Attachment behavior is deliberately asymmetric:
+  - attach requires both the server and volume; either missing resource maps to
+    `ErrResourceNotFound`
+  - a Cinder attachment already present on the requested server is successful
+    and returns its observed device without a Nova read
+  - an attachment to any other server maps to `ErrConflict`; Region does not
+    support multi-attach even when the Cinder volume is multiattach-capable
+  - when Cinder reports no attachment, attach calls Nova create directly; a
+    create `409 Conflict` is followed by one Nova attachment read so concurrent
+    creation of the same desired attachment becomes success, while an
+    unresolved conflict maps to `ErrConflict`
+  - detach calls Nova delete only when Cinder reports an attachment to the
+    requested server; a missing server, volume, requested-server attachment, or
+    Nova delete `404` is success because detached state already holds, including
+    when the volume remains attached only to another server
+  - a Nova delete `409 Conflict` maps to `ErrConflict`; other provider failures
+    are preserved
+  - detach also no-ops when the backing OpenStack identity was never realized,
+    matching the provider's other teardown contracts
+
+  Attachment intent and observed rows remain on `Server.Spec.Volumes` and
+  `Server.Status.Volumes`; this provider slice does not mirror attachments into
+  `Volume.Status`, claim volumes, or reconcile server controllers.
 - Image handling is a first-class contract surface here:
   - OpenStack image properties are validated against a schema
   - public images can additionally be signature-verified
   - image properties are translated into provider-neutral OS, package, GPU,
     ownership, virtualization, and tag metadata
+  - an explicit Glance `architecture` property wins; otherwise image conversion
+    uses `openstack.defaultArchitecture`, with the same defensive legacy
+    `x86_64` fallback as flavor conversion
   - an optional refresh-ahead cache exists because raw image API latency is too
     expensive to expose directly to every caller
 - Quota and role behaviour are not purely discovered from OpenStack defaults.
   The package assumes and applies a managed-role model, including default role
   names such as `manager`, `member`, and `load-balancer_member`, unless region
   configuration overrides parts of that behaviour.
-- Network, security group, and server resources are re-found in OpenStack by
+- Network, security group, server, and Volume resources are re-found in OpenStack by
   deterministic lookup rather than relying on mirrored `OpenstackNetwork`,
   `OpenstackSecurityGroup`, or `OpenstackServer` CRDs as authoritative state.
 - Baremetal server progress uses Ironic as an additional provider truth source
@@ -331,7 +414,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   `Active` state so API responses still see a coherent live signal rather than
   failing the monitor path.
 - Some OpenStack list APIs are not safe to treat as exact lookup, notably
-  server, network, and Octavia load-balancer `name` filters:
+  server, network, Cinder volume, and Octavia load-balancer `name` filters:
   - `name` filters behave like prefix or regular-expression matches rather than
     strict equality
   - this package therefore re-checks exact names after listing to avoid aliasing
