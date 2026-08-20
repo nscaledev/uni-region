@@ -2,11 +2,11 @@
 
 ## Purpose
 
-`pkg/handler/common` defines the shared constructor dependency bundle for the
-region handler layer.
+`pkg/handler/common` defines shared handler dependencies and Identity allocation
+delegation for the region handler layer.
 
-Its entire job is `ClientArgs`: a pragmatic package-level contract for the
-ambient capabilities most handlers need in order to do useful work.
+`ClientArgs` is a pragmatic package-level contract for the ambient capabilities
+that most handlers need.
 
 Those capabilities are:
 
@@ -14,11 +14,10 @@ Those capabilities are:
 - process namespace
 - provider lookup
 - outbound identity API access
+- Identity allocation create, update, and delete delegation
 
-This is not an especially pure abstraction. It is a practical way to keep
-handler construction uniform without hiding runtime dependencies in
-`context.Context` or forcing a much larger refactor around a dedicated handler
-runtime object.
+This package keeps handler construction uniform. It does not hide runtime
+dependencies in `context.Context` or require a separate handler runtime object.
 
 ## Main Component
 
@@ -26,6 +25,9 @@ runtime object.
 
 `ClientArgs` is the shared constructor shape used by most region handlers and
 their helper clients.
+
+It also delegates Identity allocation create, update, and delete calls. Concrete
+handlers keep their allocation requirements, compensation, and error handling.
 
 It carries:
 
@@ -41,7 +43,8 @@ ad hoc.
 
 ## Invariants And Guard Rails
 
-- This package owns wiring shape, not business logic.
+- This package owns shared wiring and Identity allocation delegation. It does
+  not own resource-specific allocation requirements or lifecycle behavior.
 - `ClientArgs` is a shared handler-layer constructor contract with wide fan-out
   across concrete handler packages and top-level server wiring.
 - The dependency bundle is intentionally coarse-grained for practicality, but it

@@ -31,7 +31,6 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
-	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
@@ -424,7 +423,7 @@ func (s *createSaga) createAllocation(ctx context.Context) error {
 		},
 	}
 
-	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Create(ctx, s.network, required); err != nil {
+	if err := s.client.CreateAllocation(ctx, s.network, required); err != nil {
 		return err
 	}
 
@@ -432,7 +431,7 @@ func (s *createSaga) createAllocation(ctx context.Context) error {
 }
 
 func (s *createSaga) deleteAllocation(ctx context.Context) error {
-	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Delete(ctx, s.network); err != nil {
+	if err := s.client.DeleteAllocation(ctx, s.network); err != nil {
 		return err
 	}
 
