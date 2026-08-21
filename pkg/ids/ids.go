@@ -17,7 +17,11 @@ limitations under the License.
 package ids
 
 import (
+	"encoding/json"
+
 	"github.com/google/uuid"
+
+	"sigs.k8s.io/structured-merge-diff/v6/value"
 )
 
 // RegionID is a UUID-backed identifier for regions. It is a distinct
@@ -324,3 +328,61 @@ func ParseFlavorID(s string) (FlavorID, error) {
 
 	return FlavorID(id), nil
 }
+
+// These identifiers are backed by uuid.UUID, which is a [16]byte array.
+// structured-merge-diff walks Go structs by reflection and has no case for arrays,
+// so it panics with "unsupported type" unless a type converts itself. It consults
+// json.Marshaler and ToUnstructured, not encoding.TextMarshaler, so MarshalText
+// alone is not enough. Server-side apply needs this, and so does the
+// controller-runtime fake client, which runs objects through the same walker.
+//
+// The encoded form is identical to what MarshalText already produced, so this
+// changes no serialised output.
+var _ = []value.UnstructuredConverter{
+	RegionID{},
+	IdentityID{},
+	NetworkID{},
+	SecurityGroupID{},
+	LoadBalancerID{},
+	VolumeID{},
+	ServerID{},
+	SSHCertificateAuthorityID{},
+	FileStorageID{},
+	ImageID{},
+	FlavorID{},
+}
+
+func (v RegionID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v RegionID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v IdentityID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v IdentityID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v NetworkID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v NetworkID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v SecurityGroupID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v SecurityGroupID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v LoadBalancerID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v LoadBalancerID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v VolumeID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v VolumeID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v ServerID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v ServerID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v SSHCertificateAuthorityID) MarshalJSON() ([]byte, error) {
+	return json.Marshal(uuid.UUID(v).String())
+}
+func (v SSHCertificateAuthorityID) ToUnstructured() any { return uuid.UUID(v).String() }
+
+func (v FileStorageID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v FileStorageID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v ImageID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v ImageID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v FlavorID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v FlavorID) ToUnstructured() any          { return uuid.UUID(v).String() }

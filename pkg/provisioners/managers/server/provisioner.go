@@ -239,7 +239,12 @@ func (p *Provisioner) eventRecorder(ctx context.Context) record.EventRecorder {
 		return p.recorder
 	}
 
-	return manager.FromContext(ctx).GetEventRecorderFor("server-controller")
+	// controller-runtime's replacement, GetEventRecorder, writes to events.k8s.io/v1
+	// instead of core/v1.  That needs new RBAC on every controller that emits events,
+	// and an action string on every call site, so it is a deployment change rather
+	// than a library bump.  Deprecated is not removed; controller-runtime suppresses
+	// the same warning internally.
+	return manager.FromContext(ctx).GetEventRecorderFor("server-controller") //nolint:staticcheck
 }
 
 func (p *Provisioner) recordProviderCreateRetryEvent(ctx context.Context, eventType, reason, logMessage, eventMessage string, attempt, maxAttempts int32) {
