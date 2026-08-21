@@ -17,11 +17,14 @@ limitations under the License.
 package ids_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
 	"github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/ids/idstest"
+
+	"sigs.k8s.io/structured-merge-diff/v6/value"
 )
 
 const (
@@ -141,6 +144,50 @@ func TestMarshalText(t *testing.T) {
 
 		if string(b) != validUUID {
 			t.Errorf("%s: MarshalText = %q, want %q", tc.name, string(b), validUUID)
+		}
+	}
+}
+
+func TestUnstructuredEncoding(t *testing.T) {
+	t.Parallel()
+
+	// The identifiers are [16]byte arrays underneath. structured-merge-diff walks
+	// Go structs by reflection and consults json.Marshaler and ToUnstructured, not
+	// encoding.TextMarshaler, so without these it panics with "unsupported type"
+	// during server-side apply. Both must yield the canonical UUID string so the
+	// encoded form stays identical to what MarshalText produces.
+	cases := []struct {
+		name  string
+		value value.UnstructuredConverter
+	}{
+		{"RegionID", idstest.MustParseRegionID(validUUID)},
+		{"IdentityID", idstest.MustParseIdentityID(validUUID)},
+		{"NetworkID", idstest.MustParseNetworkID(validUUID)},
+		{"SecurityGroupID", idstest.MustParseSecurityGroupID(validUUID)},
+		{"LoadBalancerID", idstest.MustParseLoadBalancerID(validUUID)},
+		{"VolumeID", idstest.MustParseVolumeID(validUUID)},
+		{"ServerID", idstest.MustParseServerID(validUUID)},
+		{"SSHCertificateAuthorityID", idstest.MustParseSSHCertificateAuthorityID(validUUID)},
+		{"FileStorageID", idstest.MustParseFileStorageID(validUUID)},
+		{"ImageID", idstest.MustParseImageID(validUUID)},
+		{"FlavorID", idstest.MustParseFlavorID(validUUID)},
+	}
+
+	want := `"` + validUUID + `"`
+
+	for _, tc := range cases {
+		b, err := json.Marshal(tc.value)
+		if err != nil {
+			t.Errorf("%s: json.Marshal returned unexpected error: %v", tc.name, err)
+			continue
+		}
+
+		if string(b) != want {
+			t.Errorf("%s: json.Marshal = %q, want %q", tc.name, string(b), want)
+		}
+
+		if got := tc.value.ToUnstructured(); got != validUUID {
+			t.Errorf("%s: ToUnstructured = %v, want %q", tc.name, got, validUUID)
 		}
 	}
 }
