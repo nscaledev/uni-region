@@ -32,6 +32,7 @@ import (
 	providertypes "github.com/unikorn-cloud/region/pkg/providers/types"
 
 	corev1 "k8s.io/api/core/v1"
+	apiMeta "k8s.io/apimachinery/pkg/api/meta"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -57,88 +58,63 @@ func volumeLogger(ctx context.Context, volume *unikornv1.Volume) logr.Logger {
 	)
 }
 
-func volumePhase(status providertypes.VolumeStatus) unikornv1.VolumePhaseReason {
-	switch status {
-	case providertypes.VolumeStatusCreating:
-		return unikornv1.VolumePhaseReasonCreating
-	case providertypes.VolumeStatusAvailable:
-		return unikornv1.VolumePhaseReasonAvailable
-	case providertypes.VolumeStatusAttaching:
-		return unikornv1.VolumePhaseReasonAttaching
-	case providertypes.VolumeStatusAttached:
-		return unikornv1.VolumePhaseReasonAttached
-	case providertypes.VolumeStatusDetaching:
-		return unikornv1.VolumePhaseReasonDetaching
-	case providertypes.VolumeStatusUpdating:
-		return unikornv1.VolumePhaseReasonUpdating
-	case providertypes.VolumeStatusDeleting:
-		return unikornv1.VolumePhaseReasonDeleting
-	case providertypes.VolumeStatusError:
-		return unikornv1.VolumePhaseReasonError
-	case providertypes.VolumeStatusUnknown:
-		return unikornv1.VolumePhaseReasonUnknown
-	}
-
-	return unikornv1.VolumePhaseReasonUnknown
-}
-
 func setObservedStatus(volume *unikornv1.Volume, observation *providertypes.VolumeObservation) {
 	size := observation.Size.DeepCopy()
 	volume.Status.Size = &size
-	phase := volumePhase(observation.Status)
-	volume.SetVolumePhase(phase)
 
-	switch phase {
-	case unikornv1.VolumePhaseReasonError:
+	switch observation.Status {
+	case providertypes.VolumeStatusError:
 		volume.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider reported the volume in an error state")
-	case unikornv1.VolumePhaseReasonUnknown:
+	case providertypes.VolumeStatusDeleting:
+		volume.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider volume is being deleted")
+	case providertypes.VolumeStatusUnknown:
 		volume.SetHealthCondition(corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "the provider volume state is unknown")
-	case unikornv1.VolumePhaseReasonMissing:
-		volume.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider volume is missing")
-	case unikornv1.VolumePhaseReasonCreating,
-		unikornv1.VolumePhaseReasonAvailable,
-		unikornv1.VolumePhaseReasonAttaching,
-		unikornv1.VolumePhaseReasonAttached,
-		unikornv1.VolumePhaseReasonDetaching,
-		unikornv1.VolumePhaseReasonUpdating,
-		unikornv1.VolumePhaseReasonDeleting:
+	case providertypes.VolumeStatusCreating,
+		providertypes.VolumeStatusAvailable,
+		providertypes.VolumeStatusAttaching,
+		providertypes.VolumeStatusAttached,
+		providertypes.VolumeStatusDetaching,
+		providertypes.VolumeStatusUpdating:
 		volume.SetHealthCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy")
+	default:
+		volume.SetHealthCondition(corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "the provider volume state is unknown")
 	}
 }
 
 func setMissingStatus(volume *unikornv1.Volume) {
 	volume.Status.Size = nil
-	volume.SetVolumePhase(unikornv1.VolumePhaseReasonMissing)
 	volume.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider volume is missing")
+}
+
+func setObservationFailureStatus(volume *unikornv1.Volume) {
+	volume.SetHealthCondition(corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to observe provider volume state")
 }
 
 func logTransitions(ctx context.Context, before, after *unikornv1.Volume) {
 	logger := volumeLogger(ctx, after)
 
-	oldPhase, oldErr := unikornv1.GetVolumePhase(before)
-	newPhase, newErr := unikornv1.GetVolumePhase(after)
-
-	if newErr == nil && (oldErr != nil || oldPhase.Reason != newPhase.Reason) {
-		from := ""
-
-		if oldErr == nil {
-			from = string(oldPhase.Reason)
-		}
-
-		logger.Info("volume phase transition", "from_phase", from, "to_phase", newPhase.Reason)
-	}
-
 	oldHealth, oldErr := unikornv1core.GetHealthyCondition(before)
 	newHealth, newErr := unikornv1core.GetHealthyCondition(after)
 
-	if newErr == nil && (oldErr != nil || oldHealth.Status != newHealth.Status || oldHealth.Reason != newHealth.Reason) {
-		from := ""
+	if newErr == nil && (oldErr != nil || oldHealth.Status != newHealth.Status || oldHealth.Reason != newHealth.Reason || oldHealth.Message != newHealth.Message) {
+		fromStatus := corev1.ConditionUnknown
+		fromReason := unikornv1core.HealthConditionReason("")
+		fromMessage := ""
 
 		if oldErr == nil {
-			from = string(oldHealth.Reason)
+			fromStatus = oldHealth.Status
+			fromReason = oldHealth.Reason
+			fromMessage = oldHealth.Message
 		}
 
-		logger.Info("volume health transition", "from_health", from, "to_health", newHealth.Reason)
+		logger.Info("volume health transition",
+			"from_status", fromStatus,
+			"from_health", fromReason,
+			"from_message", fromMessage,
+			"to_status", newHealth.Status,
+			"to_health", newHealth.Reason,
+			"to_message", newHealth.Message,
+		)
 	}
 }
 
@@ -187,6 +163,8 @@ func (c *Checker) processVolume(ctx context.Context, volume *unikornv1.Volume) e
 	}
 
 	updated := volume.DeepCopy()
+	apiMeta.RemoveStatusCondition(&updated.Status.Conditions, string(unikornv1core.ConditionActive))
+
 	observation, err := provider.ObserveVolume(ctx, identity, volume)
 
 	switch {
@@ -195,13 +173,11 @@ func (c *Checker) processVolume(ctx context.Context, volume *unikornv1.Volume) e
 	case errors.Is(err, coreerrors.ErrResourceNotFound):
 		setMissingStatus(updated)
 	case err != nil:
-		volumeLogger(ctx, volume).Error(err, "failed to observe volume, skipping")
-
-		return nil
+		volumeLogger(ctx, volume).Error(err, "failed to observe volume")
+		setObservationFailureStatus(updated)
 	case observation == nil:
-		volumeLogger(ctx, volume).Error(fmt.Errorf("%w: nil volume observation", coreerrors.ErrConsistency), "failed to observe volume, skipping")
-
-		return nil
+		volumeLogger(ctx, volume).Error(fmt.Errorf("%w: nil volume observation", coreerrors.ErrConsistency), "failed to observe volume")
+		setObservationFailureStatus(updated)
 	default:
 		setObservedStatus(updated, observation)
 	}

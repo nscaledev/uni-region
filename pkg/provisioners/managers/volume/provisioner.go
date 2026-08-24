@@ -30,6 +30,8 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 // Options allows access to CLI options in the provisioner.
@@ -85,6 +87,11 @@ func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 
 // Provision reconciles the desired provider Volume.
 func (p *Provisioner) Provision(ctx context.Context) error {
+	available, err := unikornv1core.GetAvailableCondition(p.volume)
+	if err == nil && available.Status == corev1.ConditionTrue && available.Reason == unikornv1core.ConditionReasonProvisioned {
+		return nil
+	}
+
 	provider, identity, err := p.ProviderAndIdentity(ctx, p.volume)
 	if err != nil {
 		return err

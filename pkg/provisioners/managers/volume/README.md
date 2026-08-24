@@ -13,6 +13,12 @@ deletion or operator intervention. This package does not check quota; the HTTP
 create handler allocates the requested capacity and stores the Identity
 allocation ID before the controller can observe the Volume.
 
+`Available=True/Provisioned` is also the durable create-completed latch. Later
+provision passes return before provider lookup or creation. If provider storage
+disappears, the monitor degrades health and the controller does not create a
+replacement under the same Region Volume ID. Users replace the Volume by
+deleting its Region resource and creating a new one.
+
 Deprovisioning deliberately has stricter ordering:
 
 1. resolve the provider and Identity through the shared provisioner lookup, then

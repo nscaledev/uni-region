@@ -156,6 +156,18 @@ func TestProvisionCreatesVolume(t *testing.T) {
 	require.NoError(t, provisioner.Provision(controllerContext(t, resource, identity)))
 }
 
+func TestProvisionDoesNotRecreateProvisionedVolume(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	providerSet := mockproviders.NewMockProviders(ctrl)
+	resource := testVolume(false)
+	resource.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "provisioned")
+
+	provisioner := volume.NewForTest(resource, providerSet, nil)
+	require.NoError(t, provisioner.Provision(controllerContext(t, resource)))
+}
+
 func TestProvisionWaitsForIdentity(t *testing.T) {
 	t.Parallel()
 

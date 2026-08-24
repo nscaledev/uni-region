@@ -99,11 +99,13 @@ stored objects rely on for linkage, migration, and operational coordination.
   `Volume.Status`, which is conditions-first. The Volume controller drives
   provider create/delete and exclusively owns the generic `Available`
   provisioning condition. The Volume monitor projects neutral provider
-  observation into `Volume.Status.Size`, coarse `Healthy`, and a domain-owned
-  Volume phase on the generic `Active` condition. Confirmed provider absence
-  is an observed `Missing` phase with degraded health; provider request errors
-  preserve the last observation. Provider-side volume identity is rediscovered
-  by stable provider lookup rather than mirrored into status.
+  observation into `Volume.Status.Size` and coarse `Healthy`. A successful
+  `Available=True/Provisioned` condition records completion of the one allowed
+  provider create. Confirmed provider absence clears observed size and degrades
+  health. It does not reset provisioning or trigger replacement. Provider
+  request errors preserve observed size and make health unknown. Provider-side
+  volume identity is rediscovered by stable provider lookup rather than
+  mirrored into status.
 - `Server.Spec.Volumes` is the attach-existing-only desired state for block
   storage. Each row names an existing Region `Volume` by ID; inline
   server-created volume templates are deliberately excluded from the first

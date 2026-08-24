@@ -121,6 +121,7 @@ func volumeFixture() *unikornv1.Volume {
 		},
 	}
 	volume.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
+	unikornv1core.UpdateCondition(&volume.Status.Conditions, unikornv1core.ConditionActive, corev1.ConditionTrue, "Available", "legacy condition")
 
 	return volume
 }
@@ -163,20 +164,20 @@ func TestCheckProjectsEveryNeutralVolumeStatus(t *testing.T) {
 	t.Parallel()
 
 	tests := map[providertypes.VolumeStatus]struct {
-		phase        unikornv1.VolumePhaseReason
-		activeStatus corev1.ConditionStatus
-		healthStatus corev1.ConditionStatus
-		healthReason unikornv1core.HealthConditionReason
+		healthStatus  corev1.ConditionStatus
+		healthReason  unikornv1core.HealthConditionReason
+		healthMessage string
 	}{
-		providertypes.VolumeStatusCreating:  {unikornv1.VolumePhaseReasonCreating, corev1.ConditionFalse, corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy},
-		providertypes.VolumeStatusAvailable: {unikornv1.VolumePhaseReasonAvailable, corev1.ConditionTrue, corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy},
-		providertypes.VolumeStatusAttaching: {unikornv1.VolumePhaseReasonAttaching, corev1.ConditionFalse, corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy},
-		providertypes.VolumeStatusAttached:  {unikornv1.VolumePhaseReasonAttached, corev1.ConditionTrue, corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy},
-		providertypes.VolumeStatusDetaching: {unikornv1.VolumePhaseReasonDetaching, corev1.ConditionFalse, corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy},
-		providertypes.VolumeStatusUpdating:  {unikornv1.VolumePhaseReasonUpdating, corev1.ConditionFalse, corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy},
-		providertypes.VolumeStatusDeleting:  {unikornv1.VolumePhaseReasonDeleting, corev1.ConditionFalse, corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy},
-		providertypes.VolumeStatusError:     {unikornv1.VolumePhaseReasonError, corev1.ConditionFalse, corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded},
-		providertypes.VolumeStatusUnknown:   {unikornv1.VolumePhaseReasonUnknown, corev1.ConditionFalse, corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown},
+		providertypes.VolumeStatusCreating:  {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		providertypes.VolumeStatusAvailable: {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		providertypes.VolumeStatusAttaching: {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		providertypes.VolumeStatusAttached:  {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		providertypes.VolumeStatusDetaching: {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		providertypes.VolumeStatusUpdating:  {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		providertypes.VolumeStatusDeleting:  {corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider volume is being deleted"},
+		providertypes.VolumeStatusError:     {corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider reported the volume in an error state"},
+		providertypes.VolumeStatusUnknown:   {corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "the provider volume state is unknown"},
+		providertypes.VolumeStatus("new"):   {corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "the provider volume state is unknown"},
 	}
 
 	for status, want := range tests {
@@ -187,19 +188,17 @@ func TestCheckProjectsEveryNeutralVolumeStatus(t *testing.T) {
 			require.NotNil(t, updated.Status.Size)
 			require.True(t, updated.Status.Size.Equal(resource.MustParse("20Gi")))
 
-			phase, err := unikornv1.GetVolumePhase(updated)
-			require.NoError(t, err)
-			require.Equal(t, want.phase, phase.Reason)
-			require.Equal(t, want.activeStatus, phase.Status)
-
 			health, err := unikornv1core.GetHealthyCondition(updated)
 			require.NoError(t, err)
 			require.Equal(t, want.healthStatus, health.Status)
 			require.Equal(t, want.healthReason, health.Reason)
+			require.Equal(t, want.healthMessage, health.Message)
 
 			available, err := unikornv1core.GetAvailableCondition(updated)
 			require.NoError(t, err)
+			require.Equal(t, corev1.ConditionTrue, available.Status)
 			require.Equal(t, unikornv1core.ConditionReasonProvisioned, available.Reason)
+			require.Len(t, updated.Status.Conditions, 2)
 		})
 	}
 }
@@ -210,59 +209,57 @@ func TestCheckProjectsMissingProviderVolumeAndLogsTransition(t *testing.T) {
 	volume := volumeFixture()
 	size := resource.MustParse("10Gi")
 	volume.Status.Size = &size
-	volume.SetVolumePhase(unikornv1.VolumePhaseReasonAvailable)
-	volume.SetHealthCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "")
+	volume.SetHealthCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy")
 
 	updated, sink := runCheck(t, volume, nil, coreerrors.ErrResourceNotFound)
 	require.Nil(t, updated.Status.Size)
-
-	phase, err := unikornv1.GetVolumePhase(updated)
-	require.NoError(t, err)
-	require.Equal(t, unikornv1.VolumePhaseReasonMissing, phase.Reason)
 
 	health, err := unikornv1core.GetHealthyCondition(updated)
 	require.NoError(t, err)
 	require.Equal(t, corev1.ConditionFalse, health.Status)
 	require.Equal(t, unikornv1core.ConditionReasonDegraded, health.Reason)
+	require.Equal(t, "the provider volume is missing", health.Message)
 
 	available, err := unikornv1core.GetAvailableCondition(updated)
 	require.NoError(t, err)
+	require.Equal(t, corev1.ConditionTrue, available.Status)
 	require.Equal(t, unikornv1core.ConditionReasonProvisioned, available.Reason)
+	require.Len(t, updated.Status.Conditions, 2)
 
-	entry := sink.entry("volume phase transition")
+	entry := sink.entry("volume health transition")
 	require.Equal(t, testVolumeID, entry["volume_id"])
 	require.Equal(t, testOrganizationID, entry["org_id"])
 	require.Equal(t, testRegionID, entry["region_id"])
-	require.Equal(t, string(unikornv1.VolumePhaseReasonAvailable), entry["from_phase"])
-	require.Equal(t, unikornv1.VolumePhaseReasonMissing, entry["to_phase"])
+	require.Equal(t, unikornv1core.ConditionReasonHealthy, entry["from_health"])
+	require.Equal(t, "the provider volume state is healthy", entry["from_message"])
+	require.Equal(t, unikornv1core.ConditionReasonDegraded, entry["to_health"])
+	require.Equal(t, "the provider volume is missing", entry["to_message"])
 }
 
-func TestCheckPreservesLastObservationOnProviderErrorAndLogs(t *testing.T) {
+func TestCheckMakesHealthUnknownOnProviderErrorAndLogs(t *testing.T) {
 	t.Parallel()
 
 	volume := volumeFixture()
 	size := resource.MustParse("10Gi")
 	volume.Status.Size = &size
-	volume.SetVolumePhase(unikornv1.VolumePhaseReasonAttached)
-	volume.SetHealthCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "")
+	volume.SetHealthCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy")
 	updated, sink := runCheck(t, volume, nil, errProviderObservation)
 	require.NotNil(t, updated.Status.Size)
 	require.True(t, updated.Status.Size.Equal(size))
 
-	phase, err := unikornv1.GetVolumePhase(updated)
-	require.NoError(t, err)
-	require.Equal(t, unikornv1.VolumePhaseReasonAttached, phase.Reason)
-
 	health, err := unikornv1core.GetHealthyCondition(updated)
 	require.NoError(t, err)
-	require.Equal(t, corev1.ConditionTrue, health.Status)
-	require.Equal(t, unikornv1core.ConditionReasonHealthy, health.Reason)
+	require.Equal(t, corev1.ConditionUnknown, health.Status)
+	require.Equal(t, unikornv1core.ConditionReasonUnknown, health.Reason)
+	require.Equal(t, "unable to observe provider volume state", health.Message)
 
 	available, err := unikornv1core.GetAvailableCondition(updated)
 	require.NoError(t, err)
+	require.Equal(t, corev1.ConditionTrue, available.Status)
 	require.Equal(t, unikornv1core.ConditionReasonProvisioned, available.Reason)
+	require.Len(t, updated.Status.Conditions, 2)
 
-	entry := sink.entry("failed to observe volume, skipping")
+	entry := sink.entry("failed to observe volume")
 	require.Equal(t, testVolumeID, entry["volume_id"])
 	require.Equal(t, testOrganizationID, entry["org_id"])
 	require.Equal(t, testRegionID, entry["region_id"])
@@ -270,4 +267,9 @@ func TestCheckPreservesLastObservationOnProviderErrorAndLogs(t *testing.T) {
 	loggedErr, ok := entry["error"].(error)
 	require.True(t, ok)
 	require.ErrorIs(t, loggedErr, errProviderObservation)
+
+	transition := sink.entry("volume health transition")
+	require.Equal(t, unikornv1core.ConditionReasonHealthy, transition["from_health"])
+	require.Equal(t, unikornv1core.ConditionReasonUnknown, transition["to_health"])
+	require.Equal(t, "unable to observe provider volume state", transition["to_message"])
 }

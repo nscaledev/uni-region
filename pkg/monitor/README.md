@@ -27,8 +27,7 @@ The current checkers are:
 - [health/server](./health/server/README.md), which projects server runtime
   state and telemetry
 - [health/volume](./health/volume/README.md), which projects provider-neutral
-  Volume size, phase, and health while preserving controller-owned provisioning
-  state
+  Volume size and health while preserving controller-owned provisioning state
 
 ## Caveats
 
