@@ -331,6 +331,7 @@ func TestCheckCachesFailedProviderLookupByRegion(t *testing.T) {
 	second := volumeFixture()
 	second.Name = testVolumeID2
 	size := resource.MustParse("10Gi")
+
 	for _, volume := range []*unikornv1.Volume{first, second} {
 		volume.Status.Size = &size
 		volume.SetHealthCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy")
