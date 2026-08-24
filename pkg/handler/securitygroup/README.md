@@ -30,6 +30,10 @@ rule-shape validation rather than deep multi-object orchestration.
   same project context.
 - Deletion is primarily handled through the ownership graph rooted at the
   network rather than bespoke orchestration here.
+- A `v2` update patches under an optimistic lock and maps a lost race to HTTP
+  409: the controller actively reconciles a fresh security group, so the
+  resourceVersion can move between the handler's read and its patch, and that
+  is the caller's retry rather than an internal error.
 
 ## Caveats
 

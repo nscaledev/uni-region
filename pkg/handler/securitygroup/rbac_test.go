@@ -41,10 +41,14 @@ import (
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 const (
@@ -73,14 +77,15 @@ func newSGFakeClient(t *testing.T, objects ...runtime.Object) *fake.ClientBuilde
 	return builder
 }
 
-// testNetworkWithProject returns a v2 Network object with the given org/project labels.
-func testNetworkWithProject(orgID, projID string) *regionv1.Network {
+// testNetworkWithProject returns a v2 Network object owned by the fixture
+// organization with the given project label.
+func testNetworkWithProject(projID string) *regionv1.Network {
 	return &regionv1.Network{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      sgNetworkID,
 			Namespace: sgNamespace,
 			Labels: map[string]string{
-				coreconstants.OrganizationLabel:   orgID,
+				coreconstants.OrganizationLabel:   sgOrganizationID,
 				coreconstants.ProjectLabel:        projID,
 				constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
 			},
@@ -146,7 +151,7 @@ func TestSGCreateV2RBACOrgScopedProjectNotFound(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 
-	network := testNetworkWithProject(sgOrganizationID, sgNonexistentProject)
+	network := testNetworkWithProject(sgNonexistentProject)
 
 	k8sClient := newSGFakeClient(t, network).Build()
 
@@ -178,7 +183,7 @@ func TestSGCreateV2RBACNoCreatePermission(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 
-	network := testNetworkWithProject(sgOrganizationID, sgProjectID)
+	network := testNetworkWithProject(sgProjectID)
 
 	k8sClient := newSGFakeClient(t, network).Build()
 
@@ -494,7 +499,7 @@ func TestSGDeleteV2AlreadyDeleting(t *testing.T) {
 func TestSGUpdateV2(t *testing.T) {
 	t.Parallel()
 
-	network := testNetworkWithProject(sgOrganizationID, sgProjectID)
+	network := testNetworkWithProject(sgProjectID)
 	resource := testSecurityGroupV2(sgSecurityGroupID)
 
 	c := newSGClient(t, network, resource)
@@ -521,6 +526,51 @@ func TestSGUpdateV2(t *testing.T) {
 	require.Len(t, result.Spec.Rules, 1)
 	require.Equal(t, openapi.NetworkDirectionIngress, result.Spec.Rules[0].Direction)
 	require.Equal(t, sgNetworkID, result.Status.NetworkId)
+}
+
+// TestSGUpdateV2ConflictReturns409 verifies UpdateV2 maps a Kubernetes
+// optimistic-lock conflict from the underlying patch to an HTTP 409, rather than
+// letting it surface as an unhandled 500. The controller actively reconciles a
+// freshly provisioned security group, so the resourceVersion can move between
+// the read and the patch.
+func TestSGUpdateV2ConflictReturns409(t *testing.T) {
+	t.Parallel()
+
+	network := testNetworkWithProject(sgProjectID)
+	resource := testSecurityGroupV2(sgSecurityGroupID)
+
+	k8sClient := newSGFakeClient(t, network, resource).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(_ context.Context, _ client.WithWatch, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
+				return kerrors.NewConflict(schema.GroupResource{Group: regionv1.GroupName, Resource: "securitygroups"}, obj.GetName(), nil)
+			},
+		}).
+		Build()
+
+	c := securitygroup.New(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: sgNamespace,
+	})
+
+	ctx := withSGPrincipal(rbac.NewContext(t.Context(),
+		sgProjectACL(identityapi.Read, identityapi.Update, identityapi.Delete)))
+
+	request := &openapi.SecurityGroupV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: "sg-1"},
+		Spec: openapi.SecurityGroupV2Spec{
+			Rules: openapi.SecurityGroupRuleV2List{
+				{
+					Direction: openapi.NetworkDirectionIngress,
+					Protocol:  openapi.NetworkProtocolAny,
+				},
+			},
+		},
+	}
+
+	_, err := c.UpdateV2(ctx, idstest.MustParseSecurityGroupID(sgSecurityGroupID), request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsConflict(err), "expected 409 conflict, got: %v", err)
 }
 
 // TestSGUpdateV2NotFound verifies updating a missing security group returns 404.

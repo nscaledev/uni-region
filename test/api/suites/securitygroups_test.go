@@ -141,8 +141,19 @@ var _ = Describe("SecurityGroup", func() {
 					},
 				}
 
-				updated, err := regionClient.UpdateSecurityGroup(ctx, sgID, updateReq)
-				Expect(err).NotTo(HaveOccurred())
+				// The update races the controller's own writes to the fresh security
+				// group and loses with a 409 (the handler's optimistic lock), so retry
+				// until the object is quiescent enough to take the patch.
+				var updated *regionopenapi.SecurityGroupV2Read
+
+				Eventually(func(g Gomega) {
+					got, err := regionClient.UpdateSecurityGroup(ctx, sgID, updateReq)
+					g.Expect(err).NotTo(HaveOccurred())
+					updated = got
+				}).WithTimeout(30*time.Second).
+					WithPolling(1*time.Second).
+					Should(Succeed(), "security group update must eventually win its optimistic-lock race")
+
 				Expect(updated.Spec.Rules).To(HaveLen(2))
 
 				Eventually(func(g Gomega) {
