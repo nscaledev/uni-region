@@ -1,5 +1,5 @@
 ---
-status: superseded by ADR-0002
+status: proposed
 ---
 
 # Use controller-managed ServerVolumeAttachments
