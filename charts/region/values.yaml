@@ -225,6 +225,20 @@ volumeController:
       cpu: 100m
       memory: 100Mi
 
+serverVolumeAttachmentCoordinator:
+  image: ~
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
+
+serverVolumeAttachmentController:
+  image: ~
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
+
 # Sets the DNS hosts/X.509 Certs.
 region:
   host: region.unikorn-cloud.org

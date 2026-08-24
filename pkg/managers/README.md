@@ -25,3 +25,5 @@ for normal operation.
 - [load-balancer](./load-balancer/README.md)
 - [volume](./volume/README.md)
 - [server](./server/README.md)
+- [server-volume-attachment-coordinator](./server-volume-attachment-coordinator/README.md)
+- [server-volume-attachment](./server-volume-attachment/README.md)

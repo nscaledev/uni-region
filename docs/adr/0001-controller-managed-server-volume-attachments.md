@@ -17,19 +17,23 @@ handling without copying the PVC resource model. The initial model permits one
 Server per Volume; multiattach is explicitly deferred.
 
 The Server HTTP handler performs preflight validation for immediate user
-feedback, but it writes only Server intent. A dedicated
-`ServerVolumeAttachment` controller watches Server attachment intent and
-reconciles each relationship by Volume ID. It materializes attachment resources
-and exclusively owns Volume claim acquisition and release, endpoint protection,
-provider attach and detach, attachment finalizers and attachment status. Handler
-validation is never authorization for a later provider mutation. The initial
-single-attach constraint makes Volume the serialization key.
+feedback, but it writes only Server intent. Two controllers divide the work:
+the custom Volume-keyed attachment coordinator watches Server intent, Volumes
+and attachments, materializes deterministic `ServerVolumeAttachment` objects,
+and exclusively owns Volume claim acquisition and release. The generic
+attachment-keyed lifecycle controller owns endpoint protection, provider attach
+and detach, attachment finalizers and attachment status. Handler validation is
+never authorization for a later provider mutation. The initial single-attach
+constraint makes Volume the serialization key.
 
-The attachment controller runs in its own binary and deployment, following the
-repository's one-controller-factory-per-binary pattern. This operational cost is
-accepted to keep both existing lifecycle controllers unchanged and to ensure
-attachment cleanup continues independently while Server or Volume deletion is
-blocked by attachment references.
+Each controller runs in its own binary and deployment. This is required because
+the shared generic UNI reconciler keys status and finalizers to the object it
+reconciles: a Volume-keyed generic controller would incorrectly publish
+attachment lifecycle on `Volume`. The coordinator therefore uses a custom
+reconcile loop, while the lifecycle controller can retain the generic pattern.
+This operational cost keeps existing Server and Volume lifecycle controllers
+unchanged and ensures attachment cleanup continues independently while endpoint
+deletion is blocked by attachment references.
 
 Packaging follows the existing Region Helm pattern: the CRD lives under
 `charts/region/crds`, and component-specific service account, least-privilege
@@ -173,27 +177,27 @@ Attachment state projects only into the corresponding
 as `Errored`. Public messages are safe and actionable, while raw provider
 details remain in controller logs.
 
-The attachment controller exclusively owns `Server.status.volumes`. Other
-Server status writers preserve that field. Projection uses a fresh Server
+The attachment lifecycle controller exclusively owns `Server.status.volumes`.
+Other Server status writers preserve that field. Projection uses a fresh Server
 object and an optimistic status patch; normal conflict retries reconcile
 concurrent writes.
 
 When multiple Servers concurrently desire an unclaimed Volume, attachment does
 not fail closed. An existing valid claim always wins; otherwise the oldest
 attachment request wins, with attachment name as the deterministic tie-breaker.
-The attachment controller acquires the singleton claim with optimistic locking and
-reports a safe claim-conflict message on losing relationships. It never changes the winner
-while that Server continues to desire the Volume.
+The Volume-keyed coordinator acquires the singleton claim with optimistic
+locking and reports a safe claim-conflict message on losing relationships. It
+never changes the winner while that Server continues to desire the Volume.
 
 Request age is the attachment's Kubernetes `creationTimestamp`, which reflects
 materialization order rather than the exact instant a Server spec changed.
 Server volume entries carry no timestamp, and adding one solely for stronger
 fairness is not justified. The choice is stable after materialization.
 
-Claim acquisition is serialized logically by the Volume reconciliation key and
-persisted with an optimistic patch to `Volume.spec.claimRef`. Kubernetes
-conflict retry resolves races between controller replicas; no distributed lock
-is introduced.
+Claim acquisition is serialized logically by the coordinator's Volume
+reconciliation key and persisted with an optimistic patch to
+`Volume.spec.claimRef`. Kubernetes conflict retry resolves races between
+controller replicas; no distributed lock is introduced.
 
 Every Server–Volume request receives a deterministic pair-named
 `ServerVolumeAttachment`. This retains the request's identity, creation time and
@@ -202,14 +206,15 @@ authoritative selected binding: only the attachment whose Server matches the
 claim may mutate provider state. Pair identity deliberately prepares the
 relationship model for possible future multiattach without enabling it now.
 
-The pair name is a stable UUIDv5 derived from `(serverID, volumeID)`. Cache
-field indexes on immutable `spec.serverID` and `spec.volumeID` provide endpoint
-lookup without controller-owned labels. Tenancy is derived from and validated
-against the endpoints. The Server is the attachment's controller owner, while
-the Volume is deliberately not an owner because Volume
-deletion must remain blocked while Server intent exists. Before any provider
-mutation, the attachment, its cleanup finalizer, the selected Volume claim and
-blocking references on both endpoints must all be persisted and read back.
+The pair name is a stable UUIDv5 derived from `(serverID, volumeID)`. The
+coordinator maps Server and attachment events back to the Volume key; it may
+use field indexes later if list-based reconciliation becomes a measured
+bottleneck. Tenancy is derived from and validated against the endpoints. The
+Server is the attachment's controller owner, while the Volume is deliberately
+not an owner because Volume deletion must remain blocked while Server intent
+exists. Before any provider mutation, the attachment, its cleanup finalizer,
+the selected Volume claim and blocking references on both endpoints must all be
+persisted and read back.
 
 Attachment observation follows the generic UNI `Available` condition convention
 and includes `observedGeneration`; an optional provider-observed device may be

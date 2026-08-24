@@ -1,0 +1,97 @@
+{{- $release := .Release.Name -}}
+{{- range $controller := list "server-volume-attachment-coordinator" "server-volume-attachment-controller" }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $release }}-{{ $controller }}
+  labels: {{- include "unikorn.labels" $ | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $release }}-{{ $controller }}
+rules:
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["create", "get", "update"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $release }}-{{ $controller }}
+subjects:
+- kind: ServiceAccount
+  namespace: {{ $.Release.Namespace }}
+  name: {{ $release }}-{{ $controller }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $release }}-{{ $controller }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $release }}-{{ $controller }}
+rules:
+- apiGroups: ["region.unikorn-cloud.org"]
+  resources: ["servers", "volumes", "servervolumeattachments"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["region.unikorn-cloud.org"]
+  resources: ["servers/status", "servervolumeattachments/status"]
+  verbs: ["get", "update", "patch"]
+{{- if eq $controller "server-volume-attachment-controller" }}
+- apiGroups: ["region.unikorn-cloud.org"]
+  resources: ["identities", "openstackidentities", "regions"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch"]
+{{- end }}
+{{- range $controller := list "server-volume-attachment-coordinator" "server-volume-attachment-controller" }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $release }}-{{ $controller }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: {{ $release }}-{{ $controller }}}
+  template:
+    metadata:
+      labels: {app: {{ $release }}-{{ $controller }}}
+    spec:
+      serviceAccountName: {{ $release }}-{{ $controller }}
+      securityContext: {runAsNonRoot: true}
+      containers:
+      - name: {{ $controller }}
+        image: {{ if eq $controller "server-volume-attachment-coordinator" }}{{ include "unikorn.serverVolumeAttachmentCoordinatorImage" $ }}{{ else }}{{ include "unikorn.serverVolumeAttachmentControllerImage" $ }}{{ end }}
+        args:
+        {{- include "unikorn.core.flags" $ | nindent 8 }}
+        {{- if eq $controller "server-volume-attachment-controller" }}
+        {{- include "unikorn.otlp.flags" $ | nindent 8 }}
+        {{- include "unikorn.identity.flags" $ | nindent 8 }}
+        {{- include "unikorn.mtls.flags" $ | nindent 8 }}
+        {{- end }}
+        securityContext: {readOnlyRootFilesystem: true}
+        resources:
+          {{- if eq $controller "server-volume-attachment-coordinator" }}{{ toYaml $.Values.serverVolumeAttachmentCoordinator.resources | nindent 10 }}{{ else }}{{ toYaml $.Values.serverVolumeAttachmentController.resources | nindent 10 }}{{ end }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $release }}-{{ $controller }}
+subjects:
+- kind: ServiceAccount
+  namespace: {{ $.Release.Namespace }}
+  name: {{ $release }}-{{ $controller }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $release }}-{{ $controller }}
+{{- end }}

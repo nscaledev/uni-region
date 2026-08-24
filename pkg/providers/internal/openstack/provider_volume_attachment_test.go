@@ -112,6 +112,7 @@ func TestAttachVolume(t *testing.T) {
 		compute.EXPECT().GetServer(t.Context(), server).Return(openstackServer, nil)
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(cinderVolume, nil)
 		compute.EXPECT().CreateVolumeAttachment(t.Context(), openstackServer.ID, cinderVolume.ID).Return(novaAttachment, nil)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(cinderVolumeWithAttachment(cinderVolume, openstackServer.ID, false), nil)
 
 		attachment, err := openstack.AttachVolumeWithClients(t.Context(), compute, blockStorage, server, volume)
 		require.NoError(t, err)
@@ -271,6 +272,7 @@ func TestDetachVolume(t *testing.T) {
 		compute.EXPECT().GetServer(t.Context(), server).Return(openstackServer, nil)
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(attachedVolume, nil)
 		compute.EXPECT().DeleteVolumeAttachment(t.Context(), openstackServer.ID, cinderVolume.ID).Return(nil)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(cinderVolume, nil)
 
 		require.NoError(t, openstack.DetachVolumeWithClients(t.Context(), compute, blockStorage, server, volume))
 	})

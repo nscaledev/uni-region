@@ -58,6 +58,7 @@ func init() {
 	SchemeBuilder.Register(&SecurityGroup{}, &SecurityGroupList{})
 	SchemeBuilder.Register(&LoadBalancer{}, &LoadBalancerList{})
 	SchemeBuilder.Register(&Volume{}, &VolumeList{})
+	SchemeBuilder.Register(&ServerVolumeAttachment{}, &ServerVolumeAttachmentList{})
 	SchemeBuilder.Register(&OpenstackSecurityGroup{}, &OpenstackSecurityGroupList{})
 	SchemeBuilder.Register(&SSHCertificateAuthority{}, &SSHCertificateAuthorityList{})
 	SchemeBuilder.Register(&Server{}, &ServerList{})

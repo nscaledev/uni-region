@@ -844,6 +844,48 @@ type VolumeList struct {
 	Items           []Volume `json:"items"`
 }
 
+// ServerVolumeAttachmentList is a typed list of server volume attachments.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type ServerVolumeAttachmentList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []ServerVolumeAttachment `json:"items"`
+}
+
+// ServerVolumeAttachment records one controller-managed Server and Volume relationship.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="server",type="string",JSONPath=".spec.serverID"
+// +kubebuilder:printcolumn:name="volume",type="string",JSONPath=".spec.volumeID"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type ServerVolumeAttachment struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              ServerVolumeAttachmentSpec   `json:"spec"`
+	Status            ServerVolumeAttachmentStatus `json:"status,omitempty"`
+}
+
+// +kubebuilder:validation:XValidation:rule="self.serverID == oldSelf.serverID",message="serverID is immutable"
+// +kubebuilder:validation:XValidation:rule="self.volumeID == oldSelf.volumeID",message="volumeID is immutable"
+type ServerVolumeAttachmentSpec struct {
+	// ServerID is the Region Server resource ID.
+	ServerID string `json:"serverID"`
+	// VolumeID is the Region Volume resource ID.
+	VolumeID string `json:"volumeID"`
+}
+
+type ServerVolumeAttachmentStatus struct {
+	// ObservedGeneration is the most recent generation observed by the lifecycle controller.
+	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
+	// Conditions records lifecycle and provider observations for this relationship.
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// Device is the guest device observed from the provider.
+	Device *string `json:"device,omitempty"`
+}
+
 // Volume defines a network-anchored block storage volume.
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

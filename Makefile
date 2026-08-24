@@ -19,6 +19,8 @@ CONTROLLERS = \
   unikorn-load-balancer-controller \
   unikorn-volume-controller \
   unikorn-server-controller \
+  unikorn-server-volume-attachment-coordinator \
+  unikorn-server-volume-attachment-controller \
   unikorn-region-monitor
 
 # Release will do cross compliation of all images for the 'all' target.

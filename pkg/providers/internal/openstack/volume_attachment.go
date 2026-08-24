@@ -28,6 +28,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/volumeattach"
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 )
@@ -97,6 +98,38 @@ func volumeAttachmentResources(ctx context.Context, compute ServerInterface, blo
 	return openstackServer, cinderVolume, nil
 }
 
+func confirmAttached(ctx context.Context, blockStorage VolumeInterface, serverID string, volume *unikornv1.Volume) (*types.ServerVolumeAttachment, error) {
+	cinderVolume, err := blockStorage.GetVolume(ctx, volume)
+	if err != nil {
+		return nil, err
+	}
+
+	if attachment := volumeAttachmentForOtherServer(cinderVolume, serverID); attachment != nil {
+		return nil, fmt.Errorf("%w: volume %s is attached to server %s", coreerrors.ErrConflict, cinderVolume.ID, attachment.ServerID)
+	}
+	if attachment := volumeAttachmentForServer(cinderVolume, serverID); attachment != nil {
+		return serverVolumeAttachment(attachment.Device), nil
+	}
+
+	return nil, fmt.Errorf("%w: waiting for Cinder to confirm volume attachment", provisioners.ErrYield)
+}
+
+func confirmDetached(ctx context.Context, blockStorage VolumeInterface, serverID string, volume *unikornv1.Volume) error {
+	cinderVolume, err := blockStorage.GetVolume(ctx, volume)
+	if providerResourceNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	if volumeAttachmentForServer(cinderVolume, serverID) != nil {
+		return fmt.Errorf("%w: waiting for Cinder to confirm volume detachment", provisioners.ErrYield)
+	}
+
+	return nil
+}
+
 func attachVolume(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, server *unikornv1.Server, volume *unikornv1.Volume) (*types.ServerVolumeAttachment, error) {
 	openstackServer, cinderVolume, err := volumeAttachmentResources(ctx, compute, blockStorage, server, volume)
 	if err != nil {
@@ -118,7 +151,11 @@ func attachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 
 	attachment, err := compute.CreateVolumeAttachment(ctx, openstackServer.ID, cinderVolume.ID)
 	if err == nil {
-		return providerVolumeAttachment(attachment)
+		if _, err := providerVolumeAttachment(attachment); err != nil {
+			return nil, err
+		}
+
+		return confirmAttached(ctx, blockStorage, openstackServer.ID, volume)
 	}
 
 	if providerResourceNotFound(err) {
@@ -184,7 +221,7 @@ func detachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 		return err
 	}
 
-	return nil
+	return confirmDetached(ctx, blockStorage, openstackServer.ID, volume)
 }
 
 func (p *Provider) AttachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume) (*types.ServerVolumeAttachment, error) {

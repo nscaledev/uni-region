@@ -37,6 +37,14 @@ v{{ .Chart.Version }}
 {{- .Values.volumeController.image | default (printf "%s/unikorn-volume-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default (include "unikorn.defaultTag" .))) }}
 {{- end }}
 
+{{- define "unikorn.serverVolumeAttachmentCoordinatorImage" -}}
+{{- .Values.serverVolumeAttachmentCoordinator.image | default (printf "%s/unikorn-server-volume-attachment-coordinator:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default (include "unikorn.defaultTag" .))) }}
+{{- end }}
+
+{{- define "unikorn.serverVolumeAttachmentControllerImage" -}}
+{{- .Values.serverVolumeAttachmentController.image | default (printf "%s/unikorn-server-volume-attachment-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default (include "unikorn.defaultTag" .))) }}
+{{- end }}
+
 {{- define "unikorn.securityGroupRuleControllerImage" -}}
 {{- .Values.securityGroupRuleController.image | default (printf "%s/unikorn-security-group-rule-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default (include "unikorn.defaultTag" .))) }}
 {{- end }}

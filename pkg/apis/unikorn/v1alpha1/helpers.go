@@ -166,6 +166,28 @@ func (c *Volume) ResourceLabels() (labels.Set, error) {
 	return nil, nil
 }
 
+// Paused implements the ReconcilePauser interface. Attachments are never paused:
+// deletion must always be able to detach provider state.
+func (*ServerVolumeAttachment) Paused() bool {
+	return false
+}
+
+// StatusConditionRead returns an attachment lifecycle or observation condition.
+func (c *ServerVolumeAttachment) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Condition, error) {
+	return unikornv1core.GetCondition(c.Status.Conditions, t)
+}
+
+// SetProvisioningCondition records the attachment lifecycle condition.
+func (c *ServerVolumeAttachment) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
+	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
+}
+
+// ResourceLabels implements the generic managed-resource contract.
+func (*ServerVolumeAttachment) ResourceLabels() (labels.Set, error) {
+	//nolint:nilnil
+	return nil, nil
+}
+
 // Paused implements the ReconcilePauser interface.
 func (c *Server) Paused() bool {
 	return c.Spec.Pause
