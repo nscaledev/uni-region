@@ -16,13 +16,14 @@ _Avoid_: Attachment, provider attachment
 A Server's request to connect an existing Volume.
 _Avoid_: Volume claim
 
-**ServerVolumeAttachment**:
-The lifecycle relationship connecting one Volume to one Server.
-_Avoid_: VolumeAttachment, attachment guard
+**Attachment reconciliation**:
+The controller-managed process that realizes one Server's attachment intent for
+one Volume. It has no separate persisted relationship resource.
+_Avoid_: ServerVolumeAttachment, attachment object
 
-**Selected attachment**:
-The ServerVolumeAttachment whose Server holds the Volume claim and is therefore permitted to affect provider state.
-_Avoid_: Winning attachment, active claim
+**Selected claim**:
+The Volume claim whose Server is permitted to affect provider attachment state.
+_Avoid_: Selected attachment, winning attachment, active claim
 
 **Orphaned attachment**:
 A provider attachment whose Volume remains attached after its Server can no longer be found through the provider.
