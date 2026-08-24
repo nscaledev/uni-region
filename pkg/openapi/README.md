@@ -79,6 +79,15 @@ health metadata.
 Attachment-derived state is not part of this base contract. The Region handler
 implements this lifecycle surface.
 
+The File Storage NFS contract exposes optional, non-nullable `posixAcl` and
+`atimeUpdateIntervalSeconds` settings on create, update, and read models. Create
+omission resolves to `false` and `0`; update omission preserves the stored
+setting. Enabling POSIX ACLs may reduce metadata performance. Extended POSIX ACLs
+must be managed over NFSv3. Disabling this option does not remove existing ACLs;
+they may remain enforced. For `atimeUpdateIntervalSeconds`: Set to 0 to disable
+read-driven atime updates. A positive value updates atime during a read only when
+the existing atime is older than this number of seconds.
+
 Keeping the schema unified matters because it allows:
 
 - one generated client/server contract

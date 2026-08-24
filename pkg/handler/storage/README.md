@@ -48,6 +48,8 @@ accounting meet.
   controller change)
 - parent File Storage reads expose the resolved default snapshot protection
   setting but not the materialized `system-default` policy that implements it
+- parent File Storage create, update, and read requests expose provider-neutral
+  POSIX ACL and atime update interval settings under the existing NFS block
 - attachment mount sources prefer the observed attachment IP range and fall back
   to the desired range until the controller reports an observed IP range
 
@@ -100,6 +102,17 @@ accounting meet.
   hidden `system-default` baseline, which never counts against the caller maximum.
 - Update preserves the existing allocation annotation while mutating the storage
   resource.
+- `posixAcl` and `atimeUpdateIntervalSeconds` are optional and non-nullable in
+  the public NFS contract. Create omission persists concrete defaults of `false`
+  and `0`. Update omission preserves the corresponding stored pointer, while
+  explicit `false` and `0` remain updates. The API does not expose a way to clear
+  a managed value back to `nil`.
+- Enabling POSIX ACLs may reduce metadata performance. Extended POSIX
+  ACLs must be managed over NFSv3. Disabling this option does not remove existing
+  ACLs; they may remain enforced.
+- For `atimeUpdateIntervalSeconds`: Set to 0 to disable read-driven atime
+  updates. A positive value updates atime during a read only when the existing
+  atime is older than this number of seconds.
 
 ## Caveats
 

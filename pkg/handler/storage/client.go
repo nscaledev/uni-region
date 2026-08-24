@@ -261,7 +261,9 @@ func checkRegionNFS(in *regionv1.NFS) *openapi.NFSV2Spec {
 	}
 
 	return &openapi.NFSV2Spec{
-		RootSquash: in.RootSquash,
+		RootSquash:                 in.RootSquash,
+		PosixAcl:                   in.POSIXACL,
+		AtimeUpdateIntervalSeconds: in.AtimeUpdateIntervalSeconds,
 	}
 }
 
@@ -380,6 +382,15 @@ func (c *Client) generateV2(ctx context.Context, organizationID identityids.Orga
 
 	defaultSnapshotProtectionEnabled := request.Spec.DefaultSnapshotProtectionEnabled
 	policies := generateSnapshotPolicies(request.Spec.SnapshotPolicies)
+	nfs := request.Spec.StorageType.NFS
+	regionNFS := &regionv1.NFS{
+		RootSquash: checkRootSquash(nfs),
+	}
+
+	if nfs != nil {
+		regionNFS.POSIXACL = nfs.PosixAcl
+		regionNFS.AtimeUpdateIntervalSeconds = nfs.AtimeUpdateIntervalSeconds
+	}
 
 	out := &regionv1.FileStorage{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.Namespace).
@@ -391,10 +402,8 @@ func (c *Client) generateV2(ctx context.Context, organizationID identityids.Orga
 			Attachments:                      attachments,
 			DefaultSnapshotProtectionEnabled: defaultSnapshotProtectionEnabled,
 			SnapshotPolicies:                 materializeDefaultSnapshotProtection(policies, defaultSnapshotProtectionEnabled),
-			NFS: &regionv1.NFS{
-				RootSquash: checkRootSquash(request.Spec.StorageType.NFS),
-			},
-			StorageClassID: storageClass.Metadata.Id,
+			NFS:                              regionNFS,
+			StorageClassID:                   storageClass.Metadata.Id,
 		},
 	}
 
@@ -530,6 +539,12 @@ func narrowStorageRange(in *regionv1.AttachmentIPRange, parallelism int) *region
 }
 
 func generateRequestFromCreate(in *openapi.StorageV2Create) *storageV2GenerateRequest {
+	storageType := in.Spec.StorageType
+	storageType.NFS = resolveNFS(storageType.NFS, &openapi.NFSV2Spec{
+		PosixAcl:                   ptr.To(false),
+		AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
+	})
+
 	return &storageV2GenerateRequest{
 		Metadata: in.Metadata,
 		Spec: storageV2GenerateSpec{
@@ -538,9 +553,34 @@ func generateRequestFromCreate(in *openapi.StorageV2Create) *storageV2GenerateRe
 			DefaultSnapshotProtectionEnabled: ptr.Deref(in.Spec.DefaultSnapshotProtectionEnabled, true),
 			SizeGiB:                          in.Spec.SizeGiB,
 			SnapshotPolicies:                 in.Spec.SnapshotPolicies,
-			StorageType:                      in.Spec.StorageType,
+			StorageType:                      storageType,
 		},
 	}
+}
+
+func resolveNFS(in, fallback *openapi.NFSV2Spec) *openapi.NFSV2Spec {
+	out := &openapi.NFSV2Spec{
+		RootSquash: checkRootSquash(in),
+	}
+
+	if fallback != nil {
+		out.PosixAcl = fallback.PosixAcl
+		out.AtimeUpdateIntervalSeconds = fallback.AtimeUpdateIntervalSeconds
+	}
+
+	if in == nil {
+		return out
+	}
+
+	if in.PosixAcl != nil {
+		out.PosixAcl = in.PosixAcl
+	}
+
+	if in.AtimeUpdateIntervalSeconds != nil {
+		out.AtimeUpdateIntervalSeconds = in.AtimeUpdateIntervalSeconds
+	}
+
+	return out
 }
 
 func generateRequestFromUpdate(in *openapi.StorageV2Update, currentDefaultProtection bool) *storageV2GenerateRequest {

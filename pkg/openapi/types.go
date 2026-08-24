@@ -140,6 +140,20 @@ const (
 
 // NFSV2Spec NFS specific
 type NFSV2Spec struct {
+	// AtimeUpdateIntervalSeconds On create, omission resolves to 0. On update, omission preserves the current setting.
+	// Explicit null is invalid.
+	//
+	// Set to 0 to disable read-driven atime updates. A positive value updates atime during a read
+	// only when the existing atime is older than this number of seconds.
+	AtimeUpdateIntervalSeconds *int64 `json:"atimeUpdateIntervalSeconds,omitempty"`
+
+	// PosixAcl Whether extended POSIX ACL support is enabled. On create, omission resolves to false.
+	// On update, omission preserves the current setting. Explicit null is invalid.
+	//
+	// Enabling POSIX ACLs may reduce metadata performance. Extended POSIX ACLs must be managed over
+	// NFSv3. Disabling this option does not remove existing ACLs; they may remain enforced.
+	PosixAcl *bool `json:"posixAcl,omitempty"`
+
 	// RootSquash root squash
 	RootSquash bool `json:"rootSquash"`
 }
