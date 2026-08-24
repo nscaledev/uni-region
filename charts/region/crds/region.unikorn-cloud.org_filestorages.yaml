@@ -90,6 +90,17 @@ spec:
               nfs:
                 description: NFS is fulfilled when leveraging the NFS storage class.
                 properties:
+                  atimeUpdateIntervalSeconds:
+                    description: AtimeUpdateIntervalSeconds controls how stale atime
+                      must be before a read updates it. Zero disables read-driven
+                      updates.
+                    format: int64
+                    maximum: 86399999999999
+                    minimum: 0
+                    type: integer
+                  posixAcl:
+                    description: POSIXACL controls extended POSIX ACL support.
+                    type: boolean
                   rootSquash:
                     type: boolean
                 type: object
