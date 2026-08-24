@@ -69,7 +69,8 @@ GOBIN := $(if $(shell go env GOBIN),$(shell go env GOBIN),$(GOPATH)/bin)
 FLAGS=-trimpath -ldflags '-X $(MODULE)/pkg/constants.Version=$(VERSION) -X $(MODULE)/pkg/constants.Revision=$(REVISION)'
 
 # Defines the linter version.
-LINT_VERSION=v2.1.5
+LINT_VERSION=v2.4.0
+LINT_GO := GOTOOLCHAIN=go$(shell awk '$$1 == "go" { print $$2; exit }' go.mod) GOCACHE=$(shell mktemp -d)
 
 # Defines the version of the CRD generation tools to use.
 CONTROLLER_TOOLS_VERSION=v0.17.3
@@ -189,8 +190,8 @@ touch:
 # This must pass or you will be denied by CI.
 .PHOMY: lint
 lint: $(GENDIR)
-	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(LINT_VERSION)
-	$(GOBIN)/golangci-lint run --timeout=10m ./...
+	@$(LINT_GO) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(LINT_VERSION)
+	$(LINT_GO) $(GOBIN)/golangci-lint run --timeout=10m ./...
 	helm lint --strict charts/region
 
 # Validate the server OpenAPI schema is legit.

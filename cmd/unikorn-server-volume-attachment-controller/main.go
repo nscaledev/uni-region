@@ -18,7 +18,7 @@ package main
 
 import (
 	"github.com/unikorn-cloud/core/pkg/manager"
-	"github.com/unikorn-cloud/region/pkg/managers/server-volume-attachment"
+	servervolumeattachment "github.com/unikorn-cloud/region/pkg/managers/server-volume-attachment"
 )
 
 func main() {

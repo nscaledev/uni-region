@@ -19,6 +19,15 @@ linters:
     - wastedassign
     - wrapcheck
     - funcorder
+    - contextcheck
+    - cyclop
+    - embeddedstructfieldcheck
+    - noinlineerr
+    - paralleltest
+    - revive
+    - testpackage
+    - wsl
+    - wsl_v5
   settings:
     nlreturn:
       block-size: 2
@@ -40,7 +49,6 @@ linters:
       - examples$
 formatters:
   enable:
-    - gci
     - gofmt
     - goimports
   settings:
