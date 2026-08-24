@@ -135,7 +135,7 @@ func (c *Checker) resolveProvider(ctx context.Context, cache map[string]provider
 	provider, err := c.providers.LookupCloud(regionID)
 	if err != nil {
 		if !isFatal(err) {
-			log.FromContext(ctx).Error(err, "failed to resolve volume provider, skipping", "region_id", regionID)
+			log.FromContext(ctx).Error(err, "failed to resolve volume provider", "region_id", regionID)
 			cache[regionID] = providerEntry{err: err}
 		}
 
@@ -145,6 +145,22 @@ func (c *Checker) resolveProvider(ctx context.Context, cache map[string]provider
 	cache[regionID] = providerEntry{provider: provider}
 
 	return provider, nil
+}
+
+func (c *Checker) patchStatus(ctx context.Context, volume, updated *unikornv1.Volume) error {
+	if err := c.client.Status().Patch(ctx, updated, client.MergeFromWithOptions(volume, &client.MergeFromWithOptimisticLock{})); err != nil {
+		if isFatal(err) {
+			return err
+		}
+
+		volumeLogger(ctx, volume).Error(err, "failed to update volume status, skipping")
+
+		return nil
+	}
+
+	logTransitions(ctx, volume, updated)
+
+	return nil
 }
 
 //nolint:cyclop // The branches keep independent provider failures isolated to the affected Volume.
@@ -165,13 +181,18 @@ func (c *Checker) processVolume(ctx context.Context, volume *unikornv1.Volume, p
 		return nil
 	}
 
+	updated := volume.DeepCopy()
+	apiMeta.RemoveStatusCondition(&updated.Status.Conditions, string(unikornv1core.ConditionActive))
+
 	provider, err := c.resolveProvider(ctx, providers, regionID)
 	if err != nil {
 		if isFatal(err) {
 			return err
 		}
 
-		return nil
+		setObservationFailureStatus(updated)
+
+		return c.patchStatus(ctx, volume, updated)
 	}
 
 	identity := &unikornv1.Identity{}
@@ -184,9 +205,6 @@ func (c *Checker) processVolume(ctx context.Context, volume *unikornv1.Volume, p
 
 		return nil
 	}
-
-	updated := volume.DeepCopy()
-	apiMeta.RemoveStatusCondition(&updated.Status.Conditions, string(unikornv1core.ConditionActive))
 
 	observation, err := provider.ObserveVolume(ctx, identity, volume)
 
@@ -212,19 +230,7 @@ func (c *Checker) processVolume(ctx context.Context, volume *unikornv1.Volume, p
 		setObservedStatus(updated, observation)
 	}
 
-	if err := c.client.Status().Patch(ctx, updated, client.MergeFromWithOptions(volume, &client.MergeFromWithOptimisticLock{})); err != nil {
-		if isFatal(err) {
-			return err
-		}
-
-		volumeLogger(ctx, volume).Error(err, "failed to update volume status, skipping")
-
-		return nil
-	}
-
-	logTransitions(ctx, volume, updated)
-
-	return nil
+	return c.patchStatus(ctx, volume, updated)
 }
 
 // Check observes every non-deleting Volume in the configured namespace.

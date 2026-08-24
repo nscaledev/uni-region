@@ -330,16 +330,35 @@ func TestCheckCachesFailedProviderLookupByRegion(t *testing.T) {
 	first := volumeFixture()
 	second := volumeFixture()
 	second.Name = testVolumeID2
+	size := resource.MustParse("10Gi")
+	for _, volume := range []*unikornv1.Volume{first, second} {
+		volume.Status.Size = &size
+		volume.SetHealthCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy")
+	}
+
 	k8sClient := fakeClient(t, first, second)
 	sink := newCaptureSink()
 	ctx := logr.NewContext(t.Context(), logr.New(sink))
 
 	require.NoError(t, volumehealth.New(k8sClient, testNamespace, providerSet).Check(ctx))
 
-	entry := sink.entry("failed to resolve volume provider, skipping")
+	entry := sink.entry("failed to resolve volume provider")
 	require.Equal(t, testRegionID, entry["region_id"])
 
 	loggedErr, ok := entry["error"].(error)
 	require.True(t, ok)
 	require.ErrorIs(t, loggedErr, errProviderLookup)
+
+	for _, volume := range []*unikornv1.Volume{first, second} {
+		updated := &unikornv1.Volume{}
+		require.NoError(t, k8sClient.Get(ctx, client.ObjectKeyFromObject(volume), updated))
+		require.NotNil(t, updated.Status.Size)
+		require.True(t, updated.Status.Size.Equal(size))
+
+		health, err := unikornv1core.GetHealthyCondition(updated)
+		require.NoError(t, err)
+		require.Equal(t, corev1.ConditionUnknown, health.Status)
+		require.Equal(t, unikornv1core.ConditionReasonUnknown, health.Reason)
+		require.Equal(t, "unable to observe provider volume state", health.Message)
+	}
 }
