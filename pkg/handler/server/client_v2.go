@@ -885,29 +885,52 @@ func providerCreateGateActor(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("%w: provider-create gate actor is not defined", coreerrors.ErrInvalidContext)
 }
 
-func providerCreateGateActionChanged(current *regionv1.Server, conditionType, actor, reason, message string) bool {
-	status, ok := current.ProviderCreateGateStatusRead(conditionType)
+func providerCreateGateActionChanged(current *regionv1.Server, conditionType string, status kcorev1.ConditionStatus, terminal bool, actor, reason, message string) bool {
+	existing, ok := current.ProviderCreateGateStatusRead(conditionType)
 	if !ok {
 		return true
 	}
 
-	return status.Status != kcorev1.ConditionTrue ||
-		status.Actor != actor ||
-		status.Reason != reason ||
-		status.Message != message
+	return existing.Status != status ||
+		existing.Terminal != terminal ||
+		existing.Actor != actor ||
+		existing.Reason != reason ||
+		existing.Message != message
+}
+
+// validateProviderCreateGateAction checks the required request fields.
+func validateProviderCreateGateAction(request *openapi.ServerProviderCreateGateAction) error {
+	switch {
+	case request.ConditionType == "":
+		return errors.OAuth2InvalidRequest("conditionType must be specified")
+	case request.Reason == "":
+		return errors.OAuth2InvalidRequest("reason must be specified")
+	case request.Message == "":
+		return errors.OAuth2InvalidRequest("message must be specified")
+	}
+
+	return nil
+}
+
+// providerCreateGateActionStatus resolves the reported status (default True) and
+// terminal flag, rejecting a terminal marker on a non-False status.
+func providerCreateGateActionStatus(request *openapi.ServerProviderCreateGateAction) (kcorev1.ConditionStatus, bool, error) {
+	status := kcorev1.ConditionTrue
+	if request.Status != nil && string(*request.Status) == string(kcorev1.ConditionFalse) {
+		status = kcorev1.ConditionFalse
+	}
+
+	terminal := request.Terminal != nil && *request.Terminal
+	if terminal && status != kcorev1.ConditionFalse {
+		return "", false, errors.OAuth2InvalidRequest("terminal is only valid with status False")
+	}
+
+	return status, terminal, nil
 }
 
 func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerProviderCreateGateAction) error {
-	if request.ConditionType == "" {
-		return errors.OAuth2InvalidRequest("conditionType must be specified")
-	}
-
-	if request.Reason == "" {
-		return errors.OAuth2InvalidRequest("reason must be specified")
-	}
-
-	if request.Message == "" {
-		return errors.OAuth2InvalidRequest("message must be specified")
+	if err := validateProviderCreateGateAction(request); err != nil {
+		return err
 	}
 
 	current, err := c.GetV2Raw(ctx, serverID.String())
@@ -929,20 +952,30 @@ func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regio
 		return fmt.Errorf("%w: unable to derive provider-create gate actor", err)
 	}
 
-	changed := providerCreateGateActionChanged(current, conditionType, actor, request.Reason, request.Message)
+	// status defaults to True (satisfy); False blocks the gate, and terminal
+	// (only valid with False) tells the provisioner the gate will never be
+	// satisfied, so provider-create fails instead of holding.
+	status, terminal, err := providerCreateGateActionStatus(request)
+	if err != nil {
+		return err
+	}
+
+	changed := providerCreateGateActionChanged(current, conditionType, status, terminal, actor, request.Reason, request.Message)
 
 	if changed {
 		updated := current.DeepCopy()
-		updated.ProviderCreateGateStatusWrite(conditionType, kcorev1.ConditionTrue, actor, request.Reason, request.Message)
+		updated.ProviderCreateGateStatusWrite(conditionType, status, terminal, actor, request.Reason, request.Message)
 
 		if err := c.Client.Client.Status().Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
-			return fmt.Errorf("%w: unable to satisfy provider-create gate", err)
+			return fmt.Errorf("%w: unable to report provider-create gate", err)
 		}
 	}
 
-	log.FromContext(ctx).Info("server provider-create gate satisfied",
+	log.FromContext(ctx).Info("server provider-create gate reported",
 		"server", serverID.String(),
 		"conditionType", conditionType,
+		"status", status,
+		"terminal", terminal,
 		"actor", actor,
 		"reason", request.Reason,
 		"changed", changed)

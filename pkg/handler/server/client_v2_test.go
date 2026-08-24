@@ -1720,7 +1720,7 @@ func TestServerGetV2ReturnsRemainingProviderCreateGates(t *testing.T) {
 		{ConditionType: srvProviderGate},
 		{ConditionType: "example.unikorn-cloud.org/second-ready"},
 	}
-	resource.ProviderCreateGateStatusWrite(srvProviderGate, corev1.ConditionTrue, "service", "Prepared", "done")
+	resource.ProviderCreateGateStatusWrite(srvProviderGate, corev1.ConditionTrue, false, "service", "Prepared", "done")
 
 	k8sClient := newSrvFakeClient(t, resource).Build()
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
@@ -1795,6 +1795,96 @@ func TestServerSatisfyProviderCreateGate(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result.Status.RemainingProviderCreateGates)
 	require.Empty(t, *result.Status.RemainingProviderCreateGates)
+}
+
+func TestServerSatisfyProviderCreateGateBlocksTerminally(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	resource := testServerV2(srvServerID)
+	resource.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
+		{ConditionType: srvProviderGate},
+	}
+
+	k8sClient := newSrvFakeClient(t, resource).
+		WithStatusSubresource(&regionv1.Server{}).
+		Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvProviderCreateGate())
+	ctx = withPrincipal(ctx)
+	ctx = withProviderCreateServiceCertificate(ctx, t)
+
+	blocked := openapi.ServerProviderCreateGateActionStatusFalse
+	terminal := true
+	request := &openapi.ServerProviderCreateGateAction{
+		ConditionType: srvProviderGate,
+		Reason:        "NoPKeyAvailable",
+		Message:       "p_key pool exhausted",
+		Status:        &blocked,
+		Terminal:      &terminal,
+	}
+
+	require.NoError(t, c.SatisfyProviderCreateGate(ctx, idstest.MustParseServerID(resource.Name), request))
+
+	updated := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
+
+	status, ok := updated.ProviderCreateGateStatusRead(srvProviderGate)
+	require.True(t, ok)
+	require.Equal(t, corev1.ConditionFalse, status.Status)
+	require.True(t, status.Terminal)
+	require.Equal(t, "NoPKeyAvailable", status.Reason)
+
+	// A blocked gate is not satisfied, so it stays outstanding and terminal.
+	require.Equal(t, []string{srvProviderGate}, updated.RemainingProviderCreateGates())
+	gate, ok := updated.TerminalProviderCreateGate()
+	require.True(t, ok)
+	require.Equal(t, srvProviderGate, gate.ConditionType)
+}
+
+func TestServerSatisfyProviderCreateGateRejectsTerminalWithoutFalse(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	resource := testServerV2(srvServerID)
+	resource.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
+		{ConditionType: srvProviderGate},
+	}
+
+	k8sClient := newSrvFakeClient(t, resource).
+		WithStatusSubresource(&regionv1.Server{}).
+		Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvProviderCreateGate())
+	ctx = withPrincipal(ctx)
+	ctx = withProviderCreateServiceCertificate(ctx, t)
+
+	// terminal with an implicit (defaulted) True status is invalid.
+	terminal := true
+	request := &openapi.ServerProviderCreateGateAction{
+		ConditionType: srvProviderGate,
+		Reason:        "Bogus",
+		Message:       "terminal requires status False",
+		Terminal:      &terminal,
+	}
+
+	require.Error(t, c.SatisfyProviderCreateGate(ctx, idstest.MustParseServerID(resource.Name), request))
 }
 
 func TestServerSatisfyProviderCreateGateIsIdempotent(t *testing.T) {

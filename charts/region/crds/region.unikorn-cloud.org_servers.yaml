@@ -338,6 +338,11 @@ spec:
                       - "False"
                       - Unknown
                       type: string
+                    terminal:
+                      description: |-
+                        Terminal marks a False gate that will never be satisfied without external
+                        change; the provisioner fails provider-create rather than holding on it.
+                      type: boolean
                   required:
                   - conditionType
                   - lastTransitionTime

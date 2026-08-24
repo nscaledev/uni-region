@@ -28,6 +28,37 @@ import (
 
 const testProviderCreateGate = "example.unikorn-cloud.org/pre-create-ready"
 
+func TestTerminalProviderCreateGate(t *testing.T) {
+	t.Parallel()
+
+	server := &regionv1.Server{
+		Spec: regionv1.ServerSpec{
+			ProviderCreateGates: []regionv1.ServerProviderCreateGate{{ConditionType: testProviderCreateGate}},
+		},
+	}
+
+	// No status reported yet: not terminal.
+	_, ok := server.TerminalProviderCreateGate()
+	require.False(t, ok)
+
+	// Blocked but transient (terminal=false): not terminal.
+	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionFalse, false, "svc", "AllocatingPKey", "still programming")
+	_, ok = server.TerminalProviderCreateGate()
+	require.False(t, ok)
+
+	// Blocked terminally: returned with its reason.
+	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionFalse, true, "svc", "NoPKeyAvailable", "p_key pool exhausted")
+	gate, ok := server.TerminalProviderCreateGate()
+	require.True(t, ok)
+	require.Equal(t, "NoPKeyAvailable", gate.Reason)
+	require.True(t, gate.Terminal)
+
+	// Satisfied: not terminal.
+	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionTrue, false, "svc", "Programmed", "done")
+	_, ok = server.TerminalProviderCreateGate()
+	require.False(t, ok)
+}
+
 func TestServerProviderCreateGates(t *testing.T) {
 	t.Parallel()
 
@@ -44,7 +75,7 @@ func TestServerProviderCreateGates(t *testing.T) {
 	require.False(t, server.ProviderCreateGatesReady())
 	require.Equal(t, []string{testProviderCreateGate}, server.RemainingProviderCreateGates())
 
-	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionUnknown, "region", "Reset", "provider create will retry")
+	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionUnknown, false, "region", "Reset", "provider create will retry")
 	require.False(t, server.ProviderCreateGatesReady())
 	require.Equal(t, []string{testProviderCreateGate}, server.RemainingProviderCreateGates())
 
@@ -56,7 +87,7 @@ func TestServerProviderCreateGates(t *testing.T) {
 	require.Equal(t, "provider create will retry", status.Message)
 	unknownTransitionTime := status.LastTransitionTime
 
-	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionTrue, "service", "Prepared", "external state is ready")
+	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionTrue, false, "service", "Prepared", "external state is ready")
 	require.True(t, server.ProviderCreateGatesReady())
 	require.Empty(t, server.RemainingProviderCreateGates())
 
@@ -69,7 +100,7 @@ func TestServerProviderCreateGates(t *testing.T) {
 	require.True(t, status.LastTransitionTime.After(unknownTransitionTime.Time) || status.LastTransitionTime.Equal(&unknownTransitionTime))
 	trueTransitionTime := status.LastTransitionTime
 
-	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionTrue, "other-service", "StillPrepared", "still ready")
+	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionTrue, false, "other-service", "StillPrepared", "still ready")
 
 	status, ok = server.ProviderCreateGateStatusRead(testProviderCreateGate)
 	require.True(t, ok)
@@ -92,8 +123,8 @@ func TestServerProviderCreateGatesReset(t *testing.T) {
 		},
 	}
 
-	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionTrue, "service", "Prepared", "")
-	server.ProviderCreateGateStatusWrite("example.unikorn-cloud.org/second-ready", corev1.ConditionTrue, "service", "Prepared", "")
+	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionTrue, false, "service", "Prepared", "")
+	server.ProviderCreateGateStatusWrite("example.unikorn-cloud.org/second-ready", corev1.ConditionTrue, false, "service", "Prepared", "")
 	require.True(t, server.ProviderCreateGatesReady())
 
 	server.ProviderCreateGatesReset("region", "ProviderCreateRetry", "provider create will retry")

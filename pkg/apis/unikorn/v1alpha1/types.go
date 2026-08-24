@@ -1308,6 +1308,9 @@ type ServerProviderCreateGateStatus struct {
 	// Status is True when the gate is satisfied.
 	// +kubebuilder:validation:Enum=True;False;Unknown
 	Status corev1.ConditionStatus `json:"status"`
+	// Terminal marks a False gate that will never be satisfied without external
+	// change; the provisioner fails provider-create rather than holding on it.
+	Terminal bool `json:"terminal,omitempty"`
 	// LastTransitionTime records when the gate status last changed.
 	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
 	// Actor is the authenticated service identity that last wrote this gate

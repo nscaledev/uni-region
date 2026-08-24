@@ -3520,7 +3520,7 @@ components:
       items:
         $ref: '#/components/schemas/serverProviderCreateGateType'
     serverProviderCreateGateAction:
-      description: Request to satisfy a configured provider-create gate.
+      description: Request to report a configured provider-create gate's status.
       type: object
       required:
       - conditionType
@@ -3530,13 +3530,28 @@ components:
         conditionType:
           $ref: '#/components/schemas/serverProviderCreateGateType'
         reason:
-          description: Machine-readable reason for satisfying the gate.
+          description: Machine-readable reason for the reported status.
           type: string
           minLength: 1
         message:
           description: Human-readable details for operators.
           type: string
           minLength: 1
+        status:
+          description: >-
+            Gate status to report. True satisfies the gate; False blocks it with
+            the given reason. Defaults to True.
+          type: string
+          enum:
+          - "True"
+          - "False"
+          default: "True"
+        terminal:
+          description: >-
+            Only meaningful with status False. When true the gate will never be
+            satisfied without external change, so provider-create fails with the
+            reported reason instead of holding.
+          type: boolean
     serverV2Networking:
       description: A server's network configuration.
       type: object

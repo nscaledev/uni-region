@@ -132,7 +132,7 @@ func withRuntimeStatus(server *regionv1.Server) {
 
 func withSatisfiedProviderCreateGate(server *regionv1.Server) {
 	server.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{{ConditionType: "test/gate"}}
-	server.ProviderCreateGateStatusWrite("test/gate", corev1.ConditionTrue, "ib-manager", "Programmed", "satisfied on the first attempt")
+	server.ProviderCreateGateStatusWrite("test/gate", corev1.ConditionTrue, false, "ib-manager", "Programmed", "satisfied on the first attempt")
 }
 
 func retryProvisioner(t *testing.T, server *regionv1.Server, options *serverprovisioner.Options, provider *mocktypes.MockProvider, recorders ...record.EventRecorder) *serverprovisioner.Provisioner {

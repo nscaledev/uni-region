@@ -87,6 +87,12 @@ const (
 	RegionTypeSimulated  RegionType = "simulated"
 )
 
+// Defines values for ServerProviderCreateGateActionStatus.
+const (
+	ServerProviderCreateGateActionStatusFalse ServerProviderCreateGateActionStatus = "False"
+	ServerProviderCreateGateActionStatusTrue  ServerProviderCreateGateActionStatus = "True"
+)
+
 // Defines values for SshInjection.
 const (
 	SshInjectionCa              SshInjection = "ca"
@@ -1044,7 +1050,7 @@ type ServerProviderCreateGate struct {
 	ConditionType ServerProviderCreateGateType `json:"conditionType"`
 }
 
-// ServerProviderCreateGateAction Request to satisfy a configured provider-create gate.
+// ServerProviderCreateGateAction Request to report a configured provider-create gate's status.
 type ServerProviderCreateGateAction struct {
 	// ConditionType A provider-create gate condition type.
 	ConditionType ServerProviderCreateGateType `json:"conditionType"`
@@ -1052,9 +1058,18 @@ type ServerProviderCreateGateAction struct {
 	// Message Human-readable details for operators.
 	Message string `json:"message"`
 
-	// Reason Machine-readable reason for satisfying the gate.
+	// Reason Machine-readable reason for the reported status.
 	Reason string `json:"reason"`
+
+	// Status Gate status to report. True satisfies the gate; False blocks it with the given reason. Defaults to True.
+	Status *ServerProviderCreateGateActionStatus `json:"status,omitempty"`
+
+	// Terminal Only meaningful with status False. When true the gate will never be satisfied without external change, so provider-create fails with the reported reason instead of holding.
+	Terminal *bool `json:"terminal,omitempty"`
 }
+
+// ServerProviderCreateGateActionStatus Gate status to report. True satisfies the gate; False blocks it with the given reason. Defaults to True.
+type ServerProviderCreateGateActionStatus string
 
 // ServerProviderCreateGateType A provider-create gate condition type.
 type ServerProviderCreateGateType = string
@@ -1881,7 +1896,7 @@ type SecurityGroupV2CreateRequest = SecurityGroupV2Create
 // SecurityGroupV2UpdateRequest A security group request.
 type SecurityGroupV2UpdateRequest = SecurityGroupV2Update
 
-// ServerProviderCreateGateRequest Request to satisfy a configured provider-create gate.
+// ServerProviderCreateGateRequest Request to report a configured provider-create gate's status.
 type ServerProviderCreateGateRequest = ServerProviderCreateGateAction
 
 // ServerRequest A server request.

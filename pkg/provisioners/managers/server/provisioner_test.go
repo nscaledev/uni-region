@@ -85,8 +85,17 @@ func withProviderCreateGate(status corev1.ConditionStatus) func(*regionv1.Server
 		}
 
 		if status != "" {
-			server.ProviderCreateGateStatusWrite(testProviderGate, status, testProviderActor, testProviderReason, testProviderMessage)
+			server.ProviderCreateGateStatusWrite(testProviderGate, status, false, testProviderActor, testProviderReason, testProviderMessage)
 		}
+	}
+}
+
+func withTerminalProviderCreateGate() func(*regionv1.Server) {
+	return func(server *regionv1.Server) {
+		server.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
+			{ConditionType: testProviderGate},
+		}
+		server.ProviderCreateGateStatusWrite(testProviderGate, corev1.ConditionFalse, true, testProviderActor, "NoPKeyAvailable", "p_key pool exhausted")
 	}
 }
 
@@ -122,6 +131,27 @@ func TestProvisionProviderCreateGateRemaining(t *testing.T) {
 	prov := serverprovisioner.NewForTest(server, providers, nil)
 	err := prov.Provision(coreclient.NewContext(t.Context(), cli))
 	require.ErrorIs(t, err, provisioners.ErrYield)
+}
+
+func TestProvisionProviderCreateGateTerminal(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	provider := mocktypes.NewMockProvider(ctrl)
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+
+	// A terminally-blocked gate must fail the create (not yield): the server is
+	// never provider-created, so no CreateServer call is expected.
+	server := testProvisionServer(withTerminalProviderCreateGate())
+	cli := testProvisionClient(t, server, testProvisionIdentity())
+
+	prov := serverprovisioner.NewForTest(server, providers, nil)
+	err := prov.Provision(coreclient.NewContext(t.Context(), cli))
+	require.Error(t, err)
+	require.NotErrorIs(t, err, provisioners.ErrYield)
 }
 
 func TestProvisionProviderCreateGateSatisfied(t *testing.T) {
