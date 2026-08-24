@@ -122,8 +122,33 @@ func isFatal(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
+type providerEntry struct {
+	provider providertypes.Provider
+	err      error
+}
+
+func (c *Checker) resolveProvider(ctx context.Context, cache map[string]providerEntry, regionID string) (providertypes.Provider, error) {
+	if entry, ok := cache[regionID]; ok {
+		return entry.provider, entry.err
+	}
+
+	provider, err := c.providers.LookupCloud(regionID)
+	if err != nil {
+		if !isFatal(err) {
+			log.FromContext(ctx).Error(err, "failed to resolve volume provider, skipping", "region_id", regionID)
+			cache[regionID] = providerEntry{err: err}
+		}
+
+		return nil, err
+	}
+
+	cache[regionID] = providerEntry{provider: provider}
+
+	return provider, nil
+}
+
 //nolint:cyclop // The branches keep independent provider failures isolated to the affected Volume.
-func (c *Checker) processVolume(ctx context.Context, volume *unikornv1.Volume) error {
+func (c *Checker) processVolume(ctx context.Context, volume *unikornv1.Volume, providers map[string]providerEntry) error {
 	if volume.DeletionTimestamp != nil {
 		return nil
 	}
@@ -140,13 +165,11 @@ func (c *Checker) processVolume(ctx context.Context, volume *unikornv1.Volume) e
 		return nil
 	}
 
-	provider, err := c.providers.LookupCloud(regionID)
+	provider, err := c.resolveProvider(ctx, providers, regionID)
 	if err != nil {
 		if isFatal(err) {
 			return err
 		}
-
-		volumeLogger(ctx, volume).Error(err, "failed to resolve volume provider, skipping")
 
 		return nil
 	}
@@ -171,6 +194,13 @@ func (c *Checker) processVolume(ctx context.Context, volume *unikornv1.Volume) e
 	case isFatal(err):
 		return err
 	case errors.Is(err, coreerrors.ErrResourceNotFound):
+		available, availableErr := unikornv1core.GetAvailableCondition(volume)
+		if availableErr != nil || available.Status != corev1.ConditionTrue || available.Reason != unikornv1core.ConditionReasonProvisioned {
+			volumeLogger(ctx, volume).Info("provider volume not found before provisioning completed")
+
+			break
+		}
+
 		setMissingStatus(updated)
 	case err != nil:
 		volumeLogger(ctx, volume).Error(err, "failed to observe volume")
@@ -204,8 +234,10 @@ func (c *Checker) Check(ctx context.Context) error {
 		return err
 	}
 
+	providers := make(map[string]providerEntry)
+
 	for i := range volumes.Items {
-		if err := c.processVolume(ctx, &volumes.Items[i]); err != nil {
+		if err := c.processVolume(ctx, &volumes.Items[i], providers); err != nil {
 			return err
 		}
 	}

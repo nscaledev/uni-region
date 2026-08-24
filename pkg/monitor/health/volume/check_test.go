@@ -49,10 +49,14 @@ const (
 	testRegionID       = "region-1"
 	testIdentityID     = "identity-1"
 	testVolumeID       = "11111111-1111-4111-8111-111111111111"
+	testVolumeID2      = "22222222-2222-4222-8222-222222222222"
 	testOrganizationID = "00000000-0000-4000-8000-000000000001"
 )
 
-var errProviderObservation = errors.New("provider observation failed")
+var (
+	errProviderLookup      = errors.New("provider lookup failed")
+	errProviderObservation = errors.New("provider observation failed")
+)
 
 type captureSink struct {
 	entries   *[]map[string]any
@@ -236,6 +240,27 @@ func TestCheckProjectsMissingProviderVolumeAndLogsTransition(t *testing.T) {
 	require.Equal(t, "the provider volume is missing", entry["to_message"])
 }
 
+func TestCheckDoesNotDegradeMissingVolumeBeforeProvisioningCompletes(t *testing.T) {
+	t.Parallel()
+
+	volume := volumeFixture()
+	volume.SetProvisioningCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonProvisioning, "provisioning")
+
+	updated, sink := runCheck(t, volume, nil, coreerrors.ErrResourceNotFound)
+	require.Nil(t, updated.Status.Size)
+
+	_, err := unikornv1core.GetHealthyCondition(updated)
+	require.Error(t, err)
+
+	available, err := unikornv1core.GetAvailableCondition(updated)
+	require.NoError(t, err)
+	require.Equal(t, corev1.ConditionFalse, available.Status)
+	require.Equal(t, unikornv1core.ConditionReasonProvisioning, available.Reason)
+	require.Len(t, updated.Status.Conditions, 1)
+	require.NotNil(t, sink.entry("provider volume not found before provisioning completed"))
+	require.Nil(t, sink.entry("volume health transition"))
+}
+
 func TestCheckMakesHealthUnknownOnProviderErrorAndLogs(t *testing.T) {
 	t.Parallel()
 
@@ -272,4 +297,49 @@ func TestCheckMakesHealthUnknownOnProviderErrorAndLogs(t *testing.T) {
 	require.Equal(t, unikornv1core.ConditionReasonHealthy, transition["from_health"])
 	require.Equal(t, unikornv1core.ConditionReasonUnknown, transition["to_health"])
 	require.Equal(t, "unable to observe provider volume state", transition["to_message"])
+}
+
+func TestCheckCachesSuccessfulProviderLookupByRegion(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().ObserveVolume(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&providertypes.VolumeObservation{Size: resource.MustParse("20Gi"), Status: providertypes.VolumeStatusAvailable}, nil).
+		Times(2)
+
+	providerSet := mockproviders.NewMockProviders(ctrl)
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+
+	identity := &unikornv1.Identity{ObjectMeta: metav1.ObjectMeta{Name: testIdentityID, Namespace: testNamespace}}
+	first := volumeFixture()
+	second := volumeFixture()
+	second.Name = testVolumeID2
+	k8sClient := fakeClient(t, identity, first, second)
+
+	require.NoError(t, volumehealth.New(k8sClient, testNamespace, providerSet).Check(t.Context()))
+}
+
+func TestCheckCachesFailedProviderLookupByRegion(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	providerSet := mockproviders.NewMockProviders(ctrl)
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(nil, errProviderLookup)
+
+	first := volumeFixture()
+	second := volumeFixture()
+	second.Name = testVolumeID2
+	k8sClient := fakeClient(t, first, second)
+	sink := newCaptureSink()
+	ctx := logr.NewContext(t.Context(), logr.New(sink))
+
+	require.NoError(t, volumehealth.New(k8sClient, testNamespace, providerSet).Check(ctx))
+
+	entry := sink.entry("failed to resolve volume provider, skipping")
+	require.Equal(t, testRegionID, entry["region_id"])
+
+	loggedErr, ok := entry["error"].(error)
+	require.True(t, ok)
+	require.ErrorIs(t, loggedErr, errProviderLookup)
 }
