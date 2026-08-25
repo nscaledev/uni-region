@@ -159,6 +159,11 @@ func (c *Volume) SetProvisioningCondition(status corev1.ConditionStatus, reason 
 	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
 }
 
+// SetHealthCondition sets the provider-observed health of a Volume.
+func (c *Volume) SetHealthCondition(status corev1.ConditionStatus, reason unikornv1core.HealthConditionReason, message string) {
+	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionHealthy, status, string(reason), message)
+}
+
 // ResourceLabels generates a set of labels to uniquely identify the resource
 // if it were to be placed in a single global namespace.
 func (c *Volume) ResourceLabels() (labels.Set, error) {

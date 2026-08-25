@@ -244,7 +244,7 @@ func (p *Provisioner) eventRecorder(ctx context.Context) record.EventRecorder {
 	// and an action string on every call site, so it is a deployment change rather
 	// than a library bump.  Deprecated is not removed; controller-runtime suppresses
 	// the same warning internally.
-	return manager.FromContext(ctx).GetEventRecorderFor("server-controller") //nolint:staticcheck
+	return manager.FromContext(ctx).GetEventRecorderFor("server-controller")
 }
 
 func (p *Provisioner) recordProviderCreateRetryEvent(ctx context.Context, eventType, reason, logMessage, eventMessage string, attempt, maxAttempts int32) {

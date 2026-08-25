@@ -121,4 +121,4 @@ continue to be passed directly through many provider interface methods.
   consume these types when converting provider-derived information into API
   reads and actions
 - [../../monitor](../../monitor/README.md) consumes provider-neutral read-side
-  information such as flavors when observing runtime state
+  information, including `VolumeObservation`, when projecting runtime state

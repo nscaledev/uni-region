@@ -20,3 +20,7 @@ test-results.json
 fuzz-results.xml
 hack/ci/ca-bundle.pem
 .claude/settings.local.json
+
+# Local agent discussion artifacts.
+CONTEXT.md
+docs/adr/

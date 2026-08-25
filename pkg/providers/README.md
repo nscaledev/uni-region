@@ -80,8 +80,8 @@ packages are the concrete provider implementations.
     removal wait for provider convergence
   - its `resource.Quantity` size and one of the nine neutral lifecycle values
     (`creating`, `available`, `attaching`, `attached`, `detaching`, `updating`,
-    `deleting`, `error`, or `unknown`) let later consumers observe backing truth
-    without importing a provider SDK
+    `deleting`, `error`, or `unknown`) let the Volume monitor project backing
+    truth without importing a provider SDK
   - no backing resource maps to the shared `ErrResourceNotFound` sentinel;
     client/request failures remain Go errors, while successfully observed
     provider `error` and unrecognized/empty `unknown` lifecycle values remain
