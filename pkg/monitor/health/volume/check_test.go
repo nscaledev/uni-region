@@ -64,13 +64,16 @@ func volumeFixture() *unikornv1.Volume {
 	}}
 	volume.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
 	unikornv1core.UpdateCondition(&volume.Status.Conditions, unikornv1core.ConditionActive, corev1.ConditionTrue, "legacy", "legacy condition")
+
 	return volume
 }
 
 func fakeClient(t *testing.T, objects ...client.Object) client.Client {
 	t.Helper()
-	scheme := runtime.NewScheme()
+	scheme := runtime.NewScheme() //nolint:wsl
+
 	require.NoError(t, unikornv1.AddToScheme(scheme))
+
 	return fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&unikornv1.Volume{}).WithObjects(objects...).Build()
 }
 
@@ -79,7 +82,7 @@ func runCheck(t *testing.T, volume *unikornv1.Volume, lookupErr, updateErr error
 	ctrl := gomock.NewController(t)
 	provider := mocktypes.NewMockProvider(ctrl)
 	providers := mockproviders.NewMockProviders(ctrl)
-	if lookupErr != nil {
+	if lookupErr != nil { //nolint:wsl
 		providers.EXPECT().LookupCloud(testRegionID).Return(nil, lookupErr)
 	} else {
 		providers.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
@@ -87,20 +90,28 @@ func runCheck(t *testing.T, volume *unikornv1.Volume, lookupErr, updateErr error
 			if mutate != nil {
 				mutate(got)
 			}
+
 			return updateErr
 		})
 	}
+
 	identity := &unikornv1.Identity{ObjectMeta: metav1.ObjectMeta{Name: testIdentityID, Namespace: testNamespace}}
 	k8sClient := fakeClient(t, identity, volume)
+
 	require.NoError(t, volumehealth.New(k8sClient, testNamespace, providers).Check(t.Context()))
-	updated := &unikornv1.Volume{}
+	updated := &unikornv1.Volume{} //nolint:wsl
+
 	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKeyFromObject(volume), updated))
+
 	return updated
 }
 
 func TestCheckPersistsProviderProjection(t *testing.T) {
+	t.Parallel()
+
 	updated := runCheck(t, volumeFixture(), nil, nil, func(volume *unikornv1.Volume) {
-		volume.Status.Size = resource.MustParsePtr("20Gi")
+		size := resource.MustParse("20Gi")
+		volume.Status.Size = &size
 		unikornv1core.UpdateCondition(&volume.Status.Conditions, unikornv1core.ConditionHealthy, corev1.ConditionTrue, string(unikornv1core.ConditionReasonHealthy), "provider healthy")
 	})
 	require.NotNil(t, updated.Status.Size)
@@ -108,11 +119,14 @@ func TestCheckPersistsProviderProjection(t *testing.T) {
 	health, err := unikornv1core.GetHealthyCondition(updated)
 	require.NoError(t, err)
 	require.Equal(t, "provider healthy", health.Message)
+
 	_, err = unikornv1core.GetCondition(updated.Status.Conditions, unikornv1core.ConditionActive)
 	require.Error(t, err)
 }
 
 func TestCheckPreservesStateWhenProviderUnavailable(t *testing.T) {
+	t.Parallel()
+
 	volume := volumeFixture()
 	size := resource.MustParse("10Gi")
 	volume.Status.Size = &size
@@ -125,6 +139,8 @@ func TestCheckPreservesStateWhenProviderUnavailable(t *testing.T) {
 }
 
 func TestCheckPreservesStateWhenProviderObservationFails(t *testing.T) {
+	t.Parallel()
+
 	volume := volumeFixture()
 	unikornv1core.UpdateCondition(&volume.Status.Conditions, unikornv1core.ConditionHealthy, corev1.ConditionTrue, string(unikornv1core.ConditionReasonHealthy), "last state")
 	updated := runCheck(t, volume, nil, errProviderState, nil)
@@ -134,6 +150,8 @@ func TestCheckPreservesStateWhenProviderObservationFails(t *testing.T) {
 }
 
 func TestCheckPersistsProviderMissingProjection(t *testing.T) {
+	t.Parallel()
+
 	updated := runCheck(t, volumeFixture(), nil, nil, func(volume *unikornv1.Volume) {
 		volume.Status.Size = nil
 		unikornv1core.UpdateCondition(&volume.Status.Conditions, unikornv1core.ConditionHealthy, corev1.ConditionFalse, string(unikornv1core.ConditionReasonDegraded), "the provider volume is missing")

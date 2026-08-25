@@ -115,6 +115,7 @@ func TestUpdateVolumeStateMapsCinderStatuses(t *testing.T) {
 	for cinderStatus, want := range tests {
 		t.Run(cinderStatus, func(t *testing.T) {
 			t.Parallel()
+
 			identity, volume := identityFixture(), volumeFixture()
 			require.NoError(t, updateVolumeState(t, identity, volume, observedCinderVolume(identity, volume, cinderStatus, 20), nil))
 
@@ -132,6 +133,7 @@ func TestUpdateVolumeStateHandlesMissingAfterProvisioning(t *testing.T) {
 
 	identity, volume := identityFixture(), volumeFixture()
 	volume.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
+
 	size := resource.MustParse("20Gi")
 	volume.Status.Size = &size
 
@@ -171,13 +173,16 @@ func TestUpdateVolumeStateRejectsInvalidProviderData(t *testing.T) {
 	t.Parallel()
 
 	identity, volume := identityFixture(), volumeFixture()
+
 	for _, size := range []int{-1, int(math.MaxInt64 >> 30)} {
 		if size == int(math.MaxInt64>>30) && strconv.IntSize < 64 {
 			continue
 		}
+
 		if size >= 0 {
 			size++
 		}
+
 		require.ErrorIs(t, updateVolumeState(t, identity, volume, observedCinderVolume(identity, volume, "available", size), nil), coreerrors.ErrConsistency)
 	}
 }
