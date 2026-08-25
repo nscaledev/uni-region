@@ -1,27 +1,22 @@
 # Volume Health
 
-`pkg/monitor/health/volume` polls the provider-neutral `ObserveVolume`
-contract and projects provider truth into Region `Volume` status.
+`pkg/monitor/health/volume` asks the provider to update a deep copy of the
+Region `Volume` with its current backing-resource state, then persists one
+optimistic status patch.
 
-The checker owns only observed state:
-
-- `status.size`
-- the coarse `Healthy` condition
+The provider owns provider-state mapping, observed size, missing-volume
+semantics, and health messages. The checker owns orchestration, patching, and
+transition logging.
 
 The Volume controller remains the sole owner of the `Available` provisioning
-condition and all create/delete intent. Creating, available, attaching,
-attached, detaching, and updating provider states are healthy. Provider error,
-unexpected provider deletion, and confirmed provider absence are degraded. An
-unknown provider state has unknown health. Provider request failures preserve
-the last observed size and make current health unknown. Provider absence only
-degrades health after the controller records `Available=True/Provisioned`.
-Before provisioning completes, absence is expected and does not set health.
+condition and all create/delete intent. Provider request or observation errors
+are logged and skipped, preserving the last observed status. Provider absence
+semantics are defined by the provider implementation.
 
 Every health transition is logged with its previous and new status, reason, and
 message. Logs also include Volume, organization, and region identifiers.
-Confirmed absence clears observed size. The checker never imports Cinder types
-or performs provider mutations. It removes the obsolete Volume `Active`
-condition when it updates status.
+The checker never imports provider SDK types. It removes the obsolete Volume
+`Active` condition when it updates status.
 
 Provider resolution results, including failures, are cached by region for one
 poll cycle. A provider initialization failure is attempted once per region, not
