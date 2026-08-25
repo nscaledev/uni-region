@@ -1559,6 +1559,16 @@ type AttachmentIPRange struct {
 // NFS has the configuration for NFS type.
 type NFS struct {
 	RootSquash bool `json:"rootSquash,omitempty"`
+
+	// POSIXACL controls extended POSIX ACL support.
+	// +optional
+	POSIXACL *bool `json:"posixAcl,omitempty"`
+
+	// AtimeUpdateIntervalSeconds controls how stale atime must be before a read updates it. Zero disables read-driven updates.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=86399999999999
+	// +optional
+	AtimeUpdateIntervalSeconds *int64 `json:"atimeUpdateIntervalSeconds,omitempty"`
 }
 
 // FileStorageClassList is a list of the FileStorageClass type.
