@@ -80,9 +80,23 @@ stored objects rely on for linkage, migration, and operational coordination.
 - `Server.Spec.ProviderCreateGates` is immutable create-time desired state used
   by the server controller to pause before provider create. Matching
   `Server.Status.ProviderCreateGates` entries record the condition status,
-  actor, reason, message, and transition time for operator diagnostics. The
-  generic `Server.Status.Conditions` list remains reserved for Region-owned
-  lifecycle conditions.
+  actor, reason, message, `terminal` flag, and transition time for operator
+  diagnostics. A satisfier reports a gate via
+  `POST /api/v2/servers/{serverID}/provider-create-gates` carrying a `status`
+  (`True` satisfies — the default, backward compatible with satisfy-only
+  callers; `False` blocks) and, only when `status` is `False`, an optional
+  `terminal` flag. Lifecycle semantics the provisioner enforces:
+  - unsatisfied, or `status=False, terminal=false` (transient) → **hold**: the
+    provisioner yields and waits for a later reconcile to satisfy the gate;
+  - `status=False, terminal=true` → **fail**: the gate can never be satisfied
+    without external change, so provider-create fails with the redacted reason
+    rather than yielding forever (see `TerminalProviderCreateGate()` and the
+    server provisioner);
+  - all gates `status=True` → provider-create proceeds.
+
+  `terminal=true` is rejected unless `status` is `False`. The generic
+  `Server.Status.Conditions` list remains reserved for Region-owned lifecycle
+  conditions.
 - `FileStorage` carries a more explicit observed-state model than the older
   resource types. Attachment-level provisioning state, observed size, usage
   reporting, and per-policy snapshot status are part of the stored
