@@ -117,6 +117,7 @@ func TestUpdateVolumeStateMapsCinderStatuses(t *testing.T) {
 			t.Parallel()
 
 			identity, volume := identityFixture(), volumeFixture()
+
 			require.NoError(t, updateVolumeState(t, identity, volume, observedCinderVolume(identity, volume, cinderStatus, 20), nil))
 
 			health, err := unikornv1core.GetHealthyCondition(volume)
@@ -132,6 +133,7 @@ func TestUpdateVolumeStateHandlesMissingAfterProvisioning(t *testing.T) {
 	t.Parallel()
 
 	identity, volume := identityFixture(), volumeFixture()
+
 	volume.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
 
 	size := resource.MustParse("20Gi")
@@ -172,18 +174,16 @@ func TestUpdateVolumeStatePreservesStateOnProviderError(t *testing.T) {
 func TestUpdateVolumeStateRejectsInvalidProviderData(t *testing.T) {
 	t.Parallel()
 
-	identity, volume := identityFixture(), volumeFixture()
-
-	for _, size := range []int{-1, int(math.MaxInt64 >> 30)} {
-		if size == int(math.MaxInt64>>30) && strconv.IntSize < 64 {
-			continue
-		}
-
-		if size >= 0 {
-			size++
-		}
+	check := func(size int) {
+		identity, volume := identityFixture(), volumeFixture()
 
 		require.ErrorIs(t, updateVolumeState(t, identity, volume, observedCinderVolume(identity, volume, "available", size), nil), coreerrors.ErrConsistency)
+	}
+
+	check(-1)
+
+	if strconv.IntSize >= 64 {
+		check(int(math.MaxInt64>>30) + 1)
 	}
 }
 
