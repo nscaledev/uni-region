@@ -31,6 +31,13 @@ The useful way to read it is not as a directory tree, but as one system:
   internal handler-owned `spec.claimRef`; Server status is the sole persisted
   projection of attachment progress. Claim writes and attachment reconciliation
   remain later lifecycle slices
+  Its provider capability exposes neutral backing discovery, observed
+  size, and lifecycle state. The monitor projects that truth into observed
+  size and coarse health without taking over the controller-owned `Available`
+  condition. A provisioned Volume is a durable identity. Provider loss degrades
+  health and never triggers replacement under the same Region Volume ID.
+  OpenStack also supports server
+  attachment behavior. Attachment projection remains a later lifecycle slice
 - `Server` now carries the internal attach-existing-only block volume intent
   and observed per-volume attachment rows. The provider boundary and OpenStack
   Nova attach/detach implementation exist; public API projection and
@@ -102,6 +109,7 @@ relationships.
 
 - [monitor](./monitor/README.md)
 - [monitor/health/server](./monitor/health/server/README.md)
+- [monitor/health/volume](./monitor/health/volume/README.md)
 
 These packages cover the part of the system that is intentionally observational
 rather than declarative.

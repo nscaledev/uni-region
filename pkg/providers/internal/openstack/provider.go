@@ -1988,14 +1988,7 @@ func (p *Provider) deleteNetwork(ctx context.Context, networking NetworkingInter
 }
 
 func volumeMetadata(identity *unikornv1.Identity, volume *unikornv1.Volume) map[string]string {
-	namespacedSystemMetadata := map[string]string{
-		"region:volume_id":         volume.Name,
-		"identity:organization_id": volume.Labels[coreconstants.OrganizationLabel],
-		"identity:project_id":      volume.Labels[coreconstants.ProjectLabel],
-		"region:region_id":         volume.Labels[constants.RegionLabel],
-		"region:network_id":        volume.Spec.NetworkID,
-		"region:identity_id":       identity.Name,
-	}
+	namespacedSystemMetadata := volumeSystemMetadata(identity, volume)
 
 	metadata := make(map[string]string, len(volume.Spec.Tags)+len(namespacedSystemMetadata))
 

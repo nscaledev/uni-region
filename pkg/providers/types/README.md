@@ -55,17 +55,22 @@ continue to be passed directly through many provider interface methods.
   operator-authored Region configuration propagated through this neutral
   model; they are not provider-discovered values. The same model carries an
   optional typed Region Flavor allowlist; nil or empty means unrestricted.
-- `Volume` is the focused create/delete capability embedded in the full
-  `Provider` composition. It accepts the native `unikornv1.Volume` lifecycle
-  intent and does not expose discovery, observed state, VolumeClass inventory,
-  or server attachment operations. `CreateVolume` is a reconciliation
-  operation rather than a one-shot request: implementations return
-  `provisioners.ErrYield` until the backing resource is usable, return `nil`
-  only after convergence, and may return a typed terminal provisioning error
-  for an unrecoverable provider state. `DeleteVolume` likewise yields after an
-  accepted asynchronous delete and succeeds only when provider absence is
-  confirmed. Discovery-only substrates implement `CommonProvider` instead of
-  the full workload lifecycle contract.
+- `Volume` is a focused create/delete/state-update capability that accepts the
+  native `unikornv1.Volume` lifecycle intent and is embedded in the full
+  `Provider` composition. `CreateVolume` is a reconciliation operation rather
+  than a one-shot request: implementations return `provisioners.ErrYield` until
+  the backing resource is usable, return `nil` only after convergence, and may
+  return a typed terminal provisioning error for an unrecoverable provider
+  state. `DeleteVolume` likewise yields after an accepted asynchronous delete
+  and succeeds only when provider absence is confirmed. `UpdateVolumeState`
+  mutates the repository-native Volume status with observed size and health,
+  rather than exposing provider SDK types.
+  VolumeClass inventory and server attachment remain separate operations.
+  Discovery-only substrates implement `CommonProvider` instead of the full
+  workload lifecycle contract.
+- `UpdateVolumeState` distinguishes absence, failed reads, and observed lifecycle
+  truth. Providers own status mapping and missing-volume semantics; read and
+  validation failures are returned so monitors preserve the last state.
 - `ServerCreateOptions` carries launch-time derived inputs without forcing them
   into the persisted `Server` CRD shape.
 - `ServerVolumeAttachment` contains only provider-neutral observation needed by
@@ -115,5 +120,5 @@ continue to be passed directly through many provider interface methods.
 - [../../handler](../../handler/README.md) and specific handler subpackages
   consume these types when converting provider-derived information into API
   reads and actions
-- [../../monitor](../../monitor/README.md) consumes provider-neutral read-side
-  information such as flavors when observing runtime state
+- [../../monitor](../../monitor/README.md) consumes provider-projected
+  repository-native status when observing runtime state

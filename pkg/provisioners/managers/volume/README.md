@@ -13,6 +13,12 @@ deletion or operator intervention. This package does not check quota; the HTTP
 create handler allocates the requested capacity and stores the Identity
 allocation ID before the controller can observe the Volume.
 
+`Available=True/Provisioned` is also the durable create-completed latch. Later
+provision passes return before provider lookup or creation. If provider storage
+disappears, the monitor degrades health and the controller does not create a
+replacement under the same Region Volume ID. Users replace the Volume by
+deleting its Region resource and creating a new one.
+
 Deprovisioning deliberately has stricter ordering:
 
 1. resolve the provider and Identity through the shared provisioner lookup, then
@@ -31,10 +37,14 @@ the referenced Region `Identity` available through this cleanup; a missing
 Identity remains an error and preserves the Volume finalizer.
 Provider lookup errors also preserve the allocation and finalizer for retry.
 
-General provider observation/status mapping, quota policy, Network
-graph-edge reconciliation, HTTP handlers, and server attachment reconciliation
-are outside this package. The provider-specific state classification needed to
-decide whether create has converged remains inside the provider implementation.
+Provider observation/status projection lives in
+[`pkg/monitor/health/volume`](../../../monitor/health/volume/README.md). Quota
+policy, Network graph-edge reconciliation, HTTP handlers, and server
+attachment reconciliation remain outside this package. The provider-specific
+state classification needed to decide whether create has converged remains
+inside the provider implementation. A provisioned Volume is durable: provider
+loss does not recreate it under the same Region ID; delete and recreate the
+Region Volume for deliberate recovery.
 
 ## Cross-Package Context
 

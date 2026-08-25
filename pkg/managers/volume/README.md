@@ -12,3 +12,8 @@ while a typed terminal provider error records its safe `Available=False`
 reason/message without continued polling. Kubernetes increments generation when
 marking a resource for deletion, so the generation predicate also enqueues
 deprovisioning.
+
+After provisioning succeeds, the provisioner treats
+`Available=True/Provisioned` as a create-completed latch. Later generation
+events do not recreate provider storage. The health monitor reports provider
+loss separately through `Healthy`.

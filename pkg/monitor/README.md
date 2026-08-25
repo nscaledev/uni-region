@@ -22,9 +22,12 @@ controller watches.
 - runs one or more `Checker`s on a poll interval
 - logs and continues on non-fatal per-check failures
 
-Right now the only checker is
-[health/server](./health/server/README.md), but the abstraction is clearly
-intended to allow additional monitor classes later.
+The current checkers are:
+
+- [health/server](./health/server/README.md), which projects server runtime
+  state and telemetry
+- [health/volume](./health/volume/README.md), which projects provider-neutral
+  Volume size and health while preserving controller-owned provisioning state
 
 ## Caveats
 
