@@ -486,19 +486,18 @@ func (mr *MockVolumeMockRecorder) DeleteVolume(ctx, identity, volume any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteVolume", reflect.TypeOf((*MockVolume)(nil).DeleteVolume), ctx, identity, volume)
 }
 
-// ObserveVolume mocks base method.
-func (m *MockVolume) ObserveVolume(ctx context.Context, identity *v1alpha1.Identity, volume *v1alpha1.Volume) (*types.VolumeObservation, error) {
+// UpdateVolumeState mocks base method.
+func (m *MockVolume) UpdateVolumeState(ctx context.Context, identity *v1alpha1.Identity, volume *v1alpha1.Volume) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ObserveVolume", ctx, identity, volume)
-	ret0, _ := ret[0].(*types.VolumeObservation)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret := m.ctrl.Call(m, "UpdateVolumeState", ctx, identity, volume)
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
-// ObserveVolume indicates an expected call of ObserveVolume.
-func (mr *MockVolumeMockRecorder) ObserveVolume(ctx, identity, volume any) *gomock.Call {
+// UpdateVolumeState indicates an expected call of UpdateVolumeState.
+func (mr *MockVolumeMockRecorder) UpdateVolumeState(ctx, identity, volume any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ObserveVolume", reflect.TypeOf((*MockVolume)(nil).ObserveVolume), ctx, identity, volume)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateVolumeState", reflect.TypeOf((*MockVolume)(nil).UpdateVolumeState), ctx, identity, volume)
 }
 
 // MockServer is a mock of Server interface.
@@ -1135,21 +1134,6 @@ func (mr *MockProviderMockRecorder) ListExternalNetworks(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListExternalNetworks", reflect.TypeOf((*MockProvider)(nil).ListExternalNetworks), ctx)
 }
 
-// ObserveVolume mocks base method.
-func (m *MockProvider) ObserveVolume(ctx context.Context, identity *v1alpha1.Identity, volume *v1alpha1.Volume) (*types.VolumeObservation, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ObserveVolume", ctx, identity, volume)
-	ret0, _ := ret[0].(*types.VolumeObservation)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ObserveVolume indicates an expected call of ObserveVolume.
-func (mr *MockProviderMockRecorder) ObserveVolume(ctx, identity, volume any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ObserveVolume", reflect.TypeOf((*MockProvider)(nil).ObserveVolume), ctx, identity, volume)
-}
-
 // QueryImages mocks base method.
 func (m *MockProvider) QueryImages() (types.ImageQuery, error) {
 	m.ctrl.T.Helper()
@@ -1234,6 +1218,20 @@ func (m *MockProvider) UpdateServerState(ctx context.Context, identity *v1alpha1
 func (mr *MockProviderMockRecorder) UpdateServerState(ctx, identity, server any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateServerState", reflect.TypeOf((*MockProvider)(nil).UpdateServerState), ctx, identity, server)
+}
+
+// UpdateVolumeState mocks base method.
+func (m *MockProvider) UpdateVolumeState(ctx context.Context, identity *v1alpha1.Identity, volume *v1alpha1.Volume) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateVolumeState", ctx, identity, volume)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateVolumeState indicates an expected call of UpdateVolumeState.
+func (mr *MockProviderMockRecorder) UpdateVolumeState(ctx, identity, volume any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateVolumeState", reflect.TypeOf((*MockProvider)(nil).UpdateVolumeState), ctx, identity, volume)
 }
 
 // VolumeClasses mocks base method.

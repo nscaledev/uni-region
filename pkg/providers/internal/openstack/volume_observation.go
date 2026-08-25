@@ -18,15 +18,17 @@ package openstack
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/providers/types"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
@@ -55,29 +57,6 @@ func validateVolumeSystemMetadata(identity *unikornv1.Identity, volume *unikornv
 	return nil
 }
 
-func volumeStatus(status string) types.VolumeStatus {
-	switch status {
-	case "creating":
-		return types.VolumeStatusCreating
-	case "available":
-		return types.VolumeStatusAvailable
-	case "reserved", "attaching":
-		return types.VolumeStatusAttaching
-	case "in-use":
-		return types.VolumeStatusAttached
-	case "detaching":
-		return types.VolumeStatusDetaching
-	case "deleting":
-		return types.VolumeStatusDeleting
-	case "managing", "maintenance", "restoring-backup", "awaiting-transfer", "backing-up", "downloading", "uploading", "retyping", "extending":
-		return types.VolumeStatusUpdating
-	case "error", "error_deleting", "error_managing", "error_restoring", "error_backing-up", "error_extending":
-		return types.VolumeStatusError
-	default:
-		return types.VolumeStatusUnknown
-	}
-}
-
 func volumeSize(sizeGiB int) (resource.Quantity, error) {
 	const bytesPerGiB = int64(1 << 30)
 
@@ -88,33 +67,65 @@ func volumeSize(sizeGiB int) (resource.Quantity, error) {
 	return *resource.NewQuantity(int64(sizeGiB)*bytesPerGiB, resource.BinarySI), nil
 }
 
-func observeVolume(ctx context.Context, blockStorage VolumeInterface, identity *unikornv1.Identity, volume *unikornv1.Volume) (*types.VolumeObservation, error) {
+func setVolumeHealth(volume *unikornv1.Volume, status string) {
+	switch status {
+	case "creating", "available", "reserved", "attaching", "in-use", "detaching", "managing", "maintenance", "restoring-backup", "awaiting-transfer", "backing-up", "downloading", "uploading", "retyping", "extending":
+		unikornv1core.UpdateCondition(&volume.Status.Conditions, unikornv1core.ConditionHealthy, corev1.ConditionTrue, string(unikornv1core.ConditionReasonHealthy), "the provider volume state is healthy")
+	case "deleting":
+		unikornv1core.UpdateCondition(&volume.Status.Conditions, unikornv1core.ConditionHealthy, corev1.ConditionFalse, string(unikornv1core.ConditionReasonDegraded), "the provider volume is being deleted")
+	case "error", "error_deleting", "error_managing", "error_restoring", "error_backing-up", "error_extending":
+		unikornv1core.UpdateCondition(&volume.Status.Conditions, unikornv1core.ConditionHealthy, corev1.ConditionFalse, string(unikornv1core.ConditionReasonDegraded), "the provider reported the volume in an error state")
+	default:
+		unikornv1core.UpdateCondition(&volume.Status.Conditions, unikornv1core.ConditionHealthy, corev1.ConditionUnknown, string(unikornv1core.ConditionReasonUnknown), "the provider volume state is unknown")
+	}
+}
+
+func updateVolumeState(ctx context.Context, blockStorage VolumeInterface, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
 	cinderVolume, err := blockStorage.GetVolume(ctx, volume)
 	if err != nil {
-		return nil, err
+		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
+			return err
+		}
+
+		available, availableErr := unikornv1core.GetAvailableCondition(volume)
+		if availableErr != nil {
+			return nil //nolint:nilerr // absence before provisioning is expected
+		}
+
+		if available.Status != corev1.ConditionTrue || available.Reason != unikornv1core.ConditionReasonProvisioned {
+			return nil
+		}
+
+		volume.Status.Size = nil
+		unikornv1core.UpdateCondition(&volume.Status.Conditions, unikornv1core.ConditionHealthy, corev1.ConditionFalse, string(unikornv1core.ConditionReasonDegraded), "the provider volume is missing")
+
+		return nil
 	}
 
 	if cinderVolume == nil {
-		return nil, fmt.Errorf("%w: nil Cinder volume returned for Region volume %s", coreerrors.ErrConsistency, volume.Name)
+		return fmt.Errorf("%w: nil Cinder volume returned for Region volume %s", coreerrors.ErrConsistency, volume.Name)
 	}
 
 	if err := validateVolumeSystemMetadata(identity, volume, cinderVolume.Metadata); err != nil {
-		return nil, err
+		return err
 	}
 
 	size, err := volumeSize(cinderVolume.Size)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return &types.VolumeObservation{Size: size, Status: volumeStatus(cinderVolume.Status)}, nil
+	volume.Status.Size = &size
+	setVolumeHealth(volume, cinderVolume.Status)
+
+	return nil
 }
 
-func (p *Provider) ObserveVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) (*types.VolumeObservation, error) {
+func (p *Provider) UpdateVolumeState(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
 	blockStorage, err := p.blockStorageFromServicePrincipal(ctx, identity)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return observeVolume(ctx, blockStorage, identity, volume)
+	return updateVolumeState(ctx, blockStorage, identity, volume)
 }

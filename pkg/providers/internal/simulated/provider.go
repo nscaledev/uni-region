@@ -477,8 +477,8 @@ func (p *Provider) DeleteVolume(_ context.Context, _ *unikornv1.Identity, _ *uni
 	return nil
 }
 
-func (p *Provider) ObserveVolume(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Volume) (*types.VolumeObservation, error) {
-	return nil, unsupported("ObserveVolume")
+func (p *Provider) UpdateVolumeState(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Volume) error {
+	return unsupported("UpdateVolumeState")
 }
 
 func (p *Provider) CreateServer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ *types.ServerCreateOptions) error {

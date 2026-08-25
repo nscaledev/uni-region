@@ -128,8 +128,7 @@ func TestVolumeLifecycle(t *testing.T) {
 	require.NoError(t, provider.DeleteVolume(t.Context(), identity, volume))
 	require.NoError(t, provider.DeleteVolume(t.Context(), identity, volume))
 
-	_, err := provider.ObserveVolume(t.Context(), identity, volume)
-	require.ErrorIs(t, err, simulated.ErrUnsupportedOperation)
+	require.ErrorIs(t, provider.UpdateVolumeState(t.Context(), identity, volume), simulated.ErrUnsupportedOperation)
 }
 
 func TestImages(t *testing.T) {

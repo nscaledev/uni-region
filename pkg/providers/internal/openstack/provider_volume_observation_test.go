@@ -26,18 +26,17 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack/mock"
-	"github.com/unikorn-cloud/region/pkg/providers/types"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-var errVolumeObservationProvider = errors.New("cinder unavailable")
+var errVolumeStateProvider = errors.New("cinder unavailable")
 
 func observedCinderVolume(identity *regionv1.Identity, volume *regionv1.Volume, status string, size int) *volumes.Volume {
 	return &volumes.Volume{
@@ -56,284 +55,138 @@ func observedCinderVolume(identity *regionv1.Identity, volume *regionv1.Volume, 
 	}
 }
 
-func TestObserveVolumeReturnsProviderNeutralResult(t *testing.T) {
+func updateVolumeState(t *testing.T, identity *regionv1.Identity, volume *regionv1.Volume, providerVolume *volumes.Volume, providerErr error) error {
+	t.Helper()
+	c := gomock.NewController(t)
+	blockStorage := mock.NewMockVolumeInterface(c)
+	blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(providerVolume, providerErr)
+
+	return openstack.UpdateVolumeStateWithClient(t.Context(), blockStorage, identity, volume)
+}
+
+func TestUpdateVolumeStateProjectsSizeAndHealth(t *testing.T) {
 	t.Parallel()
 
 	identity, volume := identityFixture(), volumeFixture()
-	c := gomock.NewController(t)
-	blockStorage := mock.NewMockVolumeInterface(c)
-	blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(observedCinderVolume(identity, volume, "available", 20), nil)
+	require.NoError(t, updateVolumeState(t, identity, volume, observedCinderVolume(identity, volume, "available", 20), nil))
 
-	got, err := openstack.ObserveVolumeWithClient(t.Context(), blockStorage, identity, volume)
+	require.NotNil(t, volume.Status.Size)
+	require.True(t, volume.Status.Size.Equal(resource.MustParse("20Gi")))
+	health, err := unikornv1core.GetHealthyCondition(volume)
 	require.NoError(t, err)
-	require.Equal(t, types.VolumeStatusAvailable, got.Status)
+	require.Equal(t, corev1.ConditionTrue, health.Status)
+	require.Equal(t, unikornv1core.ConditionReasonHealthy, health.Reason)
 }
 
-func TestObserveVolumeMapsCinderStatuses(t *testing.T) {
+func TestUpdateVolumeStateMapsCinderStatuses(t *testing.T) {
 	t.Parallel()
 
-	cases := map[string]types.VolumeStatus{
-		"creating":            types.VolumeStatusCreating,
-		"available":           types.VolumeStatusAvailable,
-		"reserved":            types.VolumeStatusAttaching,
-		"attaching":           types.VolumeStatusAttaching,
-		"in-use":              types.VolumeStatusAttached,
-		"detaching":           types.VolumeStatusDetaching,
-		"deleting":            types.VolumeStatusDeleting,
-		"managing":            types.VolumeStatusUpdating,
-		"maintenance":         types.VolumeStatusUpdating,
-		"restoring-backup":    types.VolumeStatusUpdating,
-		"awaiting-transfer":   types.VolumeStatusUpdating,
-		"backing-up":          types.VolumeStatusUpdating,
-		"downloading":         types.VolumeStatusUpdating,
-		"uploading":           types.VolumeStatusUpdating,
-		"retyping":            types.VolumeStatusUpdating,
-		"extending":           types.VolumeStatusUpdating,
-		"error":               types.VolumeStatusError,
-		"error_deleting":      types.VolumeStatusError,
-		"error_managing":      types.VolumeStatusError,
-		"error_restoring":     types.VolumeStatusError,
-		"error_backing-up":    types.VolumeStatusError,
-		"error_extending":     types.VolumeStatusError,
-		"":                    types.VolumeStatusUnknown,
-		"future-cinder-state": types.VolumeStatusUnknown,
-	}
-
-	for cinderStatus, want := range cases {
-		name := cinderStatus
-		if name == "" {
-			name = "unknown-empty"
-		}
-
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			identity, volume := identityFixture(), volumeFixture()
-			c := gomock.NewController(t)
-			blockStorage := mock.NewMockVolumeInterface(c)
-			blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(observedCinderVolume(identity, volume, cinderStatus, 20), nil)
-
-			got, err := openstack.ObserveVolumeWithClient(t.Context(), blockStorage, identity, volume)
-			require.NoError(t, err)
-			require.Equal(t, want, got.Status)
-		})
-	}
-}
-
-func TestObserveVolumeReturnsResourceNotFound(t *testing.T) {
-	t.Parallel()
-
-	identity, volume := identityFixture(), volumeFixture()
-	c := gomock.NewController(t)
-	blockStorage := mock.NewMockVolumeInterface(c)
-	blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(nil, coreerrors.ErrResourceNotFound)
-
-	got, err := openstack.ObserveVolumeWithClient(t.Context(), blockStorage, identity, volume)
-	require.Nil(t, got)
-	require.ErrorIs(t, err, coreerrors.ErrResourceNotFound)
-}
-
-func TestObserveVolumePreservesProviderError(t *testing.T) {
-	t.Parallel()
-
-	identity, volume := identityFixture(), volumeFixture()
-	c := gomock.NewController(t)
-	blockStorage := mock.NewMockVolumeInterface(c)
-	blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(nil, errVolumeObservationProvider)
-
-	got, err := openstack.ObserveVolumeWithClient(t.Context(), blockStorage, identity, volume)
-	require.Nil(t, got)
-	require.ErrorIs(t, err, errVolumeObservationProvider)
-}
-
-func TestObserveVolumeConvertsObservedSize(t *testing.T) {
-	t.Parallel()
-
-	identity, volume := identityFixture(), volumeFixture()
-	c := gomock.NewController(t)
-	blockStorage := mock.NewMockVolumeInterface(c)
-	blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(observedCinderVolume(identity, volume, "available", 37), nil)
-
-	got, err := openstack.ObserveVolumeWithClient(t.Context(), blockStorage, identity, volume)
-	require.NoError(t, err)
-	require.Zero(t, got.Size.Cmp(resource.MustParse("37Gi")))
-}
-
-func TestObserveVolumeConvertsMaxRepresentableSize(t *testing.T) {
-	t.Parallel()
-
-	if strconv.IntSize < 64 {
-		t.Skip("Cinder's int size cannot represent the largest safe GiB value on this architecture")
-	}
-
-	maxSizeGiB := int64(math.MaxInt64 >> 30)
-	identity, volume := identityFixture(), volumeFixture()
-	c := gomock.NewController(t)
-	blockStorage := mock.NewMockVolumeInterface(c)
-	blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(observedCinderVolume(identity, volume, "available", int(maxSizeGiB)), nil)
-
-	got, err := openstack.ObserveVolumeWithClient(t.Context(), blockStorage, identity, volume)
-	require.NoError(t, err)
-	require.Zero(t, got.Size.Cmp(resource.MustParse("8589934591Gi")))
-}
-
-func TestObserveVolumeRejectsNegativeSize(t *testing.T) {
-	t.Parallel()
-
-	identity, volume := identityFixture(), volumeFixture()
-	c := gomock.NewController(t)
-	blockStorage := mock.NewMockVolumeInterface(c)
-	blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(observedCinderVolume(identity, volume, "available", -1), nil)
-
-	got, err := openstack.ObserveVolumeWithClient(t.Context(), blockStorage, identity, volume)
-	require.Nil(t, got)
-	require.ErrorIs(t, err, coreerrors.ErrConsistency)
-}
-
-func TestObserveVolumeRejectsOverflowSize(t *testing.T) {
-	t.Parallel()
-
-	if strconv.IntSize < 64 {
-		t.Skip("Cinder's int size cannot exceed the largest safe GiB value on this architecture")
-	}
-
-	maxSizeGiB := int64(math.MaxInt64 >> 30)
-	identity, volume := identityFixture(), volumeFixture()
-	c := gomock.NewController(t)
-	blockStorage := mock.NewMockVolumeInterface(c)
-	blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(observedCinderVolume(identity, volume, "available", int(maxSizeGiB+1)), nil)
-
-	got, err := openstack.ObserveVolumeWithClient(t.Context(), blockStorage, identity, volume)
-	require.Nil(t, got)
-	require.ErrorIs(t, err, coreerrors.ErrConsistency)
-}
-
-func TestObserveVolumeRejectsInvalidMetadata(t *testing.T) {
-	t.Parallel()
-
-	keys := map[string]string{
-		"volume ID":       "region:volume_id",
-		"organization ID": "identity:organization_id",
-		"project ID":      "identity:project_id",
-		"region ID":       "region:region_id",
-		"network ID":      "region:network_id",
-		"identity ID":     "region:identity_id",
-	}
-
-	for name, key := range keys {
-		for _, mutation := range []string{"missing", "conflicting"} {
-			t.Run(mutation+" "+name, func(t *testing.T) {
-				t.Parallel()
-
-				identity, volume := identityFixture(), volumeFixture()
-				cinderVolume := observedCinderVolume(identity, volume, "available", 20)
-
-				if mutation == "missing" {
-					delete(cinderVolume.Metadata, key)
-				} else {
-					cinderVolume.Metadata[key] = "other-resource"
-				}
-
-				c := gomock.NewController(t)
-				blockStorage := mock.NewMockVolumeInterface(c)
-				blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(cinderVolume, nil)
-
-				got, err := openstack.ObserveVolumeWithClient(t.Context(), blockStorage, identity, volume)
-				require.Nil(t, got)
-				require.ErrorIs(t, err, coreerrors.ErrConsistency)
-			})
-		}
-	}
-
-	t.Run("nil metadata", func(t *testing.T) {
-		t.Parallel()
-
-		identity, volume := identityFixture(), volumeFixture()
-		cinderVolume := observedCinderVolume(identity, volume, "available", 20)
-		cinderVolume.Metadata = nil
-		c := gomock.NewController(t)
-		blockStorage := mock.NewMockVolumeInterface(c)
-		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(cinderVolume, nil)
-
-		got, err := openstack.ObserveVolumeWithClient(t.Context(), blockStorage, identity, volume)
-		require.Nil(t, got)
-		require.ErrorIs(t, err, coreerrors.ErrConsistency)
-	})
-}
-
-func TestObserveVolumeRejectsEmptyExpectedMetadata(t *testing.T) {
-	t.Parallel()
-
-	cases := map[string]struct {
-		key   string
-		clear func(*regionv1.Identity, *regionv1.Volume)
+	tests := map[string]struct {
+		status  corev1.ConditionStatus
+		reason  unikornv1core.HealthConditionReason
+		message string
 	}{
-		"volume ID": {
-			key: "region:volume_id",
-			clear: func(_ *regionv1.Identity, volume *regionv1.Volume) {
-				volume.Name = ""
-			},
-		},
-		"organization ID": {
-			key: "identity:organization_id",
-			clear: func(_ *regionv1.Identity, volume *regionv1.Volume) {
-				volume.Labels[coreconstants.OrganizationLabel] = ""
-			},
-		},
-		"project ID": {
-			key: "identity:project_id",
-			clear: func(_ *regionv1.Identity, volume *regionv1.Volume) {
-				volume.Labels[coreconstants.ProjectLabel] = ""
-			},
-		},
-		"region ID": {
-			key: "region:region_id",
-			clear: func(_ *regionv1.Identity, volume *regionv1.Volume) {
-				volume.Labels[constants.RegionLabel] = ""
-			},
-		},
-		"network ID": {
-			key: "region:network_id",
-			clear: func(_ *regionv1.Identity, volume *regionv1.Volume) {
-				volume.Spec.NetworkID = ""
-			},
-		},
-		"identity ID": {
-			key: "region:identity_id",
-			clear: func(identity *regionv1.Identity, _ *regionv1.Volume) {
-				identity.Name = ""
-			},
-		},
+		"creating":          {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		"available":         {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		"reserved":          {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		"attaching":         {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		"in-use":            {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		"detaching":         {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		"managing":          {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		"maintenance":       {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		"restoring-backup":  {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		"awaiting-transfer": {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		"backing-up":        {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		"downloading":       {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		"uploading":         {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		"retyping":          {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		"extending":         {corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy"},
+		"deleting":          {corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider volume is being deleted"},
+		"error":             {corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider reported the volume in an error state"},
+		"error_deleting":    {corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider reported the volume in an error state"},
+		"error_managing":    {corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider reported the volume in an error state"},
+		"error_restoring":   {corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider reported the volume in an error state"},
+		"error_backing-up":  {corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider reported the volume in an error state"},
+		"error_extending":   {corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider reported the volume in an error state"},
+		"":                  {corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "the provider volume state is unknown"},
+		"future-state":      {corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "the provider volume state is unknown"},
 	}
 
-	for name, testCase := range cases {
-		t.Run(name, func(t *testing.T) {
+	for cinderStatus, want := range tests {
+		t.Run(cinderStatus, func(t *testing.T) {
 			t.Parallel()
-
 			identity, volume := identityFixture(), volumeFixture()
-			testCase.clear(identity, volume)
-			cinderVolume := observedCinderVolume(identity, volume, "available", 20)
-			cinderVolume.Metadata[testCase.key] = ""
-			c := gomock.NewController(t)
-			blockStorage := mock.NewMockVolumeInterface(c)
-			blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(cinderVolume, nil)
+			require.NoError(t, updateVolumeState(t, identity, volume, observedCinderVolume(identity, volume, cinderStatus, 20), nil))
 
-			got, err := openstack.ObserveVolumeWithClient(t.Context(), blockStorage, identity, volume)
-			require.Nil(t, got)
-			require.ErrorIs(t, err, coreerrors.ErrConsistency)
+			health, err := unikornv1core.GetHealthyCondition(volume)
+			require.NoError(t, err)
+			require.Equal(t, want.status, health.Status)
+			require.Equal(t, want.reason, health.Reason)
+			require.Equal(t, want.message, health.Message)
 		})
 	}
 }
 
-func TestObserveVolumeRejectsNilResult(t *testing.T) {
+func TestUpdateVolumeStateHandlesMissingAfterProvisioning(t *testing.T) {
 	t.Parallel()
 
 	identity, volume := identityFixture(), volumeFixture()
-	c := gomock.NewController(t)
-	blockStorage := mock.NewMockVolumeInterface(c)
-	blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(nil, nil)
+	volume.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
+	size := resource.MustParse("20Gi")
+	volume.Status.Size = &size
 
-	got, err := openstack.ObserveVolumeWithClient(t.Context(), blockStorage, identity, volume)
-	require.Nil(t, got)
-	require.ErrorIs(t, err, coreerrors.ErrConsistency)
+	require.NoError(t, updateVolumeState(t, identity, volume, nil, coreerrors.ErrResourceNotFound))
+	require.Nil(t, volume.Status.Size)
+	health, err := unikornv1core.GetHealthyCondition(volume)
+	require.NoError(t, err)
+	require.Equal(t, corev1.ConditionFalse, health.Status)
+	require.Equal(t, unikornv1core.ConditionReasonDegraded, health.Reason)
+	require.Equal(t, "the provider volume is missing", health.Message)
+}
+
+func TestUpdateVolumeStateIgnoresMissingBeforeProvisioning(t *testing.T) {
+	t.Parallel()
+
+	identity, volume := identityFixture(), volumeFixture()
+	size := resource.MustParse("20Gi")
+	volume.Status.Size = &size
+
+	require.NoError(t, updateVolumeState(t, identity, volume, nil, coreerrors.ErrResourceNotFound))
+	require.NotNil(t, volume.Status.Size)
+	require.True(t, volume.Status.Size.Equal(size))
+	_, err := unikornv1core.GetHealthyCondition(volume)
+	require.Error(t, err)
+}
+
+func TestUpdateVolumeStatePreservesStateOnProviderError(t *testing.T) {
+	t.Parallel()
+
+	identity, volume := identityFixture(), volumeFixture()
+	require.ErrorIs(t, updateVolumeState(t, identity, volume, nil, errVolumeStateProvider), errVolumeStateProvider)
+	_, err := unikornv1core.GetHealthyCondition(volume)
+	require.Error(t, err)
+}
+
+func TestUpdateVolumeStateRejectsInvalidProviderData(t *testing.T) {
+	t.Parallel()
+
+	identity, volume := identityFixture(), volumeFixture()
+	for _, size := range []int{-1, int(math.MaxInt64 >> 30)} {
+		if size == int(math.MaxInt64>>30) && strconv.IntSize < 64 {
+			continue
+		}
+		if size >= 0 {
+			size++
+		}
+		require.ErrorIs(t, updateVolumeState(t, identity, volume, observedCinderVolume(identity, volume, "available", size), nil), coreerrors.ErrConsistency)
+	}
+}
+
+func TestUpdateVolumeStateRejectsInvalidMetadata(t *testing.T) {
+	t.Parallel()
+
+	identity, volume := identityFixture(), volumeFixture()
+	cinderVolume := observedCinderVolume(identity, volume, "available", 20)
+	delete(cinderVolume.Metadata, "region:volume_id")
+	require.ErrorIs(t, updateVolumeState(t, identity, volume, cinderVolume, nil), coreerrors.ErrConsistency)
 }

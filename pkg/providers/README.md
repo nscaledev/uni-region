@@ -61,14 +61,14 @@ packages are the concrete provider implementations.
     the real backing resources
   - mirrored provider-state records are not the preferred answer unless the
     state cannot be reconstructed safely enough by other means
-- `types.Volume` is the focused create/delete/observation capability embedded in the full
+- `types.Volume` is the focused create/delete/state-update capability embedded in the full
   `types.Provider` contract and consumed through `LookupCloud` by the Volume
   controller. Discovery-only providers remain on `types.CommonProvider` and do
   not implement workload lifecycle:
   - lifecycle intent is the native Region `Volume` CRD
   - provider implementations rediscover their backing object internally before
-    create, delete, or observation; observation returns a `types.VolumeObservation`
-    rather than writing the CRD
+    create, delete, or state update; `UpdateVolumeState` mutates the CRD status
+    without exposing provider SDK types
   - create success means the rediscovered backing volume is usable, not merely
     that an asynchronous provider request was accepted. Providers return
     `provisioners.ErrYield` while creation is still converging and a safe typed
