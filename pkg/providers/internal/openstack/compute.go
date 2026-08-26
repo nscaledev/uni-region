@@ -20,6 +20,7 @@ package openstack
 
 import (
 	"context"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -52,6 +53,17 @@ type ComputeClient struct {
 	flavorCache *cache.TimeoutCache[[]flavors.Flavor]
 }
 
+// computeMicroversion is the Nova API microversion every compute call is made
+// at. Need at least 2.15 for soft-anti-affinity policy, and at least 2.64 for
+// the new server group interface. Must stay below 2.93: from there Nova sets
+// reimage_boot_volume on every rebuild and the Ironic driver refuses the flag
+// outright, so every baremetal rebuild fails — an upstream defect, unfixed as
+// of 2025.1 and measured there
+// (https://bugs.launchpad.net/nova/+bug/2127017). See the README's rebuild
+// caveats. Pinned by TestComputeMicroversionPin; do not bump without reading
+// both.
+const computeMicroversion = "2.90"
+
 // NewComputeClient provides a simple one-liner to start computing.
 func NewComputeClient(ctx context.Context, provider CredentialProvider, options *unikornv1.RegionOpenstackComputeSpec) (*ComputeClient, error) {
 	providerClient, err := provider.Client(ctx)
@@ -64,9 +76,7 @@ func NewComputeClient(ctx context.Context, provider CredentialProvider, options 
 		return nil, err
 	}
 
-	// Need at least 2.15 for soft-anti-affinity policy.
-	// Need at least 2.64 for new server group interface.
-	client.Microversion = "2.90"
+	client.Microversion = computeMicroversion
 
 	c := &ComputeClient{
 		options:     options,
@@ -266,7 +276,36 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 		return nil, errors.ErrResourceNotFound
 	}
 
+	// The fault may be empty on a listed ERROR server (Nova up to 2025.2 can
+	// omit it from a list response); the consumer that wants it fetches it via
+	// GetServerFault on the transition into error, so every other read — and
+	// there are two per errored server per cycle, exactly when Nova is degraded —
+	// does not pay a second call.
 	return &result[index], nil
+}
+
+// GetServerFault reads a server by ID for its fault detail, which a list
+// response can omit (Nova up to 2025.2). A missing server maps to
+// ErrResourceNotFound so the caller can tell a deleted server from a failed
+// read.
+func (c *ComputeClient) GetServerFault(ctx context.Context, id string) (*servers.Fault, error) {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", id),
+	)
+
+	_, span := traceStart(ctx, "GET /compute/v2/servers/{id}", spanAttributes)
+	defer span.End()
+
+	detailed, err := servers.Get(ctx, c.client, id).Extract()
+	if err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return nil, errors.ErrResourceNotFound
+		}
+
+		return nil, err
+	}
+
+	return &detailed.Fault, nil
 }
 
 func (c *ComputeClient) GetVolumeAttachment(ctx context.Context, serverID, volumeID string) (*volumeattach.VolumeAttachment, error) {

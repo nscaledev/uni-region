@@ -38,24 +38,48 @@ status/telemetry model.
   value, while unconditionally writing a valid MAC self-heals drift (the status
   PATCH makes a same-value write a no-op).
 - logs phase and health-condition transitions
-- the provider's poll also advances `Status.Rebuild.State` from observed Nova
-  evidence, forward-only and never creating, clearing, or retargeting the
-  marker. Advancement is attributed by image ref, not by spec match: only an
-  observed ref equal to the marker's target advances `Rebuilding` (an active
-  `task_state`) or `Succeeded` (converged and quiescent — a stable non-error
-  status with an empty `task_state`), and an `ERROR` under that ref, or under a
-  marker already durably accepted, advances `Failed`; a durably accepted
-  rebuild whose readable ref has moved off the target advances `Failed` by
-  supersession. A marker still `Initiated` with a non-matching ref advances
-  nothing, so an unattributed observation cannot destroy the submission gate.
-  That terminal stamp is the wake signal that settles a pending server rebuild:
-  a `Succeeded`/`Failed` state trips the server manager's `RebuildSettled` watch
-  predicate (`pkg/provisioners/managers/server`), which wakes the reconciler for
-  a settlement pass — marker clear on success, `UserActionRequired` park on
-  failure. The chain is: monitor stamps the terminal observation → predicate
-  fires → reconcile → the reconciler re-decides from its own fresh provider
-  read. The monitor's stamp is stimulus, not authorization — the reconciler
-  never trusts the projected status to make the rebuild decision.
+- populates `status.observed` from the poll's existing `GetServer` response. The
+  region has one writer *function* rather than one caller: the reconciler's
+  create-retry existence check goes through the same `UpdateServerState`, and so the
+  same projection. One derivation with no arbitration is what removes the ordering
+  argument between the two status writers — not the monitor holding the region
+  alone. That shared derivation also means a provider not-found is *surfaced* by
+  `UpdateServerState` — the create-retry path reads it as "confirmed gone" — but
+  the absent observation (errored cleared, generation stamped, image sticky) is
+  recorded on the server first, and this monitor persists it despite the error:
+  the observed wake is what lets the reconciler notice the out-of-band deletion
+  and recreate the server. The absent server is excluded from the state gauge for
+  that cycle, as the skip was before — there is no provider state to count.
+  `generation` is stamped unconditionally, so the subtree exists from the
+  first poll that read the provider at all — a present subtree with no `image`
+  means "polled, image unreadable", which is not the same fact as an absent
+  subtree meaning "never successfully polled".
+  `image` tracks the live provider image, but an unreadable ref (absent, empty or
+  unparseable) preserves the previous value and never clears it, for the same
+  reason `macAddress` is never cleared: a transient read miss must not erase a
+  known fact. `errored` is the opposite — live state that clears on an authoritative
+  non-error read. That is safe only because a provider that cannot be reached
+  aborts the poll before any write, so connectivity loss can never be mistaken for
+  a recovery. It is gated on the provider reporting `ERROR` rather than on Nova's
+  `fault` being populated, because Nova leaves a stale `fault` on a server that has
+  since recovered. The fault detail itself (code, message, created) never reaches
+  projected status: it is fetched and logged once, best-effort, on the transition
+  into the errored state, and `fault.details` is excluded even from the log as an
+  admin-only stack trace.
+  A write to this region wakes the reconciler: the server manager's
+  `serverObservedUpdate` predicate (`pkg/managers/server`) fires on any change to
+  the subtree, so the reconciler sleeps until a provider fact moves rather than
+  requeueing to re-read one. Nothing reads the region's *contents* yet.
+  Because `generation` is stamped unconditionally, the first poll after a spec edit
+  writes a real patch even when no provider fact moved, so it wakes the reconciler
+  once redundantly — the edit already woke it via the generation predicate. Harmless,
+  and cheaper than the alternative of making the stamp conditional on other fields
+  having changed, which would make the stamp mean something subtler than "the
+  generation this was observed at".
+  The rule for when something does read the contents: **an observation never
+  authorizes an action against the provider** — actuation is decided from a fresh
+  provider read, and an observation may only be read as a precondition that refuses
+  one.
 - rebuilds gauge counts from the effective server set each cycle
 
 ## Invariants And Guard Rails
@@ -75,41 +99,20 @@ status/telemetry model.
 ## Caveats
 
 - This package is intentionally eventual and observational; it does not make
-  provider state changes happen, it notices and projects them. That still holds
-  literally — the monitor issues no provider calls — but its
-  `Status.Rebuild.State` stamps are now load-bearing for rebuild settlement
-  liveness: since the reconciler stopped self-polling a rebuild to completion,
-  a pending rebuild settles (marker clear on success, failure park) only when
-  the monitor records a terminal observation and that level wakes the
-  reconciler. Observation is no longer purely for display.
-- Lost marker stamps self-heal by recomputation, not by re-assertion. Each poll
-  recomputes the stamp from a fresh Nova read and patches the difference under
-  optimistic lock; a conflict skips that cycle's patch, but the underlying
-  evidence persists (a quiescent convergence is stable, an `ERROR` is terminal),
-  so the next poll recomputes a value that still differs from etcd and its patch
-  is non-empty and produces a real watch event. Re-asserting a value already in
-  etcd would be the wrong mechanism: a merge patch with no change is an empty
-  patch, makes no API-server write, and produces no watch event — so the design
-  never relies on re-assertion to re-fire a settlement wake.
-- The rebuild marker-state advance and the health condition are written in a
-  single `Status().Patch` per poll cycle (`check.go`). This is a load-bearing
-  liveness invariant, not an implementation accident. A conflict-dropped failure
-  park is recovered by the `RebuildSettled` wake re-firing on the next non-empty
-  status write while the terminal marker still stands; splitting this into
-  separate patches with health written first would let a health-already-matching
-  no-op patch produce no event and drop that wake, reopening the window in which
-  a dropped park stalls. See `pkg/provisioners/managers/server` for the wake
-  predicate that depends on it.
+  provider state changes happen, it notices and projects them.
 - The `Active` condition is a live readiness signal once provisioning status
   reaches `provisioned`. If the monitor stops running, or a server is
   persistently skipped before the status patch (region resolution, identity, or
   Nova lookup failures), it can lag observed reality by an unbounded amount. In
-  healthy operation staleness is bounded by one poll period. For a pending
-  rebuild the same stall is now functional, not merely cosmetic: a stopped or
-  persistently-skipping monitor never records the terminal observation, so the
-  marker clear and the failure park wait indefinitely — until a controller
-  restart re-lists the server or a spec change wakes the reconciler through
-  another path. The rebuild is delayed, not lost.
+  healthy operation staleness is bounded by one poll period. A pending rebuild is
+  unaffected: it converges on the reconciler's own requeue, so a stopped monitor does
+  not stall it. It does leave the `Rebuilding` stamp standing after convergence,
+  because only the monitor writes `Active=Running`. A server parked on a quiesced
+  provider `ERROR` (the provider's failed-rebuild row) is different: no requeue
+  exists there, so recovery without a spec change depends on this monitor's
+  `status.observed` write. A stopped or persistently-skipping monitor (the failure
+  modes above) pins such a server at `provisioningStatus=error` until a spec edit,
+  whose generation wake is monitor-independent.
 - `unikorn_region_server_provision_duration_seconds` measures
   `CreationTimestamp → OS-SRV-USG:launched_at`. `launched_at` is when the
   hypervisor boots the instance, not when the guest OS finishes booting. For

@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/ids/idstest"
 
@@ -340,4 +342,32 @@ func TestParseRoundTrips(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestImageIDDeepCopyIsIndependent covers the deepcopy-gen hook on ImageID. CRD
+// types embed a *ImageID, and generated deepcopy code delegates to these methods,
+// so a copy that shared state with its source would silently let a mutation of one
+// resource alter another.
+func TestImageIDDeepCopyIsIndependent(t *testing.T) {
+	t.Parallel()
+
+	original := idstest.MustParseImageID(validUUID)
+
+	copied := original.DeepCopy()
+	require.NotNil(t, copied)
+	require.Equal(t, original.String(), copied.String())
+
+	*copied = idstest.MustParseImageID("f47ac10b-58cc-4372-a567-0e02b2c3d480")
+
+	require.Equal(t, validUUID, original.String(), "mutating a copy must not reach the original")
+}
+
+// TestImageIDDeepCopyNil pins the nil case: generated deepcopy code calls DeepCopy
+// on optional fields, so a nil receiver must yield nil rather than panic.
+func TestImageIDDeepCopyNil(t *testing.T) {
+	t.Parallel()
+
+	var id *ids.ImageID
+
+	require.Nil(t, id.DeepCopy())
 }

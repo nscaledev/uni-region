@@ -38,10 +38,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// requireRebuildAcceptedStamp asserts the fixed in-flight view the reconciler
-// writes on rebuild acceptance (markServerRebuildAccepted): Active Rebuilding
-// and health Unknown, matching what the monitor derives for a Nova REBUILD so
-// reconciler and monitor writes agree rather than flap.
+// requireRebuildAcceptedStamp asserts the fixed in-flight view for an accepted
+// rebuild: Active Rebuilding and health Unknown, matching the monitor's REBUILD
+// derivation so the two writers agree.
 func requireRebuildAcceptedStamp(t *testing.T, server *unikornv1.Server) {
 	t.Helper()
 
@@ -56,27 +55,33 @@ func requireRebuildAcceptedStamp(t *testing.T, server *unikornv1.Server) {
 	require.Equal(t, string(unikornv1core.ConditionReasonUnknown), health.Reason)
 }
 
-// requireNoReconcilerStamp asserts a pre-acceptance pass wrote neither the
-// Active lifecycle condition nor the monitor-owned Healthy condition, leaving
-// both for the monitor to derive.
+// requireNoReconcilerStamp asserts the pass left both monitor-owned conditions
+// alone. Every row except an accepted rebuild must.
 func requireNoReconcilerStamp(t *testing.T, server *unikornv1.Server) {
 	t.Helper()
 
 	_, activeErr := server.StatusConditionRead(unikornv1core.ConditionActive)
-	require.Error(t, activeErr, "a pre-acceptance pass must not write a synthetic Active lifecycle condition")
+	require.Error(t, activeErr, "this pass must not write a synthetic Active lifecycle condition")
 
 	_, healthErr := server.StatusConditionRead(unikornv1core.ConditionHealthy)
-	require.Error(t, healthErr, "a pre-acceptance pass must not write the monitor-owned Healthy condition")
+	require.Error(t, healthErr, "this pass must not write the monitor-owned Healthy condition")
 }
 
 const (
-	rebuildOldImageID   = "11111111-1111-4111-a111-111111111111"
-	rebuildNewImageID   = "22222222-2222-4222-a222-222222222222"
-	rebuildThirdImageID = "33333333-3333-4333-a333-333333333333"
+	rebuildOldImageID = "11111111-1111-4111-a111-111111111111"
+	rebuildNewImageID = "22222222-2222-4222-a222-222222222222"
 )
 
-// desiredRebuildServer is a CR wanting the new image, with no status launch
-// latch: the gate authorizes from the fresh Nova launched_at, not CR status.
+// Nova's rebuild_states family, plus one task state that is deliberately not a
+// rebuild.
+const (
+	taskStateRebuilding                = "rebuilding"
+	taskStateRebuildBlockDeviceMapping = "rebuild_block_device_mapping"
+	taskStateRebuildSpawning           = "rebuild_spawning"
+	taskStateRebooting                 = "rebooting"
+)
+
+// desiredRebuildServer is a CR wanting the new image, with no status latch.
 func desiredRebuildServer() *unikornv1.Server {
 	return &unikornv1.Server{
 		Spec: unikornv1.ServerSpec{
@@ -85,8 +90,7 @@ func desiredRebuildServer() *unikornv1.Server {
 	}
 }
 
-// novaRebuildServer is a launched server: its Nova launched_at is non-zero, the
-// fresh signal the rebuild gate authorizes from (not the CR status latches).
+// novaRebuildServer is a launched server, which the submission gate requires.
 func novaRebuildServer(status, imageID string) *servers.Server {
 	return &servers.Server{
 		ID:         "server-1",
@@ -96,8 +100,7 @@ func novaRebuildServer(status, imageID string) *servers.Server {
 	}
 }
 
-// novaUnlaunchedServer is a never-booted server: Nova reports a zero
-// launched_at, so the gate must defer any image change until first boot.
+// novaUnlaunchedServer is a never-booted server, so an image change must defer.
 func novaUnlaunchedServer(status, imageID string) *servers.Server {
 	server := novaRebuildServer(status, imageID)
 	server.LaunchedAt = time.Time{}
@@ -105,8 +108,7 @@ func novaUnlaunchedServer(status, imageID string) *servers.Server {
 	return server
 }
 
-// novaRebuildServerTask is a launched server with a non-empty task_state, the
-// signal the quiescence gate reads to tell in-flight apart from settled.
+// novaRebuildServerTask is a launched server with a task in flight.
 func novaRebuildServerTask(status, imageID, taskState string) *servers.Server {
 	server := novaRebuildServer(status, imageID)
 	server.TaskState = taskState
@@ -118,10 +120,9 @@ func rebuildOptions() openstack.ServerRebuildOptions {
 	return openstack.ServerRebuildOptions{ImageID: idstest.MustParseImageID(rebuildNewImageID)}
 }
 
-// TestReconcileServerImageStartsOnce pins the two-pass write-ahead protocol: the
-// first pass records intent and yields without touching Nova; only the second,
-// whose marker was read back durable, submits.
-func TestReconcileServerImageStartsOnce(t *testing.T) {
+// TestReconcileServerImageSubmitsOnFirstPass pins that a quiescent server whose
+// ref has not moved is rebuilt in the pass that notices, with no arming yield.
+func TestReconcileServerImageSubmitsOnFirstPass(t *testing.T) {
 	t.Parallel()
 
 	client := mock.NewMockServerInterface(gomock.NewController(t))
@@ -130,36 +131,346 @@ func TestReconcileServerImageStartsOnce(t *testing.T) {
 
 	server := desiredRebuildServer()
 
-	// Arm pass: intent recorded, no Nova call, yield persists the marker. The
-	// yield is silent — no Phase and no monitor-owned Healthy condition.
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
-	require.ErrorIs(t, err, provisioners.ErrYield)
-	require.Equal(t, idstest.MustParseImageID(rebuildNewImageID), server.Status.Rebuild.TargetImageID)
-	require.Equal(t, unikornv1.ServerRebuildStateInitiated, server.Status.Rebuild.State)
-	requireNoReconcilerStamp(t, server)
-
-	// Submit pass: the durable Initiated marker authorizes one submission;
-	// acceptance advances it to Rebuilding.
-	_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
-	require.NoError(t, err)
-	require.Equal(t, idstest.MustParseImageID(rebuildNewImageID), server.Status.Rebuild.TargetImageID)
-	require.Equal(t, unikornv1.ServerRebuildStateRebuilding, server.Status.Rebuild.State)
-
-	// The reconcile completes after submission; pin the accepted status stamps.
+	require.ErrorIs(t, err, provisioners.ErrYield, "an accepted rebuild is in flight, so the pass must not report the server settled")
 	requireRebuildAcceptedStamp(t, server)
 }
 
-// TestReconcileServerRebuildOmitsGuestConfiguration pins that the rebuild call
-// carries only the image. Guest configuration is preserved by Nova's
-// omitted-field semantics, so neither the server's stored user data nor the
-// keypair name in play reaches the rebuild request.
+// TestReconcileServerImageSubmitsRebuildFromErrorStatus pins the recovery path for
+// a parked server whose spec image moved: R4″ must fire from ERROR just as it does
+// from ACTIVE. The server is launched and quiescent (no task in flight), and its ref
+// has diverged from the spec image, so the one destructive row submits the corrective
+// rebuild toward the desired image. A defensive "if ERROR then yield" guard added
+// above this row would wedge every parked server forever — the spec edit that moves
+// the image is exactly the un-park trigger, and yielding here would strand it.
+func TestReconcileServerImageSubmitsRebuildFromErrorStatus(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
+		Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+
+	server := desiredRebuildServer()
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildOldImageID))
+	require.ErrorIs(t, err, provisioners.ErrYield, "an accepted rebuild is in flight, so the pass must not report the server settled")
+	requireRebuildAcceptedStamp(t, server)
+}
+
+// TestReconcileServerImageDoesNotResubmitWhileRebuilding is the no-double-wipe
+// guard: a rebuild task on the desired ref must yield, never submit again.
+func TestReconcileServerImageDoesNotResubmitWhileRebuilding(t *testing.T) {
+	t.Parallel()
+
+	// Every member of Nova's rebuild_states family, plus the REBUILD status Nova
+	// projects from them.
+	for _, taskState := range []string{taskStateRebuilding, taskStateRebuildBlockDeviceMapping, taskStateRebuildSpawning} {
+		t.Run(taskState, func(t *testing.T) {
+			t.Parallel()
+
+			// No RebuildServer expectation: any call fails the test.
+			client := mock.NewMockServerInterface(gomock.NewController(t))
+			server := desiredRebuildServer()
+
+			_, err := openstack.ReconcileServerImage(t.Context(), client, server,
+				novaRebuildServerTask("REBUILD", rebuildNewImageID, taskState))
+			require.ErrorIs(t, err, provisioners.ErrYield)
+			requireRebuildAcceptedStamp(t, server)
+		})
+	}
+}
+
+// TestReconcileServerImageUnknownRebuildSubstateIsInFlight pins the prefix
+// match: a rebuild substate this code has never heard of, presented without the
+// projected REBUILD status, must still read as in flight — the alternative is
+// reporting the server settled while its root disk is being rewritten.
+func TestReconcileServerImageUnknownRebuildSubstateIsInFlight(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	server := desiredRebuildServer()
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server,
+		novaRebuildServerTask("ACTIVE", rebuildNewImageID, "rebuild_guest_reimage"))
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	requireRebuildAcceptedStamp(t, server)
+}
+
+// TestReconcileServerImageConvergedIsDone pins the settled row.
+func TestReconcileServerImageConvergedIsDone(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	server := desiredRebuildServer()
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildNewImageID))
+	require.NoError(t, err)
+	requireNoReconcilerStamp(t, server)
+}
+
+// TestReconcileServerImageConvergedErrorParks pins that a quiesced ERROR on the
+// desired image parks as user-action-required: the ref moves at accept, not on
+// a successful write, so this state cannot certify the spec image was realized
+// and must not read as provisioned (INST-1235). The message is ours, cause-neutral
+// and actionable — it diagnoses nothing (the row also catches e.g. a failed
+// live-migration with the guest still running) and never carries Nova's fault
+// vocabulary.
+func TestReconcileServerImageConvergedErrorParks(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	server := desiredRebuildServer()
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
+	require.Error(t, err)
+	require.True(t, provisioners.IsTerminal(err), "a failed rebuild must park, not retry or settle")
+	require.ErrorIs(t, err, provisioners.ErrUserActionRequired,
+		"the advertised remedy is a spec edit, so the park must carry the user-fixable disposition, not the operator-only ErrTerminal")
+	require.ErrorContains(t, err, "the provider reports the server in an error state; select another image or replace the server")
+	requireNoReconcilerStamp(t, server)
+}
+
+// TestReconcileServerImageConvergedErrorBeforeLaunchIsCreateRetrys pins the guard:
+// an ERROR on the desired image before first boot is a failed create, which the
+// provisioner's bounded retry machinery owns. This pass must complete without a
+// park so that machinery is reached.
+func TestReconcileServerImageConvergedErrorBeforeLaunchIsCreateRetrys(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	server := desiredRebuildServer()
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaUnlaunchedServer("ERROR", rebuildNewImageID))
+	require.NoError(t, err)
+	requireNoReconcilerStamp(t, server)
+}
+
+// TestReconcileServerImageConvergedForeignTaskIsNotARebuild pins that a non-rebuild
+// task on a converged server is not reported as rebuilding.
+func TestReconcileServerImageConvergedForeignTaskIsNotARebuild(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	server := desiredRebuildServer()
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server,
+		novaRebuildServerTask("ACTIVE", rebuildNewImageID, taskStateRebooting))
+	require.NoError(t, err)
+	requireNoReconcilerStamp(t, server)
+}
+
+// TestReconcileServerImageForeignTaskDefersSubmission pins that a pending image
+// change waits for quiescence, since Nova requires a NULL task_state.
+func TestReconcileServerImageForeignTaskDefersSubmission(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	server := desiredRebuildServer()
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server,
+		novaRebuildServerTask("ACTIVE", rebuildOldImageID, taskStateRebooting))
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	requireNoReconcilerStamp(t, server)
+}
+
+// TestReconcileServerImageDefersUntilFirstLaunch pins that a never-booted server is
+// create-retry's to own.
+func TestReconcileServerImageDefersUntilFirstLaunch(t *testing.T) {
+	t.Parallel()
+
+	for name, openstackServer := range map[string]*servers.Server{
+		"building": novaUnlaunchedServer("BUILD", rebuildOldImageID),
+		"errored":  novaUnlaunchedServer("ERROR", rebuildOldImageID),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			client := mock.NewMockServerInterface(gomock.NewController(t))
+			server := desiredRebuildServer()
+
+			_, err := openstack.ReconcileServerImage(t.Context(), client, server, openstackServer)
+			require.ErrorIs(t, err, provisioners.ErrYield)
+			requireNoReconcilerStamp(t, server)
+		})
+	}
+}
+
+// TestReconcileServerImageUnreadableImageParks pins that an unverifiable image ref
+// never reports success and parks as user-action-required: the ref is the only proof
+// the spec image was realized, so an unreadable one cannot certify convergence. The
+// park is re-derived per pass, so a later readable ref un-parks it without any spec
+// change. The message is ours and cause-neutral.
+func TestReconcileServerImageUnreadableImageParks(t *testing.T) {
+	t.Parallel()
+
+	for name, image := range map[string]map[string]any{
+		"absent":      nil,
+		"empty":       {"id": ""},
+		"unparseable": {"id": "not-a-uuid"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			client := mock.NewMockServerInterface(gomock.NewController(t))
+			server := desiredRebuildServer()
+
+			openstackServer := novaRebuildServer("ACTIVE", rebuildOldImageID)
+			openstackServer.Image = image
+
+			_, err := openstack.ReconcileServerImage(t.Context(), client, server, openstackServer)
+			require.Error(t, err)
+			require.True(t, provisioners.IsTerminal(err), "an unreadable image ref must park, not retry or settle")
+			require.ErrorIs(t, err, provisioners.ErrUserActionRequired,
+				"the only remedy is a spec edit or replacement, so the park must carry the user-fixable disposition")
+			require.ErrorContains(t, err, "the provider cannot report the server's image, so the desired image cannot be verified; replace the server")
+			requireNoReconcilerStamp(t, server)
+		})
+	}
+}
+
+// TestReconcileServerImageNoDesiredImageParks pins the no-desired-image row: a
+// server with no spec image must not complete, because completing would report it
+// provisioned onto no image at all. The only remedy is a spec edit, which is the
+// park contract.
+func TestReconcileServerImageNoDesiredImageParks(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	server := &unikornv1.Server{}
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
+	require.Error(t, err)
+	require.True(t, provisioners.IsTerminal(err), "a server with no spec image must park, not complete")
+	require.ErrorIs(t, err, provisioners.ErrUserActionRequired,
+		"the only remedy is a spec edit, so the park must carry the user-fixable disposition")
+	require.ErrorContains(t, err, "the server specifies no image to converge onto; set an image in the specification")
+	requireNoReconcilerStamp(t, server)
+}
+
+// TestReconcileServerImageConflictYieldsSilently pins the pre-acceptance path: a
+// 409 leaves the server untouched, so the pass yields and writes no status.
+func TestReconcileServerImageConflictYieldsSilently(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
+		Return(nil, gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusConflict})
+
+	server := desiredRebuildServer()
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	requireNoReconcilerStamp(t, server)
+}
+
+// TestReconcileServerImageRejectionSurfaces pins that a rejection which may heal
+// without a spec edit (a 5xx here, but equally a 403: quota freeing bumps no
+// generation, and, since the park narrowed to the image-not-found signature,
+// any unrecognized 400) surfaces as a plain retried error — never a yield, and
+// never a park, which would strand the server. Nothing is left for a later
+// poll to observe.
+func TestReconcileServerImageRejectionSurfaces(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
+		Return(nil, gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusInternalServerError})
+
+	server := desiredRebuildServer()
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
+	require.Error(t, err)
+	require.NotErrorIs(t, err, provisioners.ErrYield)
+	require.NotErrorIs(t, err, provisioners.ErrUserActionRequired,
+		"a 5xx can heal without a generation bump, so parking it would strand the server")
+	require.False(t, provisioners.IsTerminal(err))
+	requireNoReconcilerStamp(t, server)
+}
+
+// TestReconcileServerImageNotFoundBadRequestParks pins that Nova's synchronous
+// image-not-found rejection — and only that 400 — parks as
+// user-action-required: the image is gone, no retry can resolve it, and the
+// remedy is a spec edit whose generation bump un-parks it. The match is on
+// Nova's fixed rejection message in the response body; the surfaced message is
+// ours, never Nova's.
+func TestReconcileServerImageNotFoundBadRequestParks(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
+		Return(nil, gophercloud.ErrUnexpectedResponseCode{
+			Actual: http.StatusBadRequest,
+			Body:   []byte(`{"badRequest": {"code": 400, "message": "Cannot find image for rebuild"}}`),
+		})
+
+	server := desiredRebuildServer()
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
+	require.ErrorIs(t, err, provisioners.ErrUserActionRequired)
+	require.ErrorContains(t, err, "the desired image no longer exists at the provider; select a different image or replace the server")
+	requireNoReconcilerStamp(t, server)
+}
+
+// TestReconcileServerImageOtherBadRequestRetries pins the narrowing's fail-safe
+// half: a 400 whose body does not carry Nova's image-not-found signature
+// surfaces as a plain retried error — never a park. ImageNotActive is the
+// motivating case: an operator reactivating a deactivated Glance image bumps
+// no generation and moves no observed field, so a park would have no recovery
+// path, while a retry converges on the pass after reactivation with no spec
+// edit. A stripped or reworded body degrades the same safe way.
+func TestReconcileServerImageOtherBadRequestRetries(t *testing.T) {
+	t.Parallel()
+
+	testCases := map[string][]byte{
+		"deactivated image":    []byte(`{"badRequest": {"code": 400, "message": "Image 22222222-2222-4222-a222-222222222222 is not active."}}`),
+		"min_disk over flavor": []byte(`{"badRequest": {"code": 400, "message": "Flavor's disk is too small for requested image."}}`),
+		"empty body":           nil,
+	}
+
+	for name, body := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			client := mock.NewMockServerInterface(gomock.NewController(t))
+			client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
+				Return(nil, gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusBadRequest, Body: body})
+
+			server := desiredRebuildServer()
+
+			_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
+			require.Error(t, err)
+			require.NotErrorIs(t, err, provisioners.ErrYield)
+			require.NotErrorIs(t, err, provisioners.ErrUserActionRequired,
+				"an unrecognized 400 may be operator-recoverable without a generation bump, so parking it would strand the server")
+			require.False(t, provisioners.IsTerminal(err))
+			requireNoReconcilerStamp(t, server)
+		})
+	}
+}
+
+// TestReconcileServerImageAcceptedStampIgnoresResponseBody pins that the accepted
+// stamp is fixed: a 202 body can still describe the server as ACTIVE.
+func TestReconcileServerImageAcceptedStampIgnoresResponseBody(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
+		Return(novaRebuildServer("ACTIVE", rebuildOldImageID), nil)
+
+	server := desiredRebuildServer()
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	requireRebuildAcceptedStamp(t, server)
+}
+
+// TestReconcileServerRebuildOmitsGuestConfiguration pins that the rebuild carries
+// only the image; Nova preserves guest configuration on an omitted field.
 func TestReconcileServerRebuildOmitsGuestConfiguration(t *testing.T) {
 	t.Parallel()
 
 	client := mock.NewMockServerInterface(gomock.NewController(t))
 	server := desiredRebuildServer()
-	// Intent already durable: this pass submits.
-	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: unikornv1.ServerRebuildStateInitiated}
 	server.Spec.UserData = []byte("#cloud-config\nusers: []\n")
 	client.EXPECT().GetServer(gomock.Any(), server).
 		Return(novaRebuildServer("ACTIVE", rebuildOldImageID), nil)
@@ -168,19 +479,16 @@ func TestReconcileServerRebuildOmitsGuestConfiguration(t *testing.T) {
 		Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
 
 	_, err := openstack.ReconcileServer(t.Context(), nil, client, server, nil, "identity-keypair")
-	require.NoError(t, err)
+	require.ErrorIs(t, err, provisioners.ErrYield)
 	requireRebuildAcceptedStamp(t, server)
 }
 
-// TestCreateServerCopiesFullStatusBackForAugmentedServers pins that the caller's
-// server observes the full post-reconcile status (Phase, Healthy, ...), not just
-// Status.Rebuild, when user-data augmentation forces a deep-copy reconcile.
+// TestCreateServerCopiesFullStatusBackForAugmentedServers pins that the caller sees
+// the full post-reconcile status when augmentation forces a deep copy.
 func TestCreateServerCopiesFullStatusBackForAugmentedServers(t *testing.T) {
 	t.Parallel()
 
 	server := desiredRebuildServer()
-	// Intent already durable: this pass submits.
-	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: unikornv1.ServerRebuildStateInitiated}
 
 	options := &types.ServerCreateOptions{UserData: []byte("#cloud-config\nssh_authorized_keys: []\n")}
 	require.NotSame(t, server, openstack.ServerForCreate(server, options), "test setup requires user-data augmentation to force a deep copy")
@@ -191,459 +499,7 @@ func TestCreateServerCopiesFullStatusBackForAugmentedServers(t *testing.T) {
 		Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
 
 	err := openstack.ReconcileServerForCreate(t.Context(), nil, client, server, options, nil, "")
-	require.NoError(t, err)
-
-	requireRebuildAcceptedStamp(t, server)
-}
-
-// TestReconcileServerImageCompletesWhileNovaRebuilds pins that with no marker, a
-// Nova REBUILD on the already-desired image is a foreign rebuild — the monitor's
-// concern. The pass completes without touching Nova, the marker, or Phase/Healthy.
-func TestReconcileServerImageCompletesWhileNovaRebuilds(t *testing.T) {
-	t.Parallel()
-
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	server := desiredRebuildServer()
-
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("REBUILD", rebuildNewImageID))
-	require.NoError(t, err)
-	require.Nil(t, server.Status.Rebuild)
-	requireNoReconcilerStamp(t, server)
-}
-
-// TestReconcileServerImageObservedRebuildAdvancesMarker pins that Nova reporting
-// REBUILD while a matching marker is still Initiated advances it to Rebuilding.
-func TestReconcileServerImageObservedRebuildAdvancesMarker(t *testing.T) {
-	t.Parallel()
-
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	server := desiredRebuildServer()
-	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: unikornv1.ServerRebuildStateInitiated}
-
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("REBUILD", rebuildNewImageID))
-	require.NoError(t, err)
-	require.Equal(t, unikornv1.ServerRebuildStateRebuilding, server.Status.Rebuild.State)
-}
-
-// TestReconcileServerImageCompletesWhileAcceptedRebuildConverges pins P7c: an
-// accepted rebuild still in flight (non-target ref, active task) is not
-// re-submitted; the reconcile re-asserts the accepted stamp and completes,
-// preserving the marker for P4c's later supersession.
-func TestReconcileServerImageCompletesWhileAcceptedRebuildConverges(t *testing.T) {
-	t.Parallel()
-
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	server := desiredRebuildServer()
-	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: unikornv1.ServerRebuildStateRebuilding}
-
-	// task_state active: genuinely in flight (an empty task would be supersession).
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServerTask("ACTIVE", rebuildOldImageID, "rebuilding"))
-	require.NoError(t, err)
-	require.Equal(t, idstest.MustParseImageID(rebuildNewImageID), server.Status.Rebuild.TargetImageID)
-	require.Equal(t, unikornv1.ServerRebuildStateRebuilding, server.Status.Rebuild.State)
-	requireRebuildAcceptedStamp(t, server)
-}
-
-// TestReconcileServerImageClearsMarkerOnSuccess pins the converged-clear (P6a)
-// for every non-Failed marker state: a quiescent convergence retires the marker,
-// confirmed by read-back (the clearing pass yields, the requeued pass that reads
-// it absent completes). Failed is excluded — it parks instead, see
-// TestReconcileServerImageDoesNotClearFailedMarker.
-func TestReconcileServerImageClearsMarkerOnSuccess(t *testing.T) {
-	t.Parallel()
-
-	states := []unikornv1.ServerRebuildState{
-		unikornv1.ServerRebuildStateInitiated,
-		unikornv1.ServerRebuildStateRebuilding,
-		unikornv1.ServerRebuildStateSucceeded,
-	}
-
-	for _, state := range states {
-		t.Run(string(state), func(t *testing.T) {
-			t.Parallel()
-
-			client := mock.NewMockServerInterface(gomock.NewController(t))
-			server := desiredRebuildServer()
-			server.Status.Rebuild = &unikornv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: state}
-
-			// Clearing pass: marker removed, yield to confirm by read-back.
-			_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildNewImageID))
-			require.ErrorIs(t, err, provisioners.ErrYield)
-			require.Nil(t, server.Status.Rebuild)
-
-			// Confirming pass: marker reads back absent, so the intent is settled.
-			_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildNewImageID))
-			require.NoError(t, err)
-			require.Nil(t, server.Status.Rebuild)
-		})
-	}
-}
-
-// TestReconcileServerImageDoesNotClearFailedMarker pins that a Failed marker
-// parks (P4a) even over a converged quiescent read — a post-acceptance failure
-// leaves an unverifiable root disk, so a false park beats a false success.
-func TestReconcileServerImageDoesNotClearFailedMarker(t *testing.T) {
-	t.Parallel()
-
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	server := desiredRebuildServer()
-	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: unikornv1.ServerRebuildStateFailed}
-
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildNewImageID))
-	require.ErrorIs(t, err, provisioners.ErrUserActionRequired)
-	require.Equal(t, unikornv1.ServerRebuildStateFailed, server.Status.Rebuild.State, "a Failed marker is never cleared by a converged read")
-}
-
-// TestReconcileServerImageParksAcceptedFailure pins the two-phase park (P4b →
-// P4a): a marker with acceptance evidence (durably >= Rebuilding, or the ref
-// flipped to the target) that observes ERROR fails. The first pass stamps Failed
-// (direct) and yields; only the second, which reads Failed back, parks. The
-// direct stamp overrides a stale Succeeded, or the retained level would re-fire
-// the settlement wake forever on a parked server.
-func TestReconcileServerImageParksAcceptedFailure(t *testing.T) {
-	t.Parallel()
-
-	testCases := map[string]struct {
-		imageID string
-		state   unikornv1.ServerRebuildState
-	}{
-		"unmoved ref":                 {imageID: rebuildOldImageID, state: unikornv1.ServerRebuildStateRebuilding},
-		"flipped ref":                 {imageID: rebuildNewImageID, state: unikornv1.ServerRebuildStateRebuilding},
-		"stale succeeded observation": {imageID: rebuildNewImageID, state: unikornv1.ServerRebuildStateSucceeded},
-	}
-
-	for name, tc := range testCases {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			client := mock.NewMockServerInterface(gomock.NewController(t))
-			server := desiredRebuildServer()
-			server.Status.Rebuild = &unikornv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: tc.state}
-
-			// Stamp pass: failure recorded (overriding a stale Succeeded), yield.
-			_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", tc.imageID))
-			require.ErrorIs(t, err, provisioners.ErrYield)
-			require.Equal(t, unikornv1.ServerRebuildStateFailed, server.Status.Rebuild.State, "the pre-park stamp records the failure")
-
-			condition, conditionErr := server.StatusConditionRead(unikornv1core.ConditionHealthy)
-			require.NoError(t, conditionErr)
-			require.Equal(t, metav1.ConditionFalse, condition.Status)
-
-			// Park pass: Failed reads back durable, so the terminal park issues.
-			_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", tc.imageID))
-			require.ErrorIs(t, err, provisioners.ErrUserActionRequired)
-			require.Equal(t, unikornv1.ServerRebuildStateFailed, server.Status.Rebuild.State, "the park retains the marker with the failure recorded")
-		})
-	}
-}
-
-func TestReconcileServerImageDoesNotRebuildUnrelatedError(t *testing.T) {
-	t.Parallel()
-
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	server := desiredRebuildServer()
-
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
-	require.NoError(t, err)
-}
-
-// TestReconcileServerImageRebuildsWhenNovaLaunchedButStatusUnobserved is the
-// headline fresh-read-gate case: Nova reports launched_at set but the monitor
-// never recorded it (CR latches nil). The gate must authorize from the fresh
-// Nova read, or the image change is silently dropped.
-func TestReconcileServerImageRebuildsWhenNovaLaunchedButStatusUnobserved(t *testing.T) {
-	t.Parallel()
-
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
-		Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
-
-	server := desiredRebuildServer()
-	// The monitor never observed the first ACTIVE: the status latches are nil.
-	server.Status.ProvisionedAt = nil
-	server.Status.LaunchedAt = nil
-
-	// The gate authorizes from the fresh read: arm, then submit.
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
 	require.ErrorIs(t, err, provisioners.ErrYield)
-	require.Equal(t, idstest.MustParseImageID(rebuildNewImageID), server.Status.Rebuild.TargetImageID)
 
-	_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
-	require.NoError(t, err)
-	require.Equal(t, idstest.MustParseImageID(rebuildNewImageID), server.Status.Rebuild.TargetImageID)
-	require.Equal(t, unikornv1.ServerRebuildStateRebuilding, server.Status.Rebuild.State)
-}
-
-// TestReconcileServerImageDefersUntilFreshLaunch pins that a server Nova reports
-// as never booted (zero launched_at) defers its image change and never rebuilds,
-// even when stale status latches claim it launched.
-func TestReconcileServerImageDefersUntilFreshLaunch(t *testing.T) {
-	t.Parallel()
-
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	server := desiredRebuildServer()
-	// Status says launched (stale); the gate must ignore it and read Nova.
-	launched := metav1.NewTime(time.Now().Add(-time.Hour))
-	server.Status.ProvisionedAt = &launched
-	server.Status.LaunchedAt = &launched
-
-	// gomock enforces that no RebuildServer call is made.
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaUnlaunchedServer("ACTIVE", rebuildOldImageID))
-	require.ErrorIs(t, err, provisioners.ErrYield)
-	require.Nil(t, server.Status.Rebuild)
-}
-
-// TestReconcileServerImageDefersErroredUnlaunchedToCreateRetry pins P7a: a
-// never-booted server Nova reports in ERROR with a pending image change and no
-// marker is in the create-retry domain. The pass yields silently (no
-// Phase/Healthy write) and submits no rebuild.
-func TestReconcileServerImageDefersErroredUnlaunchedToCreateRetry(t *testing.T) {
-	t.Parallel()
-
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	server := desiredRebuildServer()
-
-	// gomock enforces that no RebuildServer call is made.
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaUnlaunchedServer("ERROR", rebuildOldImageID))
-	require.ErrorIs(t, err, provisioners.ErrYield)
-	require.Nil(t, server.Status.Rebuild)
-
-	_, conditionErr := server.StatusConditionRead(unikornv1core.ConditionHealthy)
-	require.Error(t, conditionErr, "the pre-acceptance create-retry yield must not write the monitor-owned Healthy condition")
-}
-
-// TestReconcileServerImageUnreadableImageYields pins P5: a fresh Nova read whose
-// image ref is missing or unparseable means convergence cannot be checked, so
-// the reconcile yields visibly without touching Nova, the marker, or Healthy.
-func TestReconcileServerImageUnreadableImageYields(t *testing.T) {
-	t.Parallel()
-
-	testCases := map[string]map[string]any{
-		"missing image ref": {},
-		"non-UUID image id": {"id": "not-a-uuid"},
-	}
-
-	for name, image := range testCases {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			// gomock enforces that no RebuildServer call is made.
-			client := mock.NewMockServerInterface(gomock.NewController(t))
-			server := desiredRebuildServer()
-
-			openstackServer := novaRebuildServer("ACTIVE", "")
-			openstackServer.Image = image
-
-			_, err := openstack.ReconcileServerImage(t.Context(), client, server, openstackServer)
-			require.ErrorIs(t, err, provisioners.ErrYield)
-			require.Nil(t, server.Status.Rebuild)
-
-			_, conditionErr := server.StatusConditionRead(unikornv1core.ConditionHealthy)
-			require.Error(t, conditionErr, "this path must not write the monitor-owned Healthy condition")
-		})
-	}
-}
-
-// TestReconcileServerImageConflictKeepsInitiated pins the 409 wait: a Nova
-// conflict is pre-acceptance, so the marker stays Initiated.
-func TestReconcileServerImageConflictKeepsInitiated(t *testing.T) {
-	t.Parallel()
-
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
-		Return(nil, gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusConflict})
-
-	server := desiredRebuildServer()
-	// Intent already durable: this pass submits.
-	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: unikornv1.ServerRebuildStateInitiated}
-
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
-	require.ErrorIs(t, err, provisioners.ErrYield)
-	require.Equal(t, unikornv1.ServerRebuildStateInitiated, server.Status.Rebuild.State)
-
-	// The 409 is pre-acceptance: the yield is silent — no Phase, no Healthy write.
-	requireNoReconcilerStamp(t, server)
-}
-
-// TestReconcileServerImageParksLostAcceptanceFailure pins the loss-window
-// recovery the write-ahead marker exists for: Nova accepted a rebuild, every
-// post-arm write was lost (marker still Initiated), then it failed fast. The
-// ref flipped to the target is the acceptance evidence (P4b's ref==target
-// disjunct), so the server parks rather than reporting a false success.
-func TestReconcileServerImageParksLostAcceptanceFailure(t *testing.T) {
-	t.Parallel()
-
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	server := desiredRebuildServer()
-	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: unikornv1.ServerRebuildStateInitiated}
-
-	// Stamp pass: the ref flip attributes the ERROR to our rebuild.
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
-	require.ErrorIs(t, err, provisioners.ErrYield)
-	require.Equal(t, unikornv1.ServerRebuildStateFailed, server.Status.Rebuild.State, "the pre-park stamp survives a lost monitor write")
-
-	// Park pass: Failed reads back durable.
-	_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
-	require.ErrorIs(t, err, provisioners.ErrUserActionRequired)
-	require.Equal(t, unikornv1.ServerRebuildStateFailed, server.Status.Rebuild.State)
-}
-
-// TestReconcileServerImageArmedUnrelatedErrorSubmits pins that intent alone is
-// not acceptance evidence: an Initiated marker with the ref unmoved means Nova
-// never acted, so an ERROR is unrelated and the submission proceeds (the
-// remediation rebuild) rather than parking.
-func TestReconcileServerImageArmedUnrelatedErrorSubmits(t *testing.T) {
-	t.Parallel()
-
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
-		Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
-
-	server := desiredRebuildServer()
-	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: unikornv1.ServerRebuildStateInitiated}
-
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildOldImageID))
-	require.NoError(t, err)
-	require.Equal(t, unikornv1.ServerRebuildStateRebuilding, server.Status.Rebuild.State)
-}
-
-// TestReconcileServerImageNewImageRearmsAfterParkedFailure pins the only re-arm
-// path for a parked (Failed) rebuild: a changed desired image. A parked failure
-// for image B does not retry; only Spec.Image.ID moving to image C re-arms
-// (replacing the Failed marker with a fresh Initiated one) and re-submits.
-func TestReconcileServerImageNewImageRearmsAfterParkedFailure(t *testing.T) {
-	t.Parallel()
-
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	client.EXPECT().RebuildServer(gomock.Any(), "server-1", openstack.ServerRebuildOptions{
-		ImageID: idstest.MustParseImageID(rebuildThirdImageID),
-	}).Return(novaRebuildServer("REBUILD", rebuildThirdImageID), nil)
-
-	server := desiredRebuildServer()
-	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{
-		TargetImageID: idstest.MustParseImageID(rebuildNewImageID),
-		State:         unikornv1.ServerRebuildStateRebuilding,
-	}
-
-	// An accepted rebuild for image B reached ERROR: stamp Failed (P4b), park (P4a).
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
-	require.ErrorIs(t, err, provisioners.ErrYield)
-	require.Equal(t, unikornv1.ServerRebuildStateFailed, server.Status.Rebuild.State)
-
-	_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
-	require.ErrorIs(t, err, provisioners.ErrUserActionRequired)
-	require.Equal(t, unikornv1.ServerRebuildStateFailed, server.Status.Rebuild.State)
-
-	// Re-arm: the desired image moves on to C; the replacement marker is written
-	// ahead, back at Initiated.
-	server.Spec.Image.ID = idstest.MustParseImageID(rebuildThirdImageID)
-
-	_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
-	require.ErrorIs(t, err, provisioners.ErrYield)
-	require.Equal(t, idstest.MustParseImageID(rebuildThirdImageID), server.Status.Rebuild.TargetImageID)
-	require.Equal(t, unikornv1.ServerRebuildStateInitiated, server.Status.Rebuild.State)
-
-	// Submit: the durable Initiated marker for C authorizes one submission.
-	_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
-	require.NoError(t, err)
-	require.Equal(t, idstest.MustParseImageID(rebuildThirdImageID), server.Status.Rebuild.TargetImageID)
-	require.Equal(t, unikornv1.ServerRebuildStateRebuilding, server.Status.Rebuild.State)
-}
-
-// TestReconcileServerImageInitiatedForeignRebuildYields pins the row the whole
-// redesign turns on. An Initiated marker with a foreign rebuild in flight toward
-// a different image (ref off target, task active) must not advance and must not
-// clean-complete: the pass yields (P7d), keeping the submission gate alive. The
-// monitor leaves it alone, so the reconciler's yield loop is the only wake
-// channel and a clean-complete would wedge the marker forever.
-func TestReconcileServerImageInitiatedForeignRebuildYields(t *testing.T) {
-	t.Parallel()
-
-	// gomock enforces that no RebuildServer call is made while the foreign op
-	// holds the server.
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	server := desiredRebuildServer()
-	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: unikornv1.ServerRebuildStateInitiated}
-
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("REBUILD", rebuildOldImageID))
-	require.ErrorIs(t, err, provisioners.ErrYield)
-	require.Equal(t, unikornv1.ServerRebuildStateInitiated, server.Status.Rebuild.State, "a foreign rebuild must not advance the submission gate off Initiated")
-}
-
-// TestReconcileServerImageUnknownMarkerStateYields pins the defensive tail of
-// the pending-state dispatch: a marker state this version does not recognize
-// (version skew during a rolling upgrade — a newer controller wrote a state
-// this one predates) must yield, never clean-complete as provisioned, and must
-// not submit a rebuild.
-func TestReconcileServerImageUnknownMarkerStateYields(t *testing.T) {
-	t.Parallel()
-
-	// gomock enforces that no RebuildServer call is made on an unrecognized state.
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	server := desiredRebuildServer()
-	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: unikornv1.ServerRebuildState("Verifying")}
-
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
-	require.ErrorIs(t, err, provisioners.ErrYield)
-}
-
-// TestReconcileServerImageParksSupersededRebuild pins P4c supersession: an
-// accepted rebuild whose fresh read shows a readable ref moved off the target
-// with a quiesced task can no longer converge. The first pass stamps Failed and
-// yields (P4c), the second parks (P4a); it never resubmits or clears.
-func TestReconcileServerImageParksSupersededRebuild(t *testing.T) {
-	t.Parallel()
-
-	// gomock enforces that no RebuildServer call is made.
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	server := desiredRebuildServer()
-	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: unikornv1.ServerRebuildStateRebuilding}
-
-	// ACTIVE, off-target ref, empty task_state: quiescent but not converged.
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
-	require.ErrorIs(t, err, provisioners.ErrYield)
-	require.Equal(t, unikornv1.ServerRebuildStateFailed, server.Status.Rebuild.State, "supersession stamps Failed")
-
-	_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
-	require.ErrorIs(t, err, provisioners.ErrUserActionRequired)
-	require.Equal(t, unikornv1.ServerRebuildStateFailed, server.Status.Rebuild.State)
-}
-
-// TestReconcileServerImageSucceededTaskActiveYields pins the quiescence gate on
-// the clear: a Succeeded marker on a converged ref but an active task_state must
-// not clear — activity after the stamp postpones settlement, so the pass yields.
-func TestReconcileServerImageSucceededTaskActiveYields(t *testing.T) {
-	t.Parallel()
-
-	// gomock enforces that no RebuildServer call is made.
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	server := desiredRebuildServer()
-	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: unikornv1.ServerRebuildStateSucceeded}
-
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServerTask("ACTIVE", rebuildNewImageID, "rebuilding"))
-	require.ErrorIs(t, err, provisioners.ErrYield)
-	require.NotNil(t, server.Status.Rebuild, "an active task after the Succeeded stamp postpones the clear")
-	require.Equal(t, unikornv1.ServerRebuildStateSucceeded, server.Status.Rebuild.State)
-}
-
-// TestReconcileServerImageAcceptedStampIgnoresResponseBody pins that the
-// acceptance stamp is fixed (Building, Healthy False/Provisioning) and never
-// derived from the rebuild response body — here a 202 body still reading ACTIVE
-// on the old image would falsely stamp Healthy/Running.
-func TestReconcileServerImageAcceptedStampIgnoresResponseBody(t *testing.T) {
-	t.Parallel()
-
-	client := mock.NewMockServerInterface(gomock.NewController(t))
-	// The response body reads ACTIVE on the OLD image — a body-derived stamp
-	// would map it to Healthy=True/Running.
-	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
-		Return(novaRebuildServer("ACTIVE", rebuildOldImageID), nil)
-
-	server := desiredRebuildServer()
-	server.Status.Rebuild = &unikornv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: unikornv1.ServerRebuildStateInitiated}
-
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
-	require.NoError(t, err)
-	require.Equal(t, unikornv1.ServerRebuildStateRebuilding, server.Status.Rebuild.State)
 	requireRebuildAcceptedStamp(t, server)
 }

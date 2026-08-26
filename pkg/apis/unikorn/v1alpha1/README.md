@@ -23,7 +23,7 @@ carryovers from older designs.
 
 ## Links
 
-- [../../constants](../../constants/README.md)
+- [../../../constants](../../../constants/README.md)
 
 `pkg/constants` defines much of the label and annotation vocabulary that these
 stored objects rely on for linkage, migration, and operational coordination.
@@ -146,29 +146,66 @@ stored objects rely on for linkage, migration, and operational coordination.
   policies plus the optional hidden `system-default` baseline — caps policy names
   at 19 characters, and validates the schedule/retention shape so direct CRD
   writes cannot persist unsupported policy combinations.
-- `Server.Spec.Image` is desired state. Nova's observed image and status
-  remain authoritative for live state. `Server.Status.Rebuild` is one struct
-  carrying the rebuild state machine. `TargetImageID` is write-ahead intent:
-  the provider persists it (by yielding an arming pass) before Nova is asked
-  to act, because it is the one fact needed to classify a failed rebuild that
-  fresh observation cannot reconstruct. `State` walks a forward-only enum —
-  `Initiated` < `Rebuilding` < `Succeeded` == `Failed`, where the terminals
-  are peers that never flip (first observation wins). The reconciler owns
-  arming (`Initiated`), clearing the struct on observed convergence, and the
-  failure park; both the reconciler and the monitor's provider poll advance
-  the state from observed Nova evidence (the reconciler stamps `Rebuilding`
-  when Nova accepts; the monitor advances from a fresh read attributed by the
-  image ref matching the target — `Rebuilding` while a rebuild is active,
-  `Succeeded`/`Failed` as its terminal observations). Lost stamps self-heal by
-  the monitor recomputing from persistent evidence each poll (a real,
-  differing patch), not by re-asserting an unchanged value.
-  The terminal states are the level the manager's wake predicate fires on.
-  The marker is not proof of provider reality, and missing or mismatched
-  bookkeeping must fail closed rather than authorize a destructive action. A
-  rebuild that fails after Nova acted parks the server, retaining the
-  `Failed` marker, until the desired image changes or the server is replaced
-  — that is the only re-arm path, since there is no longer a client-facing
-  retry generation to bump.
+- `Server.Spec.Image` is desired state; Nova's observed image and status remain
+  authoritative for live state.
+  A rebuild failure is not attributable: an unrelated host failure on the desired
+  image is indistinguishable from a failed rebuild, whatever is recorded, so it
+  surfaces on the monitor's lifecycle axis rather than as a reconciler diagnosis.
+  Recovery is another image or a replacement server — never data restoration.
+- `Server.Status.Observed` is the partition that lets the two status writers stop
+  arbitrating. `Server` status has two writers: the reconciler drives the provider
+  toward spec, the monitor polls the provider and records what it saw. Anything they
+  share needs an ordering argument between them; anything derived exactly one way
+  does not. Every field under `Observed` comes from a single projection of one fresh
+  provider read. The monitor's poll is the normal caller but not the only one — the
+  reconciler's create-retry existence check reaches the same projection through the
+  same provider method — and that costs nothing because there is nothing to
+  arbitrate: both callers write the same derivation of the same kind of read, neither
+  advances a state, and a losing race loses on `resourceVersion` rather than
+  reverting a field. The retired `Status.Rebuild` marker failed on exactly the
+  opposite property: two writers holding different models of one field.
+  The governing rule is that **an observation never authorizes an action against
+  the provider**. Actuation is decided from a fresh provider read in the acting
+  pass, because an observation is stale by up to one poll interval and acting on
+  one would let a read taken before an operation landed authorize a second one —
+  which for a destructive operation means doing it twice. An observation may be
+  read as a precondition that *refuses* an action. This is the platform
+  specification's rule for projected status, not a local convention.
+  `Generation` is the freshness stamp: `metadata.generation` as read when the
+  snapshot was taken, so a reader can tell whether an observation postdates a spec
+  edit. It is stamped on every poll, which means the subtree exists from the first
+  poll that read the provider at all — a present subtree with no `Image` means
+  "polled, image unreadable", a different fact from an absent subtree meaning
+  "never successfully polled". The monitor patches with an optimistic lock, so a
+  write whose object moved underneath it is rejected outright and the recorded
+  generation is the one in force at write time.
+  `Image` tracks the live provider image rather than latching, but an unreadable
+  ref preserves the previous value and never clears it: a transient read miss must
+  not erase a known image, because a reader cannot tell an erased image from one
+  never observed. `Errored` is a neutral presence marker — "the provider reports
+  the server in an error state" — carrying no provider vocabulary; the provider's
+  own fault detail is written to the observing component's log at the moment of
+  observation, where operator detail belongs. It is live state and does clear on
+  an authoritative non-error read, which is safe only because an unreachable
+  provider aborts the poll without writing at all — connectivity loss can never
+  be mistaken for a recovery.
+  The `Healthy` and `Active` conditions are deliberately not in this region: the API
+  projects health from the condition, and the conditions array is shared with the
+  reconciler either way — it writes both on create and on an accepted rebuild.
+  **What this region can never tell you.** Every field under it is provider state,
+  so it bounds at provider-level truth and stops there. A rebuild onto a
+  well-formed but unbootable image was measured settling as `ACTIVE`, on the target
+  ref, with an empty `task_state` and no fault — byte-identical at the provider
+  layer to a perfect rebuild, with a dead workload inside. No enrichment of this
+  region can distinguish the two, because the difference is not visible to the
+  provider API. So `Image` matching the desired image means "the provider reports
+  the server running that image", never "the workload works", and `Errored` being false
+  means "the provider reports no failure", never "the guest is healthy". Note also
+  that a provider's failure detail may not survive the read the monitor makes: see the
+  OpenStack provider's `GetServer` notes on list responses omitting the fault. Workload
+  liveness is a separate axis needing a signal from inside the guest; treating
+  convergence here as proof of a working workload is a misreading this region
+  cannot protect against.
 
 ## Caveats
 

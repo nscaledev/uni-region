@@ -18,6 +18,7 @@ package server_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -358,4 +359,122 @@ func TestProvision_ProvisionedServerHealthErrorDoesNotRetryCreate(t *testing.T) 
 	require.NoError(t, prov.Provision(coreclient.NewContext(t.Context(), cli)))
 	require.Zero(t, server.Status.ProviderCreateFailures)
 	require.False(t, server.Status.ProviderCreateRetrying)
+}
+
+// TestProvision_YieldStillReleasesConsumedReferences pins that a yielding pass
+// (a rebuild in flight, a create retrying) still releases references to
+// resources the spec no longer names. A rebuild yields for its entire duration
+// — 30+ minutes on baremetal — and a dropped security group must not be
+// undeletable for that window.
+func TestProvision_YieldStillReleasesConsumedReferences(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	server := retryServer()
+
+	// A security group carrying this server's consumption reference, which the
+	// server's spec no longer names.
+	droppedGroup := &regionv1.SecurityGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "dropped-group",
+			Namespace: "default",
+			Labels: map[string]string{
+				constants.IdentityLabel: retryIdentityID,
+			},
+			Finalizers: []string{"servers.region.unikorn-cloud.org/" + server.Name},
+		},
+	}
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(provisioners.ErrYield)
+
+	cli := retryClient(t, retryIdentity(), server, droppedGroup)
+	prov := retryProvisioner(t, server, nil, provider)
+
+	require.ErrorIs(t, prov.Provision(coreclient.NewContext(t.Context(), cli)), provisioners.ErrYield)
+
+	updated := &regionv1.SecurityGroup{}
+	require.NoError(t, cli.Get(t.Context(), client.ObjectKey{Namespace: "default", Name: "dropped-group"}, updated))
+	require.Empty(t, updated.Finalizers, "a yielding pass must still release references the spec no longer holds")
+}
+
+// TestProvision_ParkStillReleasesConsumedReferences pins that a parked pass —
+// a provider outcome satisfying provisioners.IsTerminal (here
+// ErrUserActionRequired) — still releases references to resources the spec no
+// longer names. A park persists until a spec edit, longer than any yield, so a
+// dropped security group must not keep this server's finalizer and be
+// undeletable for the lifetime of the park. The provider detaches dropped
+// groups from the Neutron port before the image row runs, so releasing on a
+// park is safe.
+func TestProvision_ParkStillReleasesConsumedReferences(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	server := retryServer()
+
+	// A security group carrying this server's consumption reference, which the
+	// server's spec no longer names.
+	droppedGroup := &regionv1.SecurityGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "dropped-group",
+			Namespace: "default",
+			Labels: map[string]string{
+				constants.IdentityLabel: retryIdentityID,
+			},
+			Finalizers: []string{"servers.region.unikorn-cloud.org/" + server.Name},
+		},
+	}
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(
+		provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored, "the provider rejected the rebuild toward the desired image; select a different image or replace the server"))
+
+	cli := retryClient(t, retryIdentity(), server, droppedGroup)
+	prov := retryProvisioner(t, server, nil, provider)
+
+	err := prov.Provision(coreclient.NewContext(t.Context(), cli))
+	require.True(t, provisioners.IsTerminal(err), "a parked pass must still carry its terminal disposition")
+
+	updated := &regionv1.SecurityGroup{}
+	require.NoError(t, cli.Get(t.Context(), client.ObjectKey{Namespace: "default", Name: "dropped-group"}, updated))
+	require.Empty(t, updated.Finalizers, "a parked pass must still release references the spec no longer holds")
+}
+
+// errProviderBoom is a sentinel for a genuine (non-yield) provider failure.
+var errProviderBoom = errors.New("provider boom")
+
+// TestProvision_NonYieldErrorDoesNotReleaseReferences pins that a genuine
+// provider error returns early: reference release only accompanies a pass that
+// reached the provider and left it in a known state (success or yield).
+func TestProvision_NonYieldErrorDoesNotReleaseReferences(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	server := retryServer()
+
+	droppedGroup := &regionv1.SecurityGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "dropped-group",
+			Namespace: "default",
+			Labels: map[string]string{
+				constants.IdentityLabel: retryIdentityID,
+			},
+			Finalizers: []string{"servers.region.unikorn-cloud.org/" + server.Name},
+		},
+	}
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(errProviderBoom)
+
+	cli := retryClient(t, retryIdentity(), server, droppedGroup)
+	prov := retryProvisioner(t, server, nil, provider)
+
+	require.ErrorIs(t, prov.Provision(coreclient.NewContext(t.Context(), cli)), errProviderBoom)
+
+	updated := &regionv1.SecurityGroup{}
+	require.NoError(t, cli.Get(t.Context(), client.ObjectKey{Namespace: "default", Name: "dropped-group"}, updated))
+	require.NotEmpty(t, updated.Finalizers)
 }

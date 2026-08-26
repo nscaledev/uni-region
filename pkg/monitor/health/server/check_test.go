@@ -29,6 +29,7 @@ import (
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/provisioninglog"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -185,7 +186,10 @@ func healthCondition() metav1.Condition {
 // runCheckFull builds a Checker, injects a capturing logger, and runs Check.
 // It returns the fake Kubernetes client (for inspecting object state), the
 // log sink (for asserting on emitted entries), and any error from Check.
-func runCheckFull(t *testing.T, srv *unikornv1.Server, updateFn func(*unikornv1.Server)) (client.Client, *captureSink, error) {
+// updateFn both mutates the server and supplies UpdateServerState's return
+// value, so a test can model a provider that records state before surfacing
+// an error (the real not-found contract).
+func runCheckFull(t *testing.T, srv *unikornv1.Server, updateFn func(*unikornv1.Server) error) (client.Client, *captureSink, error) {
 	t.Helper()
 
 	ctrl := gomock.NewController(t)
@@ -194,8 +198,7 @@ func runCheckFull(t *testing.T, srv *unikornv1.Server, updateFn func(*unikornv1.
 	mockProvider.EXPECT().
 		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			updateFn(s)
-			return nil
+			return updateFn(s)
 		})
 	mockProvider.EXPECT().
 		Region(gomock.Any()).
@@ -221,7 +224,10 @@ func runCheckFull(t *testing.T, srv *unikornv1.Server, updateFn func(*unikornv1.
 func runCheck(t *testing.T, srv *unikornv1.Server, updateFn func(*unikornv1.Server)) (*captureSink, error) {
 	t.Helper()
 
-	_, sink, err := runCheckFull(t, srv, updateFn)
+	_, sink, err := runCheckFull(t, srv, func(s *unikornv1.Server) error {
+		updateFn(s)
+		return nil
+	})
 
 	return sink, err
 }
@@ -933,4 +939,137 @@ func TestCheckServerNoHistogramOnIntermediatePhaseTransition(t *testing.T) {
 
 	require.Empty(t, collectHistogram(t, reader))
 	require.Empty(t, collectSchedulingHistogram(t, reader))
+}
+
+// TestCheckServerPersistsObservedStatus pins that the poll's single status patch
+// carries the monitor's observed subtree through to etcd. The subtree is the
+// monitor's exclusive write region, so this is the write that makes it readable at
+// all; a patch that dropped it would leave the region permanently empty while
+// every in-memory unit test still passed.
+func TestCheckServerPersistsObservedStatus(t *testing.T) {
+	t.Parallel()
+
+	srv := serverFixture(unikornv1.ActiveConditionReasonRunning)
+	imageID := idstest.MustParseImageID("33333333-3333-4333-a333-333333333333")
+
+	k8sClient, _, err := runCheckFull(t, srv, func(s *unikornv1.Server) error {
+		s.Status.Observed = &unikornv1.ServerObservedStatus{
+			Generation: 9,
+			Image:      &imageID,
+			Errored:    true,
+		}
+
+		return nil
+	})
+	require.NoError(t, err)
+
+	updated := &unikornv1.Server{}
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, updated))
+
+	require.NotNil(t, updated.Status.Observed)
+	require.Equal(t, int64(9), updated.Status.Observed.Generation)
+	require.Equal(t, &imageID, updated.Status.Observed.Image)
+	require.True(t, updated.Status.Observed.Errored)
+}
+
+// TestCheckServerPersistsObservedStatusOnProviderAbsence pins that a server
+// whose Nova instance disappeared out-of-band still gets an observed write —
+// and thus an observed wake — on the monitor's poll path. The provider's
+// GetServer returns ErrResourceNotFound; updateServerStateWithClients records
+// an absent observation (errored cleared, generation stamped from
+// metadata.generation, image preserved as last-known) and surfaces the error
+// (the create-retry provisioner's confirmed-gone gate depends on it), so
+// UpdateServerState here both mutates and errors. checkServer still proceeds
+// to the status patch on that error while keeping the server out of the state
+// gauge, and the poll cycle itself does not fail. Without the patch, a parked
+// server (observed.errored: true) whose instance is deleted stays in error
+// forever: no observed change means no reconciler wake.
+func TestCheckServerPersistsObservedStatusOnProviderAbsence(t *testing.T) {
+	t.Parallel()
+
+	srv := serverFixture(unikornv1.ActiveConditionReasonRunning)
+	imageID := idstest.MustParseImageID("33333333-3333-4333-a333-333333333333")
+
+	// Seed a parked server: observed.errored is true and the observed
+	// generation lags metadata.generation, so a stale observation is
+	// distinguishable from a fresh one.
+	srv.Generation = 10
+	srv.Status.Observed = &unikornv1.ServerObservedStatus{
+		Generation: 9,
+		Image:      &imageID,
+		Errored:    true,
+	}
+
+	k8sClient, _, err := runCheckFull(t, srv, func(s *unikornv1.Server) error {
+		// Simulates updateServerStateWithClients on the not-found path:
+		// GetServer returned ErrResourceNotFound, so the absent observation
+		// is recorded and UpdateServerState surfaces the not-found error.
+		if s.Status.Observed == nil {
+			s.Status.Observed = &unikornv1.ServerObservedStatus{}
+		}
+
+		s.Status.Observed.Generation = s.Generation
+		s.Status.Observed.Errored = false
+
+		return coreerrors.ErrResourceNotFound
+	})
+	require.NoError(t, err)
+
+	updated := &unikornv1.Server{}
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, updated))
+
+	require.NotNil(t, updated.Status.Observed)
+	require.False(t, updated.Status.Observed.Errored)
+	require.Equal(t, updated.Generation, updated.Status.Observed.Generation)
+	require.Equal(t, &imageID, updated.Status.Observed.Image)
+}
+
+// TestCheckServerPersistsObservedStatusClearsErrored pins the un-park trigger for a
+// recovered-in-place server: a healthy ACTIVE read sets Errored to false, stamps
+// Generation from metadata.generation, and records the observed current image. The
+// observed subtree is the monitor's exclusive write region, so this is the write
+// that flips the reconciler's freshness predicate; Errored has omitempty JSON, so
+// asserting the clear survives the merge patch pins that the false value is
+// persisted (not omitted as a no-op) and the parked server is un-parked without a
+// spec edit.
+func TestCheckServerPersistsObservedStatusClearsErrored(t *testing.T) {
+	t.Parallel()
+
+	srv := serverFixture(unikornv1.ActiveConditionReasonRunning)
+	staleImageID := idstest.MustParseImageID("44444444-4444-4444-a444-444444444444")
+	currentImageID := idstest.MustParseImageID("33333333-3333-4333-a333-333333333333")
+
+	// Seed a parked server: observed.errored is true and the observed
+	// generation lags metadata.generation, so a stale observation is
+	// distinguishable from a fresh one.
+	srv.Generation = 10
+	srv.Status.Observed = &unikornv1.ServerObservedStatus{
+		Generation: 9,
+		Image:      &staleImageID,
+		Errored:    true,
+	}
+
+	k8sClient, _, err := runCheckFull(t, srv, func(s *unikornv1.Server) error {
+		// Simulates a healthy ACTIVE read on a recovered-in-place server:
+		// the provider clears the errored marker, stamps the generation
+		// from metadata.generation, and records the observed current image.
+		if s.Status.Observed == nil {
+			s.Status.Observed = &unikornv1.ServerObservedStatus{}
+		}
+
+		s.Status.Observed.Generation = s.Generation
+		s.Status.Observed.Errored = false
+		s.Status.Observed.Image = &currentImageID
+
+		return nil
+	})
+	require.NoError(t, err)
+
+	updated := &unikornv1.Server{}
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, updated))
+
+	require.NotNil(t, updated.Status.Observed)
+	require.False(t, updated.Status.Observed.Errored, "the clear must survive the merge patch despite omitempty JSON")
+	require.Equal(t, updated.Generation, updated.Status.Observed.Generation)
+	require.Equal(t, &currentImageID, updated.Status.Observed.Image)
 }

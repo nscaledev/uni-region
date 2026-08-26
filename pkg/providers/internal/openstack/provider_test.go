@@ -70,6 +70,7 @@ import (
 var (
 	errNeutronConflict    = errors.New("409 Conflict: port still attached")
 	errNeutronServerError = errors.New("500 Internal Server Error")
+	errNovaListFailed     = errors.New("503 Service Unavailable")
 )
 
 func mustConvertImage(t *testing.T, in *images.Image) *types.Image {
@@ -815,6 +816,12 @@ func withFloatingIP(s *regionv1.Server) {
 	}
 }
 
+const providerTestImageID = "11111111-1111-4111-a111-111111111111"
+
+func withImage(s *regionv1.Server) {
+	s.Spec.Image = &regionv1.ServerImage{ID: idstest.MustParseImageID(providerTestImageID)}
+}
+
 func withSecurityGroup(securityGroup *regionv1.SecurityGroup) func(*regionv1.Server) {
 	return func(s *regionv1.Server) {
 		s.Spec.SecurityGroups = append(s.Spec.SecurityGroups, regionv1.ServerSecurityGroupSpec{
@@ -915,10 +922,16 @@ func openstackFloatingIPFixture(port *ports.Port) *floatingips.FloatingIP {
 }
 
 func openstackServerFixture(server *regionv1.Server) *servers.Server {
-	return &servers.Server{
+	srv := &servers.Server{
 		ID:   string(uuid.NewUUID()),
 		Name: server.Labels[coreconstants.NameLabel],
 	}
+
+	if server.Spec.Image != nil {
+		srv.Image = map[string]any{"id": server.Spec.Image.ID.String()}
+	}
+
+	return srv
 }
 
 func sshCertificateAuthorityFixture() *regionv1.SSHCertificateAuthority {
@@ -1993,7 +2006,7 @@ func TestReconcileServer(t *testing.T) {
 	c := gomock.NewController(t)
 	t.Cleanup(c.Finish)
 
-	server := serverFixture()
+	server := serverFixture(withImage)
 	network := networkFixture()
 
 	openstackNetwork := openstackNetworkFixture(network)
@@ -2045,6 +2058,22 @@ func TestReconcileServer(t *testing.T) {
 		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
 		require.NoError(t, err)
 	})
+
+	// An ambiguous read must fail closed: GetServer resolves by name via a
+	// list, so any failure other than a positive not-found must surface rather
+	// than fall through to CreateServer and mint a duplicate. No CreateServer
+	// expectation is set, so a fall-through fails the mock.
+	t.Run("AmbiguousReadDoesNotCreate", func(t *testing.T) {
+		t.Parallel()
+
+		compute := mock.NewMockServerInterface(c)
+		compute.EXPECT().GetServer(t.Context(), server).Return(nil, errNovaListFailed)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
+		require.ErrorIs(t, err, errNovaListFailed)
+	})
 }
 
 // TestReconcileServerPreflight tests the optional preflight hook runs only
@@ -2054,7 +2083,7 @@ func TestReconcileServerPreflight(t *testing.T) {
 
 	client := getClient(t, nil)
 
-	server := serverFixture()
+	server := serverFixture(withImage)
 	network := networkFixture()
 
 	openstackNetwork := openstackNetworkFixture(network)
@@ -2172,8 +2201,6 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 	server := serverFixture(withNetwork(network), withFloatingIP)
 	server.Spec.Image = &regionv1.ServerImage{ID: idstest.MustParseImageID(rebuildNewImageID)}
 	server.Status.ProvisionedAt = ptr.To(metav1.Now())
-	// Intent already durable: this pass submits the rebuild.
-	server.Status.Rebuild = &regionv1.ServerRebuildStatus{TargetImageID: idstest.MustParseImageID(rebuildNewImageID), State: regionv1.ServerRebuildStateInitiated}
 
 	openstackNetwork := openstackNetworkFixture(network)
 	openstackSubnet := openstackSubnetFixture(network, openstackNetwork)
@@ -2197,15 +2224,13 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 	p := openstack.NewTestProvider(client, regionFixture())
 
 	err := openstack.CreateServerWithClients(t.Context(), p, networking, compute, server, options, "")
-	require.NoError(t, err)
+	require.ErrorIs(t, err, provisioners.ErrYield, "the accepted rebuild is in flight, so the pass yields")
 
 	// (a) the port/FIP status writes must survive the copy-back.
 	require.Equal(t, ptr.To(serverPortIP), server.Status.PrivateIP, "copy-back must not revert PrivateIP written by port reconciliation")
 	require.Equal(t, ptr.To(openstackFloatingIP.FloatingIP), server.Status.PublicIP, "copy-back must not revert PublicIP written by floating IP reconciliation")
 
-	// (b) the rebuild status writes must propagate back to the caller.
-	require.NotNil(t, server.Status.Rebuild)
-	require.Equal(t, regionv1.ServerRebuildStateRebuilding, server.Status.Rebuild.State)
+	// (b) the rebuild's accepted status stamp must propagate back to the caller.
 	requireRebuildAcceptedStamp(t, server)
 }
 

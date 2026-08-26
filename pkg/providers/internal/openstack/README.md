@@ -50,7 +50,7 @@ This package therefore owns the mapping between:
 
 - [../../../apis/unikorn/v1alpha1](../../../apis/unikorn/v1alpha1/README.md)
 - [../../types](../../types/README.md)
-- [../allocation/vlan](../allocation/vlan/README.md)
+- [../../allocation/vlan](../../allocation/vlan/README.md)
 - [./ADMIN.md](./ADMIN.md)
 
 `pkg/apis/unikorn/v1alpha1` defines the service-native resources and the
@@ -118,7 +118,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   the desired image is a create parameter, not a rebuild target, so a pending
   image change on a server Nova reports with a zero `launched_at` defers: the
   reconcile yields, leaving the resource visibly `provisioning` and re-checking
-  every 10s until first boot, then subsequent passes arm and submit the rebuild. A
+  every 10s until first boot, after which a pass submits the rebuild once the
+  server is quiescent. A
   never-booted server Nova reports in `ERROR` is likewise deferred here — the
   reconcile pass yields silently without writing a health stamp (the monitor
   owns observed state) — and absorbed by the bounded provider-create
@@ -132,117 +133,149 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   baremetal deploy, where recreate would skip a wasted provision) is a future
   optimization, rejected for now to avoid a third delete/recreate site and the
   known name-collision race.
-- Rebuild intent is write-ahead. The marker is `Status.Rebuild`, a two-field
-  struct: `TargetImageID` (the image this intent converges toward) and `State`
-  (a forward-only enum `Initiated` < `Rebuilding` < `Succeeded` == `Failed`,
-  the terminals being peers that never retreat and never flip
-  terminal-to-terminal — first observation wins). Arming (recording the target
-  at `Initiated`) and submitting to Nova happen in separate reconcile passes,
-  with the yield between them acting as the durable commit point, so the
-  marker is persisted — and read back on a later pass — before Nova can be
-  asked to destroy the root disk. The marker records the one fact fresh
-  observation cannot reconstruct: whether Region recently asked for a
-  destructive rebuild.
+- `reconcileServerImage` decides entirely from the fresh `GetServer` on the same
+  pass.
 
-  Ownership is split. Only the reconciler creates, replaces, or clears the
-  marker, and only the reconciler parks; the monitor's poll only rank-advances
-  `State` from observed evidence, never creating, clearing, or retargeting it
-  (observation is stimulus, never authorization — the reconciler's settlement
-  pass always re-decides from its own fresh `GetServer`). The forward-only
-  rank check (`advanceRebuildState`) makes every advance monotone, so a late
-  or duplicate observation, or two writers racing the same edge, can never
-  retreat a state or flip a terminal. The one exception is the reconciler's
-  park, which assigns `Failed` directly and may overwrite a `Succeeded`
-  stamped moments before an `ERROR` arrived — a stale success left standing
-  would otherwise re-fire the settlement wake forever on a parked server.
+  Nova commits the image ref and `task_state` together. `nova/compute/api.py` sets
+  `task_state = REBUILDING` and `image_ref = image_href` on one object and saves them
+  with `expected_task_state=[None]` — a database compare-and-swap — *before*
+  `_record_action_start` and before the RPC cast to the compute node, all inside the
+  synchronous request. Three consequences the pass rests on: there is no interleaving
+  in which a reader sees the new ref without an active rebuild task; the state is
+  durable before the client receives its 202; and two concurrent rebuilds cannot both
+  commit, the loser raising `UnexpectedTaskStateError`. Nova's own state check
+  (`check_instance_state`, whose default requires `task_state` NULL) refuses a rebuild
+  against a rebuilding server with a 409 before that. All of this is decided in Nova's
+  API layer above the driver, so it holds for Ironic exactly as for libvirt.
 
-  Attribution ties a Nova observation to *this* rebuild by the image ref, not
-  by spec match. Nova flips the ref to the target atomically with `task_state`
-  at accept, and this protocol never submits when the fresh ref already equals
-  the target, so a standing marker observed with `ref == target` always means
-  an accepted rebuild toward it (ours, or a fail-closed-equivalent foreign
-  same-image one). Activity is read from `OS-EXT-STS:task_state`, which is
-  non-empty for the whole rebuild window and empty at rest (the `REBUILD`
-  status is folded in defensively, since Nova projects it only from an active
-  rebuild task). Convergence is therefore the conjunction `ref == target ∧
-  stable non-error status ∧ task_state empty`: the ref flips at accept but
-  `task_state` stays non-empty until the rebuild settles, so that conjunction
-  is never observable while a rebuild is in flight, and it uniquely
-  characterises completion. Both the monitor's `Succeeded` stamp and the
-  reconciler's marker clear gate on it. This is what closes the accept-to-
-  settle lag window: a stopped or errored server can display a stable
-  `SHUTOFF`/`ERROR` throughout its rebuild, so a converged-looking status
-  alone is not evidence of completion — `task_state` is the authoritative
-  activity signal, and settlement is state-based rather than
-  health-reason-based (`SHUTOFF` settles like any other stable status).
+  The pass order, deciding only from the fresh read:
 
-  The monitor (`advanceServerRebuildState`) advances: with `ref == target`,
-  `ERROR` → `Failed`, an active task → `Rebuilding`, otherwise quiescent →
-  `Succeeded`; with a readable off-target ref and the marker already durably
-  `>= Rebuilding`, an `ERROR` or a quiesced task → `Failed` (supersession — an
-  accepted rebuild whose ref has moved off the target can no longer converge);
-  with an unreadable ref, only durable acceptance plus `ERROR` → `Failed`. An
-  `Initiated` marker observed with `ref != target` advances nothing: an
-  unattributed advance would falsely satisfy the submission gate and either
-  wedge the rebuild or drive a second Nova accept.
+  | | Condition | Action |
+  |---|---|---|
+  | R1 | `Spec.Image == nil` | **park** |
+  | R2 | image ref unreadable | **park** |
+  | R3 | ref == desired, rebuild task active | yield |
+  | R3′ | ref == desired, `ERROR`, launched | **park** |
+  | R3″ | ref == desired, otherwise | done |
+  | R4 | ref != desired, `launched_at` zero | yield |
+  | R4′ | ref != desired, any task active | yield |
+  | R4″ | ref != desired, quiescent | **submit** |
 
-  The reconciler's pass (`reconcileServerImage`) follows a fixed order. It
-  replaces a marker whose target differs from the desired image (the re-arm
-  recovery, allowed even over a parked `Failed` — a different image is the
-  designed recovery), then classifies a park, then yields on an unreadable
-  ref, then converges or submits. Park classification runs *before* the
-  unreadable-ref yield so an attributable `ERROR` with an unverifiable ref
-  parks rather than yielding forever. On a converged read with the marker
-  present and the task empty, the pass clears the marker and yields so the
-  requeued pass confirms the clear by read-back (marker absent → settled;
-  marker still present → the write dropped → clear and yield again). A
-  converged read with an active task and a non-terminal marker records the
-  acceptance (`Rebuilding`) and completes the pass, because a future monitor
-  rank-advance to a terminal is still guaranteed to wake the settlement pass;
-  but a *terminal* marker can never rank-advance again, so a pass observing one
-  it cannot yet settle yields rather than clean-completing, carrying liveness
-  through its own requeue.
+  R2 exists because every server this provider creates is image-booted, so an absent,
+  empty or unparseable ref is abnormal: the pass must not report success over an image
+  change it cannot verify. The park is re-derived per pass, so a later readable ref
+  un-parks it without any spec change.
 
-  The park is two-phase (`reconcileServerRebuildPark`). A deciding pass stamps
-  `Failed` (by direct assignment) and yields; the terminal `UserActionRequired`
-  return — which core turns into `Available=Errored`, the "parked" signal — is
-  issued only by a pass that reads `Failed` back durable. The common case
-  satisfies this on the first pass, because the monitor's own `Failed` stamp is
-  the usual wake. A dropped pre-park stamp is recovered by read-back: the
-  requeued pass re-enters the same branch (the evidence persists) and stamps
-  again until a pass reads it back and parks. The park records the fresh-read
-  health and retains the marker; the only re-arm is a different desired image
-  or server replacement. Failure recovery is never data restoration.
+  `serverRebuildInFlight` tests Nova's own `rebuild_states` family
+  (`rebuilding`, `rebuild_block_device_mapping`, `rebuild_spawning` — matched by the
+  `rebuild` prefix, so a substate a newer Nova adds still reads as in flight rather
+  than as settled over a disk being rewritten — plus the `REBUILD` status projected
+  from the same family), because on a converged ref the question is specifically
+  whether *a rebuild* is running — an unrelated task such as a user's reboot must not
+  be reported as one. `serverTaskActive` tests any task at all, because before
+  submitting the question is only whether Nova would accept, and it refuses while any
+  task holds the server.
 
-  The submission (`submitServerRebuild`) is the single destructive step, gated
-  on an `Initiated` marker read back durable plus a quiescent server, and it
-  submits at most one accepted action per standing target image. On Nova's 2xx
-  it advances to `Rebuilding` and writes a fixed accepted stamp (`Phase=Building`,
-  `Healthy=False/Provisioning`, matching the monitor's `REBUILD` mapping so the
-  two writers agree) — it never derives the stamp from the rebuild HTTP response
-  body, whose server representation can still read `ACTIVE` for the
-  pre-destruction server and would falsely stamp the just-accepted destructive
-  rebuild as running. A Nova `409 Conflict` is pre-acceptance and yields
-  silently, leaving the marker at `Initiated`.
+  R3′ parks a quiesced `ERROR` on the desired ref as user-action-required
+  (`provisioners.UserActionRequired`, so `provisioningStatus=error` with an
+  actionable, cause-neutral message that advertises the spec-edit remedy),
+  mirroring create-retry's exhausted-attempts park. The
+  ref moves at *accept*, not on a successful write, so this state means the spec
+  image was never realized and must not read as `provisioned` (INST-1235: measured
+  on kolla 2025.1, a failed rebuild deploy settles exactly here within seconds on
+  both the sushy and fake-controllable fixtures). The park does not claim to
+  attribute the `ERROR` to the rebuild — an unrelated host failure after a
+  successful rebuild presents identically — but under either cause the spec is
+  unrealized, so `error` is the honest report on the provisioning axis; the
+  monitor's health axis carries the ambient view on its own cadence. Deferring the
+  report to the monitor instead was measured to lose short-lived failures
+  entirely: the reconciler settles in one 10s yield cycle while the monitor
+  samples at one-minute cadence. Never-launched servers are excluded from the
+  park (an `ERROR` before first boot is a failed create, owned by the
+  provisioner's bounded retry machinery).
 
-  Pre-acceptance situations yield silently — a log line and the yield, nothing
-  else — because no action was taken: the arming pass; a fresh read whose image
-  ref is missing or unparseable (every server this provider creates is
-  image-booted, so convergence cannot be checked and the pass must not report
-  success over a dropped image change); a foreign or blocking op holding the
-  task busy while the marker is still `Initiated`; and the Nova `409` at
-  submission. A generic Nova `ERROR` under an unmoved-ref `Initiated` marker is
-  intent without acceptance — unrelated, never a rebuild park (the remediation
-  submit owns it) — and a marker-less `ERROR` never becomes a rebuild request.
-  The reconciler writes `Phase`/`Healthy` only when it acts (a rebuild is
-  accepted) or decides (a park); while it waits, the health monitor owns the
-  observed state and the core-owned provisioning status on yield keeps the
-  pending change user-visible. Because the reconciler no longer watches the
-  rebuild converge tick by tick, a post-success ambiguity window — during which
-  an unrelated Nova `ERROR` is indistinguishable from a failed rebuild and is
-  treated as one — widens from a single reconcile requeue to at most one or two
-  monitor poll cycles. This fails closed: recovery is selecting an image again
-  or replacing the server, never data restoration.
+  A parked server has no requeue, so it un-parks on exactly three paths. The user
+  edits the spec — the remedy the message advertises — and the generation-change
+  wake resumes reconciliation, monitor-independent. Or the provider recovers
+  without a spec change, in which case the un-park rides the monitor's
+  `status.observed` write firing the observed wake: the park is re-derived per
+  pass, so the woken pass walks to R3″ and reads `provisioned` again (the same
+  measured path as a foreign recovery, below — within one monitor period). Or
+  the provider server disappears entirely — deleted out-of-band — in which case
+  the monitor's `GetServer` returns not-found and `updateServerStateWithClients`
+  records an absent observation (errored cleared, generation stamped, image
+  sticky) before surfacing the not-found error — surfaced, not swallowed,
+  because the create-retry provisioner's confirmed-gone gate depends on
+  `UpdateServerState` returning `ErrResourceNotFound`. The monitor persists the
+  recorded observation anyway, firing the same observed wake; the reconciler's
+  own fresh read then routes not-found to the create path and recreates the
+  server.
+
+  The provisioning axis reports *spec-realization*, not attribution. A
+  rebuild-class operation this provider did not submit — `nova evacuate` is
+  implemented as a rebuild, presenting `task_state=rebuilding` with the ref
+  already on the spec image — therefore reads exactly as ours when a pass runs.
+  Measured behaviour: an in-flight foreign rebuild does not move the
+  provisioning axis at all (a foreign operation generates no reconciler wake —
+  no spec change, no observed change — so R3 never runs; only the monitor's
+  phase and health axes read `Rebuilding`/`Unknown` for one poll cycle), a
+  *failed* foreign rebuild parks via the observed-errored wake within one
+  monitor period, and a foreign recovery un-parks the same way. A foreign
+  rebuild onto a *different* image — succeeded or failed — is auto-reverted:
+  the ref flip changes `observed.image`, the wake fires, and R4″ resubmits
+  toward the spec image (measured: ~20s from the foreign act to the corrective
+  rebuild). The park is therefore scoped precisely to failures on the
+  *converged* ref, where the spec image itself is implicated; divergent-ref
+  failures are reconverged instead. Operational consequence: operators must
+  change the spec, never act through Nova — a Nova-side image change is undone
+  within seconds. This is deliberate. During any rebuild-shaped operation the
+  server is not serving its spec — a rebuild is rewriting the root disk, while an
+  evacuation on shared storage rebuilds the instance on another host without
+  touching it — so `provisioning` is honest; after a failed one the spec image is
+  not running. Both reports are true regardless of who initiated the operation, and
+  no destructive row can fire on a foreign operation (R4″ requires a diverged
+  ref, which a foreign rebuild does not present). The park is re-derived per
+  pass, not latched: when a foreign recovery returns the server to `ACTIVE` on
+  the converged ref, the next pass walks to R3″ and the server reads
+  `provisioned` again. What this costs is attribution in the *messages* — a
+  failed evacuation reports the same cause-neutral park message as a failed
+  rebuild — which is the price of having no persisted intent to consult, and
+  why the message names neither.
+
+  R4 defers to the create-retry path rather than duplicating it, and Nova enforces the
+  same precondition itself (`must_have_launched`).
+
+  R4″ is the single destructive step. The submission (`submitServerRebuild`) writes a
+  fixed accepted stamp on a 2xx (`Active` `Rebuilding`, `Healthy` `Unknown`, matching
+  the monitor's `REBUILD` mapping so the two writers agree rather than churn) and never
+  derives it from the rebuild response body, whose 202 can still describe the
+  pre-destruction server as `ACTIVE` and would stamp a just-accepted destructive
+  rebuild as running. Acceptance *yields* rather than completing: Nova now has a
+  destructive operation in flight, and completing would map to
+  `Available=Provisioned` and report a server whose root disk is being rewritten as
+  settled. A `409` is pre-acceptance — the server is untouched — so it
+  also yields, silently, for a short retry.
+
+  Nova's accept gate refuses an unresolvable or non-`active` image, an image
+  whose `min_ram`/`min_disk` exceeds the flavor, non-bootable image properties, a
+  locked or wrongly-stated instance, and quota — all *before* writing any state.
+  `status.observed` structurally cannot carry the rejection, so the body stays
+  in the log and never reaches the API surface. A synchronous HTTP 400 parks
+  the server as user-action-required (a spec edit resumes it) only when the
+  body carries Nova's image-not-found signature ("Cannot find image for
+  rebuild") — the one refusal that provably cannot self-heal. Nova 400s are
+  not homogeneous: a *deactivated* image (`ImageNotActive`) is also a 400, but
+  an operator reactivating it bumps no generation and moves no observed field,
+  so parking it would strand the server; it retries instead and converges on
+  the pass after reactivation. Every other 400 — and a reworded or stripped
+  body — likewise surfaces as the pass's error and retries, failing safe
+  toward the retry loop rather than toward a wrong park. An HTTP 409 yields
+  awaiting quiescence, and every other rejection class surfaces as the pass's
+  error and retries on the yield interval.
+
+  The reconciler writes `Active`/`Healthy` when it acts and re-asserts the
+  accepted stamp while a rebuild it submitted is still in flight (R3); on every other
+  waiting row it writes nothing and the monitor owns observed state.
 - Nova rebuild retains the server UUID, network ports and IP relationships,
   attached data volumes, flavor, metadata, and placement, but recreates the
   root disk. It stays on the same compute host; evacuation is a separate
@@ -400,7 +433,26 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   field, `status.macAddress`, from the Nova response once the server is `ACTIVE`
   (the port MAC rides inline in `addresses`, reused from the same `GetServer` — no
   extra call). ACTIVE is required because baremetal Ironic rebinds the port to the
-  real NIC MAC asynchronously; the value is only ever written, never cleared. The lookup is
+  real NIC MAC asynchronously; the value is only ever written, never cleared.
+  `GetServer` resolves by name, which forces a list, and **the list response can omit
+  `fault` entirely** on Nova up to 2025.2, so a listed errored server carries no
+  fault detail. `GetServer` itself does not compensate: the fault is operator log
+  detail, not part of the returned server, so it is fetched by a dedicated by-ID
+  read exactly once, on the observed transition into the errored state, and
+  written to the observation log — status records only the neutral
+  `observed.errored` marker. Best-effort: a failed fetch logs the transition
+  without the detail rather than failing anything, because the fault is an
+  enrichment and not the reason for the read; healthy servers, and servers
+  already known to be errored, never pay the extra call.
+  `setServerObservedStatus` records the monitor's `status.observed` region from the
+  `GetServer` response: `generation` unconditionally, the image via `openstackServerImageID`
+  (an unreadable ref preserves the previous value rather than clearing it), and
+  the neutral `errored` marker when Nova reports `ERROR`. The marker is gated on
+  `Status == "ERROR"` and not on `Fault` being populated, because Nova leaves a
+  stale `fault` on a recovered server, so keying off the struct would report a
+  cleared failure forever. The logged detail is the fault's code, message, and
+  created timestamp; `fault.details` is excluded as an admin-only stack trace,
+  and nothing from the fault reaches projected status. The Ironic lookup is
   filtered by `instance_uuid`. Because Ironic node ownership and visibility
   are provider infrastructure concerns rather than tenant workload operations,
   this lookup uses the Region top-level provider credentials scoped to the
@@ -522,18 +574,58 @@ There are a few Octavia-specific constraints worth preserving:
 - Some older assumptions still leak through in status fields and helper paths,
   especially where compatibility with older API or storage shapes is still being
   carried.
-- Rebuild settlement rests on two environmental facts about the target cloud,
-  both worth an integration assertion rather than assumption. First, that Nova
-  flips the image ref to the target *atomically* with setting `task_state` at
-  accept: if a cloud made the ref visible before `task_state`, a poll could see
-  the converged ref with an empty task inside the rebuild window and stamp a
-  premature `Succeeded` — the accept-to-settle lag window this design closes by
-  gating settlement on `task_state` emptiness would silently reopen. Second,
-  that `OS-EXT-STS:task_state` is actually visible to the region service
-  principal (its exposure is policy-gated, and an unexposed field decodes
-  indistinguishably from "at rest"); without that visibility the same premature
-  clear returns. A kind/devstack assertion that a just-accepted rebuild's GET
-  shows a non-empty `task_state` covers both.
+- Rebuild rests on one environmental fact about the target cloud: that
+  `OS-EXT-STS:task_state` is actually visible to the region service principal. Its
+  exposure is policy-gated, and an unexposed field decodes indistinguishably from "at
+  rest" — so without it a foreign operation would not be seen to hold
+  the server, and Nova's 409 becomes the only guard. It was visible
+  to a project-scoped admin credential on a kolla 2025.1 all-in-one.
+
+  `OS-SRV-USG:launched_at` is likewise policy-gated and is now load-bearing for
+  the image-row decisions — the before-first-boot deferral and the
+  never-launched exclusion on the failed-rebuild park — so a cloud hiding it
+  breaks those rows the same way a hidden `task_state` breaks the in-flight
+  tests.
+
+  Measured on the **libvirt** driver — the first GET after accept, at 260 ms
+  with 1 s polling, already showed the target ref together with
+  `task_state='rebuilding'`. The failure side is atomic the same way: an
+  asynchronous failure moved `REBUILD`→`ERROR` and cleared `task_state` within a single
+  observation, so a failed rebuild never presents as a settled one.
+
+  The same contract holds on the **Ironic** driver (measured on sushy-tools
+  virtual metal): the ref and `task_state` flip together at accept, the rebuild
+  task states stay visible through the whole redeploy, and a failed redeploy
+  settles `ERROR` with the ref **still on the target** — it never reverts, which
+  is what keeps a failed rebuild from re-satisfying the submission row. The node
+  lands in `deploy failed`, and a rebuild toward another image recovers both
+  server and node without operator action.
+
+  - **Do not raise the compute client microversion past 2.92.** From 2.93 Nova
+    sets `reimage_boot_volume` on every rebuild and the Ironic driver refuses the
+    flag outright — volume-backed or not — so every baremetal rebuild fails. An
+    upstream defect, unfixed as of 2025.1
+    (https://bugs.launchpad.net/nova/+bug/2127017). The client pins 2.90.
+  - Ironic node reads require a *system-scoped* credential — project-scoped admin
+    lists nodes but 404s on node detail — so `task_state` visibility has an Ironic
+    sibling that needs its own credential arrangement.
+- A rebuild toward a nonexistent image is rejected *synchronously* (HTTP 400,
+  "Cannot find image for rebuild") and touches nothing: the server stays on its
+  image, no wipe, no `ERROR`. Nova resolves the image before mutating anything,
+  so a bad image ID can never produce a converged-looking ref on a broken server.
+  The controller parks only this signature ("Cannot find image for rebuild",
+  matched in the 400 response body) as user-action-required, since a deleted
+  image can never be re-resolved and the remedy is a spec edit. Other rebuild
+  400s retry: notably `ImageNotActive` from a *deactivated* Glance image,
+  which an operator can clear with an image reactivation that bumps no
+  generation and moves no observed field — a park there would have no recovery
+  path. An HTTP 409 yields awaiting quiescence, and every other rejection
+  class retries. A valid image Nova can resolve but qemu cannot use
+  (measured with a truncated qcow2, which Glance accepts as `active`) behaves
+  the opposite way: accepted, ref flipped, then an asynchronous failure to
+  `ERROR`. Its fault carries `code: 400` despite the request having been
+  accepted, so a 4xx in a recorded provider error does not imply the request
+  was rejected.
 
 ## TODO
 
@@ -561,5 +653,5 @@ There are a few Octavia-specific constraints worth preserving:
   provider-state records this package consumes
 - [../../../handler](../../../handler/README.md) and specific handler packages
   depend on this package to make region API operations real against OpenStack
-- [../allocation/vlan](../allocation/vlan/README.md) exists because this
+- [../../allocation/vlan](../../allocation/vlan/README.md) exists because this
   package needs a compensating local allocator for provider-network VLAN IDs

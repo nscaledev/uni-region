@@ -61,25 +61,30 @@ func requireSchemaProperty(t *testing.T, schema *apixv1.JSONSchemaProps, path ..
 	return current
 }
 
-func TestServerRebuildSchema(t *testing.T) {
+// TestServerObservedSchema pins the monitor's exclusive write region into the
+// published schema. The subtree is the contract that keeps the two status writers
+// off each other's fields, so its shape belongs in the CRD, not just in Go.
+func TestServerObservedSchema(t *testing.T) {
 	t.Parallel()
 
 	schema := crdSchema(t, serverCRDFile)
 
-	targetImageID := requireSchemaProperty(t, schema, "status", "rebuild", "targetImageID")
-	require.Equal(t, "string", targetImageID.Type)
-	require.Equal(t, "uuid", targetImageID.Format)
+	generation := requireSchemaProperty(t, schema, "status", "observed", "generation")
+	require.Equal(t, "integer", generation.Type)
 
-	state := requireSchemaProperty(t, schema, "status", "rebuild", "state")
-	require.Equal(t, "string", state.Type)
+	image := requireSchemaProperty(t, schema, "status", "observed", "image")
+	require.Equal(t, "string", image.Type)
+	require.Equal(t, "uuid", image.Format)
 
-	want := []apixv1.JSON{
-		{Raw: []byte(`"Initiated"`)},
-		{Raw: []byte(`"Rebuilding"`)},
-		{Raw: []byte(`"Succeeded"`)},
-		{Raw: []byte(`"Failed"`)},
-	}
-	require.ElementsMatch(t, want, state.Enum, "the rebuild state enum must be validated at the CRD schema")
+	// The error member is a neutral presence marker only: no provider fault
+	// code, message or timestamp may ship in the schema — that detail is
+	// provider vocabulary and lives in the observation log.
+	errored := requireSchemaProperty(t, schema, "status", "observed", "errored")
+	require.Equal(t, "boolean", errored.Type)
+
+	observed := requireSchemaProperty(t, schema, "status", "observed")
+	require.NotContains(t, observed.Properties, "error", "the provider fault struct must not return to the schema")
+	require.Equal(t, []string{"generation"}, observed.Required, "the freshness stamp is what makes an observation readable; it must not be optional")
 }
 
 type crdValidator struct {

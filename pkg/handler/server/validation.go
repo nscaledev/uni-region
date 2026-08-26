@@ -166,8 +166,8 @@ func validateServerImageForCreate(ctx context.Context, provider types.Provider, 
 // security-patch rebuild) must still go through. On a miss the
 // flavor-dependent compatibility checks (architecture, disk size,
 // virtualization) are skipped because the flavor's metadata is unavailable;
-// Nova is the remaining backstop for a truly incompatible rebuild, and the
-// rebuild state machine parks the server on ERROR if Nova objects.
+// Nova is the remaining backstop for a truly incompatible rebuild, which it
+// either rejects synchronously or settles as ERROR for the monitor to report.
 func validateServerImageForUpdate(ctx context.Context, provider types.Provider, organizationID identityids.OrganizationID, imageID regionids.ImageID, flavorID regionids.FlavorID) error {
 	image, err := readyServerImage(ctx, provider, organizationID, imageID)
 	if err != nil {
