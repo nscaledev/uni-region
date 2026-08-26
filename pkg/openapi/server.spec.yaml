@@ -3530,28 +3530,25 @@ components:
         conditionType:
           $ref: '#/components/schemas/serverProviderCreateGateType'
         reason:
-          description: Machine-readable reason for the reported status.
+          description: Machine-readable reason for the reported state.
           type: string
           minLength: 1
         message:
           description: Human-readable details for operators.
           type: string
           minLength: 1
-        status:
+        state:
           description: >-
-            Gate status to report. True satisfies the gate; False blocks it with
-            the given reason. Defaults to True.
+            The gate state to report. Open satisfies the gate; Locked blocks it
+            permanently (provider-create fails); Closed reports transient
+            progress and refreshes the reason without resolving the gate.
+            Defaults to Open.
           type: string
           enum:
-          - "True"
-          - "False"
-          default: "True"
-        terminal:
-          description: >-
-            Only meaningful with status False. When true the gate will never be
-            satisfied without external change, so provider-create fails with the
-            reported reason instead of holding.
-          type: boolean
+          - Closed
+          - Open
+          - Locked
+          default: Open
     serverV2Networking:
       description: A server's network configuration.
       type: object

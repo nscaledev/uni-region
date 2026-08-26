@@ -117,8 +117,8 @@ spec:
                 type: string
               providerCreateGates:
                 description: |-
-                  ProviderCreateGates are externally satisfied gates that must be True before
-                  the server controller calls the provider create path.
+                  ProviderCreateGates are externally satisfied gates that must all be Open
+                  before the server controller calls the provider create path.
                 items:
                   properties:
                     conditionType:
@@ -344,7 +344,7 @@ spec:
                     actor:
                       description: |-
                         Actor is the authenticated service identity that last wrote this gate
-                        status.
+                        state.
                       type: string
                     conditionType:
                       description: ConditionType matches a configured ServerSpec.ProviderCreateGates
@@ -352,7 +352,7 @@ spec:
                       minLength: 1
                       type: string
                     lastTransitionTime:
-                      description: LastTransitionTime records when the gate status
+                      description: LastTransitionTime records when the gate state
                         last changed.
                       format: date-time
                       type: string
@@ -360,24 +360,21 @@ spec:
                       description: Message is human-readable detail.
                       type: string
                     reason:
-                      description: Reason is a machine-readable reason for the status.
+                      description: Reason is a machine-readable reason for the state.
                       type: string
-                    status:
-                      description: Status is True when the gate is satisfied.
-                      enum:
-                      - "True"
-                      - "False"
-                      - Unknown
-                      type: string
-                    terminal:
+                    state:
                       description: |-
-                        Terminal marks a False gate that will never be satisfied without external
-                        change; the provisioner fails provider-create rather than holding on it.
-                      type: boolean
+                        State is the resolved gate state: Closed (default) holds provider-create,
+                        Open satisfies it, and Locked fails it permanently.
+                      enum:
+                      - Closed
+                      - Open
+                      - Locked
+                      type: string
                   required:
                   - conditionType
                   - lastTransitionTime
-                  - status
+                  - state
                   type: object
                 type: array
                 x-kubernetes-list-map-keys:

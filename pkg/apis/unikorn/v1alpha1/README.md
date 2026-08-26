@@ -79,24 +79,36 @@ stored objects rely on for linkage, migration, and operational coordination.
   schema-only.
 - `Server.Spec.ProviderCreateGates` is immutable create-time desired state used
   by the server controller to pause before provider create. Matching
-  `Server.Status.ProviderCreateGates` entries record the condition status,
-  actor, reason, message, `terminal` flag, and transition time for operator
-  diagnostics. A satisfier reports a gate via
-  `POST /api/v2/servers/{serverID}/provider-create-gates` carrying a `status`
-  (`True` satisfies — the default, backward compatible with satisfy-only
-  callers; `False` blocks) and, only when `status` is `False`, an optional
-  `terminal` flag. Lifecycle semantics the provisioner enforces:
-  - unsatisfied, or `status=False, terminal=false` (transient) → **hold**: the
-    provisioner yields and waits for a later reconcile to satisfy the gate;
-  - `status=False, terminal=true` → **fail**: the gate can never be satisfied
-    without external change, so provider-create fails with the redacted reason
-    rather than yielding forever (see `TerminalProviderCreateGate()` and the
-    server provisioner);
-  - all gates `status=True` → provider-create proceeds.
+  `Server.Status.ProviderCreateGates` entries record the gate `state`, actor,
+  reason, message, and transition time for operator diagnostics. Each gate is a
+  three-state machine — `Closed`, `Open`, `Locked` — where `Closed` is the
+  default resting state reached without any report (a gate with no status entry
+  is treated as `Closed`). A satisfier reports a gate via
+  `POST /api/v2/servers/{serverID}/provider-create-gates` carrying a `state`
+  (`Open` satisfies — the default, backward compatible with satisfy-only
+  callers). Lifecycle semantics the provisioner enforces:
+  - `Closed` (unreported, or reported to record transient progress) → **hold**:
+    the provisioner yields and waits for a later reconcile to resolve the gate.
+    Re-reporting `Closed` is a self-loop that refreshes the reason without
+    resolving the gate;
+  - `Locked` → **fail**: the gate can never be satisfied without external
+    change, so provider-create fails with the reported reason rather than
+    yielding forever (see `LockedProviderCreateGate()` and the server
+    provisioner);
+  - all gates `Open` → provider-create proceeds.
 
-  `terminal=true` is rejected unless `status` is `False`. The generic
+  `Open` and `Locked` are terminal for a given provider-create attempt; a retry
+  resets every gate back to `Closed` (`ProviderCreateGatesReset`). The generic
   `Server.Status.Conditions` list remains reserved for Region-owned lifecycle
   conditions.
+
+  Upgrade note: this `state` field replaced an earlier `status`
+  (`True`/`False`/`Unknown`) field in the same API version, with no stored-data
+  conversion. A gate persisted by the old code has no `state` key, so it reads
+  back as the zero value and is treated as `Closed` (unresolved) — the safe
+  direction, never a spurious `Open`. Any server holding at a gate across the
+  upgrade therefore waits for its satisfier to re-report; level-triggered
+  satisfiers recover on their next reconcile.
 - `FileStorage` carries a more explicit observed-state model than the older
   resource types. Attachment-level provisioning state, observed size, usage
   reporting, and per-policy snapshot status are part of the stored

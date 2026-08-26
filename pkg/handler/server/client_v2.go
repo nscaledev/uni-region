@@ -57,7 +57,6 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"github.com/unikorn-cloud/region/pkg/userdata"
 
-	kcorev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
@@ -870,14 +869,13 @@ func providerCreateGateActor(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("%w: provider-create gate actor is not defined", coreerrors.ErrInvalidContext)
 }
 
-func providerCreateGateActionChanged(current *regionv1.Server, conditionType string, status kcorev1.ConditionStatus, terminal bool, actor, reason, message string) bool {
+func providerCreateGateActionChanged(current *regionv1.Server, conditionType string, state regionv1.ServerProviderCreateGateState, actor, reason, message string) bool {
 	existing, ok := current.ProviderCreateGateStatusRead(conditionType)
 	if !ok {
 		return true
 	}
 
-	return existing.Status != status ||
-		existing.Terminal != terminal ||
+	return existing.State != state ||
 		existing.Actor != actor ||
 		existing.Reason != reason ||
 		existing.Message != message
@@ -897,20 +895,25 @@ func validateProviderCreateGateAction(request *openapi.ServerProviderCreateGateA
 	return nil
 }
 
-// providerCreateGateActionStatus resolves the reported status (default True) and
-// terminal flag, rejecting a terminal marker on a non-False status.
-func providerCreateGateActionStatus(request *openapi.ServerProviderCreateGateAction) (kcorev1.ConditionStatus, bool, error) {
-	status := kcorev1.ConditionTrue
-	if request.Status != nil && string(*request.Status) == string(kcorev1.ConditionFalse) {
-		status = kcorev1.ConditionFalse
+// providerCreateGateActionState resolves the reported gate state, defaulting to
+// Open (satisfy) when the caller omits it. The openapi layer already validates
+// the enum on the HTTP path; the explicit mapping here rejects any unrecognized
+// value so a non-HTTP caller cannot write a garbage state onto the status.
+func providerCreateGateActionState(request *openapi.ServerProviderCreateGateAction) (regionv1.ServerProviderCreateGateState, error) {
+	if request.State == nil {
+		return regionv1.ServerProviderCreateGateOpen, nil
 	}
 
-	terminal := request.Terminal != nil && *request.Terminal
-	if terminal && status != kcorev1.ConditionFalse {
-		return "", false, errors.OAuth2InvalidRequest("terminal is only valid with status False")
+	switch *request.State {
+	case openapi.ServerProviderCreateGateActionStateClosed:
+		return regionv1.ServerProviderCreateGateClosed, nil
+	case openapi.ServerProviderCreateGateActionStateOpen:
+		return regionv1.ServerProviderCreateGateOpen, nil
+	case openapi.ServerProviderCreateGateActionStateLocked:
+		return regionv1.ServerProviderCreateGateLocked, nil
 	}
 
-	return status, terminal, nil
+	return "", errors.OAuth2InvalidRequest("state must be one of Closed, Open, Locked")
 }
 
 func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerProviderCreateGateAction) error {
@@ -937,19 +940,19 @@ func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regio
 		return fmt.Errorf("%w: unable to derive provider-create gate actor", err)
 	}
 
-	// status defaults to True (satisfy); False blocks the gate, and terminal
-	// (only valid with False) tells the provisioner the gate will never be
-	// satisfied, so provider-create fails instead of holding.
-	status, terminal, err := providerCreateGateActionStatus(request)
+	// state defaults to Open (satisfy). Locked tells the provisioner the gate
+	// will never be satisfied, so provider-create fails instead of holding;
+	// Closed reports transient progress without resolving the gate.
+	state, err := providerCreateGateActionState(request)
 	if err != nil {
 		return err
 	}
 
-	changed := providerCreateGateActionChanged(current, conditionType, status, terminal, actor, request.Reason, request.Message)
+	changed := providerCreateGateActionChanged(current, conditionType, state, actor, request.Reason, request.Message)
 
 	if changed {
 		updated := current.DeepCopy()
-		updated.ProviderCreateGateStatusWrite(conditionType, status, terminal, actor, request.Reason, request.Message)
+		updated.ProviderCreateGateStatusWrite(conditionType, state, actor, request.Reason, request.Message)
 
 		if err := c.Client.Client.Status().Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
 			return fmt.Errorf("%w: unable to report provider-create gate", err)
@@ -959,8 +962,7 @@ func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regio
 	log.FromContext(ctx).Info("server provider-create gate reported",
 		"server", serverID.String(),
 		"conditionType", conditionType,
-		"status", status,
-		"terminal", terminal,
+		"state", state,
 		"actor", actor,
 		"reason", request.Reason,
 		"changed", changed)

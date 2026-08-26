@@ -133,7 +133,7 @@ func withRuntimeStatus(server *regionv1.Server) {
 
 func withSatisfiedProviderCreateGate(server *regionv1.Server) {
 	server.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{{ConditionType: "test/gate"}}
-	server.ProviderCreateGateStatusWrite("test/gate", corev1.ConditionTrue, false, "ib-manager", "Programmed", "satisfied on the first attempt")
+	server.ProviderCreateGateStatusWrite("test/gate", regionv1.ServerProviderCreateGateOpen, "ib-manager", "Programmed", "satisfied on the first attempt")
 }
 
 func retryProvisioner(t *testing.T, server *regionv1.Server, options *serverprovisioner.Options, provider *mocktypes.MockProvider, recorders ...record.EventRecorder) *serverprovisioner.Provisioner {
@@ -194,11 +194,11 @@ func TestProvision_ProviderCreateFailureDeletesAndYields(t *testing.T) {
 	// reset must not clear it. A stale value self-heals on the next ACTIVE poll.
 	require.Equal(t, ptr.To("00:11:22:33:44:55"), server.Status.MACAddress)
 	require.Nil(t, server.Status.ScheduledAt)
-	// The gate satisfied on the first attempt is reset to Unknown so external
+	// The gate satisfied on the first attempt is reset to Closed so external
 	// services re-run their pre-create work before the retry.
 	gate, ok := server.ProviderCreateGateStatusRead("test/gate")
 	require.True(t, ok)
-	require.Equal(t, corev1.ConditionUnknown, gate.Status)
+	require.Equal(t, regionv1.ServerProviderCreateGateClosed, gate.State)
 	require.Equal(t, "ProviderCreateRetry", gate.Reason)
 
 	requireEvent(t, recorder, corev1.EventTypeNormal, "ProviderCreateRetrying", "attempt 1/3")
@@ -268,7 +268,7 @@ func TestProvision_ProviderCreateRetryKeepsDeletingWithGate(t *testing.T) {
 	// until the deletion-confirmed branch runs.
 	gate, ok := server.ProviderCreateGateStatusRead("test/gate")
 	require.True(t, ok)
-	require.Equal(t, corev1.ConditionTrue, gate.Status)
+	require.Equal(t, regionv1.ServerProviderCreateGateOpen, gate.State)
 }
 
 func TestProvision_ProviderCreateFailureStopsAtAttemptLimit(t *testing.T) {

@@ -51,7 +51,6 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -1719,7 +1718,7 @@ func TestServerGetV2ReturnsRemainingProviderCreateGates(t *testing.T) {
 		{ConditionType: srvProviderGate},
 		{ConditionType: "example.unikorn-cloud.org/second-ready"},
 	}
-	resource.ProviderCreateGateStatusWrite(srvProviderGate, corev1.ConditionTrue, false, "service", "Prepared", "done")
+	resource.ProviderCreateGateStatusWrite(srvProviderGate, regionv1.ServerProviderCreateGateOpen, "service", "Prepared", "done")
 
 	k8sClient := newSrvFakeClient(t, resource).Build()
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
@@ -1778,7 +1777,7 @@ func TestServerSatisfyProviderCreateGate(t *testing.T) {
 
 	status, ok := updated.ProviderCreateGateStatusRead(srvProviderGate)
 	require.True(t, ok)
-	require.Equal(t, corev1.ConditionTrue, status.Status)
+	require.Equal(t, regionv1.ServerProviderCreateGateOpen, status.State)
 	require.Equal(t, "pre-create-service", status.Actor)
 	require.Equal(t, request.Reason, status.Reason)
 	require.Equal(t, request.Message, status.Message)
@@ -1796,7 +1795,7 @@ func TestServerSatisfyProviderCreateGate(t *testing.T) {
 	require.Empty(t, *result.Status.RemainingProviderCreateGates)
 }
 
-func TestServerSatisfyProviderCreateGateBlocksTerminally(t *testing.T) {
+func TestServerSatisfyProviderCreateGateLocks(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
@@ -1821,14 +1820,12 @@ func TestServerSatisfyProviderCreateGateBlocksTerminally(t *testing.T) {
 	ctx = withPrincipal(ctx)
 	ctx = withProviderCreateServiceCertificate(ctx, t)
 
-	blocked := openapi.ServerProviderCreateGateActionStatusFalse
-	terminal := true
+	locked := openapi.ServerProviderCreateGateActionStateLocked
 	request := &openapi.ServerProviderCreateGateAction{
 		ConditionType: srvProviderGate,
 		Reason:        "NoPKeyAvailable",
 		Message:       "p_key pool exhausted",
-		Status:        &blocked,
-		Terminal:      &terminal,
+		State:         &locked,
 	}
 
 	require.NoError(t, c.SatisfyProviderCreateGate(ctx, idstest.MustParseServerID(resource.Name), request))
@@ -1838,18 +1835,17 @@ func TestServerSatisfyProviderCreateGateBlocksTerminally(t *testing.T) {
 
 	status, ok := updated.ProviderCreateGateStatusRead(srvProviderGate)
 	require.True(t, ok)
-	require.Equal(t, corev1.ConditionFalse, status.Status)
-	require.True(t, status.Terminal)
+	require.Equal(t, regionv1.ServerProviderCreateGateLocked, status.State)
 	require.Equal(t, "NoPKeyAvailable", status.Reason)
 
-	// A blocked gate is not satisfied, so it stays outstanding and terminal.
+	// A Locked gate is not satisfied, so it stays outstanding and Locked.
 	require.Equal(t, []string{srvProviderGate}, updated.RemainingProviderCreateGates())
-	gate, ok := updated.TerminalProviderCreateGate()
+	gate, ok := updated.LockedProviderCreateGate()
 	require.True(t, ok)
 	require.Equal(t, srvProviderGate, gate.ConditionType)
 }
 
-func TestServerSatisfyProviderCreateGateRejectsTerminalWithoutFalse(t *testing.T) {
+func TestServerSatisfyProviderCreateGateReportsClosed(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
@@ -1874,16 +1870,71 @@ func TestServerSatisfyProviderCreateGateRejectsTerminalWithoutFalse(t *testing.T
 	ctx = withPrincipal(ctx)
 	ctx = withProviderCreateServiceCertificate(ctx, t)
 
-	// terminal with an implicit (defaulted) True status is invalid.
-	terminal := true
+	// Reporting Closed records transient progress: the gate stays unresolved
+	// (not satisfied, not Locked) but the reason is recorded for operators.
+	closed := openapi.ServerProviderCreateGateActionStateClosed
+	request := &openapi.ServerProviderCreateGateAction{
+		ConditionType: srvProviderGate,
+		Reason:        "AllocatingPKey",
+		Message:       "still programming the fabric",
+		State:         &closed,
+	}
+
+	require.NoError(t, c.SatisfyProviderCreateGate(ctx, idstest.MustParseServerID(resource.Name), request))
+
+	updated := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
+
+	status, ok := updated.ProviderCreateGateStatusRead(srvProviderGate)
+	require.True(t, ok)
+	require.Equal(t, regionv1.ServerProviderCreateGateClosed, status.State)
+	require.Equal(t, "AllocatingPKey", status.Reason)
+
+	require.Equal(t, []string{srvProviderGate}, updated.RemainingProviderCreateGates())
+	_, ok = updated.LockedProviderCreateGate()
+	require.False(t, ok)
+}
+
+func TestServerSatisfyProviderCreateGateRejectsInvalidState(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	resource := testServerV2(srvServerID)
+	resource.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
+		{ConditionType: srvProviderGate},
+	}
+
+	k8sClient := newSrvFakeClient(t, resource).
+		WithStatusSubresource(&regionv1.Server{}).
+		Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvProviderCreateGate())
+	ctx = withPrincipal(ctx)
+	ctx = withProviderCreateServiceCertificate(ctx, t)
+
+	// A state outside the Closed/Open/Locked enum is rejected by the handler,
+	// guarding non-HTTP callers that skip the openapi request validator.
+	bad := openapi.ServerProviderCreateGateActionState("Bogus")
 	request := &openapi.ServerProviderCreateGateAction{
 		ConditionType: srvProviderGate,
 		Reason:        "Bogus",
-		Message:       "terminal requires status False",
-		Terminal:      &terminal,
+		Message:       "not a valid state",
+		State:         &bad,
 	}
 
 	require.Error(t, c.SatisfyProviderCreateGate(ctx, idstest.MustParseServerID(resource.Name), request))
+
+	updated := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
+	require.Empty(t, updated.Status.ProviderCreateGates)
 }
 
 func TestServerSatisfyProviderCreateGateIsIdempotent(t *testing.T) {

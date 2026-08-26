@@ -23,7 +23,6 @@ import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -1100,8 +1099,8 @@ type ServerSpec struct {
 	// the provider bypasses its scheduler and provisions directly onto the
 	// identified host.
 	InfrastructureRef *string `json:"infrastructureRef,omitempty"`
-	// ProviderCreateGates are externally satisfied gates that must be True before
-	// the server controller calls the provider create path.
+	// ProviderCreateGates are externally satisfied gates that must all be Open
+	// before the server controller calls the provider create path.
 	// +listType=map
 	// +listMapKey=conditionType
 	ProviderCreateGates []ServerProviderCreateGate `json:"providerCreateGates,omitempty"`
@@ -1283,22 +1282,41 @@ type ServerVolumeStatus struct {
 	Message string `json:"message"`
 }
 
+// ServerProviderCreateGateState is the resolved state of a provider-create
+// gate. A gate rests in Closed (the default entry state, reached without any
+// report) until a satisfier resolves it. The two resolving states are terminal
+// for a given provider-create attempt:
+//   - Closed: unresolved; the provisioner holds (yields). A satisfier may
+//     re-report Closed to refresh the reason while it keeps working (a
+//     self-loop that leaves the state unchanged).
+//   - Open: satisfied; provider-create proceeds once every gate is Open.
+//   - Locked: can never be satisfied without external change; provider-create
+//     fails with the reported reason rather than holding.
+//
+// A provider-create retry resets every gate back to Closed (see
+// ProviderCreateGatesReset), starting a fresh attempt.
+// +kubebuilder:validation:Enum=Closed;Open;Locked
+type ServerProviderCreateGateState string
+
+const (
+	ServerProviderCreateGateClosed ServerProviderCreateGateState = "Closed"
+	ServerProviderCreateGateOpen   ServerProviderCreateGateState = "Open"
+	ServerProviderCreateGateLocked ServerProviderCreateGateState = "Locked"
+)
+
 type ServerProviderCreateGateStatus struct {
 	// ConditionType matches a configured ServerSpec.ProviderCreateGates entry.
 	// +kubebuilder:validation:MinLength=1
 	ConditionType string `json:"conditionType"`
-	// Status is True when the gate is satisfied.
-	// +kubebuilder:validation:Enum=True;False;Unknown
-	Status corev1.ConditionStatus `json:"status"`
-	// Terminal marks a False gate that will never be satisfied without external
-	// change; the provisioner fails provider-create rather than holding on it.
-	Terminal bool `json:"terminal,omitempty"`
-	// LastTransitionTime records when the gate status last changed.
+	// State is the resolved gate state: Closed (default) holds provider-create,
+	// Open satisfies it, and Locked fails it permanently.
+	State ServerProviderCreateGateState `json:"state"`
+	// LastTransitionTime records when the gate state last changed.
 	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
 	// Actor is the authenticated service identity that last wrote this gate
-	// status.
+	// state.
 	Actor string `json:"actor,omitempty"`
-	// Reason is a machine-readable reason for the status.
+	// Reason is a machine-readable reason for the state.
 	Reason string `json:"reason,omitempty"`
 	// Message is human-readable detail.
 	Message string `json:"message,omitempty"`

@@ -107,9 +107,9 @@ func New(options manager.ControllerOptions, providers providers.Providers) provi
 // Ensure the ManagerProvisioner interface is implemented.
 var _ provisioners.ManagerProvisioner = &Provisioner{}
 
-// ErrProviderCreateGateTerminal is returned when a provider-create gate is
-// reported terminally blocked, failing the create rather than holding.
-var ErrProviderCreateGateTerminal = errors.New("provider create gate terminally blocked")
+// ErrProviderCreateGateLocked is returned when a provider-create gate is
+// reported Locked, failing the create rather than holding.
+var ErrProviderCreateGateLocked = errors.New("provider create gate locked")
 
 func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 	return p.server
@@ -440,10 +440,10 @@ func (p *Provisioner) blockUntilDependenciesReady(ctx context.Context, cli clien
 		}
 	}
 
-	// A terminal gate will never be satisfied, so fail the create (not yield)
+	// A Locked gate will never be satisfied, so fail the create (not yield)
 	// with the reported reason rather than holding the server indefinitely.
-	if gate, ok := p.server.TerminalProviderCreateGate(); ok {
-		return fmt.Errorf("%w: gate %q: %s (%s)", ErrProviderCreateGateTerminal, gate.ConditionType, gate.Message, gate.Reason)
+	if gate, ok := p.server.LockedProviderCreateGate(); ok {
+		return fmt.Errorf("%w: gate %q: %s (%s)", ErrProviderCreateGateLocked, gate.ConditionType, gate.Message, gate.Reason)
 	}
 
 	if !p.server.ProviderCreateGatesReady() {

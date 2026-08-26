@@ -273,12 +273,11 @@ func (c *Server) ProviderCreateGateStatusRead(conditionType string) (*ServerProv
 	return nil, false
 }
 
-func (c *Server) ProviderCreateGateStatusWrite(conditionType string, status corev1.ConditionStatus, terminal bool, actor, reason, message string) {
+func (c *Server) ProviderCreateGateStatusWrite(conditionType string, state ServerProviderCreateGateState, actor, reason, message string) {
 	now := metav1.Now()
 	gate := ServerProviderCreateGateStatus{
 		ConditionType:      conditionType,
-		Status:             status,
-		Terminal:           terminal,
+		State:              state,
 		LastTransitionTime: now,
 		Actor:              actor,
 		Reason:             reason,
@@ -292,7 +291,7 @@ func (c *Server) ProviderCreateGateStatusWrite(conditionType string, status core
 		return
 	}
 
-	if existing.Status == status {
+	if existing.State == state {
 		gate.LastTransitionTime = existing.LastTransitionTime
 	}
 
@@ -304,7 +303,7 @@ func (c *Server) RemainingProviderCreateGates() []string {
 
 	for _, gate := range c.Spec.ProviderCreateGates {
 		status, ok := c.ProviderCreateGateStatusRead(gate.ConditionType)
-		if !ok || status.Status != corev1.ConditionTrue {
+		if !ok || status.State != ServerProviderCreateGateOpen {
 			out = append(out, gate.ConditionType)
 		}
 	}
@@ -316,13 +315,13 @@ func (c *Server) ProviderCreateGatesReady() bool {
 	return len(c.RemainingProviderCreateGates()) == 0
 }
 
-// TerminalProviderCreateGate returns the first configured gate reported blocked
-// terminally (Status=False, Terminal=true), if any. The provisioner fails
-// provider-create rather than holding when a gate is terminal.
-func (c *Server) TerminalProviderCreateGate() (*ServerProviderCreateGateStatus, bool) {
+// LockedProviderCreateGate returns the first configured gate reported Locked, if
+// any. A Locked gate can never be satisfied, so the provisioner fails
+// provider-create rather than holding when a gate is Locked.
+func (c *Server) LockedProviderCreateGate() (*ServerProviderCreateGateStatus, bool) {
 	for _, gate := range c.Spec.ProviderCreateGates {
 		status, ok := c.ProviderCreateGateStatusRead(gate.ConditionType)
-		if ok && status.Status == corev1.ConditionFalse && status.Terminal {
+		if ok && status.State == ServerProviderCreateGateLocked {
 			return status, true
 		}
 	}
@@ -332,7 +331,7 @@ func (c *Server) TerminalProviderCreateGate() (*ServerProviderCreateGateStatus, 
 
 func (c *Server) ProviderCreateGatesReset(actor, reason, message string) {
 	for _, gate := range c.Spec.ProviderCreateGates {
-		c.ProviderCreateGateStatusWrite(gate.ConditionType, corev1.ConditionUnknown, false, actor, reason, message)
+		c.ProviderCreateGateStatusWrite(gate.ConditionType, ServerProviderCreateGateClosed, actor, reason, message)
 	}
 }
 
