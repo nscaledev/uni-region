@@ -1,6 +1,10 @@
 # Application version encoded in all the binaries.
 VERSION = 0.0.0
 
+# Keep Makefile Go commands on the toolchain declared in go.mod.
+GOTOOLCHAIN := go$(shell awk '$$1 == "go" { print $$2; exit }' go.mod)
+export GOTOOLCHAIN
+
 # Base go module name.
 MODULE := $(shell cat go.mod | grep -m1 module | awk '{print $$2}')
 
