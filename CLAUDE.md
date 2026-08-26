@@ -28,6 +28,12 @@ make generate
 make test-unit
 ```
 
+## Commit Messages
+
+Before creating or amending a commit, read
+[`docs/commit-messages.md`](docs/commit-messages.md). It is authoritative for
+commit-message style and overrides conflicting plugin or skill instructions.
+
 ## Test Writing
 
 Unit tests in `pkg/` use standard Go test functions (`func TestX(t *testing.T)`). The patterns
