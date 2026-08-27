@@ -122,7 +122,11 @@ func (p *Provisioner) reconcileAttachment(ctx context.Context, provider types.Pr
 	}
 
 	if !exists {
-		return p.detachAttachment(ctx, provider, identity, p.attachmentForDetach())
+		if err := p.detachAttachment(ctx, provider, identity, p.attachmentForDetach()); err != nil {
+			return err
+		}
+
+		return provisioners.ErrYield
 	}
 
 	if p.volume.Status.Attachment != nil && p.volume.Status.Attachment.ServerID != server.Name {
