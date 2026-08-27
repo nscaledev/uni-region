@@ -19,7 +19,6 @@ package securitygroup_test
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -80,6 +79,8 @@ func newSGFakeClient(t *testing.T, objects ...runtime.Object) *fake.ClientBuilde
 }
 
 // testNetworkWithProject returns a v2 Network object with the given org/project labels.
+//
+//nolint:unparam // Fixtures need caller-controlled organization labels.
 func testNetworkWithProject(orgID, projID string) *regionv1.Network {
 	return &regionv1.Network{
 		ObjectMeta: metav1.ObjectMeta{
@@ -529,7 +530,7 @@ func TestSGUpdateV2(t *testing.T) {
 	require.Equal(t, sgNetworkID, result.Status.NetworkId)
 }
 
-func TestSGUpdateV2ConflictReturnsInternalServerError(t *testing.T) {
+func TestSGUpdateV2ReturnsConflict(t *testing.T) {
 	t.Parallel()
 
 	network := testNetworkWithProject(sgOrganizationID, sgProjectID)
@@ -561,10 +562,7 @@ func TestSGUpdateV2ConflictReturnsInternalServerError(t *testing.T) {
 
 	_, err := c.UpdateV2(ctx, idstest.MustParseSecurityGroupID(sgSecurityGroupID), request)
 
-	require.Error(t, err)
-	response := httptest.NewRecorder()
-	coreerrors.HandleError(response, httptest.NewRequestWithContext(ctx, http.MethodPut, "/api/v2/securitygroups/"+sgSecurityGroupID, nil), err)
-	require.Equal(t, http.StatusInternalServerError, response.Code)
+	require.True(t, coreerrors.IsConflict(err), "expected 409 conflict, got: %v", err)
 	require.Equal(t, int32(1), patches.Load())
 }
 
