@@ -3552,6 +3552,37 @@ components:
           type: boolean
         allowedSourceAddresses:
           $ref: '#/components/schemas/allowedSourceAddresses'
+    serverV2VolumeStatus:
+      description: Observed attachment state for a desired Volume.
+      type: object
+      required:
+      - id
+      - provisioningStatus
+      - message
+      properties:
+        id:
+          description: The attached Volume ID.
+          allOf:
+          - $ref: '#/components/schemas/volumeId'
+        provisioningStatus:
+          description: The attachment provisioning state.
+          type: string
+          enum:
+          - Provisioning
+          - Provisioned
+          - Errored
+          - Deprovisioning
+        device:
+          description: The provider-assigned guest device name, when available.
+          type: string
+        message:
+          description: A safe human-readable description of the attachment state.
+          type: string
+    serverV2VolumeStatusList:
+      description: Observed attachment state for the Server's desired Volumes.
+      type: array
+      items:
+        $ref: '#/components/schemas/serverV2VolumeStatus'
     serverV2Spec:
       description: A server's specification.
       type: object
@@ -3641,6 +3672,8 @@ components:
           type: string
         remainingProviderCreateGates:
           $ref: '#/components/schemas/serverRemainingProviderCreateGates'
+        volumes:
+          $ref: '#/components/schemas/serverV2VolumeStatusList'
     serverV2Read:
       description: A server.
       type: object

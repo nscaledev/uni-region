@@ -75,9 +75,10 @@ VolumeClass ID plus a positive whole-GiB size. Network, class, and size are
 immutable through this API; updates contain resource metadata and tags only.
 Reads expose the requested inputs alongside the Region the volume was
 provisioned in, provider-observed size, and the standard provisioning and
-health metadata.
-Attachment-derived state is not part of this base contract. The Region handler
-implements this lifecycle surface.
+health metadata. A Server v2 read also exposes its current desired Volume-keyed
+attachment projection: attachment progress, optional provider-assigned device,
+and a safe message. This is derived status only; it never authorizes provider
+cleanup. The Region handler implements this lifecycle surface.
 
 The File Storage NFS write contract exposes optional, nullable `posixAcl` and
 `atimeUpdateIntervalSeconds` settings. On create and update, omission or explicit

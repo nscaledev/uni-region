@@ -877,8 +877,9 @@ type VolumeSpec struct {
 	VolumeClassID string `json:"volumeClassID"`
 	// Size is the requested volume capacity.
 	Size resource.Quantity `json:"size"`
-	// ClaimRef binds this volume to the resource that owns its
-	// attachment. Unset means the volume is available for claiming.
+	// ClaimRef is an internal handler-owned reservation that exclusively binds
+	// this volume attachment to a Server. Unset means the volume is available for
+	// claiming.
 	ClaimRef *VolumeClaimRef `json:"claimRef,omitempty"`
 }
 
@@ -902,9 +903,23 @@ type VolumeStatus struct {
 	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
 	// Current service state of a volume.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// Attachment records the observed state of this volume's requested Server
+	// attachment. It is derived state and must not authorize provider cleanup.
+	Attachment *VolumeAttachmentStatus `json:"attachment,omitempty"`
 	// Size is the currently provisioned/observed size of the volume.
 	// (May differ from spec.size while provisioning.)
 	Size *resource.Quantity `json:"size,omitempty"`
+}
+
+type VolumeAttachmentStatus struct {
+	// ServerID is the Region Server resource ID the volume is attached to.
+	ServerID string `json:"serverID"`
+	// ProvisioningStatus reports attachment progress.
+	ProvisioningStatus AttachmentProvisioningStatus `json:"provisioningStatus"`
+	// Device is the provider-assigned guest device name, when available.
+	Device *string `json:"device,omitempty"`
+	// Message is a safe human-readable description of the attachment state.
+	Message string `json:"message"`
 }
 
 // +kubebuilder:validation:Enum=tcp;udp

@@ -87,6 +87,14 @@ const (
 	RegionTypeSimulated  RegionType = "simulated"
 )
 
+// Defines values for ServerV2VolumeStatusProvisioningStatus.
+const (
+	ServerV2VolumeStatusProvisioningStatusDeprovisioning ServerV2VolumeStatusProvisioningStatus = "Deprovisioning"
+	ServerV2VolumeStatusProvisioningStatusErrored        ServerV2VolumeStatusProvisioningStatus = "Errored"
+	ServerV2VolumeStatusProvisioningStatusProvisioned    ServerV2VolumeStatusProvisioningStatus = "Provisioned"
+	ServerV2VolumeStatusProvisioningStatusProvisioning   ServerV2VolumeStatusProvisioningStatus = "Provisioning"
+)
+
 // Defines values for SshInjection.
 const (
 	SshInjectionCa              SshInjection = "ca"
@@ -1280,6 +1288,9 @@ type ServerV2Status struct {
 
 	// SshInjection The resolved create-time SSH access material Region arranged for the server.
 	SshInjection *SshInjection `json:"sshInjection,omitempty"`
+
+	// Volumes Observed attachment state for the Server's desired Volumes.
+	Volumes *ServerV2VolumeStatusList `json:"volumes,omitempty"`
 }
 
 // ServerV2Update A server update request.
@@ -1290,6 +1301,27 @@ type ServerV2Update struct {
 	// Spec A server's specification.
 	Spec ServerV2Spec `json:"spec"`
 }
+
+// ServerV2VolumeStatus Observed attachment state for a desired Volume.
+type ServerV2VolumeStatus struct {
+	// Device The provider-assigned guest device name, when available.
+	Device *string `json:"device,omitempty"`
+
+	// Id The attached Volume ID.
+	Id VolumeId `json:"id"`
+
+	// Message A safe human-readable description of the attachment state.
+	Message string `json:"message"`
+
+	// ProvisioningStatus The attachment provisioning state.
+	ProvisioningStatus ServerV2VolumeStatusProvisioningStatus `json:"provisioningStatus"`
+}
+
+// ServerV2VolumeStatusProvisioningStatus The attachment provisioning state.
+type ServerV2VolumeStatusProvisioningStatus string
+
+// ServerV2VolumeStatusList Observed attachment state for the Server's desired Volumes.
+type ServerV2VolumeStatusList = []ServerV2VolumeStatus
 
 // ServerWrite A server request.
 type ServerWrite struct {

@@ -79,3 +79,17 @@ func TestVolumeLifecycleContract(t *testing.T) {
 	volumeID := componentSchema(t, swagger, "volumeId")
 	require.Equal(t, "regionids.VolumeID", volumeID.Extensions["x-go-type"])
 }
+
+func TestServerVolumeAttachmentStatusContract(t *testing.T) {
+	t.Parallel()
+
+	swagger, err := openapi.GetSwagger()
+	require.NoError(t, err)
+
+	status := componentSchema(t, swagger, "serverV2VolumeStatus")
+	require.ElementsMatch(t, []string{"id", "provisioningStatus", "message"}, status.Required)
+	require.Len(t, schemaProperty(t, status, "id").AllOf, 1)
+	require.Equal(t, "#/components/schemas/volumeId", schemaProperty(t, status, "id").AllOf[0].Ref)
+	require.Equal(t, []any{"Provisioning", "Provisioned", "Errored", "Deprovisioning"}, schemaProperty(t, status, "provisioningStatus").Enum)
+	requireSchemaPropertyRef(t, componentSchema(t, swagger, "serverV2Status"), "volumes", "#/components/schemas/serverV2VolumeStatusList")
+}
