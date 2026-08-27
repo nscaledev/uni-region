@@ -115,7 +115,7 @@ var _ = Describe("File Storage Management", func() {
 				unchangedAtime := remoteFileAtimeEpoch(mounted.SSHClient, atimeFile)
 				Expect(unchangedAtime).To(Equal(refreshedAtime), "read within the threshold window should not advance atime")
 
-				By("disabling POSIX ACLs via update, leaving the atime interval untouched")
+				By("disabling POSIX ACLs via update, resetting the omitted atime interval")
 				// Attachments must be resent: an omitted attachment list detaches the
 				// network and would break the live mount.
 				update := regionopenapi.StorageV2UpdateRequest{
@@ -133,7 +133,7 @@ var _ = Describe("File Storage Management", func() {
 
 				updated, err := regionClient.UpdateFileStorage(ctx, storageID, update)
 				Expect(err).NotTo(HaveOccurred())
-				expectNFSPolicyValues(updated, false, false, nfsPolicyAtimeIntervalSeconds)
+				expectNFSPolicyValues(updated, false, false, 0)
 
 				By("waiting for the disabled POSIX ACL policy to propagate to the filesystem")
 				disabledFile := path.Join(caseDir, "acl-disabled-probe")
