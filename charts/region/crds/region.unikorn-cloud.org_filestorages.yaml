@@ -91,6 +91,7 @@ spec:
                 description: NFS is fulfilled when leveraging the NFS storage class.
                 properties:
                   atimeUpdateIntervalSeconds:
+                    default: 0
                     description: AtimeUpdateIntervalSeconds controls how stale atime
                       must be before a read updates it. Zero disables read-driven
                       updates.
@@ -99,10 +100,14 @@ spec:
                     minimum: 0
                     type: integer
                   posixAcl:
+                    default: false
                     description: POSIXACL controls extended POSIX ACL support.
                     type: boolean
                   rootSquash:
                     type: boolean
+                required:
+                - atimeUpdateIntervalSeconds
+                - posixAcl
                 type: object
               pause:
                 description: Pause, if true, will inhibit reconciliation.

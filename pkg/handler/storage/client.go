@@ -256,12 +256,16 @@ func remotePortsFromIPRange(in *regionv1.AttachmentIPRange) string {
 func checkRegionNFS(in *regionv1.NFS) *openapi.NFSV2Spec {
 	if in == nil {
 		return &openapi.NFSV2Spec{
-			RootSquash: true,
+			RootSquash:                 true,
+			PosixAcl:                   ptr.To(false),
+			AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
 		}
 	}
 
 	return &openapi.NFSV2Spec{
-		RootSquash: in.RootSquash,
+		RootSquash:                 in.RootSquash,
+		PosixAcl:                   ptr.To(ptr.Deref(in.POSIXACL, false)),
+		AtimeUpdateIntervalSeconds: ptr.To(ptr.Deref(in.AtimeUpdateIntervalSeconds, 0)),
 	}
 }
 
@@ -380,6 +384,12 @@ func (c *Client) generateV2(ctx context.Context, organizationID identityids.Orga
 
 	defaultSnapshotProtectionEnabled := request.Spec.DefaultSnapshotProtectionEnabled
 	policies := generateSnapshotPolicies(request.Spec.SnapshotPolicies)
+	nfs := request.Spec.StorageType.NFS
+	regionNFS := &regionv1.NFS{
+		RootSquash:                 nfs.RootSquash,
+		POSIXACL:                   nfs.PosixAcl,
+		AtimeUpdateIntervalSeconds: nfs.AtimeUpdateIntervalSeconds,
+	}
 
 	out := &regionv1.FileStorage{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.Namespace).
@@ -391,10 +401,8 @@ func (c *Client) generateV2(ctx context.Context, organizationID identityids.Orga
 			Attachments:                      attachments,
 			DefaultSnapshotProtectionEnabled: defaultSnapshotProtectionEnabled,
 			SnapshotPolicies:                 materializeDefaultSnapshotProtection(policies, defaultSnapshotProtectionEnabled),
-			NFS: &regionv1.NFS{
-				RootSquash: checkRootSquash(request.Spec.StorageType.NFS),
-			},
-			StorageClassID: storageClass.Metadata.Id,
+			NFS:                              regionNFS,
+			StorageClassID:                   storageClass.Metadata.Id,
 		},
 	}
 
@@ -412,14 +420,28 @@ func (c *Client) generateV2(ctx context.Context, organizationID identityids.Orga
 	return out, nil
 }
 
-// checkRootSquash sets the Rootsquash bool, defaults to true
-// this is only called on 'generates'.
-func checkRootSquash(nfs *openapi.NFSV2Spec) bool {
-	if nfs != nil {
-		return nfs.RootSquash
+func resolveNFS(nfs *openapi.NFSV2Spec) *openapi.NFSV2Spec {
+	out := &openapi.NFSV2Spec{
+		RootSquash:                 true,
+		PosixAcl:                   ptr.To(false),
+		AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
 	}
 
-	return true
+	if nfs == nil {
+		return out
+	}
+
+	out.RootSquash = nfs.RootSquash
+
+	if nfs.PosixAcl != nil {
+		out.PosixAcl = nfs.PosixAcl
+	}
+
+	if nfs.AtimeUpdateIntervalSeconds != nil {
+		out.AtimeUpdateIntervalSeconds = nfs.AtimeUpdateIntervalSeconds
+	}
+
+	return out
 }
 
 func generateAttachmentList(ctx context.Context, networkClient *network.Client, in *storageV2GenerateRequest, parallelism int) ([]regionv1.Attachment, error) {
@@ -530,6 +552,9 @@ func narrowStorageRange(in *regionv1.AttachmentIPRange, parallelism int) *region
 }
 
 func generateRequestFromCreate(in *openapi.StorageV2Create) *storageV2GenerateRequest {
+	storageType := in.Spec.StorageType
+	storageType.NFS = resolveNFS(storageType.NFS)
+
 	return &storageV2GenerateRequest{
 		Metadata: in.Metadata,
 		Spec: storageV2GenerateSpec{
@@ -538,12 +563,15 @@ func generateRequestFromCreate(in *openapi.StorageV2Create) *storageV2GenerateRe
 			DefaultSnapshotProtectionEnabled: ptr.Deref(in.Spec.DefaultSnapshotProtectionEnabled, true),
 			SizeGiB:                          in.Spec.SizeGiB,
 			SnapshotPolicies:                 in.Spec.SnapshotPolicies,
-			StorageType:                      in.Spec.StorageType,
+			StorageType:                      storageType,
 		},
 	}
 }
 
 func generateRequestFromUpdate(in *openapi.StorageV2Update, currentDefaultProtection bool) *storageV2GenerateRequest {
+	storageType := in.Spec.StorageType
+	storageType.NFS = resolveNFS(storageType.NFS)
+
 	return &storageV2GenerateRequest{
 		Metadata: in.Metadata,
 		Spec: storageV2GenerateSpec{
@@ -552,7 +580,7 @@ func generateRequestFromUpdate(in *openapi.StorageV2Update, currentDefaultProtec
 			DefaultSnapshotProtectionEnabled: ptr.Deref(in.Spec.DefaultSnapshotProtectionEnabled, currentDefaultProtection),
 			SizeGiB:                          in.Spec.SizeGiB,
 			SnapshotPolicies:                 in.Spec.SnapshotPolicies,
-			StorageType:                      in.Spec.StorageType,
+			StorageType:                      storageType,
 		},
 	}
 }

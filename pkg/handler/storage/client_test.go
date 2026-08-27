@@ -58,13 +58,14 @@ import (
 )
 
 const (
-	testNamespace      = "uni-storage-test"
-	testOrganizationID = "11111111-1111-4111-a111-111111111111"
-	testProjectID      = "22222222-2222-4222-a222-222222222222"
-	testRegionID       = "33333333-3333-4333-a333-333333333333"
-	testFileStorageID  = "44444444-4444-4444-a444-444444444444"
-	testAllocationID   = "66666666-6666-4666-a666-666666666666"
-	testNetworkID      = "77777777-7777-4777-a777-777777777777"
+	testNamespace                 = "uni-storage-test"
+	testOrganizationID            = "11111111-1111-4111-a111-111111111111"
+	testProjectID                 = "22222222-2222-4222-a222-222222222222"
+	testRegionID                  = "33333333-3333-4333-a333-333333333333"
+	testFileStorageID             = "44444444-4444-4444-a444-444444444444"
+	testAllocationID              = "66666666-6666-4666-a666-666666666666"
+	testNetworkID                 = "77777777-7777-4777-a777-777777777777"
+	maxAtimeUpdateIntervalSeconds = int64(86_399_999_999_999)
 )
 
 //nolint:gochecknoglobals
@@ -455,9 +456,6 @@ func TestGenerateAttachmentList(t *testing.T) {
 					Attachments: &openapi.StorageAttachmentV2Spec{
 						NetworkIds: openapi.NetworkIDList{testNetworkID},
 					},
-					StorageType: openapi.StorageTypeV2Spec{
-						NFS: &openapi.NFSV2Spec{},
-					},
 				},
 			},
 			want: []regionv1.Attachment{
@@ -546,7 +544,9 @@ func TestConvertV2List(t *testing.T) {
 						SnapshotPolicies:                 emptyStorageSnapshotPoliciesPointer,
 						StorageType: openapi.StorageTypeV2Spec{
 							NFS: &openapi.NFSV2Spec{
-								RootSquash: true,
+								RootSquash:                 true,
+								PosixAcl:                   ptr.To(false),
+								AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
 							},
 						},
 					},
@@ -620,7 +620,9 @@ func TestConvertV2List(t *testing.T) {
 						SnapshotPolicies:                 emptyStorageSnapshotPoliciesPointer,
 						StorageType: openapi.StorageTypeV2Spec{
 							NFS: &openapi.NFSV2Spec{
-								RootSquash: true,
+								RootSquash:                 true,
+								PosixAcl:                   ptr.To(false),
+								AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
 							},
 						},
 					},
@@ -924,7 +926,9 @@ func TestConvertV2(t *testing.T) {
 				Spec: regionv1.FileStorageSpec{
 					Size: *gibToQuantity(int64(2)),
 					NFS: &regionv1.NFS{
-						RootSquash: true,
+						RootSquash:                 true,
+						POSIXACL:                   ptr.To(false),
+						AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
 					},
 					Attachments: []regionv1.Attachment{},
 				},
@@ -943,7 +947,9 @@ func TestConvertV2(t *testing.T) {
 					SnapshotPolicies:                 emptyStorageSnapshotPoliciesPointer,
 					StorageType: openapi.StorageTypeV2Spec{
 						NFS: &openapi.NFSV2Spec{
-							RootSquash: true,
+							RootSquash:                 true,
+							PosixAcl:                   ptr.To(false),
+							AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
 						},
 					},
 				},
@@ -979,7 +985,11 @@ func TestConvertV2(t *testing.T) {
 					Attachments:                      &openapi.StorageAttachmentV2Spec{NetworkIds: []string{}},
 					DefaultSnapshotProtectionEnabled: ptr.To(false),
 					SnapshotPolicies:                 emptyStorageSnapshotPoliciesPointer,
-					StorageType:                      openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
+					StorageType: openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{
+						RootSquash:                 true,
+						PosixAcl:                   ptr.To(false),
+						AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
+					}},
 				},
 				Status: openapi.StorageV2Status{
 					SnapshotPolicies: emptyStorageSnapshotPolicyStatuses,
@@ -1018,7 +1028,11 @@ func TestConvertV2(t *testing.T) {
 					Attachments:                      &openapi.StorageAttachmentV2Spec{NetworkIds: []string{}},
 					DefaultSnapshotProtectionEnabled: ptr.To(false),
 					SnapshotPolicies:                 emptyStorageSnapshotPoliciesPointer,
-					StorageType:                      openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
+					StorageType: openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{
+						RootSquash:                 true,
+						PosixAcl:                   ptr.To(false),
+						AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
+					}},
 				},
 				Status: openapi.StorageV2Status{
 					SnapshotPolicies: emptyStorageSnapshotPolicyStatuses,
@@ -1053,7 +1067,11 @@ func TestConvertV2(t *testing.T) {
 					Attachments:                      &openapi.StorageAttachmentV2Spec{NetworkIds: []string{}},
 					DefaultSnapshotProtectionEnabled: ptr.To(false),
 					SnapshotPolicies:                 emptyStorageSnapshotPoliciesPointer,
-					StorageType:                      openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
+					StorageType: openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{
+						RootSquash:                 true,
+						PosixAcl:                   ptr.To(false),
+						AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
+					}},
 				},
 				Status: openapi.StorageV2Status{
 					SnapshotPolicies: emptyStorageSnapshotPolicyStatuses,
@@ -1098,7 +1116,11 @@ func TestConvertV2(t *testing.T) {
 					Attachments:                      &openapi.StorageAttachmentV2Spec{NetworkIds: []string{testNetworkID}},
 					DefaultSnapshotProtectionEnabled: ptr.To(false),
 					SnapshotPolicies:                 emptyStorageSnapshotPoliciesPointer,
-					StorageType:                      openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{RootSquash: true}},
+					StorageType: openapi.StorageTypeV2Spec{NFS: &openapi.NFSV2Spec{
+						RootSquash:                 true,
+						PosixAcl:                   ptr.To(false),
+						AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
+					}},
 				},
 				Status: openapi.StorageV2Status{
 					SnapshotPolicies: emptyStorageSnapshotPolicyStatuses,
@@ -1295,6 +1317,31 @@ func TestCreateV2OmittedDefaultProtectionEnablesDefaultAndCreatesNoSnapshotPolic
 	require.Empty(t, got.Status.SnapshotPolicies)
 }
 
+func TestCreateV2OmittedNFSPolicyPersistsDefaults(t *testing.T) {
+	t.Parallel()
+
+	got := createStorageV2ForSnapshotPolicyTest(t, nil)
+	require.True(t, got.Spec.StorageType.NFS.RootSquash)
+	require.Equal(t, ptr.To(false), got.Spec.StorageType.NFS.PosixAcl)
+	require.Equal(t, ptr.To(int64(0)), got.Spec.StorageType.NFS.AtimeUpdateIntervalSeconds)
+}
+
+func TestCreateV2ExplicitNFSPolicyPersistsValues(t *testing.T) {
+	t.Parallel()
+
+	got := createStorageV2ForSnapshotPolicyTest(t, func(request *openapi.StorageV2Create) {
+		request.Spec.StorageType.NFS = &openapi.NFSV2Spec{
+			RootSquash:                 false,
+			PosixAcl:                   ptr.To(true),
+			AtimeUpdateIntervalSeconds: ptr.To(maxAtimeUpdateIntervalSeconds),
+		}
+	})
+
+	require.False(t, got.Spec.StorageType.NFS.RootSquash)
+	require.Equal(t, ptr.To(true), got.Spec.StorageType.NFS.PosixAcl)
+	require.Equal(t, ptr.To(maxAtimeUpdateIntervalSeconds), got.Spec.StorageType.NFS.AtimeUpdateIntervalSeconds)
+}
+
 func TestCreateV2ExplicitFalseDisablesDefaultProtection(t *testing.T) {
 	t.Parallel()
 
@@ -1454,6 +1501,71 @@ func TestUpdateOmittedSnapshotPoliciesPreservesExistingPolicies(t *testing.T) {
 	}, got.Status.SnapshotPolicies)
 }
 
+func TestUpdateV2CompleteNFSPolicyPersistsManagedValues(t *testing.T) {
+	t.Parallel()
+
+	got := updateStorageV2ForSnapshotPolicyTest(t, nil)
+	require.True(t, got.Spec.StorageType.NFS.RootSquash)
+	require.Equal(t, ptr.To(true), got.Spec.StorageType.NFS.PosixAcl)
+	require.Equal(t, ptr.To(int64(600)), got.Spec.StorageType.NFS.AtimeUpdateIntervalSeconds)
+}
+
+func TestUpdateV2OmittedNFSDefaultsEntirePolicy(t *testing.T) {
+	t.Parallel()
+
+	got := updateStorageV2ForSnapshotPolicyTest(t, func(request *openapi.StorageV2Update) {
+		request.Spec.StorageType.NFS = nil
+	})
+
+	require.True(t, got.Spec.StorageType.NFS.RootSquash)
+	require.Equal(t, ptr.To(false), got.Spec.StorageType.NFS.PosixAcl)
+	require.Equal(t, ptr.To(int64(0)), got.Spec.StorageType.NFS.AtimeUpdateIntervalSeconds)
+}
+
+func TestUpdateV2ExplicitFalseAndZeroNFSPolicyPersistsValues(t *testing.T) {
+	t.Parallel()
+
+	got := updateStorageV2ForSnapshotPolicyTest(t, func(request *openapi.StorageV2Update) {
+		request.Spec.StorageType.NFS = &openapi.NFSV2Spec{
+			RootSquash:                 false,
+			PosixAcl:                   ptr.To(false),
+			AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
+		}
+	})
+
+	require.False(t, got.Spec.StorageType.NFS.RootSquash)
+	require.Equal(t, ptr.To(false), got.Spec.StorageType.NFS.PosixAcl)
+	require.Equal(t, ptr.To(int64(0)), got.Spec.StorageType.NFS.AtimeUpdateIntervalSeconds)
+}
+
+func TestUpdateSagaUsesRequestNFSPolicyWithoutCurrentStateMerge(t *testing.T) {
+	t.Parallel()
+
+	saga := &updateSaga{
+		request: &openapi.StorageV2Update{
+			Spec: openapi.StorageV2Spec{
+				StorageType: openapi.StorageTypeV2Spec{
+					NFS: &openapi.NFSV2Spec{RootSquash: false},
+				},
+			},
+		},
+		current: &regionv1.FileStorage{
+			Spec: regionv1.FileStorageSpec{
+				NFS: &regionv1.NFS{
+					RootSquash:                 true,
+					POSIXACL:                   ptr.To(true),
+					AtimeUpdateIntervalSeconds: ptr.To(int64(600)),
+				},
+			},
+		},
+	}
+
+	resolved := saga.resolveGenerateRequest()
+	require.False(t, resolved.Spec.StorageType.NFS.RootSquash)
+	require.Equal(t, ptr.To(false), resolved.Spec.StorageType.NFS.PosixAcl)
+	require.Equal(t, ptr.To(int64(0)), resolved.Spec.StorageType.NFS.AtimeUpdateIntervalSeconds)
+}
+
 func TestUpdateEmptySnapshotPoliciesClearsExistingPolicies(t *testing.T) {
 	t.Parallel()
 
@@ -1549,7 +1661,9 @@ func updateStorageV2ForSnapshotPolicyTest(t *testing.T, configure func(*openapi.
 				Size:           *resource.NewQuantity(10*giB, resource.BinarySI),
 				StorageClassID: "sc-1",
 				NFS: &regionv1.NFS{
-					RootSquash: true,
+					RootSquash:                 true,
+					POSIXACL:                   ptr.To(true),
+					AtimeUpdateIntervalSeconds: ptr.To(int64(600)),
 				},
 				SnapshotPolicies: []regionv1.FileStorageSnapshotPolicy{
 					{
@@ -1587,6 +1701,13 @@ func updateStorageV2ForSnapshotPolicyTest(t *testing.T, configure func(*openapi.
 		Metadata: corev1.ResourceWriteMetadata{Name: "test-filestorage"},
 		Spec: openapi.StorageV2Spec{
 			SizeGiB: 10,
+			StorageType: openapi.StorageTypeV2Spec{
+				NFS: &openapi.NFSV2Spec{
+					RootSquash:                 true,
+					PosixAcl:                   ptr.To(true),
+					AtimeUpdateIntervalSeconds: ptr.To(int64(600)),
+				},
+			},
 		},
 	}
 
@@ -1782,7 +1903,9 @@ func TestGenerateV2(t *testing.T) {
 						},
 					},
 					NFS: &regionv1.NFS{
-						RootSquash: true,
+						RootSquash:                 true,
+						POSIXACL:                   ptr.To(false),
+						AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
 					},
 				},
 			},
@@ -2507,6 +2630,13 @@ func newDefaultGenerateV2Input() *generateV2Input {
 				DefaultSnapshotProtectionEnabled: true,
 				SizeGiB:                          10,
 				Attachments:                      &openapi.StorageAttachmentV2Spec{NetworkIds: openapi.NetworkIDList{testNetworkID}},
+				StorageType: openapi.StorageTypeV2Spec{
+					NFS: &openapi.NFSV2Spec{
+						RootSquash:                 true,
+						PosixAcl:                   ptr.To(false),
+						AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
+					},
+				},
 			},
 		},
 	}

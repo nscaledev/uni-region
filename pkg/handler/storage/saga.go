@@ -217,12 +217,10 @@ func newUpdateSaga(client *Client, current *regionv1.FileStorage, request *opena
 	}
 }
 
-// resolveGenerateRequest builds the update's generate request with snapshot
-// policies and default protection resolved against the current state: a nil
-// policy list preserves the current user-managed policies and a nil default
-// protection flag preserves the current value. The result is deterministic from
-// request + current, so validateRequest and generate share it and
-// the reserved-name check sees exactly what generate will persist.
+// resolveGenerateRequest builds the update's generate request with omitted
+// snapshot policies resolved against the current state. The result is deterministic
+// from request + current, so validateRequest and generate share it and the
+// reserved-name check sees exactly what generate will persist.
 func (s *updateSaga) resolveGenerateRequest() *storageV2GenerateRequest {
 	generateRequest := generateRequestFromUpdate(s.request, s.current.Spec.DefaultSnapshotProtectionEnabled)
 
