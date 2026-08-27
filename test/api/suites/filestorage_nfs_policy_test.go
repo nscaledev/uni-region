@@ -21,6 +21,7 @@ limitations under the License.
 package suites
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"strconv"
@@ -41,6 +42,9 @@ const (
 	// nfsPolicyAtimeIntervalSeconds is the atime update threshold under test. A read
 	// advances the server-side atime only when the stored atime is staler than this.
 	nfsPolicyAtimeIntervalSeconds = int64(600)
+	// nfsPolicyStaleAtimeEpochSeconds is 2000-01-01T00:00:00Z, safely older
+	// than the positive interval regardless of clock skew between test systems.
+	nfsPolicyStaleAtimeEpochSeconds = int64(946_684_800)
 
 	// nfsPolicyACLProbeUID is an arbitrary numeric principal for setfacl. The storage
 	// backend stores and serves numeric entries, so no matching local user is needed.
@@ -51,14 +55,18 @@ const (
 	// actimeo=0 disables client attribute caching so stat reflects server-side atime.
 	nfsPolicyMountOptions = "vers=3,proto=tcp,sec=sys,hard,acl,actimeo=0,lookupcache=none"
 
-	nfsPolicyPropagationTimeout = 5 * time.Minute
-	nfsPolicyPropagationPolling = 15 * time.Second
+	nfsPolicyPropagationTimeout  = 5 * time.Minute
+	nfsPolicyPropagationPolling  = 15 * time.Second
+	nfsPolicyDisabledObservation = 15 * time.Second
+	nfsPolicyDisabledPolling     = 2 * time.Second
 )
+
+var errReadAdvancedAtime = errors.New("read advanced atime")
 
 var _ = Describe("File Storage Management", func() {
 	Context("When exercising NFS policy options against a mounted filesystem", func() {
 		Describe("Given NFSv3 file storage with POSIX ACLs enabled and a 600-second atime interval", func() {
-			It("persists the policy fields and enforces setfacl gating and the atime threshold", Label("slow"), func() {
+			It("persists the policy fields and enforces setfacl gating and atime behavior", Label("slow"), func() {
 				mounted := EventuallyProvisionMountedFilesystem(mountedFilesystemOptions{
 					nfs: &regionopenapi.NFSV2Spec{
 						PosixAcl:                   ptr.To(true),
@@ -96,9 +104,9 @@ var _ = Describe("File Storage Management", func() {
 				// 16 MiB forces real READ operations; a backdate beyond the interval is the
 				// positive control, an immediate re-read inside the window the negative one.
 				runSSHCommandExpectNoError(mounted.SSHClient, fmt.Sprintf("dd if=/dev/urandom of=%s bs=1M count=16 status=none && sync", shellQuote(atimeFile)))
-				runSSHCommandExpectNoError(mounted.SSHClient, fmt.Sprintf("touch -a -d '15 minutes ago' %s && sync", shellQuote(atimeFile)))
 
-				staleAtime := remoteFileAtimeEpoch(mounted.SSHClient, atimeFile)
+				staleAtime, err := backdateRemoteFileAtime(mounted.SSHClient, atimeFile)
+				Expect(err).NotTo(HaveOccurred())
 				remoteNow := remoteEpochSeconds(mounted.SSHClient)
 				Expect(remoteNow-staleAtime).To(BeNumerically(">", nfsPolicyAtimeIntervalSeconds),
 					"backdated atime should be staler than the interval")
@@ -115,7 +123,7 @@ var _ = Describe("File Storage Management", func() {
 				unchangedAtime := remoteFileAtimeEpoch(mounted.SSHClient, atimeFile)
 				Expect(unchangedAtime).To(Equal(refreshedAtime), "read within the threshold window should not advance atime")
 
-				By("disabling POSIX ACLs via update, resetting the omitted atime interval")
+				By("disabling POSIX ACLs and read-driven atime updates via update")
 				// Attachments must be resent: an omitted attachment list detaches the
 				// network and would break the live mount.
 				update := regionopenapi.StorageV2UpdateRequest{
@@ -126,7 +134,10 @@ var _ = Describe("File Storage Management", func() {
 						Attachments: &regionopenapi.StorageAttachmentV2Spec{NetworkIds: []string{mounted.NetworkID}},
 						SizeGiB:     storageSizeGiB,
 						StorageType: regionopenapi.StorageTypeV2Spec{
-							NFS: &regionopenapi.NFSV2Spec{PosixAcl: ptr.To(false)},
+							NFS: &regionopenapi.NFSV2Spec{
+								PosixAcl:                   ptr.To(false),
+								AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
+							},
 						},
 					},
 				}
@@ -134,6 +145,43 @@ var _ = Describe("File Storage Management", func() {
 				updated, err := regionClient.UpdateFileStorage(ctx, storageID, update)
 				Expect(err).NotTo(HaveOccurred())
 				expectNFSPolicyValues(updated, false, false, 0)
+
+				By("waiting for explicit zero to disable read-driven atime updates")
+				// Reset before every attempt so a read under the old 600-second policy
+				// cannot make a later retry look disabled.
+				Eventually(func() error {
+					baseline, err := backdateRemoteFileAtime(mounted.SSHClient, atimeFile)
+					if err != nil {
+						return err
+					}
+
+					_, stderr, err := runSSHCommandReturnResult(mounted.SSHClient, directReadCmd, sshCmdTimeout)
+					if err != nil {
+						return fmt.Errorf("direct read while waiting for atime updates to be disabled: %w\nstderr:\n%s", err, stderr)
+					}
+
+					current, err := readRemoteFileAtimeEpoch(mounted.SSHClient, atimeFile)
+					if err != nil {
+						return err
+					}
+					if current != baseline {
+						return fmt.Errorf("%w from %d to %d", errReadAdvancedAtime, baseline, current)
+					}
+
+					return nil
+				}).WithTimeout(nfsPolicyPropagationTimeout).
+					WithPolling(nfsPolicyPropagationPolling).
+					Should(Succeed(), "a read should leave stale atime unchanged once explicit zero reaches the filesystem")
+
+				disabledAtime, err := backdateRemoteFileAtime(mounted.SSHClient, atimeFile)
+				Expect(err).NotTo(HaveOccurred())
+				Consistently(func() int64 {
+					runSSHCommandExpectNoError(mounted.SSHClient, directReadCmd)
+
+					return remoteFileAtimeEpoch(mounted.SSHClient, atimeFile)
+				}).WithTimeout(nfsPolicyDisabledObservation).
+					WithPolling(nfsPolicyDisabledPolling).
+					Should(Equal(disabledAtime), "subsequent reads should not advance atime while updates are disabled")
 
 				By("waiting for the disabled POSIX ACL policy to propagate to the filesystem")
 				disabledFile := path.Join(caseDir, "acl-disabled-probe")
@@ -204,13 +252,38 @@ func mustEnsureACLTools(client *ssh.Client) {
 	runSSHCommandExpectNoError(client, nfsPolicyACLToolsPresentCmd)
 }
 
-func remoteFileAtimeEpoch(client *ssh.Client, filePath string) int64 {
-	stdout := runSSHCommandExpectNoError(client, fmt.Sprintf("stat -c %%X %s", shellQuote(filePath)))
+func backdateRemoteFileAtime(client *ssh.Client, filePath string) (int64, error) {
+	command := fmt.Sprintf("touch -a -d @%d %s && sync", nfsPolicyStaleAtimeEpochSeconds, shellQuote(filePath))
 
-	epoch, err := strconv.ParseInt(strings.TrimSpace(stdout), 10, 64)
-	Expect(err).NotTo(HaveOccurred(), "parsing atime epoch from stat output %q", stdout)
+	_, stderr, err := runSSHCommandReturnResult(client, command, sshCmdTimeout)
+	if err != nil {
+		return 0, fmt.Errorf("backdating atime: %w\nstderr:\n%s", err, stderr)
+	}
+
+	return readRemoteFileAtimeEpoch(client, filePath)
+}
+
+func remoteFileAtimeEpoch(client *ssh.Client, filePath string) int64 {
+	epoch, err := readRemoteFileAtimeEpoch(client, filePath)
+	Expect(err).NotTo(HaveOccurred())
 
 	return epoch
+}
+
+func readRemoteFileAtimeEpoch(client *ssh.Client, filePath string) (int64, error) {
+	command := fmt.Sprintf("stat -c %%X %s", shellQuote(filePath))
+
+	stdout, stderr, err := runSSHCommandReturnResult(client, command, sshCmdTimeout)
+	if err != nil {
+		return 0, fmt.Errorf("reading atime: %w\nstderr:\n%s", err, stderr)
+	}
+
+	epoch, err := strconv.ParseInt(strings.TrimSpace(stdout), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parsing atime epoch from stat output %q: %w", stdout, err)
+	}
+
+	return epoch, nil
 }
 
 func remoteEpochSeconds(client *ssh.Client) int64 {
