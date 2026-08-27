@@ -396,7 +396,11 @@ func (c *Client) Update(ctx context.Context, organizationID identityids.Organiza
 	updated.Spec = required.Spec
 
 	if err := c.Client.Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
-		return nil, fmt.Errorf("%w: unable to updated security group", err)
+		if kerrors.IsConflict(err) {
+			return nil, errors.HTTPConflict().WithError(err)
+		}
+
+		return nil, fmt.Errorf("%w: unable to update security group", err)
 	}
 
 	return convert(updated), nil
