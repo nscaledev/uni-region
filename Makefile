@@ -1,8 +1,10 @@
 # Application version encoded in all the binaries.
 VERSION = 0.0.0
 
-# Keep Makefile Go commands on the toolchain declared in go.mod.
-GOTOOLCHAIN := go$(shell awk '$$1 == "go" { print $$2; exit }' go.mod)
+# Pin Makefile Go commands to CI's Go version. The `go` directive is a minimum,
+# so GOTOOLCHAIN=auto leaves a newer local Go installation unchanged.
+GO_VERSION := $(shell awk '$$1 == "go" { print $$2; exit }' go.mod)
+GOTOOLCHAIN := go$(GO_VERSION)
 export GOTOOLCHAIN
 
 # Base go module name.
