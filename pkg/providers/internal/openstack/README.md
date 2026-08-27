@@ -474,6 +474,117 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
 - Provider networks that require VLAN segmentation use the local VLAN allocator
   because OpenStack does not allocate those IDs for us.
 
+## Credential Sessions
+
+A credential's callers arrive in herds. Every `New*Client` used to be a full
+`AuthenticatedClient` — a Keystone password grant plus a service catalog fetch —
+and a reconcile builds two or three. Meanwhile a pinned server authenticates as
+the Region admin user scoped to the service principal's project rather than as the
+tenant service principal, so every server pinned to one identity shares one
+credential. A restart resync of an identity holding 1157 servers asked for that
+one credential a couple of thousand times inside a few minutes, and the health
+monitor asked for it again for every server, every minute.
+
+A `Session` is the per-credential state that outlives every service client built
+from it, keyed on the whole credential so a rotated secret can never be served a
+client authenticated with the old one. It caches the authenticated
+`ProviderClient` and collapses concurrent cold-start logins into one, which is
+what a controller restart needs: no client is cached yet at the moment the herd
+arrives.
+
+Cache the `ProviderClient`, not the derived service clients. It holds the token,
+carries `ReauthFunc` and serialises its own reauth internally, so it refreshes in
+place. Caching derived clients would synchronise token expiry across a burst —
+everything built in one burst expiring in one burst — and reform the herd an hour
+later.
+
+Three things follow that are worth knowing.
+
+**The service catalog is pinned for the life of the process.** gophercloud's
+`v3auth` closes `EndpointLocator` over the catalog from the login that built the
+client, and `ReauthFunc` only copies the refreshed token back, not a new catalog.
+An operator who moves a service's public endpoint in Keystone needs this process
+restarted; previously each client construction re-fetched the catalog and
+self-healed within a reconcile. The same applies to a service *added* to the
+catalog after startup — enabling Octavia on a live region leaves load-balancer
+clients failing endpoint lookup until a restart. The operator-facing procedure is
+in [ADMIN.md](./ADMIN.md), because the symptom points away from the cause: calls
+fail against an endpoint that has already been changed while Keystone itself is
+healthy, and nothing logs the staleness.
+
+**The shared client carries a request timeout, and must.** Sharing a client shares
+gophercloud's reauth serialisation: `AuthenticatedHeaders` waits for an
+in-progress refresh on *every* request, on a channel receive that consults no
+context. One caller whose refresh hangs would otherwise park every other caller on
+that credential — reconciles, the monitor, and the synchronous reboot, start, stop
+and console handlers — below the level at which their own contexts could rescue
+them. A zero-value `http.Client` has no timeout, so the bound is set explicitly.
+
+It is set *before* authenticating, which is not interchangeable with setting it
+afterwards: gophercloud copies the client by value to build the one it
+reauthenticates with, so a timeout assigned after the login leaves both the login
+and every subsequent reauth unbounded — and the reauth is the request every other
+caller waits behind. Pinned by `TestSessionBoundsTheLoginItself`.
+
+The bound now applies to every OpenStack call made with a shared client, all of
+which were previously unbounded. Every call in this package is ordinary
+request/response and pagination pays the bound per page, so the value is
+defensible, but a call that legitimately took longer would now fail where it used
+to succeed.
+
+It bounds a *request*, not a call. One call can serialise a context-free wait on
+another caller's in-progress reauth, its own request, a reauth on a 401, and the
+retry, so the worst case a caller observes is several multiples of it. A cold
+login against a versionless Keystone endpoint is likewise two bounded requests,
+discovery and the grant. Do not size an upstream timeout off the single-request
+figure.
+
+The detaching covers the cold-start login only, because that is the one this
+package's code owns. gophercloud owns the reauth and runs it under whichever
+caller's request received the 401, sharing that one result with every caller
+refreshing at the same moment — so at token expiry a caller that hangs up
+mid-refresh can hand its cancellation to the others. They error and retry and it
+self-heals, so this is a spurious failure rather than a stuck credential, but it
+is a consequence of sharing that did not exist when every caller refreshed its
+own client.
+
+Callers waiting on someone else's login keep their own contexts and stop waiting
+when those are done. The login itself runs detached from whichever caller opened
+it, so a handler whose client hung up cannot fail the healthy reconciles that
+joined its flight, and a caller that gives up leaves the login to finish and
+populate the cache rather than wasting it.
+
+**Entries are never evicted**, and grow by two per `OpenstackIdentity` the process
+has ever seen — the service principal's own password and the Region admin scoped
+to that identity's project — rather than tracking the live identity count. An
+entry appears when a provider is constructed, whether or not it ever logs in, and
+rotating the Region admin secret re-keys every identity-scoped session and adds
+another entry per live identity. Each retains a decoded token response and the
+service catalog it closes over, which is tens of kilobytes, not nothing. For a
+long-lived controller against a churning estate that is worth bounding; the cost
+of an eviction is one login.
+
+### What this deliberately does not do
+
+It does not share provider *reads*. Collapsing `GetServer` was measured and
+rejected. Nova's name filter is a regular expression, so a filtered read scans the
+project and returns one row; dropping the filter would let concurrent callers
+share one list, but it returns every row in the project to every caller. Against a
+modelled 1538-server estate the unfiltered form cost the sequential monitor cycle
+1m40s where the filtered form costs 35s, which is the difference between fitting
+the one-minute poll period and not, and a bulk create emitted three orders of
+magnitude more instance records because each create retires the sharing anyway.
+Sharing the reads would also have needed a guard against a caller joining a read
+opened before its own create and building a second server.
+
+The real saving on the monitor's path is not a shared read but a single read: it
+walks servers one at a time (`pkg/monitor/health/server/check.go`), so one list
+per identity per cycle indexed by name would replace a read per server with a
+read per identity — around two orders of magnitude fewer requests against that
+same estate.
+Observation-only reads are allowed to do that; see the note on projected status in
+[the API package](../../../apis/unikorn/v1alpha1/README.md).
+
 ## Octavia Load Balancers
 
 OpenStack load balancers are reconciled through Octavia in the service

@@ -212,3 +212,36 @@ spec:
             maxThroughputMiBps: 500
           encrypted: true
 ```
+
+## Changing A Service Catalog Endpoint
+
+**Changing a service's endpoint in Keystone requires the region controllers to be
+restarted.** This applies to moving an existing endpoint — a hostname change, a
+TLS cutover, an endpoint migration — and equally to *enabling a new service*, for
+example turning on Octavia for a region that did not have it.
+
+The region service authenticates once per credential and keeps the resulting
+client, and that client resolves every service endpoint through the catalog it was
+handed at login. It does not re-read the catalog when the token refreshes. So
+until the process restarts it keeps calling whatever the catalog said when it
+started, and a service added afterwards is not in that catalog at all.
+
+The symptom points away from the cause. Compute, network, block storage,
+load-balancer or Ironic calls fail against an endpoint the operator has already
+changed, or a newly enabled service reports its endpoint as not found, while
+Keystone itself is healthy and every other region works. Nothing logs the
+staleness, because from the controller's point of view the catalog it holds is the
+catalog it was given.
+
+After any catalog change, roll the region deployments:
+
+```shell
+kubectl --namespace unikorn-region rollout restart deployment \
+    --selector app.kubernetes.io/instance=<release name>
+kubectl --namespace unikorn-region rollout status deployment \
+    --selector app.kubernetes.io/instance=<release name>
+```
+
+The controllers hold their own clients, so every one that talks to the affected
+service needs restarting, not just the API. Restarting the whole release is the
+simple answer.

@@ -29,22 +29,17 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 )
 
-// authenticatedClient returns a provider client used to initialize service clients.
-func authenticatedClient(ctx context.Context, options gophercloud.AuthOptions) (*gophercloud.ProviderClient, error) {
+// CredentialProvider abstracts authentication methods.
+type CredentialProvider interface {
+	// Client returns the provider client for these credentials. For the
+	// authenticating implementations, concurrent callers share one client and one
+	// login — see Session — so the returned client must be treated as shared and
+	// never reconfigured by a caller. UnauthenticatedProvider has no credentials
+	// to share and builds a client per call.
+	//
 	// TODO: the JWT token issuer will cap the expiry at that of the
 	// keystone token, so we shouldn't get an unauthorized error.  Just
 	// as well as we cannot disambiguate from what gophercloud returns.
-	client, err := openstack.AuthenticatedClient(ctx, options)
-	if err != nil {
-		return nil, err
-	}
-
-	return client, nil
-}
-
-// CredentialProvider abstracts authentication methods.
-type CredentialProvider interface {
-	// Client returns a new provider client.
 	Client(ctx context.Context) (*gophercloud.ProviderClient, error)
 }
 
@@ -53,6 +48,7 @@ type ApplicationCredentialProvider struct {
 	endpoint string
 	id       string
 	secret   string
+	session  *Session
 }
 
 // Ensure the interface is implemented.
@@ -65,6 +61,7 @@ func NewApplicationCredentialProvider(endpoint, id, secret string) *ApplicationC
 		endpoint: endpoint,
 		id:       id,
 		secret:   secret,
+		session:  sessionFor("application-credential", endpoint, id, secret),
 	}
 }
 
@@ -77,7 +74,7 @@ func (p *ApplicationCredentialProvider) Client(ctx context.Context) (*gopherclou
 		AllowReauth:                 true,
 	}
 
-	return authenticatedClient(ctx, options)
+	return p.session.authenticate(ctx, options)
 }
 
 // PasswordProvider allows use of an application credential.
@@ -86,6 +83,7 @@ type PasswordProvider struct {
 	userID    string
 	password  string
 	projectID string
+	session   *Session
 }
 
 // Ensure the interface is implemented.
@@ -99,6 +97,7 @@ func NewPasswordProvider(endpoint, userID, password, projectID string) *Password
 		userID:    userID,
 		password:  password,
 		projectID: projectID,
+		session:   sessionFor("password", endpoint, userID, password, projectID),
 	}
 }
 
@@ -114,7 +113,7 @@ func (p *PasswordProvider) Client(ctx context.Context) (*gophercloud.ProviderCli
 		},
 	}
 
-	return authenticatedClient(ctx, options)
+	return p.session.authenticate(ctx, options)
 }
 
 // DomainScopedPasswordProvider allows use of an application credential.
@@ -123,6 +122,7 @@ type DomainScopedPasswordProvider struct {
 	userID   string
 	password string
 	domainID string
+	session  *Session
 }
 
 // Ensure the interface is implemented.
@@ -136,6 +136,7 @@ func NewDomainScopedPasswordProvider(endpoint, userID, password, domainID string
 		userID:   userID,
 		password: password,
 		domainID: domainID,
+		session:  sessionFor("domain-scoped-password", endpoint, userID, password, domainID),
 	}
 }
 
@@ -151,7 +152,7 @@ func (p *DomainScopedPasswordProvider) Client(ctx context.Context) (*gophercloud
 		AllowReauth: true,
 	}
 
-	return authenticatedClient(ctx, options)
+	return p.session.authenticate(ctx, options)
 }
 
 // TokenProvider creates a client from an endpoint and token.
@@ -162,6 +163,8 @@ type TokenProvider struct {
 
 	// token is an Openstack authorization token.
 	token string
+
+	session *Session
 }
 
 // Ensure the interface is implemented.
@@ -172,6 +175,7 @@ func NewTokenProvider(endpoint, token string) *TokenProvider {
 	return &TokenProvider{
 		endpoint: endpoint,
 		token:    token,
+		session:  sessionFor("token", endpoint, token),
 	}
 }
 
@@ -183,7 +187,7 @@ func (p *TokenProvider) Client(ctx context.Context) (*gophercloud.ProviderClient
 		AllowReauth:      true,
 	}
 
-	return authenticatedClient(ctx, options)
+	return p.session.authenticate(ctx, options)
 }
 
 // UnauthenticatedProvider is used for token issue.
