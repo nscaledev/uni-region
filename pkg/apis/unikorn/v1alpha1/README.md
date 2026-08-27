@@ -102,11 +102,12 @@ stored objects rely on for linkage, migration, and operational coordination.
   `Server` is the current supported claim kind. `Server.Status.Volumes` projects
   attachment progress, optional provider device, and a safe message.
   `Volume.Status.AttachedAt` records when the current attachment was first
-  confirmed; omission means no current attachment is recorded. Future attachment
-  reconciliation will
-  advance `ObservedGeneration` only after both backing volume and requested
-  attachment state converge, and will report attachment errors through the generic
-  `Available` condition. The Volume controller drives provider create/delete,
+  confirmed; omission means no current attachment is recorded. The Volume
+  controller advances `ObservedGeneration`
+  only after both backing Volume and requested attachment state converge,
+  reports attachment errors through the generic `Available` condition, and
+  discovers provider attachments from the Volume before detaching them. The
+  controller drives provider create/delete,
   but provider-side volume identity is rediscovered by stable provider lookup
   rather than mirrored into status.
   The Volume controller exclusively owns the generic `Available` provisioning

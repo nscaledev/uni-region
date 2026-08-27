@@ -38,13 +38,20 @@ the referenced Region `Identity` available through this cleanup; a missing
 Identity remains an error and preserves the Volume finalizer.
 Provider lookup errors also preserve the allocation and finalizer for retry.
 
-Provider observation/status projection lives in
-[`pkg/monitor/health/volume`](../../../monitor/health/volume/README.md) until
-controller-owned observation is enabled. Quota
-policy, Network graph-edge reconciliation, HTTP handlers, and server
-attachment reconciliation remain outside this package. The provider-specific
-state classification needed to decide whether create has converged remains
-inside the provider implementation.
+After the backing Volume converges, this provisioner reconciles its single
+claimed Server attachment. It reads the handler-owned Volume claim and Server
+intent, then calls the provider attachment boundary. A provisioning or errored
+Server yields; its condition can recover without a Volume generation change.
+The provider remains authoritative for attachment and detach work. The
+provisioner projects progress only onto `Server.Status.Volumes`; it never uses
+that derived projection to decide provider cleanup. It advances the Volume
+observed generation only when both the backing Volume and attachment converge.
+
+This controller still watches only Volume generation changes. General provider
+observation/status mapping, quota policy, Network graph-edge reconciliation,
+and HTTP handlers are outside this package. The provider-specific state
+classification needed to decide whether create has converged remains inside the
+provider implementation.
 
 ## Cross-Package Context
 
