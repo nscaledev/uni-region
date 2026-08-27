@@ -19,6 +19,8 @@ package securitygroup_test
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -41,10 +43,14 @@ import (
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 const (
@@ -521,6 +527,45 @@ func TestSGUpdateV2(t *testing.T) {
 	require.Len(t, result.Spec.Rules, 1)
 	require.Equal(t, openapi.NetworkDirectionIngress, result.Spec.Rules[0].Direction)
 	require.Equal(t, sgNetworkID, result.Status.NetworkId)
+}
+
+func TestSGUpdateV2ConflictReturnsInternalServerError(t *testing.T) {
+	t.Parallel()
+
+	network := testNetworkWithProject(sgOrganizationID, sgProjectID)
+	resource := testSecurityGroupV2(sgSecurityGroupID)
+
+	var patches atomic.Int32
+
+	k8sClient := newSGFakeClient(t, network, resource).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(_ context.Context, _ client.WithWatch, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
+				if patches.Add(1) == 1 {
+					return kerrors.NewConflict(schema.GroupResource{Group: regionv1.GroupName, Resource: "securitygroups"}, obj.GetName(), nil)
+				}
+
+				return nil
+			},
+		}).
+		Build()
+
+	c := securitygroup.New(common.ClientArgs{Client: k8sClient, Namespace: sgNamespace})
+	ctx := withSGPrincipal(rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read, identityapi.Update, identityapi.Delete)))
+	request := &openapi.SecurityGroupV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: "sg-1"},
+		Spec: openapi.SecurityGroupV2Spec{Rules: openapi.SecurityGroupRuleV2List{{
+			Direction: openapi.NetworkDirectionIngress,
+			Protocol:  openapi.NetworkProtocolAny,
+		}}},
+	}
+
+	_, err := c.UpdateV2(ctx, idstest.MustParseSecurityGroupID(sgSecurityGroupID), request)
+
+	require.Error(t, err)
+	response := httptest.NewRecorder()
+	coreerrors.HandleError(response, httptest.NewRequestWithContext(ctx, http.MethodPut, "/api/v2/securitygroups/"+sgSecurityGroupID, nil), err)
+	require.Equal(t, http.StatusInternalServerError, response.Code)
+	require.Equal(t, int32(1), patches.Load())
 }
 
 // TestSGUpdateV2NotFound verifies updating a missing security group returns 404.
