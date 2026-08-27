@@ -102,11 +102,12 @@ accounting meet.
   hidden `system-default` baseline, which never counts against the caller maximum.
 - Update preserves the existing allocation annotation while mutating the storage
   resource.
-- `posixAcl` and `atimeUpdateIntervalSeconds` are optional and non-nullable in
-  the public NFS contract. Create omission persists concrete defaults of `false`
-  and `0`. Update omission preserves the corresponding stored pointer, while
-  explicit `false` and `0` remain updates. The API does not expose a way to clear
-  a managed value back to `nil`.
+- `posixAcl` and `atimeUpdateIntervalSeconds` are optional and nullable on create
+  and update. The handler resolves omission or explicit null to `false` and `0`
+  before persistence.
+- The stored NFS policy uses defaulted values. PUT never merges omitted NFS
+  policy fields from stored state, and every GET or list result returns the
+  complete effective policy.
 - Enabling POSIX ACLs may reduce metadata performance. Extended POSIX
   ACLs must be managed over NFSv3. Disabling this option does not remove existing
   ACLs; they may remain enforced.

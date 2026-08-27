@@ -138,17 +138,16 @@ const (
 	GetApiV2RegionsRegionIDImagesParamsScopeOwned     GetApiV2RegionsRegionIDImagesParamsScope = "owned"
 )
 
-// NFSV2Spec NFS specific
+// NFSV2Spec NFS settings supplied during create or update.
 type NFSV2Spec struct {
-	// AtimeUpdateIntervalSeconds On create, omission resolves to 0. On update, omission preserves the current setting.
-	// Explicit null is invalid.
+	// AtimeUpdateIntervalSeconds Omission or explicit null resolves to 0.
 	//
 	// Set to 0 to disable read-driven atime updates. A positive value updates atime during a read
-	// only when the existing atime is older than this number of seconds.
+	// only when the existing atime is older than this number of seconds. Maximum: 86,399,999,999,999
+	// seconds.
 	AtimeUpdateIntervalSeconds *int64 `json:"atimeUpdateIntervalSeconds,omitempty"`
 
-	// PosixAcl Whether extended POSIX ACL support is enabled. On create, omission resolves to false.
-	// On update, omission preserves the current setting. Explicit null is invalid.
+	// PosixAcl Whether extended POSIX ACL support is enabled. Omission or explicit null resolves to false.
 	//
 	// Enabling POSIX ACLs may reduce metadata performance. Extended POSIX ACLs must be managed over
 	// NFSv3. Disabling this option does not remove existing ACLs; they may remain enforced.
@@ -1489,7 +1488,7 @@ type StorageSnapshotScheduleV2Spec struct {
 
 // StorageTypeV2Spec A storage's type
 type StorageTypeV2Spec struct {
-	// NFS NFS specific
+	// NFS NFS settings supplied during create or update.
 	NFS *NFSV2Spec `json:"NFS,omitempty"`
 }
 
@@ -1505,7 +1504,7 @@ type StorageUsageV2Status struct {
 	UsedBytes *int64 `json:"usedBytes,omitempty"`
 }
 
-// StorageV2Create A storage create request. When spec.defaultSnapshotProtectionEnabled is omitted, Default Snapshot Protection is enabled. Explicit null defaultSnapshotProtectionEnabled is invalid. When spec.snapshotPolicies is omitted or empty, the API stores no user-managed Snapshot Policies. Non-empty policy lists are stored exactly as supplied.
+// StorageV2Create A storage create request. Omitted or null NFS POSIX ACL and atime settings resolve to false and 0. When spec.defaultSnapshotProtectionEnabled is omitted, Default Snapshot Protection is enabled. Explicit null defaultSnapshotProtectionEnabled is invalid. When spec.snapshotPolicies is omitted or empty, the API stores no user-managed Snapshot Policies. Non-empty policy lists are stored exactly as supplied.
 type StorageV2Create struct {
 	// Metadata Metadata required for all API resource reads and writes.
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
@@ -1593,7 +1592,7 @@ type StorageV2Status struct {
 	Usage *StorageUsageV2Status `json:"usage,omitempty"`
 }
 
-// StorageV2Update A storage update request. Omitted spec.defaultSnapshotProtectionEnabled preserves the current Default Snapshot Protection setting, and explicit null is invalid. Omitted spec.snapshotPolicies preserves existing desired user-managed Snapshot Policies, an empty list clears them, and a non-empty list replaces the full list.
+// StorageV2Update A storage update request. Omitted or null NFS POSIX ACL and atime settings resolve to false and 0 rather than preserving prior state. Omitted spec.defaultSnapshotProtectionEnabled preserves the current Default Snapshot Protection setting, and explicit null is invalid. Omitted spec.snapshotPolicies preserves existing desired user-managed Snapshot Policies, an empty list clears them, and a non-empty list replaces the full list.
 type StorageV2Update struct {
 	// Metadata Metadata required for all API resource reads and writes.
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
@@ -1913,10 +1912,10 @@ type SnapshotServerRequest = SnapshotCreate
 // SshCertificateAuthorityV2CreateRequest An SSH certificate authority creation request.
 type SshCertificateAuthorityV2CreateRequest = SshCertificateAuthorityV2Create
 
-// StorageV2CreateRequest A storage create request. When spec.defaultSnapshotProtectionEnabled is omitted, Default Snapshot Protection is enabled. Explicit null defaultSnapshotProtectionEnabled is invalid. When spec.snapshotPolicies is omitted or empty, the API stores no user-managed Snapshot Policies. Non-empty policy lists are stored exactly as supplied.
+// StorageV2CreateRequest A storage create request. Omitted or null NFS POSIX ACL and atime settings resolve to false and 0. When spec.defaultSnapshotProtectionEnabled is omitted, Default Snapshot Protection is enabled. Explicit null defaultSnapshotProtectionEnabled is invalid. When spec.snapshotPolicies is omitted or empty, the API stores no user-managed Snapshot Policies. Non-empty policy lists are stored exactly as supplied.
 type StorageV2CreateRequest = StorageV2Create
 
-// StorageV2UpdateRequest A storage update request. Omitted spec.defaultSnapshotProtectionEnabled preserves the current Default Snapshot Protection setting, and explicit null is invalid. Omitted spec.snapshotPolicies preserves existing desired user-managed Snapshot Policies, an empty list clears them, and a non-empty list replaces the full list.
+// StorageV2UpdateRequest A storage update request. Omitted or null NFS POSIX ACL and atime settings resolve to false and 0 rather than preserving prior state. Omitted spec.defaultSnapshotProtectionEnabled preserves the current Default Snapshot Protection setting, and explicit null is invalid. Omitted spec.snapshotPolicies preserves existing desired user-managed Snapshot Policies, an empty list clears them, and a non-empty list replaces the full list.
 type StorageV2UpdateRequest = StorageV2Update
 
 // VolumeV2CreateRequest A volume creation request.

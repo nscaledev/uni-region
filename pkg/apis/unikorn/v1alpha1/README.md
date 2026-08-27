@@ -87,10 +87,10 @@ stored objects rely on for linkage, migration, and operational coordination.
   resource types. Attachment-level provisioning state, observed size, usage
   reporting, and per-policy snapshot status are part of the stored
   reconciliation contract.
-- `FileStorage.Spec.NFS` stores optional POSIX ACL and atime update interval
-  desired state as pointers. Omission remains distinct from explicit `false`
-  and `0`. The CRD does not default either field. An atime value of `0` means
-  read-driven updates are disabled.
+- `FileStorage.Spec.NFS` stores POSIX ACL and atime update interval desired state
+  as required, defaulted values. The CRD defaults missing values to `false` and
+  `0` before validation. An atime value of `0` means read-driven updates are
+  disabled.
 - `Volume` is the Region-owned block storage primitive. It is anchored to a
   `Network`, carries its own requested capacity and volume class identity, and
   is expected to carry quota/accounting responsibility in the Region layer.

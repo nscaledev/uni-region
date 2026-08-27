@@ -17,6 +17,7 @@ limitations under the License.
 package openapi_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -32,24 +33,27 @@ func TestFileStorageNFSPolicyContract(t *testing.T) {
 	swagger, err := openapi.GetSwagger()
 	require.NoError(t, err)
 
-	storageType := componentSchema(t, swagger, "storageTypeV2Spec")
-	requireSchemaPropertyRef(t, storageType, "NFS", "#/components/schemas/NFSV2Spec")
+	writeStorageType := componentSchema(t, swagger, "storageTypeV2Spec")
+	requireSchemaPropertyRef(t, writeStorageType, "NFS", "#/components/schemas/NFSV2Spec")
+	require.NotContains(t, writeStorageType.Required, "NFS")
 
-	nfs := componentSchema(t, swagger, "NFSV2Spec")
-	require.Contains(t, nfs.Required, "rootSquash")
+	writeNFS := componentSchema(t, swagger, "NFSV2Spec")
+	require.Contains(t, writeNFS.Required, "rootSquash")
+	require.NotContains(t, writeNFS.Required, "posixAcl")
+	require.NotContains(t, writeNFS.Required, "atimeUpdateIntervalSeconds")
 
-	posixACL := schemaProperty(t, nfs, "posixAcl")
-	require.NotContains(t, nfs.Required, "posixAcl")
+	posixACL := schemaProperty(t, writeNFS, "posixAcl")
 	require.NotNil(t, posixACL.Type)
 	require.True(t, posixACL.Type.Includes("boolean"))
-	require.False(t, posixACL.PermitsNull())
+	require.True(t, posixACL.PermitsNull())
+	require.Equal(t, false, posixACL.Default)
 
-	atime := schemaProperty(t, nfs, "atimeUpdateIntervalSeconds")
-	require.NotContains(t, nfs.Required, "atimeUpdateIntervalSeconds")
+	atime := schemaProperty(t, writeNFS, "atimeUpdateIntervalSeconds")
 	require.NotNil(t, atime.Type)
 	require.True(t, atime.Type.Includes("integer"))
 	require.Equal(t, "int64", atime.Format)
-	require.False(t, atime.PermitsNull())
+	require.True(t, atime.PermitsNull())
+	require.EqualValues(t, 0, atime.Default)
 	require.NotNil(t, atime.Min)
 	require.InDelta(t, float64(0), *atime.Min, 0)
 	require.NotNil(t, atime.Max)
@@ -61,6 +65,14 @@ func TestFileStorageNFSPolicyContract(t *testing.T) {
 	require.Equal(t, "#/components/schemas/storageV2Spec", componentSchema(t, swagger, "storageV2Create").Properties["spec"].Value.AllOf[1].Ref)
 }
 
+func TestFileStorageNFSPolicyGeneratedClientPreservesOmission(t *testing.T) {
+	t.Parallel()
+
+	data, err := json.Marshal(openapi.NFSV2Spec{RootSquash: true})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"rootSquash":true}`, string(data))
+}
+
 func TestFileStorageNFSPolicyRequestValidation(t *testing.T) {
 	t.Parallel()
 
@@ -70,12 +82,11 @@ func TestFileStorageNFSPolicyRequestValidation(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "omitted fields", nfs: `"rootSquash":true`},
+		{name: "null fields", nfs: `"rootSquash":true,"posixAcl":null,"atimeUpdateIntervalSeconds":null`},
 		{name: "explicit false and zero", nfs: `"rootSquash":true,"posixAcl":false,"atimeUpdateIntervalSeconds":0`},
-		{name: "upper bound", nfs: `"rootSquash":true,"atimeUpdateIntervalSeconds":86399999999999`},
-		{name: "negative atime", nfs: `"rootSquash":true,"atimeUpdateIntervalSeconds":-1`, wantErr: true},
-		{name: "atime above upper bound", nfs: `"rootSquash":true,"atimeUpdateIntervalSeconds":86400000000000`, wantErr: true},
-		{name: "null POSIX ACL", nfs: `"rootSquash":true,"posixAcl":null`, wantErr: true},
-		{name: "null atime", nfs: `"rootSquash":true,"atimeUpdateIntervalSeconds":null`, wantErr: true},
+		{name: "upper bound", nfs: `"rootSquash":true,"posixAcl":true,"atimeUpdateIntervalSeconds":86399999999999`},
+		{name: "negative atime", nfs: `"rootSquash":true,"posixAcl":true,"atimeUpdateIntervalSeconds":-1`, wantErr: true},
+		{name: "atime above upper bound", nfs: `"rootSquash":true,"posixAcl":true,"atimeUpdateIntervalSeconds":86400000000000`, wantErr: true},
 		{name: "missing root squash", nfs: `"posixAcl":false,"atimeUpdateIntervalSeconds":0`, wantErr: true},
 	}
 
@@ -95,4 +106,7 @@ func TestFileStorageNFSPolicyRequestValidation(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+
+	require.NoError(t, validateStorageV2UpdateRequest(t, `{"metadata":{"name":"storage-name"},"spec":{"sizeGiB":10,"storageType":{}}}`))
+	require.Error(t, validateStorageV2UpdateRequest(t, `{"metadata":{"name":"storage-name"},"spec":{"sizeGiB":10,"storageType":{"NFS":null}}}`))
 }

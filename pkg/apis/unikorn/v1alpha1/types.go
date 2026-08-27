@@ -1543,13 +1543,15 @@ type NFS struct {
 	RootSquash bool `json:"rootSquash,omitempty"`
 
 	// POSIXACL controls extended POSIX ACL support.
-	// +optional
+	// +kubebuilder:default=false
+	// +kubebuilder:validation:Required
 	POSIXACL *bool `json:"posixAcl,omitempty"`
 
 	// AtimeUpdateIntervalSeconds controls how stale atime must be before a read updates it. Zero disables read-driven updates.
+	// +kubebuilder:default=0
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=86399999999999
-	// +optional
+	// +kubebuilder:validation:Required
 	AtimeUpdateIntervalSeconds *int64 `json:"atimeUpdateIntervalSeconds,omitempty"`
 }
 
