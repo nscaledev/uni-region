@@ -13,18 +13,11 @@ deletion or operator intervention. This package does not check quota; the HTTP
 create handler allocates the requested capacity and stores the Identity
 allocation ID before the controller can observe the Volume.
 
-`VolumeStatus.ProvisionedAt` is the durable record that backing storage once
-existed. Provisioning always re-derives provider state: an existing backing
-volume is adopted, while a missing volume with `ProvisionedAt` set is never
-recreated under the same Region Volume ID. The controller reports that state as
-a user-action-required error; users replace the Volume by deleting its Region
-resource and creating a new one.
-
 Deprovisioning deliberately has stricter ordering:
 
 1. resolve the provider and Identity through the shared provisioner lookup, then
-   call provider deletion without consulting Identity readiness or best-effort
-   Volume status;
+   discover and detach provider attachments by Volume, then call provider
+   deletion without consulting Identity readiness or derived status;
 2. retain the finalizer while an accepted asynchronous provider deletion
    yields, and only after rediscovery confirms the provider resource is absent,
    delete the Identity allocation named by the allocation annotation;
