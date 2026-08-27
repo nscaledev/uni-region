@@ -201,7 +201,7 @@ func (p *Provisioner) waitForServerAttachment(ctx context.Context, server *uniko
 			return err
 		}
 
-		return provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored, message)
+		return provisioners.ErrYield
 	}
 
 	if err := p.setAttachmentStatus(ctx, server, unikornv1.AttachmentProvisioning, nil, "waiting for server provisioning"); err != nil {
