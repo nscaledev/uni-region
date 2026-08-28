@@ -1635,7 +1635,7 @@ func TestServerGetV2ReturnsVolumeAttachmentStatus(t *testing.T) {
 	}}, *result.Status.Volumes)
 }
 
-func TestServerGetV2OmitsStaleVolumeAttachmentStatus(t *testing.T) {
+func TestServerGetV2ReturnsDeprovisioningVolumeAttachmentStatus(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
@@ -1655,8 +1655,16 @@ func TestServerGetV2OmitsStaleVolumeAttachmentStatus(t *testing.T) {
 	result, err := c.GetV2(rbac.NewContext(t.Context(), aclWithSrvUpdate()), idstest.MustParseServerID(resource.Name))
 
 	require.NoError(t, err)
-	require.Len(t, *result.Status.Volumes, 1)
-	require.Equal(t, idstest.MustParseVolumeID(resource.Spec.Volumes[0].ID), (*result.Status.Volumes)[0].Id)
+	require.Equal(t, openapi.ServerV2VolumeStatusList{
+		{
+			Id:                 idstest.MustParseVolumeID(resource.Status.Volumes[0].ID),
+			ProvisioningStatus: coreapi.ResourceProvisioningStatusProvisioned,
+		},
+		{
+			Id:                 idstest.MustParseVolumeID(resource.Status.Volumes[1].ID),
+			ProvisioningStatus: coreapi.ResourceProvisioningStatusDeprovisioning,
+		},
+	}, *result.Status.Volumes)
 }
 
 func TestServerGetV2OmitsEmptyVolumeAttachmentStatus(t *testing.T) {

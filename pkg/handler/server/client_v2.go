@@ -243,20 +243,11 @@ func convertRemainingProviderCreateGates(in *regionv1.Server) *openapi.ServerRem
 }
 
 func appendVolumeStatuses(in *regionv1.Server, out *openapi.ServerV2VolumeStatusList) error {
-	if len(in.Status.Volumes) == 0 || len(in.Spec.Volumes) == 0 {
+	if len(in.Status.Volumes) == 0 {
 		return nil
 	}
 
-	desired := make(map[string]struct{}, len(in.Spec.Volumes))
-	for _, volume := range in.Spec.Volumes {
-		desired[volume.ID] = struct{}{}
-	}
-
 	for _, status := range in.Status.Volumes {
-		if _, ok := desired[status.ID]; !ok {
-			continue
-		}
-
 		volumeID, err := regionids.ParseVolumeID(status.ID)
 		if err != nil {
 			return err
