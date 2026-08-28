@@ -124,36 +124,6 @@ spec:
               rule: self.networkID == oldSelf.networkID
           status:
             properties:
-              attachment:
-                description: |-
-                  Attachment records the observed state of this volume's requested Server
-                  attachment. It is derived state and must not authorize provider cleanup.
-                properties:
-                  device:
-                    description: Device is the provider-assigned guest device name,
-                      when available.
-                    type: string
-                  message:
-                    description: Message is a safe human-readable description of the
-                      attachment state.
-                    type: string
-                  provisioningStatus:
-                    description: ProvisioningStatus reports attachment progress.
-                    enum:
-                    - Provisioning
-                    - Provisioned
-                    - Errored
-                    - Deprovisioning
-                    type: string
-                  serverID:
-                    description: ServerID is the Region Server resource ID the volume
-                      is attached to.
-                    type: string
-                required:
-                - message
-                - provisioningStatus
-                - serverID
-                type: object
               conditions:
                 description: Current service state of a volume.
                 items:

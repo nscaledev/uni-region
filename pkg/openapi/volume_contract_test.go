@@ -72,6 +72,7 @@ func TestVolumeLifecycleContract(t *testing.T) {
 	status := componentSchema(t, swagger, "volumeV2Status")
 	require.Equal(t, []string{"regionId"}, status.Required)
 	require.NotContains(t, status.Properties, "attachedServerIds")
+	require.NotContains(t, status.Properties, "attachment")
 	require.Contains(t, status.Properties, "sizeGiB")
 	require.NotContains(t, status.Properties, "phase")
 	require.NotContains(t, swagger.Components.Schemas, "volumeV2Phase")

@@ -87,7 +87,7 @@ func TestServerObservedSchema(t *testing.T) {
 	require.Equal(t, []string{"generation"}, observed.Required, "the freshness stamp is what makes an observation readable; it must not be optional")
 }
 
-func TestVolumeAttachmentSchema(t *testing.T) {
+func TestVolumeClaimSchema(t *testing.T) {
 	t.Parallel()
 
 	schema := crdSchema(t, volumeCRDFile)
@@ -98,12 +98,8 @@ func TestVolumeAttachmentSchema(t *testing.T) {
 	require.Len(t, claim.Properties["kind"].Enum, 1)
 	require.JSONEq(t, `"Server"`, string(claim.Properties["kind"].Enum[0].Raw))
 
-	attachment := requireSchemaProperty(t, schema, "status", "attachment")
-	require.ElementsMatch(t, []string{"serverID", "provisioningStatus", "message"}, attachment.Required)
-	require.Equal(t, "string", attachment.Properties["serverID"].Type)
-	require.Equal(t, "string", attachment.Properties["device"].Type)
-	require.Len(t, attachment.Properties["provisioningStatus"].Enum, 4)
-	require.JSONEq(t, `"Deprovisioning"`, string(attachment.Properties["provisioningStatus"].Enum[3].Raw))
+	status := requireSchemaProperty(t, schema, "status")
+	require.NotContains(t, status.Properties, "attachment")
 }
 
 type crdValidator struct {

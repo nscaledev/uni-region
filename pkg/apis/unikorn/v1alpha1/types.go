@@ -903,23 +903,9 @@ type VolumeStatus struct {
 	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
 	// Current service state of a volume.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	// Attachment records the observed state of this volume's requested Server
-	// attachment. It is derived state and must not authorize provider cleanup.
-	Attachment *VolumeAttachmentStatus `json:"attachment,omitempty"`
 	// Size is the currently provisioned/observed size of the volume.
 	// (May differ from spec.size while provisioning.)
 	Size *resource.Quantity `json:"size,omitempty"`
-}
-
-type VolumeAttachmentStatus struct {
-	// ServerID is the Region Server resource ID the volume is attached to.
-	ServerID string `json:"serverID"`
-	// ProvisioningStatus reports attachment progress.
-	ProvisioningStatus AttachmentProvisioningStatus `json:"provisioningStatus"`
-	// Device is the provider-assigned guest device name, when available.
-	Device *string `json:"device,omitempty"`
-	// Message is a safe human-readable description of the attachment state.
-	Message string `json:"message"`
 }
 
 // +kubebuilder:validation:Enum=tcp;udp
