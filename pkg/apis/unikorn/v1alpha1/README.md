@@ -96,12 +96,15 @@ stored objects rely on for linkage, migration, and operational coordination.
   is expected to carry quota/accounting responsibility in the Region layer.
   `Volume` does not define a per-network name uniqueness key; its resource ID
   follows the platform's normal UUID v4 identity pattern, while mutable display
-  names live in standard metadata labels. `Volume.Spec.ClaimRef` records the
-  kind and Region resource ID of the resource that owns the volume's attachment
-  claim; a nil claim means the volume is available for claiming. `Server` is the
-  current supported claim kind. Attachment realization remains outside
-  `Volume.Status`, which is conditions-first and also reserves observed size for
-  later observation work. The Volume controller drives provider create/delete,
+  names live in standard metadata labels. `Volume.Spec.ClaimRef` is internal
+  handler-owned state that records the exclusive Server reservation; a nil claim
+  means the volume is available for claiming. `Server` is the current supported
+  claim kind. `Server.Status.Volumes` is the sole persisted projection of
+  attachment progress, optional provider device, and a safe message. Future
+  attachment reconciliation will
+  advance `ObservedGeneration` only after both backing volume and requested
+  attachment state converge, and will report attachment errors through the generic
+  `Available` condition. The Volume controller drives provider create/delete,
   but provider-side volume identity is rediscovered by stable provider lookup
   rather than mirrored into status.
 - `Server.Spec.Volumes` is the attach-existing-only desired state for block
@@ -112,8 +115,8 @@ stored objects rely on for linkage, migration, and operational coordination.
   device name for later controller and monitor work. The provider layer now
   supplies a server-owned attach/detach boundary and the OpenStack provider
   realizes it with Nova, but this package still only owns the persisted shape;
-  reference placement, claim/locking behavior, controller reconciliation, and
-  public API projection live in later layers/tickets.
+  reference placement, claim/locking behavior, and controller reconciliation live
+  in later layers/tickets. The v2 Server read projects stored attachment status.
 - The `Network -> Volume` graph edge is declared as containment for future
   behavior: Network scope propagates to Volume; co-location is implicit; Volume
   holds a reverse deletion-blocking relationship to Network for its lifetime;

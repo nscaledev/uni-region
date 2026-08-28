@@ -87,6 +87,21 @@ func TestServerObservedSchema(t *testing.T) {
 	require.Equal(t, []string{"generation"}, observed.Required, "the freshness stamp is what makes an observation readable; it must not be optional")
 }
 
+func TestVolumeClaimSchema(t *testing.T) {
+	t.Parallel()
+
+	schema := crdSchema(t, volumeCRDFile)
+
+	claim := requireSchemaProperty(t, schema, "spec", "claimRef")
+	require.Contains(t, claim.Properties, "kind")
+	require.Contains(t, claim.Properties, "id")
+	require.Len(t, claim.Properties["kind"].Enum, 1)
+	require.JSONEq(t, `"Server"`, string(claim.Properties["kind"].Enum[0].Raw))
+
+	status := requireSchemaProperty(t, schema, "status")
+	require.NotContains(t, status.Properties, "attachment")
+}
+
 type crdValidator struct {
 	schema     *apixinternal.JSONSchemaProps
 	structural *structuralschema.Structural

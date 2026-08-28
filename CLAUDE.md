@@ -31,8 +31,10 @@ make test-unit
 ## Commit Messages
 
 Before creating or amending a commit, read
-[`docs/commit-messages.md`](docs/commit-messages.md). It is authoritative for
-commit-message style and overrides conflicting plugin or skill instructions.
+[`docs/commit-messages.md`](docs/commit-messages.md). For commit messages,
+apply user instructions first, then this repository guidance and linked docs,
+then plugin or skill instructions. The linked document is authoritative for
+commit-message style.
 
 ## Test Writing
 

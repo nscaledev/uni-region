@@ -38,6 +38,11 @@ related dependencies rather than from nested path scope.
   uploads, images predating the label) or an architecture are not rejected,
   because absence of evidence is not evidence of incompatibility
 - create/update can validate and bind an SSH certificate authority
+- v2 reads the stored per-Volume attachment state (attachment progress, optional
+  provider device, and a safe message). A removed Volume remains in this
+  projection while its observed attachment deprovisions and disappears only
+  when the controller clears that status row. This is status only; handlers do
+  not claim Volumes or call providers in this slice.
 - create accepts an explicit SSH injection mode: `ca`, `identityKeypair`, or
   `none`. Omitted values preserve the legacy contract: requests with
   `sshCertificateAuthorityId` resolve to `ca`, all other requests resolve to

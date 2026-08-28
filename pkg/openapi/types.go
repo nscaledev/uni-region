@@ -1280,6 +1280,9 @@ type ServerV2Status struct {
 
 	// SshInjection The resolved create-time SSH access material Region arranged for the server.
 	SshInjection *SshInjection `json:"sshInjection,omitempty"`
+
+	// Volumes Observed attachment state for the Server's desired Volumes.
+	Volumes *ServerV2VolumeStatusList `json:"volumes,omitempty"`
 }
 
 // ServerV2Update A server update request.
@@ -1290,6 +1293,24 @@ type ServerV2Update struct {
 	// Spec A server's specification.
 	Spec ServerV2Spec `json:"spec"`
 }
+
+// ServerV2VolumeStatus Observed attachment state for a desired Volume.
+type ServerV2VolumeStatus struct {
+	// Device The provider-assigned guest device name, when available.
+	Device *string `json:"device,omitempty"`
+
+	// Id The attached Volume ID.
+	Id VolumeId `json:"id"`
+
+	// Message Optional safe human-readable description of the attachment state.
+	Message *string `json:"message,omitempty"`
+
+	// ProvisioningStatus The provisioning state of a resource.
+	ProvisioningStatus externalRef0.ResourceProvisioningStatus `json:"provisioningStatus"`
+}
+
+// ServerV2VolumeStatusList Observed attachment state for the Server's desired Volumes.
+type ServerV2VolumeStatusList = []ServerV2VolumeStatus
 
 // ServerWrite A server request.
 type ServerWrite struct {
