@@ -1629,7 +1629,7 @@ func TestServerGetV2ReturnsVolumeAttachmentStatus(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, openapi.ServerV2VolumeStatusList{{
 		Id:                 idstest.MustParseVolumeID(resource.Status.Volumes[0].ID),
-		ProvisioningStatus: openapi.ServerV2VolumeStatusProvisioningStatus(regionv1.AttachmentProvisioned),
+		ProvisioningStatus: coreapi.ResourceProvisioningStatusProvisioned,
 		Device:             resource.Status.Volumes[0].Device,
 		Message:            resource.Status.Volumes[0].Message,
 	}}, *result.Status.Volumes)

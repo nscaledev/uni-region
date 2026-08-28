@@ -3565,13 +3565,7 @@ components:
           allOf:
           - $ref: '#/components/schemas/volumeId'
         provisioningStatus:
-          description: The attachment provisioning state.
-          type: string
-          enum:
-          - Provisioning
-          - Provisioned
-          - Errored
-          - Deprovisioning
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/resourceProvisioningStatus'
         device:
           description: The provider-assigned guest device name, when available.
           type: string

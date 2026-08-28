@@ -33,6 +33,7 @@ import (
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
@@ -263,13 +264,28 @@ func appendVolumeStatuses(in *regionv1.Server, out *openapi.ServerV2VolumeStatus
 
 		*out = append(*out, openapi.ServerV2VolumeStatus{
 			Id:                 volumeID,
-			ProvisioningStatus: openapi.ServerV2VolumeStatusProvisioningStatus(status.ProvisioningStatus),
+			ProvisioningStatus: convertVolumeProvisioningStatus(status.ProvisioningStatus),
 			Device:             status.Device,
 			Message:            status.Message,
 		})
 	}
 
 	return nil
+}
+
+func convertVolumeProvisioningStatus(in regionv1.AttachmentProvisioningStatus) coreopenapi.ResourceProvisioningStatus {
+	switch in {
+	case regionv1.AttachmentProvisioning:
+		return coreopenapi.ResourceProvisioningStatusProvisioning
+	case regionv1.AttachmentProvisioned:
+		return coreopenapi.ResourceProvisioningStatusProvisioned
+	case regionv1.AttachmentErrored:
+		return coreopenapi.ResourceProvisioningStatusError
+	case regionv1.AttachmentDeprovisioning:
+		return coreopenapi.ResourceProvisioningStatusDeprovisioning
+	default:
+		return coreopenapi.ResourceProvisioningStatusPending
+	}
 }
 
 func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {

@@ -87,14 +87,6 @@ const (
 	RegionTypeSimulated  RegionType = "simulated"
 )
 
-// Defines values for ServerV2VolumeStatusProvisioningStatus.
-const (
-	ServerV2VolumeStatusProvisioningStatusDeprovisioning ServerV2VolumeStatusProvisioningStatus = "Deprovisioning"
-	ServerV2VolumeStatusProvisioningStatusErrored        ServerV2VolumeStatusProvisioningStatus = "Errored"
-	ServerV2VolumeStatusProvisioningStatusProvisioned    ServerV2VolumeStatusProvisioningStatus = "Provisioned"
-	ServerV2VolumeStatusProvisioningStatusProvisioning   ServerV2VolumeStatusProvisioningStatus = "Provisioning"
-)
-
 // Defines values for SshInjection.
 const (
 	SshInjectionCa              SshInjection = "ca"
@@ -1313,12 +1305,9 @@ type ServerV2VolumeStatus struct {
 	// Message A safe human-readable description of the attachment state.
 	Message string `json:"message"`
 
-	// ProvisioningStatus The attachment provisioning state.
-	ProvisioningStatus ServerV2VolumeStatusProvisioningStatus `json:"provisioningStatus"`
+	// ProvisioningStatus The provisioning state of a resource.
+	ProvisioningStatus externalRef0.ResourceProvisioningStatus `json:"provisioningStatus"`
 }
-
-// ServerV2VolumeStatusProvisioningStatus The attachment provisioning state.
-type ServerV2VolumeStatusProvisioningStatus string
 
 // ServerV2VolumeStatusList Observed attachment state for the Server's desired Volumes.
 type ServerV2VolumeStatusList = []ServerV2VolumeStatus
