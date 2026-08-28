@@ -492,7 +492,7 @@ func convertFlavors(resources []flavors.Flavor, region *unikornv1.Region) types.
 }
 
 // applyFlavorMetadata overlays any Region-level per-flavor metadata (CPU, GPU,
-// bare-metal/pinning) onto the converted flavor.
+// InfiniBand, bare-metal/pinning) onto the converted flavor.
 func applyFlavorMetadata(f *types.Flavor, region *unikornv1.Region, flavorID string) {
 	if region == nil || region.Spec.Openstack == nil || region.Spec.Openstack.Compute == nil || region.Spec.Openstack.Compute.Flavors == nil {
 		return
@@ -527,6 +527,12 @@ func applyFlavorMetadata(f *types.Flavor, region *unikornv1.Region, flavorID str
 			Memory:        metadata.GPU.Memory,
 			PhysicalCount: metadata.GPU.PhysicalCount,
 			LogicalCount:  metadata.GPU.LogicalCount,
+		}
+	}
+
+	if metadata.InfiniBand != nil {
+		f.InfiniBand = &types.InfiniBand{
+			PortCount: metadata.InfiniBand.PortCount,
 		}
 	}
 }
