@@ -84,8 +84,8 @@ packages are the concrete provider implementations.
     client/request failures remain Go errors, while successfully observed
     provider `error` and unrecognized/empty `unknown` lifecycle values remain
     successful observations
-  - VolumeClass inventory remains on `CommonProvider`, and server
-    attach/detach is a separate capability
+  - VolumeClass inventory remains on `CommonProvider`; Server attach and
+    Volume-based detach are separate capabilities
 - Provider `Delete*` methods must be idempotent and must tolerate an unrealized
   identity as a no-op. Callers delegate unconditionally; the provider
   self-gates on realized identity rather than the caller gating on readiness or

@@ -486,6 +486,20 @@ func (mr *MockVolumeMockRecorder) DeleteVolume(ctx, identity, volume any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteVolume", reflect.TypeOf((*MockVolume)(nil).DeleteVolume), ctx, identity, volume)
 }
 
+// DetachVolume mocks base method.
+func (m *MockVolume) DetachVolume(ctx context.Context, identity *v1alpha1.Identity, volume *v1alpha1.Volume) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DetachVolume", ctx, identity, volume)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DetachVolume indicates an expected call of DetachVolume.
+func (mr *MockVolumeMockRecorder) DetachVolume(ctx, identity, volume any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DetachVolume", reflect.TypeOf((*MockVolume)(nil).DetachVolume), ctx, identity, volume)
+}
+
 // UpdateVolumeState mocks base method.
 func (m *MockVolume) UpdateVolumeState(ctx context.Context, identity *v1alpha1.Identity, volume *v1alpha1.Volume) error {
 	m.ctrl.T.Helper()
@@ -564,20 +578,6 @@ func (m *MockServer) DeleteServer(ctx context.Context, identity *v1alpha1.Identi
 func (mr *MockServerMockRecorder) DeleteServer(ctx, identity, server any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteServer", reflect.TypeOf((*MockServer)(nil).DeleteServer), ctx, identity, server)
-}
-
-// DetachVolume mocks base method.
-func (m *MockServer) DetachVolume(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server, volume *v1alpha1.Volume) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DetachVolume", ctx, identity, server, volume)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// DetachVolume indicates an expected call of DetachVolume.
-func (mr *MockServerMockRecorder) DetachVolume(ctx, identity, server, volume any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DetachVolume", reflect.TypeOf((*MockServer)(nil).DetachVolume), ctx, identity, server, volume)
 }
 
 // RebootServer mocks base method.
@@ -1061,17 +1061,17 @@ func (mr *MockProviderMockRecorder) DeleteVolume(ctx, identity, volume any) *gom
 }
 
 // DetachVolume mocks base method.
-func (m *MockProvider) DetachVolume(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server, volume *v1alpha1.Volume) error {
+func (m *MockProvider) DetachVolume(ctx context.Context, identity *v1alpha1.Identity, volume *v1alpha1.Volume) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DetachVolume", ctx, identity, server, volume)
+	ret := m.ctrl.Call(m, "DetachVolume", ctx, identity, volume)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DetachVolume indicates an expected call of DetachVolume.
-func (mr *MockProviderMockRecorder) DetachVolume(ctx, identity, server, volume any) *gomock.Call {
+func (mr *MockProviderMockRecorder) DetachVolume(ctx, identity, volume any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DetachVolume", reflect.TypeOf((*MockProvider)(nil).DetachVolume), ctx, identity, server, volume)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DetachVolume", reflect.TypeOf((*MockProvider)(nil).DetachVolume), ctx, identity, volume)
 }
 
 // Flavors mocks base method.
