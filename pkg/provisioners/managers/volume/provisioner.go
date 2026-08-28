@@ -166,28 +166,31 @@ func (p *Provisioner) reconcileServerAttachment(ctx context.Context, provider ty
 
 	attachment, err := provider.AttachVolume(ctx, identity, server, p.volume)
 	if err != nil {
-		if errors.Is(err, coreerrors.ErrConflict) {
-			if detachErr := p.detachAttachments(ctx, provider, identity); detachErr != nil {
-				return detachErr
-			}
-
-			return provisioners.ErrYield
-		}
-
-		status := unikornv1.AttachmentProvisioning
-
-		if !errors.Is(err, provisioners.ErrYield) {
-			status = unikornv1.AttachmentErrored
-		}
-
-		if statusErr := p.setAttachmentStatus(ctx, server, status, nil, attachmentMessage(err)); statusErr != nil {
-			return statusErr
-		}
-
-		return err
+		return p.handleAttachmentError(ctx, provider, identity, server, err)
 	}
 
 	return p.setAttachmentStatus(ctx, server, unikornv1.AttachmentProvisioned, attachment.Device, "")
+}
+
+func (p *Provisioner) handleAttachmentError(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, server *unikornv1.Server, err error) error {
+	if errors.Is(err, coreerrors.ErrConflict) {
+		if detachErr := p.detachAttachments(ctx, provider, identity); detachErr != nil {
+			return detachErr
+		}
+
+		return provisioners.ErrYield
+	}
+
+	status := unikornv1.AttachmentProvisioning
+	if !errors.Is(err, provisioners.ErrYield) {
+		status = unikornv1.AttachmentErrored
+	}
+
+	if statusErr := p.setAttachmentStatus(ctx, server, status, nil, attachmentMessage(err)); statusErr != nil {
+		return statusErr
+	}
+
+	return err
 }
 
 func (p *Provisioner) waitForServerAttachment(ctx context.Context, server *unikornv1.Server, condition *unikornv1core.TypedCondition[unikornv1core.ProvisioningConditionReason], conditionErr error) error {
@@ -264,6 +267,7 @@ func (p *Provisioner) clearAttachmentStatuses(ctx context.Context) error {
 
 	for i := range servers.Items {
 		server := &servers.Items[i]
+
 		updated := removeServerVolumeStatus(server.Status.Volumes, p.volume.Name)
 		if len(updated) == len(server.Status.Volumes) {
 			continue
