@@ -234,6 +234,9 @@ type FlavorMetadata struct {
 	// GPU defines additional GPU metadata.  When provided it will enable selection
 	// of images based on GPU vendor and model.
 	GPU *GPUSpec `json:"gpu,omitempty"`
+	// InfiniBand defines additional InfiniBand metadata. When provided it enables
+	// InfiniBand partition isolation for servers using this flavor.
+	InfiniBand *InfiniBandSpec `json:"infiniBand,omitempty"`
 	// PinnedOnly indicates that this flavor requires a specific physical host to
 	// be identified via InfrastructureRef when creating a server. Attempts to
 	// create a server with this flavor without an InfrastructureRef are rejected.
@@ -276,6 +279,14 @@ type GPUSpec struct {
 	LogicalCount int `json:"logicalCount"`
 	// Memory is the amount of memory each logical GPU has access to.
 	Memory *resource.Quantity `json:"memory"`
+}
+
+type InfiniBandSpec struct {
+	// PortCount is the number of InfiniBand ports the flavor exposes. This counts
+	// ports, not host channel adapters (a single HCA can present one or two ports),
+	// because fabric partitioning programs a partition membership per port GUID.
+	// +kubebuilder:validation:Minimum=1
+	PortCount int `json:"portCount"`
 }
 
 type RegionOpenstackImageSpec struct {
