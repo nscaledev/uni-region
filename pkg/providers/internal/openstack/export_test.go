@@ -334,8 +334,8 @@ func AttachVolumeWithClients(ctx context.Context, compute ComputeInterface, bloc
 	return attachVolume(ctx, compute, blockStorage, server, volume)
 }
 
-func DetachVolumeWithClients(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, server *unikornv1.Server, volume *unikornv1.Volume) error {
-	return detachVolume(ctx, compute, blockStorage, server, volume)
+func DetachVolumeWithClients(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, _ *unikornv1.Server, volume *unikornv1.Volume) error {
+	return detachVolume(ctx, compute, blockStorage, volume)
 }
 
 func ResolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {

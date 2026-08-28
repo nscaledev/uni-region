@@ -102,6 +102,8 @@ type Volume interface {
 	// UpdateVolumeState rediscovers provider state and updates the Region Volume in place.
 	// Provider failures are returned so callers can preserve the last observed state.
 	UpdateVolumeState(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
+	// DetachVolume discovers and detaches every provider attachment for a Region volume.
+	DetachVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
 }
 
 type Server interface {
@@ -109,8 +111,6 @@ type Server interface {
 	CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, options *ServerCreateOptions) error
 	// AttachVolume attaches an existing Region volume to a server.
 	AttachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume) (*ServerVolumeAttachment, error)
-	// DetachVolume detaches an existing Region volume from a server.
-	DetachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume) error
 	// RebootServer soft reboots a server.
 	RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error
 	// StartServer starts a server.
