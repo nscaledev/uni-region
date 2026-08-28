@@ -1631,7 +1631,7 @@ func TestServerGetV2ReturnsVolumeAttachmentStatus(t *testing.T) {
 		Id:                 idstest.MustParseVolumeID(resource.Status.Volumes[0].ID),
 		ProvisioningStatus: coreapi.ResourceProvisioningStatusProvisioned,
 		Device:             resource.Status.Volumes[0].Device,
-		Message:            resource.Status.Volumes[0].Message,
+		Message:            ptr.To(resource.Status.Volumes[0].Message),
 	}}, *result.Status.Volumes)
 }
 

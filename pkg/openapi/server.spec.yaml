@@ -3558,7 +3558,6 @@ components:
       required:
       - id
       - provisioningStatus
-      - message
       properties:
         id:
           description: The attached Volume ID.
@@ -3570,7 +3569,7 @@ components:
           description: The provider-assigned guest device name, when available.
           type: string
         message:
-          description: A safe human-readable description of the attachment state.
+          description: Optional safe human-readable description of the attachment state.
           type: string
     serverV2VolumeStatusList:
       description: Observed attachment state for the Server's desired Volumes.

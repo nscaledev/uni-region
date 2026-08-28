@@ -1302,8 +1302,8 @@ type ServerV2VolumeStatus struct {
 	// Id The attached Volume ID.
 	Id VolumeId `json:"id"`
 
-	// Message A safe human-readable description of the attachment state.
-	Message string `json:"message"`
+	// Message Optional safe human-readable description of the attachment state.
+	Message *string `json:"message,omitempty"`
 
 	// ProvisioningStatus The provisioning state of a resource.
 	ProvisioningStatus externalRef0.ResourceProvisioningStatus `json:"provisioningStatus"`

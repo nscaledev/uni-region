@@ -253,12 +253,17 @@ func appendVolumeStatuses(in *regionv1.Server, out *openapi.ServerV2VolumeStatus
 			return err
 		}
 
-		*out = append(*out, openapi.ServerV2VolumeStatus{
+		item := openapi.ServerV2VolumeStatus{
 			Id:                 volumeID,
 			ProvisioningStatus: convertVolumeProvisioningStatus(status.ProvisioningStatus),
 			Device:             status.Device,
-			Message:            status.Message,
-		})
+		}
+
+		if status.Message != "" {
+			item.Message = ptr.To(status.Message)
+		}
+
+		*out = append(*out, item)
 	}
 
 	return nil
