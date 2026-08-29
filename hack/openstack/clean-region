@@ -13,6 +13,8 @@ DELETE_SECRET="false"
 FORCE_FINALIZERS="false"
 WAIT="true"
 DELETE_TIMEOUT="${DELETE_TIMEOUT:-5m}"
+UNIKORN_CLEAN_REGION_ALLOW=""
+ENV_FILE_COUNT=0
 ENV_FILES=()
 
 WORKLOAD_RESOURCES=(
@@ -67,6 +69,13 @@ The script is a dry run by default. Pass --confirm to delete matched resources.
 Run it while the Region controllers are healthy so finalizers can deprovision
 OpenStack resources before the Kubernetes objects disappear.
 
+Confirmed deletes require an env file containing:
+
+  UNIKORN_CLEAN_REGION_ALLOW=true
+
+When no --env file is provided, --namespace and --region-id must be passed
+explicitly.
+
 Options:
   --env FILE            Source a shell env file, such as test/.env.install or
                         test/.env.provider. May be passed more than once.
@@ -90,6 +99,7 @@ Environment:
   OPENSTACK_REGION_ID
   REGION_ID
   OPENSTACK_SECRET_NAME
+  UNIKORN_CLEAN_REGION_ALLOW=true
   DELETE_TIMEOUT
 EOF
 }
@@ -98,6 +108,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --env)
       ENV_FILES+=("$2")
+      ENV_FILE_COUNT=$((ENV_FILE_COUNT + 1))
       shift 2
       ;;
     --namespace)
@@ -146,11 +157,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for env_file in "${ENV_FILES[@]}"; do
-  [[ -f "${env_file}" ]] || fatal "env file not found: ${env_file}"
-  # shellcheck disable=SC1090
-  . "${env_file}"
-done
+if [[ "${ENV_FILE_COUNT}" -gt 0 ]]; then
+  for env_file in "${ENV_FILES[@]}"; do
+    [[ -f "${env_file}" ]] || fatal "env file not found: ${env_file}"
+    # shellcheck disable=SC1090
+    . "${env_file}"
+  done
+fi
 
 NAMESPACE="${NAMESPACE_ARG:-${REGION_NAMESPACE:-}}"
 TARGET_REGION_ID="${REGION_ID_ARG:-${TEST_REGION_ID:-${OPENSTACK_REGION_ID:-${REGION_ID:-}}}}"
@@ -162,10 +175,21 @@ require kubectl
 [[ -n "${NAMESPACE}" ]] || fatal "--namespace or REGION_NAMESPACE is required"
 [[ -n "${TARGET_REGION_ID}" ]] || fatal "--region-id, TEST_REGION_ID, OPENSTACK_REGION_ID, or REGION_ID is required"
 
+if [[ "${ENV_FILE_COUNT}" -eq 0 && ( -z "${NAMESPACE_ARG}" || -z "${REGION_ID_ARG}" ) ]]; then
+  fatal "--namespace and --region-id are required when no --env file is provided"
+fi
+
+if [[ "${CONFIRM}" == "true" ]]; then
+  [[ "${ENV_FILE_COUNT}" -gt 0 ]] || fatal "--confirm requires --env FILE"
+  [[ "${UNIKORN_CLEAN_REGION_ALLOW}" == "true" ]] || fatal "--confirm requires UNIKORN_CLEAN_REGION_ALLOW=true in an --env file"
+fi
+
 if [[ "${FORCE_FINALIZERS}" == "true" && "${CONFIRM}" != "true" ]]; then
   fatal "--force-finalizers requires --confirm"
 fi
 
+KUBECTL_CONTEXT="$(kubectl config current-context)"
+KUBECTL_CLUSTER_SERVER="$(kubectl config view --minify -o 'jsonpath={.clusters[0].cluster.server}')"
 API_RESOURCES="$(kubectl api-resources --verbs=list --namespaced -o name)"
 
 resource_exists() {
@@ -328,6 +352,8 @@ delete_secret() {
 log "Namespace: ${NAMESPACE}"
 log "Region ID: ${TARGET_REGION_ID}"
 log "Selector: ${SELECTOR}"
+log "Kubernetes context: ${KUBECTL_CONTEXT}"
+log "Kubernetes server: ${KUBECTL_CLUSTER_SERVER}"
 
 if [[ "${CONFIRM}" == "true" ]]; then
   log "Deleting matched resources."
