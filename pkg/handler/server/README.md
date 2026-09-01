@@ -38,6 +38,7 @@ related dependencies rather than from nested path scope.
   uploads, images predating the label) or an architecture are not rejected,
   because absence of evidence is not evidence of incompatibility
 - create/update can validate and bind an SSH certificate authority
+- create/update execute their existing lookup, authorization, validation, generation, and terminal persistence sequence as explicit saga actions. The terminal persistence action has no compensation because the controller owns cleanup after the Server exists; reversible attachment claim/release actions belong immediately before it in a later change
 - v2 reads the stored per-Volume attachment state (attachment progress, optional
   provider device, and a safe message). A removed Volume remains in this
   projection while its observed attachment deprovisions and disappears only

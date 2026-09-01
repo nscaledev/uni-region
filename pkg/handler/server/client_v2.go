@@ -36,6 +36,7 @@ import (
 	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
+	"github.com/unikorn-cloud/core/pkg/server/saga"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
@@ -48,7 +49,6 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
-	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/securitygroup"
 	"github.com/unikorn-cloud/region/pkg/handler/sshcertificateauthority"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
@@ -716,45 +716,13 @@ func (c *ClientV2) validateCreateV2Request(ctx context.Context, request *openapi
 }
 
 func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create) (*openapi.ServerV2Read, error) {
-	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId.String())
-	if err != nil {
+	s := &createV2Saga{client: c, request: request}
+
+	if err := saga.Run(ctx, s); err != nil {
 		return nil, err
 	}
 
-	organizationID, projectID, err := network.OrganizationAndProjectID()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := rbac.AllowProjectScopeCreateID(ctx, c.Identity, "region:servers", identityapi.Create, organizationID, projectID); err != nil {
-		return nil, err
-	}
-
-	if err := c.validateCreateV2Request(ctx, request, network); err != nil {
-		return nil, err
-	}
-
-	commonRequest, err := convertCreateToUpdateRequest(request)
-	if err != nil {
-		return nil, err
-	}
-
-	sshInjection := resolveSSHInjection(request.Spec.SshInjection, request.Spec.SshCertificateAuthorityId)
-
-	resource, err := c.generateV2(ctx, organizationID, projectID, commonRequest, network, request.Spec.SshCertificateAuthorityId, request.Spec.InfrastructureRef, sshInjection, generateProviderCreateGates(request.Spec.ProviderCreateGates))
-	if err != nil {
-		return nil, err
-	}
-
-	if err := c.Client.Client.Create(ctx, resource); err != nil {
-		if kerrors.IsAlreadyExists(err) {
-			return nil, errors.HTTPConflict()
-		}
-
-		return nil, fmt.Errorf("%w: unable to create server", err)
-	}
-
-	return convertV2(resource)
+	return convertV2(s.server)
 }
 
 func (c *ClientV2) GetV2Raw(ctx context.Context, serverID string) (*regionv1.Server, error) {
@@ -816,61 +784,13 @@ func validateServerUpdate(current *regionv1.Server, request *openapi.ServerV2Upd
 }
 
 func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerV2Update) (*openapi.ServerV2Read, error) {
-	current, err := c.GetV2Raw(ctx, serverID.String())
-	if err != nil {
+	s := &updateV2Saga{client: c, serverID: serverID, request: request}
+
+	if err := saga.Run(ctx, s); err != nil {
 		return nil, err
 	}
 
-	organizationID, projectID, err := current.OrganizationAndProjectID()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := rbac.AllowProjectScopeID(ctx, "region:servers", identityapi.Update, organizationID, projectID); err != nil {
-		return nil, err
-	}
-
-	if err := validateServerUpdate(current, request); err != nil {
-		return nil, err
-	}
-
-	// Security groups are mutable, so re-validate that every referenced group still
-	// belongs to the server's network. The SSH certificate authority and
-	// infrastructure reference are immutable, so they keep the scope validated at
-	// create time.
-	if err := c.validateSecurityGroupReferences(ctx, current.Labels[constants.NetworkLabel], request.Spec.Networking); err != nil {
-		return nil, err
-	}
-
-	// Get the network, required for generation.
-	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, current.Spec.Networks[0].ID.String())
-	if err != nil {
-		return nil, err
-	}
-
-	// Updates replace the persisted user-data wholesale: an omitted field clears
-	// the stored value. The value is not applied to the running guest — it is
-	// consumed by the next rebuild (image change) or recreate. Changed user-data
-	// is re-validated at the boundary; identical payloads are not.
-	if err := c.validateUpdateV2Request(ctx, network, current, request); err != nil {
-		return nil, err
-	}
-
-	required, err := c.generateV2(ctx, organizationID, projectID, request, network, current.Spec.SSHCertificateAuthorityID, current.Spec.InfrastructureRef, current.ResolvedSSHInjection(), current.Spec.ProviderCreateGates)
-	if err != nil {
-		return nil, err
-	}
-
-	updated := current.DeepCopy()
-	updated.Labels = required.Labels
-	updated.Annotations = required.Annotations
-	updated.Spec = required.Spec
-
-	if err := c.Client.Client.Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
-		return nil, fmt.Errorf("%w: unable to update server", err)
-	}
-
-	return convertV2(updated)
+	return convertV2(s.updated)
 }
 
 func (c *ClientV2) DeleteV2(ctx context.Context, serverID regionids.ServerID) error {
