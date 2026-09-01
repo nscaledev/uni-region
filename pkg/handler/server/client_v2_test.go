@@ -23,6 +23,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	goerrors "errors"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -58,6 +59,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 const (
@@ -73,6 +75,8 @@ const (
 	srvRegionID           = "88888888-8888-4888-a888-888888888888"
 	srvProviderGate       = "example.unikorn-cloud.org/pre-create-ready"
 )
+
+var errServerPersistence = goerrors.New("server persistence failed")
 
 // newSrvFakeClient builds a fake k8s client pre-populated with the given objects.
 func newSrvFakeClient(t *testing.T, objects ...runtime.Object) *fake.ClientBuilder {
@@ -549,6 +553,60 @@ func TestServerCreateV2SecurityGroupAcceptsSameNetwork(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
+}
+
+// TestServerCreateV2SagaPersistsServer keeps the create saga's terminal
+// persistence contract covered while its earlier actions remain validation-only.
+func TestServerCreateV2SagaPersistsServer(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	network := testSrvNetworkWithProject(srvProjectID)
+	k8sClient := newSrvFakeClient(t, network).Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+		Providers: newMockProvidersWithReadyImage(ctrl),
+	})
+
+	result, err := c.CreateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate())), minimalServerV2CreateRequest())
+
+	require.NoError(t, err)
+
+	created := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: result.Metadata.Id}, created))
+	require.Equal(t, result.Spec.ImageId, created.Spec.Image.ID)
+}
+
+func TestServerCreateV2SagaReturnsPersistenceError(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	network := testSrvNetworkWithProject(srvProjectID)
+	k8sClient := newSrvFakeClient(t, network).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(context.Context, client.WithWatch, client.Object, ...client.CreateOption) error {
+				return errServerPersistence
+			},
+		}).
+		Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+		Providers: newMockProvidersWithReadyImage(ctrl),
+	})
+
+	_, err := c.CreateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate())), minimalServerV2CreateRequest())
+
+	require.ErrorContains(t, err, "unable to create server")
 }
 
 func TestServerCreateV2SSHCertificateAuthorityRejectsUnsupportedUserData(t *testing.T) {
@@ -1057,6 +1115,62 @@ func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {
 	require.Equal(t, resource.Spec.SSHCertificateAuthorityID, updated.Spec.SSHCertificateAuthorityID)
 	require.NotNil(t, updated.Spec.SSHInjection)
 	require.Equal(t, regionv1.ServerSSHInjectionCA, *updated.Spec.SSHInjection)
+}
+
+// TestServerUpdateV2SagaPersistsServer keeps the update saga's terminal patch
+// contract covered while its earlier actions remain validation-only.
+func TestServerUpdateV2SagaPersistsServer(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	network := testSrvNetworkWithProject(srvProjectID)
+	k8sClient := newSrvFakeClient(t, network, resource).Build()
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+
+	userData := []byte("#cloud-config\nusers: []\n")
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+			UserData: &userData,
+		},
+	}
+
+	result, err := c.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate())), idstest.MustParseServerID(resource.Name), request)
+
+	require.NoError(t, err)
+
+	updated := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
+	require.Equal(t, *result.Spec.UserData, updated.Spec.UserData)
+}
+
+func TestServerUpdateV2SagaReturnsPersistenceError(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	network := testSrvNetworkWithProject(srvProjectID)
+	k8sClient := newSrvFakeClient(t, network, resource).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(context.Context, client.WithWatch, client.Object, client.Patch, ...client.PatchOption) error {
+				return errServerPersistence
+			},
+		}).
+		Build()
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+		},
+	}
+
+	_, err := c.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate())), idstest.MustParseServerID(resource.Name), request)
+
+	require.ErrorContains(t, err, "unable to update server")
 }
 
 func TestServerUpdateV2RejectsFlavorChange(t *testing.T) {
