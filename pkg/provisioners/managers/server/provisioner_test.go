@@ -158,6 +158,7 @@ func TestProvisionProviderCreateGateLocked(t *testing.T) {
 	// bespoke one) and a user-safe message that names the gate but does not
 	// fail-open the satisfier's machine-readable reason.
 	var provErr *provisioners.Error
+
 	require.ErrorAs(t, err, &provErr)
 	require.Equal(t, unikornv1core.ConditionReasonErrored, provErr.Reason())
 	require.Contains(t, provErr.Message(), testProviderGate)

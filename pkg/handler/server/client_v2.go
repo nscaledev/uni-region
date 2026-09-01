@@ -238,6 +238,8 @@ func convertProviderCreateGateState(in regionv1.ServerProviderCreateGateState) o
 		return openapi.ServerProviderCreateGateStateOpen
 	case regionv1.ServerProviderCreateGateLocked:
 		return openapi.ServerProviderCreateGateStateLocked
+	case regionv1.ServerProviderCreateGateClosed:
+		return openapi.ServerProviderCreateGateStateClosed
 	default:
 		return openapi.ServerProviderCreateGateStateClosed
 	}
@@ -994,6 +996,21 @@ func providerCreateGateActionState(request *openapi.ServerProviderCreateGateActi
 	return "", errors.OAuth2InvalidRequest("state must be one of Closed, Open, Locked")
 }
 
+// providerCreateGateOpenDowngrade reports whether the reported state would move
+// an already-Open gate backwards. Once a gate is Open, provider-create may have
+// started (or completed) on the strength of it, and servers reconcile
+// constantly, so letting a satisfier move it back to Closed or Locked would let
+// any holder of this endpoint wedge or fail a running server on a later pass.
+// Open is monotonic for the life of an attempt; only Region resets it, as part
+// of a provider-create retry.
+func providerCreateGateOpenDowngrade(current *regionv1.Server, conditionType string, state regionv1.ServerProviderCreateGateState) bool {
+	existing, ok := current.ProviderCreateGateStatusRead(conditionType)
+
+	return ok &&
+		existing.State == regionv1.ServerProviderCreateGateOpen &&
+		state != regionv1.ServerProviderCreateGateOpen
+}
+
 func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerProviderCreateGateAction) error {
 	if err := validateProviderCreateGateAction(request); err != nil {
 		return err
@@ -1026,15 +1043,7 @@ func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regio
 		return err
 	}
 
-	// Once a gate is Open, provider-create may already have started (or
-	// completed) on the strength of it. Servers reconcile constantly, so
-	// allowing a satisfier to move an Open gate back to Closed or Locked would
-	// let any holder of this endpoint wedge or fail a running server on a later
-	// pass. Open is therefore monotonic for the life of an attempt: only Region
-	// resets it, as part of a provider-create retry. Reject the downgrade.
-	if existing, ok := current.ProviderCreateGateStatusRead(conditionType); ok &&
-		existing.State == regionv1.ServerProviderCreateGateOpen &&
-		state != regionv1.ServerProviderCreateGateOpen {
+	if providerCreateGateOpenDowngrade(current, conditionType, state) {
 		return errors.HTTPConflict()
 	}
 

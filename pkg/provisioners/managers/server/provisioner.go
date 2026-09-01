@@ -113,19 +113,19 @@ var _ provisioners.ManagerProvisioner = &Provisioner{}
 // condition either.
 const providerCreateGateMessageMax = 256
 
-// truncate clamps s to at most max runes, appending an ellipsis when it clips,
+// truncate clamps s to at most limit runes, appending an ellipsis when it clips,
 // so an over-long satisfier message cannot bloat a derived condition.
-func truncate(s string, max int) string {
+func truncate(s string, limit int) string {
 	r := []rune(s)
-	if len(r) <= max {
+	if len(r) <= limit {
 		return s
 	}
 
-	if max <= 1 {
-		return string(r[:max])
+	if limit <= 1 {
+		return string(r[:limit])
 	}
 
-	return string(r[:max-1]) + "…"
+	return string(r[:limit-1]) + "…"
 }
 
 func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
