@@ -876,8 +876,9 @@ type VolumeSpec struct {
 	VolumeClassID string `json:"volumeClassID"`
 	// Size is the requested volume capacity.
 	Size resource.Quantity `json:"size"`
-	// ClaimRef binds this volume to the resource that owns its
-	// attachment. Unset means the volume is available for claiming.
+	// ClaimRef is an internal handler-owned reservation that exclusively binds
+	// this volume attachment to a Server. Unset means the volume is available for
+	// claiming.
 	ClaimRef *VolumeClaimRef `json:"claimRef,omitempty"`
 }
 
@@ -1578,13 +1579,15 @@ type NFS struct {
 	RootSquash bool `json:"rootSquash,omitempty"`
 
 	// POSIXACL controls extended POSIX ACL support.
-	// +optional
+	// +kubebuilder:default=false
+	// +kubebuilder:validation:Required
 	POSIXACL *bool `json:"posixAcl,omitempty"`
 
 	// AtimeUpdateIntervalSeconds controls how stale atime must be before a read updates it. Zero disables read-driven updates.
+	// +kubebuilder:default=0
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=86399999999999
-	// +optional
+	// +kubebuilder:validation:Required
 	AtimeUpdateIntervalSeconds *int64 `json:"atimeUpdateIntervalSeconds,omitempty"`
 }
 

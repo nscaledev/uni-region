@@ -33,6 +33,7 @@ import (
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
@@ -266,6 +267,48 @@ func convertRemainingProviderCreateGates(in *regionv1.Server) *openapi.ServerRem
 	return &out
 }
 
+func appendVolumeStatuses(in *regionv1.Server, out *openapi.ServerV2VolumeStatusList) error {
+	if len(in.Status.Volumes) == 0 {
+		return nil
+	}
+
+	for _, status := range in.Status.Volumes {
+		volumeID, err := regionids.ParseVolumeID(status.ID)
+		if err != nil {
+			return err
+		}
+
+		item := openapi.ServerV2VolumeStatus{
+			Id:                 volumeID,
+			ProvisioningStatus: convertVolumeProvisioningStatus(status.ProvisioningStatus),
+			Device:             status.Device,
+		}
+
+		if status.Message != "" {
+			item.Message = ptr.To(status.Message)
+		}
+
+		*out = append(*out, item)
+	}
+
+	return nil
+}
+
+func convertVolumeProvisioningStatus(in regionv1.AttachmentProvisioningStatus) coreopenapi.ResourceProvisioningStatus {
+	switch in {
+	case regionv1.AttachmentProvisioning:
+		return coreopenapi.ResourceProvisioningStatusProvisioning
+	case regionv1.AttachmentProvisioned:
+		return coreopenapi.ResourceProvisioningStatusProvisioned
+	case regionv1.AttachmentErrored:
+		return coreopenapi.ResourceProvisioningStatusError
+	case regionv1.AttachmentDeprovisioning:
+		return coreopenapi.ResourceProvisioningStatusDeprovisioning
+	default:
+		return coreopenapi.ResourceProvisioningStatusPending
+	}
+}
+
 func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 	imageID, err := in.ImageID()
 	if err != nil {
@@ -274,6 +317,11 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 
 	regionID, err := in.RegionID()
 	if err != nil {
+		return nil, err
+	}
+
+	var volumes openapi.ServerV2VolumeStatusList
+	if err := appendVolumeStatuses(in, &volumes); err != nil {
 		return nil, err
 	}
 
@@ -299,6 +347,10 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 			MacAddress:                   in.Status.MACAddress,
 			RemainingProviderCreateGates: convertRemainingProviderCreateGates(in),
 		},
+	}
+
+	if len(volumes) > 0 {
+		out.Status.Volumes = &volumes
 	}
 
 	return out, nil

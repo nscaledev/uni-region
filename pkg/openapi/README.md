@@ -75,9 +75,20 @@ VolumeClass ID plus a positive whole-GiB size. Network, class, and size are
 immutable through this API; updates contain resource metadata and tags only.
 Reads expose the requested inputs alongside the Region the volume was
 provisioned in, provider-observed size, and the standard provisioning and
-health metadata.
-Attachment-derived state is not part of this base contract. The Region handler
-implements this lifecycle surface.
+health metadata. A Server v2 read also exposes its current desired Volume-keyed
+attachment projection: attachment progress, optional provider-assigned device,
+and a safe message. This is derived status only; it never authorizes provider
+cleanup. The Region handler implements this lifecycle surface.
+
+The File Storage NFS write contract exposes optional, nullable `posixAcl` and
+`atimeUpdateIntervalSeconds` settings. On create and update, omission or explicit
+null resolves to `false` and `0`; PUT never resolves them from prior resource
+state. Read contracts return a complete, non-null NFS representation. Enabling POSIX ACLs may reduce
+metadata performance. Extended POSIX ACLs must be managed over NFSv3. Disabling
+this option does not remove existing ACLs; they may remain enforced. For
+`atimeUpdateIntervalSeconds`, `0` disables read-driven atime updates. A positive
+value updates atime during a read only when the existing atime is older than that
+number of seconds.
 
 Keeping the schema unified matters because it allows:
 

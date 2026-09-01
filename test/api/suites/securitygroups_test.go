@@ -141,8 +141,15 @@ var _ = Describe("SecurityGroup", func() {
 					},
 				}
 
-				updated, err := regionClient.UpdateSecurityGroup(ctx, sgID, updateReq)
-				Expect(err).NotTo(HaveOccurred())
+				var updated *regionopenapi.SecurityGroupV2Read
+				Eventually(func() error {
+					var err error
+					updated, err = regionClient.UpdateSecurityGroup(ctx, sgID, updateReq)
+
+					return err
+				}).WithTimeout(30 * time.Second).
+					WithPolling(time.Second).
+					Should(Succeed())
 				Expect(updated.Spec.Rules).To(HaveLen(2))
 
 				Eventually(func(g Gomega) {

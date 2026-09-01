@@ -72,10 +72,25 @@ func TestVolumeLifecycleContract(t *testing.T) {
 	status := componentSchema(t, swagger, "volumeV2Status")
 	require.Equal(t, []string{"regionId"}, status.Required)
 	require.NotContains(t, status.Properties, "attachedServerIds")
+	require.NotContains(t, status.Properties, "attachment")
 	require.Contains(t, status.Properties, "sizeGiB")
 	require.NotContains(t, status.Properties, "phase")
 	require.NotContains(t, swagger.Components.Schemas, "volumeV2Phase")
 
 	volumeID := componentSchema(t, swagger, "volumeId")
 	require.Equal(t, "regionids.VolumeID", volumeID.Extensions["x-go-type"])
+}
+
+func TestServerVolumeAttachmentStatusContract(t *testing.T) {
+	t.Parallel()
+
+	swagger, err := openapi.GetSwagger()
+	require.NoError(t, err)
+
+	status := componentSchema(t, swagger, "serverV2VolumeStatus")
+	require.ElementsMatch(t, []string{"id", "provisioningStatus"}, status.Required)
+	require.Len(t, schemaProperty(t, status, "id").AllOf, 1)
+	require.Equal(t, "#/components/schemas/volumeId", schemaProperty(t, status, "id").AllOf[0].Ref)
+	requireSchemaPropertyRef(t, status, "provisioningStatus", "#/components/schemas/unikorn-cloud_core_v1.17.1_pkg_openapi_common_resourceProvisioningStatus")
+	requireSchemaPropertyRef(t, componentSchema(t, swagger, "serverV2Status"), "volumes", "#/components/schemas/serverV2VolumeStatusList")
 }

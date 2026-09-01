@@ -1608,6 +1608,108 @@ func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 	require.Equal(t, resource.Status.MACAddress, result.Status.MacAddress)
 }
 
+func TestServerGetV2ReturnsVolumeAttachmentStatus(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	resource := testServerV2(srvServerID)
+	resource.Spec.Volumes = []regionv1.ServerVolumeSpec{{ID: "77777777-7777-4777-a777-777777777777"}}
+	resource.Status.Volumes = []regionv1.ServerVolumeStatus{{
+		ID:                 "77777777-7777-4777-a777-777777777777",
+		ProvisioningStatus: regionv1.AttachmentProvisioned,
+		Device:             ptr.To("/dev/vdb"),
+		Message:            "attached",
+	}}
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, resource).Build(),
+		Namespace: srvNamespace,
+		Identity:  identitymock.NewMockClientWithResponsesInterface(ctrl),
+	})
+
+	result, err := c.GetV2(rbac.NewContext(t.Context(), aclWithSrvUpdate()), idstest.MustParseServerID(resource.Name))
+
+	require.NoError(t, err)
+	require.Equal(t, openapi.ServerV2VolumeStatusList{{
+		Id:                 idstest.MustParseVolumeID(resource.Status.Volumes[0].ID),
+		ProvisioningStatus: coreapi.ResourceProvisioningStatusProvisioned,
+		Device:             resource.Status.Volumes[0].Device,
+		Message:            ptr.To(resource.Status.Volumes[0].Message),
+	}}, *result.Status.Volumes)
+}
+
+func TestServerGetV2ReturnsDeprovisioningVolumeAttachmentStatus(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	resource := testServerV2(srvServerID)
+	resource.Spec.Volumes = []regionv1.ServerVolumeSpec{{ID: "77777777-7777-4777-a777-777777777777"}}
+	resource.Status.Volumes = []regionv1.ServerVolumeStatus{
+		{ID: "77777777-7777-4777-a777-777777777777", ProvisioningStatus: regionv1.AttachmentProvisioned},
+		{ID: "88888888-8888-4888-a888-888888888888", ProvisioningStatus: regionv1.AttachmentDeprovisioning},
+	}
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, resource).Build(),
+		Namespace: srvNamespace,
+		Identity:  identitymock.NewMockClientWithResponsesInterface(ctrl),
+	})
+
+	result, err := c.GetV2(rbac.NewContext(t.Context(), aclWithSrvUpdate()), idstest.MustParseServerID(resource.Name))
+
+	require.NoError(t, err)
+	require.Equal(t, openapi.ServerV2VolumeStatusList{
+		{
+			Id:                 idstest.MustParseVolumeID(resource.Status.Volumes[0].ID),
+			ProvisioningStatus: coreapi.ResourceProvisioningStatusProvisioned,
+		},
+		{
+			Id:                 idstest.MustParseVolumeID(resource.Status.Volumes[1].ID),
+			ProvisioningStatus: coreapi.ResourceProvisioningStatusDeprovisioning,
+		},
+	}, *result.Status.Volumes)
+}
+
+func TestServerGetV2OmitsEmptyVolumeAttachmentStatus(t *testing.T) {
+	t.Parallel()
+
+	for _, volumes := range [][]regionv1.ServerVolumeStatus{nil, {}} {
+		resource := testServerV2(srvServerID)
+		resource.Status.Volumes = volumes
+		ctrl := gomock.NewController(t)
+
+		c := server.NewClientV2(common.ClientArgs{
+			Client:    newSrvFakeClient(t, resource).Build(),
+			Namespace: srvNamespace,
+			Identity:  identitymock.NewMockClientWithResponsesInterface(ctrl),
+		})
+
+		result, err := c.GetV2(rbac.NewContext(t.Context(), aclWithSrvUpdate()), idstest.MustParseServerID(resource.Name))
+
+		require.NoError(t, err)
+		require.Nil(t, result.Status.Volumes)
+	}
+}
+
+func TestServerGetV2RejectsMalformedVolumeAttachmentStatusID(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	resource := testServerV2(srvServerID)
+	resource.Spec.Volumes = []regionv1.ServerVolumeSpec{{ID: "not-a-volume-id"}}
+	resource.Status.Volumes = []regionv1.ServerVolumeStatus{{ID: "not-a-volume-id"}}
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, resource).Build(),
+		Namespace: srvNamespace,
+		Identity:  identitymock.NewMockClientWithResponsesInterface(ctrl),
+	})
+
+	_, err := c.GetV2(rbac.NewContext(t.Context(), aclWithSrvUpdate()), idstest.MustParseServerID(resource.Name))
+
+	require.Error(t, err)
+}
+
 func TestServerSSHKeyReturnsIdentityKey(t *testing.T) {
 	t.Parallel()
 

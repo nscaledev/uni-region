@@ -124,16 +124,16 @@ func TestStorageV2UpdateRequestRejectsExplicitNulls(t *testing.T) {
 	}{
 		{
 			name: "omitted nullable-looking fields is valid",
-			body: `{"metadata":{"name":"storage-name"},"spec":{"sizeGiB":10,"storageType":{"NFS":{"rootSquash":true}}}}`,
+			body: `{"metadata":{"name":"storage-name"},"spec":{"sizeGiB":10,"storageType":{"NFS":{"rootSquash":true,"posixAcl":false,"atimeUpdateIntervalSeconds":0}}}}`,
 		},
 		{
 			name:    "snapshot policies null is invalid",
-			body:    `{"metadata":{"name":"storage-name"},"spec":{"sizeGiB":10,"storageType":{"NFS":{"rootSquash":true}},"snapshotPolicies":null}}`,
+			body:    `{"metadata":{"name":"storage-name"},"spec":{"sizeGiB":10,"storageType":{"NFS":{"rootSquash":true,"posixAcl":false,"atimeUpdateIntervalSeconds":0}},"snapshotPolicies":null}}`,
 			wantErr: true,
 		},
 		{
 			name:    "default snapshot protection null is invalid",
-			body:    `{"metadata":{"name":"storage-name"},"spec":{"sizeGiB":10,"storageType":{"NFS":{"rootSquash":true}},"defaultSnapshotProtectionEnabled":null}}`,
+			body:    `{"metadata":{"name":"storage-name"},"spec":{"sizeGiB":10,"storageType":{"NFS":{"rootSquash":true,"posixAcl":false,"atimeUpdateIntervalSeconds":0}},"defaultSnapshotProtectionEnabled":null}}`,
 			wantErr: true,
 		},
 	}
