@@ -78,10 +78,8 @@ packages are the concrete provider implementations.
     merely that an asynchronous provider request was accepted. Accepted delete
     requests return `provisioners.ErrYield` so allocation cleanup and finalizer
     removal wait for provider convergence
-  - its `resource.Quantity` size and one of the nine neutral lifecycle values
-    (`creating`, `available`, `attaching`, `attached`, `detaching`, `updating`,
-    `deleting`, `error`, or `unknown`) let the Volume monitor project backing
-    truth without importing a provider SDK
+  - `UpdateVolumeState` projects observed size and health directly onto the
+    native Region `Volume` status for the Volume monitor
   - no backing resource maps to the shared `ErrResourceNotFound` sentinel;
     client/request failures remain Go errors, while successfully observed
     provider `error` and unrecognized/empty `unknown` lifecycle values remain
