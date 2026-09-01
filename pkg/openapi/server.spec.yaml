@@ -3514,11 +3514,41 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/serverProviderCreateGate'
+    serverProviderCreateGateState:
+      description: >-
+        The resolved state of a provider-create gate. Closed holds
+        provider-create (unresolved, still being worked); Open satisfies it;
+        Locked fails provider-create permanently.
+      type: string
+      enum:
+      - Closed
+      - Open
+      - Locked
+    serverRemainingProviderCreateGate:
+      description: A configured provider-create gate that is not yet Open, with its resolved state.
+      type: object
+      required:
+      - conditionType
+      - state
+      properties:
+        conditionType:
+          $ref: '#/components/schemas/serverProviderCreateGateType'
+        state:
+          $ref: '#/components/schemas/serverProviderCreateGateState'
+        reason:
+          description: Machine-readable reason for the reported state.
+          type: string
+        message:
+          description: Human-readable detail reported for the gate.
+          type: string
     serverRemainingProviderCreateGates:
-      description: Configured provider-create gates that are not currently satisfied.
+      description: >-
+        Configured provider-create gates that are not yet Open, each with its
+        resolved state so a reader can tell Closed (still being worked) from
+        Locked (will never open).
       type: array
       items:
-        $ref: '#/components/schemas/serverProviderCreateGateType'
+        $ref: '#/components/schemas/serverRemainingProviderCreateGate'
     serverProviderCreateGateAction:
       description: Request to report a configured provider-create gate's status.
       type: object
@@ -3533,16 +3563,19 @@ components:
           description: Machine-readable reason for the reported state.
           type: string
           minLength: 1
+          maxLength: 256
         message:
           description: Human-readable details for operators.
           type: string
           minLength: 1
+          maxLength: 1024
         state:
           description: >-
             The gate state to report. Open satisfies the gate; Locked blocks it
             permanently (provider-create fails); Closed reports transient
             progress and refreshes the reason without resolving the gate.
-            Defaults to Open.
+            Defaults to Open. Once a gate is Open it may not be moved back to
+            Closed or Locked; that downgrade is rejected with a conflict.
           type: string
           enum:
           - Closed

@@ -143,8 +143,8 @@ func TestProvisionProviderCreateGateLocked(t *testing.T) {
 	providers := mockproviders.NewMockProviders(ctrl)
 	providers.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
 
-	// A Locked gate must fail the create (not yield): the server is never
-	// provider-created, so no CreateServer call is expected.
+	// A Locked gate must fail the create terminally (not yield): the server is
+	// never provider-created, so no CreateServer call is expected.
 	server := testProvisionServer(withLockedProviderCreateGate())
 	cli := testProvisionClient(t, server, testProvisionIdentity())
 
@@ -152,6 +152,16 @@ func TestProvisionProviderCreateGateLocked(t *testing.T) {
 	err := prov.Provision(coreclient.NewContext(t.Context(), cli))
 	require.Error(t, err)
 	require.NotErrorIs(t, err, provisioners.ErrYield)
+	require.ErrorIs(t, err, provisioners.ErrTerminal)
+
+	// The disposition must carry the closed-vocabulary Errored reason (not a
+	// bespoke one) and a user-safe message that names the gate but does not
+	// fail-open the satisfier's machine-readable reason.
+	var provErr *provisioners.Error
+	require.ErrorAs(t, err, &provErr)
+	require.Equal(t, unikornv1core.ConditionReasonErrored, provErr.Reason())
+	require.Contains(t, provErr.Message(), testProviderGate)
+	require.NotContains(t, provErr.Message(), "NoPKeyAvailable")
 }
 
 func TestProvisionProviderCreateGateSatisfied(t *testing.T) {

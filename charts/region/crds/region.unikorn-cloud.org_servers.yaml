@@ -345,6 +345,7 @@ spec:
                       description: |-
                         Actor is the authenticated service identity that last wrote this gate
                         state.
+                      maxLength: 256
                       type: string
                     conditionType:
                       description: ConditionType matches a configured ServerSpec.ProviderCreateGates
@@ -357,15 +358,25 @@ spec:
                       format: date-time
                       type: string
                     message:
-                      description: Message is human-readable detail.
+                      description: |-
+                        Message is human-readable detail. It is written by an external satisfier,
+                        so it is length-bounded to keep the stored object small.
+                      maxLength: 1024
                       type: string
                     reason:
-                      description: Reason is a machine-readable reason for the state.
+                      description: |-
+                        Reason is a machine-readable reason for the state. It is written by an
+                        external satisfier, so it is length-bounded to keep the stored object
+                        small.
+                      maxLength: 256
                       type: string
                     state:
+                      default: Closed
                       description: |-
                         State is the resolved gate state: Closed (default) holds provider-create,
-                        Open satisfies it, and Locked fails it permanently.
+                        Open satisfies it, and Locked fails it permanently. The default makes a
+                        gate persisted before this field existed (status "True", no state) decode
+                        as Closed rather than "", which would fail the enum on the next write.
                       enum:
                       - Closed
                       - Open

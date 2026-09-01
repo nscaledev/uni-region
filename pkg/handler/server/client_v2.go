@@ -231,11 +231,37 @@ func sshInjectionStatus(in *regionv1.Server) *openapi.SshInjection {
 	return &out
 }
 
+func convertProviderCreateGateState(in regionv1.ServerProviderCreateGateState) openapi.ServerProviderCreateGateState {
+	switch in {
+	case regionv1.ServerProviderCreateGateOpen:
+		return openapi.ServerProviderCreateGateStateOpen
+	case regionv1.ServerProviderCreateGateLocked:
+		return openapi.ServerProviderCreateGateStateLocked
+	default:
+		return openapi.ServerProviderCreateGateStateClosed
+	}
+}
+
 func convertRemainingProviderCreateGates(in *regionv1.Server) *openapi.ServerRemainingProviderCreateGates {
-	remaining := in.RemainingProviderCreateGates()
+	remaining := in.RemainingProviderCreateGateStatuses()
 	out := make(openapi.ServerRemainingProviderCreateGates, len(remaining))
 
-	copy(out, remaining)
+	for i := range remaining {
+		gate := &remaining[i]
+
+		out[i] = openapi.ServerRemainingProviderCreateGate{
+			ConditionType: gate.ConditionType,
+			State:         convertProviderCreateGateState(gate.State),
+		}
+
+		if gate.Reason != "" {
+			out[i].Reason = ptr.To(gate.Reason)
+		}
+
+		if gate.Message != "" {
+			out[i].Message = ptr.To(gate.Message)
+		}
+	}
 
 	return &out
 }
@@ -946,6 +972,18 @@ func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regio
 	state, err := providerCreateGateActionState(request)
 	if err != nil {
 		return err
+	}
+
+	// Once a gate is Open, provider-create may already have started (or
+	// completed) on the strength of it. Servers reconcile constantly, so
+	// allowing a satisfier to move an Open gate back to Closed or Locked would
+	// let any holder of this endpoint wedge or fail a running server on a later
+	// pass. Open is therefore monotonic for the life of an attempt: only Region
+	// resets it, as part of a provider-create retry. Reject the downgrade.
+	if existing, ok := current.ProviderCreateGateStatusRead(conditionType); ok &&
+		existing.State == regionv1.ServerProviderCreateGateOpen &&
+		state != regionv1.ServerProviderCreateGateOpen {
+		return errors.HTTPConflict()
 	}
 
 	changed := providerCreateGateActionChanged(current, conditionType, state, actor, request.Reason, request.Message)

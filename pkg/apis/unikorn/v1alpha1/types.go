@@ -1284,17 +1284,22 @@ type ServerVolumeStatus struct {
 
 // ServerProviderCreateGateState is the resolved state of a provider-create
 // gate. A gate rests in Closed (the default entry state, reached without any
-// report) until a satisfier resolves it. The two resolving states are terminal
-// for a given provider-create attempt:
+// report) until a satisfier resolves it:
 //   - Closed: unresolved; the provisioner holds (yields). A satisfier may
 //     re-report Closed to refresh the reason while it keeps working (a
 //     self-loop that leaves the state unchanged).
-//   - Open: satisfied; provider-create proceeds once every gate is Open.
+//   - Open: satisfied; provider-create proceeds once every gate is Open. Once a
+//     gate is Open a satisfier may not move it back to Closed or Locked (the
+//     report endpoint rejects the downgrade); only Region resets it, and only
+//     as part of a provider-create retry.
 //   - Locked: can never be satisfied without external change; provider-create
-//     fails with the reported reason rather than holding.
+//     fails terminally with the reported reason rather than holding.
 //
-// A provider-create retry resets every gate back to Closed (see
-// ProviderCreateGatesReset), starting a fresh attempt.
+// Resets are Region-owned. A provider-create *retry* resets a server's gates
+// back to Closed (see ProviderCreateGatesReset) once the failed provider server
+// is confirmed gone, starting a fresh attempt. A Locked gate fails before any
+// provider server exists, so the retry path never runs for it: recovery is
+// out-of-band (recreate the server).
 // +kubebuilder:validation:Enum=Closed;Open;Locked
 type ServerProviderCreateGateState string
 
@@ -1309,16 +1314,25 @@ type ServerProviderCreateGateStatus struct {
 	// +kubebuilder:validation:MinLength=1
 	ConditionType string `json:"conditionType"`
 	// State is the resolved gate state: Closed (default) holds provider-create,
-	// Open satisfies it, and Locked fails it permanently.
+	// Open satisfies it, and Locked fails it permanently. The default makes a
+	// gate persisted before this field existed (status "True", no state) decode
+	// as Closed rather than "", which would fail the enum on the next write.
+	// +kubebuilder:default=Closed
 	State ServerProviderCreateGateState `json:"state"`
 	// LastTransitionTime records when the gate state last changed.
 	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
 	// Actor is the authenticated service identity that last wrote this gate
 	// state.
+	// +kubebuilder:validation:MaxLength=256
 	Actor string `json:"actor,omitempty"`
-	// Reason is a machine-readable reason for the state.
+	// Reason is a machine-readable reason for the state. It is written by an
+	// external satisfier, so it is length-bounded to keep the stored object
+	// small.
+	// +kubebuilder:validation:MaxLength=256
 	Reason string `json:"reason,omitempty"`
-	// Message is human-readable detail.
+	// Message is human-readable detail. It is written by an external satisfier,
+	// so it is length-bounded to keep the stored object small.
+	// +kubebuilder:validation:MaxLength=1024
 	Message string `json:"message,omitempty"`
 }
 

@@ -94,6 +94,13 @@ const (
 	ServerProviderCreateGateActionStateOpen   ServerProviderCreateGateActionState = "Open"
 )
 
+// Defines values for ServerProviderCreateGateState.
+const (
+	ServerProviderCreateGateStateClosed ServerProviderCreateGateState = "Closed"
+	ServerProviderCreateGateStateLocked ServerProviderCreateGateState = "Locked"
+	ServerProviderCreateGateStateOpen   ServerProviderCreateGateState = "Open"
+)
+
 // Defines values for SshInjection.
 const (
 	SshInjectionCa              SshInjection = "ca"
@@ -1062,12 +1069,15 @@ type ServerProviderCreateGateAction struct {
 	// Reason Machine-readable reason for the reported state.
 	Reason string `json:"reason"`
 
-	// State The gate state to report. Open satisfies the gate; Locked blocks it permanently (provider-create fails); Closed reports transient progress and refreshes the reason without resolving the gate. Defaults to Open.
+	// State The gate state to report. Open satisfies the gate; Locked blocks it permanently (provider-create fails); Closed reports transient progress and refreshes the reason without resolving the gate. Defaults to Open. Once a gate is Open it may not be moved back to Closed or Locked; that downgrade is rejected with a conflict.
 	State *ServerProviderCreateGateActionState `json:"state,omitempty"`
 }
 
-// ServerProviderCreateGateActionState The gate state to report. Open satisfies the gate; Locked blocks it permanently (provider-create fails); Closed reports transient progress and refreshes the reason without resolving the gate. Defaults to Open.
+// ServerProviderCreateGateActionState The gate state to report. Open satisfies the gate; Locked blocks it permanently (provider-create fails); Closed reports transient progress and refreshes the reason without resolving the gate. Defaults to Open. Once a gate is Open it may not be moved back to Closed or Locked; that downgrade is rejected with a conflict.
 type ServerProviderCreateGateActionState string
+
+// ServerProviderCreateGateState The resolved state of a provider-create gate. Closed holds provider-create (unresolved, still being worked); Open satisfies it; Locked fails provider-create permanently.
+type ServerProviderCreateGateState string
 
 // ServerProviderCreateGateType A provider-create gate condition type.
 type ServerProviderCreateGateType = string
@@ -1093,8 +1103,23 @@ type ServerRead struct {
 	Status ServerStatus `json:"status"`
 }
 
-// ServerRemainingProviderCreateGates Configured provider-create gates that are not currently satisfied.
-type ServerRemainingProviderCreateGates = []ServerProviderCreateGateType
+// ServerRemainingProviderCreateGate A configured provider-create gate that is not yet Open, with its resolved state.
+type ServerRemainingProviderCreateGate struct {
+	// ConditionType A provider-create gate condition type.
+	ConditionType ServerProviderCreateGateType `json:"conditionType"`
+
+	// Message Human-readable detail reported for the gate.
+	Message *string `json:"message,omitempty"`
+
+	// Reason Machine-readable reason for the reported state.
+	Reason *string `json:"reason,omitempty"`
+
+	// State The resolved state of a provider-create gate. Closed holds provider-create (unresolved, still being worked); Open satisfies it; Locked fails provider-create permanently.
+	State ServerProviderCreateGateState `json:"state"`
+}
+
+// ServerRemainingProviderCreateGates Configured provider-create gates that are not yet Open, each with its resolved state so a reader can tell Closed (still being worked) from Locked (will never open).
+type ServerRemainingProviderCreateGates = []ServerRemainingProviderCreateGate
 
 // ServerSecurityGroup A security group.
 type ServerSecurityGroup struct {
@@ -1272,7 +1297,7 @@ type ServerV2Status struct {
 	// RegionId The region the server belongs to.
 	RegionId RegionId `json:"regionId"`
 
-	// RemainingProviderCreateGates Configured provider-create gates that are not currently satisfied.
+	// RemainingProviderCreateGates Configured provider-create gates that are not yet Open, each with its resolved state so a reader can tell Closed (still being worked) from Locked (will never open).
 	RemainingProviderCreateGates *ServerRemainingProviderCreateGates `json:"remainingProviderCreateGates,omitempty"`
 
 	// SshCertificateAuthorityId The SSH certificate authority configured when the server was created.

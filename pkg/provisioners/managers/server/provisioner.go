@@ -107,9 +107,26 @@ func New(options manager.ControllerOptions, providers providers.Providers) provi
 // Ensure the ManagerProvisioner interface is implemented.
 var _ provisioners.ManagerProvisioner = &Provisioner{}
 
-// ErrProviderCreateGateLocked is returned when a provider-create gate is
-// reported Locked, failing the create rather than holding.
-var ErrProviderCreateGateLocked = errors.New("provider create gate locked")
+// providerCreateGateMessageMax bounds the satisfier-supplied detail that reaches
+// the Available condition message. The stored gate is already MaxLength-bounded
+// by the CRD; this is a second belt so a chatty satisfier cannot bloat the
+// condition either.
+const providerCreateGateMessageMax = 256
+
+// truncate clamps s to at most max runes, appending an ellipsis when it clips,
+// so an over-long satisfier message cannot bloat a derived condition.
+func truncate(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+
+	if max <= 1 {
+		return string(r[:max])
+	}
+
+	return string(r[:max-1]) + "…"
+}
 
 func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 	return p.server
@@ -440,10 +457,16 @@ func (p *Provisioner) blockUntilDependenciesReady(ctx context.Context, cli clien
 		}
 	}
 
-	// A Locked gate will never be satisfied, so fail the create (not yield)
-	// with the reported reason rather than holding the server indefinitely.
+	// A Locked gate will never be satisfied, so fail the create rather than
+	// holding the server indefinitely. This is a terminal disposition: the
+	// generic Errored reason (the provisioning vocabulary is closed and
+	// core-owned), with the satisfier's own, length-bounded, user-safe detail on
+	// the message. A raw error here would both requeue forever and fail-open the
+	// untrusted detail onto the condition. Recovery is out-of-band (recreate the
+	// server); the retry path never runs for a gate that fails before create.
 	if gate, ok := p.server.LockedProviderCreateGate(); ok {
-		return fmt.Errorf("%w: gate %q: %s (%s)", ErrProviderCreateGateLocked, gate.ConditionType, gate.Message, gate.Reason)
+		return provisioners.Terminal(unikornv1core.ConditionReasonErrored,
+			fmt.Sprintf("provider-create gate %q is locked: %s", gate.ConditionType, truncate(gate.Message, providerCreateGateMessageMax)))
 	}
 
 	if !p.server.ProviderCreateGatesReady() {

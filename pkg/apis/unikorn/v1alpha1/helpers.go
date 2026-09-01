@@ -315,6 +315,34 @@ func (c *Server) ProviderCreateGatesReady() bool {
 	return len(c.RemainingProviderCreateGates()) == 0
 }
 
+// RemainingProviderCreateGateStatuses returns the resolved status of every
+// configured gate that is not Open, so a reader can tell Closed (unresolved,
+// still being worked) from Locked (will never open) and see the reported
+// reason. A gate with no status yet is reported Closed, its resting state.
+func (c *Server) RemainingProviderCreateGateStatuses() []ServerProviderCreateGateStatus {
+	out := make([]ServerProviderCreateGateStatus, 0, len(c.Spec.ProviderCreateGates))
+
+	for _, gate := range c.Spec.ProviderCreateGates {
+		status, ok := c.ProviderCreateGateStatusRead(gate.ConditionType)
+		if ok && status.State == ServerProviderCreateGateOpen {
+			continue
+		}
+
+		if !ok {
+			out = append(out, ServerProviderCreateGateStatus{
+				ConditionType: gate.ConditionType,
+				State:         ServerProviderCreateGateClosed,
+			})
+
+			continue
+		}
+
+		out = append(out, *status)
+	}
+
+	return out
+}
+
 // LockedProviderCreateGate returns the first configured gate reported Locked, if
 // any. A Locked gate can never be satisfied, so the provisioner fails
 // provider-create rather than holding when a gate is Locked.

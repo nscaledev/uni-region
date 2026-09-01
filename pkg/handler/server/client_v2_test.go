@@ -1004,7 +1004,9 @@ func TestServerCreateV2SetsProviderCreateGates(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.Status.RemainingProviderCreateGates)
-	require.Equal(t, openapi.ServerRemainingProviderCreateGates{srvProviderGate}, *result.Status.RemainingProviderCreateGates)
+	require.Equal(t, openapi.ServerRemainingProviderCreateGates{
+		{ConditionType: srvProviderGate, State: openapi.ServerProviderCreateGateStateClosed},
+	}, *result.Status.RemainingProviderCreateGates)
 
 	created := &regionv1.Server{}
 	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: result.Metadata.Id}, created))
@@ -1566,7 +1568,9 @@ func TestServerUpdateV2PreservesProviderCreateGates(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.Status.RemainingProviderCreateGates)
-	require.Equal(t, openapi.ServerRemainingProviderCreateGates{srvProviderGate}, *result.Status.RemainingProviderCreateGates)
+	require.Equal(t, openapi.ServerRemainingProviderCreateGates{
+		{ConditionType: srvProviderGate, State: openapi.ServerProviderCreateGateStateClosed},
+	}, *result.Status.RemainingProviderCreateGates)
 
 	updated, err := c.GetV2Raw(ctx, resource.Name)
 	require.NoError(t, err)
@@ -1736,7 +1740,9 @@ func TestServerGetV2ReturnsRemainingProviderCreateGates(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.Status.RemainingProviderCreateGates)
-	require.Equal(t, openapi.ServerRemainingProviderCreateGates{"example.unikorn-cloud.org/second-ready"}, *result.Status.RemainingProviderCreateGates)
+	require.Equal(t, openapi.ServerRemainingProviderCreateGates{
+		{ConditionType: "example.unikorn-cloud.org/second-ready", State: openapi.ServerProviderCreateGateStateClosed},
+	}, *result.Status.RemainingProviderCreateGates)
 }
 
 func TestServerSatisfyProviderCreateGate(t *testing.T) {
@@ -1843,6 +1849,65 @@ func TestServerSatisfyProviderCreateGateLocks(t *testing.T) {
 	gate, ok := updated.LockedProviderCreateGate()
 	require.True(t, ok)
 	require.Equal(t, srvProviderGate, gate.ConditionType)
+}
+
+func TestServerSatisfyProviderCreateGateRejectsDowngradeFromOpen(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name  string
+		state openapi.ServerProviderCreateGateActionState
+	}{
+		{name: "to Closed", state: openapi.ServerProviderCreateGateActionStateClosed},
+		{name: "to Locked", state: openapi.ServerProviderCreateGateActionStateLocked},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctrl := gomock.NewController(t)
+
+			resource := testServerV2(srvServerID)
+			resource.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
+				{ConditionType: srvProviderGate},
+			}
+			// The gate is already Open (provider-create may already have run).
+			resource.ProviderCreateGateStatusWrite(srvProviderGate, regionv1.ServerProviderCreateGateOpen, "pre-create-service", "Prepared", "ready")
+
+			k8sClient := newSrvFakeClient(t, resource).
+				WithStatusSubresource(&regionv1.Server{}).
+				Build()
+			mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+			c := server.NewClientV2(common.ClientArgs{
+				Client:    k8sClient,
+				Namespace: srvNamespace,
+				Identity:  mockIdentity,
+			})
+
+			ctx := rbac.NewContext(t.Context(), aclWithSrvProviderCreateGate())
+			ctx = withPrincipal(ctx)
+			ctx = withProviderCreateServiceCertificate(ctx, t)
+
+			state := tc.state
+			request := &openapi.ServerProviderCreateGateAction{
+				ConditionType: srvProviderGate,
+				Reason:        "ChangedMind",
+				Message:       "trying to wedge a running server",
+				State:         &state,
+			}
+
+			err := c.SatisfyProviderCreateGate(ctx, idstest.MustParseServerID(resource.Name), request)
+			require.True(t, coreerrors.IsConflict(err), "expected 409 conflict, got: %v", err)
+
+			// The gate must remain Open and untouched.
+			updated := &regionv1.Server{}
+			require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
+			status, ok := updated.ProviderCreateGateStatusRead(srvProviderGate)
+			require.True(t, ok)
+			require.Equal(t, regionv1.ServerProviderCreateGateOpen, status.State)
+			require.Equal(t, "Prepared", status.Reason)
+		})
+	}
 }
 
 func TestServerSatisfyProviderCreateGateReportsClosed(t *testing.T) {
