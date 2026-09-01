@@ -34,8 +34,9 @@ The useful way to read it is not as a directory tree, but as one system:
   Its provider capability exposes neutral backing discovery, observed
   size, and lifecycle state. The monitor projects that truth into observed
   size and coarse health without taking over the controller-owned `Available`
-  condition. A provisioned Volume is a durable identity. Provider loss degrades
-  health and never triggers replacement under the same Region Volume ID.
+  condition. `VolumeStatus.ProvisionedAt` records durable backing-storage
+  creation, so provider loss degrades health without triggering replacement
+  under the same Region Volume ID.
   OpenStack also supports server
   attachment behavior. Attachment projection remains a later lifecycle slice
 - `Server` now carries the internal attach-existing-only block volume intent

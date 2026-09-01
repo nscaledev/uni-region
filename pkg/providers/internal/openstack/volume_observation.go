@@ -21,27 +21,17 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
+
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
-	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-	"github.com/unikorn-cloud/region/pkg/constants"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
-
-func volumeSystemMetadata(identity *unikornv1.Identity, volume *unikornv1.Volume) map[string]string {
-	return map[string]string{
-		"region:volume_id":         volume.Name,
-		"identity:organization_id": volume.Labels[coreconstants.OrganizationLabel],
-		"identity:project_id":      volume.Labels[coreconstants.ProjectLabel],
-		"region:region_id":         volume.Labels[constants.RegionLabel],
-		"region:network_id":        volume.Spec.NetworkID,
-		"region:identity_id":       identity.Name,
-	}
-}
 
 func volumeSize(sizeGiB int) (resource.Quantity, error) {
 	const bytesPerGiB = int64(1 << 30)
@@ -54,16 +44,32 @@ func volumeSize(sizeGiB int) (resource.Quantity, error) {
 }
 
 func setVolumeHealth(volume *unikornv1.Volume, status string) {
+	if strings.HasPrefix(status, volumeStatusErrorPrefix) {
+		volume.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider reported the volume in an error state")
+
+		return
+	}
+
 	switch status {
 	case "creating", "available", "reserved", "attaching", "in-use", "detaching", "managing", "maintenance", "restoring-backup", "awaiting-transfer", "backing-up", "downloading", "uploading", "retyping", "extending":
 		volume.SetHealthCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "the provider volume state is healthy")
 	case "deleting":
 		volume.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider volume is being deleted")
-	case "error", "error_deleting", "error_managing", "error_restoring", "error_backing-up", "error_extending":
-		volume.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider reported the volume in an error state")
 	default:
 		volume.SetHealthCondition(corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "the provider volume state is unknown")
 	}
+}
+
+func projectVolumeState(volume *unikornv1.Volume, cinderVolume *volumes.Volume) error {
+	size, err := volumeSize(cinderVolume.Size)
+	if err != nil {
+		return err
+	}
+
+	volume.Status.Size = &size
+	setVolumeHealth(volume, cinderVolume.Status)
+
+	return nil
 }
 
 func updateVolumeState(ctx context.Context, blockStorage VolumeInterface, volume *unikornv1.Volume) error {
@@ -73,12 +79,7 @@ func updateVolumeState(ctx context.Context, blockStorage VolumeInterface, volume
 			return err
 		}
 
-		available, availableErr := unikornv1core.GetAvailableCondition(volume)
-		if availableErr != nil {
-			return nil //nolint:nilerr // absence before provisioning is expected
-		}
-
-		if available.Status != corev1.ConditionTrue || available.Reason != unikornv1core.ConditionReasonProvisioned {
+		if volume.Status.ProvisionedAt == nil {
 			return nil
 		}
 
@@ -92,18 +93,19 @@ func updateVolumeState(ctx context.Context, blockStorage VolumeInterface, volume
 		return fmt.Errorf("%w: nil Cinder volume returned for Region volume %s", coreerrors.ErrConsistency, volume.Name)
 	}
 
-	size, err := volumeSize(cinderVolume.Size)
+	return projectVolumeState(volume, cinderVolume)
+}
+
+func (p *Provider) UpdateVolumeState(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
+	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
 	if err != nil {
 		return err
 	}
 
-	volume.Status.Size = &size
-	setVolumeHealth(volume, cinderVolume.Status)
+	if !provisioned {
+		return nil
+	}
 
-	return nil
-}
-
-func (p *Provider) UpdateVolumeState(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
 	blockStorage, err := p.blockStorageFromServicePrincipal(ctx, identity)
 	if err != nil {
 		return err

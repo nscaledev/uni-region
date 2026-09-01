@@ -13,8 +13,7 @@ condition and all create/delete intent. Provider request or observation errors
 are logged and skipped, preserving the last observed status. Provider absence
 semantics are defined by the provider implementation.
 
-Every health transition is logged with its previous and new status, reason, and
-message. Logs also include Volume, organization, and region identifiers.
+Every health transition is emitted on the structured lifecycle stream.
 The checker never imports provider SDK types.
 
 Provider resolution results, including failures, are cached by region for one

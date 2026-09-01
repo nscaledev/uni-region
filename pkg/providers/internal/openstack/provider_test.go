@@ -57,6 +57,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
+	k8score "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
@@ -646,6 +647,19 @@ func TestDeleteVolumeNoopsWhenIdentityUnrealized(t *testing.T) {
 	p := openstack.NewTestProvider(k8sClient, region)
 
 	require.NoError(t, p.DeleteVolume(t.Context(), identity, volume))
+}
+
+func TestUpdateVolumeStateNoopsWhenIdentityUnrealized(t *testing.T) {
+	t.Parallel()
+
+	region := providerNetworkRegionFixture()
+	identity := identityFixture()
+	volume := volumeFixture()
+
+	k8sClient := getClient(t, []client.Object{unrealizedOpenstackIdentityFixture(identity)})
+	p := openstack.NewTestProvider(k8sClient, region)
+
+	require.NoError(t, p.UpdateVolumeState(t.Context(), identity, volume))
 }
 
 // TestDeleteLoadBalancerNoopsWhenIdentityUnrealized verifies the delete is a
@@ -1882,6 +1896,7 @@ func TestReconcileVolume(t *testing.T) {
 	t.Run("ItDoesNotExist", func(t *testing.T) {
 		t.Parallel()
 
+		volume := volume.DeepCopy()
 		c := gomock.NewController(t)
 		blockStorage := mock.NewMockVolumeInterface(c)
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(nil, coreerrors.ErrResourceNotFound)
@@ -1889,21 +1904,25 @@ func TestReconcileVolume(t *testing.T) {
 
 		err := openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume)
 		require.ErrorIs(t, err, provisioners.ErrYield)
+		require.Nil(t, volume.Status.ProvisionedAt)
 	})
 
 	t.Run("ItIsAvailable", func(t *testing.T) {
 		t.Parallel()
 
+		volume := volume.DeepCopy()
 		c := gomock.NewController(t)
 		blockStorage := mock.NewMockVolumeInterface(c)
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(openstackVolume, nil)
 
 		require.NoError(t, openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume))
+		require.NotNil(t, volume.Status.ProvisionedAt)
 	})
 
 	t.Run("ItIsCreating", func(t *testing.T) {
 		t.Parallel()
 
+		volume := volume.DeepCopy()
 		c := gomock.NewController(t)
 		blockStorage := mock.NewMockVolumeInterface(c)
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(&volumes.Volume{
@@ -1919,6 +1938,7 @@ func TestReconcileVolume(t *testing.T) {
 	t.Run("ItIsErrored", func(t *testing.T) {
 		t.Parallel()
 
+		volume := volume.DeepCopy()
 		c := gomock.NewController(t)
 		blockStorage := mock.NewMockVolumeInterface(c)
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(&volumes.Volume{
@@ -1937,9 +1957,30 @@ func TestReconcileVolume(t *testing.T) {
 		require.Equal(t, "provider volume entered an error state", provisioningError.Message())
 	})
 
+	t.Run("ItWasProvisionedButIsMissing", func(t *testing.T) {
+		t.Parallel()
+
+		missingVolume := volumeFixture()
+		provisionedAt := metav1.Now()
+		missingVolume.Status.ProvisionedAt = &provisionedAt
+
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), missingVolume).Return(nil, coreerrors.ErrResourceNotFound)
+
+		err := openstack.ReconcileVolume(t.Context(), blockStorage, identity, missingVolume)
+		require.ErrorIs(t, err, provisioners.ErrUserActionRequired)
+
+		health, healthErr := corev1.GetHealthyCondition(missingVolume)
+		require.NoError(t, healthErr)
+		require.Equal(t, k8score.ConditionFalse, health.Status)
+		require.Equal(t, corev1.ConditionReasonDegraded, health.Reason)
+	})
+
 	t.Run("ItHasAnUnknownProviderStatus", func(t *testing.T) {
 		t.Parallel()
 
+		volume := volume.DeepCopy()
 		c := gomock.NewController(t)
 		blockStorage := mock.NewMockVolumeInterface(c)
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(&volumes.Volume{

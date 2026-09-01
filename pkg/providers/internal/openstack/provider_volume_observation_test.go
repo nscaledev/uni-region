@@ -34,6 +34,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var errVolumeStateProvider = errors.New("cinder unavailable")
@@ -55,20 +56,20 @@ func observedCinderVolume(identity *regionv1.Identity, volume *regionv1.Volume, 
 	}
 }
 
-func updateVolumeState(t *testing.T, identity *regionv1.Identity, volume *regionv1.Volume, providerVolume *volumes.Volume, providerErr error) error {
+func updateVolumeState(t *testing.T, volume *regionv1.Volume, providerVolume *volumes.Volume, providerErr error) error {
 	t.Helper()
 	c := gomock.NewController(t)
 	blockStorage := mock.NewMockVolumeInterface(c)
 	blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(providerVolume, providerErr)
 
-	return openstack.UpdateVolumeStateWithClient(t.Context(), blockStorage, identity, volume)
+	return openstack.UpdateVolumeStateWithClient(t.Context(), blockStorage, volume)
 }
 
 func TestUpdateVolumeStateProjectsSizeAndHealth(t *testing.T) {
 	t.Parallel()
 
 	identity, volume := identityFixture(), volumeFixture()
-	require.NoError(t, updateVolumeState(t, identity, volume, observedCinderVolume(identity, volume, "available", 20), nil))
+	require.NoError(t, updateVolumeState(t, volume, observedCinderVolume(identity, volume, "available", 20), nil))
 
 	require.NotNil(t, volume.Status.Size)
 	require.True(t, volume.Status.Size.Equal(resource.MustParse("20Gi")))
@@ -76,6 +77,7 @@ func TestUpdateVolumeStateProjectsSizeAndHealth(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, corev1.ConditionTrue, health.Status)
 	require.Equal(t, unikornv1core.ConditionReasonHealthy, health.Reason)
+	require.Nil(t, volume.Status.ProvisionedAt)
 }
 
 func TestUpdateVolumeStateMapsCinderStatuses(t *testing.T) {
@@ -108,6 +110,7 @@ func TestUpdateVolumeStateMapsCinderStatuses(t *testing.T) {
 		"error_restoring":   {corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider reported the volume in an error state"},
 		"error_backing-up":  {corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider reported the volume in an error state"},
 		"error_extending":   {corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider reported the volume in an error state"},
+		"error_future":      {corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider reported the volume in an error state"},
 		"":                  {corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "the provider volume state is unknown"},
 		"future-state":      {corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "the provider volume state is unknown"},
 	}
@@ -118,7 +121,7 @@ func TestUpdateVolumeStateMapsCinderStatuses(t *testing.T) {
 
 			identity, volume := identityFixture(), volumeFixture()
 
-			require.NoError(t, updateVolumeState(t, identity, volume, observedCinderVolume(identity, volume, cinderStatus, 20), nil))
+			require.NoError(t, updateVolumeState(t, volume, observedCinderVolume(identity, volume, cinderStatus, 20), nil))
 
 			health, err := unikornv1core.GetHealthyCondition(volume)
 			require.NoError(t, err)
@@ -132,14 +135,17 @@ func TestUpdateVolumeStateMapsCinderStatuses(t *testing.T) {
 func TestUpdateVolumeStateHandlesMissingAfterProvisioning(t *testing.T) {
 	t.Parallel()
 
-	identity, volume := identityFixture(), volumeFixture()
+	volume := volumeFixture()
 
 	volume.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
+
+	provisionedAt := metav1.Now()
+	volume.Status.ProvisionedAt = &provisionedAt
 
 	size := resource.MustParse("20Gi")
 	volume.Status.Size = &size
 
-	require.NoError(t, updateVolumeState(t, identity, volume, nil, coreerrors.ErrResourceNotFound))
+	require.NoError(t, updateVolumeState(t, volume, nil, coreerrors.ErrResourceNotFound))
 	require.Nil(t, volume.Status.Size)
 	health, err := unikornv1core.GetHealthyCondition(volume)
 	require.NoError(t, err)
@@ -151,11 +157,11 @@ func TestUpdateVolumeStateHandlesMissingAfterProvisioning(t *testing.T) {
 func TestUpdateVolumeStateIgnoresMissingBeforeProvisioning(t *testing.T) {
 	t.Parallel()
 
-	identity, volume := identityFixture(), volumeFixture()
+	volume := volumeFixture()
 	size := resource.MustParse("20Gi")
 	volume.Status.Size = &size
 
-	require.NoError(t, updateVolumeState(t, identity, volume, nil, coreerrors.ErrResourceNotFound))
+	require.NoError(t, updateVolumeState(t, volume, nil, coreerrors.ErrResourceNotFound))
 	require.NotNil(t, volume.Status.Size)
 	require.True(t, volume.Status.Size.Equal(size))
 	_, err := unikornv1core.GetHealthyCondition(volume)
@@ -165,8 +171,8 @@ func TestUpdateVolumeStateIgnoresMissingBeforeProvisioning(t *testing.T) {
 func TestUpdateVolumeStatePreservesStateOnProviderError(t *testing.T) {
 	t.Parallel()
 
-	identity, volume := identityFixture(), volumeFixture()
-	require.ErrorIs(t, updateVolumeState(t, identity, volume, nil, errVolumeStateProvider), errVolumeStateProvider)
+	volume := volumeFixture()
+	require.ErrorIs(t, updateVolumeState(t, volume, nil, errVolumeStateProvider), errVolumeStateProvider)
 	_, err := unikornv1core.GetHealthyCondition(volume)
 	require.Error(t, err)
 }
@@ -177,7 +183,7 @@ func TestUpdateVolumeStateRejectsInvalidProviderData(t *testing.T) {
 	check := func(size int) {
 		identity, volume := identityFixture(), volumeFixture()
 
-		require.ErrorIs(t, updateVolumeState(t, identity, volume, observedCinderVolume(identity, volume, "available", size), nil), coreerrors.ErrConsistency)
+		require.ErrorIs(t, updateVolumeState(t, volume, observedCinderVolume(identity, volume, "available", size), nil), coreerrors.ErrConsistency)
 	}
 
 	check(-1)
@@ -193,6 +199,6 @@ func TestUpdateVolumeStateIgnoresMetadataDrift(t *testing.T) {
 	identity, volume := identityFixture(), volumeFixture()
 	cinderVolume := observedCinderVolume(identity, volume, "available", 20)
 	delete(cinderVolume.Metadata, "region:volume_id")
-	require.NoError(t, updateVolumeState(t, identity, volume, cinderVolume, nil))
+	require.NoError(t, updateVolumeState(t, volume, cinderVolume, nil))
 	require.Equal(t, "20Gi", volume.Status.Size.String())
 }

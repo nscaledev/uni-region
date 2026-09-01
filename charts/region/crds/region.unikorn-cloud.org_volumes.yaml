@@ -186,6 +186,13 @@ spec:
                   by the controller.
                 format: int64
                 type: integer
+              provisionedAt:
+                description: |-
+                  ProvisionedAt records the first successful discovery of backing storage.
+                  It is never cleared, because a missing provider volume must not be recreated
+                  under the same Region Volume ID.
+                format: date-time
+                type: string
               size:
                 anyOf:
                 - type: integer

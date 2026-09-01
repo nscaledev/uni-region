@@ -303,6 +303,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - create lists by the stable generated name and exact-matches the result
     before submitting a create, so controller retries adopt an existing volume
     rather than duplicating it
+  - a successful rediscovery stamps `VolumeStatus.ProvisionedAt` once; if a
+    later lookup confirms the backing volume is gone, the provider refuses to
+    recreate it under the same Region Volume ID
   - an accepted Cinder create is partial progress rather than success: the
     provider yields after submission and on subsequent rediscovery until the
     volume reports `available`; all unrecognized non-error states also yield so
@@ -340,10 +343,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     not Go errors.
   - `UpdateVolumeState` mutates the supplied Region Volume with observed size
     and health without exposing Cinder or Gophercloud types. It returns provider
-    read errors so the monitor can preserve the last observed
-    status. It does not introduce a mirrored provider-state CRD. The Volume
-    controller separately owns create/delete intent and the generic `Available`
-    provisioning condition.
+    read errors so the monitor can preserve the last observed status. It does
+    not introduce a mirrored provider-state CRD. The Volume controller owns the
+    durable `ProvisionedAt` marker, create/delete intent, and generic
+    `Available` provisioning condition.
     VolumeClass inventory and Nova
     attach/detach remain separate capabilities
 - Flavor export is a hybrid model: OpenStack discovers the flavor inventory, but

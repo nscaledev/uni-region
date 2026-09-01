@@ -24,12 +24,12 @@ import (
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	"github.com/unikorn-cloud/core/pkg/provisioninglog"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/providers"
 	providertypes "github.com/unikorn-cloud/region/pkg/providers/types"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -56,31 +56,13 @@ func volumeLogger(ctx context.Context, volume *unikornv1.Volume) logr.Logger {
 	)
 }
 
-func logTransitions(ctx context.Context, before, after *unikornv1.Volume) {
-	logger := volumeLogger(ctx, after)
-
+func (c *Checker) logTransitions(ctx context.Context, before, after *unikornv1.Volume) {
 	oldHealth, oldErr := unikornv1core.GetHealthyCondition(before)
 	newHealth, newErr := unikornv1core.GetHealthyCondition(after)
 
 	if healthChanged(oldHealth, oldErr, newHealth, newErr) {
-		fromStatus := corev1.ConditionUnknown
-		fromReason := unikornv1core.HealthConditionReason("")
-		fromMessage := ""
-
-		if oldErr == nil {
-			fromStatus = oldHealth.Status
-			fromReason = oldHealth.Reason
-			fromMessage = oldHealth.Message
-		}
-
-		logger.Info("volume health transition",
-			"from_status", fromStatus,
-			"from_health", fromReason,
-			"from_message", fromMessage,
-			"to_status", newHealth.Status,
-			"to_health", newHealth.Reason,
-			"to_message", newHealth.Message,
-		)
+		provisioninglog.Emit(ctx, c.client.Scheme(), after, provisioninglog.StreamLifecycle,
+			string(newHealth.Status), string(newHealth.Reason), newHealth.Message)
 	}
 }
 
@@ -101,14 +83,19 @@ type providerEntry struct {
 	err      error
 }
 
-func (c *Checker) resolveProvider(cache map[string]providerEntry, regionID string) (providertypes.Provider, error) {
+func (c *Checker) resolveProvider(ctx context.Context, cache map[string]providerEntry, regionID string) (providertypes.Provider, error) {
 	if entry, ok := cache[regionID]; ok {
 		return entry.provider, entry.err
 	}
 
 	provider, err := c.providers.LookupCloud(regionID)
 	if err != nil {
+		if !isFatal(err) {
+			log.FromContext(ctx).Error(err, "failed to resolve volume provider, skipping", "region", regionID)
+		}
+
 		cache[regionID] = providerEntry{err: err}
+
 		return nil, err
 	}
 
@@ -122,7 +109,7 @@ func (c *Checker) patchStatus(ctx context.Context, volume, updated *unikornv1.Vo
 		return err
 	}
 
-	logTransitions(ctx, volume, updated)
+	c.logTransitions(ctx, volume, updated)
 
 	return nil
 }
@@ -132,13 +119,11 @@ func (c *Checker) observeVolume(ctx context.Context, volume *unikornv1.Volume, p
 	identityID := volume.Labels[constants.IdentityLabel]
 	updated := volume.DeepCopy()
 
-	provider, err := c.resolveProvider(providers, regionID)
+	provider, err := c.resolveProvider(ctx, providers, regionID)
 	if err != nil {
 		if isFatal(err) {
 			return err
 		}
-
-		volumeLogger(ctx, volume).Error(err, "failed to resolve volume provider, skipping")
 
 		return nil
 	}
@@ -159,7 +144,7 @@ func (c *Checker) observeVolume(ctx context.Context, volume *unikornv1.Volume, p
 			return err
 		}
 
-		volumeLogger(ctx, volume).Error(err, "failed to update provider volume state, skipping")
+		volumeLogger(ctx, volume).Error(err, "failed to observe provider volume state, skipping")
 
 		return nil
 	}

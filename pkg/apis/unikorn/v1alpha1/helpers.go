@@ -189,9 +189,8 @@ func (c *Server) SetProvisioningCondition(status corev1.ConditionStatus, reason 
 }
 
 // SetHealthCondition sets the Healthy condition with a reason drawn from the
-// health vocabulary. A server is the only region resource that carries a health
-// verdict (derived from the provider's observed server state); it is an
-// informational signal and nothing gates on it.
+// health vocabulary. Like a Volume health verdict, it is derived from provider
+// observation, informational, and does not gate lifecycle decisions.
 func (c *Server) SetHealthCondition(status corev1.ConditionStatus, reason unikornv1core.HealthConditionReason, message string) {
 	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionHealthy, status, string(reason), message)
 }
