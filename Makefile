@@ -85,6 +85,25 @@ OPENAPI_FILES = \
 	pkg/openapi/client.go \
 	pkg/openapi/router.go
 
+DEEPCOPY_GEN_FILE = pkg/apis/unikorn/v1alpha1/zz_generated.deepcopy.go
+
+# Only the mocks a //go:generate directive recreates.  pkg/handler/image/mock and
+# pkg/handler/server/mock carry MockGen headers but no directive -- they were
+# produced by a mockgen command run by hand, recorded in their own header, and
+# `go generate` will not bring them back.  Deleting them here would simply lose
+# them.
+MOCK_FILES = \
+	pkg/providers/mock/interfaces.go \
+	pkg/providers/types/mock/interfaces.go \
+	pkg/providers/internal/openstack/mock/interfaces.go \
+	pkg/handler/storage/mock/saga.go
+
+# Everything the generators produce, named once so every target that has to
+# reason about generated output agrees on what that means.  The CRDs are a
+# directory of outputs rather than a single file, so they are listed apart from
+# the files.
+GENERATED_FILES = $(OPENAPI_FILES) $(DEEPCOPY_GEN_FILE) $(MOCK_FILES)
+
 MOCKGEN_VERSION=v0.3.0
 GINKGO_VERSION := $(shell awk '$$1 == "github.com/onsi/ginkgo/v2" { print $$2; exit }' go.mod)
 GOMEGA_VERSION := $(shell awk '$$1 == "github.com/onsi/gomega" { print $$2; exit }' go.mod)
@@ -192,6 +211,54 @@ lint: $(GENDIR)
 	helm lint --strict charts/region
 
 # Validate the server OpenAPI schema is legit.
+# Regenerating and then building proves the sources and the generators agree; it
+# says nothing about the files that were committed, which are what reviewers read
+# and what other modules compile against.  This compares the two.
+#
+# It regenerates from scratch rather than in place, because these targets are
+# driven by timestamps and a fresh checkout gives every file much the same one,
+# so whether an in-place regeneration does any work at all is decided by the
+# order git happened to write the tree.  That is what made the old check a coin
+# flip: it passed when make skipped the work and failed when make did not.
+# Deleting first also catches an output whose source has gone, which no generator
+# removes for us.
+#
+# The comparison is against the whole tree rather than against $(GENERATED_FILES),
+# because scoping it to that list would make the check only as complete as the
+# list is.  Whatever the generators write, a tree-wide status sees.
+#
+# That only holds on a tree with nothing else uncommitted in it, so this is a
+# check for CI rather than for the edit-test loop.  Refusing outright also stops
+# the destructive regeneration eating uncommitted work if it is run locally by
+# mistake; there, `make generate` and a look at `git status` is quicker.
+.PHONY: validate-generated
+validate-generated:
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "validate-generated regenerates in place and compares the whole tree; commit or stash first:" >&2; \
+		git status --short >&2; \
+		exit 1; \
+	fi
+	$(MAKE) clean-generated
+	$(MAKE) $(CRDDIR) $(GENDIR) $(OPENAPI_FILES) generate
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "Generated files do not match their sources; regenerate and commit the result:" >&2; \
+		git status --short >&2; \
+		exit 1; \
+	fi
+
+# Only the generated output, so a caller wanting a from-scratch regeneration does
+# not also have to reinstall the tools that do the generating.
+#
+# Both directories go entirely: they are their own timestamp markers, and their
+# targets compare that timestamp against the sources.  Emptying $(CRDDIR) would
+# update its mtime to now and the target would then consider itself up to date
+# and skip, which is the trap this whole check exists to close.  Their rules
+# recreate them.
+.PHONY: clean-generated
+clean-generated:
+	rm -f $(GENERATED_FILES)
+	rm -rf $(CRDDIR) $(GENDIR)
+
 .PHONY: validate
 validate: $(OPENAPI_FILES)
 	go run github.com/unikorn-cloud/core/hack/validate_openapi
