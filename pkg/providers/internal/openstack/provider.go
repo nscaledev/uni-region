@@ -3308,6 +3308,39 @@ func resolveServerKeyName(server *unikornv1.Server, identity *unikornv1.Openstac
 	return *identity.Spec.SSHKeyName
 }
 
+func deleteServer(ctx context.Context, compute ServerInterface, server *unikornv1.Server) error {
+	openstackServer, err := compute.GetServer(ctx, server)
+	if errors.Is(err, coreerrors.ErrResourceNotFound) {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
+
+	if openstackServer.TaskState == "deleting" {
+		return provisioners.ErrYield
+	}
+
+	log.FromContext(ctx).V(1).Info("deleting server")
+
+	if err := compute.DeleteServer(ctx, openstackServer.ID); err != nil {
+		return err
+	}
+
+	_, err = compute.GetServer(ctx, server)
+
+	if errors.Is(err, coreerrors.ErrResourceNotFound) {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
+
+	return provisioners.ErrYield
+}
+
 //nolint:cyclop
 func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	log := log.FromContext(ctx)
@@ -3326,17 +3359,8 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
-	openstackServer, err := compute.GetServer(ctx, server)
-	if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
+	if err := deleteServer(ctx, compute, server); err != nil {
 		return err
-	}
-
-	if openstackServer != nil {
-		log.V(1).Info("deleting server")
-
-		if err := compute.DeleteServer(ctx, openstackServer.ID); err != nil {
-			return err
-		}
 	}
 
 	networking, err := p.networkFromServicePrincipal(ctx, identity)
