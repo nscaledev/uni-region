@@ -79,10 +79,55 @@ stored objects rely on for linkage, migration, and operational coordination.
   schema-only.
 - `Server.Spec.ProviderCreateGates` is immutable create-time desired state used
   by the server controller to pause before provider create. Matching
-  `Server.Status.ProviderCreateGates` entries record the condition status,
-  actor, reason, message, and transition time for operator diagnostics. The
-  generic `Server.Status.Conditions` list remains reserved for Region-owned
-  lifecycle conditions.
+  `Server.Status.ProviderCreateGates` entries record the gate `state`, actor,
+  reason, message, and transition time for operator diagnostics. Each gate is a
+  three-state machine — `Closed`, `Open`, `Locked` — where `Closed` is the
+  default resting state reached without any report (a gate with no status entry
+  is treated as `Closed`). A satisfier reports a gate via
+  `POST /api/v2/servers/{serverID}/provider-create-gates` carrying a `state`
+  (`Open` satisfies — the default, backward compatible with satisfy-only
+  callers). The `reason` and `message` are satisfier-supplied and
+  length-bounded (256/1024) so a chatty caller cannot bloat the stored object.
+  Lifecycle semantics the provisioner enforces:
+  - `Closed` (unreported, or reported to record transient progress) → **hold**:
+    the provisioner yields and waits for a later reconcile to resolve the gate.
+    Re-reporting `Closed` is a self-loop that refreshes the reason without
+    resolving the gate;
+  - `Locked` → **fail terminally**: the gate can never be satisfied without
+    external change, so provider-create fails rather than yielding forever (see
+    `LockedProviderCreateGate()` and the server provisioner). The failure
+    carries the closed-vocabulary `Errored` provisioning reason with the
+    satisfier's own, length-bounded detail on the message — the untrusted text
+    never becomes a bespoke reason;
+  - all gates `Open` → provider-create proceeds.
+
+  `Open` is monotonic for the life of an attempt: once a gate is `Open`,
+  provider-create may already have started on the strength of it, so the report
+  endpoint **rejects** a satisfier moving it back to `Closed` or `Locked` (HTTP
+  409) — otherwise any holder of the endpoint could wedge or fail a running
+  server on a later reconcile. Only Region resets gates, and only as part of a
+  provider-create retry: `ProviderCreateGatesReset` returns every gate to
+  `Closed` once a failed provider server is confirmed gone, starting a fresh
+  attempt. That retry path runs only *after* a provider server was created and
+  failed, so it never applies to a `Locked` gate (which fails *before* any
+  provider server exists); recovery from `Locked` is out-of-band — recreate the
+  server. The generic `Server.Status.Conditions` list remains reserved for
+  Region-owned lifecycle conditions.
+
+  The read API mirrors the write model: `Status.RemainingProviderCreateGates`
+  lists every not-yet-`Open` gate with its resolved `state` (and reason), so a
+  consumer can tell `Closed` (still being worked) from `Locked` (will never
+  open) without string-matching the Available condition.
+
+  Upgrade note: this `state` field replaced an earlier `status`
+  (`True`/`False`/`Unknown`) field in the same API version, with no stored-data
+  conversion. A gate persisted by the old code has no `state` key; the CRD
+  defaults the field to `Closed` (`+kubebuilder:default=Closed`), applied when
+  the stored object is decoded, so old entries read back as `Closed`
+  (unresolved) — the safe direction, never a spurious `Open` — and subsequent
+  status writes validate against the enum. Any server holding at a gate across
+  the upgrade therefore waits for its satisfier to re-report; level-triggered
+  satisfiers recover on their next reconcile.
 - `FileStorage` carries a more explicit observed-state model than the older
   resource types. Attachment-level provisioning state, observed size, usage
   reporting, and per-policy snapshot status are part of the stored

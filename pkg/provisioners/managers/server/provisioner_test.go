@@ -78,15 +78,24 @@ func testProvisionServer(opts ...func(*regionv1.Server)) *regionv1.Server {
 	return server
 }
 
-func withProviderCreateGate(status corev1.ConditionStatus) func(*regionv1.Server) {
+func withProviderCreateGate(state regionv1.ServerProviderCreateGateState) func(*regionv1.Server) {
 	return func(server *regionv1.Server) {
 		server.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
 			{ConditionType: testProviderGate},
 		}
 
-		if status != "" {
-			server.ProviderCreateGateStatusWrite(testProviderGate, status, testProviderActor, testProviderReason, testProviderMessage)
+		if state != "" {
+			server.ProviderCreateGateStatusWrite(testProviderGate, state, testProviderActor, testProviderReason, testProviderMessage)
 		}
+	}
+}
+
+func withLockedProviderCreateGate() func(*regionv1.Server) {
+	return func(server *regionv1.Server) {
+		server.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
+			{ConditionType: testProviderGate},
+		}
+		server.ProviderCreateGateStatusWrite(testProviderGate, regionv1.ServerProviderCreateGateLocked, testProviderActor, "NoPKeyAvailable", "p_key pool exhausted")
 	}
 }
 
@@ -124,12 +133,44 @@ func TestProvisionProviderCreateGateRemaining(t *testing.T) {
 	require.ErrorIs(t, err, provisioners.ErrYield)
 }
 
+func TestProvisionProviderCreateGateLocked(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	provider := mocktypes.NewMockProvider(ctrl)
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+
+	// A Locked gate must fail the create terminally (not yield): the server is
+	// never provider-created, so no CreateServer call is expected.
+	server := testProvisionServer(withLockedProviderCreateGate())
+	cli := testProvisionClient(t, server, testProvisionIdentity())
+
+	prov := serverprovisioner.NewForTest(server, providers, nil)
+	err := prov.Provision(coreclient.NewContext(t.Context(), cli))
+	require.Error(t, err)
+	require.NotErrorIs(t, err, provisioners.ErrYield)
+	require.ErrorIs(t, err, provisioners.ErrTerminal)
+
+	// The disposition must carry the closed-vocabulary Errored reason (not a
+	// bespoke one) and a user-safe message that names the gate but does not
+	// fail-open the satisfier's machine-readable reason.
+	var provErr *provisioners.Error
+
+	require.ErrorAs(t, err, &provErr)
+	require.Equal(t, unikornv1core.ConditionReasonErrored, provErr.Reason())
+	require.Contains(t, provErr.Message(), testProviderGate)
+	require.NotContains(t, provErr.Message(), "NoPKeyAvailable")
+}
+
 func TestProvisionProviderCreateGateSatisfied(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
 
-	server := testProvisionServer(withProviderCreateGate(corev1.ConditionTrue))
+	server := testProvisionServer(withProviderCreateGate(regionv1.ServerProviderCreateGateOpen))
 
 	provider := mocktypes.NewMockProvider(ctrl)
 	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(nil)

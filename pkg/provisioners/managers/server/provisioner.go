@@ -107,6 +107,27 @@ func New(options manager.ControllerOptions, providers providers.Providers) provi
 // Ensure the ManagerProvisioner interface is implemented.
 var _ provisioners.ManagerProvisioner = &Provisioner{}
 
+// providerCreateGateMessageMax bounds the satisfier-supplied detail that reaches
+// the Available condition message. The stored gate is already MaxLength-bounded
+// by the CRD; this is a second belt so a chatty satisfier cannot bloat the
+// condition either.
+const providerCreateGateMessageMax = 256
+
+// truncate clamps s to at most limit runes, appending an ellipsis when it clips,
+// so an over-long satisfier message cannot bloat a derived condition.
+func truncate(s string, limit int) string {
+	r := []rune(s)
+	if len(r) <= limit {
+		return s
+	}
+
+	if limit <= 1 {
+		return string(r[:limit])
+	}
+
+	return string(r[:limit-1]) + "…"
+}
+
 func (p *Provisioner) Object() unikornv1core.ManagableResourceInterface {
 	return p.server
 }
@@ -434,6 +455,18 @@ func (p *Provisioner) blockUntilDependenciesReady(ctx context.Context, cli clien
 		if err := p.blockUntilResourceReady(ctx, cli, id, &unikornv1.SecurityGroup{}); err != nil {
 			return err
 		}
+	}
+
+	// A Locked gate will never be satisfied, so fail the create rather than
+	// holding the server indefinitely. This is a terminal disposition: the
+	// generic Errored reason (the provisioning vocabulary is closed and
+	// core-owned), with the satisfier's own, length-bounded, user-safe detail on
+	// the message. A raw error here would both requeue forever and fail-open the
+	// untrusted detail onto the condition. Recovery is out-of-band (recreate the
+	// server); the retry path never runs for a gate that fails before create.
+	if gate, ok := p.server.LockedProviderCreateGate(); ok {
+		return provisioners.Terminal(unikornv1core.ConditionReasonErrored,
+			fmt.Sprintf("provider-create gate %q is locked: %s", gate.ConditionType, truncate(gate.Message, providerCreateGateMessageMax)))
 	}
 
 	if !p.server.ProviderCreateGatesReady() {
