@@ -1189,6 +1189,9 @@ type ServerV2CreateSpec struct {
 	// it clears the stored value. A changed value is not applied to the running guest —
 	// it takes effect only when the server is next rebuilt (image change) or recreated.
 	UserData *[]byte `json:"userData,omitempty"`
+
+	// Volumes Complete desired set of existing Volumes to attach to the Server.
+	Volumes *ServerV2VolumeList `json:"volumes,omitempty"`
 }
 
 // ServerV2Networking A server's network configuration.
@@ -1239,6 +1242,9 @@ type ServerV2Spec struct {
 	// it clears the stored value. A changed value is not applied to the running guest —
 	// it takes effect only when the server is next rebuilt (image change) or recreated.
 	UserData *[]byte `json:"userData,omitempty"`
+
+	// Volumes Complete desired set of existing Volumes to attach to the Server.
+	Volumes *ServerV2VolumeList `json:"volumes,omitempty"`
 }
 
 // ServerV2Status Read only status information about a server.
@@ -1293,6 +1299,9 @@ type ServerV2Update struct {
 	// Spec A server's specification.
 	Spec ServerV2Spec `json:"spec"`
 }
+
+// ServerV2VolumeList Complete desired set of existing Volumes to attach to the Server.
+type ServerV2VolumeList = []VolumeId
 
 // ServerV2VolumeStatus Observed attachment state for a desired Volume.
 type ServerV2VolumeStatus struct {
