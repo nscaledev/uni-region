@@ -28,6 +28,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/volumeattach"
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 )
@@ -163,26 +164,52 @@ func detachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 		return err
 	}
 
+	detachAccepted := false
+
 	for _, attachment := range cinderVolume.Attachments {
-		if err := compute.DeleteVolumeAttachment(ctx, attachment.ServerID, cinderVolume.ID); err != nil {
-			if providerResourceNotFound(err) {
-				continue
-			}
-
-			if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-				return fmt.Errorf(
-					"%w: volume %s cannot be detached from server %s in its current state",
-					coreerrors.ErrConflict,
-					cinderVolume.ID,
-					attachment.ServerID,
-				)
-			}
-
+		deleted, err := deleteVolumeAttachment(ctx, compute, attachment.ServerID, cinderVolume.ID)
+		if err != nil {
 			return err
 		}
+
+		detachAccepted = detachAccepted || deleted
+	}
+
+	if !detachAccepted {
+		return nil
+	}
+
+	cinderVolume, err = blockStorage.GetVolume(ctx, volume)
+	if err != nil {
+		if providerResourceNotFound(err) {
+			return nil
+		}
+
+		return err
+	}
+
+	if len(cinderVolume.Attachments) != 0 {
+		return provisioners.ErrYield
 	}
 
 	return nil
+}
+
+func deleteVolumeAttachment(ctx context.Context, compute ComputeInterface, serverID, volumeID string) (bool, error) {
+	err := compute.DeleteVolumeAttachment(ctx, serverID, volumeID)
+	if err == nil {
+		return true, nil
+	}
+
+	if providerResourceNotFound(err) {
+		return false, nil
+	}
+
+	if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+		return false, fmt.Errorf("%w: volume %s cannot be detached from server %s in its current state", coreerrors.ErrConflict, volumeID, serverID)
+	}
+
+	return false, err
 }
 
 func (p *Provider) AttachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume) (*types.ServerVolumeAttachment, error) {
