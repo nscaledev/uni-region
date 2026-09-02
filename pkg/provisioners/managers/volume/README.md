@@ -13,6 +13,10 @@ deletion or operator intervention. This package does not check quota; the HTTP
 create handler allocates the requested capacity and stores the Identity
 allocation ID before the controller can observe the Volume.
 
+Provision passes always re-derive provider state. OpenStack uses the stable
+provider name and idempotent create path, so an existing backing volume is
+adopted and a missing one is recreated under the same Region Volume ID.
+
 Deprovisioning deliberately has stricter ordering:
 
 1. resolve the provider and Identity through the shared provisioner lookup, then
@@ -35,16 +39,22 @@ After the backing Volume converges, this provisioner reconciles its single
 claimed Server attachment. It reads the handler-owned Volume claim and Server
 intent, then calls the provider attachment boundary. A provisioning or errored
 Server yields; its condition can recover without a Volume generation change.
+If the claimed Server is gone, deleting, or no longer requests the Volume, a
+confirmed detach releases the claim; detach errors and yields retain it.
 The provider remains authoritative for attachment and detach work. The
 provisioner projects progress only onto `Server.Status.Volumes`; it never uses
 that derived projection to decide provider cleanup. It advances the Volume
 observed generation only when both the backing Volume and attachment converge.
+For a valid Server claim, it first projects attachment provisioning even while
+the backing Volume is still converging.
+Each projection re-reads the Server and retries status conflicts while merging
+only the claimed Volume's entry.
 
-This controller still watches only Volume generation changes. General provider
-observation/status mapping, quota policy, Network graph-edge reconciliation,
-and HTTP handlers are outside this package. The provider-specific state
-classification needed to decide whether create has converged remains inside the
-provider implementation.
+Provider observation/status projection lives in
+[`pkg/monitor/health/volume`](../../../monitor/health/volume/README.md). Quota
+policy, Network graph-edge reconciliation, and HTTP handlers remain outside
+this package. The provider-specific state classification needed to decide
+whether create has converged remains inside the provider implementation.
 
 ## Cross-Package Context
 
