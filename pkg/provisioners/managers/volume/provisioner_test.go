@@ -66,7 +66,41 @@ var (
 	errProviderDelete   = errors.New("provider delete failed")
 	errProviderLookup   = errors.New("provider lookup failed")
 	errAllocationDelete = errors.New("allocation delete failed")
+	errStatusConflict   = errors.New("concurrent status update")
 )
+
+type conflictOnceClient struct {
+	client.Client
+
+	onConflict func(context.Context) error
+	conflicted bool
+}
+
+type conflictOnceStatusWriter struct {
+	client.SubResourceWriter
+
+	client *conflictOnceClient
+}
+
+func (c *conflictOnceClient) Status() client.SubResourceWriter {
+	return &conflictOnceStatusWriter{
+		SubResourceWriter: c.Client.Status(),
+		client:            c,
+	}
+}
+
+func (w *conflictOnceStatusWriter) Update(ctx context.Context, object client.Object, options ...client.SubResourceUpdateOption) error {
+	if w.client.conflicted {
+		return w.SubResourceWriter.Update(ctx, object, options...)
+	}
+
+	w.client.conflicted = true
+	if err := w.client.onConflict(ctx); err != nil {
+		return err
+	}
+
+	return kerrors.NewConflict(unikornv1.Resource("servers"), object.GetName(), errStatusConflict)
+}
 
 func testVolume(withAllocation bool) *unikornv1.Volume {
 	resource := &unikornv1.Volume{
@@ -220,6 +254,105 @@ func TestProvisionAttachesClaimedVolumeToReadyServer(t *testing.T) {
 	}}, updatedServer.Status.Volumes)
 }
 
+func TestProvisionProjectsStatusBeforeDetachingConflictingAttachment(t *testing.T) {
+	t.Parallel()
+
+	provider, providerSet := volumeMocks(t)
+	resource := testVolume(false)
+	resource.Spec.ClaimRef = &unikornv1.VolumeClaimRef{Kind: unikornv1.VolumeClaimKindServer, ID: testServerID}
+	identity := testIdentity(true)
+	server := testServer(true)
+	server.Spec.Volumes = []unikornv1.ServerVolumeSpec{{ID: testVolumeID}}
+
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+	gomock.InOrder(
+		provider.EXPECT().CreateVolume(gomock.Any(), identityNamed(), resource).Return(nil),
+		provider.EXPECT().AttachVolume(gomock.Any(), identityNamed(), serverNamed(), resource).Return(nil, coreerrors.ErrConflict),
+		provider.EXPECT().DetachVolume(gomock.Any(), identityNamed(), resource).Return(provisioners.ErrYield),
+	)
+
+	provisioner := volume.NewForTest(resource, providerSet, nil)
+	ctx := controllerContext(t, resource, identity, server)
+	require.ErrorIs(t, provisioner.Provision(ctx), provisioners.ErrYield)
+
+	cli, err := coreclient.FromContext(ctx)
+	require.NoError(t, err)
+
+	updatedServer := &unikornv1.Server{}
+	require.NoError(t, cli.Get(ctx, client.ObjectKeyFromObject(server), updatedServer))
+	require.Equal(t, unikornv1.AttachmentProvisioning, updatedServer.Status.Volumes[0].ProvisioningStatus)
+}
+
+func TestProvisionProjectsStatusBeforeVolumeConverges(t *testing.T) {
+	t.Parallel()
+
+	provider, providerSet := volumeMocks(t)
+	resource := testVolume(false)
+	resource.Spec.ClaimRef = &unikornv1.VolumeClaimRef{Kind: unikornv1.VolumeClaimKindServer, ID: testServerID}
+	identity := testIdentity(true)
+	server := testServer(true)
+	server.Spec.Volumes = []unikornv1.ServerVolumeSpec{{ID: testVolumeID}}
+
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+	provider.EXPECT().CreateVolume(gomock.Any(), identityNamed(), resource).Return(provisioners.ErrYield)
+
+	provisioner := volume.NewForTest(resource, providerSet, nil)
+	ctx := controllerContext(t, resource, identity, server)
+	require.ErrorIs(t, provisioner.Provision(ctx), provisioners.ErrYield)
+	require.Nil(t, resource.Status.ObservedGeneration)
+
+	cli, err := coreclient.FromContext(ctx)
+	require.NoError(t, err)
+
+	updatedServer := &unikornv1.Server{}
+	require.NoError(t, cli.Get(ctx, client.ObjectKeyFromObject(server), updatedServer))
+	require.Equal(t, unikornv1.AttachmentProvisioning, updatedServer.Status.Volumes[0].ProvisioningStatus)
+}
+
+func TestProvisionRetriesServerStatusConflictAndPreservesOtherVolume(t *testing.T) {
+	t.Parallel()
+
+	provider, providerSet := volumeMocks(t)
+	resource := testVolume(false)
+	resource.Spec.ClaimRef = &unikornv1.VolumeClaimRef{Kind: unikornv1.VolumeClaimKindServer, ID: testServerID}
+	identity := testIdentity(true)
+	server := testServer(true)
+	server.Spec.Volumes = []unikornv1.ServerVolumeSpec{{ID: testVolumeID}, {ID: testOldServerID}}
+
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+	gomock.InOrder(
+		provider.EXPECT().CreateVolume(gomock.Any(), identityNamed(), resource).Return(nil),
+		provider.EXPECT().AttachVolume(gomock.Any(), identityNamed(), serverNamed(), resource).Return(&providertypes.ServerVolumeAttachment{}, nil),
+	)
+
+	scheme, err := coreclient.NewScheme(unikornv1.AddToScheme)
+	require.NoError(t, err)
+
+	baseClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&unikornv1.Server{}).WithObjects(resource, identity, server).Build()
+	conflictClient := &conflictOnceClient{Client: baseClient}
+	conflictClient.onConflict = func(ctx context.Context) error {
+		latest := &unikornv1.Server{}
+		if err := baseClient.Get(ctx, client.ObjectKeyFromObject(server), latest); err != nil {
+			return err
+		}
+
+		latest.Status.Volumes = append(latest.Status.Volumes, unikornv1.ServerVolumeStatus{ID: testOldServerID, ProvisioningStatus: unikornv1.AttachmentProvisioned})
+
+		return baseClient.Status().Update(ctx, latest)
+	}
+
+	provisioner := volume.NewForTest(resource, providerSet, nil)
+	ctx := coreclient.NewContext(t.Context(), conflictClient)
+	require.NoError(t, provisioner.Provision(ctx))
+
+	updatedServer := &unikornv1.Server{}
+	require.NoError(t, baseClient.Get(ctx, client.ObjectKeyFromObject(server), updatedServer))
+	require.ElementsMatch(t, []unikornv1.ServerVolumeStatus{
+		{ID: testOldServerID, ProvisioningStatus: unikornv1.AttachmentProvisioned},
+		{ID: testVolumeID, ProvisioningStatus: unikornv1.AttachmentProvisioned},
+	}, updatedServer.Status.Volumes)
+}
+
 func TestProvisionDetachesVolumeWhenClaimIsRemoved(t *testing.T) {
 	t.Parallel()
 
@@ -265,6 +398,31 @@ func TestProvisionDetachesVolumeWhenServerIntentIsRemoved(t *testing.T) {
 
 	provisioner := volume.NewForTest(resource, providerSet, nil)
 	require.NoError(t, provisioner.Provision(controllerContext(t, resource, identity, server)))
+	require.Nil(t, resource.Spec.ClaimRef)
+}
+
+func TestProvisionReleasesClaimWhenServerIsDeleting(t *testing.T) {
+	t.Parallel()
+
+	provider, providerSet := volumeMocks(t)
+	resource := testVolume(false)
+	resource.Spec.ClaimRef = &unikornv1.VolumeClaimRef{Kind: unikornv1.VolumeClaimKindServer, ID: testServerID}
+	identity := testIdentity(true)
+	server := testServer(true)
+	server.Spec.Volumes = []unikornv1.ServerVolumeSpec{{ID: testVolumeID}}
+	deleting := metav1.Now()
+	server.DeletionTimestamp = &deleting
+	server.Finalizers = []string{"test"}
+
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+	gomock.InOrder(
+		provider.EXPECT().CreateVolume(gomock.Any(), identityNamed(), resource).Return(nil),
+		provider.EXPECT().DetachVolume(gomock.Any(), identityNamed(), resource).Return(nil),
+	)
+
+	provisioner := volume.NewForTest(resource, providerSet, nil)
+	require.NoError(t, provisioner.Provision(controllerContext(t, resource, identity, server)))
+	require.Nil(t, resource.Spec.ClaimRef)
 }
 
 func TestProvisionDetachesPreviousAttachmentBeforeAttachingClaimedServer(t *testing.T) {
@@ -338,6 +496,39 @@ func TestProvisionWaitsForClaimedServerToExist(t *testing.T) {
 	err := provisioner.Provision(controllerContext(t, resource, identity))
 	require.ErrorIs(t, err, provisioners.ErrYield)
 	require.Nil(t, resource.Status.ObservedGeneration)
+	require.Nil(t, resource.Spec.ClaimRef)
+}
+
+func TestProvisionRetainsClaimUntilMissingServerDetaches(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name string
+		err  error
+	}{
+		{name: "Pending", err: provisioners.ErrYield},
+		{name: "Failed", err: errProviderDelete},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			provider, providerSet := volumeMocks(t)
+			resource := testVolume(false)
+			resource.Spec.ClaimRef = &unikornv1.VolumeClaimRef{Kind: unikornv1.VolumeClaimKindServer, ID: testServerID}
+			identity := testIdentity(true)
+
+			providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+			gomock.InOrder(
+				provider.EXPECT().CreateVolume(gomock.Any(), identityNamed(), resource).Return(nil),
+				provider.EXPECT().DetachVolume(gomock.Any(), identityNamed(), resource).Return(test.err),
+			)
+
+			provisioner := volume.NewForTest(resource, providerSet, nil)
+			err := provisioner.Provision(controllerContext(t, resource, identity))
+			require.ErrorIs(t, err, test.err)
+			require.NotNil(t, resource.Spec.ClaimRef)
+		})
+	}
 }
 
 func TestProvisionRetriesErroredServer(t *testing.T) {
@@ -397,6 +588,25 @@ func TestProvisionRetriesAttachment(t *testing.T) {
 	require.NoError(t, provisioner.Provision(ctx))
 	require.NoError(t, cli.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: testServerID}, updatedServer))
 	require.Equal(t, unikornv1.AttachmentProvisioned, updatedServer.Status.Volumes[0].ProvisioningStatus)
+}
+
+func TestProvisionReconcilesProvisionedVolume(t *testing.T) {
+	t.Parallel()
+
+	provider, providerSet := volumeMocks(t)
+	resource := testVolume(false)
+	resource.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "provisioned")
+
+	identity := testIdentity(true)
+
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+	gomock.InOrder(
+		provider.EXPECT().CreateVolume(gomock.Any(), identityNamed(), resource).Return(nil),
+		provider.EXPECT().DetachVolume(gomock.Any(), identityNamed(), resource).Return(nil),
+	)
+
+	provisioner := volume.NewForTest(resource, providerSet, nil)
+	require.NoError(t, provisioner.Provision(controllerContext(t, resource, identity)))
 }
 
 func TestProvisionWaitsForIdentity(t *testing.T) {
