@@ -107,6 +107,14 @@ stored objects rely on for linkage, migration, and operational coordination.
   `Available` condition. The Volume controller drives provider create/delete,
   but provider-side volume identity is rediscovered by stable provider lookup
   rather than mirrored into status.
+  The Volume controller exclusively owns the generic `Available` provisioning
+  condition. The controller stamps `VolumeStatus.ProvisionedAt` after its
+  successful provider rediscovery; the monitor projects `Volume.Status.Size`
+  and coarse `Healthy`. Confirmed provider absence clears observed size and degrades health;
+  a marked Volume is never recreated under the same Region Volume ID. Provider
+  request errors preserve observed size and health. Provider-side volume
+  identity is rediscovered by stable provider lookup rather than mirrored into
+  status.
 - `Server.Spec.Volumes` is the attach-existing-only desired state for block
   storage. Each row names an existing Region `Volume` by ID; inline
   server-created volume templates are deliberately excluded from the first

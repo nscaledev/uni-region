@@ -263,6 +263,10 @@ func ReconcileVolume(ctx context.Context, client VolumeInterface, identity *unik
 	return reconcileVolume(ctx, client, identity, volume)
 }
 
+func UpdateVolumeStateWithClient(ctx context.Context, client VolumeInterface, volume *unikornv1.Volume) error {
+	return updateVolumeState(ctx, client, volume)
+}
+
 func DeleteVolumeWithClient(ctx context.Context, client VolumeInterface, volume *unikornv1.Volume) error {
 	return deleteVolume(ctx, client, volume)
 }

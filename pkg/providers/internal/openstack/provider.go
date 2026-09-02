@@ -1988,14 +1988,7 @@ func (p *Provider) deleteNetwork(ctx context.Context, networking NetworkingInter
 }
 
 func volumeMetadata(identity *unikornv1.Identity, volume *unikornv1.Volume) map[string]string {
-	namespacedSystemMetadata := map[string]string{
-		"region:volume_id":         volume.Name,
-		"identity:organization_id": volume.Labels[coreconstants.OrganizationLabel],
-		"identity:project_id":      volume.Labels[coreconstants.ProjectLabel],
-		"region:region_id":         volume.Labels[constants.RegionLabel],
-		"region:network_id":        volume.Spec.NetworkID,
-		"region:identity_id":       identity.Name,
-	}
+	namespacedSystemMetadata := volumeSystemMetadata(identity, volume)
 
 	metadata := make(map[string]string, len(volume.Spec.Tags)+len(namespacedSystemMetadata))
 
@@ -2010,6 +2003,17 @@ func volumeMetadata(identity *unikornv1.Identity, volume *unikornv1.Volume) map[
 	return metadata
 }
 
+func volumeSystemMetadata(identity *unikornv1.Identity, volume *unikornv1.Volume) map[string]string {
+	return map[string]string{
+		"region:volume_id":         volume.Name,
+		"identity:organization_id": volume.Labels[coreconstants.OrganizationLabel],
+		"identity:project_id":      volume.Labels[coreconstants.ProjectLabel],
+		"region:region_id":         volume.Labels[constants.RegionLabel],
+		"region:network_id":        volume.Spec.NetworkID,
+		"region:identity_id":       identity.Name,
+	}
+}
+
 const (
 	volumeStatusAvailable   = "available"
 	volumeStatusErrorPrefix = "error"
@@ -2021,6 +2025,15 @@ func reconcileVolume(ctx context.Context, blockStorage VolumeInterface, identity
 	openstackVolume, err := blockStorage.GetVolume(ctx, volume)
 	if err == nil {
 		logger.V(1).Info("volume already exists")
+
+		if err := projectVolumeState(volume, openstackVolume); err != nil {
+			return err
+		}
+
+		if volume.Status.ProvisionedAt == nil {
+			now := metav1.Now()
+			volume.Status.ProvisionedAt = &now
+		}
 
 		if strings.HasPrefix(openstackVolume.Status, volumeStatusErrorPrefix) {
 			return provisioners.Terminal(unikornv1core.ConditionReasonErrored, "provider volume entered an error state")
@@ -2037,8 +2050,17 @@ func reconcileVolume(ctx context.Context, blockStorage VolumeInterface, identity
 		return err
 	}
 
+	if volume.Status.ProvisionedAt != nil {
+		volume.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider volume is missing")
+
+		return provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored, "the provider volume is missing; replace the Region Volume")
+	}
+
 	logger.V(1).Info("creating volume")
 
+	// The next successful lookup stamps ProvisionedAt, so a failed create cannot
+	// permanently park the Volume. A provider delete before that lookup can permit
+	// replacement, but nothing can attach during that short creation window.
 	if _, err = blockStorage.CreateVolume(ctx, volume, volumeMetadata(identity, volume)); err != nil {
 		return err
 	}

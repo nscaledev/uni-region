@@ -156,6 +156,25 @@ func TestProvisionCreatesVolume(t *testing.T) {
 	require.NoError(t, provisioner.Provision(controllerContext(t, resource, identity)))
 }
 
+func TestProvisionRefusesMissingProvisionedVolume(t *testing.T) {
+	t.Parallel()
+
+	provider, providerSet := volumeMocks(t)
+	resource := testVolume(false)
+	resource.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "provisioned")
+
+	identity := testIdentity(true)
+	provisionedAt := metav1.Now()
+	resource.Status.ProvisionedAt = &provisionedAt
+
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+	provider.EXPECT().CreateVolume(gomock.Any(), identityNamed(), resource).Return(
+		provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored, "the provider volume is missing; replace the Region Volume"))
+
+	provisioner := volume.NewForTest(resource, providerSet, nil)
+	require.ErrorIs(t, provisioner.Provision(controllerContext(t, resource, identity)), provisioners.ErrUserActionRequired)
+}
+
 func TestProvisionWaitsForIdentity(t *testing.T) {
 	t.Parallel()
 
