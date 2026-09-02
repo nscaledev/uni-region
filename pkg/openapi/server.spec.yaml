@@ -1420,6 +1420,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
         '404':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '422':
@@ -3576,6 +3578,11 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/serverV2VolumeStatus'
+    serverV2VolumeList:
+      description: Complete desired set of existing Volumes to attach to the Server.
+      type: array
+      items:
+        $ref: '#/components/schemas/volumeId'
     serverV2Spec:
       description: A server's specification.
       type: object
@@ -3604,6 +3611,8 @@ components:
             it takes effect only when the server is next rebuilt (image change) or recreated.
           type: string
           format: byte
+        volumes:
+          $ref: '#/components/schemas/serverV2VolumeList'
     serverV2CreateSpec:
       description: A server's specification.
       type: object

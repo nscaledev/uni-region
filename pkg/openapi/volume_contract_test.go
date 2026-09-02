@@ -94,3 +94,15 @@ func TestServerVolumeAttachmentStatusContract(t *testing.T) {
 	requireSchemaPropertyRef(t, status, "provisioningStatus", "#/components/schemas/unikorn-cloud_core_v1.17.1_pkg_openapi_common_resourceProvisioningStatus")
 	requireSchemaPropertyRef(t, componentSchema(t, swagger, "serverV2Status"), "volumes", "#/components/schemas/serverV2VolumeStatusList")
 }
+
+func TestServerV2UpdateContractDeclaresConflicts(t *testing.T) {
+	t.Parallel()
+
+	swagger, err := openapi.GetSwagger()
+	require.NoError(t, err)
+
+	resource := swagger.Paths.Find("/api/v2/servers/{serverID}")
+	require.NotNil(t, resource)
+	require.NotNil(t, resource.Put)
+	require.NotNil(t, resource.Put.Responses.Value("409"))
+}

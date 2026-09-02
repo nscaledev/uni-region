@@ -269,6 +269,39 @@ func appendVolumeStatuses(in *regionv1.Server, out *openapi.ServerV2VolumeStatus
 	return nil
 }
 
+func convertVolumes(in []regionv1.ServerVolumeSpec) (*openapi.ServerV2VolumeList, error) {
+	if len(in) == 0 {
+		//nolint:nilnil // An empty desired set is represented by nil in the API.
+		return nil, nil
+	}
+
+	out := make(openapi.ServerV2VolumeList, len(in))
+
+	for i := range in {
+		id, err := regionids.ParseVolumeID(in[i].ID)
+		if err != nil {
+			return nil, err
+		}
+
+		out[i] = id
+	}
+
+	return &out, nil
+}
+
+func generateVolumes(in *openapi.ServerV2VolumeList) []regionv1.ServerVolumeSpec {
+	if in == nil {
+		return nil
+	}
+
+	out := make([]regionv1.ServerVolumeSpec, len(*in))
+	for i := range *in {
+		out[i].ID = (*in)[i].String()
+	}
+
+	return out
+}
+
 func convertVolumeProvisioningStatus(in regionv1.AttachmentProvisioningStatus) coreopenapi.ResourceProvisioningStatus {
 	switch in {
 	case regionv1.AttachmentProvisioning:
@@ -300,6 +333,11 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 		return nil, err
 	}
 
+	desiredVolumes, err := convertVolumes(in.Spec.Volumes)
+	if err != nil {
+		return nil, err
+	}
+
 	metadata := conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags)
 
 	out := &openapi.ServerV2Read{
@@ -309,6 +347,7 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 			ImageId:    imageID,
 			Networking: convertNetworkingV2(in),
 			UserData:   convertUserData(in.Spec.UserData),
+			Volumes:    desiredVolumes,
 		},
 		Status: openapi.ServerV2Status{
 			RegionId:                     regionID,
@@ -599,6 +638,7 @@ func (c *ClientV2) generateV2(ctx context.Context, organizationID identityids.Or
 			InfrastructureRef:         infrastructureRef,
 			ProviderCreateGates:       providerCreateGates,
 			UserData:                  generateUserData(in.Spec.UserData),
+			Volumes:                   generateVolumes(in.Spec.Volumes),
 		},
 	}
 
