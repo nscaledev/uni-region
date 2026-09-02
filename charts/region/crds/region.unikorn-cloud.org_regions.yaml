@@ -395,6 +395,21 @@ spec:
                                   description: ID is the immutable Openstack identifier
                                     for the flavor.
                                   type: string
+                                infiniBand:
+                                  description: |-
+                                    InfiniBand defines additional InfiniBand metadata. When provided it enables
+                                    InfiniBand partition isolation for servers using this flavor.
+                                  properties:
+                                    portCount:
+                                      description: |-
+                                        PortCount is the number of InfiniBand ports the flavor exposes. This counts
+                                        ports, not host channel adapters (a single HCA can present one or two ports),
+                                        because fabric partitioning programs a partition membership per port GUID.
+                                      minimum: 1
+                                      type: integer
+                                  required:
+                                  - portCount
+                                  type: object
                                 memory:
                                   anyOf:
                                   - type: integer

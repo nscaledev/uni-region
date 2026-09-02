@@ -227,6 +227,9 @@ type FlavorSpec struct {
 	// Gpu GPU specification.
 	Gpu *GpuSpec `json:"gpu,omitempty"`
 
+	// InfiniBand InfiniBand specification.
+	InfiniBand *InfiniBandSpec `json:"infiniBand,omitempty"`
+
 	// Memory The amount of memory in GiB.
 	Memory int `json:"memory"`
 
@@ -445,6 +448,12 @@ type ImageVirtualization string
 
 // Images A list of images that are compatible with this platform.
 type Images = []Image
+
+// InfiniBandSpec InfiniBand specification.
+type InfiniBandSpec struct {
+	// PortCount The number of InfiniBand ports available to the flavor.
+	PortCount int `json:"portCount"`
+}
 
 // InfrastructureRef A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
 type InfrastructureRef = string
