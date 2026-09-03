@@ -283,7 +283,7 @@ func TestProvisionProjectsStatusBeforeDetachingConflictingAttachment(t *testing.
 	require.Equal(t, unikornv1.AttachmentProvisioning, updatedServer.Status.Volumes[0].ProvisioningStatus)
 }
 
-func TestProvisionProjectsStatusBeforeVolumeConverges(t *testing.T) {
+func TestProvisionDoesNotProjectAttachmentStatusBeforeVolumeConverges(t *testing.T) {
 	t.Parallel()
 
 	provider, providerSet := volumeMocks(t)
@@ -306,7 +306,7 @@ func TestProvisionProjectsStatusBeforeVolumeConverges(t *testing.T) {
 
 	updatedServer := &unikornv1.Server{}
 	require.NoError(t, cli.Get(ctx, client.ObjectKeyFromObject(server), updatedServer))
-	require.Equal(t, unikornv1.AttachmentProvisioning, updatedServer.Status.Volumes[0].ProvisioningStatus)
+	require.Empty(t, updatedServer.Status.Volumes)
 }
 
 func TestProvisionRetriesServerStatusConflictAndPreservesOtherVolume(t *testing.T) {

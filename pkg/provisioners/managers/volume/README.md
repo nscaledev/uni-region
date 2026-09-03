@@ -45,8 +45,8 @@ The provider remains authoritative for attachment and detach work. The
 provisioner projects progress only onto `Server.Status.Volumes`; it never uses
 that derived projection to decide provider cleanup. It advances the Volume
 observed generation only when both the backing Volume and attachment converge.
-For a valid Server claim, it first projects attachment provisioning even while
-the backing Volume is still converging.
+It does not project attachment status until the backing Volume has converged
+and attachment reconciliation begins.
 Each projection re-reads the Server and retries status conflicts while merging
 only the claimed Volume's entry.
 
