@@ -858,6 +858,23 @@ func withTags(tags ...corev1.Tag) func(*regionv1.Server) {
 	}
 }
 
+// withAllowedAddressPair adds an allowed address pair to the server's first
+// network.  An empty mac exercises the specification's optional MAC, which
+// Neutron reports back as the port's own.
+func withAllowedAddressPair(cidr, mac string) func(*regionv1.Server) {
+	return func(s *regionv1.Server) {
+		_, ipnet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic(err)
+		}
+
+		s.Spec.Networks[0].AllowedAddressPairs = append(s.Spec.Networks[0].AllowedAddressPairs, regionv1.ServerNetworkAddressPair{
+			CIDR:       corev1.IPv4Prefix{IPNet: *ipnet},
+			MACAddress: mac,
+		})
+	}
+}
+
 func volumeFixture() *regionv1.Volume {
 	return &regionv1.Volume{
 		ObjectMeta: metav1.ObjectMeta{
@@ -911,8 +928,8 @@ func serverFixture(opts ...func(*regionv1.Server)) *regionv1.Server {
 const serverPortIP = "192.168.0.42"
 const serverPortMAC = "fa:16:3e:12:34:56"
 
-func openstackServerPortFixture(server *regionv1.Server, openstackNetwork *openstack.NetworkExt, openstackSubnet *subnets.Subnet) *ports.Port {
-	return &ports.Port{
+func openstackServerPortFixture(server *regionv1.Server, openstackNetwork *openstack.NetworkExt, openstackSubnet *subnets.Subnet, opts ...func(*ports.Port)) *ports.Port {
+	p := &ports.Port{
 		ID:          string(uuid.NewUUID()),
 		Name:        openstack.ServerName(server),
 		MACAddress:  serverPortMAC,
@@ -924,6 +941,27 @@ func openstackServerPortFixture(server *regionv1.Server, openstackNetwork *opens
 				IPAddress: serverPortIP,
 			},
 		},
+	}
+
+	for _, o := range opts {
+		o(p)
+	}
+
+	return p
+}
+
+// withPortSecurityGroups puts security groups on the observed port, so a test
+// can present one that already matches the specification.
+func withPortSecurityGroups(ids ...string) func(*ports.Port) {
+	return func(p *ports.Port) {
+		p.SecurityGroups = ids
+	}
+}
+
+// withPortAddressPairs puts allowed address pairs on the observed port.
+func withPortAddressPairs(pairs ...ports.AddressPair) func(*ports.Port) {
+	return func(p *ports.Port) {
+		p.AllowedAddressPairs = pairs
 	}
 }
 
@@ -1568,6 +1606,200 @@ func TestReconcileSecurityGroupRules(t *testing.T) {
 	})
 }
 
+// TestReconcileServerPortConverged covers the ports that must NOT be written.
+//
+// Neutron accepts an update that changes nothing, so the write used to be
+// unconditional. Every rule below silently reinstates that unconditional write
+// if it is dropped -- none of them fails loudly -- so each has a case here.
+func TestReconcileServerPortConverged(t *testing.T) {
+	t.Parallel()
+
+	network := networkFixture()
+	securityGroup := securityGroupFixture()
+	securityGroup2 := securityGroupFixture()
+
+	client := getClient(t, []client.Object{network, securityGroup, securityGroup2})
+
+	openstackNetwork := openstackNetworkFixture(network)
+	openstackSubnet := openstackSubnetFixture(network, openstackNetwork)
+	openstackSecurityGroup := openstackSecurityGroupFixture(securityGroup)
+	openstackSecurityGroup2 := openstackSecurityGroupFixture(securityGroup2)
+
+	// The provider group each CRD resolves to. The fixture IDs are random, so the
+	// instances have to be reused rather than rebuilt per lookup.
+	openstackGroups := map[string]*groups.SecGroup{
+		securityGroup.Name:  openstackSecurityGroup,
+		securityGroup2.Name: openstackSecurityGroup2,
+	}
+
+	// requireNoWrite asserts the pass reconciles without issuing an UpdatePort.
+	// gomock fails an unexpected call, so the absence of that expectation is the
+	// assertion.
+	//
+	// The controller is per subtest, not shared: gomock reports a violation by
+	// calling Fatalf on the t it was built with, and from a parallel subtest
+	// goroutine that aborts the whole binary with a bare Goexit panic and no
+	// named failure. Since an unexpected call IS the assertion here, it has to
+	// arrive diagnosably.
+	//
+	// Security group lookups are matched per entry rather than with
+	// gomock.Any(): the returns are handed out in registration order, so
+	// gomock.Any() would pass a provider that resolved the same specification
+	// entry every time, which is exactly what the out-of-order case exists to
+	// catch.
+	requireNoWrite := func(t *testing.T, server *regionv1.Server, port *ports.Port, securityGroups ...*regionv1.SecurityGroup) {
+		t.Helper()
+
+		c := gomock.NewController(t)
+		t.Cleanup(c.Finish)
+
+		networking := mock.NewMockNetworkingInterface(c)
+		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
+
+		for _, sg := range securityGroups {
+			networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(sg)).Return(openstackGroups[sg.Name], nil)
+		}
+
+		networking.EXPECT().GetServerPort(t.Context(), server).Return(port, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServerPort(t.Context(), p, networking, server)
+		require.NoError(t, err)
+	}
+
+	t.Run("SecurityGroupMatches", func(t *testing.T) {
+		t.Parallel()
+
+		server := serverFixture(withNetwork(network), withSecurityGroup(securityGroup))
+
+		requireNoWrite(t, server, openstackServerPortFixture(server, openstackNetwork, openstackSubnet,
+			withPortSecurityGroups(openstackSecurityGroup.ID)), securityGroup)
+
+		require.NotNil(t, server.Status.PrivateIP, "the converged path must still record the address")
+		require.Equal(t, serverPortIP, *server.Status.PrivateIP)
+		// The MAC is owned exclusively by the monitor, not the reconciler.
+		require.Nil(t, server.Status.MACAddress)
+	})
+
+	// Neutron returns security groups in an order of its own choosing, so a
+	// positional comparison would report drift that is not there.
+	t.Run("SecurityGroupsOutOfOrder", func(t *testing.T) {
+		t.Parallel()
+
+		server := serverFixture(withNetwork(network),
+			withSecurityGroup(securityGroup), withSecurityGroup(securityGroup2))
+
+		requireNoWrite(t, server, openstackServerPortFixture(server, openstackNetwork, openstackSubnet,
+			withPortSecurityGroups(openstackSecurityGroup2.ID, openstackSecurityGroup.ID)),
+			securityGroup, securityGroup2)
+	})
+
+	// Neither the API nor the CRD forbids naming the same group twice, and
+	// Neutron's port security groups are a set, so it reports the group once.
+	// Compared as multisets that never converges.
+	t.Run("DuplicateSecurityGroup", func(t *testing.T) {
+		t.Parallel()
+
+		server := serverFixture(withNetwork(network),
+			withSecurityGroup(securityGroup), withSecurityGroup(securityGroup))
+
+		requireNoWrite(t, server, openstackServerPortFixture(server, openstackNetwork, openstackSubnet,
+			withPortSecurityGroups(openstackSecurityGroup.ID)),
+			securityGroup, securityGroup)
+	})
+
+	// The specification's MAC is optional and Neutron defaults an omitted one to
+	// the port's own, so an unfilled pair must still compare equal.
+	t.Run("AddressPairWithoutMAC", func(t *testing.T) {
+		t.Parallel()
+
+		server := serverFixture(withNetwork(network), withSecurityGroup(securityGroup),
+			withAllowedAddressPair("10.0.1.0/24", ""))
+
+		requireNoWrite(t, server, openstackServerPortFixture(server, openstackNetwork, openstackSubnet,
+			withPortSecurityGroups(openstackSecurityGroup.ID),
+			withPortAddressPairs(ports.AddressPair{IPAddress: "10.0.1.0/24", MACAddress: serverPortMAC})),
+			securityGroup)
+	})
+
+	// Address pairs are a set to Neutron too, so their order must not matter
+	// either. Without two pairs somewhere, the sort is unpinned.
+	t.Run("AddressPairsOutOfOrder", func(t *testing.T) {
+		t.Parallel()
+
+		server := serverFixture(withNetwork(network), withSecurityGroup(securityGroup),
+			withAllowedAddressPair("10.0.1.0/24", "fa:16:3e:ca:fe:01"),
+			withAllowedAddressPair("10.0.2.0/24", "fa:16:3e:ca:fe:02"))
+
+		requireNoWrite(t, server, openstackServerPortFixture(server, openstackNetwork, openstackSubnet,
+			withPortSecurityGroups(openstackSecurityGroup.ID),
+			withPortAddressPairs(
+				ports.AddressPair{IPAddress: "10.0.2.0/24", MACAddress: "fa:16:3e:ca:fe:02"},
+				ports.AddressPair{IPAddress: "10.0.1.0/24", MACAddress: "fa:16:3e:ca:fe:01"})),
+			securityGroup)
+	})
+
+	// Address pairs are a set to Neutron as well, so a duplicated one has to be
+	// dropped for the same reason a duplicated security group does.
+	t.Run("DuplicateAddressPair", func(t *testing.T) {
+		t.Parallel()
+
+		server := serverFixture(withNetwork(network), withSecurityGroup(securityGroup),
+			withAllowedAddressPair("10.0.1.0/24", "fa:16:3e:ca:fe:01"),
+			withAllowedAddressPair("10.0.1.0/24", "fa:16:3e:ca:fe:01"))
+
+		requireNoWrite(t, server, openstackServerPortFixture(server, openstackNetwork, openstackSubnet,
+			withPortSecurityGroups(openstackSecurityGroup.ID),
+			withPortAddressPairs(ports.AddressPair{IPAddress: "10.0.1.0/24", MACAddress: "fa:16:3e:ca:fe:01"})),
+			securityGroup)
+	})
+
+	// A duplicate that only exists once the MACs are filled. Deduplicating
+	// before the fill let this through, and Neutron rejects a request naming one
+	// pair twice, so the port failed to converge on every pass.
+	t.Run("DuplicateAddressPairAfterMACFill", func(t *testing.T) {
+		t.Parallel()
+
+		server := serverFixture(withNetwork(network), withSecurityGroup(securityGroup),
+			withAllowedAddressPair("10.0.1.0/24", ""),
+			withAllowedAddressPair("10.0.1.0/24", serverPortMAC))
+
+		requireNoWrite(t, server, openstackServerPortFixture(server, openstackNetwork, openstackSubnet,
+			withPortSecurityGroups(openstackSecurityGroup.ID),
+			withPortAddressPairs(ports.AddressPair{IPAddress: "10.0.1.0/24", MACAddress: serverPortMAC})),
+			securityGroup)
+	})
+
+	// The same, via case rather than the fill.
+	t.Run("DuplicateAddressPairAfterCaseFold", func(t *testing.T) {
+		t.Parallel()
+
+		server := serverFixture(withNetwork(network), withSecurityGroup(securityGroup),
+			withAllowedAddressPair("10.0.1.0/24", "FA:16:3E:CA:FE:01"),
+			withAllowedAddressPair("10.0.1.0/24", "fa:16:3e:ca:fe:01"))
+
+		requireNoWrite(t, server, openstackServerPortFixture(server, openstackNetwork, openstackSubnet,
+			withPortSecurityGroups(openstackSecurityGroup.ID),
+			withPortAddressPairs(ports.AddressPair{IPAddress: "10.0.1.0/24", MACAddress: "fa:16:3e:ca:fe:01"})),
+			securityGroup)
+	})
+
+	// A MAC is hexadecimal, so case cannot be significant. Neutron reports its
+	// own lower-cased form.
+	t.Run("AddressPairMACCase", func(t *testing.T) {
+		t.Parallel()
+
+		server := serverFixture(withNetwork(network), withSecurityGroup(securityGroup),
+			withAllowedAddressPair("10.0.1.0/24", "FA:16:3E:CA:FE:01"))
+
+		requireNoWrite(t, server, openstackServerPortFixture(server, openstackNetwork, openstackSubnet,
+			withPortSecurityGroups(openstackSecurityGroup.ID),
+			withPortAddressPairs(ports.AddressPair{IPAddress: "10.0.1.0/24", MACAddress: "fa:16:3e:ca:fe:01"})),
+			securityGroup)
+	})
+}
+
 // TestReconcileServerPort tests a resource is created when one isn't present.
 // TODO: allowed address pairs for NFV.
 func TestReconcileServerPort(t *testing.T) {
@@ -1620,26 +1852,55 @@ func TestReconcileServerPort(t *testing.T) {
 		require.Nil(t, server.Status.MACAddress)
 	})
 
-	t.Run("ItExists", func(t *testing.T) {
+	// The dangerous direction: a MAC the specification asked for that the port
+	// does not carry must reach Neutron, not be absorbed by the empty-MAC fill.
+	t.Run("ItUpdatesDriftedAddressPairMAC", func(t *testing.T) {
 		t.Parallel()
 
-		server := server.DeepCopy()
+		server := serverFixture(withNetwork(network), withSecurityGroup(securityGroup),
+			withAllowedAddressPair("10.0.1.0/24", "fa:16:3e:ca:fe:01"))
+
+		drifted := openstackServerPortFixture(server, openstackNetwork, openstackSubnet,
+			withPortSecurityGroups(openstackSecurityGroup.ID),
+			withPortAddressPairs(ports.AddressPair{IPAddress: "10.0.1.0/24", MACAddress: serverPortMAC}))
 
 		networking := mock.NewMockNetworkingInterface(c)
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
-		networking.EXPECT().GetServerPort(t.Context(), server).Return(openstackServerPort, nil)
-		// TODO: this shouldn't happen as it's not been modified.
-		networking.EXPECT().UpdatePort(t.Context(), openstackServerPort.ID, []string{openstackSecurityGroup.ID}, []ports.AddressPair{}).Return(openstackServerPort, nil)
+		networking.EXPECT().GetServerPort(t.Context(), server).Return(drifted, nil)
+		networking.EXPECT().UpdatePort(t.Context(), drifted.ID, []string{openstackSecurityGroup.ID},
+			[]ports.AddressPair{{IPAddress: "10.0.1.0/24", MACAddress: "fa:16:3e:ca:fe:01"}}).Return(drifted, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
 		_, err := openstack.ReconcileServerPort(t.Context(), p, networking, server)
 		require.NoError(t, err)
-		require.NotNil(t, server.Status.PrivateIP)
-		require.Equal(t, serverPortIP, *server.Status.PrivateIP)
-		// The MAC is owned exclusively by the monitor, not the reconciler.
-		require.Nil(t, server.Status.MACAddress)
+	})
+
+	// Drift in the address pairs alone still has to be written.
+	t.Run("ItUpdatesAddressPairs", func(t *testing.T) {
+		t.Parallel()
+
+		server := serverFixture(withNetwork(network), withSecurityGroup(securityGroup),
+			withAllowedAddressPair("10.0.1.0/24", ""))
+
+		drifted := openstackServerPortFixture(server, openstackNetwork, openstackSubnet,
+			withPortSecurityGroups(openstackSecurityGroup.ID))
+
+		networking := mock.NewMockNetworkingInterface(c)
+		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
+		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
+		networking.EXPECT().GetServerPort(t.Context(), server).Return(drifted, nil)
+		// The port's MAC, not the specification's empty one: the request body is
+		// the same canonical form the comparison used, so the two cannot
+		// disagree. Neutron would have applied this default itself.
+		networking.EXPECT().UpdatePort(t.Context(), drifted.ID, []string{openstackSecurityGroup.ID},
+			[]ports.AddressPair{{IPAddress: "10.0.1.0/24", MACAddress: serverPortMAC}}).Return(drifted, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServerPort(t.Context(), p, networking, server)
+		require.NoError(t, err)
 	})
 
 	t.Run("ItUpdatesSecurityGroups", func(t *testing.T) {
@@ -2252,8 +2513,10 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 
 	networking := mock.NewMockNetworkingInterface(c)
 	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
+	// No UpdatePort: this server asks for no security groups and no address
+	// pairs, and the port has neither, so nothing has drifted.  PrivateIP is
+	// still written, which is the copy-back this test is about.
 	networking.EXPECT().GetServerPort(t.Context(), server).Return(openstackServerPort, nil)
-	networking.EXPECT().UpdatePort(t.Context(), openstackServerPort.ID, []string{}, []ports.AddressPair{}).Return(openstackServerPort, nil)
 	networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(openstackFloatingIP, nil)
 
 	compute := mock.NewMockServerInterface(c)

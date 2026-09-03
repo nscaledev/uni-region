@@ -46,11 +46,12 @@ and two decodings of one instant must not read as a change.
 
 On load: the arm fires on any observed-subtree delta, so a server flapping in and
 out of `ERROR` drives one full reconcile per flip — and each woken pass also
-mutates the provider, re-running port reconciliation (today an unconditional
-Neutron `UpdatePort`, with a standing TODO in the openstack provider to make it
-conditional) plus floating-IP reconciliation, so the deferral's cost is Neutron
-write amplification, not just controller CPU. The unconditional `generation`
-stamp guarantees one redundant wake per spec edit — the generation predicate
+re-runs port and floating-IP reconciliation. The port write is now conditional on
+the port having drifted (see
+[`pkg/providers/internal/openstack`](../../providers/internal/openstack/README.md)),
+so the cost of a flip is the Neutron *reads* those two make, not a write per
+flip. The unconditional `generation` stamp guarantees one redundant wake per
+spec edit — the generation predicate
 already woke the reconciler for that edit. If wake volume ever becomes a
 problem, the knob is comparing only the fields a woken pass acts on (`image`,
 `errored`); deferred until it is one.

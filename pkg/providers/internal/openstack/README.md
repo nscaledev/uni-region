@@ -498,6 +498,50 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     and false matches
 - Provider networks that require VLAN segmentation use the local VLAN allocator
   because OpenStack does not allocate those IDs for us.
+- A server's Neutron port is written only when it has drifted. Neutron accepts an
+  update that changes nothing, so `reconcileServerPort` used to issue one on every
+  pass; that was merely wasteful while a settled server reconciled on a
+  specification edit alone, and becomes a write against every port in the estate
+  every period once the controller polls.
+
+  **The comparison and the request body are built from one canonical form**, and
+  that is the property to preserve. Canonicalising in two places at two stages is
+  a trap that has already been fallen into once: deduplicating the specification
+  and then filling MACs let a duplicate that only appears once the MACs are
+  filled survive the deduplication, and it went to Neutron — which rejects a
+  request naming the same pair twice, so the port failed to converge on every
+  pass. Comparing exactly what would be sent makes that unrepresentable.
+
+  Four rules make that canonical form correct. Every one of them silently
+  reinstates the unconditional write if dropped — none fails loudly — so each has
+  a test that fails without it:
+  - security groups and allowed address pairs are ordered before comparison,
+    because Neutron returns each in an order of its own choosing
+  - duplicates are dropped. Neither the API nor the CRD forbids naming the same
+    security group or address pair twice. Neutron's `security_groups` is a set, so
+    it reports a repeated group once and an order-insensitive comparison of
+    multisets never converges; a repeated address pair is worse, because Neutron
+    rejects the request outright.
+  - an allowed address pair's MAC is optional in the specification, and Neutron
+    documents an omitted one as defaulting to the port's own, so the port's MAC
+    fills an empty one. Left unfilled, such a pair never matches. The fill is
+    conditional, and must be: applied unconditionally it reports a genuinely
+    drifted MAC as converged, which is the one direction that loses a write the
+    user asked for.
+  - MAC case is folded. A MAC is hexadecimal and so case insensitive, the
+    specification field constrains neither case nor format, and Neutron reports
+    its own lower-cased form.
+
+  On the create path there is no port yet to canonicalise an omitted MAC against,
+  so the fill is a no-op there and Neutron applies the same default itself.
+
+  The network is deliberately not compared: Neutron cannot move a port between
+  networks, so an unconditional update never converged a network change either.
+
+  Only the *write* is conditional. `lookupNetwork` plus one `GetSecurityGroup` per
+  specified group still run on every pass, so a settled server costs those reads
+  per period. Collapsing them is a separate concern from the write amplification
+  this addresses.
 
 ## Credential Sessions
 

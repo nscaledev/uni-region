@@ -19,6 +19,7 @@ package openstack
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -2663,25 +2664,31 @@ func (p *Provider) lookupSecurityGroup(ctx context.Context, securityGroups Secur
 	return openstackSecurityGroup, nil
 }
 
-func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInterface, server *unikornv1.Server) (*ports.Port, error) {
-	log := log.FromContext(ctx)
+// serverSecurityGroupIDs resolves the specification's security groups to the
+// provider IDs the port carries.
+func (p *Provider) serverSecurityGroupIDs(ctx context.Context, client NetworkingInterface, server *unikornv1.Server) ([]string, error) {
+	securityGroupIDs := make([]string, 0, len(server.Spec.SecurityGroups))
 
-	network, err := p.lookupNetwork(ctx, client, server.Namespace, server.Spec.Networks[0].ID.String())
-	if err != nil {
-		return nil, err
-	}
-
-	securityGroupIDs := make([]string, len(server.Spec.SecurityGroups))
-
-	for i, s := range server.Spec.SecurityGroups {
+	for _, s := range server.Spec.SecurityGroups {
 		securityGroup, err := p.lookupSecurityGroup(ctx, client, server.Namespace, s.ID.String())
 		if err != nil {
 			return nil, err
 		}
 
-		securityGroupIDs[i] = securityGroup.ID
+		if slices.Contains(securityGroupIDs, securityGroup.ID) {
+			continue
+		}
+
+		securityGroupIDs = append(securityGroupIDs, securityGroup.ID)
 	}
 
+	return securityGroupIDs, nil
+}
+
+// serverAddressPairs translates the specification's allowed address pairs into
+// the Neutron representation.  A plain translation: canonicalAddressPairs owns
+// every decision about what counts as the same pair.
+func serverAddressPairs(server *unikornv1.Server) []ports.AddressPair {
 	addressPairs := make([]ports.AddressPair, len(server.Spec.Networks[0].AllowedAddressPairs))
 
 	for i, pair := range server.Spec.Networks[0].AllowedAddressPairs {
@@ -2691,29 +2698,137 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 		}
 	}
 
-	port, err := client.GetServerPort(ctx, server)
-	if err != nil {
-		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
-			return nil, err
-		}
+	return addressPairs
+}
 
-		log.V(1).Info("creating port")
-
-		port, err = client.CreateServerPort(ctx, server, network.ID, securityGroupIDs, addressPairs)
-		if err != nil {
-			return nil, err
-		}
-
-		server.Status.PrivateIP = ptr.To(port.FixedIPs[0].IPAddress)
-
-		return port, nil
+// compareAddressPairs orders allowed address pairs so two sets of them can be
+// compared without depending on the order Neutron chose to return them in.
+func compareAddressPairs(a, b ports.AddressPair) int {
+	if order := cmp.Compare(a.IPAddress, b.IPAddress); order != 0 {
+		return order
 	}
 
-	// TODO: we should only do this when the security groups or address pairs differ.
-	log.V(1).Info("updating port")
+	return cmp.Compare(a.MACAddress, b.MACAddress)
+}
 
-	port, err = client.UpdatePort(ctx, port.ID, securityGroupIDs, addressPairs)
+// sameSecurityGroups reports whether two lists name the same security groups,
+// irrespective of order.
+//
+// Both sides are duplicate free -- Neutron's port security groups are a set, and
+// serverSecurityGroupIDs deduplicates the specification -- so an
+// order-insensitive comparison of them is a set comparison.
+func sameSecurityGroups(a, b []string) bool {
+	return slices.Equal(slices.Sorted(slices.Values(a)), slices.Sorted(slices.Values(b)))
+}
+
+// canonicalAddressPairs reduces allowed address pairs to the single form that
+// both the convergence comparison and the Neutron request body are built from.
+//
+// ONE form for both, deliberately.  Canonicalising in two places at two stages
+// is a trap: deduplicating the specification and then filling MACs meant a
+// duplicate that only appears once the MACs are filled survived the
+// deduplication, and was sent to Neutron -- which rejects a request naming the
+// same pair twice, so the port never converged and every pass failed.  Comparing
+// exactly what would be sent is what makes that unrepresentable.
+//
+// portMAC is empty on the create path, where there is no port yet to take a MAC
+// from.  The fill is then a no-op and Neutron applies its own default, which is
+// the same value the next pass will canonicalise against.
+func canonicalAddressPairs(pairs []ports.AddressPair, portMAC string) []ports.AddressPair {
+	canonical := make([]ports.AddressPair, 0, len(pairs))
+
+	for _, pair := range pairs {
+		// The MAC is optional in the specification, and Neutron documents an
+		// omitted one as defaulting to the port's own, so the two spell the same
+		// pair.  Left unfilled it never compares equal and the port is written on
+		// every pass -- the thing the convergence check exists to stop.  The fill
+		// must stay conditional: applied unconditionally it reports a genuinely
+		// drifted MAC as converged, dropping a write the user asked for.
+		if pair.MACAddress == "" {
+			pair.MACAddress = portMAC
+		}
+
+		// A MAC is hexadecimal and so case insensitive, the specification field
+		// constrains neither case nor format, and Neutron reports its own
+		// lower-cased form.
+		pair.MACAddress = strings.ToLower(pair.MACAddress)
+
+		if slices.Contains(canonical, pair) {
+			continue
+		}
+
+		canonical = append(canonical, pair)
+	}
+
+	// The order is Neutron's to choose, so they are sorted rather than compared
+	// positionally.
+	slices.SortFunc(canonical, compareAddressPairs)
+
+	return canonical
+}
+
+// serverPortConverged reports whether the port already carries the security
+// groups and allowed address pairs the specification asks for.
+//
+// addressPairs must already be canonical for this port, so that what is compared
+// is exactly what would be sent.
+//
+// The network is deliberately not part of this. Neutron cannot move a port
+// between networks, so an unconditional update never converged a network change
+// either; it is out of scope here rather than newly ignored.
+func serverPortConverged(port *ports.Port, securityGroupIDs []string, addressPairs []ports.AddressPair) bool {
+	if !sameSecurityGroups(port.SecurityGroups, securityGroupIDs) {
+		return false
+	}
+
+	return slices.Equal(addressPairs, canonicalAddressPairs(port.AllowedAddressPairs, port.MACAddress))
+}
+
+func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInterface, server *unikornv1.Server) (*ports.Port, error) {
+	log := log.FromContext(ctx)
+
+	network, err := p.lookupNetwork(ctx, client, server.Namespace, server.Spec.Networks[0].ID.String())
 	if err != nil {
+		return nil, err
+	}
+
+	securityGroupIDs, err := p.serverSecurityGroupIDs(ctx, client, server)
+	if err != nil {
+		return nil, err
+	}
+
+	addressPairs := serverAddressPairs(server)
+
+	port, err := client.GetServerPort(ctx, server)
+
+	switch {
+	case err == nil:
+		// Canonical against this port, and the same value both compared and
+		// sent, so the two can never disagree about what the specification asks
+		// for.
+		desired := canonicalAddressPairs(addressPairs, port.MACAddress)
+
+		// Neutron accepts an update that changes nothing, so this used to run
+		// unconditionally.  That was merely wasteful while a settled server only
+		// reconciled on a specification edit; a polling controller would write
+		// every port in the estate every period, so the write is now conditional
+		// on the port having actually drifted.
+		if !serverPortConverged(port, securityGroupIDs, desired) {
+			log.V(1).Info("updating port")
+
+			if port, err = client.UpdatePort(ctx, port.ID, securityGroupIDs, desired); err != nil {
+				return nil, err
+			}
+		}
+	case errors.Is(err, coreerrors.ErrResourceNotFound):
+		log.V(1).Info("creating port")
+
+		// No port exists yet, so there is no MAC to canonicalise an omitted one
+		// against; Neutron applies its own default.
+		if port, err = client.CreateServerPort(ctx, server, network.ID, securityGroupIDs, canonicalAddressPairs(addressPairs, "")); err != nil {
+			return nil, err
+		}
+	default:
 		return nil, err
 	}
 
