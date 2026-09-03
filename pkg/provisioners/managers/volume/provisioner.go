@@ -101,10 +101,6 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
-	if err := p.projectPendingAttachmentStatus(ctx); err != nil {
-		return err
-	}
-
 	if err := provider.CreateVolume(ctx, identity, p.volume); err != nil {
 		return err
 	}
@@ -116,23 +112,6 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 	p.volume.Status.ObservedGeneration = &p.volume.Generation
 
 	return nil
-}
-
-func (p *Provisioner) projectPendingAttachmentStatus(ctx context.Context) error {
-	if p.volume.Spec.ClaimRef == nil {
-		return nil
-	}
-
-	server, exists, err := p.claimedServer(ctx)
-	if err != nil {
-		return err
-	}
-
-	if !exists || server.GetDeletionTimestamp() != nil || !serverRequestsVolume(server, p.volume.Name) {
-		return nil
-	}
-
-	return p.setAttachmentStatus(ctx, server, unikornv1.AttachmentProvisioning, nil, "waiting for volume provisioning")
 }
 
 func (p *Provisioner) reconcileAttachment(ctx context.Context, provider types.Provider, identity *unikornv1.Identity) error {
