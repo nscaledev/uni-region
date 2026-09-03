@@ -408,8 +408,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     creation of the same desired attachment becomes success, while an
     unresolved conflict maps to `ErrConflict`
   - detach discovers every Cinder attachment for the Volume and calls Nova
-    delete for each attached server; a missing volume or Nova delete `404` is
-    success because detached state already holds
+    delete for each attached server; a missing volume is success. After each
+    detach attempt, including a Nova delete `404`, Cinder is re-read: success
+    requires no remaining attachment rows, otherwise detach yields
   - a Nova delete `409 Conflict` maps to `ErrConflict`; other provider failures
     are preserved
   - detach also no-ops when the backing OpenStack identity was never realized,
