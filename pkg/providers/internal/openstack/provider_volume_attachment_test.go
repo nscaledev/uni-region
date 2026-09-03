@@ -339,7 +339,7 @@ func TestDetachVolume(t *testing.T) {
 		require.NoError(t, openstack.DetachVolumeWithClients(t.Context(), compute, blockStorage, server, volume))
 	})
 
-	t.Run("DeleteNotFoundIsIdempotent", func(t *testing.T) {
+	t.Run("DeleteNotFoundYieldsWhileCinderReportsAttachment", func(t *testing.T) {
 		t.Parallel()
 
 		c := gomock.NewController(t)
@@ -347,10 +347,14 @@ func TestDetachVolume(t *testing.T) {
 		blockStorage := mock.NewMockVolumeInterface(c)
 		attachedVolume := cinderVolumeWithAttachment(cinderVolume, openstackServer.ID, false)
 
-		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(attachedVolume, nil)
-		compute.EXPECT().DeleteVolumeAttachment(t.Context(), openstackServer.ID, cinderVolume.ID).Return(notFound)
+		gomock.InOrder(
+			blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(attachedVolume, nil),
+			compute.EXPECT().DeleteVolumeAttachment(t.Context(), openstackServer.ID, cinderVolume.ID).Return(notFound),
+			blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(attachedVolume, nil),
+		)
 
-		require.NoError(t, openstack.DetachVolumeWithClients(t.Context(), compute, blockStorage, server, volume))
+		err := openstack.DetachVolumeWithClients(t.Context(), compute, blockStorage, server, volume)
+		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
 
 	t.Run("ConflictReturnsConflict", func(t *testing.T) {
