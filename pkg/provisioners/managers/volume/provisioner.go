@@ -126,7 +126,15 @@ func (p *Provisioner) reconcileAttachment(ctx context.Context, provider types.Pr
 		return err
 	}
 
-	if !exists || server.GetDeletionTimestamp() != nil || !serverRequestsVolume(server, p.volume.Name) {
+	if !exists {
+		if err := p.detachAttachments(ctx, provider, identity); err != nil {
+			return err
+		}
+
+		return provisioners.ErrYield
+	}
+
+	if server.GetDeletionTimestamp() != nil || !serverRequestsVolume(server, p.volume.Name) {
 		if err := p.releaseClaim(ctx, claim); err != nil {
 			return err
 		}
@@ -235,6 +243,10 @@ func attachmentMessage(err error) string {
 }
 
 func (p *Provisioner) detachAttachments(ctx context.Context, provider types.Provider, identity *unikornv1.Identity) error {
+	if err := p.markAttachmentStatusesDeprovisioning(ctx); err != nil {
+		return err
+	}
+
 	if err := provider.DetachVolume(ctx, identity, p.volume); err != nil {
 		return err
 	}
@@ -279,10 +291,10 @@ func (p *Provisioner) setAttachmentStatus(ctx context.Context, server *unikornv1
 		ProvisioningStatus: status,
 		Device:             device,
 		Message:            message,
-	})
+	}, true)
 }
 
-func (p *Provisioner) updateAttachmentStatus(ctx context.Context, server *unikornv1.Server, status *unikornv1.ServerVolumeStatus) error {
+func (p *Provisioner) updateAttachmentStatus(ctx context.Context, server *unikornv1.Server, status *unikornv1.ServerVolumeStatus, create bool) error {
 	cli, err := coreclient.FromContext(ctx)
 	if err != nil {
 		return err
@@ -298,6 +310,10 @@ func (p *Provisioner) updateAttachmentStatus(ctx context.Context, server *unikor
 
 		updated := removeServerVolumeStatus(latest.Status.Volumes, p.volume.Name)
 		if status != nil {
+			if !create && len(updated) == len(latest.Status.Volumes) {
+				return nil
+			}
+
 			updated = append(updated, *status)
 		} else if len(updated) == len(latest.Status.Volumes) {
 			return nil
@@ -307,6 +323,32 @@ func (p *Provisioner) updateAttachmentStatus(ctx context.Context, server *unikor
 
 		return cli.Status().Update(ctx, latest)
 	})
+}
+
+func (p *Provisioner) markAttachmentStatusesDeprovisioning(ctx context.Context) error {
+	cli, err := coreclient.FromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	servers := &unikornv1.ServerList{}
+	if err := cli.List(ctx, servers, client.InNamespace(p.volume.Namespace)); err != nil {
+		return err
+	}
+
+	status := &unikornv1.ServerVolumeStatus{
+		ID:                 p.volume.Name,
+		ProvisioningStatus: unikornv1.AttachmentDeprovisioning,
+		Message:            "detaching volume attachment",
+	}
+
+	for i := range servers.Items {
+		if err := p.updateAttachmentStatus(ctx, &servers.Items[i], status, false); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (p *Provisioner) clearAttachmentStatuses(ctx context.Context) error {
@@ -323,7 +365,7 @@ func (p *Provisioner) clearAttachmentStatuses(ctx context.Context) error {
 	for i := range servers.Items {
 		server := &servers.Items[i]
 
-		if err := p.updateAttachmentStatus(ctx, server, nil); err != nil {
+		if err := p.updateAttachmentStatus(ctx, server, nil, false); err != nil {
 			return err
 		}
 	}

@@ -41,15 +41,19 @@ After the backing Volume converges, this provisioner reconciles its single
 claimed Server attachment. It reads the handler-owned Volume claim and Server
 intent, then calls the provider attachment boundary. A provisioning or errored
 Server yields; its condition can recover without a Volume generation change.
-If the claimed Server is gone, deleting, or no longer requests the Volume, the
-provisioner conflict-safely releases that claim and yields. The following
-no-claim pass detaches provider attachments and clears stale Server status.
+If the claimed Server is absent, the provisioner detaches any old provider
+attachments, retains the claim, and yields so Server creation can complete. If
+the Server is deleting or no longer requests the Volume, it
+conflict-safely releases that claim and yields. The following no-claim pass
+detaches provider attachments and clears stale Server status.
 The provider remains authoritative for attachment and detach work. The
 provisioner projects progress only onto `Server.Status.Volumes`; it never uses
 that derived projection to decide provider cleanup. It advances the Volume
 observed generation only when both the backing Volume and attachment converge.
 It does not project attachment status until the backing Volume has converged
-and attachment reconciliation begins.
+and attachment reconciliation begins. Before an asynchronous detach, existing
+attachment rows are marked `Deprovisioning`; they are removed only after the
+provider confirms detachment.
 Each projection re-reads the Server and retries status conflicts while merging
 only the claimed Volume's entry.
 
