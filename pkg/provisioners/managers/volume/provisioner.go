@@ -119,21 +119,19 @@ func (p *Provisioner) reconcileAttachment(ctx context.Context, provider types.Pr
 		return p.detachAttachments(ctx, provider, identity)
 	}
 
+	claim := *p.volume.Spec.ClaimRef
+
 	server, exists, err := p.claimedServer(ctx)
 	if err != nil {
 		return err
 	}
 
-	if !exists {
-		if err := p.detachAndReleaseClaim(ctx, provider, identity); err != nil {
+	if !exists || server.GetDeletionTimestamp() != nil || !serverRequestsVolume(server, p.volume.Name) {
+		if err := p.releaseClaim(ctx, claim); err != nil {
 			return err
 		}
 
 		return provisioners.ErrYield
-	}
-
-	if server.GetDeletionTimestamp() != nil || !serverRequestsVolume(server, p.volume.Name) {
-		return p.detachAndReleaseClaim(ctx, provider, identity)
 	}
 
 	return p.reconcileServerAttachment(ctx, provider, identity, server)
@@ -244,14 +242,35 @@ func (p *Provisioner) detachAttachments(ctx context.Context, provider types.Prov
 	return p.clearAttachmentStatuses(ctx)
 }
 
-func (p *Provisioner) detachAndReleaseClaim(ctx context.Context, provider types.Provider, identity *unikornv1.Identity) error {
-	if err := p.detachAttachments(ctx, provider, identity); err != nil {
+func (p *Provisioner) releaseClaim(ctx context.Context, claim unikornv1.VolumeClaimRef) error {
+	cli, err := coreclient.FromContext(ctx)
+	if err != nil {
 		return err
 	}
 
-	p.volume.Spec.ClaimRef = nil
+	key := client.ObjectKeyFromObject(p.volume)
 
-	return nil
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &unikornv1.Volume{}
+		if err := cli.Get(ctx, key, latest); err != nil {
+			return err
+		}
+
+		if latest.Spec.ClaimRef == nil || *latest.Spec.ClaimRef != claim {
+			*p.volume = *latest
+
+			return nil
+		}
+
+		latest.Spec.ClaimRef = nil
+		if err := cli.Update(ctx, latest); err != nil {
+			return err
+		}
+
+		*p.volume = *latest
+
+		return nil
+	})
 }
 
 func (p *Provisioner) setAttachmentStatus(ctx context.Context, server *unikornv1.Server, status unikornv1.AttachmentProvisioningStatus, device *string, message string) error {
