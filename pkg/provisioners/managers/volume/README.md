@@ -15,7 +15,9 @@ allocation ID before the controller can observe the Volume.
 
 Provision passes always re-derive provider state. OpenStack uses the stable
 provider name and idempotent create path, so an existing backing volume is
-adopted and a missing one is recreated under the same Region Volume ID.
+adopted. Before `VolumeStatus.ProvisionedAt` is set, a missing backing volume
+is created under the same Region Volume ID. Afterward, confirmed provider loss
+requires a replacement Volume; it is not recreated under the same ID.
 
 Deprovisioning deliberately has stricter ordering:
 
