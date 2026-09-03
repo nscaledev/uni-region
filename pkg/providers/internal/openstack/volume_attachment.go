@@ -164,19 +164,14 @@ func detachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 		return err
 	}
 
-	detachAccepted := false
-
-	for _, attachment := range cinderVolume.Attachments {
-		deleted, err := deleteVolumeAttachment(ctx, compute, attachment.ServerID, cinderVolume.ID)
-		if err != nil {
-			return err
-		}
-
-		detachAccepted = detachAccepted || deleted
+	if len(cinderVolume.Attachments) == 0 {
+		return nil
 	}
 
-	if !detachAccepted {
-		return nil
+	for _, attachment := range cinderVolume.Attachments {
+		if err := deleteVolumeAttachment(ctx, compute, attachment.ServerID, cinderVolume.ID); err != nil {
+			return err
+		}
 	}
 
 	cinderVolume, err = blockStorage.GetVolume(ctx, volume)
@@ -195,21 +190,21 @@ func detachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 	return nil
 }
 
-func deleteVolumeAttachment(ctx context.Context, compute ComputeInterface, serverID, volumeID string) (bool, error) {
+func deleteVolumeAttachment(ctx context.Context, compute ComputeInterface, serverID, volumeID string) error {
 	err := compute.DeleteVolumeAttachment(ctx, serverID, volumeID)
 	if err == nil {
-		return true, nil
+		return nil
 	}
 
 	if providerResourceNotFound(err) {
-		return false, nil
+		return nil
 	}
 
 	if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-		return false, fmt.Errorf("%w: volume %s cannot be detached from server %s in its current state", coreerrors.ErrConflict, volumeID, serverID)
+		return fmt.Errorf("%w: volume %s cannot be detached from server %s in its current state", coreerrors.ErrConflict, volumeID, serverID)
 	}
 
-	return false, err
+	return err
 }
 
 func (p *Provider) AttachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume) (*types.ServerVolumeAttachment, error) {
