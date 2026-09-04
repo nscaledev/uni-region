@@ -139,16 +139,6 @@ server:
       cpu: 100m
       memory: 100Mi
 
-# Monitor configuration.
-monitor:
-  # Allow override of the controller image.
-  image: ~
-  # Allows resource limits to be set.
-  resources:
-    limits:
-      cpu: 100m
-      memory: 100Mi
-
 # Project event consumer.
 projectConsumer:
   # Allow override of the controller image.

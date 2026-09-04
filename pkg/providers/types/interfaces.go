@@ -99,9 +99,6 @@ type Volume interface {
 	CreateVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
 	// DeleteVolume idempotently deletes the provider volume described by the Region Volume.
 	DeleteVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
-	// UpdateVolumeState rediscovers provider state and updates the Region Volume in place.
-	// Provider failures are returned so callers can preserve the last observed state.
-	UpdateVolumeState(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
 }
 
 type Server interface {
@@ -121,9 +118,8 @@ type Server interface {
 	DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
 	// UpdateServerState checks a server's state and modifies the resource in place.
 	// Implementations MUST return ErrResourceNotFound when the provider server is
-	// absent (after recording any observation they wish to persist): the server
-	// provisioner's create-retry "confirmed gone" gate and the health monitor's
-	// absent-server handling both depend on it.
+	// absent: the server provisioner's create-retry "confirmed gone" gate depends
+	// on it, and that gate is this method's only caller.
 	UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
 }
 

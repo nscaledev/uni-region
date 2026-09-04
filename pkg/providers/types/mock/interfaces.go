@@ -486,20 +486,6 @@ func (mr *MockVolumeMockRecorder) DeleteVolume(ctx, identity, volume any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteVolume", reflect.TypeOf((*MockVolume)(nil).DeleteVolume), ctx, identity, volume)
 }
 
-// UpdateVolumeState mocks base method.
-func (m *MockVolume) UpdateVolumeState(ctx context.Context, identity *v1alpha1.Identity, volume *v1alpha1.Volume) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateVolumeState", ctx, identity, volume)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// UpdateVolumeState indicates an expected call of UpdateVolumeState.
-func (mr *MockVolumeMockRecorder) UpdateVolumeState(ctx, identity, volume any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateVolumeState", reflect.TypeOf((*MockVolume)(nil).UpdateVolumeState), ctx, identity, volume)
-}
-
 // MockServer is a mock of Server interface.
 type MockServer struct {
 	ctrl     *gomock.Controller
@@ -1218,20 +1204,6 @@ func (m *MockProvider) UpdateServerState(ctx context.Context, identity *v1alpha1
 func (mr *MockProviderMockRecorder) UpdateServerState(ctx, identity, server any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateServerState", reflect.TypeOf((*MockProvider)(nil).UpdateServerState), ctx, identity, server)
-}
-
-// UpdateVolumeState mocks base method.
-func (m *MockProvider) UpdateVolumeState(ctx context.Context, identity *v1alpha1.Identity, volume *v1alpha1.Volume) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateVolumeState", ctx, identity, volume)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// UpdateVolumeState indicates an expected call of UpdateVolumeState.
-func (mr *MockProviderMockRecorder) UpdateVolumeState(ctx, identity, volume any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateVolumeState", reflect.TypeOf((*MockProvider)(nil).UpdateVolumeState), ctx, identity, volume)
 }
 
 // VolumeClasses mocks base method.

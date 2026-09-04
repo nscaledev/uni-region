@@ -435,7 +435,7 @@ func TestUpdateServerStateWithClientsVMBuildSkipsIronicAndBuilds(t *testing.T) {
 
 // TestUpdateServerStateWithClientsBaremetalIronicFailureDegradesToBuilding
 // confirms a failed Ironic client construction (or lookup) leaves Phase at
-// Building, matching the VM default — the monitor must not block reconciles.
+// Building, matching the VM default — Ironic must not block reconciles.
 func TestUpdateServerStateWithClientsBaremetalIronicFailureDegradesToBuilding(t *testing.T) {
 	t.Parallel()
 

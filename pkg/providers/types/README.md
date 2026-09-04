@@ -70,7 +70,7 @@ continue to be passed directly through many provider interface methods.
   workload lifecycle contract.
 - `UpdateVolumeState` distinguishes absence, failed reads, and observed lifecycle
   truth. Providers own status mapping and missing-volume semantics; read and
-  validation failures are returned so monitors preserve the last state.
+  validation failures are returned so the caller preserves the last state.
 - `ServerCreateOptions` carries launch-time derived inputs without forcing them
   into the persisted `Server` CRD shape.
 - `ServerVolumeAttachment` contains only provider-neutral observation needed by
@@ -120,5 +120,5 @@ continue to be passed directly through many provider interface methods.
 - [../../handler](../../handler/README.md) and specific handler subpackages
   consume these types when converting provider-derived information into API
   reads and actions
-- [../../monitor](../../monitor/README.md) consumes provider-projected
+- [../../provisioners](../../provisioners/README.md) consumes provider-projected
   repository-native status when observing runtime state

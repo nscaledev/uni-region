@@ -113,7 +113,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   stamped `status.launchedAt`/`status.provisionedAt` latches, which are
   observations and must not authorize the gate (observation is stimulus, never
   authorization; keying off them silently dropped image changes whenever the
-  monitor had not yet recorded the first `ACTIVE`, and the clean-completing
+  first `ACTIVE` had not yet been recorded, and the clean-completing
   reconcile then let the API misreport the change as settled). Before first boot
   the desired image is a create parameter, not a rebuild target, so a pending
   image change on a server Nova reports with a zero `launched_at` defers: the
@@ -126,7 +126,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   errored lifecycle stamp, which the pass now projects itself, so it takes
   effect on the next pass rather than at worst one poll later. This
   assumes the cloud exposes
-  `OS-SRV-USG:launched_at` — the same signal the health monitor mirrors and the
+  `OS-SRV-USG:launched_at` — the same signal the projection records and the
   create-retry guard keys off. Deliberately not a goal: recreating a
   never-booted server rather than waiting for it to boot (e.g. a queued
   baremetal deploy, where recreate would skip a wasted provision) is a future
@@ -185,30 +185,28 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   both the sushy and fake-controllable fixtures). The park does not claim to
   attribute the `ERROR` to the rebuild — an unrelated host failure after a
   successful rebuild presents identically — but under either cause the spec is
-  unrealized, so `error` is the honest report on the provisioning axis; the
-  monitor's health axis carries the ambient view on its own cadence. Deferring the
-  report to the monitor instead was measured to lose short-lived failures
-  entirely: the reconciler settles in one 10s yield cycle while the monitor
-  samples at one-minute cadence. Never-launched servers are excluded from the
-  park (an `ERROR` before first boot is a failed create, owned by the
-  provisioner's bounded retry machinery).
+  unrealized, so `error` is the honest report on the provisioning axis. The same
+  pass projects the lifecycle and health conditions from the same read, so the
+  ambient view no longer arrives on a separate cadence. Never-launched servers
+  are excluded from the park (an `ERROR` before first boot is a failed create,
+  owned by the provisioner's bounded retry machinery).
 
-  A parked server has no requeue, so it un-parks on exactly three paths. The user
-  edits the spec — the remedy the message advertises — and the generation-change
-  wake resumes reconciliation, monitor-independent. Or the provider recovers
-  without a spec change, in which case the un-park rides the monitor's
-  `status.observed` write firing the observed wake: the park is re-derived per
-  pass, so the woken pass walks to R3″ and reads `provisioned` again (the same
-  measured path as a foreign recovery, below — within one monitor period). Or
-  the provider server disappears entirely — deleted out-of-band — in which case
-  the monitor's `GetServer` returns not-found and `updateServerStateWithClients`
-  records an absent observation (errored cleared, generation stamped, image
-  sticky) before surfacing the not-found error — surfaced, not swallowed,
-  because the create-retry provisioner's confirmed-gone gate depends on
-  `UpdateServerState` returning `ErrResourceNotFound`. The monitor persists the
-  recorded observation anyway, firing the same observed wake; the reconciler's
-  own fresh read then routes not-found to the create path and recreates the
-  server.
+  **A parked server has no requeue, and polling does not change that.** core
+  deliberately excludes the terminal branch from the poll, because a disposition
+  that will not self-heal is precisely the workqueue burn parking exists to stop.
+  So a park un-parks on three paths. The user edits the spec — the remedy the
+  message advertises — and the generation-change wake resumes reconciliation; or
+  the resource is deleted and recreated; or the controller restarts, which
+  re-drives it because a polling controller never stamps its processed
+  generation, precisely so a restart stays a recovery route. A provider that
+  quietly recovers no longer un-parks a server on its own: that used to ride the
+  monitor's `status.observed` write, and both have been deleted.
+
+  A server that is *not* parked needs none of that. The pass polls, so an
+  instance deleted out-of-band is found not-found by the next pass's own
+  `GetServer`, which routes to the create path and recreates it. That is also why
+  `UpdateServerState` still surfaces `ErrResourceNotFound` rather than swallowing
+  it: the create-retry provisioner's confirmed-gone gate depends on it.
 
   The provisioning axis reports *spec-realization*, not attribution. A
   rebuild-class operation this provider did not submit — `nova evacuate` is
@@ -219,10 +217,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   no spec change, no observed change — so R3 never runs; only the lifecycle and
   health conditions read `Rebuilding`/`Unknown`, written by whichever observer
   sees it first), a
-  *failed* foreign rebuild parks via the observed-errored wake within one
-  monitor period, and a foreign recovery un-parks the same way. A foreign
-  rebuild onto a *different* image — succeeded or failed — is auto-reverted:
-  the ref flip changes `observed.image`, the wake fires, and R4″ resubmits
+  *failed* foreign rebuild parks on the next poll, and a park then needs a spec
+  edit. A foreign rebuild onto a *different* image — succeeded or failed — is
+  auto-reverted: the next poll reads the flipped ref and R4″ resubmits
   toward the spec image (measured: ~20s from the foreign act to the corrective
   rebuild). The park is therefore scoped precisely to failures on the
   *converged* ref, where the spec image itself is implicated; divergent-ref
@@ -246,8 +243,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   same precondition itself (`must_have_launched`).
 
   R4″ is the single destructive step. The submission (`submitServerRebuild`) writes a
-  fixed accepted stamp on a 2xx (`Active` `Rebuilding`, `Healthy` `Unknown`, matching
-  the monitor's `REBUILD` mapping so the two writers agree rather than churn) and never
+  fixed accepted stamp on a 2xx (`Active` `Rebuilding`, `Healthy` `Unknown`) and never
   derives it from the rebuild response body, whose 202 can still describe the
   pre-destruction server as `ACTIVE` and would stamp a just-accepted destructive
   rebuild as running. Acceptance *yields* rather than completing: Nova now has a
@@ -343,7 +339,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     not Go errors.
   - `UpdateVolumeState` mutates the supplied Region Volume with observed size
     and health without exposing Cinder or Gophercloud types. It returns provider
-    read errors so the monitor can preserve the last observed status. It does
+    read errors so the caller can preserve the last observed status. It does
     not introduce a mirrored provider-state CRD. The Volume controller owns the
     durable `ProvisionedAt` marker, create/delete intent, and generic
     `Available` provisioning condition.
@@ -448,7 +444,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   splitting "in the pipeline" from "in the pipeline but unhappy" across both the
   `Active` and `Healthy` conditions would just duplicate one concept across two
   axes). Provisioning status itself is a separate axis (the `Available` condition),
-  provisioner-owned and the monitor never writes it; `setServerActive`
+  provisioner-owned and the projection never writes it; `setServerActive`
   does, however, latch `status.provisionedAt` from Nova
   `launched_at` the first time a server is seen booted (write-once, never
   cleared, independent of live power state), which the controller's bounded
@@ -469,27 +465,6 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   without the detail rather than failing anything, because the fault is an
   enrichment and not the reason for the read; healthy servers, and servers
   already known to be errored, never pay the extra call.
-  `setServerObservedStatus` records the monitor's `status.observed` region from the
-  `GetServer` response: `generation` unconditionally, the image via `openstackServerImageID`
-  (an unreadable ref preserves the previous value rather than clearing it), and
-  the neutral `errored` marker when Nova reports `ERROR`. The marker is gated on
-  `Status == "ERROR"` and not on `Fault` being populated, because Nova leaves a
-  stale `fault` on a recovered server, so keying off the struct would report a
-  cleared failure forever. The logged detail is the fault's code, message, and
-  created timestamp; `fault.details` is excluded as an admin-only stack trace,
-  and nothing from the fault reaches projected status. The Ironic lookup is
-  filtered by `instance_uuid`. Because Ironic node ownership and visibility
-  are provider infrastructure concerns rather than tenant workload operations,
-  this lookup uses the Region top-level provider credentials scoped to the
-  service principal's project, matching the package's other privileged client
-  patterns. Deployments must grant those credentials enough Ironic policy
-  visibility to list/detail nodes by instance UUID, for example through a
-  narrow `bm-mapper`-style role or equivalent admin, service, or system-reader
-  policy that permits `baremetal:node:list_all`/node-detail visibility. If the
-  privileged client cannot be created or Ironic rejects or fails the lookup,
-  the monitor logs the failure and falls back to the VM default `Building`
-  `Active` state so API responses still see a coherent live signal rather than
-  failing the monitor path.
 - Some OpenStack list APIs are not safe to treat as exact lookup, notably
   server, network, Cinder volume, and Octavia load-balancer `name` filters:
   - `name` filters behave like prefix or regular-expression matches rather than
@@ -550,12 +525,15 @@ MAC once Nova has bound one, and live lifecycle state via `setServerActive`. It
 takes the read rather than fetching one, so neither caller can observe at a
 different moment from the one it decided at.
 
-It is not the whole of `UpdateServerState`. That also writes `status.observed`
-and runs the bounded fault log on the error edge, both of which stay with the
-monitor for now, so until the monitor is deleted a pass can report
-`Active=Errored` while `status.observed.errored` is still false. `status.observed`
-exists only to wake the reconciler and nothing reads its contents, so the
-divergence is invisible; it disappears with the monitor.
+It is the whole of `UpdateServerState` bar the read itself, which is why that
+method is now a thin wrapper: it survives only because the create-retry
+provisioner's confirmed-gone gate needs it to surface `ErrResourceNotFound`.
+
+The fault detail is fetched on the transition into error and logged, never
+projected — Nova fault codes and messages are provider vocabulary. The edge is
+decided from the lifecycle condition the projection is about to overwrite, so an
+already-errored server pays no per-pass fault read, and no stored marker is
+needed to remember it.
 
 `reconcileServer` calls it on the already-exists branch, **before the image
 rows**, and the ordering is not free choice:
@@ -594,7 +572,8 @@ the Region admin user scoped to the service principal's project rather than as t
 tenant service principal, so every server pinned to one identity shares one
 credential. A restart resync of an identity holding 1157 servers asked for that
 one credential a couple of thousand times inside a few minutes, and the health
-monitor asked for it again for every server, every minute.
+monitor asked for it again for every server, every minute. The monitor is gone;
+  the reconcile pass polls instead, and shares the same session.
 
 A `Session` is the per-credential state that outlives every service client built
 from it, keyed on the whole credential so a rotated secret can never be served a
@@ -639,7 +618,7 @@ healthy, and nothing logs the staleness.
 gophercloud's reauth serialisation: `AuthenticatedHeaders` waits for an
 in-progress refresh on *every* request, on a channel receive that consults no
 context. One caller whose refresh hangs would otherwise park every other caller on
-that credential — reconciles, the monitor, and the synchronous reboot, start, stop
+that credential — reconciles and the synchronous reboot, start, stop
 and console handlers — below the level at which their own contexts could rescue
 them. A zero-value `http.Client` has no timeout, so the bound is set explicitly.
 
@@ -689,24 +668,39 @@ of an eviction is one login.
 
 ### What this deliberately does not do
 
-It does not share provider *reads*. Collapsing `GetServer` was measured and
-rejected. Nova's name filter is a regular expression, so a filtered read scans the
-project and returns one row; dropping the filter would let concurrent callers
-share one list, but it returns every row in the project to every caller. Against a
-modelled 1538-server estate the unfiltered form cost the sequential monitor cycle
-1m40s where the filtered form costs 35s, which is the difference between fitting
-the one-minute poll period and not, and a bulk create emitted three orders of
-magnitude more instance records because each create retires the sharing anyway.
-Sharing the reads would also have needed a guard against a caller joining a read
-opened before its own create and building a second server.
+It does not share provider *reads*, and `GetServer` keeps its Nova name filter.
+Nova treats that filter as a regular expression, so a filtered read scans the
+whole project to return one row — O(N) per call, O(N²) per resync of a project
+holding N servers. Dropping it would let concurrent callers single-flight one
+list, but an unfiltered list returns every row in the project to every caller.
 
-The real saving on the monitor's path is not a shared read but a single read: it
-walks servers one at a time (`pkg/monitor/health/server/check.go`), so one list
-per identity per cycle indexed by name would replace a read per server with a
-read per identity — around two orders of magnitude fewer requests against that
-same estate.
-Observation-only reads are allowed to do that; see the note on projected status in
-[the API package](../../../apis/unikorn/v1alpha1/README.md).
+**This is worth revisiting, and the reason it was rejected no longer holds.** The
+rejection was measured against the health monitor, which walked servers one at a
+time: at concurrency 1 a shared read merges nothing, so the larger response was
+pure cost — 1m40s unfiltered against 35s filtered for a 1538-server estate, which
+was the difference between fitting the one-minute poll period and not. The monitor
+is gone. The reconcile pass observes instead, and its read concurrency is
+`MaxConcurrentReconciles`, not one. Single-flight collapses reads to roughly `N/C`
+and rows to `N²/C`, so the headroom grows as `√C` — about 8× more servers per
+project at equal Nova load on the same model.
+
+Two things stay true if it is picked up, and both are why it is not a
+drop-the-filter one-liner:
+
+- **The create gate.** `reconcileServer` is check-then-act: a positive not-found
+  authorises the create. A caller that joins a read opened *before* its own create
+  is told the server does not exist and builds a second one — reachable by one
+  reconciler retrying itself, no competing actor needed. The guard is a
+  per-credential mutation epoch folded into the read key, so a create retires every
+  flight in progress. Without it, sharing reads breaks the invariant that an
+  observation is fresh at decision time.
+- **A create burst pays full price anyway.** Every create retires the sharing, so a
+  bulk create into one project single-flights nothing *and* returns three orders of
+  magnitude more rows than the filtered form — measured at 202 records against
+  377,258 for 1000 servers.
+
+Bounding the credential session registry is the other outstanding item; see the
+growth note above.
 
 ## Octavia Load Balancers
 

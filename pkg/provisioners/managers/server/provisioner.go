@@ -313,7 +313,7 @@ func (p *Provisioner) providerCreateFailure() bool {
 // create attempt so the next attempt starts clean. Resetting the Active condition
 // to Pending clears the terminal Error state, so ProviderCreateFailure no longer
 // fires while the retry is in flight. The Healthy condition is left alone: nothing
-// gates on it and the monitor re-derives it on the next observation.
+// gates on it and the next pass re-derives it.
 func (p *Provisioner) resetProviderCreateRuntimeStatus() {
 	p.server.SetActiveCondition(unikornv1.ActiveConditionReasonPending)
 	p.server.Status.PrivateIP = nil

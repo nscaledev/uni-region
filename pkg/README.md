@@ -32,7 +32,7 @@ The useful way to read it is not as a directory tree, but as one system:
   projection of attachment progress. Claim writes and attachment reconciliation
   remain later lifecycle slices
   Its provider capability exposes neutral backing discovery, observed
-  size, and lifecycle state. The monitor projects that truth into observed
+  size, and lifecycle state. The reconcile pass projects that truth into observed
   size and coarse health without taking over the controller-owned `Available`
   condition. `VolumeStatus.ProvisionedAt` records durable backing-storage
   creation, so provider loss degrades health without triggering replacement
@@ -106,18 +106,13 @@ lifecycle logic: waiting for prerequisite identity readiness, maintaining
 reference edges, calling providers, and cleaning up allocation/accounting
 relationships.
 
-### Monitor Layer
-
-- [monitor](./monitor/README.md)
-- [monitor/health/server](./monitor/health/server/README.md)
-- [monitor/health/volume](./monitor/health/volume/README.md)
-
-These packages cover the part of the system that is intentionally observational
-rather than declarative.
-
-They poll provider-backed reality and project it back into Kubernetes status,
-logs, and telemetry. That is an important architectural admission: not all
-lifecycle truth in this platform arrives through controller watches alone.
+Observation is not a separate layer. A resource whose provider moves underneath
+it — `Server` and `Volume` — is reconciled by a polling controller, and each pass
+projects the read it decided on into Kubernetes status, logs and telemetry. There
+is no second process, and therefore one writer per resource. That is the
+architectural admission this platform makes: not all lifecycle truth arrives
+through controller watches, so some of it is polled — but it is polled by the
+thing that already owns the resource.
 
 ## Important Cross-Cutting Themes
 
@@ -163,7 +158,7 @@ Common edge types include:
 - hidden service-principal roots
 - cross-service propagation bridges
 
-This is the abstraction that ties together handlers, provisioners, monitors,
+This is the abstraction that ties together handlers, provisioners,
 and even command-level consumers outside `pkg`.
 
 ### OpenStack Project Scoping
@@ -197,7 +192,6 @@ This is especially visible in:
 
 - [handler](./handler/README.md)
 - [provisioners](./provisioners/README.md)
-- [monitor](./monitor/README.md)
 
 ## Caveats
 

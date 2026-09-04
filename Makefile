@@ -18,8 +18,7 @@ CONTROLLERS = \
   unikorn-security-group-controller \
   unikorn-load-balancer-controller \
   unikorn-volume-controller \
-  unikorn-server-controller \
-  unikorn-region-monitor
+  unikorn-server-controller
 
 # Release will do cross compliation of all images for the 'all' target.
 # Note we aren't fucking about with docker here because that opens up a

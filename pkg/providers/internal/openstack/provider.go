@@ -2016,8 +2016,11 @@ func volumeSystemMetadata(identity *unikornv1.Identity, volume *unikornv1.Volume
 }
 
 const (
-	volumeStatusAvailable   = "available"
-	volumeStatusErrorPrefix = "error"
+	volumeStatusAvailable = "available"
+	// volumeStatusError is the bare Cinder error state.  Compared exactly it is a
+	// failed create; as a prefix it matches the whole error family.  See the
+	// README for why those differ.
+	volumeStatusError = "error"
 )
 
 func reconcileVolume(ctx context.Context, blockStorage VolumeInterface, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
@@ -2036,8 +2039,13 @@ func reconcileVolume(ctx context.Context, blockStorage VolumeInterface, identity
 			volume.Status.ProvisionedAt = &now
 		}
 
-		if strings.HasPrefix(openstackVolume.Status, volumeStatusErrorPrefix) {
-			return provisioners.Terminal(unikornv1core.ConditionReasonErrored, "provider volume entered an error state")
+		// Only a bare "error" is a failed create and therefore terminal.  The
+		// error_* sub-states are a failed operation on a volume that exists and
+		// can clear on its own, so they yield: a polling controller must not park
+		// external state that recovers without us.  See the README.
+		if openstackVolume.Status == volumeStatusError {
+			return provisioners.Terminal(unikornv1core.ConditionReasonErrored,
+				"the provider volume failed to be created; replace the Region Volume")
 		}
 
 		if openstackVolume.Status != volumeStatusAvailable {
@@ -2052,6 +2060,7 @@ func reconcileVolume(ctx context.Context, blockStorage VolumeInterface, identity
 	}
 
 	if volume.Status.ProvisionedAt != nil {
+		volume.Status.Size = nil
 		volume.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider volume is missing")
 
 		return provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored, "the provider volume is missing; replace the Region Volume")
@@ -2416,7 +2425,7 @@ const (
 
 // healthMessageIndeterminate is the Healthy-condition message used whenever a
 // server's health cannot be determined. markServerRebuildAccepted (reconciler)
-// and convertServerHealthStatus's REBUILD branch (monitor) MUST write the same
+// and convertServerHealthStatus's REBUILD branch MUST write the same
 // value, or the two writers churn the message on every poll.
 const healthMessageIndeterminate = "unable to determine server status"
 
@@ -2586,7 +2595,7 @@ func setServerActive(ctx context.Context, server *unikornv1.Server, openstackser
 		return
 	}
 
-	// Nova BUILD is the window where the live monitor refines the lifecycle
+	// Nova BUILD is the window where the projection refines the lifecycle
 	// view beyond what PowerState alone can express. PowerState is NOSTATE
 	// throughout BUILD, so we look at server.Status + the optional Ironic
 	// state to pick Queued vs Building.
@@ -2612,7 +2621,7 @@ func setServerActive(ctx context.Context, server *unikornv1.Server, openstackser
 		server.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 	case servers.SHUTDOWN:
 		// TODO: Stopping is only ever written by the handler in response to a
-		// user-initiated stop. If a monitor poll lands while OpenStack is
+		// user-initiated stop. If a poll lands while OpenStack is
 		// already reporting SHUTOFF/SHUTDOWN (e.g. the user stopped via the
 		// OpenStack dashboard rather than the platform API, or the platform
 		// missed the transient Stopping window), this flips Stopping → Stopped
@@ -3034,7 +3043,7 @@ func logServerFault(ctx context.Context, client ServerObservationInterface, serv
 }
 
 // markServerRebuildAccepted stamps the post-acceptance in-flight view: Active
-// Rebuilding and health Unknown, byte-identical to what the monitor derives for
+// Rebuilding and health Unknown, matching what the projection derives for
 // a Nova REBUILD (setServerActive + convertServerHealthStatus). Never call
 // before Nova has accepted: pre-acceptance waits are silent yields.
 func markServerRebuildAccepted(server *unikornv1.Server) {
@@ -3134,7 +3143,7 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 //	                                      and diagnoses nothing.) The outcome of a
 //	                                      submission belongs to the reconciler's
 //	                                      axis; ambient health of a settled server
-//	                                      remains the monitor's. Never-launched
+//	                                      is the projection's. Never-launched
 //	                                      servers are excluded: an ERROR before
 //	                                      first boot is create-retry's to own.
 //	R3″  ref == desired, otherwise       → done.
@@ -3181,15 +3190,14 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 		// attempts are exhausted. The remedy is a spec edit — a new image choice
 		// or a replacement server — which is ErrUserActionRequired's contract:
 		// recovery is generation-driven, and there is no retry bookkeeping to
-		// clear here, so the sentinel alone suffices. The park is also
-		// re-derived per pass, so a monitor observed-write after a silent
-		// provider recovery un-parks it without any spec change.
+		// clear here, so the sentinel alone suffices. A park has no requeue, so
+		// it needs a spec edit or a replacement; see the README.
 		if openstackServer.Status == novaStatusError && !openstackServer.LaunchedAt.IsZero() {
 			return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
 				"the provider reports the server in an error state; select another image or replace the server")
 		}
 
-		// R3″: converged. Any other task is the monitor's axis.
+		// R3″: converged.
 		return openstackServer, nil
 	}
 
@@ -3288,7 +3296,7 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerObservation
 	}
 
 	setServerHealthStatus(server, openstackServer)
-	// No Ironic lookup at create time — the live monitor's UpdateServerState
+	// No Ironic lookup at create time — the next pass's projection
 	// refines the lifecycle state from observed Ironic state on each poll.
 	setServerActive(ctx, server, openstackServer, nil)
 
@@ -3532,8 +3540,8 @@ func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Id
 // lookupIronicNodeForPhase fetches the bound Ironic node for a baremetal
 // server in Nova BUILD so setServerActive can distinguish Queued (pre-deploy)
 // from Building (active deploy). All failure modes log and return nil;
-// setServerActive then falls back to Building, matching the VM default — the
-// monitor must never error on a missing or unreachable Ironic.
+// setServerActive then falls back to Building, matching the VM default: the
+// pass must never error on a missing or unreachable Ironic.
 func (p *Provider) lookupIronicNodeForPhase(
 	ctx context.Context,
 	identity *unikornv1.Identity,
@@ -3567,20 +3575,11 @@ func (p *Provider) updateServerStateWithClients(
 ) error {
 	openstackServer, err := serverClient.GetServer(ctx, server)
 	if err != nil {
-		// A server whose Nova instance is gone (deleted out-of-band, e.g. a
-		// parked server whose backing instance was removed) still gets the
-		// observed subtree stamped: errored is cleared (the absence is not a
-		// provider error), generation is stamped as on every successful read,
-		// and the image is preserved as the documented sticky last-known
-		// value. No fault fetch happens — there is no server to read one for
-		// — so this path never touches the observation client. The recording
-		// lets a caller that chooses to persist status on the absent path do
-		// so (the monitor does, firing the observed wake that lets the
-		// reconciler recreate the server), but the error still surfaces
-		// rather than being swallowed: the create-retry provisioner's
-		// "confirmed gone" gate depends on UpdateServerState returning
-		// ErrResourceNotFound (deleteFailedProviderServer,
-		// pkg/provisioners/managers/server/provisioner.go).
+		// Surfaced, never swallowed: the create-retry provisioner's
+		// "confirmed gone" gate depends on this returning ErrResourceNotFound
+		// (deleteFailedProviderServer, pkg/provisioners/managers/server).  A
+		// pass that is polling routes the same not-found to the create path
+		// itself.
 		return err
 	}
 

@@ -649,19 +649,6 @@ func TestDeleteVolumeNoopsWhenIdentityUnrealized(t *testing.T) {
 	require.NoError(t, p.DeleteVolume(t.Context(), identity, volume))
 }
 
-func TestUpdateVolumeStateNoopsWhenIdentityUnrealized(t *testing.T) {
-	t.Parallel()
-
-	region := providerNetworkRegionFixture()
-	identity := identityFixture()
-	volume := volumeFixture()
-
-	k8sClient := getClient(t, []client.Object{unrealizedOpenstackIdentityFixture(identity)})
-	p := openstack.NewTestProvider(k8sClient, region)
-
-	require.NoError(t, p.UpdateVolumeState(t.Context(), identity, volume))
-}
-
 // TestDeleteLoadBalancerNoopsWhenIdentityUnrealized verifies the delete is a
 // clean no-op when the backing identity has no project allocated yet.
 func TestDeleteLoadBalancerNoopsWhenIdentityUnrealized(t *testing.T) {
@@ -2214,7 +2201,51 @@ func TestReconcileVolume(t *testing.T) {
 
 		require.ErrorAs(t, err, &provisioningError)
 		require.Equal(t, corev1.ConditionReasonErrored, provisioningError.Reason())
-		require.Equal(t, "provider volume entered an error state", provisioningError.Message())
+		require.Equal(t, "the provider volume failed to be created; replace the Region Volume", provisioningError.Message())
+	})
+
+	// The error_* sub-states are a failed operation on a volume that exists and
+	// can clear on its own, so they must yield rather than park: a polling
+	// controller has no watch on Cinder, and a park has no requeue.
+	for _, status := range []string{"error_extending", "error_restoring", "error_backing-up"} {
+		t.Run("ItYieldsOn_"+status, func(t *testing.T) {
+			t.Parallel()
+
+			volume := volume.DeepCopy()
+			volume.Status.ProvisionedAt = ptr.To(metav1.Now())
+
+			c := gomock.NewController(t)
+			blockStorage := mock.NewMockVolumeInterface(c)
+			blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(&volumes.Volume{
+				ID:     openstackVolume.ID,
+				Name:   openstackVolume.Name,
+				Size:   1,
+				Status: status,
+			}, nil)
+
+			err := openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume)
+			require.ErrorIs(t, err, provisioners.ErrYield, "a recoverable Cinder state must not park")
+			require.False(t, provisioners.IsTerminal(err))
+			require.NotNil(t, volume.Status.Size, "a yielding pass still projects what it read")
+		})
+	}
+
+	// The monitor cleared the size for a volume whose backing storage has gone;
+	// the pass must too, or a stale size outlives the volume it described.
+	t.Run("ItClearsTheSizeWhenMissing", func(t *testing.T) {
+		t.Parallel()
+
+		volume := volume.DeepCopy()
+		volume.Status.ProvisionedAt = ptr.To(metav1.Now())
+		volume.Status.Size = ptr.To(resource.MustParse("1Gi"))
+
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(nil, coreerrors.ErrResourceNotFound)
+
+		err := openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume)
+		require.True(t, provisioners.IsTerminal(err))
+		require.Nil(t, volume.Status.Size, "a size that describes storage that has gone must not stand")
 	})
 
 	t.Run("ItWasProvisionedButIsMissing", func(t *testing.T) {

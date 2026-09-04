@@ -97,7 +97,7 @@ func retryClient(t *testing.T, objects ...client.Object) client.Client {
 
 // withProviderCreateFailure marks a server as a terminal provider-create failure
 // via the Active condition — the axis ProviderCreateFailure now keys off (Nova
-// ERROR is surfaced as ActiveConditionReasonError by the monitor).
+// ERROR is surfaced as ActiveConditionReasonError by the projection).
 func withProviderCreateFailure(server *regionv1.Server) {
 	server.SetActiveCondition(regionv1.ActiveConditionReasonError)
 }

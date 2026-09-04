@@ -186,9 +186,9 @@ type ServerInterface interface {
 	CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error)
 }
 
-// ServerObservationInterface is the read surface of the server state monitor:
-// the listing read every poll makes, plus the per-ID fault fetch the observer
-// pays only on the transition into error.
+// ServerObservationInterface is the read surface of the server projection: the
+// listing read every pass makes, plus the per-ID fault fetch paid only on the
+// transition into error.
 type ServerObservationInterface interface {
 	ServerInterface
 	GetServerFault(ctx context.Context, id string) (*servers.Fault, error)
@@ -223,7 +223,7 @@ type VolumeInterface interface {
 	DeleteVolume(ctx context.Context, id string) error
 }
 
-// BaremetalInterface lets the live monitor look up the Ironic node bound to a
+// BaremetalInterface lets the projection look up the Ironic node bound to a
 // Nova instance so it can refine Phase for baremetal servers in BUILD.
 type BaremetalInterface interface {
 	GetNodeByInstanceUUID(ctx context.Context, instanceUUID string) (*nodes.Node, error)

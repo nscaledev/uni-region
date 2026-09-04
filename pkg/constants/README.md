@@ -17,7 +17,7 @@ small number of contract clusters:
 - an API-generation label used to distinguish old and new external API
   semantics while keeping storage broadly in place
 - specialized image and server-state metadata that drives snapshot/import
-  provenance and observed pending-state timing
+  provenance
 
 The same package also defines the process-level build metadata for the running
 binary: application name, version, revision, and the derived service
@@ -37,9 +37,6 @@ descriptor/version string used by shared runtime layers.
   split into separate storage models.
 - `MarshalAPIVersion()` and `UnmarshalAPIVersion()` define the current storage
   encoding for that API version discriminator as a decimal string.
-- `ServerPendingEntryTimeAnnotation` has a single-writer operational contract:
-  the region monitor stamps it when a server enters `Pending` and removes it
-  when the server leaves that state.
 - `ImageSourceTag`, `ImageSourceImport`, `ImageSourceSnapshot`, and
   `ImageOrganizationIDTag` are part of the current image-origin contract used to
   distinguish imported images pushed into OpenStack via the back channel from
@@ -61,9 +58,6 @@ descriptor/version string used by shared runtime layers.
   depends partly on how the binary is packaged or invoked.
 - If the build does not inject `Version` or `Revision`, the package still
   compiles, but much of its deployment-debugging value is lost.
-- `ServerPendingEntryTimeAnnotation` records an entry timestamp, but its value
-  is not corrected while the server stays pending. Manual edits therefore remain
-  visible until the next state transition out of and back into `Pending`.
 - The image-origin contract is currently encoded in generic user-visible tags,
   which is a weak abstraction for service-owned semantics. A typed API field
   would be a safer long-term design than relying on mutable key/value metadata.
@@ -80,5 +74,5 @@ descriptor/version string used by shared runtime layers.
 This package follows the same cross-repository pattern used elsewhere for
 runtime identity and service descriptors, but most of its metadata vocabulary is
 best understood first as a region-repository contract for resource linkage,
-in-place API migration, image-origin handling, and monitor-managed server
+in-place API migration, image-origin handling, and observed server
 timing.

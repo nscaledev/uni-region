@@ -38,9 +38,8 @@ the referenced Region `Identity` available through this cleanup; a missing
 Identity remains an error and preserves the Volume finalizer.
 Provider lookup errors also preserve the allocation and finalizer for retry.
 
-Provider observation/status projection lives in
-[`pkg/monitor/health/volume`](../../../monitor/health/volume/README.md) until
-controller-owned observation is enabled. Quota
+Provider observation and status projection happen in the reconcile pass, which
+polls because Cinder moves a volume underneath us. Quota
 policy, Network graph-edge reconciliation, HTTP handlers, and server
 attachment reconciliation remain outside this package. The provider-specific
 state classification needed to decide whether create has converged remains

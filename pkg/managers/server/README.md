@@ -8,53 +8,26 @@ which maintains explicit resource-reference edges and SSH CA cloud-init
 augmentation.
 
 The watch is slightly broader than the other resource managers: besides server
-spec generation changes, it also wakes the controller when the monitor first
-observes a pre-launch provider server in `Healthy/Errored`. That status edge is
-the trigger for bounded delete-and-retry handling in the server provisioner.
+spec generation changes, it also wakes the controller when a pre-launch provider
+server is first seen in `Active/Errored`. That status edge is the trigger for
+bounded delete-and-retry handling in the server provisioner, and it comes from
+the reconcile pass's own projection, so a failed create is adopted on the next
+pass rather than a poll later.
 
-A third, `serverObservedUpdate`, wakes the controller whenever the
-`status.observed` region moves. It is the wake half of the reader/writer partition
-described in
-[`pkg/apis/unikorn/v1alpha1`](../../apis/unikorn/v1alpha1/README.md): the
-reconciler sleeps until a provider fact actually changed instead of requeueing to
-re-read one.
-
-For every yielding state it is a latency optimisation, not a liveness dependency:
-`ErrYield` requeues after `DefaultYieldTimeout`, so an in-flight rebuild is re-read
-on a timer whether or not this arm ever fires; the arm only shortens the wait. For
-a server parked by the provider's failed-rebuild row (a converged, quiesced
-`ERROR` — see
+The controller **polls**. Nova moves a server underneath us — power state, health,
+and the image reference on a rebuild — and none of that writes to the CRD, so no
+watch can fire for it. That is what let `status.observed` and its wake predicate
+go: the subtree existed only to give a predicate something to diff, and nothing
+read its contents. See
+[`pkg/provisioners/managers/server`](../../provisioners/managers/server/README.md)
+for what the pass does with the read, and
 [`pkg/providers/internal/openstack`](../../providers/internal/openstack/README.md)
-— where no requeue exists), this arm *is* the liveness for observation-driven
-recovery: a fault that clears at the provider un-parks the server only via this
-wake, or via a spec edit's generation wake, which is monitor-independent.
+for the projection itself.
 
-Unlike its siblings it compares the whole subtree instead of detecting a
-field-specific edge. A predicate sees only the old and new objects, never the patch
-that produced them, so an arm without a comparison would return true for every
-update — the reconciler's own status writes included. Comparing makes it inert for
-the writes that carry the region back unchanged, and a monitor write that races one
-loses on `resourceVersion` rather than reverting it. The whole-subtree form means
-facts added to the region later wake the reconciler with no edit here. What makes
-that safe is not a single writer — the reconciler's create-retry path reaches the
-same projection through `UpdateServerState`, so it can move the region itself — but
-that a self-wake converges: the next pass writes the same value and the arm falls
-quiet. The sibling arms are narrow because they guard conditions, which both writers
-share. The comparison uses
-semantic rather than reflect equality because the region carries a `*metav1.Time`,
-and two decodings of one instant must not read as a change.
-
-On load: the arm fires on any observed-subtree delta, so a server flapping in and
-out of `ERROR` drives one full reconcile per flip — and each woken pass also
-re-runs port and floating-IP reconciliation. The port write is now conditional on
-the port having drifted (see
-[`pkg/providers/internal/openstack`](../../providers/internal/openstack/README.md)),
-so the cost of a flip is the Neutron *reads* those two make, not a write per
-flip. The unconditional `generation` stamp guarantees one redundant wake per
-spec edit — the generation predicate
-already woke the reconciler for that edit. If wake volume ever becomes a
-problem, the knob is comparing only the fields a woken pass acts on (`image`,
-`errored`); deferred until it is one.
+A parked server is the exception: a terminal disposition has no requeue, by
+design, so polling does not revive it. It waits for a spec edit, a replacement,
+or a controller restart — the restart works because a polling controller never
+stamps its processed generation.
 
 The "pre-launch" test is the shared `ProviderCreateFailure` predicate exported by
 [`pkg/provisioners/managers/server`](../../provisioners/managers/server/README.md),
