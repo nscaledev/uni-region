@@ -152,8 +152,8 @@ func setClaims(ctx context.Context, c *ClientV2, volumes map[string]*regionv1.Vo
 		}
 
 		if err := c.Client.Client.Patch(ctx, after, client.MergeFromWithOptions(before, &client.MergeFromWithOptimisticLock{})); err != nil {
-			for i := len(changed) - 1; i >= 0; i-- {
-				_ = c.Client.Client.Patch(ctx, changed[i].before, client.MergeFromWithOptions(changed[i].after, &client.MergeFromWithOptimisticLock{}))
+			for _, change := range slices.Backward(changed) {
+				_ = c.Client.Client.Patch(ctx, change.before, client.MergeFromWithOptions(change.after, &client.MergeFromWithOptimisticLock{}))
 			}
 
 			return fmt.Errorf("%w: unable to update volume claim", err)
@@ -246,10 +246,6 @@ func (s *createV2Saga) create(ctx context.Context) error {
 	return nil
 }
 
-func (s *createV2Saga) delete(ctx context.Context) error {
-	return s.client.Client.Client.Delete(ctx, s.server)
-}
-
 func (s *createV2Saga) claim(ctx context.Context) error {
 	return setClaims(ctx, s.client, s.volumes, s.server.Name)
 }
@@ -258,16 +254,16 @@ func (s *createV2Saga) release(ctx context.Context) error {
 	return setClaims(ctx, s.client, s.volumes, "")
 }
 
-// Actions persist Server intent before creating the Volume claims that wake the
-// Volume controller; both writes compensate if a later saga action fails.
+// Actions claim Volumes before persisting Server intent. A failed final Server
+// write compensates the claims, but has no Server compensation of its own.
 func (s *createV2Saga) Actions() []saga.Action {
 	return []saga.Action{
 		saga.NewAction("resolve network", s.resolveNetwork, nil),
 		saga.NewAction("authorize create", s.authorize, nil),
 		saga.NewAction("validate request", s.validate, nil),
 		saga.NewAction("generate server", s.generate, nil),
-		saga.NewAction("create server", s.create, s.delete),
 		saga.NewAction("claim volumes", s.claim, s.release),
+		saga.NewAction("create server", s.create, nil),
 	}
 }
 

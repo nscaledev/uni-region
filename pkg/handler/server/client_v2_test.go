@@ -121,9 +121,9 @@ func testSrvRegion() *regionv1.Region {
 	}
 }
 
-func testSrvVolume(id string) *regionv1.Volume {
+func testSrvVolume() *regionv1.Volume {
 	return &regionv1.Volume{ObjectMeta: metav1.ObjectMeta{
-		Name: id, Namespace: srvNamespace, Labels: map[string]string{
+		Name: srvVolumeID, Namespace: srvNamespace, Labels: map[string]string{
 			coreconstants.OrganizationLabel: srvOrganizationID, coreconstants.ProjectLabel: srvProjectID,
 			constants.RegionLabel: srvRegionID, constants.IdentityLabel: "test-identity",
 			constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
@@ -608,7 +608,7 @@ func TestServerCreateV2ClaimsRequestedVolumes(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	network := testSrvNetworkWithProject(srvProjectID)
-	volume := testSrvVolume(srvVolumeID)
+	volume := testSrvVolume()
 	k8sClient := newSrvFakeClient(t, network, testSrvRegion(), volume).Build()
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	expectProjectFound(mockIdentity)
@@ -629,7 +629,8 @@ func TestServerCreateV2SagaReturnsPersistenceError(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	network := testSrvNetworkWithProject(srvProjectID)
-	k8sClient := newSrvFakeClient(t, network).
+	volume := testSrvVolume()
+	k8sClient := newSrvFakeClient(t, network, testSrvRegion(), volume).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Create: func(context.Context, client.WithWatch, client.Object, ...client.CreateOption) error {
 				return errServerPersistence
@@ -646,9 +647,14 @@ func TestServerCreateV2SagaReturnsPersistenceError(t *testing.T) {
 		Providers: newMockProvidersWithReadyImage(ctrl),
 	})
 
-	_, err := c.CreateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate())), minimalServerV2CreateRequest())
+	request := minimalServerV2CreateRequest()
+	request.Spec.Volumes = &openapi.ServerV2VolumeList{idstest.MustParseVolumeID(srvVolumeID)}
+
+	_, err := c.CreateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate())), request)
 
 	require.ErrorContains(t, err, "unable to create server")
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: srvVolumeID}, volume))
+	require.Nil(t, volume.Spec.ClaimRef)
 }
 
 func TestServerCreateV2SSHCertificateAuthorityRejectsUnsupportedUserData(t *testing.T) {
@@ -1193,7 +1199,7 @@ func TestServerUpdateV2VolumeSetSemantics(t *testing.T) {
 
 	resource := testServerV2(srvServerID)
 	resource.Spec.Volumes = []regionv1.ServerVolumeSpec{{ID: srvVolumeID}}
-	volume := testSrvVolume(srvVolumeID)
+	volume := testSrvVolume()
 	volume.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: srvServerID}
 	k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), testSrvRegion(), resource, volume).Build()
 	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
@@ -1216,7 +1222,7 @@ func TestServerUpdateV2RejectsVolumeClaimedByAnotherServer(t *testing.T) {
 	t.Parallel()
 
 	resource := testServerV2(srvServerID)
-	volume := testSrvVolume(srvVolumeID)
+	volume := testSrvVolume()
 	volume.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: srvNonexistentID}
 	k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), testSrvRegion(), resource, volume).Build()
 	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
@@ -2569,6 +2575,31 @@ func TestServerDeleteV2_NoDeletePermission(t *testing.T) {
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
+}
+
+func TestServerDeleteV2_ReleasesVolumeClaims(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	resource := testServerV2(srvServerID)
+	resource.Spec.Volumes = []regionv1.ServerVolumeSpec{{ID: srvVolumeID}}
+	volume := testSrvVolume()
+	volume.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: resource.Name}
+	k8sClient := newSrvFakeClient(t, resource, volume).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	err := c.DeleteV2(rbac.NewContext(t.Context(), srvProjectACL(identityapi.Read, identityapi.Delete)), idstest.MustParseServerID(resource.Name))
+
+	require.NoError(t, err)
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: volume.Name}, volume))
+	require.Nil(t, volume.Spec.ClaimRef)
 }
 
 // srvProjectACL grants the given region:servers operations at project scope, which

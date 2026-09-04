@@ -38,10 +38,13 @@ related dependencies rather than from nested path scope.
   uploads, images predating the label) or an architecture are not rejected,
   because absence of evidence is not evidence of incompatibility
 - create/update can validate and bind an SSH certificate authority
-- create/update execute as sagas. Create persists desired Volume IDs then claims
-  them; update releases removed claims, writes the complete desired set, then
-  claims additions. Compensations restore handler-owned Server and claim writes
-  after a later failure; providers remain exclusively controller-owned
+- create/update execute as sagas. Create claims Volumes then persists the
+  complete Server desired set as its final step. The Server create has no
+  compensation, but a failure releases its earlier Volume claims; update
+  releases removed claims, writes the complete desired set, then claims
+  additions with compensation. Providers remain exclusively controller-owned
+- delete releases each desired Volume claim before deleting the Server. Releasing
+  an already-absent claim is safe, so repeated delete work converges
 - v2 reads the stored per-Volume attachment state (attachment progress, optional
   provider device, and a safe message). A removed Volume remains in this
   projection while its observed attachment deprovisions and disappears only
