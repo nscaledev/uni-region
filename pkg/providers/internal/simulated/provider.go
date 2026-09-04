@@ -489,7 +489,7 @@ func (p *Provider) AttachVolume(_ context.Context, _ *unikornv1.Identity, _ *uni
 	return nil, unsupported("AttachVolume")
 }
 
-func (p *Provider) DetachVolume(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ *unikornv1.Volume) error {
+func (p *Provider) DetachVolume(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Volume) error {
 	return unsupported("DetachVolume")
 }
 

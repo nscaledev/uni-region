@@ -100,11 +100,11 @@ stored objects rely on for linkage, migration, and operational coordination.
   handler-owned state that records the exclusive Server reservation; a nil claim
   means the volume is available for claiming. `Server` is the current supported
   claim kind. `Server.Status.Volumes` is the sole persisted projection of
-  attachment progress, optional provider device, and a safe message. Future
-  attachment reconciliation will
-  advance `ObservedGeneration` only after both backing volume and requested
-  attachment state converge, and will report attachment errors through the generic
-  `Available` condition. The Volume controller drives provider create/delete,
+  attachment progress, optional provider device, and a safe message. The
+  Volume controller advances `ObservedGeneration` only after both backing
+  Volume and requested attachment state converge, reports attachment errors
+  through the generic `Available` condition, and discovers provider attachments
+  from the Volume before detaching them. The controller drives provider create/delete,
   but provider-side volume identity is rediscovered by stable provider lookup
   rather than mirrored into status.
   The Volume controller exclusively owns the generic `Available` provisioning

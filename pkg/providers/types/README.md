@@ -34,9 +34,9 @@ continue to be passed directly through many provider interface methods.
 - `Provider` is a capability composition interface, not one monolithic "SDK"
   wrapper. It embeds smaller contracts such as `ImageRead`, `ImageWrite`,
   `Network`, `Volume`, `Server`, `ServerConsole`, and `ServerSnapshot`.
-- The `Server` capability owns both ends of the existing-volume attachment
-  boundary. `AttachVolume` and `DetachVolume` receive the repo-native
-  `Server` and `Volume` resources; `Volume` does not own attachment intent.
+- The `Server` capability attaches an existing Volume to its desired Server.
+  The `Volume` capability discovers and detaches provider attachments by
+  Volume, so recovery never relies on derived Server status.
 - CRD-backed lifecycle operations continue to use repo-native
   `unikornv1.*` resource types where those are the stable service contract.
 - Provider-derived or non-CRD concepts use the intermediate types defined in
