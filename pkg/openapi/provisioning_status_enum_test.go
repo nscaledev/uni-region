@@ -83,6 +83,35 @@ func TestSchemaAcceptsAllProvisioningStatusValues(t *testing.T) {
 	require.NotZero(t, found, "no resourceProvisioningStatus schema found in the embedded document; the bundling layout may have changed and this guard needs updating")
 }
 
+func TestServerV2CreateResponseAllowsNotFound(t *testing.T) {
+	t.Parallel()
+
+	swagger, err := openapi.GetSwagger()
+	require.NoError(t, err)
+
+	router, err := legacy.NewRouter(swagger)
+	require.NoError(t, err)
+
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v2/servers", nil)
+	require.NoError(t, err)
+
+	route, pathParams, err := router.FindRoute(request)
+	require.NoError(t, err)
+
+	require.NoError(t, openapi3filter.ValidateResponse(t.Context(), &openapi3filter.ResponseValidationInput{
+		RequestValidationInput: &openapi3filter.RequestValidationInput{
+			Request:    request,
+			PathParams: pathParams,
+			Route:      route,
+		},
+		Status: http.StatusNotFound,
+		Options: &openapi3filter.Options{
+			IncludeResponseStatus: true,
+			ExcludeResponseBody:   true,
+		},
+	}))
+}
+
 func TestStorageDefaultSnapshotProtectionContract(t *testing.T) {
 	t.Parallel()
 
