@@ -307,27 +307,27 @@ func ReconcileLoadBalancerFloatingIP(ctx context.Context, p *Provider, client Fl
 	return p.reconcileLoadBalancerFloatingIP(ctx, client, loadBalancer, vipPortID)
 }
 
-func ReconcileServer(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
-	return p.reconcileServer(ctx, client, server, port, keyName, nil)
+func ReconcileServer(ctx context.Context, p *Provider, client ServerObservationInterface, identity *unikornv1.Identity, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
+	return p.reconcileServer(ctx, client, identity, server, port, keyName, nil)
 }
 
-func ReconcileServerWithPreflight(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight func(context.Context, *unikornv1.Server) error) (*servers.Server, error) {
-	return p.reconcileServer(ctx, client, server, port, keyName, serverCreatePreflight(preflight))
+func ReconcileServerWithPreflight(ctx context.Context, p *Provider, client ServerObservationInterface, identity *unikornv1.Identity, server *unikornv1.Server, port *ports.Port, keyName string, preflight func(context.Context, *unikornv1.Server) error) (*servers.Server, error) {
+	return p.reconcileServer(ctx, client, identity, server, port, keyName, serverCreatePreflight(preflight))
 }
 
 // ReconcileServerForCreate exercises the CreateServer copy-back semantics:
 // the augmented copy is snapshotted, reconciled, and its status copied back
 // onto the caller's server whenever the two differ.
-func ReconcileServerForCreate(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, port *ports.Port, keyName string) error {
-	return p.reconcileServerForCreate(ctx, client, server, options, port, keyName, nil)
+func ReconcileServerForCreate(ctx context.Context, p *Provider, client ServerObservationInterface, identity *unikornv1.Identity, server *unikornv1.Server, options *types.ServerCreateOptions, port *ports.Port, keyName string) error {
+	return p.reconcileServerForCreate(ctx, client, identity, server, options, port, keyName, nil)
 }
 
 // CreateServerWithClients exercises the client-independent core of
 // CreateServer — port and floating IP reconciliation (which write status onto
 // the caller's server) followed by the augmented-copy reconcile and status
 // copy-back — pinning the production interleaving of those steps.
-func CreateServerWithClients(ctx context.Context, p *Provider, networking NetworkingInterface, compute ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, keyName string) error {
-	return p.createServer(ctx, networking, compute, server, options, keyName, nil)
+func CreateServerWithClients(ctx context.Context, p *Provider, networking NetworkingInterface, compute ServerObservationInterface, identity *unikornv1.Identity, server *unikornv1.Server, options *types.ServerCreateOptions, keyName string) error {
+	return p.createServer(ctx, networking, compute, identity, server, options, keyName, nil)
 }
 
 func AttachVolumeWithClients(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, server *unikornv1.Server, volume *unikornv1.Volume) (*types.ServerVolumeAttachment, error) {

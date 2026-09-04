@@ -230,8 +230,8 @@ func TestSetServerPhaseStopped(t *testing.T) {
 }
 
 // TestUpdateServerStateWithClientsRecordsMACAddress is the end-to-end wiring
-// test for the monitor as sole owner of the MAC: an ACTIVE Nova server carrying
-// a bound port MAC results in that MAC being recorded on the resource.
+// test for the MAC projection: an ACTIVE Nova server carrying a bound port MAC
+// results in that MAC being recorded on the resource.
 func TestUpdateServerStateWithClientsRecordsMACAddress(t *testing.T) {
 	t.Parallel()
 
@@ -543,4 +543,49 @@ func TestIsBaremetalFlavor(t *testing.T) {
 	require.False(t, isBaremetalFlavor(region, flavorVMID))
 	require.False(t, isBaremetalFlavor(region, "missing"))
 	require.False(t, isBaremetalFlavor(nil, flavorMetalID))
+}
+
+// TestObserveServerPassesIdentityToIronic pins that the identity threaded into
+// the reconcile pass reaches the Ironic node lookup. Without it a baremetal
+// server in BUILD cannot be distinguished from one Ironic is actively deploying.
+func TestObserveServerPassesIdentityToIronic(t *testing.T) {
+	t.Parallel()
+
+	const metalFlavorID = "22222222-2222-4222-a222-222222222222"
+
+	identity := &unikornv1.Identity{ObjectMeta: metav1.ObjectMeta{Name: "identity-1"}}
+
+	server := &unikornv1.Server{
+		ObjectMeta: metav1.ObjectMeta{Name: "server-1"},
+		Spec:       unikornv1.ServerSpec{FlavorID: idstest.MustParseFlavorID(metalFlavorID)},
+	}
+
+	provider := &Provider{
+		openstack: &openStackClients{
+			_region: &unikornv1.Region{
+				Spec: unikornv1.RegionSpec{
+					Openstack: &unikornv1.RegionOpenstackSpec{
+						Compute: &unikornv1.RegionOpenstackComputeSpec{
+							Flavors: &unikornv1.OpenstackFlavorsSpec{
+								Metadata: []unikornv1.FlavorMetadata{{ID: metalFlavorID, Baremetal: true}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	var got *unikornv1.Identity
+
+	provider.observeServer(t.Context(), nil, identity, server, &servers.Server{ID: "nova-1", Status: "BUILD"},
+		func(_ context.Context, i *unikornv1.Identity) (BaremetalInterface, error) {
+			got = i
+
+			return nil, errIronicUnavailable
+		})
+
+	require.Same(t, identity, got, "the pass must hand its own identity to the Ironic lookup")
+	// An unreachable Ironic degrades to the VM default rather than failing.
+	require.Equal(t, unikornv1.ActiveConditionReasonBuilding, activeReason(t, server))
 }

@@ -18,6 +18,10 @@ limitations under the License.
 package server
 
 import (
+	"context"
+
+	"go.opentelemetry.io/otel"
+
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	coremanager "github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/manager/options"
@@ -26,8 +30,6 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/managers"
 	"github.com/unikorn-cloud/region/pkg/provisioners/managers/server"
-
-	"k8s.io/apimachinery/pkg/api/equality"
 
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -41,6 +43,10 @@ import (
 // Factory provides methods that can build a type specific controller.
 type Factory struct {
 	managers.ProvidersInit
+
+	// options is retained so Initialize can attach the metrics, which cannot
+	// be built until OpenTelemetry is up.
+	options *server.Options
 }
 
 var _ interface {
@@ -54,13 +60,36 @@ func (*Factory) Metadata() util.ServiceDescriptor {
 }
 
 // Options returns any options to be added to the CLI flags and passed to the reconciler.
-func (*Factory) Options() coremanager.ControllerOptions {
-	return server.NewOptions()
+func (f *Factory) Options() coremanager.ControllerOptions {
+	f.options = server.NewOptions()
+
+	return f.options
+}
+
+// Initialize builds the provider cache and the lifecycle metrics.  core sets
+// OpenTelemetry up before calling this, and not before Options, which is why
+// the instruments are attached here rather than constructed with the options.
+func (f *Factory) Initialize(ctx context.Context, manager manager.Manager, options *options.Options) error {
+	if err := f.ProvidersInit.Initialize(ctx, manager, options); err != nil {
+		return err
+	}
+
+	metrics, err := server.NewMetrics(otel.GetMeterProvider().Meter(constants.Application))
+	if err != nil {
+		return err
+	}
+
+	f.options.SetMetrics(metrics)
+
+	return nil
 }
 
 // Reconciler returns a new reconciler instance.
 func (f *Factory) Reconciler(options *options.Options, controllerOptions coremanager.ControllerOptions, manager manager.Manager) reconcile.Reconciler {
-	return coremanager.NewReconciler(options, controllerOptions, manager, f.ProvisionerCreate(server.New))
+	// Nova moves a server underneath us -- power state, health, and the image
+	// reference on a rebuild -- and none of that writes to the CRD, so no watch
+	// fires.  See the README.
+	return coremanager.NewReconciler(options, controllerOptions, manager, f.ProvisionerCreate(server.New), coremanager.WithPolling())
 }
 
 func providerCreateFailureUpdate(e event.TypedUpdateEvent[*unikornv1.Server]) bool {
@@ -71,21 +100,6 @@ func providerCreateFailureUpdate(e event.TypedUpdateEvent[*unikornv1.Server]) bo
 	return !server.ProviderCreateFailure(e.ObjectOld) && server.ProviderCreateFailure(e.ObjectNew)
 }
 
-// serverObservedUpdate wakes the reconciler when the status.observed region moves.
-// Compared rather than tested for presence: a predicate sees only the old and new
-// objects, so an uncompared arm fires on every update. The reconciler's own
-// create-retry path can move the region, which self-wakes once and then converges.
-// Semantic equality so any metav1.Time a future fact adds to the region
-// compares by instant rather than by location pointer, which would wake the
-// reconciler for nothing on every re-decode.
-func serverObservedUpdate(e event.TypedUpdateEvent[*unikornv1.Server]) bool {
-	if e.ObjectOld == nil || e.ObjectNew == nil {
-		return false
-	}
-
-	return !equality.Semantic.DeepEqual(e.ObjectOld.Status.Observed, e.ObjectNew.Status.Observed)
-}
-
 // RegisterWatches adds any watches that would trigger a reconcile.
 func (*Factory) RegisterWatches(manager manager.Manager, controller controller.Controller) error {
 	// Any changes to the server spec, trigger a reconcile.
@@ -93,9 +107,6 @@ func (*Factory) RegisterWatches(manager manager.Manager, controller controller.C
 		predicate.TypedGenerationChangedPredicate[*unikornv1.Server]{},
 		predicate.TypedFuncs[*unikornv1.Server]{
 			UpdateFunc: providerCreateFailureUpdate,
-		},
-		predicate.TypedFuncs[*unikornv1.Server]{
-			UpdateFunc: serverObservedUpdate,
 		},
 	)
 

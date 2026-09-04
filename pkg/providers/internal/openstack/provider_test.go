@@ -1678,7 +1678,7 @@ func TestReconcileServerPortConverged(t *testing.T) {
 
 		require.NotNil(t, server.Status.PrivateIP, "the converged path must still record the address")
 		require.Equal(t, serverPortIP, *server.Status.PrivateIP)
-		// The MAC is owned exclusively by the monitor, not the reconciler.
+		// Port reconciliation must not record a MAC; see the package README.
 		require.Nil(t, server.Status.MACAddress)
 	})
 
@@ -1846,9 +1846,8 @@ func TestReconcileServerPort(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, server.Status.PrivateIP)
 		require.Equal(t, serverPortIP, *server.Status.PrivateIP)
-		// The MAC is owned exclusively by the monitor, not the reconciler:
-		// the port MAC observed at create time is the ephemeral Neutron one
-		// for baremetal, so reconcileServerPort must not record it.
+		// The port MAC at create time is the ephemeral Neutron one for
+		// baremetal, so reconcileServerPort must not record it.
 		require.Nil(t, server.Status.MACAddress)
 	})
 
@@ -2339,25 +2338,25 @@ func TestReconcileServer(t *testing.T) {
 	t.Run("ItDoesntExist", func(t *testing.T) {
 		t.Parallel()
 
-		compute := mock.NewMockServerInterface(c)
+		compute := mock.NewMockServerObservationInterface(c)
 		compute.EXPECT().GetServer(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
 		compute.EXPECT().CreateServer(t.Context(), server, sshKeyName, openstackNetworks, nil, metadata).Return(openstackServer, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
-		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
+		_, err := openstack.ReconcileServer(t.Context(), p, compute, identityFixture(), server, openstackServerPort, sshKeyName)
 		require.NoError(t, err)
 	})
 
 	t.Run("ItExists", func(t *testing.T) {
 		t.Parallel()
 
-		compute := mock.NewMockServerInterface(c)
+		compute := mock.NewMockServerObservationInterface(c)
 		compute.EXPECT().GetServer(t.Context(), server).Return(openstackServer, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
-		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
+		_, err := openstack.ReconcileServer(t.Context(), p, compute, identityFixture(), server, openstackServerPort, sshKeyName)
 		require.NoError(t, err)
 	})
 
@@ -2368,12 +2367,12 @@ func TestReconcileServer(t *testing.T) {
 	t.Run("AmbiguousReadDoesNotCreate", func(t *testing.T) {
 		t.Parallel()
 
-		compute := mock.NewMockServerInterface(c)
+		compute := mock.NewMockServerObservationInterface(c)
 		compute.EXPECT().GetServer(t.Context(), server).Return(nil, errNovaListFailed)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
-		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
+		_, err := openstack.ReconcileServer(t.Context(), p, compute, identityFixture(), server, openstackServerPort, sshKeyName)
 		require.ErrorIs(t, err, errNovaListFailed)
 	})
 }
@@ -2419,14 +2418,14 @@ func TestReconcileServerPreflight(t *testing.T) {
 		c := gomock.NewController(t)
 		t.Cleanup(c.Finish)
 
-		compute := mock.NewMockServerInterface(c)
+		compute := mock.NewMockServerObservationInterface(c)
 		compute.EXPECT().GetServer(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
 		preflightCalled := false
 
-		_, err := openstack.ReconcileServerWithPreflight(t.Context(), p, compute, server, openstackServerPort, sshKeyName, func(_ context.Context, got *regionv1.Server) error {
+		_, err := openstack.ReconcileServerWithPreflight(t.Context(), p, compute, identityFixture(), server, openstackServerPort, sshKeyName, func(_ context.Context, got *regionv1.Server) error {
 			preflightCalled = true
 
 			require.Same(t, server, got)
@@ -2443,7 +2442,7 @@ func TestReconcileServerPreflight(t *testing.T) {
 		c := gomock.NewController(t)
 		t.Cleanup(c.Finish)
 
-		compute := mock.NewMockServerInterface(c)
+		compute := mock.NewMockServerObservationInterface(c)
 		compute.EXPECT().GetServer(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
 		compute.EXPECT().CreateServer(t.Context(), server, sshKeyName, openstackNetworks, nil, metadata).Return(openstackServer, nil)
 
@@ -2451,7 +2450,7 @@ func TestReconcileServerPreflight(t *testing.T) {
 
 		preflightCalled := false
 
-		_, err := openstack.ReconcileServerWithPreflight(t.Context(), p, compute, server, openstackServerPort, sshKeyName, func(_ context.Context, got *regionv1.Server) error {
+		_, err := openstack.ReconcileServerWithPreflight(t.Context(), p, compute, identityFixture(), server, openstackServerPort, sshKeyName, func(_ context.Context, got *regionv1.Server) error {
 			preflightCalled = true
 
 			require.Same(t, server, got)
@@ -2468,12 +2467,12 @@ func TestReconcileServerPreflight(t *testing.T) {
 		c := gomock.NewController(t)
 		t.Cleanup(c.Finish)
 
-		compute := mock.NewMockServerInterface(c)
+		compute := mock.NewMockServerObservationInterface(c)
 		compute.EXPECT().GetServer(t.Context(), server).Return(openstackServer, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
-		_, err := openstack.ReconcileServerWithPreflight(t.Context(), p, compute, server, openstackServerPort, sshKeyName, func(context.Context, *regionv1.Server) error {
+		_, err := openstack.ReconcileServerWithPreflight(t.Context(), p, compute, identityFixture(), server, openstackServerPort, sshKeyName, func(context.Context, *regionv1.Server) error {
 			t.Fatal("preflight called for existing server")
 
 			return nil
@@ -2519,7 +2518,7 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 	networking.EXPECT().GetServerPort(t.Context(), server).Return(openstackServerPort, nil)
 	networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(openstackFloatingIP, nil)
 
-	compute := mock.NewMockServerInterface(c)
+	compute := mock.NewMockServerObservationInterface(c)
 	compute.EXPECT().GetServer(t.Context(), gomock.Any()).Return(novaRebuildServer("ACTIVE", rebuildOldImageID), nil)
 	compute.EXPECT().RebuildServer(t.Context(), "server-1", openstack.ServerRebuildOptions{
 		ImageID: idstest.MustParseImageID(rebuildNewImageID),
@@ -2527,7 +2526,7 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 
 	p := openstack.NewTestProvider(client, regionFixture())
 
-	err := openstack.CreateServerWithClients(t.Context(), p, networking, compute, server, options, "")
+	err := openstack.CreateServerWithClients(t.Context(), p, networking, compute, identityFixture(), server, options, "")
 	require.ErrorIs(t, err, provisioners.ErrYield, "the accepted rebuild is in flight, so the pass yields")
 
 	// (a) the port/FIP status writes must survive the copy-back.
@@ -2745,13 +2744,13 @@ func TestReconcileServerTags(t *testing.T) {
 			"region:region_id":         regionID,
 		}
 
-		compute := mock.NewMockServerInterface(c)
+		compute := mock.NewMockServerObservationInterface(c)
 		compute.EXPECT().GetServer(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
 		compute.EXPECT().CreateServer(t.Context(), server, sshKeyName, openstackNetworks, nil, expectedMetadata).Return(openstackServer, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
-		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
+		_, err := openstack.ReconcileServer(t.Context(), p, compute, identityFixture(), server, openstackServerPort, sshKeyName)
 		require.NoError(t, err)
 	})
 
@@ -2786,13 +2785,13 @@ func TestReconcileServerTags(t *testing.T) {
 			"region:region_id":         regionID,
 		}
 
-		compute := mock.NewMockServerInterface(c)
+		compute := mock.NewMockServerObservationInterface(c)
 		compute.EXPECT().GetServer(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
 		compute.EXPECT().CreateServer(t.Context(), server, sshKeyName, openstackNetworks, nil, expectedMetadata).Return(openstackServer, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
-		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
+		_, err := openstack.ReconcileServer(t.Context(), p, compute, identityFixture(), server, openstackServerPort, sshKeyName)
 		require.NoError(t, err)
 	})
 }

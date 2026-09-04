@@ -25,6 +25,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -68,4 +69,10 @@ func NewForTest(server *unikornv1.Server, providers providers.Providers, options
 	}
 
 	return provisioner
+}
+
+// EmitTransitions exercises the diff a pass makes between the status it read and
+// the status it wrote.
+func EmitTransitions(ctx context.Context, p *Provisioner, scheme *runtime.Scheme, before *unikornv1.Server, provider types.Provider) {
+	p.emitTransitions(ctx, scheme, before, provider)
 }

@@ -49,6 +49,64 @@ This is the clearest controller-side expression of the lifecycle DAG model:
 - cloud-init augmentation translates higher-level SSH CA semantics into machine
   bootstrap material
 
+## Transition Emission
+
+A pass reports what it observed changing by diffing the status it read against
+the status it wrote. `Provision` snapshots the server before anything can write
+to it and emits from a `defer`, so a parking or yielding pass reports its
+transition too.
+
+The snapshot must be a copy. Aliasing the server puts the provider's writes on
+both sides of the diff, and every transition is silently swallowed — no error,
+no log, just a stream that goes quiet.
+
+This is why the emission could not wait for the monitor's deletion. The monitor
+detects edges the same way, by diffing its own read against its own projection,
+so whichever writer moves a field first owns the edge. Once the reconcile pass
+projects, the monitor's diff comes up empty and its emission stops — and for the
+duration histograms that loss is permanent per server, because they fire only on
+the nil-to-set transition of a Nova timestamp and each server has exactly one.
+
+One event, one record. Only an `Active` change is reported, to
+`provisioninglog.StreamLifecycle`, which core documents as the lifecycle stream.
+
+`Healthy` is deliberately not reported. Both conditions are derived from the same
+provider read in the same pass, so a health line sat alongside the lifecycle one
+saying the same thing: a server that stops produces `Active=Stopped` *and*
+`Healthy=Degraded`, and the second carries no fact the first does not. The
+monitor emitted both and this package briefly copied it; observed on a real
+instance, the pair was pure duplication.
+
+`Healthy` only makes sense for a cluster; a single server's state is the `Active`
+condition. There is a `TODO: move this` on `setServerHealthStatus`.
+
+The duration histograms record on the first arrival at `Running` from any earlier
+state. The lifecycle path is Pending → Building → Running for VMs and Pending →
+Queued → Building → Running for baremetal, so a strict Pending → Running
+predicate would miss every observation. Each server contributes at most one
+observation of each per persisted status, keyed off the nil-to-set transition of
+the timestamp being measured rather than off the state change, so a stop/start
+cycle does not double count.
+
+It is not yet exactly-once. The emission runs inside `Provision`, before core
+persists the status, so a pass whose status write does not land -- an optimistic
+lock conflict, a missing RBAC verb, the process dying in between -- emits a
+record and observes a duration that the next pass, reading the same unchanged
+status, emits and observes again. core's own rule is to emit only once the change
+is persisted, which needs a hook this package does not have. Until it does, a
+lost status write costs a duplicate rather than a silence, which is the better
+failure of the two. A timestamp predating the resource
+(clock skew between the controller and Nova) is logged and dropped.
+
+Metric label names — the region and flavour display names — are resolved from the
+provider only when an observation is actually recorded, which is once in a
+server's life. Resolving them per pass would put two provider reads on every
+reconcile to label a metric that almost never fires.
+
+There is no fleet gauge. Counting servers by state is an aggregate over every
+server, which a per-resource reconcile cannot compute; the state is on the CR, so
+that aggregation belongs to whatever scrapes them.
+
 ## Caveats
 
 - Reference maintenance here is easy to underappreciate, but it is central to
@@ -83,12 +141,13 @@ This is the clearest controller-side expression of the lifecycle DAG model:
   depth so losing any single status field cannot re-arm the rebuild path.
   Existing servers predating the latch backfill it on the next poll once booted
   and are covered by the `launchedAt` backstop until then.
-- `Server.status.macAddress` is owned exclusively by the monitor (see
-  `pkg/monitor/health/server`), not the reconciler. The reconciler no longer
-  records it at port-create time — that value is the ephemeral Neutron MAC for
-  baremetal, which Ironic later rebinds to the real NIC MAC — and the retry
-  reset deliberately leaves it intact (like `provisionedAt`) so it never
-  flickers to unset; a stale value self-heals on the next `ACTIVE` poll.
+- `Server.status.macAddress` is projected from the provider read, once the
+  server reaches `ACTIVE` — see
+  [`pkg/providers/internal/openstack`](../../../providers/internal/openstack/README.md).
+  It is not recorded at port-create time: that value is the ephemeral Neutron MAC
+  for baremetal, which Ironic later rebinds to the real NIC MAC. The retry reset
+  deliberately leaves it intact (like `provisionedAt`) so it never flickers to
+  unset; a stale value self-heals on the next observation.
 - Provider create retries also emit Kubernetes events and structured logs on
   retry start, retry readiness after delete, and retry exhaustion; avoid
   per-reconcile emissions while deletion is still converging.

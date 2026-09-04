@@ -61,30 +61,17 @@ func requireSchemaProperty(t *testing.T, schema *apixv1.JSONSchemaProps, path ..
 	return current
 }
 
-// TestServerObservedSchema pins the monitor's exclusive write region into the
-// published schema. The subtree is the contract that keeps the two status writers
-// off each other's fields, so its shape belongs in the CRD, not just in Go.
-func TestServerObservedSchema(t *testing.T) {
+// TestServerObservedAbsentFromSchema pins that the observed subtree stays gone.
+// It existed only to give a wake predicate something to diff, and the polling
+// controller needs no such wake; a reappearance would mean a second status
+// writer had returned.
+func TestServerObservedAbsentFromSchema(t *testing.T) {
 	t.Parallel()
 
 	schema := crdSchema(t, serverCRDFile)
 
-	generation := requireSchemaProperty(t, schema, "status", "observed", "generation")
-	require.Equal(t, "integer", generation.Type)
-
-	image := requireSchemaProperty(t, schema, "status", "observed", "image")
-	require.Equal(t, "string", image.Type)
-	require.Equal(t, "uuid", image.Format)
-
-	// The error member is a neutral presence marker only: no provider fault
-	// code, message or timestamp may ship in the schema — that detail is
-	// provider vocabulary and lives in the observation log.
-	errored := requireSchemaProperty(t, schema, "status", "observed", "errored")
-	require.Equal(t, "boolean", errored.Type)
-
-	observed := requireSchemaProperty(t, schema, "status", "observed")
-	require.NotContains(t, observed.Properties, "error", "the provider fault struct must not return to the schema")
-	require.Equal(t, []string{"generation"}, observed.Required, "the freshness stamp is what makes an observation readable; it must not be optional")
+	status := requireSchemaProperty(t, schema, "status")
+	require.NotContains(t, status.Properties, "observed", "the observed subtree must not return to the schema")
 }
 
 func TestVolumeClaimSchema(t *testing.T) {

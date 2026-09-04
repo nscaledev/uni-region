@@ -1207,15 +1207,14 @@ type ServerStatus struct {
 	// PublicIP is the public IP address of the server.
 	PublicIP *string `json:"publicIP,omitempty"`
 	// MACAddress is the MAC address of the server's primary (single) network
-	// interface. It is owned exclusively by the monitor (the health checker),
-	// not the reconciler: it is recorded from the Nova server response once the
-	// server reaches ACTIVE, the barrier at which the port MAC is guaranteed
-	// bound for VMs and baremetal alike. For baremetal Ironic rebinds the port
-	// to the real NIC MAC asynchronously during deploy, so the value observed
-	// earlier (e.g. at port-create time) is the ephemeral Neutron MAC and is not
-	// trustworthy. It is only ever written, never cleared: the provider-create
-	// retry reset leaves it intact and a transient port-read miss cannot unset
-	// it, while an authoritative ACTIVE read self-heals any drift.
+	// interface. It is projected from the provider read once the server reaches
+	// ACTIVE, the barrier at which the port MAC is guaranteed bound for VMs and
+	// baremetal alike. For baremetal Ironic rebinds the port to the real NIC MAC
+	// asynchronously during deploy, so the value observed earlier (e.g. at
+	// port-create time) is the ephemeral Neutron MAC and is not trustworthy. It
+	// is only ever written, never cleared: the provider-create retry reset leaves
+	// it intact and a transient read miss cannot unset it, while an
+	// authoritative ACTIVE read self-heals any drift.
 	MACAddress *string `json:"macAddress,omitempty"`
 	// LaunchedAt is the time the provider booted the VM. Nil until the server has
 	// been observed Running at least once.
@@ -1246,33 +1245,6 @@ type ServerStatus struct {
 	// +patchMergeKey=id
 	// +optional
 	Volumes []ServerVolumeStatus `json:"volumes,omitempty"`
-	// Observed carries the provider facts recorded from a provider read, normally
-	// the monitor's poll — see ServerObservedStatus for the ownership rule.
-	// +optional
-	Observed *ServerObservedStatus `json:"observed,omitempty"`
-}
-
-// ServerObservedStatus is recorded from a single fresh provider read, by one
-// projection with no arbitration between its callers. An observation never
-// authorizes an action against the provider; it may only refuse one.
-type ServerObservedStatus struct {
-	// Generation is metadata.generation as read when this snapshot was taken, so a
-	// reader can tell whether the observation postdates a spec edit. Stamped on
-	// every poll, so a present subtree with no image means the image was unreadable.
-	Generation int64 `json:"generation"`
-	// Image is the image the provider reports the server running, as of the last poll
-	// that could read it. An unreadable ref preserves the previous value.
-	// +optional
-	Image *regionids.ImageID `json:"image,omitempty"`
-	// Errored records that the provider reports the server in an error state, with
-	// no detail and no attribution to any action this service took. Unlike Image it
-	// clears when the provider stops reporting the error. It exists so a change in
-	// the provider's view is diffable (the reconciler wakes on it); it is not a
-	// diagnostic surface. The provider's own failure detail is written to the
-	// observing component's log at the moment of observation, in provider
-	// vocabulary, where operator detail belongs.
-	// +optional
-	Errored bool `json:"errored,omitempty"`
 }
 
 type ServerVolumeStatus struct {

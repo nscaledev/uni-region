@@ -190,8 +190,8 @@ func TestProvision_ProviderCreateFailureDeletesAndYields(t *testing.T) {
 	require.Equal(t, regionv1.ActiveConditionReasonPending, activeReason(t, server))
 	require.Nil(t, server.Status.PrivateIP)
 	require.Nil(t, server.Status.PublicIP)
-	// The MAC is owned exclusively by the monitor; the reconciler's create-failure
-	// reset must not clear it. A stale value self-heals on the next ACTIVE poll.
+	// The create-failure reset must not clear the MAC; a stale value self-heals
+	// on the next observation.
 	require.Equal(t, ptr.To("00:11:22:33:44:55"), server.Status.MACAddress)
 	require.Nil(t, server.Status.ScheduledAt)
 	// The gate satisfied on the first attempt is reset to Unknown so external

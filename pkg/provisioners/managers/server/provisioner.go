@@ -57,6 +57,16 @@ type Options struct {
 	// ProviderCreateMaxAttempts bounds provider server create attempts before
 	// surfacing an error on the Server.
 	ProviderCreateMaxAttempts int32
+
+	// metrics are attached by the controller factory once the meter exists.
+	// Nil until then, and nil in tests.
+	metrics *Metrics
+}
+
+// SetMetrics attaches the lifecycle instruments.  Called by the controller
+// factory after OpenTelemetry setup, which is why this is not a flag.
+func (o *Options) SetMetrics(metrics *Metrics) {
+	o.metrics = metrics
 }
 
 // NewOptions returns server controller options with production defaults.
@@ -272,9 +282,9 @@ func (p *Provisioner) recordProviderCreateRetryEvent(ctx context.Context, eventT
 //     condition cannot serve this role — it is re-derived every reconcile and
 //     flips to a non-provisioned value when a reconcile re-runs against a flaky
 //     provider (for example on a controller restart).
-//   - The failure signal itself is the Active condition: the provider monitor sets
-//     ActiveConditionReasonError when it observes the server in a terminal error
-//     state (e.g. Nova ERROR). Active is the pertinent lifecycle axis for a single
+//   - The failure signal itself is the Active condition, set to
+//     ActiveConditionReasonError by whichever observer sees the server in a
+//     terminal error state (e.g. Nova ERROR). Active is the pertinent lifecycle axis for a single
 //     server's state; the Healthy condition is a legacy cluster-aggregate concept
 //     and nothing here depends on it.
 func ProviderCreateFailure(server *unikornv1.Server) bool {
@@ -308,8 +318,8 @@ func (p *Provisioner) resetProviderCreateRuntimeStatus() {
 	p.server.SetActiveCondition(unikornv1.ActiveConditionReasonPending)
 	p.server.Status.PrivateIP = nil
 	p.server.Status.PublicIP = nil
-	// MACAddress is deliberately not reset: the monitor is its sole owner, and a
-	// stale value self-heals on the next ACTIVE poll rather than flickering to unset.
+	// MACAddress is deliberately not reset: a stale value self-heals on the next
+	// observation rather than flickering to unset.
 	p.server.Status.LaunchedAt = nil
 	p.server.Status.ScheduledAt = nil
 }
@@ -492,6 +502,10 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
+	// The status as read, to diff what this pass observed changing against.
+	// Taken before anything can write to it.
+	before := p.server.DeepCopy()
+
 	// Add references to any resources we consume.
 	reference, err := manager.GenerateResourceReference(cli, p.server)
 	if err != nil {
@@ -506,6 +520,8 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	defer p.emitTransitions(ctx, cli.Scheme(), before, provider)
 
 	if err := p.blockUntilDependenciesReady(ctx, cli, identity); err != nil {
 		return err

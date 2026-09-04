@@ -36,6 +36,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 // requireRebuildAcceptedStamp asserts the fixed in-flight view for an accepted
@@ -55,16 +56,18 @@ func requireRebuildAcceptedStamp(t *testing.T, server *unikornv1.Server) {
 	require.Equal(t, string(unikornv1core.ConditionReasonUnknown), health.Reason)
 }
 
-// requireNoReconcilerStamp asserts the pass left both monitor-owned conditions
-// alone. Every row except an accepted rebuild must.
-func requireNoReconcilerStamp(t *testing.T, server *unikornv1.Server) {
+// requireNoImageRowStamp asserts the image rows themselves write no conditions.
+// Only an accepted rebuild does. The surrounding pass projects Active and
+// Healthy from its own read either way, which is why these tests call
+// reconcileServerImage directly rather than through reconcileServer.
+func requireNoImageRowStamp(t *testing.T, server *unikornv1.Server) {
 	t.Helper()
 
 	_, activeErr := server.StatusConditionRead(unikornv1core.ConditionActive)
-	require.Error(t, activeErr, "this pass must not write a synthetic Active lifecycle condition")
+	require.Error(t, activeErr, "the image rows must not synthesise a lifecycle condition")
 
 	_, healthErr := server.StatusConditionRead(unikornv1core.ConditionHealthy)
-	require.Error(t, healthErr, "this pass must not write the monitor-owned Healthy condition")
+	require.Error(t, healthErr, "the image rows must not write health")
 }
 
 const (
@@ -125,7 +128,7 @@ func rebuildOptions() openstack.ServerRebuildOptions {
 func TestReconcileServerImageSubmitsOnFirstPass(t *testing.T) {
 	t.Parallel()
 
-	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
 		Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
 
@@ -146,7 +149,7 @@ func TestReconcileServerImageSubmitsOnFirstPass(t *testing.T) {
 func TestReconcileServerImageSubmitsRebuildFromErrorStatus(t *testing.T) {
 	t.Parallel()
 
-	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
 		Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
 
@@ -169,7 +172,7 @@ func TestReconcileServerImageDoesNotResubmitWhileRebuilding(t *testing.T) {
 			t.Parallel()
 
 			// No RebuildServer expectation: any call fails the test.
-			client := mock.NewMockServerInterface(gomock.NewController(t))
+			client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 			server := desiredRebuildServer()
 
 			_, err := openstack.ReconcileServerImage(t.Context(), client, server,
@@ -187,7 +190,7 @@ func TestReconcileServerImageDoesNotResubmitWhileRebuilding(t *testing.T) {
 func TestReconcileServerImageUnknownRebuildSubstateIsInFlight(t *testing.T) {
 	t.Parallel()
 
-	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 	server := desiredRebuildServer()
 
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server,
@@ -200,12 +203,12 @@ func TestReconcileServerImageUnknownRebuildSubstateIsInFlight(t *testing.T) {
 func TestReconcileServerImageConvergedIsDone(t *testing.T) {
 	t.Parallel()
 
-	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 	server := desiredRebuildServer()
 
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildNewImageID))
 	require.NoError(t, err)
-	requireNoReconcilerStamp(t, server)
+	requireNoImageRowStamp(t, server)
 }
 
 // TestReconcileServerImageConvergedErrorParks pins that a quiesced ERROR on the
@@ -218,7 +221,7 @@ func TestReconcileServerImageConvergedIsDone(t *testing.T) {
 func TestReconcileServerImageConvergedErrorParks(t *testing.T) {
 	t.Parallel()
 
-	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 	server := desiredRebuildServer()
 
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
@@ -227,7 +230,7 @@ func TestReconcileServerImageConvergedErrorParks(t *testing.T) {
 	require.ErrorIs(t, err, provisioners.ErrUserActionRequired,
 		"the advertised remedy is a spec edit, so the park must carry the user-fixable disposition, not the operator-only ErrTerminal")
 	require.ErrorContains(t, err, "the provider reports the server in an error state; select another image or replace the server")
-	requireNoReconcilerStamp(t, server)
+	requireNoImageRowStamp(t, server)
 }
 
 // TestReconcileServerImageConvergedErrorBeforeLaunchIsCreateRetrys pins the guard:
@@ -237,12 +240,12 @@ func TestReconcileServerImageConvergedErrorParks(t *testing.T) {
 func TestReconcileServerImageConvergedErrorBeforeLaunchIsCreateRetrys(t *testing.T) {
 	t.Parallel()
 
-	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 	server := desiredRebuildServer()
 
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaUnlaunchedServer("ERROR", rebuildNewImageID))
 	require.NoError(t, err)
-	requireNoReconcilerStamp(t, server)
+	requireNoImageRowStamp(t, server)
 }
 
 // TestReconcileServerImageConvergedForeignTaskIsNotARebuild pins that a non-rebuild
@@ -250,13 +253,13 @@ func TestReconcileServerImageConvergedErrorBeforeLaunchIsCreateRetrys(t *testing
 func TestReconcileServerImageConvergedForeignTaskIsNotARebuild(t *testing.T) {
 	t.Parallel()
 
-	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 	server := desiredRebuildServer()
 
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server,
 		novaRebuildServerTask("ACTIVE", rebuildNewImageID, taskStateRebooting))
 	require.NoError(t, err)
-	requireNoReconcilerStamp(t, server)
+	requireNoImageRowStamp(t, server)
 }
 
 // TestReconcileServerImageForeignTaskDefersSubmission pins that a pending image
@@ -264,13 +267,13 @@ func TestReconcileServerImageConvergedForeignTaskIsNotARebuild(t *testing.T) {
 func TestReconcileServerImageForeignTaskDefersSubmission(t *testing.T) {
 	t.Parallel()
 
-	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 	server := desiredRebuildServer()
 
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server,
 		novaRebuildServerTask("ACTIVE", rebuildOldImageID, taskStateRebooting))
 	require.ErrorIs(t, err, provisioners.ErrYield)
-	requireNoReconcilerStamp(t, server)
+	requireNoImageRowStamp(t, server)
 }
 
 // TestReconcileServerImageDefersUntilFirstLaunch pins that a never-booted server is
@@ -285,12 +288,12 @@ func TestReconcileServerImageDefersUntilFirstLaunch(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			client := mock.NewMockServerInterface(gomock.NewController(t))
+			client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 			server := desiredRebuildServer()
 
 			_, err := openstack.ReconcileServerImage(t.Context(), client, server, openstackServer)
 			require.ErrorIs(t, err, provisioners.ErrYield)
-			requireNoReconcilerStamp(t, server)
+			requireNoImageRowStamp(t, server)
 		})
 	}
 }
@@ -311,7 +314,7 @@ func TestReconcileServerImageUnreadableImageParks(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			client := mock.NewMockServerInterface(gomock.NewController(t))
+			client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 			server := desiredRebuildServer()
 
 			openstackServer := novaRebuildServer("ACTIVE", rebuildOldImageID)
@@ -323,7 +326,7 @@ func TestReconcileServerImageUnreadableImageParks(t *testing.T) {
 			require.ErrorIs(t, err, provisioners.ErrUserActionRequired,
 				"the only remedy is a spec edit or replacement, so the park must carry the user-fixable disposition")
 			require.ErrorContains(t, err, "the provider cannot report the server's image, so the desired image cannot be verified; replace the server")
-			requireNoReconcilerStamp(t, server)
+			requireNoImageRowStamp(t, server)
 		})
 	}
 }
@@ -335,7 +338,7 @@ func TestReconcileServerImageUnreadableImageParks(t *testing.T) {
 func TestReconcileServerImageNoDesiredImageParks(t *testing.T) {
 	t.Parallel()
 
-	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 	server := &unikornv1.Server{}
 
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
@@ -344,7 +347,7 @@ func TestReconcileServerImageNoDesiredImageParks(t *testing.T) {
 	require.ErrorIs(t, err, provisioners.ErrUserActionRequired,
 		"the only remedy is a spec edit, so the park must carry the user-fixable disposition")
 	require.ErrorContains(t, err, "the server specifies no image to converge onto; set an image in the specification")
-	requireNoReconcilerStamp(t, server)
+	requireNoImageRowStamp(t, server)
 }
 
 // TestReconcileServerImageConflictYieldsSilently pins the pre-acceptance path: a
@@ -352,7 +355,7 @@ func TestReconcileServerImageNoDesiredImageParks(t *testing.T) {
 func TestReconcileServerImageConflictYieldsSilently(t *testing.T) {
 	t.Parallel()
 
-	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
 		Return(nil, gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusConflict})
 
@@ -360,7 +363,7 @@ func TestReconcileServerImageConflictYieldsSilently(t *testing.T) {
 
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
 	require.ErrorIs(t, err, provisioners.ErrYield)
-	requireNoReconcilerStamp(t, server)
+	requireNoImageRowStamp(t, server)
 }
 
 // TestReconcileServerImageRejectionSurfaces pins that a rejection which may heal
@@ -372,7 +375,7 @@ func TestReconcileServerImageConflictYieldsSilently(t *testing.T) {
 func TestReconcileServerImageRejectionSurfaces(t *testing.T) {
 	t.Parallel()
 
-	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
 		Return(nil, gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusInternalServerError})
 
@@ -384,7 +387,7 @@ func TestReconcileServerImageRejectionSurfaces(t *testing.T) {
 	require.NotErrorIs(t, err, provisioners.ErrUserActionRequired,
 		"a 5xx can heal without a generation bump, so parking it would strand the server")
 	require.False(t, provisioners.IsTerminal(err))
-	requireNoReconcilerStamp(t, server)
+	requireNoImageRowStamp(t, server)
 }
 
 // TestReconcileServerImageNotFoundBadRequestParks pins that Nova's synchronous
@@ -396,7 +399,7 @@ func TestReconcileServerImageRejectionSurfaces(t *testing.T) {
 func TestReconcileServerImageNotFoundBadRequestParks(t *testing.T) {
 	t.Parallel()
 
-	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
 		Return(nil, gophercloud.ErrUnexpectedResponseCode{
 			Actual: http.StatusBadRequest,
@@ -408,7 +411,7 @@ func TestReconcileServerImageNotFoundBadRequestParks(t *testing.T) {
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
 	require.ErrorIs(t, err, provisioners.ErrUserActionRequired)
 	require.ErrorContains(t, err, "the desired image no longer exists at the provider; select a different image or replace the server")
-	requireNoReconcilerStamp(t, server)
+	requireNoImageRowStamp(t, server)
 }
 
 // TestReconcileServerImageOtherBadRequestRetries pins the narrowing's fail-safe
@@ -431,7 +434,7 @@ func TestReconcileServerImageOtherBadRequestRetries(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			client := mock.NewMockServerInterface(gomock.NewController(t))
+			client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 			client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
 				Return(nil, gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusBadRequest, Body: body})
 
@@ -443,7 +446,7 @@ func TestReconcileServerImageOtherBadRequestRetries(t *testing.T) {
 			require.NotErrorIs(t, err, provisioners.ErrUserActionRequired,
 				"an unrecognized 400 may be operator-recoverable without a generation bump, so parking it would strand the server")
 			require.False(t, provisioners.IsTerminal(err))
-			requireNoReconcilerStamp(t, server)
+			requireNoImageRowStamp(t, server)
 		})
 	}
 }
@@ -453,7 +456,7 @@ func TestReconcileServerImageOtherBadRequestRetries(t *testing.T) {
 func TestReconcileServerImageAcceptedStampIgnoresResponseBody(t *testing.T) {
 	t.Parallel()
 
-	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
 		Return(novaRebuildServer("ACTIVE", rebuildOldImageID), nil)
 
@@ -469,7 +472,7 @@ func TestReconcileServerImageAcceptedStampIgnoresResponseBody(t *testing.T) {
 func TestReconcileServerRebuildOmitsGuestConfiguration(t *testing.T) {
 	t.Parallel()
 
-	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 	server := desiredRebuildServer()
 	server.Spec.UserData = []byte("#cloud-config\nusers: []\n")
 	client.EXPECT().GetServer(gomock.Any(), server).
@@ -478,7 +481,9 @@ func TestReconcileServerRebuildOmitsGuestConfiguration(t *testing.T) {
 	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
 		Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
 
-	_, err := openstack.ReconcileServer(t.Context(), nil, client, server, nil, "identity-keypair")
+	p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+	_, err := openstack.ReconcileServer(t.Context(), p, client, identityFixture(), server, nil, "identity-keypair")
 	require.ErrorIs(t, err, provisioners.ErrYield)
 	requireRebuildAcceptedStamp(t, server)
 }
@@ -493,13 +498,128 @@ func TestCreateServerCopiesFullStatusBackForAugmentedServers(t *testing.T) {
 	options := &types.ServerCreateOptions{UserData: []byte("#cloud-config\nssh_authorized_keys: []\n")}
 	require.NotSame(t, server, openstack.ServerForCreate(server, options), "test setup requires user-data augmentation to force a deep copy")
 
-	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
 	client.EXPECT().GetServer(gomock.Any(), gomock.Any()).Return(novaRebuildServer("ACTIVE", rebuildOldImageID), nil)
 	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
 		Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
 
-	err := openstack.ReconcileServerForCreate(t.Context(), nil, client, server, options, nil, "")
+	p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+	err := openstack.ReconcileServerForCreate(t.Context(), p, client, identityFixture(), server, options, nil, "")
 	require.ErrorIs(t, err, provisioners.ErrYield)
 
 	requireRebuildAcceptedStamp(t, server)
+}
+
+// TestReconcileServerObservesInThePass pins that a pass holding a successful
+// provider read projects it, whatever it then decides about the specification.
+// The ProvisionedAt latch is the bounded create-retry guard's input, so a pass
+// that skips the projection re-arms delete-and-retry on a booted server.
+func TestReconcileServerObservesInThePass(t *testing.T) {
+	t.Parallel()
+
+	const observedMAC = "e0:9d:73:86:cc:18"
+
+	network := networkFixture()
+
+	server := desiredRebuildServer()
+	server.Spec.Networks = []unikornv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID(network.Name)}}
+
+	// Converged on the desired image and quiescent, so the image rows write
+	// nothing and only the projection can account for the status below.
+	observed := novaRebuildServer("ACTIVE", rebuildNewImageID)
+	observed.PowerState = servers.RUNNING
+	observed.Created = time.Now().Add(-2 * time.Hour)
+	observed.Addresses = map[string]any{
+		"network-" + network.Name: []any{map[string]any{
+			"OS-EXT-IPS:type":         "fixed",
+			"addr":                    "7.247.33.145",
+			"version":                 float64(4),
+			"OS-EXT-IPS-MAC:mac_addr": observedMAC,
+		}},
+	}
+
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
+	client.EXPECT().GetServer(gomock.Any(), server).Return(observed, nil)
+
+	p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+	_, err := openstack.ReconcileServer(t.Context(), p, client, identityFixture(), server, nil, "")
+	require.NoError(t, err)
+
+	active, err := server.StatusConditionRead(unikornv1core.ConditionActive)
+	require.NoError(t, err, "the pass must project the observed lifecycle state")
+	require.Equal(t, string(unikornv1.ActiveConditionReasonRunning), active.Reason)
+
+	health, err := server.StatusConditionRead(unikornv1core.ConditionHealthy)
+	require.NoError(t, err, "the pass must project the observed health")
+	require.Equal(t, metav1.ConditionTrue, health.Status)
+
+	require.NotNil(t, server.Status.ScheduledAt)
+	require.NotNil(t, server.Status.LaunchedAt)
+	require.NotNil(t, server.Status.ProvisionedAt, "the create-retry guard reads this latch")
+	require.Equal(t, observedMAC, ptr.Deref(server.Status.MACAddress, ""), "the MAC is projected by the pass, not only by the monitor")
+}
+
+// TestReconcileServerObservesOnAParkedRow pins the projection on a row that
+// does not complete. A parking or yielding row is where the latch matters most:
+// the bounded create-retry guard reads ProvisionedAt, so a pass that skips the
+// projection re-arms delete-and-retry on a server that has booted.
+func TestReconcileServerObservesOnAParkedRow(t *testing.T) {
+	t.Parallel()
+
+	server := desiredRebuildServer()
+
+	// An unreadable image reference: the pass cannot verify the image, so it
+	// parks (R2) without reaching the converged row.
+	observed := novaRebuildServer("ACTIVE", rebuildNewImageID)
+	observed.Image = map[string]any{}
+	observed.PowerState = servers.RUNNING
+
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
+	client.EXPECT().GetServer(gomock.Any(), server).Return(observed, nil)
+
+	p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+	_, err := openstack.ReconcileServer(t.Context(), p, client, identityFixture(), server, nil, "")
+	require.True(t, provisioners.IsTerminal(err), "an unverifiable image parks")
+
+	require.NotNil(t, server.Status.LaunchedAt, "a parked pass still projects")
+	require.NotNil(t, server.Status.ProvisionedAt, "the create-retry guard reads this latch")
+}
+
+// TestReconcileServerObservesBaremetalPhase pins that the pass hands its own
+// identity to the Ironic node lookup: without one the privileged client cannot
+// be built, and a baremetal server in BUILD loses the Queued refinement.
+func TestReconcileServerObservesBaremetalPhase(t *testing.T) {
+	t.Parallel()
+
+	const metalFlavorID = "33333333-3333-4333-a333-333333333333"
+
+	server := desiredRebuildServer()
+	server.Spec.FlavorID = idstest.MustParseFlavorID(metalFlavorID)
+
+	region := regionFixture()
+	region.Spec.Openstack.Compute = &unikornv1.RegionOpenstackComputeSpec{
+		Flavors: &unikornv1.OpenstackFlavorsSpec{
+			Metadata: []unikornv1.FlavorMetadata{{ID: metalFlavorID, Baremetal: true}},
+		},
+	}
+
+	client := mock.NewMockServerObservationInterface(gomock.NewController(t))
+	client.EXPECT().GetServer(gomock.Any(), server).
+		Return(novaRebuildServer("BUILD", rebuildNewImageID), nil)
+
+	p := openstack.NewTestProvider(getClient(t, nil), region)
+
+	// Ironic is unreachable here, so this pins only that the lookup is attempted
+	// with a usable identity: a nil one panics in GetOpenstackIdentity before it
+	// can degrade. Which identity is handed over is pinned by
+	// TestObserveServerPassesIdentityToIronic.
+	_, err := openstack.ReconcileServer(t.Context(), p, client, identityFixture(), server, nil, "")
+	require.NoError(t, err, "an unreachable Ironic degrades to the VM default rather than failing the pass")
+
+	active, err := server.StatusConditionRead(unikornv1core.ConditionActive)
+	require.NoError(t, err)
+	require.Equal(t, string(unikornv1.ActiveConditionReasonBuilding), active.Reason)
 }

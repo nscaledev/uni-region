@@ -96,8 +96,7 @@ func TestSetServerMACAddress(t *testing.T) {
 		},
 		{
 			// A read that yields no MAC must never clear a value we already
-			// hold: the monitor is the sole owner and only ever writes a
-			// non-empty MAC.
+			// hold: only a non-empty MAC is ever written.
 			name:          "active without mac preserves existing",
 			networks:      []unikornv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID(primaryNetworkID)}},
 			existing:      ptr.To(realMAC),
