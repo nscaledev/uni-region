@@ -436,6 +436,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
 - Network, security group, server, and Volume resources are re-found in OpenStack by
   deterministic lookup rather than relying on mirrored `OpenstackNetwork`,
   `OpenstackSecurityGroup`, or `OpenstackServer` CRDs as authoritative state.
+- Server deletion is asynchronous: after Nova accepts a delete, the provider
+  yields until a fresh lookup confirms the server is absent, then removes the
+  dependent floating IP and port.
 - Baremetal server progress uses Ironic as an additional provider truth source
   only while Nova reports `BUILD` for a flavor marked baremetal in region
   configuration. The result feeds `setServerActive`, which sets the `Active`

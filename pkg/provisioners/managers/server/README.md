@@ -18,6 +18,8 @@ Distinctive behaviour:
   servers that have never been successfully provisioned; once the attempt cap is
   reached it aborts terminally rather than retrying further
 - clears or updates consumed-resource references during reprovision and teardown
+- retains those references during teardown until the provider confirms that the
+  server is absent; an accepted asynchronous delete yields instead of finalizing
 
 Create recovery and image rebuild recovery deliberately use different state:
 
