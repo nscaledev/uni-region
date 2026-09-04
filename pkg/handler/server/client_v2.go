@@ -843,6 +843,15 @@ func (c *ClientV2) DeleteV2(ctx context.Context, serverID regionids.ServerID) er
 		return err
 	}
 
+	volumes, err := currentVolumes(ctx, c, volumeIDs(resource.Spec.Volumes), resource.Name)
+	if err != nil {
+		return err
+	}
+
+	if err := setClaims(ctx, c, volumes, ""); err != nil {
+		return err
+	}
+
 	if err := c.Client.Client.Delete(ctx, resource); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
