@@ -61,7 +61,9 @@ func (*Factory) Options() coremanager.ControllerOptions {
 
 // Reconciler returns a Volume reconciler.
 func (f *Factory) Reconciler(options *options.Options, controllerOptions coremanager.ControllerOptions, manager manager.Manager) reconcile.Reconciler {
-	return coremanager.NewReconciler(options, controllerOptions, manager, f.ProvisionerCreate(volumeprovisioner.New))
+	// Cinder moves a volume underneath us -- size, attachment and error state --
+	// and none of that writes to the CRD, so no watch fires.
+	return coremanager.NewReconciler(options, controllerOptions, manager, f.ProvisionerCreate(volumeprovisioner.New), coremanager.WithPolling())
 }
 
 // RegisterWatches registers Volume desired-state and Server attachment-intent watches.

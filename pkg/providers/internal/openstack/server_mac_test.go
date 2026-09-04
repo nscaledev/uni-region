@@ -76,7 +76,7 @@ func TestSetServerMACAddress(t *testing.T) {
 	}{
 		{
 			// The core case: server is ACTIVE and the port MAC is present, so
-			// the monitor records it. For baremetal this is the real NIC MAC
+			// it is recorded. For baremetal this is the real NIC MAC
 			// bound by Ironic (Intel OUI), not the ephemeral Neutron one.
 			name:          "active with mac sets it",
 			networks:      []unikornv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID(primaryNetworkID)}},
@@ -86,7 +86,7 @@ func TestSetServerMACAddress(t *testing.T) {
 		},
 		{
 			// Before ACTIVE the port MAC is not guaranteed to be the final one
-			// (baremetal rebinds during deploy), so the monitor must not record
+			// (baremetal rebinds during deploy), so it must not be recorded
 			// it yet.
 			name:          "building leaves mac untouched",
 			networks:      []unikornv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID(primaryNetworkID)}},

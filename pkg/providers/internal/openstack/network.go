@@ -150,7 +150,7 @@ func (c *NetworkClient) ExternalNetworks(ctx context.Context) ([]networks.Networ
 }
 
 // networkNameForID creates the openstack network name from a region network ID.
-// Nova keys a server's addresses map by this name, so the monitor reconstructs
+// Nova keys a server's addresses map by this name, so the projection reconstructs
 // it to find the MAC of a specific network interface.
 func networkNameForID(id string) string {
 	return "network-" + id

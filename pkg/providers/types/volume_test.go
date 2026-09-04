@@ -37,8 +37,6 @@ func TestVolumeMockExercisesLifecycleContract(t *testing.T) {
 	provider.EXPECT().CreateVolume(t.Context(), identity, volume).Return(nil)
 	provider.EXPECT().DeleteVolume(t.Context(), identity, volume).Return(nil)
 
-	provider.EXPECT().UpdateVolumeState(t.Context(), identity, volume).DoAndReturn(func(_ any, _ any, got *unikornv1.Volume) error { return nil })
-
 	var capability types.Volume = provider
 
 	if err := capability.CreateVolume(t.Context(), identity, volume); err != nil {
@@ -47,9 +45,5 @@ func TestVolumeMockExercisesLifecycleContract(t *testing.T) {
 
 	if err := capability.DeleteVolume(t.Context(), identity, volume); err != nil {
 		t.Fatalf("DeleteVolume() error = %v", err)
-	}
-
-	if err := capability.UpdateVolumeState(t.Context(), identity, volume); err != nil {
-		t.Fatalf("UpdateVolumeState() error = %v", err)
 	}
 }

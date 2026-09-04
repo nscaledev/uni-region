@@ -83,10 +83,9 @@ reconciled before its generation is observed.
 Each projection re-reads the Server and retries status conflicts while merging
 only the claimed Volume's entry.
 
-Provider observation/status projection lives in
-[`pkg/monitor/health/volume`](../../../monitor/health/volume/README.md). Quota
-policy, Network graph-edge reconciliation, and HTTP handlers remain outside
-this package. The provider-specific state classification needed to decide
+Provider observation and status projection happen in the reconcile pass, which
+polls because Cinder moves a volume underneath us. Quota policy, Network
+graph-edge reconciliation, and HTTP handlers remain outside this package. The provider-specific state classification needed to decide
 whether create has converged remains inside the provider implementation.
 
 ## Cross-Package Context

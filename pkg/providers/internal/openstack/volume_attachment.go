@@ -96,7 +96,7 @@ func observedVolumeAttachment(cinderVolume *volumes.Volume, serverID string) (*t
 		return nil, false, fmt.Errorf("%w: volume is already attached to another server", coreerrors.ErrConflict)
 	}
 
-	if strings.HasPrefix(cinderVolume.Status, volumeStatusErrorPrefix) {
+	if strings.HasPrefix(cinderVolume.Status, volumeStatusError) {
 		return nil, false, provisioners.Terminal(unikornv1core.ConditionReasonErrored, "provider volume entered an error state")
 	}
 

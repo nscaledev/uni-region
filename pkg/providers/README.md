@@ -79,7 +79,7 @@ packages are the concrete provider implementations.
     requests return `provisioners.ErrYield` so allocation cleanup and finalizer
     removal wait for provider convergence
   - `UpdateVolumeState` projects observed size and health directly onto the
-    native Region `Volume` status for the Volume monitor
+    native Region `Volume` status for the Volume reconcile pass
   - no backing resource maps to the shared `ErrResourceNotFound` sentinel;
     client/request failures remain Go errors, while successfully observed
     provider `error` and unrecognized/empty `unknown` lifecycle values remain
