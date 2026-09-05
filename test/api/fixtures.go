@@ -582,6 +582,15 @@ func (b *FileStoragePayloadBuilder) WithSnapshotPolicies(policies *regionopenapi
 	return b
 }
 
+// WithNFS overrides the NFS storage-type spec (nil keeps the default empty spec).
+func (b *FileStoragePayloadBuilder) WithNFS(nfs *regionopenapi.NFSV2Spec) *FileStoragePayloadBuilder {
+	if nfs != nil {
+		b.storage.Spec.StorageType = regionopenapi.StorageTypeV2Spec{NFS: nfs}
+	}
+
+	return b
+}
+
 // Build returns the typed StorageV2CreateRequest struct.
 func (b *FileStoragePayloadBuilder) Build() regionopenapi.StorageV2CreateRequest {
 	return b.storage
