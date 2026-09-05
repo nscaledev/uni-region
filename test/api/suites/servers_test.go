@@ -32,20 +32,6 @@ import (
 	"github.com/unikorn-cloud/region/test/api"
 )
 
-func skipUnlessServerInfrastructureRefConfigured() {
-	if config.ServerInfrastructureRef == "" {
-		Skip("infrastructureRef server tests require TEST_SERVER_INFRASTRUCTURE_REF")
-	}
-}
-
-func testFlavorID() string {
-	return config.ServerFlavorID
-}
-
-func testImageID() string {
-	return config.ServerImageID
-}
-
 func expectServerInfrastructureRef(server *regionopenapi.ServerV2Read, infrastructureRef string) {
 	Expect(server).NotTo(BeNil())
 	Expect(server.Status.InfrastructureRef).NotTo(BeNil())
