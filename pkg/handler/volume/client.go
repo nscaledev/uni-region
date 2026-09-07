@@ -95,6 +95,10 @@ func convertV2(in *regionv1.Volume) (*openapi.VolumeV2Read, error) {
 		out.Status.SizeGiB = ptr.To(sizeGiB(*in.Status.Size))
 	}
 
+	if in.Status.AttachedAt != nil {
+		out.Status.AttachedAt = &in.Status.AttachedAt.Time
+	}
+
 	return out, nil
 }
 

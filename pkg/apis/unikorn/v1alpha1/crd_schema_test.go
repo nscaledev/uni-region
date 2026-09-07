@@ -100,6 +100,11 @@ func TestVolumeClaimSchema(t *testing.T) {
 
 	status := requireSchemaProperty(t, schema, "status")
 	require.NotContains(t, status.Properties, "attachment")
+
+	attachedAt := requireSchemaProperty(t, status, "attachedAt")
+	require.Equal(t, "string", attachedAt.Type)
+	require.Equal(t, "date-time", attachedAt.Format)
+	require.NotContains(t, status.Required, "attachedAt")
 }
 
 type crdValidator struct {

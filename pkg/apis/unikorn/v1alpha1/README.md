@@ -99,9 +99,10 @@ stored objects rely on for linkage, migration, and operational coordination.
   names live in standard metadata labels. `Volume.Spec.ClaimRef` is internal
   handler-owned state that records the exclusive Server reservation; a nil claim
   means the volume is available for claiming. `Server` is the current supported
-  claim kind. `Server.Status.Volumes` is the sole persisted projection of
-  attachment progress, optional provider device, and a safe message. Future
-  attachment reconciliation will
+  claim kind. `Server.Status.Volumes` projects attachment progress, optional
+  provider device, and a safe message. `Volume.Status.AttachedAt` records when
+  the current attachment was first confirmed; omission means no current
+  attachment is recorded. Future attachment reconciliation will
   advance `ObservedGeneration` only after both backing volume and requested
   attachment state converge, and will report attachment errors through the generic
   `Available` condition. The Volume controller drives provider create/delete,

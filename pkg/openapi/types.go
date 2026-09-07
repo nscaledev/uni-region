@@ -1710,6 +1710,9 @@ type VolumeV2Spec struct {
 
 // VolumeV2Status Provider-observed volume state.
 type VolumeV2Status struct {
+	// AttachedAt Timestamp when the current volume attachment was first confirmed. Omitted when no current attachment is recorded.
+	AttachedAt *time.Time `json:"attachedAt,omitempty"`
+
 	// RegionId The Region in which the volume is provisioned.
 	RegionId RegionId `json:"regionId"`
 

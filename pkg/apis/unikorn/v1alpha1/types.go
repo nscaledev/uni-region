@@ -905,6 +905,9 @@ type VolumeStatus struct {
 	// It is never cleared, because a missing provider volume must not be recreated
 	// under the same Region Volume ID.
 	ProvisionedAt *metav1.Time `json:"provisionedAt,omitempty"`
+	// AttachedAt is when the current attachment was first confirmed.
+	// Unset means no current attachment is recorded.
+	AttachedAt *metav1.Time `json:"attachedAt,omitempty"`
 	// Current service state of a volume.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// Size is the currently provisioned/observed size of the volume.
