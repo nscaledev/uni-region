@@ -47,9 +47,11 @@ the Server is deleting or no longer requests the Volume, it
 conflict-safely releases that claim and yields. The following no-claim pass
 detaches provider attachments and clears stale Server status.
 The provider remains authoritative for attachment and detach work. The
-provisioner projects progress only onto `Server.Status.Volumes`; it never uses
-that derived projection to decide provider cleanup. It advances the Volume
-observed generation only when both the backing Volume and attachment converge.
+provisioner projects progress onto `Server.Status.Volumes`, records the first
+confirmed current attachment in `Volume.Status.AttachedAt`, and clears that
+timestamp after confirmed detachment. It never uses either derived projection
+to decide provider cleanup. It advances the Volume observed generation only
+when both the backing Volume and attachment converge.
 It does not project attachment status until the backing Volume has converged
 and attachment reconciliation begins. Before an asynchronous detach, existing
 attachment rows are marked `Deprovisioning`; they are removed only after the

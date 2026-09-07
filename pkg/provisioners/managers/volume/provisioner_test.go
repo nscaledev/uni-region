@@ -272,6 +272,7 @@ func TestProvisionAttachesClaimedVolumeToReadyServer(t *testing.T) {
 		ProvisioningStatus: unikornv1.AttachmentProvisioned,
 		Device:             &device,
 	}}, updatedServer.Status.Volumes)
+	require.NotNil(t, resource.Status.AttachedAt)
 }
 
 func TestProvisionProjectsStatusBeforeDetachingConflictingAttachment(t *testing.T) {
@@ -280,6 +281,8 @@ func TestProvisionProjectsStatusBeforeDetachingConflictingAttachment(t *testing.
 	provider, providerSet := volumeMocks(t)
 	resource := testVolume(false)
 	resource.Spec.ClaimRef = &unikornv1.VolumeClaimRef{Kind: unikornv1.VolumeClaimKindServer, ID: testServerID}
+	attachedAt := metav1.Now()
+	resource.Status.AttachedAt = &attachedAt
 	identity := testIdentity(true)
 	server := testServer(true)
 	server.Spec.Volumes = []unikornv1.ServerVolumeSpec{{ID: testVolumeID}}
@@ -301,6 +304,7 @@ func TestProvisionProjectsStatusBeforeDetachingConflictingAttachment(t *testing.
 	updatedServer := &unikornv1.Server{}
 	require.NoError(t, cli.Get(ctx, client.ObjectKeyFromObject(server), updatedServer))
 	require.Equal(t, unikornv1.AttachmentDeprovisioning, updatedServer.Status.Volumes[0].ProvisioningStatus)
+	require.Equal(t, &attachedAt, resource.Status.AttachedAt)
 }
 
 func TestProvisionDoesNotProjectAttachmentStatusBeforeVolumeConverges(t *testing.T) {
@@ -378,6 +382,8 @@ func TestProvisionDetachesVolumeWhenClaimIsRemoved(t *testing.T) {
 
 	provider, providerSet := volumeMocks(t)
 	resource := testVolume(false)
+	attachedAt := metav1.Now()
+	resource.Status.AttachedAt = &attachedAt
 	identity := testIdentity(true)
 	server := testServer(true)
 	server.Status.Volumes = []unikornv1.ServerVolumeStatus{{ID: testVolumeID, ProvisioningStatus: unikornv1.AttachmentProvisioned}}
@@ -399,6 +405,7 @@ func TestProvisionDetachesVolumeWhenClaimIsRemoved(t *testing.T) {
 
 	require.NoError(t, cli.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: testServerID}, updatedServer))
 	require.Empty(t, updatedServer.Status.Volumes)
+	require.Nil(t, resource.Status.AttachedAt)
 }
 
 func TestProvisionDetachesVolumeWhenServerIntentIsRemoved(t *testing.T) {

@@ -34,6 +34,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -177,7 +178,16 @@ func (p *Provisioner) reconcileServerAttachment(ctx context.Context, provider ty
 		return p.handleAttachmentError(ctx, provider, identity, server, err)
 	}
 
-	return p.setAttachmentStatus(ctx, server, unikornv1.AttachmentProvisioned, attachment.Device, "")
+	if err := p.setAttachmentStatus(ctx, server, unikornv1.AttachmentProvisioned, attachment.Device, ""); err != nil {
+		return err
+	}
+
+	if p.volume.Status.AttachedAt == nil {
+		attachedAt := metav1.Now()
+		p.volume.Status.AttachedAt = &attachedAt
+	}
+
+	return nil
 }
 
 func (p *Provisioner) handleAttachmentError(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, server *unikornv1.Server, err error) error {
@@ -251,7 +261,13 @@ func (p *Provisioner) detachAttachments(ctx context.Context, provider types.Prov
 		return err
 	}
 
-	return p.clearAttachmentStatuses(ctx)
+	if err := p.clearAttachmentStatuses(ctx); err != nil {
+		return err
+	}
+
+	p.volume.Status.AttachedAt = nil
+
+	return nil
 }
 
 func (p *Provisioner) releaseClaim(ctx context.Context, claim unikornv1.VolumeClaimRef) error {
