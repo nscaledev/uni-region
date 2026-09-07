@@ -3271,6 +3271,10 @@ func (in *VolumeStatus) DeepCopyInto(out *VolumeStatus) {
 		in, out := &in.ProvisionedAt, &out.ProvisionedAt
 		*out = (*in).DeepCopy()
 	}
+	if in.AttachedAt != nil {
+		in, out := &in.AttachedAt, &out.AttachedAt
+		*out = (*in).DeepCopy()
+	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]v1.Condition, len(*in))

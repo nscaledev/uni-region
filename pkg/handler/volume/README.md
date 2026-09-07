@@ -12,7 +12,8 @@ failed CRD write compensates by deleting the allocation.
 
 List and get expose project-scoped metadata, immutable Network/class/size, the
 standard lifecycle and health projection, and observed size when it is present
-in CRD status. Attachment-derived fields are not projected by this package.
+in CRD status. They project the optional `AttachedAt` timestamp directly from
+Volume status without inferring attachment state from the internal claim.
 
 Updates replace mutable metadata and tags with optimistic locking while
 preserving Network, VolumeClass, size, claims, controller state, and any

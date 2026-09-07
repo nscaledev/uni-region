@@ -28,9 +28,10 @@ The useful way to read it is not as a directory tree, but as one system:
   public v2 Volume lifecycle contract and core CRUD handlers are published;
   creation allocates requested capacity through Identity before persisting the
   Volume. Its persisted model reserves one Server attachment through the
-  internal handler-owned `spec.claimRef`; Server status is the sole persisted
-  projection of attachment progress. Claim writes and attachment reconciliation
-  remain later lifecycle slices
+  internal handler-owned `spec.claimRef`; Server status projects detailed
+  attachment progress, while Volume status exposes when the current attachment
+  was first confirmed. Claim writes and attachment reconciliation remain
+  later lifecycle slices
   Its provider capability exposes neutral backing discovery, observed
   size, and lifecycle state. The monitor projects that truth into observed
   size and coarse health without taking over the controller-owned `Available`

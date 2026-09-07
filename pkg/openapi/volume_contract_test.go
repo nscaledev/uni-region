@@ -17,12 +17,21 @@ limitations under the License.
 package openapi_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
+
+func TestVolumeAttachedAtOmittedWhenUnset(t *testing.T) {
+	t.Parallel()
+
+	data, err := json.Marshal(openapi.VolumeV2Status{})
+	require.NoError(t, err)
+	require.NotContains(t, string(data), `"attachedAt"`)
+}
 
 func TestVolumeLifecycleContract(t *testing.T) {
 	t.Parallel()
@@ -73,6 +82,9 @@ func TestVolumeLifecycleContract(t *testing.T) {
 	require.Equal(t, []string{"regionId"}, status.Required)
 	require.NotContains(t, status.Properties, "attachedServerIds")
 	require.NotContains(t, status.Properties, "attachment")
+	attachedAt := schemaProperty(t, status, "attachedAt")
+	require.True(t, attachedAt.Type.Is("string"))
+	require.Equal(t, "date-time", attachedAt.Format)
 	require.Contains(t, status.Properties, "sizeGiB")
 	require.NotContains(t, status.Properties, "phase")
 	require.NotContains(t, swagger.Components.Schemas, "volumeV2Phase")

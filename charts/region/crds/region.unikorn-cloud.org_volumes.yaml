@@ -124,6 +124,12 @@ spec:
               rule: self.networkID == oldSelf.networkID
           status:
             properties:
+              attachedAt:
+                description: |-
+                  AttachedAt is when the current attachment was first confirmed.
+                  Unset means no current attachment is recorded.
+                format: date-time
+                type: string
               conditions:
                 description: Current service state of a volume.
                 items:

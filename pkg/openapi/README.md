@@ -74,8 +74,9 @@ storage. Creation is anchored to a Network and requires a provider-neutral
 VolumeClass ID plus a positive whole-GiB size. Network, class, and size are
 immutable through this API; updates contain resource metadata and tags only.
 Reads expose the requested inputs alongside the Region the volume was
-provisioned in, provider-observed size, and the standard provisioning and
-health metadata. A Server v2 read also exposes its current desired Volume-keyed
+provisioned in, provider-observed size, the optional timestamp when the current
+attachment was first confirmed, and the standard provisioning and health
+metadata. A Server v2 read also exposes its current desired Volume-keyed
 attachment projection: attachment progress, optional provider-assigned device,
 and a safe message. This is derived status only; it never authorizes provider
 cleanup. The Region handler implements this lifecycle surface.
