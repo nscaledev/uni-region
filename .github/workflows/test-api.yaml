@@ -112,7 +112,8 @@ jobs:
       API_AUTH_TOKEN: ${{ secrets.DEV_API_AUTH_TOKEN }}
       TEST_ORG_ID: ${{ vars.DEV_TEST_ORG_ID }}
       TEST_PROJECT_ID: ${{ vars.DEV_TEST_PROJECT_ID }}
-      TEST_REGION_ID: ${{ inputs.region_id || vars.DEV_TEST_REGION_ID }}
+      # Temporary fake data centre target for VPC API test validation.
+      TEST_REGION_ID: 3c5f5d1e-f7b9-5058-bb66-5eea98038a9b
       TEST_NETWORK_ID: ${{ vars.DEV_TEST_NETWORK_ID }}
       TEST_PRIVATE_REGION_ID: ${{ vars.DEV_TEST_PRIVATE_REGION_ID }}
       TEST_SECONDARY_ORG_ID: ${{ vars.DEV_TEST_SECONDARY_ORG_ID }}
@@ -177,7 +178,8 @@ jobs:
         format: ginkgo-json
         workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
-        send-slack: ${{ github.event.inputs.skip_slack_notifications != 'true' && 'true' || 'false' }}
+        # This temporary fake data centre test must not notify Slack.
+        send-slack: false
         environment: dev
         deployed-version: ${{ needs.find-dev-deployed-version.outputs.version || needs.find-dev-deployed-version.outputs.ref }}
         title: 'Region API Test Results'
