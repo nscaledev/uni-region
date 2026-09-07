@@ -2578,7 +2578,7 @@ func TestServerDeleteV2_NoDeletePermission(t *testing.T) {
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
 }
 
-func TestServerDeleteV2_ReleasesVolumeClaims(t *testing.T) {
+func TestServerDeleteV2_LeavesVolumeClaimsForDeprovision(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
@@ -2600,7 +2600,7 @@ func TestServerDeleteV2_ReleasesVolumeClaims(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: volume.Name}, volume))
-	require.Nil(t, volume.Spec.ClaimRef)
+	require.Equal(t, &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: resource.Name}, volume.Spec.ClaimRef)
 }
 
 // srvProjectACL grants the given region:servers operations at project scope, which

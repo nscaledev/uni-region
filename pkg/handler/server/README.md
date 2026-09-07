@@ -43,8 +43,6 @@ related dependencies rather than from nested path scope.
   compensation, but a failure releases its earlier Volume claims; update
   releases removed claims, writes the complete desired set, then claims
   additions with compensation. Providers remain exclusively controller-owned
-- delete releases each desired Volume claim before deleting the Server. Releasing
-  an already-absent claim is safe, so repeated delete work converges
 - v2 reads the stored per-Volume attachment state (attachment progress, optional
   provider device, and a safe message). A removed Volume remains in this
   projection while its observed attachment deprovisions and disappears only
