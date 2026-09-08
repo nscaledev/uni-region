@@ -23,6 +23,7 @@ import (
 	"net"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
+	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
@@ -55,6 +56,33 @@ func convertList(in *unikornv1.ServerList) (openapi.ServersRead, error) {
 	return out, nil
 }
 
+// serverReadMetadata projects the standard read metadata for a server. Core
+// derives provisioningStatus from the Available condition alone, which between
+// a spec update and the first reconcile still holds the previous spec's result.
+// A result that does not carry the current generation is not evidence about
+// the current spec, so it is reported as in flight. Deletion keeps priority:
+// core already projects a deleting resource as deprovisioning whatever the
+// condition says, and this does not override it.
+func serverReadMetadata(in *unikornv1.Server) coreopenapi.ProjectScopedResourceReadMetadata {
+	out := conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags)
+
+	if in.DeletionTimestamp != nil || in.ProvisioningConditionCurrent() {
+		return out
+	}
+
+	if out.ProvisioningStatus == coreopenapi.ResourceProvisioningStatusPending {
+		return out
+	}
+
+	out.ProvisioningStatus = coreopenapi.ResourceProvisioningStatusProvisioning
+	out.ProvisioningStatusDetail = &coreopenapi.ProvisioningStatusDetail{
+		Reason:  coreopenapi.ProvisioningStatusReasonProvisioning,
+		Message: "awaiting reconciliation of the current specification",
+	}
+
+	return out
+}
+
 // convert converts from a custom resource into the API definition.
 func convert(in *unikornv1.Server) (*openapi.ServerRead, error) {
 	imageID, err := in.ImageID()
@@ -63,7 +91,7 @@ func convert(in *unikornv1.Server) (*openapi.ServerRead, error) {
 	}
 
 	out := &openapi.ServerRead{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
+		Metadata: serverReadMetadata(in),
 		Spec: openapi.ServerSpec{
 			FlavorId:           in.Spec.FlavorID,
 			ImageId:            imageID,
