@@ -300,7 +300,7 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 		return nil, err
 	}
 
-	metadata := conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags)
+	metadata := serverReadMetadata(in)
 
 	out := &openapi.ServerV2Read{
 		Metadata: metadata,

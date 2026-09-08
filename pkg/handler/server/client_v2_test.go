@@ -33,6 +33,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
@@ -2787,4 +2788,79 @@ func TestServerUpdateV2RejectsRename(t *testing.T) {
 	_, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
 	require.Error(t, err)
 	require.True(t, coreerrors.IsUnprocessableContent(err), "rename attempt must return 422 Unprocessable Content, got: %v", err)
+}
+
+// testServerWithProvisioningResult returns a v2 server whose Available condition
+// was evaluated at conditionGeneration while the spec is at specGeneration.
+func testServerWithProvisioningResult(specGeneration, conditionGeneration int64, status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason) *regionv1.Server {
+	resource := testServerWithSSHCertificateAuthority()
+	resource.Generation = conditionGeneration
+	resource.SetProvisioningCondition(status, reason, "message")
+	resource.Generation = specGeneration
+
+	return resource
+}
+
+func getServerV2(t *testing.T, resource *regionv1.Server) *openapi.ServerV2Read {
+	t.Helper()
+
+	ctrl := gomock.NewController(t)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, resource).Build(),
+		Namespace: srvNamespace,
+		Identity:  identitymock.NewMockClientWithResponsesInterface(ctrl),
+	})
+
+	result, err := c.GetV2(rbac.NewContext(t.Context(), aclWithSrvUpdate()), idstest.MustParseServerID(resource.Name))
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	return result
+}
+
+// TestServerGetV2ProvisioningStatusFreshness pins the freshness rule end to
+// end: a v2 read must not present a result recorded for a previous spec
+// generation as convergence, but a current result keeps its own outcome, and
+// deletion and pending are unaffected.
+func TestServerGetV2ProvisioningStatusFreshness(t *testing.T) {
+	t.Parallel()
+
+	unstamped := testServerWithSSHCertificateAuthority()
+	unstamped.Generation = 1
+	unikornv1core.UpdateCondition(&unstamped.Status.Conditions, unikornv1core.ConditionAvailable, corev1.ConditionTrue, string(unikornv1core.ConditionReasonProvisioned), "provisioned")
+
+	noCondition := testServerWithSSHCertificateAuthority()
+	noCondition.Generation = 1
+
+	deleting := testServerWithProvisioningResult(2, 1, corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned)
+	deleting.DeletionTimestamp = ptr.To(metav1.Now())
+	deleting.Finalizers = []string{"test"}
+
+	for _, tc := range []struct {
+		resource   *regionv1.Server
+		wantStatus coreapi.ResourceProvisioningStatus
+		wantReason *coreapi.ProvisioningStatusReason
+	}{
+		{testServerWithProvisioningResult(2, 1, corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned), coreapi.ResourceProvisioningStatusProvisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioning)},
+		{testServerWithProvisioningResult(2, 2, corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned), coreapi.ResourceProvisioningStatusProvisioned, ptr.To(coreapi.ProvisioningStatusReasonProvisioned)},
+		{testServerWithProvisioningResult(3, 3, corev1.ConditionFalse, unikornv1core.ConditionReasonProvisioning), coreapi.ResourceProvisioningStatusProvisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioning)},
+		{testServerWithProvisioningResult(3, 3, corev1.ConditionFalse, unikornv1core.ConditionReasonErrored), coreapi.ResourceProvisioningStatusError, ptr.To(coreapi.ProvisioningStatusReasonErrored)},
+		{testServerWithProvisioningResult(2, 1, corev1.ConditionFalse, unikornv1core.ConditionReasonErrored), coreapi.ResourceProvisioningStatusProvisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioning)},
+		{unstamped, coreapi.ResourceProvisioningStatusProvisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioning)},
+		{noCondition, coreapi.ResourceProvisioningStatusPending, nil},
+		{deleting, coreapi.ResourceProvisioningStatusDeprovisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioned)},
+	} {
+		result := getServerV2(t, tc.resource)
+		require.Equal(t, tc.wantStatus, result.Metadata.ProvisioningStatus)
+
+		if tc.wantReason == nil {
+			require.Nil(t, result.Metadata.ProvisioningStatusDetail)
+
+			continue
+		}
+
+		require.NotNil(t, result.Metadata.ProvisioningStatusDetail)
+		require.Equal(t, *tc.wantReason, result.Metadata.ProvisioningStatusDetail.Reason)
+	}
 }

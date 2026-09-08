@@ -28,6 +28,7 @@ import (
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
@@ -183,9 +184,33 @@ func (c *Server) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Con
 }
 
 // SetProvisioningCondition sets the Available condition with a reason drawn from
-// the provisioning vocabulary.
+// the provisioning vocabulary. The condition records the spec generation it was
+// evaluated against on every outcome, so a reader can tell a result for the
+// current spec from one left over from a previous spec. This is distinct from
+// Status.Observed.Generation, which stamps a provider observation, not a
+// provisioning result.
 func (c *Server) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
-	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
+	meta.SetStatusCondition(&c.Status.Conditions, metav1.Condition{
+		Type:               string(unikornv1core.ConditionAvailable),
+		Status:             metav1.ConditionStatus(status),
+		ObservedGeneration: c.Generation,
+		Reason:             string(reason),
+		Message:            message,
+	})
+}
+
+// ProvisioningConditionCurrent reports whether the Available condition was
+// evaluated against the current spec generation. A missing condition or an
+// unstamped (zero) generation is not current: it cannot be verified, so it must
+// not be read as a result for this spec. Current says nothing about success;
+// the condition's status and reason carry that.
+func (c *Server) ProvisioningConditionCurrent() bool {
+	condition := meta.FindStatusCondition(c.Status.Conditions, string(unikornv1core.ConditionAvailable))
+	if condition == nil {
+		return false
+	}
+
+	return condition.ObservedGeneration != 0 && condition.ObservedGeneration == c.Generation
 }
 
 // SetHealthCondition sets the Healthy condition with a reason drawn from the

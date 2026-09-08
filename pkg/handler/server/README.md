@@ -113,14 +113,12 @@ related dependencies rather than from nested path scope.
   contents even if the rebuild subsequently fails, so failure recovery is
   choosing another image or replacing the server — never data restoration.
 - while a rebuild is pending or in flight the v2 read reports
-  `provisioningStatus=provisioning`, with one bounded exception: between an
-  accepted v2 update and the first reconcile pass it triggers — one watch
-  dispatch, typically sub-second, not a poll period — a read still reports
-  `provisioned`, because the status is derived purely from the `Available`
-  condition and only the reconciler rewrites that condition. This is deliberate:
-  the read path performs no masking of its own (that machinery was removed with
-  the rebuild marker). Once the reconciler runs it yields while an image change
-  is outstanding, and core maps a yield to `Available=Provisioning`.
+  `provisioningStatus=provisioning`, from the accepted update onward, because a
+  result without the current generation stamp projects as `provisioning` with
+  reason `Provisioning` and message "awaiting reconciliation of the current
+  specification". Exceptions: deletion stays `deprovisioning`, never-evaluated
+  stays `pending`, and a paused server (`spec.pause`) does not restamp and
+  reads `provisioning` while paused. The v1 read shares the helper.
   `provisioned` means settled — which the sole consumer, uni-compute's instance
   settlement gate, relies on — and the target image is not realized until the
   rebuild converges. A rebuild

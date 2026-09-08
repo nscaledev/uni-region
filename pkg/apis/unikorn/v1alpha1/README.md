@@ -203,6 +203,12 @@ stored objects rely on for linkage, migration, and operational coordination.
   liveness is a separate axis needing a signal from inside the guest; treating
   convergence here as proof of a working workload is a misreading this region
   cannot protect against.
+- `Server.SetProvisioningCondition` stamps `metadata.generation` into the
+  `Available` condition's `observedGeneration` on every outcome, distinct from
+  `Status.Observed.Generation`. A zero or mismatched stamp means the result
+  belongs to a previous spec: `Server.ProvisioningConditionCurrent` returns
+  false, and the REST read projects it as `provisioning`. Enforced at the REST
+  boundary only; internal readers still key off the reason.
 
 ## Caveats
 
