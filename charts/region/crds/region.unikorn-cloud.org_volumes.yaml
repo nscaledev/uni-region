@@ -64,6 +64,7 @@ spec:
                   id:
                     description: ID is the Region resource ID of the resource claiming
                       the volume attachment.
+                    minLength: 1
                     type: string
                   kind:
                     description: Kind is the kind of resource claiming the volume
