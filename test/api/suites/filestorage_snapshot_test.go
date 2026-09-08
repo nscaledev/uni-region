@@ -61,7 +61,7 @@ var _ = Describe("File storage snapshot happy flow", func() {
 		Describe("Given an OpenStack network, server, and NFS file storage attachment", func() {
 			It("captures probe file contents in an hourly scheduled snapshot", Label("slow"), func() {
 				policies := buildHourlySnapshotPolicy()
-				mounted := EventuallyProvisionMountedFilesystem(&policies)
+				mounted := EventuallyProvisionMountedFilesystem(mountedFilesystemOptions{snapshotPolicies: &policies})
 				probePath := path.Join(mounted.MountPoint, probeFilename)
 				probeContent := "probe-" + mounted.Storage.Metadata.Id
 
@@ -82,6 +82,17 @@ type mountedFileStorage struct {
 	Storage    *regionopenapi.StorageV2Read
 	SSHClient  *ssh.Client
 	MountPoint string
+	NetworkID  string
+}
+
+// mountedFilesystemOptions configures EventuallyProvisionMountedFilesystem. The
+// zero value provisions file storage with an empty NFS spec and mounts it with
+// plain NFS defaults.
+type mountedFilesystemOptions struct {
+	snapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec
+	nfs              *regionopenapi.NFSV2Spec
+	// mountOptions is passed verbatim to mount -o; empty means no -o flag.
+	mountOptions string
 }
 
 func mustFindNFSFileStorageClassID() string {
@@ -154,12 +165,13 @@ func buildHourlySnapshotPolicy() regionopenapi.StorageSnapshotPolicyListV2Spec {
 }
 
 // MustProvisionFileStorage creates NFS file storage attached to networkID, waits for a
-// mountable attachment, and — when snapshotPolicies is set — waits for the snapshot
+// mountable attachment, and — when opts.snapshotPolicies is set — waits for the snapshot
 // policy to be provisioned. Cleanup is registered immediately after creation.
-func MustProvisionFileStorage(storageClassID, networkID string, snapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec) (*regionopenapi.StorageV2Read, regionopenapi.StorageAttachmentV2Status) {
+func MustProvisionFileStorage(storageClassID, networkID string, opts mountedFilesystemOptions) (*regionopenapi.StorageV2Read, regionopenapi.StorageAttachmentV2Status) {
 	request := api.NewFileStoragePayload(config.OrgID, config.ProjectID, config.RegionID, storageClassID, networkID).
 		WithSizeGiB(storageSizeGiB).
-		WithSnapshotPolicies(snapshotPolicies).
+		WithSnapshotPolicies(opts.snapshotPolicies).
+		WithNFS(opts.nfs).
 		Build()
 
 	storage, err := regionClient.CreateFileStorage(ctx, request)
@@ -204,7 +216,7 @@ func MustProvisionFileStorage(storageClassID, networkID string, snapshotPolicies
 		WithPolling(15*time.Second).
 		Should(Succeed(), "file storage should become mountable")
 
-	if snapshotPolicies != nil {
+	if opts.snapshotPolicies != nil {
 		EventuallyProvisionSnapshotPolicy(storage.Metadata.Id)
 	}
 
@@ -339,15 +351,20 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
-// buildMountCmd mounts the export with plain NFS defaults. The API-provided
-// status.attachments[].mountOptions (e.g. remoteports) are provider/multipath
-// specific and unsupported by the stock nfs-common client on the test image; the
-// mountSource alone mounts fine and is all the snapshot test needs.
-func buildMountCmd(mountSource, mountPoint string) string {
+// buildMountCmd mounts the export with plain NFS defaults, plus any caller-supplied
+// -o options. The API-provided status.attachments[].mountOptions (e.g. remoteports)
+// are provider/multipath specific and unsupported by the stock nfs-common client on
+// the test image; the mountSource alone mounts fine.
+func buildMountCmd(mountSource, mountPoint, mountOptions string) string {
 	quotedMountSource := shellQuote(mountSource)
 	quotedMountPoint := shellQuote(mountPoint)
 
-	return fmt.Sprintf("sudo -n mkdir -p %s && sudo -n mount -t nfs %s %s", quotedMountPoint, quotedMountSource, quotedMountPoint)
+	optionsFlag := ""
+	if mountOptions != "" {
+		optionsFlag = "-o " + shellQuote(mountOptions) + " "
+	}
+
+	return fmt.Sprintf("sudo -n mkdir -p %s && sudo -n mount -t nfs %s%s %s", quotedMountPoint, optionsFlag, quotedMountSource, quotedMountPoint)
 }
 
 func buildSnapshotDir(mountPoint string) string {
@@ -396,7 +413,7 @@ func AssertProbeFileContent(client *ssh.Client, probePath, content string) {
 	runSSHCommandExpectNoError(client, fmt.Sprintf("test \"$(sudo -n cat %s)\" = %s", shellQuote(probePath), shellQuote(content)))
 }
 
-func EventuallyProvisionMountedFilesystem(snapshotPolicies *regionopenapi.StorageSnapshotPolicyListV2Spec) *mountedFileStorage {
+func EventuallyProvisionMountedFilesystem(opts mountedFilesystemOptions) *mountedFileStorage {
 	api.SkipUnlessOpenStackRegion(regionClient, ctx, config)
 	api.SkipUnlessInternalAPIConfigured(regionClient)
 	api.SkipUnlessServerFixtureConfigured(config)
@@ -410,7 +427,7 @@ func EventuallyProvisionMountedFilesystem(snapshotPolicies *regionopenapi.Storag
 	securityGroup := MustCreateSecurityGroup(network.Metadata.Id)
 
 	By("creating the NFS file storage and waiting for a mountable attachment")
-	storage, attachment := MustProvisionFileStorage(storageClassID, network.Metadata.Id, snapshotPolicies)
+	storage, attachment := MustProvisionFileStorage(storageClassID, network.Metadata.Id, opts)
 
 	By("provisioning a server and waiting for it to run with a public IP")
 	server := MustProvisionServer(network.Metadata.Id, securityGroup.Metadata.Id)
@@ -434,7 +451,7 @@ func EventuallyProvisionMountedFilesystem(snapshotPolicies *regionopenapi.Storag
 	By("mounting the file storage over NFS")
 	mountPoint := path.Join("/mnt", string(storage.Metadata.Name))
 	mountSource := *attachment.MountSource
-	runSSHCommandExpectNoError(sshClient, buildMountCmd(mountSource, mountPoint))
+	runSSHCommandExpectNoError(sshClient, buildMountCmd(mountSource, mountPoint, opts.mountOptions))
 	DeferCleanup(func() {
 		runSSHCommandExpectNoError(sshClient, fmt.Sprintf("sudo -n umount %s && sudo -n rmdir %s", shellQuote(mountPoint), shellQuote(mountPoint)))
 	})
@@ -443,6 +460,7 @@ func EventuallyProvisionMountedFilesystem(snapshotPolicies *regionopenapi.Storag
 		Storage:    storage,
 		SSHClient:  sshClient,
 		MountPoint: mountPoint,
+		NetworkID:  network.Metadata.Id,
 	}
 }
 
