@@ -127,6 +127,64 @@ func TestFileStorageSnapshotPolicyScheduleValidation(t *testing.T) {
 	}
 }
 
+func TestFileStorageSnapshotPolicyProtectedPathValidation(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name          string
+		protectedPath *string
+		valid         bool
+	}{
+		{
+			name:  "omitted protected path",
+			valid: true,
+		},
+		{
+			name:          "accepts relative path",
+			protectedPath: ptr.To("applications/data"),
+			valid:         true,
+		},
+		{
+			name:          "accepts dots within a component",
+			protectedPath: ptr.To("releases/v1.2"),
+			valid:         true,
+		},
+		{
+			name:          "rejects empty path",
+			protectedPath: ptr.To(""),
+		},
+		{
+			name:          "rejects absolute path",
+			protectedPath: ptr.To("/applications/data"),
+		},
+		{
+			name:          "rejects trailing slash",
+			protectedPath: ptr.To("applications/data/"),
+		},
+		{
+			name:          "rejects doubled slash",
+			protectedPath: ptr.To("applications//data"),
+		},
+		{
+			name:          "rejects current-directory component",
+			protectedPath: ptr.To("applications/./data"),
+		},
+		{
+			name:          "rejects parent-directory component",
+			protectedPath: ptr.To("applications/../data"),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			valid := newCRDValidator(t, fileStorageCRDFile).validatesUnstructured(t, fileStorageWithSnapshotPolicyProtectedPath(tc.protectedPath))
+			require.Equal(t, tc.valid, valid)
+		})
+	}
+}
+
 func fileStorageWithSnapshotPolicySchedule(schedule regionv1.FileStorageSnapshotPolicySchedule) *regionv1.FileStorage {
 	return &regionv1.FileStorage{
 		TypeMeta: metav1.TypeMeta{
@@ -149,6 +207,36 @@ func fileStorageWithSnapshotPolicySchedule(schedule regionv1.FileStorageSnapshot
 					},
 				},
 			},
+		},
+	}
+}
+
+func fileStorageWithSnapshotPolicyProtectedPath(protectedPath *string) map[string]any {
+	policy := map[string]any{
+		"name": "policy",
+		"schedule": map[string]any{
+			"interval": "hourly",
+		},
+		"retention": map[string]any{
+			"keep": 1,
+		},
+	}
+
+	if protectedPath != nil {
+		policy["protectedPath"] = *protectedPath
+	}
+
+	return map[string]any{
+		"apiVersion": regionv1.Group,
+		"kind":       "FileStorage",
+		"metadata": map[string]any{
+			"name":      "storage",
+			"namespace": "default",
+		},
+		"spec": map[string]any{
+			"storageClassID":   "storage-class",
+			"size":             "1Gi",
+			"snapshotPolicies": []any{policy},
 		},
 	}
 }

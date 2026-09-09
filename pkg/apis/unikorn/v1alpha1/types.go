@@ -1403,6 +1403,11 @@ type FileStorageSnapshotPolicy struct {
 	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=19
 	Name string `json:"name"`
+	// ProtectedPath is the relative path within the file storage data hierarchy protected by this policy.
+	// +kubebuilder:validation:Pattern=`^([^/]+/)*[^/]+$`
+	// +kubebuilder:validation:XValidation:rule="self.split('/').all(component, component != '.' && component != '..')",message="protectedPath must not contain . or .. path components"
+	// +optional
+	ProtectedPath string `json:"protectedPath,omitempty"`
 	// Schedule defines when snapshots run in UTC.
 	Schedule FileStorageSnapshotPolicySchedule `json:"schedule"`
 	// Retention defines how many snapshots are retained.
