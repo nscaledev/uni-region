@@ -196,7 +196,7 @@ func (p *Provisioner) reconcileClaimedVolume(ctx context.Context, provider types
 
 	condition, err := unikornv1core.GetAvailableCondition(server)
 	if err != nil || condition.Reason != unikornv1core.ConditionReasonProvisioned {
-		return p.waitForServerAttachment(ctx, server, condition, err)
+		return p.waitForServerProvisioning(ctx, server, condition, err)
 	}
 
 	attachment, err := provider.AttachVolume(ctx, identity, server, p.volume)
@@ -241,7 +241,11 @@ func (p *Provisioner) handleAttachmentError(ctx context.Context, provider types.
 	return err
 }
 
-func (p *Provisioner) waitForServerAttachment(ctx context.Context, server *unikornv1.Server, condition *unikornv1core.TypedCondition[unikornv1core.ProvisioningConditionReason], conditionErr error) error {
+// waitForServerProvisioning records why attachment is blocked and yields until
+// the claimed Server is ready for the provider attachment call.
+func (p *Provisioner) waitForServerProvisioning(ctx context.Context, server *unikornv1.Server, condition *unikornv1core.TypedCondition[unikornv1core.ProvisioningConditionReason], conditionErr error) error {
+	// A Server provisioning error blocks attachment, but remains retryable because
+	// the Server condition can recover without a Volume generation change.
 	if conditionErr == nil && condition.Reason == unikornv1core.ConditionReasonErrored {
 		message := "server provisioning failed"
 
