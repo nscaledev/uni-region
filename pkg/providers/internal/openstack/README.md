@@ -407,14 +407,25 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     create `409 Conflict` is followed by one Nova attachment read so concurrent
     creation of the same desired attachment becomes success, while an
     unresolved conflict maps to `ErrConflict`
-  - detach discovers every Cinder attachment for the Volume and calls Nova
-    delete for each attached server; a missing volume is success. After each
-    detach attempt, including a Nova delete `404`, Cinder is re-read: success
-    requires no remaining attachment rows, otherwise detach yields
-  - a Nova delete `409 Conflict` maps to `ErrConflict`; other provider failures
-    are preserved
+  - detach receives the claimed Region Server while it exists, resolves its
+    Nova server, and checks Nova directly, so an empty Cinder attachment list
+    cannot hide the claimed Nova attachment. If the Region Server is already
+    gone, its completed deletion establishes Nova teardown and only Cinder
+    convergence remains. A Cinder attachment row is the supported fallback
+    when Nova cannot confirm the claimed relationship
+  - an accepted Nova delete yields immediately because detach is asynchronous.
+    A later reconcile succeeds only when Nova no longer reports the claimed
+    attachment and Cinder reports no attachment with status `available`; a
+    missing backing Volume is idempotent success
+  - a Nova delete `400 Bad Request` yields while the provider attachment state
+    converges; the claim is retained and Region does not reset Cinder state. A
+    `409 Conflict` maps to `ErrConflict`; other provider failures are preserved
   - detach also no-ops when the backing OpenStack identity was never realized,
     matching the provider's other teardown contracts
+
+  Region owns these resources through its API. Detach does not attempt
+  administrative repair of foreign attachments, multiattach, or resources
+  changed directly through Kubernetes or OpenStack.
 
   Attachment intent and observed rows remain on `Server.Spec.Volumes` and
   `Server.Status.Volumes`; this provider slice does not mirror attachments into

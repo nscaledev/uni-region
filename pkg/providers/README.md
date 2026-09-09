@@ -99,12 +99,15 @@ packages are the concrete provider implementations.
     consumers are gone: at delete time it is either realized-and-complete or
     never realized. Callers must therefore never gate a delete on identity
     readiness or recorded status — that belongs to this layer.
-- `DetachVolume` follows the same absent-means-converged teardown rule: a
-  missing provider server, volume, or attachment is success. `AttachVolume`
-  instead requires both backing resources and reports semantic not-found when
-  either is absent. Concrete provider conflicts are normalized to the shared
-  conflict sentinel; provider failures that are neither not-found nor conflict
-  remain available to callers for diagnosis.
+- `DetachVolume` verifies claimed attachment teardown against both compute and
+  block-storage state before the caller releases its claim. Transitional or
+  inconsistent claimed state yields for recovery; no provider-side
+  administrative reset is attempted. A provider detach `400 Bad Request` also
+  yields and retains the claim. A missing provider Volume remains idempotent
+  success. `AttachVolume` instead requires both backing resources and reports
+  semantic not-found when either is absent. Concrete provider conflicts are
+  normalized to the shared conflict sentinel; other failures remain available
+  to callers for diagnosis.
 - Providers must tolerate changing backing credentials and region state rather
   than assuming client material is static for process lifetime.
   Credential rotation, secret refresh, and region configuration refresh are part

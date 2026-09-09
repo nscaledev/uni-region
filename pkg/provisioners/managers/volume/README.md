@@ -21,9 +21,10 @@ requires a replacement Volume; it is not recreated under the same ID.
 
 Deprovisioning deliberately has stricter ordering:
 
-1. resolve the provider and Identity through the shared provisioner lookup, then
-   discover and detach provider attachments by Volume, then call provider
-   deletion without consulting Identity readiness or derived status;
+1. resolve the provider and Identity through the shared provisioner lookup,
+   then call provider deletion without consulting Identity readiness or
+   derived status; the API rejects deletion of a claimed Volume, so attachment
+   teardown has already completed;
 2. retain the finalizer while an accepted asynchronous provider deletion
    yields, and only after rediscovery confirms the provider resource is absent,
    delete the Identity allocation named by the allocation annotation;
@@ -37,15 +38,18 @@ the referenced Region `Identity` available through this cleanup; a missing
 Identity remains an error and preserves the Volume finalizer.
 Provider lookup errors also preserve the allocation and finalizer for retry.
 
-After the backing Volume converges, this provisioner reconciles its single
-claimed Server attachment. It reads the handler-owned Volume claim and Server
+Attachment setup starts only after the backing Volume converges. Teardown intent
+is evaluated first so provider creation readiness cannot block claim release or
+detachment. The provisioner reads the handler-owned Volume claim and Server
 intent, then calls the provider attachment boundary. A provisioning or errored
 Server yields; its condition can recover without a Volume generation change.
-If the claimed Server is absent, the provisioner detaches any old provider
-attachments, retains the claim, and yields so Server creation can complete. If
-the Server is deleting or no longer requests the Volume, it
-conflict-safely releases that claim and yields. The following no-claim pass
-detaches provider attachments and clears stale Server status.
+If the claimed Server is absent and `Volume.Status.AttachedAt` is unset, the
+provisioner retains the claim and yields so Server creation can complete. A
+recorded attachment means that a now-absent Server completed deletion, so only
+Cinder convergence remains before claim release. When the Server is deleting
+or no longer requests the Volume, the full Server remains available to the
+provider until it confirms Nova and Cinder teardown. A provider yield or error
+retains the claim and its recovery context.
 The provider remains authoritative for attachment and detach work. The
 provisioner projects progress onto `Server.Status.Volumes`, records the first
 confirmed current attachment in `Volume.Status.AttachedAt`, and clears that
@@ -54,8 +58,8 @@ to decide provider cleanup. It advances the Volume observed generation only
 when both the backing Volume and attachment converge.
 It does not project attachment status until the backing Volume has converged
 and attachment reconciliation begins. Before an asynchronous detach, existing
-attachment rows are marked `Deprovisioning`; they are removed only after the
-provider confirms detachment.
+attachment rows are marked `Deprovisioning`; they and the claim are removed only
+after the provider confirms detachment.
 Each projection re-reads the Server and retries status conflicts while merging
 only the claimed Volume's entry.
 

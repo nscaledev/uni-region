@@ -35,8 +35,9 @@ continue to be passed directly through many provider interface methods.
   wrapper. It embeds smaller contracts such as `ImageRead`, `ImageWrite`,
   `Network`, `Volume`, `Server`, `ServerConsole`, and `ServerSnapshot`.
 - The `Server` capability attaches an existing Volume to its desired Server.
-  The `Volume` capability discovers and detaches provider attachments by
-  Volume, so recovery never relies on derived Server status.
+  The `Volume` detach capability also receives that Server while it exists, so
+  providers can verify the claimed relationship without relying on lagging
+  block-storage attachment data or derived Server status.
 - CRD-backed lifecycle operations continue to use repo-native
   `unikornv1.*` resource types where those are the stable service contract.
 - Provider-derived or non-CRD concepts use the intermediate types defined in

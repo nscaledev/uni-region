@@ -102,11 +102,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
-	if err := provider.CreateVolume(ctx, identity, p.volume); err != nil {
-		return err
-	}
-
-	if err := p.reconcileAttachment(ctx, provider, identity); err != nil {
+	if err := p.reconcileVolume(ctx, provider, identity); err != nil {
 		return err
 	}
 
@@ -115,9 +111,9 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 	return nil
 }
 
-func (p *Provisioner) reconcileAttachment(ctx context.Context, provider types.Provider, identity *unikornv1.Identity) error {
+func (p *Provisioner) reconcileVolume(ctx context.Context, provider types.Provider, identity *unikornv1.Identity) error {
 	if p.volume.Spec.ClaimRef == nil {
-		return p.detachAttachments(ctx, provider, identity)
+		return provider.CreateVolume(ctx, identity, p.volume)
 	}
 
 	claim := *p.volume.Spec.ClaimRef
@@ -127,23 +123,51 @@ func (p *Provisioner) reconcileAttachment(ctx context.Context, provider types.Pr
 		return err
 	}
 
+	serverDeleting := exists && server.GetDeletionTimestamp() != nil
+	requested := exists && serverRequestsVolume(server, p.volume.Name)
+
 	if !exists {
-		if err := p.detachAttachments(ctx, provider, identity); err != nil {
-			return err
+		// Server creation claims Volumes before persisting the Server. Without a
+		// recorded attachment, this is the normal claim-before-create saga window.
+		if p.volume.Status.AttachedAt == nil {
+			return provisioners.ErrYield
 		}
 
+		// An attachment was previously confirmed, so a missing Region Server means
+		// its deletion completed. Nova no longer needs Server context; wait for
+		// Cinder to report the Volume available before releasing the claim.
+		return p.teardownClaim(ctx, provider, identity, nil, claim)
+	}
+
+	// Keep the claim available to the provider until it confirms teardown, then
+	// release it because the Server is going away or no longer wants the Volume.
+	if serverDeleting || !requested {
+		return p.teardownClaim(ctx, provider, identity, server, claim)
+	}
+
+	return p.reconcileClaimedVolume(ctx, provider, identity, server)
+}
+
+func (p *Provisioner) teardownClaim(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, server *unikornv1.Server, claim unikornv1.VolumeClaimRef) error {
+	// Preserve the Server until the provider has confirmed Nova and Cinder agree
+	// that the attachment is gone. Releasing the claim earlier loses that context.
+	if err := p.detachAttachments(ctx, provider, identity, server); err != nil {
+		return err
+	}
+
+	if err := p.releaseClaim(ctx, claim); err != nil {
+		return err
+	}
+
+	// releaseClaim refreshes the Volume from storage, including its stale attachment status.
+	p.volume.Status.AttachedAt = nil
+
+	// A concurrent claimant owns a new generation that this pass has not reconciled.
+	if p.volume.Spec.ClaimRef != nil {
 		return provisioners.ErrYield
 	}
 
-	if server.GetDeletionTimestamp() != nil || !serverRequestsVolume(server, p.volume.Name) {
-		if err := p.releaseClaim(ctx, claim); err != nil {
-			return err
-		}
-
-		return provisioners.ErrYield
-	}
-
-	return p.reconcileServerAttachment(ctx, provider, identity, server)
+	return nil
 }
 
 func (p *Provisioner) claimedServer(ctx context.Context) (*unikornv1.Server, bool, error) {
@@ -159,15 +183,17 @@ func (p *Provisioner) claimedServer(ctx context.Context) (*unikornv1.Server, boo
 			return nil, false, err
 		}
 
-		server.Name = p.volume.Spec.ClaimRef.ID
-
-		return server, false, nil
+		return nil, false, nil
 	}
 
 	return server, true, nil
 }
 
-func (p *Provisioner) reconcileServerAttachment(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, server *unikornv1.Server) error {
+func (p *Provisioner) reconcileClaimedVolume(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, server *unikornv1.Server) error {
+	if err := provider.CreateVolume(ctx, identity, p.volume); err != nil {
+		return err
+	}
+
 	condition, err := unikornv1core.GetAvailableCondition(server)
 	if err != nil || condition.Reason != unikornv1core.ConditionReasonProvisioned {
 		return p.waitForServerAttachment(ctx, server, condition, err)
@@ -196,7 +222,7 @@ func (p *Provisioner) handleAttachmentError(ctx context.Context, provider types.
 			return statusErr
 		}
 
-		if detachErr := p.detachAttachments(ctx, provider, identity); detachErr != nil {
+		if detachErr := p.detachAttachments(ctx, provider, identity, server); detachErr != nil {
 			return detachErr
 		}
 
@@ -252,12 +278,12 @@ func attachmentMessage(err error) string {
 	return "an unexpected error occurred"
 }
 
-func (p *Provisioner) detachAttachments(ctx context.Context, provider types.Provider, identity *unikornv1.Identity) error {
+func (p *Provisioner) detachAttachments(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	if err := p.markAttachmentStatusesDeprovisioning(ctx); err != nil {
 		return err
 	}
 
-	if err := provider.DetachVolume(ctx, identity, p.volume); err != nil {
+	if err := provider.DetachVolume(ctx, identity, server, p.volume); err != nil {
 		return err
 	}
 
@@ -405,13 +431,6 @@ func removeServerVolumeStatus(volumes []unikornv1.ServerVolumeStatus, volumeID s
 func (p *Provisioner) Deprovision(ctx context.Context) error {
 	provider, identity, err := p.ProviderAndIdentity(ctx, p.volume)
 	if err != nil {
-		return err
-	}
-
-	// Provider cleanup is unconditional and idempotent. The provider owns
-	// authoritative rediscovery and already-absent handling, so readiness and
-	// best-effort status must never gate this call.
-	if err := p.detachAttachments(ctx, provider, identity); err != nil {
 		return err
 	}
 

@@ -154,7 +154,7 @@ func attachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 	)
 }
 
-func detachVolume(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, volume *unikornv1.Volume) error {
+func detachVolume(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, server *unikornv1.Server, volume *unikornv1.Volume) error {
 	cinderVolume, err := blockStorage.GetVolume(ctx, volume)
 	if err != nil {
 		if providerResourceNotFound(err) {
@@ -164,30 +164,65 @@ func detachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 		return err
 	}
 
-	if len(cinderVolume.Attachments) == 0 {
-		return nil
+	if server != nil {
+		detachRequested, err := requestServerVolumeDetach(ctx, compute, server, cinderVolume.ID)
+		if err != nil {
+			return err
+		}
+
+		if detachRequested {
+			// Nova detach is asynchronous. Verify Nova and Cinder again on the
+			// next reconciliation before allowing the claim to be released.
+			return provisioners.ErrYield
+		}
 	}
 
-	for _, attachment := range cinderVolume.Attachments {
+	// Region does not expose multiattach, so one Cinder attachment is the only
+	// supported fallback when Nova could not confirm the claimed relationship.
+	if len(cinderVolume.Attachments) != 0 {
+		attachment := cinderVolume.Attachments[0]
 		if err := deleteVolumeAttachment(ctx, compute, attachment.ServerID, cinderVolume.ID); err != nil {
 			return err
 		}
+
+		return provisioners.ErrYield
 	}
 
-	cinderVolume, err = blockStorage.GetVolume(ctx, volume)
-	if err != nil {
-		if providerResourceNotFound(err) {
-			return nil
-		}
-
-		return err
-	}
-
-	if len(cinderVolume.Attachments) != 0 {
+	// An empty Cinder attachment list is not enough: during the reproduced race,
+	// Cinder returned [] while the Volume was still attaching or detaching.
+	if cinderVolume.Status != volumeStatusAvailable {
 		return provisioners.ErrYield
 	}
 
 	return nil
+}
+
+func requestServerVolumeDetach(ctx context.Context, compute ComputeInterface, server *unikornv1.Server, volumeID string) (bool, error) {
+	openstackServer, err := compute.GetServer(ctx, server)
+	if err != nil {
+		if providerResourceNotFound(err) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	// Cinder can report Attachments=[] while Nova still owns the attachment,
+	// so always query Nova while the claimed Region Server is available.
+	_, err = compute.GetVolumeAttachment(ctx, openstackServer.ID, volumeID)
+	if err != nil {
+		if providerResourceNotFound(err) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	if err := deleteVolumeAttachment(ctx, compute, openstackServer.ID, volumeID); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 func deleteVolumeAttachment(ctx context.Context, compute ComputeInterface, serverID, volumeID string) error {
@@ -198,6 +233,10 @@ func deleteVolumeAttachment(ctx context.Context, compute ComputeInterface, serve
 
 	if providerResourceNotFound(err) {
 		return nil
+	}
+
+	if gophercloud.ResponseCodeIs(err, http.StatusBadRequest) {
+		return provisioners.ErrYield
 	}
 
 	if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
@@ -221,7 +260,7 @@ func (p *Provider) AttachVolume(ctx context.Context, identity *unikornv1.Identit
 	return attachVolume(ctx, compute, blockStorage, server, volume)
 }
 
-func (p *Provider) DetachVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
+func (p *Provider) DetachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume) error {
 	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
 	if err != nil {
 		return err
@@ -241,5 +280,5 @@ func (p *Provider) DetachVolume(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
-	return detachVolume(ctx, compute, blockStorage, volume)
+	return detachVolume(ctx, compute, blockStorage, server, volume)
 }
