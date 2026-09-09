@@ -1216,7 +1216,7 @@ func TestServerUpdateV2VolumeSetSemantics(t *testing.T) {
 	_, err = c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
 	require.NoError(t, err)
 	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: srvVolumeID}, volume))
-	require.Nil(t, volume.Spec.ClaimRef)
+	require.Equal(t, &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: srvServerID}, volume.Spec.ClaimRef)
 }
 
 func TestServerUpdateV2RejectsVolumeClaimedByAnotherServer(t *testing.T) {
@@ -1247,10 +1247,23 @@ func TestServerUpdateV2SagaReturnsPersistenceError(t *testing.T) {
 
 	resource := testServerV2(srvServerID)
 	network := testSrvNetworkWithProject(srvProjectID)
-	k8sClient := newSrvFakeClient(t, network, resource).
+	volume := testSrvVolume()
+	claimPatches := []string{}
+	k8sClient := newSrvFakeClient(t, network, testSrvRegion(), resource, volume).
 		WithInterceptorFuncs(interceptor.Funcs{
-			Patch: func(context.Context, client.WithWatch, client.Object, client.Patch, ...client.PatchOption) error {
-				return errServerPersistence
+			Patch: func(_ context.Context, _ client.WithWatch, object client.Object, _ client.Patch, _ ...client.PatchOption) error {
+				switch resource := object.(type) {
+				case *regionv1.Server:
+					return errServerPersistence
+				case *regionv1.Volume:
+					if resource.Spec.ClaimRef == nil {
+						claimPatches = append(claimPatches, "")
+					} else {
+						claimPatches = append(claimPatches, resource.Spec.ClaimRef.ID)
+					}
+				}
+
+				return nil
 			},
 		}).
 		Build()
@@ -1261,12 +1274,14 @@ func TestServerUpdateV2SagaReturnsPersistenceError(t *testing.T) {
 		Spec: openapi.ServerV2Spec{
 			FlavorId: resource.Spec.FlavorID,
 			ImageId:  resource.Spec.Image.ID,
+			Volumes:  &openapi.ServerV2VolumeList{idstest.MustParseVolumeID(srvVolumeID)},
 		},
 	}
 
 	_, err := c.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate())), idstest.MustParseServerID(resource.Name), request)
 
 	require.ErrorContains(t, err, "unable to update server")
+	require.Equal(t, []string{srvServerID, ""}, claimPatches)
 }
 
 func TestServerUpdateV2RejectsFlavorChange(t *testing.T) {

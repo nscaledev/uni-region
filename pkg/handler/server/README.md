@@ -40,9 +40,11 @@ related dependencies rather than from nested path scope.
 - create/update can validate and bind an SSH certificate authority
 - create/update execute as sagas. Create claims Volumes then persists the
   complete Server desired set as its final step. The Server create has no
-  compensation, but a failure releases its earlier Volume claims; update
-  releases removed claims, writes the complete desired set, then claims
-  additions with compensation. Providers remain exclusively controller-owned
+  compensation, but a failure releases its earlier Volume claims. Update uses
+  the same ordering: it claims additions with compensation, then persists the
+  complete Server desired set as its uncompensated final step. Removed claims
+  remain until the Volume controller reconciles the changed Server intent.
+  Providers remain exclusively controller-owned
 - v2 reads the stored per-Volume attachment state (attachment progress, optional
   provider device, and a safe message). A removed Volume remains in this
   projection while its observed attachment deprovisions and disappears only

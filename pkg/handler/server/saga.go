@@ -99,25 +99,6 @@ func validateVolume(ctx context.Context, c *ClientV2, network *regionv1.Network,
 	return volume, nil
 }
 
-func currentVolumes(ctx context.Context, c *ClientV2, ids []string, serverID string) (map[string]*regionv1.Volume, error) {
-	volumes := map[string]*regionv1.Volume{}
-
-	for _, id := range ids {
-		volume := &regionv1.Volume{}
-		if err := c.Client.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: id}, volume); err != nil {
-			return nil, fmt.Errorf("%w: unable to lookup current volume", err)
-		}
-
-		if claim := volume.Spec.ClaimRef; claim != nil && (claim.Kind != regionv1.VolumeClaimKindServer || claim.ID != serverID) {
-			return nil, errors.HTTPUnprocessableContent("volume is attached to another server")
-		}
-
-		volumes[id] = volume
-	}
-
-	return volumes, nil
-}
-
 func volumeClassSupportsFlavor(region *regionv1.Region, volumeClassID, flavorID string) bool {
 	if region.Spec.Openstack == nil || region.Spec.Openstack.BlockStorage == nil || region.Spec.Openstack.BlockStorage.VolumeClasses == nil {
 		return true
@@ -224,7 +205,10 @@ func (s *createV2Saga) generate(ctx context.Context) error {
 		return err
 	}
 
-	server, err := s.client.generateV2(ctx, s.organizationID, s.projectID, request, s.network, s.request.Spec.SshCertificateAuthorityId, s.request.Spec.InfrastructureRef, resolveSSHInjection(s.request.Spec.SshInjection, s.request.Spec.SshCertificateAuthorityId), generateProviderCreateGates(s.request.Spec.ProviderCreateGates))
+	serverSSHInjection := resolveSSHInjection(s.request.Spec.SshInjection, s.request.Spec.SshCertificateAuthorityId)
+	providerCreateGates := generateProviderCreateGates(s.request.Spec.ProviderCreateGates)
+	server, err := s.client.generateV2(ctx, s.organizationID, s.projectID, request, s.network, s.request.Spec.SshCertificateAuthorityId, s.request.Spec.InfrastructureRef, serverSSHInjection, providerCreateGates)
+
 	if err != nil {
 		return err
 	}
@@ -277,7 +261,6 @@ type updateV2Saga struct {
 	organizationID identityids.OrganizationID
 	projectID      identityids.ProjectID
 	updated        *regionv1.Server
-	removed        map[string]*regionv1.Volume
 	added          map[string]*regionv1.Volume
 }
 
@@ -336,20 +319,11 @@ func (s *updateV2Saga) validate(ctx context.Context) error {
 		return err
 	}
 
-	current := volumeIDs(s.current.Spec.Volumes)
-
-	stored, err := currentVolumes(ctx, s.client, current, s.current.Name)
-	if err != nil {
-		return err
+	for _, id := range volumeIDs(s.current.Spec.Volumes) {
+		delete(volumes, id)
 	}
 
-	for id, volume := range stored {
-		volumes[id] = volume
-	}
-
-	requestedIDs := volumeIDs(generateVolumes(s.request.Spec.Volumes))
-	s.removed = selectVolumes(volumes, current, requestedIDs, false)
-	s.added = selectVolumes(volumes, current, requestedIDs, true)
+	s.added = volumes
 
 	return nil
 }
@@ -372,23 +346,11 @@ func (s *updateV2Saga) generate(ctx context.Context) error {
 	return nil
 }
 
-func (s *updateV2Saga) revert(ctx context.Context) error {
-	return s.client.Client.Client.Patch(ctx, s.current, client.MergeFromWithOptions(s.updated, &client.MergeFromWithOptimisticLock{}))
-}
-
-func (s *updateV2Saga) release(ctx context.Context) error {
-	return setClaims(ctx, s.client, s.removed, "")
-}
-
-func (s *updateV2Saga) reclaim(ctx context.Context) error {
-	return setClaims(ctx, s.client, s.removed, s.current.Name)
-}
-
 func (s *updateV2Saga) claim(ctx context.Context) error {
 	return setClaims(ctx, s.client, s.added, s.current.Name)
 }
 
-func (s *updateV2Saga) unclaim(ctx context.Context) error {
+func (s *updateV2Saga) release(ctx context.Context) error {
 	return setClaims(ctx, s.client, s.added, "")
 }
 
@@ -400,8 +362,8 @@ func (s *updateV2Saga) update(ctx context.Context) error {
 	return nil
 }
 
-// Actions release, persist, and claim in order so the persisted Server desired
-// set and the internal Volume reservations converge together on failure too.
+// Actions claim new Volumes before persisting Server intent. A failed final
+// Server write compensates the claims, but has no Server compensation of its own.
 func (s *updateV2Saga) Actions() []saga.Action {
 	return []saga.Action{
 		saga.NewAction("get server", s.getCurrent, nil),
@@ -411,9 +373,8 @@ func (s *updateV2Saga) Actions() []saga.Action {
 		saga.NewAction("resolve network", s.resolveNetwork, nil),
 		saga.NewAction("validate request", s.validate, nil),
 		saga.NewAction("generate server", s.generate, nil),
-		saga.NewAction("release removed volume claims", s.release, s.reclaim),
-		saga.NewAction("update server", s.update, s.revert),
-		saga.NewAction("claim added volumes", s.claim, s.unclaim),
+		saga.NewAction("claim added volumes", s.claim, s.release),
+		saga.NewAction("update server", s.update, nil),
 	}
 }
 
@@ -425,16 +386,4 @@ func volumeIDs(volumes []regionv1.ServerVolumeSpec) []string {
 	}
 
 	return ids
-}
-
-func selectVolumes(volumes map[string]*regionv1.Volume, current, requested []string, additions bool) map[string]*regionv1.Volume {
-	selected := map[string]*regionv1.Volume{}
-
-	for id, volume := range volumes {
-		if slices.Contains(requested, id) != slices.Contains(current, id) && slices.Contains(requested, id) == additions {
-			selected[id] = volume
-		}
-	}
-
-	return selected
 }
