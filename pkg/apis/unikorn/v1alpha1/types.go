@@ -887,6 +887,7 @@ type VolumeClaimRef struct {
 	// Kind is the kind of resource claiming the volume attachment.
 	Kind VolumeClaimKind `json:"kind"`
 	// ID is the Region resource ID of the resource claiming the volume attachment.
+	// +kubebuilder:validation:MinLength=1
 	ID string `json:"id"`
 }
 

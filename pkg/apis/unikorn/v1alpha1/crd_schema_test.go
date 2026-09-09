@@ -97,6 +97,8 @@ func TestVolumeClaimSchema(t *testing.T) {
 	require.Contains(t, claim.Properties, "id")
 	require.Len(t, claim.Properties["kind"].Enum, 1)
 	require.JSONEq(t, `"Server"`, string(claim.Properties["kind"].Enum[0].Raw))
+	require.NotNil(t, claim.Properties["id"].MinLength)
+	require.Equal(t, int64(1), *claim.Properties["id"].MinLength)
 
 	status := requireSchemaProperty(t, schema, "status")
 	require.NotContains(t, status.Properties, "attachment")
