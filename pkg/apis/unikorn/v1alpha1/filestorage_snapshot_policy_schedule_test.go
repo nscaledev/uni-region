@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -148,6 +149,10 @@ func TestFileStorageSnapshotPolicyProtectedPathValidation(t *testing.T) {
 			name:          "accepts dots within a component",
 			protectedPath: ptr.To("releases/v1.2"),
 			valid:         true,
+		},
+		{
+			name:          "rejects a path exceeding the maximum length",
+			protectedPath: ptr.To(strings.Repeat("a", 1025)),
 		},
 		{
 			name:          "rejects empty path",

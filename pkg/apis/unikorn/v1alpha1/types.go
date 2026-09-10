@@ -1405,6 +1405,7 @@ type FileStorageSnapshotPolicy struct {
 	Name string `json:"name"`
 	// ProtectedPath is the relative path within the file storage data hierarchy protected by this policy.
 	// +kubebuilder:validation:Pattern=`^([^/]+/)*[^/]+$`
+	// +kubebuilder:validation:MaxLength=1024
 	// +kubebuilder:validation:XValidation:rule="self.split('/').all(component, component != '.' && component != '..')",message="protectedPath must not contain . or .. path components"
 	// +optional
 	ProtectedPath string `json:"protectedPath,omitempty"`

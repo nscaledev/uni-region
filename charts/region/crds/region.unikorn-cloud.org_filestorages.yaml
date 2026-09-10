@@ -133,6 +133,7 @@ spec:
                     protectedPath:
                       description: ProtectedPath is the relative path within the file
                         storage data hierarchy protected by this policy.
+                      maxLength: 1024
                       pattern: ^([^/]+/)*[^/]+$
                       type: string
                       x-kubernetes-validations:
