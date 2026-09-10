@@ -21,12 +21,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
-	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/volumeattach"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -46,14 +47,6 @@ func serverVolumeAttachment(device string) *types.ServerVolumeAttachment {
 	}
 
 	return result
-}
-
-func providerVolumeAttachment(attachment *volumeattach.VolumeAttachment) (*types.ServerVolumeAttachment, error) {
-	if attachment == nil {
-		return nil, fmt.Errorf("%w: provider returned an empty volume attachment", coreerrors.ErrConsistency)
-	}
-
-	return serverVolumeAttachment(attachment.Device), nil
 }
 
 func volumeAttachmentForServer(volume *volumes.Volume, serverID string) *volumes.Attachment {
@@ -98,14 +91,9 @@ func volumeAttachmentResources(ctx context.Context, compute ServerInterface, blo
 	return openstackServer, cinderVolume, nil
 }
 
-func attachVolume(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, server *unikornv1.Server, volume *unikornv1.Volume) (*types.ServerVolumeAttachment, error) {
-	openstackServer, cinderVolume, err := volumeAttachmentResources(ctx, compute, blockStorage, server, volume)
-	if err != nil {
-		return nil, err
-	}
-
-	if attachment := volumeAttachmentForOtherServer(cinderVolume, openstackServer.ID); attachment != nil {
-		return nil, fmt.Errorf(
+func observedVolumeAttachment(cinderVolume *volumes.Volume, serverID string) (*types.ServerVolumeAttachment, bool, error) {
+	if attachment := volumeAttachmentForOtherServer(cinderVolume, serverID); attachment != nil {
+		return nil, false, fmt.Errorf(
 			"%w: volume %s is already attached to server %s",
 			coreerrors.ErrConflict,
 			cinderVolume.ID,
@@ -113,13 +101,36 @@ func attachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 		)
 	}
 
-	if attachment := volumeAttachmentForServer(cinderVolume, openstackServer.ID); attachment != nil {
-		return serverVolumeAttachment(attachment.Device), nil
+	if strings.HasPrefix(cinderVolume.Status, volumeStatusErrorPrefix) {
+		return nil, false, provisioners.Terminal(unikornv1core.ConditionReasonErrored, "provider volume entered an error state")
 	}
 
-	attachment, err := compute.CreateVolumeAttachment(ctx, openstackServer.ID, cinderVolume.ID)
+	attachment := volumeAttachmentForServer(cinderVolume, serverID)
+	if attachment == nil {
+		return nil, false, nil
+	}
+
+	if cinderVolume.Status != volumeStatusInUse {
+		return nil, true, provisioners.ErrYield
+	}
+
+	return serverVolumeAttachment(attachment.Device), true, nil
+}
+
+func attachVolume(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, server *unikornv1.Server, volume *unikornv1.Volume) (*types.ServerVolumeAttachment, error) {
+	openstackServer, cinderVolume, err := volumeAttachmentResources(ctx, compute, blockStorage, server, volume)
+	if err != nil {
+		return nil, err
+	}
+
+	attachment, observed, err := observedVolumeAttachment(cinderVolume, openstackServer.ID)
+	if observed || err != nil {
+		return attachment, err
+	}
+
+	_, err = compute.CreateVolumeAttachment(ctx, openstackServer.ID, cinderVolume.ID)
 	if err == nil {
-		return providerVolumeAttachment(attachment)
+		return nil, provisioners.ErrYield
 	}
 
 	if providerResourceNotFound(err) {
@@ -137,9 +148,9 @@ func attachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 
 	// A concurrent request may have created the same attachment between the
 	// read and create. Confirm that desired state before surfacing the conflict.
-	attachment, getErr := compute.GetVolumeAttachment(ctx, openstackServer.ID, cinderVolume.ID)
+	_, getErr := compute.GetVolumeAttachment(ctx, openstackServer.ID, cinderVolume.ID)
 	if getErr == nil {
-		return providerVolumeAttachment(attachment)
+		return nil, provisioners.ErrYield
 	}
 
 	if !providerResourceNotFound(getErr) {

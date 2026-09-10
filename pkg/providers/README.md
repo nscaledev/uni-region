@@ -107,8 +107,10 @@ packages are the concrete provider implementations.
   for recovery; no provider-side
   administrative reset is attempted. A provider detach `400 Bad Request` also
   yields and retains the claim. A missing provider Volume remains idempotent
-  success. `AttachVolume` instead requires both backing resources and reports
-  semantic not-found when either is absent. Concrete provider conflicts are
+  success. `AttachVolume` requires both backing resources and reports semantic
+  not-found when either is absent. It returns success only after provider
+  observation confirms the claimed attachment is usable; accepted asynchronous
+  requests and transitional observations yield. Concrete provider conflicts are
   normalized to the shared conflict sentinel; other failures remain available
   to callers for diagnosis.
 - Providers must tolerate changing backing credentials and region state rather

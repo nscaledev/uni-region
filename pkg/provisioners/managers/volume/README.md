@@ -53,11 +53,12 @@ convergence. When a live Server no longer requests the Volume, the full Server
 remains available to the provider until it confirms Nova and Cinder teardown.
 A provider yield or error retains the claim and its recovery context.
 The provider remains authoritative for attachment and detach work. The
-provisioner projects progress onto `Server.Status.Volumes`, records the first
-confirmed current attachment in `Volume.Status.AttachedAt`, and clears that
-timestamp after confirmed detachment. It never uses either derived projection
-to decide provider cleanup. It advances the Volume observed generation only
-when both the backing Volume and attachment converge.
+provisioner projects `AttachmentProvisioning` until the provider observes the
+claimed Cinder attachment `in-use`, then records the first confirmed current
+attachment in `Volume.Status.AttachedAt`; it clears that timestamp after
+confirmed detachment. It never uses either derived projection to decide
+provider cleanup. It advances the Volume observed generation only when both
+the backing Volume and attachment converge.
 It does not project attachment status until the backing Volume has converged
 and attachment reconciliation begins. Before an asynchronous detach, existing
 attachment rows are marked `Deprovisioning`; they and the claim are removed only

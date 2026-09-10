@@ -400,13 +400,16 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - attach requires both the server and volume; either missing resource maps to
     `ErrResourceNotFound`
   - a Cinder attachment already present on the requested server is successful
-    and returns its observed device without a Nova read
+    only when Cinder reports the Volume `in-use`; it returns that row's observed
+    device without a Nova read. `reserved`, `attaching`, and other transitional
+    states yield for another observation; `error*` states return a terminal
+    provider error
   - an attachment to any other server maps to `ErrConflict`; Region does not
     support multi-attach even when the Cinder volume is multiattach-capable
-  - when Cinder reports no attachment, attach calls Nova create directly; a
-    create `409 Conflict` is followed by one Nova attachment read so concurrent
-    creation of the same desired attachment becomes success, while an
-    unresolved conflict maps to `ErrConflict`
+  - when Cinder reports no attachment, attach calls Nova create directly and
+    yields after acceptance. A create `409 Conflict` is followed by one Nova
+    attachment read so a concurrent desired request yields for Cinder `in-use`;
+    an unresolved conflict maps to `ErrConflict`
   - detach receives whether Region is deleting the claimed Server. While it is
     deleting, it resolves Nova but never requests a competing Nova detach;
     Nova's completed 404 establishes teardown, after which only Cinder
