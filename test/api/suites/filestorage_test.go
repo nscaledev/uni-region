@@ -718,53 +718,23 @@ var _ = Describe("File Storage Management", func() {
 					Skip("No filestorage or network ID available")
 				}
 
-				// Attachment is complete when mountSource is present
-				// Note: attachment.provisioningStatus may remain "unknown"
-				Eventually(func() string {
+				Eventually(func(g Gomega) {
 					retrieved, err := regionClient.GetFileStorage(ctx, filestorageID)
-					if err != nil {
-						GinkgoWriter.Printf("Error retrieving filestorage: %v\n", err)
-						return ""
-					}
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(retrieved.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioned),
+						"Storage should be provisioned")
+					g.Expect(retrieved.Status.Attachments).NotTo(BeNil())
+					g.Expect(*retrieved.Status.Attachments).To(HaveLen(1), "Should have exactly one attachment")
 
-					if retrieved.Status.Attachments == nil || len(*retrieved.Status.Attachments) == 0 {
-						GinkgoWriter.Printf("No attachments in status yet\n")
-						return ""
-					}
-
-					for _, attachment := range *retrieved.Status.Attachments {
-						if attachment.NetworkId == networkID &&
-							attachment.MountSource != nil &&
-							*attachment.MountSource != "" {
-							return *attachment.MountSource
-						}
-					}
-
-					return ""
-				}).WithTimeout(10*time.Minute).
-					WithPolling(15*time.Second).
-					ShouldNot(BeEmpty(), "Attachment should have mount source populated")
-
-				// Fetch again for full assertions after mount source confirmed
-				retrieved, err := regionClient.GetFileStorage(ctx, filestorageID)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(retrieved.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioned),
-					"Storage should be provisioned")
-
-				Expect(retrieved.Status.Attachments).NotTo(BeNil())
-				Expect(*retrieved.Status.Attachments).To(HaveLen(1), "Should have exactly one attachment")
-
-				attachment := (*retrieved.Status.Attachments)[0]
-				Expect(attachment.NetworkId).To(Equal(networkID))
-				Expect(attachment.MountSource).NotTo(BeNil(), "MountSource should be present")
-				Expect(*attachment.MountSource).NotTo(BeEmpty(), "MountSource should not be empty")
-				// Note: attachment.ProvisioningStatus may be "unknown" - this is acceptable and tracked separately
-
-				GinkgoWriter.Printf("Attachment verified:\n")
-				GinkgoWriter.Printf("  Network ID: %s\n", attachment.NetworkId)
-				GinkgoWriter.Printf("  Mount Source: %s\n", *attachment.MountSource)
-				GinkgoWriter.Printf("  Attachment Status: %s (may be 'unknown' - acceptable)\n", attachment.ProvisioningStatus)
-				GinkgoWriter.Printf("  Storage Status: %s\n", retrieved.Metadata.ProvisioningStatus)
+					attachment := (*retrieved.Status.Attachments)[0]
+					g.Expect(attachment.NetworkId).To(Equal(networkID))
+					g.Expect(attachment.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioned),
+						"Attachment should be provisioned")
+					g.Expect(attachment.MountSource).NotTo(BeNil(), "MountSource should be present")
+					g.Expect(*attachment.MountSource).NotTo(BeEmpty(), "MountSource should not be empty")
+				}).WithTimeout(10 * time.Minute).
+					WithPolling(5 * time.Second).
+					Should(Succeed())
 			})
 
 			It("should remove network attachment from file storage", func() {
