@@ -75,6 +75,7 @@ const (
 	srvNonexistentID      = "77777777-7777-4777-a777-777777777777"
 	srvRegionID           = "88888888-8888-4888-a888-888888888888"
 	srvVolumeID           = "99999999-9999-4999-a999-999999999999"
+	srvVolumeID2          = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
 	srvProviderGate       = "example.unikorn-cloud.org/pre-create-ready"
 )
 
@@ -622,7 +623,11 @@ func TestServerCreateV2ClaimsRequestedVolumes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, *request.Spec.Volumes, *result.Spec.Volumes)
 	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: srvVolumeID}, volume))
-	require.Equal(t, result.Metadata.Id, volume.Spec.ClaimRef.ID)
+	require.Equal(t, &regionv1.VolumeClaimRef{
+		Kind:                    regionv1.VolumeClaimKindServer,
+		ID:                      result.Metadata.Id,
+		PendingServerGeneration: 1,
+	}, volume.Spec.ClaimRef)
 }
 
 func TestServerCreateV2SagaReturnsPersistenceError(t *testing.T) {
@@ -1217,6 +1222,68 @@ func TestServerUpdateV2VolumeSetSemantics(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: srvVolumeID}, volume))
 	require.Equal(t, &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: srvServerID}, volume.Spec.ClaimRef)
+}
+
+func TestServerUpdateV2StagesAddedVolumeClaimForNextServerGeneration(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	resource.Generation = 2
+	resource.Spec.Volumes = []regionv1.ServerVolumeSpec{{ID: srvVolumeID}}
+	existingVolume := testSrvVolume()
+	existingVolume.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: resource.Name}
+	addedVolume := testSrvVolume()
+	addedVolume.Name = srvVolumeID2
+	k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), testSrvRegion(), resource, existingVolume, addedVolume).Build()
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+			Volumes: &openapi.ServerV2VolumeList{
+				idstest.MustParseVolumeID(srvVolumeID),
+				idstest.MustParseVolumeID(srvVolumeID2),
+			},
+		},
+	}
+
+	_, err := c.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate())), idstest.MustParseServerID(resource.Name), request)
+	require.NoError(t, err)
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKeyFromObject(addedVolume), addedVolume))
+	require.Equal(t, &regionv1.VolumeClaimRef{
+		Kind:                    regionv1.VolumeClaimKindServer,
+		ID:                      resource.Name,
+		PendingServerGeneration: 3,
+	}, addedVolume.Spec.ClaimRef)
+}
+
+func TestServerUpdateV2RepairsMissingClaimForCurrentIntent(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	resource.Generation = 2
+	resource.Spec.Volumes = []regionv1.ServerVolumeSpec{{ID: srvVolumeID}}
+	volume := testSrvVolume()
+	k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), testSrvRegion(), resource, volume).Build()
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+			Volumes:  &openapi.ServerV2VolumeList{idstest.MustParseVolumeID(srvVolumeID)},
+		},
+	}
+
+	_, err := c.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate())), idstest.MustParseServerID(resource.Name), request)
+	require.NoError(t, err)
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKeyFromObject(volume), volume))
+	require.Equal(t, &regionv1.VolumeClaimRef{
+		Kind:                    regionv1.VolumeClaimKindServer,
+		ID:                      resource.Name,
+		PendingServerGeneration: resource.Generation,
+	}, volume.Spec.ClaimRef)
 }
 
 func TestServerUpdateV2RejectsVolumeClaimedByAnotherServer(t *testing.T) {

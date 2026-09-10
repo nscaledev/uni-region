@@ -119,7 +119,7 @@ func volumeClassSupportsFlavor(region *regionv1.Region, volumeClassID, flavorID 
 	return true
 }
 
-func setClaims(ctx context.Context, c *ClientV2, volumes map[string]*regionv1.Volume, serverID string) error {
+func setClaims(ctx context.Context, c *ClientV2, volumes map[string]*regionv1.Volume, serverID string, pendingServerGeneration int64) error {
 	changed := make([]struct{ before, after *regionv1.Volume }, 0, len(volumes))
 
 	for _, volume := range volumes {
@@ -129,7 +129,11 @@ func setClaims(ctx context.Context, c *ClientV2, volumes map[string]*regionv1.Vo
 		if serverID == "" {
 			after.Spec.ClaimRef = nil
 		} else {
-			after.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: serverID}
+			after.Spec.ClaimRef = &regionv1.VolumeClaimRef{
+				Kind:                    regionv1.VolumeClaimKindServer,
+				ID:                      serverID,
+				PendingServerGeneration: pendingServerGeneration,
+			}
 		}
 
 		if err := c.Client.Client.Patch(ctx, after, client.MergeFromWithOptions(before, &client.MergeFromWithOptimisticLock{})); err != nil {
@@ -231,11 +235,11 @@ func (s *createV2Saga) create(ctx context.Context) error {
 }
 
 func (s *createV2Saga) claim(ctx context.Context) error {
-	return setClaims(ctx, s.client, s.volumes, s.server.Name)
+	return setClaims(ctx, s.client, s.volumes, s.server.Name, 1)
 }
 
 func (s *createV2Saga) release(ctx context.Context) error {
-	return setClaims(ctx, s.client, s.volumes, "")
+	return setClaims(ctx, s.client, s.volumes, "", 0)
 }
 
 // Actions claim Volumes before persisting Server intent. A failed final Server
@@ -261,6 +265,7 @@ type updateV2Saga struct {
 	organizationID identityids.OrganizationID
 	projectID      identityids.ProjectID
 	updated        *regionv1.Server
+	repair         map[string]*regionv1.Volume
 	added          map[string]*regionv1.Volume
 }
 
@@ -319,7 +324,19 @@ func (s *updateV2Saga) validate(ctx context.Context) error {
 		return err
 	}
 
+	s.repair = map[string]*regionv1.Volume{}
+	// Existing Server intent makes a missing or still-pending claim safe to
+	// activate at the current generation. New intent waits for the next one.
 	for _, id := range volumeIDs(s.current.Spec.Volumes) {
+		volume, ok := volumes[id]
+		if !ok {
+			continue
+		}
+
+		if volume.Spec.ClaimRef == nil || volume.Spec.ClaimRef.PendingServerGeneration != 0 {
+			s.repair[id] = volume
+		}
+
 		delete(volumes, id)
 	}
 
@@ -346,12 +363,20 @@ func (s *updateV2Saga) generate(ctx context.Context) error {
 	return nil
 }
 
-func (s *updateV2Saga) claim(ctx context.Context) error {
-	return setClaims(ctx, s.client, s.added, s.current.Name)
+func (s *updateV2Saga) repairClaims(ctx context.Context) error {
+	return setClaims(ctx, s.client, s.repair, s.current.Name, s.current.Generation)
 }
 
-func (s *updateV2Saga) release(ctx context.Context) error {
-	return setClaims(ctx, s.client, s.added, "")
+func (s *updateV2Saga) releaseRepairedClaims(ctx context.Context) error {
+	return setClaims(ctx, s.client, s.repair, "", 0)
+}
+
+func (s *updateV2Saga) claimAdded(ctx context.Context) error {
+	return setClaims(ctx, s.client, s.added, s.current.Name, s.current.Generation+1)
+}
+
+func (s *updateV2Saga) releaseAddedClaims(ctx context.Context) error {
+	return setClaims(ctx, s.client, s.added, "", 0)
 }
 
 func (s *updateV2Saga) update(ctx context.Context) error {
@@ -362,8 +387,9 @@ func (s *updateV2Saga) update(ctx context.Context) error {
 	return nil
 }
 
-// Actions claim new Volumes before persisting Server intent. A failed final
-// Server write compensates the claims, but has no Server compensation of its own.
+// Actions stage new Volume claims for the Server generation written by the
+// terminal patch. Claims repairing existing intent can activate immediately.
+// A failed final Server write compensates both kinds of claim.
 func (s *updateV2Saga) Actions() []saga.Action {
 	return []saga.Action{
 		saga.NewAction("get server", s.getCurrent, nil),
@@ -373,7 +399,8 @@ func (s *updateV2Saga) Actions() []saga.Action {
 		saga.NewAction("resolve network", s.resolveNetwork, nil),
 		saga.NewAction("validate request", s.validate, nil),
 		saga.NewAction("generate server", s.generate, nil),
-		saga.NewAction("claim added volumes", s.claim, s.release),
+		saga.NewAction("repair missing volume claims", s.repairClaims, s.releaseRepairedClaims),
+		saga.NewAction("claim added volumes", s.claimAdded, s.releaseAddedClaims),
 		saga.NewAction("update server", s.update, nil),
 	}
 }
