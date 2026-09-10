@@ -126,6 +126,10 @@ func (p *Provisioner) reconcileVolume(ctx context.Context, provider types.Provid
 	serverDeleting := exists && server.GetDeletionTimestamp() != nil
 	requested := exists && serverRequestsVolume(server, p.volume.Name)
 
+	if claim.PendingServerGeneration != 0 {
+		return p.reconcilePendingClaim(ctx, server, exists, serverDeleting, requested, claim)
+	}
+
 	if !exists {
 		// Server creation claims Volumes before persisting the Server. Without a
 		// recorded attachment, this is the normal claim-before-create saga window.
@@ -146,6 +150,22 @@ func (p *Provisioner) reconcileVolume(ctx context.Context, provider types.Provid
 	}
 
 	return p.reconcileClaimedVolume(ctx, provider, identity, server)
+}
+
+func (p *Provisioner) reconcilePendingClaim(ctx context.Context, server *unikornv1.Server, exists, serverDeleting, requested bool, claim unikornv1.VolumeClaimRef) error {
+	if !exists || (!serverDeleting && server.Generation < claim.PendingServerGeneration) {
+		return provisioners.ErrYield
+	}
+
+	if !serverDeleting && requested {
+		if err := p.activateClaim(ctx, claim); err != nil {
+			return err
+		}
+
+		return provisioners.ErrYield
+	}
+
+	return p.releaseClaim(ctx, claim)
 }
 
 func (p *Provisioner) teardownClaim(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, server *unikornv1.Server, claim unikornv1.VolumeClaimRef, serverDeleting bool) error {
@@ -325,6 +345,37 @@ func (p *Provisioner) releaseClaim(ctx context.Context, claim unikornv1.VolumeCl
 		}
 
 		latest.Spec.ClaimRef = nil
+		if err := cli.Update(ctx, latest); err != nil {
+			return err
+		}
+
+		*p.volume = *latest
+
+		return nil
+	})
+}
+
+func (p *Provisioner) activateClaim(ctx context.Context, claim unikornv1.VolumeClaimRef) error {
+	cli, err := coreclient.FromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	key := client.ObjectKeyFromObject(p.volume)
+
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &unikornv1.Volume{}
+		if err := cli.Get(ctx, key, latest); err != nil {
+			return err
+		}
+
+		if latest.Spec.ClaimRef == nil || *latest.Spec.ClaimRef != claim {
+			*p.volume = *latest
+
+			return nil
+		}
+
+		latest.Spec.ClaimRef.PendingServerGeneration = 0
 		if err := cli.Update(ctx, latest); err != nil {
 			return err
 		}

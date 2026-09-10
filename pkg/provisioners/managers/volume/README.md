@@ -43,6 +43,12 @@ is evaluated first so provider creation readiness cannot block claim release or
 detachment. The provisioner reads the handler-owned Volume claim and Server
 intent, then calls the provider attachment boundary. A provisioning or errored
 Server yields; its condition can recover without a Volume generation change.
+Claims created before a terminal Server write record the expected Server
+generation. The provisioner waits while the Server is missing or older,
+activates the claim when that generation requests the Volume, and releases a
+superseded pending claim without provider teardown. For legacy active claims,
+an absent Server with no recorded attachment remains the create-saga
+compatibility window.
 If the claimed Server is absent and `Volume.Status.AttachedAt` is unset, the
 provisioner retains the claim and yields so Server creation can complete. A
 recorded attachment means that a now-absent Server completed deletion, so only

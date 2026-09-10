@@ -341,6 +341,76 @@ func TestProvisionStampsAttachmentTimeAfterConvergence(t *testing.T) {
 	require.Equal(t, attachedAt, *resource.Status.AttachedAt)
 }
 
+func TestProvisionWaitsForPendingClaimServerGeneration(t *testing.T) {
+	t.Parallel()
+
+	provider, providerSet := volumeMocks(t)
+	resource := testVolume(false)
+	resource.Spec.ClaimRef = &unikornv1.VolumeClaimRef{
+		Kind:                    unikornv1.VolumeClaimKindServer,
+		ID:                      testServerID,
+		PendingServerGeneration: 2,
+	}
+	identity := testIdentity(true)
+	server := testServer(true)
+	server.Generation = 1
+
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+
+	provisioner := volume.NewForTest(resource, providerSet, nil)
+	require.ErrorIs(t, provisioner.Provision(controllerContext(t, resource, identity, server)), provisioners.ErrYield)
+	require.EqualValues(t, 2, resource.Spec.ClaimRef.PendingServerGeneration)
+}
+
+func TestProvisionActivatesPendingClaimAtServerGeneration(t *testing.T) {
+	t.Parallel()
+
+	provider, providerSet := volumeMocks(t)
+	resource := testVolume(false)
+	resource.Spec.ClaimRef = &unikornv1.VolumeClaimRef{
+		Kind:                    unikornv1.VolumeClaimKindServer,
+		ID:                      testServerID,
+		PendingServerGeneration: 2,
+	}
+	identity := testIdentity(true)
+	server := testServer(true)
+	server.Generation = 2
+	server.Spec.Volumes = []unikornv1.ServerVolumeSpec{{ID: testVolumeID}}
+
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil).Times(2)
+	gomock.InOrder(
+		provider.EXPECT().CreateVolume(gomock.Any(), identityNamed(), resource).Return(nil),
+		provider.EXPECT().AttachVolume(gomock.Any(), identityNamed(), serverNamed(), resource).Return(&providertypes.ServerVolumeAttachment{}, nil),
+	)
+
+	provisioner := volume.NewForTest(resource, providerSet, nil)
+	ctx := controllerContext(t, resource, identity, server)
+	require.ErrorIs(t, provisioner.Provision(ctx), provisioners.ErrYield)
+	require.Zero(t, resource.Spec.ClaimRef.PendingServerGeneration)
+	require.NoError(t, provisioner.Provision(ctx))
+}
+
+func TestProvisionReleasesSupersededPendingClaim(t *testing.T) {
+	t.Parallel()
+
+	provider, providerSet := volumeMocks(t)
+	resource := testVolume(false)
+	resource.Spec.ClaimRef = &unikornv1.VolumeClaimRef{
+		Kind:                    unikornv1.VolumeClaimKindServer,
+		ID:                      testServerID,
+		PendingServerGeneration: 2,
+	}
+	identity := testIdentity(true)
+	server := testServer(true)
+	server.Generation = 2
+
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+
+	provisioner := volume.NewForTest(resource, providerSet, nil)
+	require.NoError(t, provisioner.Provision(controllerContext(t, resource, identity, server)))
+	require.Nil(t, resource.Spec.ClaimRef)
+}
+
 func TestProvisionProjectsStatusBeforeDetachingConflictingAttachment(t *testing.T) {
 	t.Parallel()
 
