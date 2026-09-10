@@ -72,6 +72,14 @@ spec:
                     enum:
                     - Server
                     type: string
+                  pendingServerGeneration:
+                    description: |-
+                      PendingServerGeneration delays activation until the claimed Server reaches
+                      the generation that contains this Volume attachment intent. Zero means the
+                      claim is active.
+                    format: int64
+                    minimum: 1
+                    type: integer
                 required:
                 - id
                 - kind

@@ -889,6 +889,11 @@ type VolumeClaimRef struct {
 	// ID is the Region resource ID of the resource claiming the volume attachment.
 	// +kubebuilder:validation:MinLength=1
 	ID string `json:"id"`
+	// PendingServerGeneration delays activation until the claimed Server reaches
+	// the generation that contains this Volume attachment intent. Zero means the
+	// claim is active.
+	// +kubebuilder:validation:Minimum=1
+	PendingServerGeneration int64 `json:"pendingServerGeneration,omitempty"`
 }
 
 // VolumeClaimKind identifies a resource kind that can claim a volume attachment.

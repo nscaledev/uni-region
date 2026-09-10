@@ -98,12 +98,15 @@ stored objects rely on for linkage, migration, and operational coordination.
   follows the platform's normal UUID v4 identity pattern, while mutable display
   names live in standard metadata labels. `Volume.Spec.ClaimRef` is internal
   handler-owned state that records the exclusive Server reservation; its ID must
-  be non-empty, and a nil claim means the volume is available for claiming.
-  `Server` is the current supported claim kind. `Server.Status.Volumes` projects
-  attachment progress, optional provider device, and a safe message.
-  `Volume.Status.AttachedAt` records when the current attachment was first
-  confirmed; omission means no current attachment is recorded. The Volume
-  controller advances `ObservedGeneration`
+  be non-empty, and a nil claim means the volume is available for claiming. A
+  nonzero `pendingServerGeneration` reserves the Volume while a handler saga
+  waits to persist that Server generation. The Volume controller activates the
+  claim only after the generation contains the Volume intent. `Server` is the
+  current supported claim kind. `Server.Status.Volumes` projects attachment
+  progress, optional provider device, and a safe message. `Volume.Status.AttachedAt`
+  records when the current attachment was first confirmed; omission means no
+  current attachment is recorded. The Volume controller advances
+  `ObservedGeneration`
   only after both backing Volume and requested attachment state converge,
   reports attachment errors through the generic `Available` condition, and
   discovers provider attachments from the Volume before detaching them. The
