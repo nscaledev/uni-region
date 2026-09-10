@@ -104,7 +104,9 @@ type Volume interface {
 	UpdateVolumeState(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
 	// DetachVolume detaches the Volume from its claimed Server. The Server is nil
 	// after Region has deleted it and only provider Volume convergence remains.
-	DetachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume) error
+	// ServerDeleting means Region owns Server deletion, so the provider must wait
+	// for provider-side Server deletion instead of requesting a detach.
+	DetachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume, serverDeleting bool) error
 }
 
 type Server interface {

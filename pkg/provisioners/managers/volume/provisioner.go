@@ -136,22 +136,22 @@ func (p *Provisioner) reconcileVolume(ctx context.Context, provider types.Provid
 		// An attachment was previously confirmed, so a missing Region Server means
 		// its deletion completed. Nova no longer needs Server context; wait for
 		// Cinder to report the Volume available before releasing the claim.
-		return p.teardownClaim(ctx, provider, identity, nil, claim)
+		return p.teardownClaim(ctx, provider, identity, nil, claim, false)
 	}
 
 	// Keep the claim available to the provider until it confirms teardown, then
 	// release it because the Server is going away or no longer wants the Volume.
 	if serverDeleting || !requested {
-		return p.teardownClaim(ctx, provider, identity, server, claim)
+		return p.teardownClaim(ctx, provider, identity, server, claim, serverDeleting)
 	}
 
 	return p.reconcileClaimedVolume(ctx, provider, identity, server)
 }
 
-func (p *Provisioner) teardownClaim(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, server *unikornv1.Server, claim unikornv1.VolumeClaimRef) error {
+func (p *Provisioner) teardownClaim(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, server *unikornv1.Server, claim unikornv1.VolumeClaimRef, serverDeleting bool) error {
 	// Preserve the Server until the provider has confirmed Nova and Cinder agree
 	// that the attachment is gone. Releasing the claim earlier loses that context.
-	if err := p.detachAttachments(ctx, provider, identity, server); err != nil {
+	if err := p.detachAttachments(ctx, provider, identity, server, serverDeleting); err != nil {
 		return err
 	}
 
@@ -222,7 +222,7 @@ func (p *Provisioner) handleAttachmentError(ctx context.Context, provider types.
 			return statusErr
 		}
 
-		if detachErr := p.detachAttachments(ctx, provider, identity, server); detachErr != nil {
+		if detachErr := p.detachAttachments(ctx, provider, identity, server, false); detachErr != nil {
 			return detachErr
 		}
 
@@ -282,12 +282,12 @@ func attachmentMessage(err error) string {
 	return "an unexpected error occurred"
 }
 
-func (p *Provisioner) detachAttachments(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, server *unikornv1.Server) error {
+func (p *Provisioner) detachAttachments(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, server *unikornv1.Server, serverDeleting bool) error {
 	if err := p.markAttachmentStatusesDeprovisioning(ctx); err != nil {
 		return err
 	}
 
-	if err := provider.DetachVolume(ctx, identity, server, p.volume); err != nil {
+	if err := provider.DetachVolume(ctx, identity, server, p.volume, serverDeleting); err != nil {
 		return err
 	}
 

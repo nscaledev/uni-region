@@ -46,10 +46,12 @@ Server yields; its condition can recover without a Volume generation change.
 If the claimed Server is absent and `Volume.Status.AttachedAt` is unset, the
 provisioner retains the claim and yields so Server creation can complete. A
 recorded attachment means that a now-absent Server completed deletion, so only
-Cinder convergence remains before claim release. When the Server is deleting
-or no longer requests the Volume, the full Server remains available to the
-provider until it confirms Nova and Cinder teardown. A provider yield or error
-retains the claim and its recovery context.
+Cinder convergence remains before claim release. When the Server is deleting,
+the provider waits for Nova to delete it and does not request a competing Nova
+detach; after Nova is absent it cleans stale Cinder state and waits for Cinder
+convergence. When a live Server no longer requests the Volume, the full Server
+remains available to the provider until it confirms Nova and Cinder teardown.
+A provider yield or error retains the claim and its recovery context.
 The provider remains authoritative for attachment and detach work. The
 provisioner projects progress onto `Server.Status.Volumes`, records the first
 confirmed current attachment in `Volume.Status.AttachedAt`, and clears that
