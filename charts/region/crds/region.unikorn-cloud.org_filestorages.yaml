@@ -130,6 +130,16 @@ spec:
                       maxLength: 19
                       pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
                       type: string
+                    protectedPath:
+                      description: ProtectedPath is the relative path within the file
+                        storage data hierarchy protected by this policy.
+                      maxLength: 1024
+                      pattern: ^([^/]+/)*[^/]+$
+                      type: string
+                      x-kubernetes-validations:
+                      - message: protectedPath must not contain . or .. path components
+                        rule: self.split('/').all(component, component != '.' && component
+                          != '..')
                     retention:
                       description: Retention defines how many snapshots are retained.
                       properties:

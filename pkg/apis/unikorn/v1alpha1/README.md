@@ -143,7 +143,12 @@ stored objects rely on for linkage, migration, and operational coordination.
   schema therefore bounds the stored list to five entries — four user-managed
   policies plus the optional hidden `system-default` baseline — caps policy names
   at 19 characters, and validates the schedule/retention shape so direct CRD
-  writes cannot persist unsupported policy combinations.
+  writes cannot persist unsupported policy combinations. A policy may optionally
+  define `protectedPath`, a canonical relative path within the file storage data
+  hierarchy;
+  the CRD rejects empty, absolute, non-canonical, and traversal-component paths.
+  Provider-specific controllers resolve this path against their backing storage
+  hierarchy in a later implementation.
 - `Server.Spec.Image` is desired state; Nova's observed image and status remain
   authoritative for live state.
   A rebuild failure is not attributable: an unrelated host failure on the desired
