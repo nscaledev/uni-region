@@ -274,6 +274,10 @@ func serverRequestsVolume(server *unikornv1.Server, volumeID string) bool {
 }
 
 func attachmentMessage(err error) string {
+	if errors.Is(err, provisioners.ErrYield) {
+		return "waiting for volume attachment to converge"
+	}
+
 	var provisioningError *provisioners.Error
 	if errors.As(err, &provisioningError) {
 		return provisioningError.Message()

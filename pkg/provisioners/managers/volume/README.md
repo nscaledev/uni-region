@@ -53,7 +53,7 @@ convergence. When a live Server no longer requests the Volume, the full Server
 remains available to the provider until it confirms Nova and Cinder teardown.
 A provider yield or error retains the claim and its recovery context.
 The provider remains authoritative for attachment and detach work. The
-provisioner projects `AttachmentProvisioning` until the provider observes the
+provisioner projects `AttachmentProvisioning` with a waiting message until the
 claimed Cinder attachment `in-use`, then records the first confirmed current
 attachment in `Volume.Status.AttachedAt`; it clears that timestamp after
 confirmed detachment. It never uses either derived projection to decide

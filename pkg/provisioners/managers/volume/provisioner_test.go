@@ -64,6 +64,7 @@ const (
 
 var (
 	errProviderCreate   = errors.New("provider create failed")
+	errProviderAttach   = errors.New("provider attach failed")
 	errProviderDelete   = errors.New("provider delete failed")
 	errProviderLookup   = errors.New("provider lookup failed")
 	errAllocationDelete = errors.New("allocation delete failed")
@@ -304,6 +305,8 @@ func TestProvisionRetainsClaimUntilAttachmentConverges(t *testing.T) {
 	updatedServer := &unikornv1.Server{}
 	require.NoError(t, cli.Get(ctx, client.ObjectKeyFromObject(server), updatedServer))
 	require.Equal(t, unikornv1.AttachmentProvisioning, updatedServer.Status.Volumes[0].ProvisioningStatus)
+	require.Equal(t, "waiting for volume attachment to converge", updatedServer.Status.Volumes[0].Message)
+	require.NotEqual(t, "an unexpected error occurred", updatedServer.Status.Volumes[0].Message)
 }
 
 func TestProvisionStampsAttachmentTimeAfterConvergence(t *testing.T) {
@@ -368,6 +371,35 @@ func TestProvisionProjectsStatusBeforeDetachingConflictingAttachment(t *testing.
 	require.NoError(t, cli.Get(ctx, client.ObjectKeyFromObject(server), updatedServer))
 	require.Equal(t, unikornv1.AttachmentDeprovisioning, updatedServer.Status.Volumes[0].ProvisioningStatus)
 	require.Equal(t, &attachedAt, resource.Status.AttachedAt)
+}
+
+func TestProvisionReportsUnexpectedAttachmentError(t *testing.T) {
+	t.Parallel()
+
+	provider, providerSet := volumeMocks(t)
+	resource := testVolume(false)
+	resource.Spec.ClaimRef = &unikornv1.VolumeClaimRef{Kind: unikornv1.VolumeClaimKindServer, ID: testServerID}
+	identity := testIdentity(true)
+	server := testServer(true)
+	server.Spec.Volumes = []unikornv1.ServerVolumeSpec{{ID: testVolumeID}}
+
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+	gomock.InOrder(
+		provider.EXPECT().CreateVolume(gomock.Any(), identityNamed(), resource).Return(nil),
+		provider.EXPECT().AttachVolume(gomock.Any(), identityNamed(), serverNamed(), resource).Return(nil, errProviderAttach),
+	)
+
+	provisioner := volume.NewForTest(resource, providerSet, nil)
+	ctx := controllerContext(t, resource, identity, server)
+	require.ErrorIs(t, provisioner.Provision(ctx), errProviderAttach)
+
+	cli, err := coreclient.FromContext(ctx)
+	require.NoError(t, err)
+
+	updatedServer := &unikornv1.Server{}
+	require.NoError(t, cli.Get(ctx, client.ObjectKeyFromObject(server), updatedServer))
+	require.Equal(t, unikornv1.AttachmentErrored, updatedServer.Status.Volumes[0].ProvisioningStatus)
+	require.Equal(t, "an unexpected error occurred", updatedServer.Status.Volumes[0].Message)
 }
 
 func TestProvisionDoesNotProjectAttachmentStatusBeforeVolumeConverges(t *testing.T) {
