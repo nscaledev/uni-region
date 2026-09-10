@@ -109,7 +109,8 @@ packages are the concrete provider implementations.
   yields and retains the claim. A missing provider Volume remains idempotent
   success. `AttachVolume` requires both backing resources and reports semantic
   not-found when either is absent. It returns success only after provider
-  observation confirms the claimed attachment is usable; accepted asynchronous
+  observation confirms the claimed attachment is usable. Providers request an
+  attachment only after observing their Volume available; accepted asynchronous
   requests and transitional observations yield. Concrete provider conflicts are
   normalized to the shared conflict sentinel; other failures remain available
   to callers for diagnosis.

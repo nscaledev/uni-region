@@ -128,6 +128,10 @@ func attachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 		return attachment, err
 	}
 
+	if cinderVolume.Status != volumeStatusAvailable {
+		return nil, provisioners.ErrYield
+	}
+
 	_, err = compute.CreateVolumeAttachment(ctx, openstackServer.ID, cinderVolume.ID)
 	if err == nil {
 		return nil, provisioners.ErrYield

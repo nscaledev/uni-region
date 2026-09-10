@@ -259,18 +259,31 @@ func TestAttachVolumeWaitsForCinderConvergence(t *testing.T) {
 	openstackServer := openstackServerFixture(server)
 	cinderVolume := cinderVolumeFixture(volume)
 
-	for _, status := range []string{"reserved", "attaching"} {
-		t.Run(status, func(t *testing.T) {
+	for _, test := range []struct {
+		status        string
+		hasAttachment bool
+	}{
+		{"reserved", true},
+		{"attaching", true},
+		{"detaching", false},
+		{"creating", false},
+	} {
+		t.Run(test.status, func(t *testing.T) {
 			t.Parallel()
 
 			c := gomock.NewController(t)
 			compute := mock.NewMockComputeInterface(c)
 			blockStorage := mock.NewMockVolumeInterface(c)
-			attachedVolume := cinderVolumeWithAttachment(cinderVolume, openstackServer.ID, false)
-			attachedVolume.Status = status
+			observedVolume := *cinderVolume
+			observedVolume.Status = test.status
+
+			if test.hasAttachment {
+				observedVolume = *cinderVolumeWithAttachment(cinderVolume, openstackServer.ID, false)
+				observedVolume.Status = test.status
+			}
 
 			compute.EXPECT().GetServer(t.Context(), server).Return(openstackServer, nil)
-			blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(attachedVolume, nil)
+			blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(&observedVolume, nil)
 			compute.EXPECT().CreateVolumeAttachment(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 
 			attachment, err := openstack.AttachVolumeWithClients(t.Context(), compute, blockStorage, server, volume)

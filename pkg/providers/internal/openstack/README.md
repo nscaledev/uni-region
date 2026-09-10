@@ -406,10 +406,11 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     provider error
   - an attachment to any other server maps to `ErrConflict`; Region does not
     support multi-attach even when the Cinder volume is multiattach-capable
-  - when Cinder reports no attachment, attach calls Nova create directly and
-    yields after acceptance. A create `409 Conflict` is followed by one Nova
-    attachment read so a concurrent desired request yields for Cinder `in-use`;
-    an unresolved conflict maps to `ErrConflict`
+  - when Cinder reports no attachment, attach requests Nova only after Cinder
+    observes the Volume `available`; transitional states yield. It yields after
+    Nova acceptance. A create `409 Conflict` is followed by one Nova attachment
+    read so a concurrent desired request yields for Cinder `in-use`; an
+    unresolved conflict maps to `ErrConflict`
   - detach receives whether Region is deleting the claimed Server. While it is
     deleting, it resolves Nova but never requests a competing Nova detach;
     Nova's completed 404 establishes teardown, after which only Cinder
