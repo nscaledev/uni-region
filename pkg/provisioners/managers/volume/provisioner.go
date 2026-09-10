@@ -131,15 +131,8 @@ func (p *Provisioner) reconcileVolume(ctx context.Context, provider types.Provid
 	}
 
 	if !exists {
-		// Server creation claims Volumes before persisting the Server. Without a
-		// recorded attachment, this is the normal claim-before-create saga window.
-		if p.volume.Status.AttachedAt == nil {
-			return provisioners.ErrYield
-		}
-
-		// An attachment was previously confirmed, so a missing Region Server means
-		// its deletion completed. Nova no longer needs Server context; wait for
-		// Cinder to report the Volume available before releasing the claim.
+		// Pending claims protect the create-before-persist window. An active claim
+		// with no Server must always re-discover provider state for teardown.
 		return p.teardownClaim(ctx, provider, identity, nil, claim, false)
 	}
 

@@ -709,7 +709,7 @@ func TestProvisionWaitsForClaimedServer(t *testing.T) {
 	require.Equal(t, unikornv1.AttachmentProvisioning, updatedServer.Status.Volumes[0].ProvisioningStatus)
 }
 
-func TestProvisionWaitsForClaimedServerToExist(t *testing.T) {
+func TestProvisionReleasesActiveClaimWhenServerDoesNotExist(t *testing.T) {
 	t.Parallel()
 
 	provider, providerSet := volumeMocks(t)
@@ -718,19 +718,20 @@ func TestProvisionWaitsForClaimedServerToExist(t *testing.T) {
 	identity := testIdentity(true)
 
 	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+	provider.EXPECT().DetachVolume(gomock.Any(), identityNamed(), nil, resource, false).Return(nil)
 
 	provisioner := volume.NewForTest(resource, providerSet, nil)
 	ctx := controllerContext(t, resource, identity)
-	err := provisioner.Provision(ctx)
-	require.ErrorIs(t, err, provisioners.ErrYield)
+	require.NoError(t, provisioner.Provision(ctx))
 	require.Nil(t, resource.Status.AttachedAt)
+	require.Nil(t, resource.Spec.ClaimRef)
 
 	cli, err := coreclient.FromContext(ctx)
 	require.NoError(t, err)
 
 	stored := &unikornv1.Volume{}
 	require.NoError(t, cli.Get(ctx, client.ObjectKeyFromObject(resource), stored))
-	require.Equal(t, resource.Spec.ClaimRef, stored.Spec.ClaimRef)
+	require.Nil(t, stored.Spec.ClaimRef)
 }
 
 func TestProvisionReleasesAttachedClaimWhenServerNoLongerExists(t *testing.T) {

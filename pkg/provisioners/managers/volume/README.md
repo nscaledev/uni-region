@@ -46,18 +46,18 @@ Server yields; its condition can recover without a Volume generation change.
 Claims created before a terminal Server write record the expected Server
 generation. The provisioner waits while the Server is missing or older,
 activates the claim when that generation requests the Volume, and releases a
-superseded pending claim without provider teardown. For legacy active claims,
-an absent Server with no recorded attachment remains the create-saga
-compatibility window.
-If the claimed Server is absent and `Volume.Status.AttachedAt` is unset, the
-provisioner retains the claim and yields so Server creation can complete. A
-recorded attachment means that a now-absent Server completed deletion, so only
-Cinder convergence remains before claim release. When the Server is deleting,
-the provider waits for Nova to delete it and does not request a competing Nova
-detach; after Nova is absent it cleans stale Cinder state and waits for Cinder
-convergence. When a live Server no longer requests the Volume, the full Server
-remains available to the provider until it confirms Nova and Cinder teardown.
-A provider yield or error retains the claim and its recovery context.
+superseded pending claim without provider teardown. Pending claims are the only
+protection for the create-saga window. An active claim with an absent Server
+always proceeds to provider teardown, regardless of `AttachedAt`; this avoids
+using derived status as cleanup authority. During a mixed-version rollout, an
+old handler can still have an active claim in flight before its Server write,
+and that claim may be torn down. New handler writes use pending claims instead.
+When the Server is deleting, the provider waits for Nova to delete it and does
+not request a competing Nova detach; after Nova is absent it cleans stale Cinder
+state and waits for Cinder convergence. When a live Server no longer requests
+the Volume, the full Server remains available to the provider until it confirms
+Nova and Cinder teardown. A provider yield or error retains the claim and its
+recovery context.
 The provider remains authoritative for attachment and detach work. The
 provisioner projects `AttachmentProvisioning` with a waiting message until the
 claimed Cinder attachment `in-use`, then records the first confirmed current
