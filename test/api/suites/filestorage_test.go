@@ -167,6 +167,37 @@ func expectNFSPolicyState(storage *regionopenapi.StorageV2Read, rootSquash, posi
 	Expect(*storage.Spec.StorageType.NFS.AtimeUpdateIntervalSeconds).To(Equal(atimeUpdateIntervalSeconds))
 }
 
+func createProvisionedNFSTestStorage(nfs *regionopenapi.NFSV2Spec) *regionopenapi.StorageV2Read {
+	request := defaultProtectionCreateRequest(requireFileStorageClassID(), nil, nil)
+	request.Metadata.Name = api.UniqueName("test-nfs-policy")
+	request.Spec.StorageType.NFS = nfs
+
+	created, err := regionClient.CreateFileStorage(ctx, request)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(created).NotTo(BeNil())
+
+	DeferCleanup(func() {
+		Expect(regionClient.DeleteFileStorage(ctx, created.Metadata.Id)).To(Succeed())
+		api.WaitForFileStorageGone(regionClient, ctx, created.Metadata.Id)
+	})
+
+	var provisioned *regionopenapi.StorageV2Read
+	Eventually(func() coreapi.ResourceProvisioningStatus {
+		retrieved, err := regionClient.GetFileStorage(ctx, created.Metadata.Id)
+		if err != nil {
+			return ""
+		}
+
+		provisioned = retrieved
+
+		return retrieved.Metadata.ProvisioningStatus
+	}).WithTimeout(5*time.Minute).
+		WithPolling(5*time.Second).
+		Should(Equal(coreapi.ResourceProvisioningStatusProvisioned), "File storage should be provisioned before update")
+
+	return provisioned
+}
+
 // INST-926 tracks Dev environment setup for file storage classes. Until Dev exposes
 // a usable class for the configured test region, storage-class-dependent specs skip.
 var _ = Describe("File Storage Management", func() {
@@ -487,26 +518,13 @@ var _ = Describe("File Storage Management", func() {
 
 	Context("When managing NFS policy settings", func() {
 		Describe("Given a valid File Storage resource", func() {
-			It("defaults, reads, and replaces POSIX ACL and atime settings", func() {
-				storageClassID := requireFileStorageClassID()
-				request := defaultProtectionCreateRequest(storageClassID, nil, nil)
-				request.Metadata.Name = api.UniqueName("test-nfs-policy")
-				request.Spec.StorageType.NFS = &regionopenapi.NFSV2Spec{RootSquash: true}
-
-				created, err := regionClient.CreateFileStorage(ctx, request)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(created).NotTo(BeNil())
-
-				DeferCleanup(func() {
-					Expect(regionClient.DeleteFileStorage(ctx, created.Metadata.Id)).To(Succeed())
-				})
-
+			It("defaults omitted POSIX ACL and atime settings", func() {
+				created := createProvisionedNFSTestStorage(&regionopenapi.NFSV2Spec{RootSquash: true})
 				expectNFSPolicyState(created, true, false, 0)
+			})
 
-				retrieved, err := regionClient.GetFileStorage(ctx, created.Metadata.Id)
-				Expect(err).NotTo(HaveOccurred())
-				expectNFSPolicyState(retrieved, true, false, 0)
-
+			It("replaces defaults with POSIX ACL and the maximum atime setting", func() {
+				created := createProvisionedNFSTestStorage(&regionopenapi.NFSV2Spec{RootSquash: true})
 				update := defaultProtectionUpdateRequest(created.Metadata.Name, nil, nil)
 				update.Spec.StorageType.NFS = &regionopenapi.NFSV2Spec{
 					RootSquash:                 false,
@@ -517,21 +535,43 @@ var _ = Describe("File Storage Management", func() {
 				updated, err := regionClient.UpdateFileStorage(ctx, created.Metadata.Id, update)
 				Expect(err).NotTo(HaveOccurred())
 				expectNFSPolicyState(updated, false, true, maxNFSAtimeUpdateIntervalSeconds)
+			})
 
+			It("resets omitted POSIX ACL and atime settings to defaults", func() {
+				created := createProvisionedNFSTestStorage(&regionopenapi.NFSV2Spec{
+					RootSquash:                 false,
+					PosixAcl:                   ptr.To(true),
+					AtimeUpdateIntervalSeconds: ptr.To(maxNFSAtimeUpdateIntervalSeconds),
+				})
+				update := defaultProtectionUpdateRequest(created.Metadata.Name, nil, nil)
 				update.Spec.StorageType.NFS = &regionopenapi.NFSV2Spec{RootSquash: true}
-				updated, err = regionClient.UpdateFileStorage(ctx, created.Metadata.Id, update)
+
+				updated, err := regionClient.UpdateFileStorage(ctx, created.Metadata.Id, update)
 				Expect(err).NotTo(HaveOccurred())
 				expectNFSPolicyState(updated, true, false, 0)
+			})
 
+			It("accepts explicit false POSIX ACL and zero atime settings", func() {
+				created := createProvisionedNFSTestStorage(&regionopenapi.NFSV2Spec{
+					RootSquash:                 true,
+					PosixAcl:                   ptr.To(true),
+					AtimeUpdateIntervalSeconds: ptr.To(maxNFSAtimeUpdateIntervalSeconds),
+				})
+				update := defaultProtectionUpdateRequest(created.Metadata.Name, nil, nil)
 				update.Spec.StorageType.NFS = &regionopenapi.NFSV2Spec{
 					RootSquash:                 false,
 					PosixAcl:                   ptr.To(false),
 					AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
 				}
-				updated, err = regionClient.UpdateFileStorage(ctx, created.Metadata.Id, update)
+
+				updated, err := regionClient.UpdateFileStorage(ctx, created.Metadata.Id, update)
 				Expect(err).NotTo(HaveOccurred())
 				expectNFSPolicyState(updated, false, false, 0)
+			})
 
+			It("rejects out-of-range atime updates", func() {
+				created := createProvisionedNFSTestStorage(&regionopenapi.NFSV2Spec{RootSquash: true})
+				update := defaultProtectionUpdateRequest(created.Metadata.Name, nil, nil)
 				for _, atime := range []int64{-1, maxNFSAtimeUpdateIntervalSeconds + 1} {
 					update.Spec.StorageType.NFS = &regionopenapi.NFSV2Spec{
 						RootSquash:                 false,
@@ -544,9 +584,9 @@ var _ = Describe("File Storage Management", func() {
 					Expect(rejected).To(BeNil())
 				}
 
-				retrieved, err = regionClient.GetFileStorage(ctx, created.Metadata.Id)
+				retrieved, err := regionClient.GetFileStorage(ctx, created.Metadata.Id)
 				Expect(err).NotTo(HaveOccurred())
-				expectNFSPolicyState(retrieved, false, false, 0)
+				expectNFSPolicyState(retrieved, true, false, 0)
 			})
 		})
 
