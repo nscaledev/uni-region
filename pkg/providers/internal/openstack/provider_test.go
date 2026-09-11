@@ -2038,6 +2038,37 @@ func TestDeleteVolumeWithClient(t *testing.T) {
 	})
 }
 
+func TestDeleteServerWithClient(t *testing.T) {
+	t.Parallel()
+
+	server := serverFixture()
+	openstackServer := &servers.Server{ID: "provider-server-id"}
+
+	t.Run("AcceptedDeleteYieldsUntilServerIsAbsent", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		compute := mock.NewMockServerInterface(c)
+		compute.EXPECT().GetServer(t.Context(), server).Return(openstackServer, nil)
+		compute.EXPECT().DeleteServer(t.Context(), openstackServer.ID).Return(nil)
+		compute.EXPECT().GetServer(t.Context(), server).Return(&servers.Server{ID: openstackServer.ID, TaskState: "deleting"}, nil)
+
+		require.ErrorIs(t, openstack.DeleteServerWithClient(t.Context(), compute, server), provisioners.ErrYield)
+	})
+
+	t.Run("DisappearsAfterAcceptedDelete", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		compute := mock.NewMockServerInterface(c)
+		compute.EXPECT().GetServer(t.Context(), server).Return(openstackServer, nil)
+		compute.EXPECT().DeleteServer(t.Context(), openstackServer.ID).Return(nil)
+		compute.EXPECT().GetServer(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
+
+		require.NoError(t, openstack.DeleteServerWithClient(t.Context(), compute, server))
+	})
+}
+
 // TestReconcileServer tests a resource is created when one isn't present.
 func TestReconcileServer(t *testing.T) {
 	t.Parallel()
