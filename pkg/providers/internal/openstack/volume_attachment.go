@@ -174,23 +174,25 @@ func detachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 		return err
 	}
 
+	serverID := ""
 	if server != nil {
-		detachRequested, err := requestServerVolumeDetach(ctx, compute, server, cinderVolume.ID, serverDeleting)
+		serverID, err = requestServerVolumeDetach(ctx, compute, server, cinderVolume.ID, serverDeleting)
 		if err != nil {
 			return err
 		}
-
-		if detachRequested {
-			// Nova detach is asynchronous. Verify Nova and Cinder again on the
-			// next reconciliation before allowing the claim to be released.
-			return provisioners.ErrYield
-		}
 	}
 
-	// Region does not expose multiattach, so one Cinder attachment is the only
-	// supported fallback when Nova could not confirm the claimed relationship.
 	if len(cinderVolume.Attachments) != 0 {
 		attachment := cinderVolume.Attachments[0]
+
+		if serverID == "" {
+			return provisioners.ErrYield
+		}
+
+		if attachment.ServerID != serverID {
+			return fmt.Errorf("%w: volume is attached to another server", coreerrors.ErrConflict)
+		}
+
 		if err := deleteVolumeAttachment(ctx, compute, attachment.ServerID, cinderVolume.ID); err != nil {
 			return err
 		}
@@ -207,18 +209,18 @@ func detachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 	return nil
 }
 
-func requestServerVolumeDetach(ctx context.Context, compute ComputeInterface, server *unikornv1.Server, volumeID string, serverDeleting bool) (bool, error) {
+func requestServerVolumeDetach(ctx context.Context, compute ComputeInterface, server *unikornv1.Server, volumeID string, serverDeleting bool) (string, error) {
 	openstackServer, err := compute.GetServer(ctx, server)
 	if err != nil {
 		if providerResourceNotFound(err) {
-			return false, nil
+			return "", nil
 		}
 
-		return false, err
+		return "", err
 	}
 
 	if serverDeleting {
-		return false, provisioners.ErrYield
+		return "", provisioners.ErrYield
 	}
 
 	// Cinder can report Attachments=[] while Nova still owns the attachment,
@@ -226,17 +228,19 @@ func requestServerVolumeDetach(ctx context.Context, compute ComputeInterface, se
 	_, err = compute.GetVolumeAttachment(ctx, openstackServer.ID, volumeID)
 	if err != nil {
 		if providerResourceNotFound(err) {
-			return false, nil
+			return openstackServer.ID, nil
 		}
 
-		return false, err
+		return "", err
 	}
 
 	if err := deleteVolumeAttachment(ctx, compute, openstackServer.ID, volumeID); err != nil {
-		return false, err
+		return "", err
 	}
 
-	return true, nil
+	// Nova detach is asynchronous. Verify Nova and Cinder again on the next
+	// reconciliation before allowing the claim to be released.
+	return "", provisioners.ErrYield
 }
 
 func deleteVolumeAttachment(ctx context.Context, compute ComputeInterface, serverID, volumeID string) error {
