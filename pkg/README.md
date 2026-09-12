@@ -28,22 +28,22 @@ The useful way to read it is not as a directory tree, but as one system:
   public v2 Volume lifecycle contract and core CRUD handlers are published;
   creation allocates requested capacity through Identity before persisting the
   Volume. Its persisted model reserves one Server attachment through the
-  internal handler-owned `spec.claimRef`; Server status projects detailed
-  attachment progress, while Volume status exposes when the current attachment
-  was first confirmed. Claim writes and attachment reconciliation remain
-  later lifecycle slices
+  internal `spec.claimRef`, which the Server handler creates and compensates and
+  the Volume controller releases after provider teardown. Server status projects
+  detailed attachment progress, while Volume status exposes when the current
+  attachment was first confirmed. Its Volume provisioner reconciles the backing
+  Volume and claimed Server attachment, then projects progress to Server status.
   Its provider capability exposes neutral backing discovery, observed
   size, and lifecycle state. The monitor projects that truth into observed
   size and coarse health without taking over the controller-owned `Available`
   condition. `VolumeStatus.ProvisionedAt` records durable backing-storage
   creation, so provider loss degrades health without triggering replacement
   under the same Region Volume ID.
-  OpenStack also supports server
-  attachment behavior. Attachment projection remains a later lifecycle slice
+  OpenStack also supports server attachment behavior.
 - `Server` now carries the internal attach-existing-only block volume intent
   and observed per-volume attachment rows. The provider boundary and OpenStack
-  Nova attach/detach implementation exist; public API projection and
-  server-controller reconciliation remain separate follow-up work
+  Nova attach/detach implementation exist; the Volume provisioner projects
+  attachment progress while the Server handler remains the owner of intent.
 
 ## Recommended Reading Order
 
