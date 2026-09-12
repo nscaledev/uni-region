@@ -84,8 +84,8 @@ packages are the concrete provider implementations.
     client/request failures remain Go errors, while successfully observed
     provider `error` and unrecognized/empty `unknown` lifecycle values remain
     successful observations
-  - VolumeClass inventory remains on `CommonProvider`, and server
-    attach/detach is a separate capability
+  - VolumeClass inventory remains on `CommonProvider`; Server attach and
+    Volume-based detach are separate capabilities
 - Provider `Delete*` methods must be idempotent and must tolerate an unrealized
   identity as a no-op. Callers delegate unconditionally; the provider
   self-gates on realized identity rather than the caller gating on readiness or
@@ -99,12 +99,21 @@ packages are the concrete provider implementations.
     consumers are gone: at delete time it is either realized-and-complete or
     never realized. Callers must therefore never gate a delete on identity
     readiness or recorded status — that belongs to this layer.
-- `DetachVolume` follows the same absent-means-converged teardown rule: a
-  missing provider server, volume, or attachment is success. `AttachVolume`
-  instead requires both backing resources and reports semantic not-found when
-  either is absent. Concrete provider conflicts are normalized to the shared
-  conflict sentinel; provider failures that are neither not-found nor conflict
-  remain available to callers for diagnosis.
+- `DetachVolume` receives whether Region is deleting the claimed Server and
+  verifies claimed attachment teardown against both compute and block-storage
+  state before the caller releases its claim. While Region deletes the Server,
+  providers wait for provider-side Server deletion instead of issuing a
+  competing detach request. Transitional or inconsistent claimed state yields
+  for recovery; no provider-side
+  administrative reset is attempted. A provider detach `400 Bad Request` also
+  yields and retains the claim. A missing provider Volume remains idempotent
+  success. `AttachVolume` requires both backing resources and reports semantic
+  not-found when either is absent. It returns success only after provider
+  observation confirms the claimed attachment is usable. Providers request an
+  attachment only after observing their Volume available; accepted asynchronous
+  requests and transitional observations yield. Concrete provider conflicts are
+  normalized to the shared conflict sentinel; other failures remain available
+  to callers for diagnosis.
 - Providers must tolerate changing backing credentials and region state rather
   than assuming client material is static for process lifetime.
   Credential rotation, secret refresh, and region configuration refresh are part
