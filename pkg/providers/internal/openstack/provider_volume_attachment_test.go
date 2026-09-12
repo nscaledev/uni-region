@@ -319,7 +319,7 @@ func TestDetachVolume(t *testing.T) {
 	cinderVolume := cinderVolumeFixture(volume)
 	notFound := gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusNotFound}
 
-	t.Run("AcceptedDetachYieldsUntilAttachmentIsGone", func(t *testing.T) {
+	t.Run("UnownedAttachmentYieldsWithoutDelete", func(t *testing.T) {
 		t.Parallel()
 
 		c := gomock.NewController(t)
@@ -327,10 +327,7 @@ func TestDetachVolume(t *testing.T) {
 		blockStorage := mock.NewMockVolumeInterface(c)
 		attachedVolume := cinderVolumeWithAttachment(cinderVolume, openstackServer.ID, false)
 
-		gomock.InOrder(
-			blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(attachedVolume, nil),
-			compute.EXPECT().DeleteVolumeAttachment(t.Context(), openstackServer.ID, cinderVolume.ID).Return(nil),
-		)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(attachedVolume, nil)
 
 		err := openstack.DetachVolumeWithClients(t.Context(), compute, blockStorage, nil, volume)
 		require.ErrorIs(t, err, provisioners.ErrYield)
@@ -416,6 +413,54 @@ func TestDetachVolume(t *testing.T) {
 		require.NoError(t, openstack.DetachVolumeWithClients(t.Context(), compute, blockStorage, server, claimedVolume))
 	})
 
+	t.Run("ForeignCinderAttachmentReturnsConflictWithoutDelete", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		compute := mock.NewMockComputeInterface(c)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		foreignVolume := cinderVolumeWithAttachment(cinderVolume, otherServerID, false)
+		claimedVolume := volume.DeepCopy()
+		claimedVolume.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: server.Name}
+
+		blockStorage.EXPECT().GetVolume(t.Context(), claimedVolume).Return(foreignVolume, nil)
+		compute.EXPECT().GetServer(t.Context(), server).Return(openstackServer, nil)
+		compute.EXPECT().GetVolumeAttachment(t.Context(), openstackServer.ID, cinderVolume.ID).Return(nil, notFound)
+
+		err := openstack.DetachVolumeWithClients(t.Context(), compute, blockStorage, server, claimedVolume)
+		require.ErrorIs(t, err, coreerrors.ErrConflict)
+	})
+
+	for _, test := range []struct {
+		name      string
+		deleteErr error
+		expected  error
+	}{
+		{"OwnedCinderFallbackRequestsDetach", nil, provisioners.ErrYield},
+		{"OwnedCinderFallbackDeleteNotFoundYields", notFound, provisioners.ErrYield},
+		{"OwnedCinderFallbackConflictReturnsConflict", gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusConflict}, coreerrors.ErrConflict},
+		{"OwnedCinderFallbackPreservesProviderError", errVolumeAttachmentProvider, errVolumeAttachmentProvider},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := gomock.NewController(t)
+			compute := mock.NewMockComputeInterface(c)
+			blockStorage := mock.NewMockVolumeInterface(c)
+			attachedVolume := cinderVolumeWithAttachment(cinderVolume, openstackServer.ID, false)
+			claimedVolume := volume.DeepCopy()
+			claimedVolume.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: server.Name}
+
+			blockStorage.EXPECT().GetVolume(t.Context(), claimedVolume).Return(attachedVolume, nil)
+			compute.EXPECT().GetServer(t.Context(), server).Return(openstackServer, nil)
+			compute.EXPECT().GetVolumeAttachment(t.Context(), openstackServer.ID, cinderVolume.ID).Return(nil, notFound)
+			compute.EXPECT().DeleteVolumeAttachment(t.Context(), openstackServer.ID, cinderVolume.ID).Return(test.deleteErr)
+
+			err := openstack.DetachVolumeWithClients(t.Context(), compute, blockStorage, server, claimedVolume)
+			require.ErrorIs(t, err, test.expected)
+		})
+	}
+
 	t.Run("MissingClaimedCinderVolumeIsIdempotent", func(t *testing.T) {
 		t.Parallel()
 
@@ -440,54 +485,6 @@ func TestDetachVolume(t *testing.T) {
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(nil, coreerrors.ErrResourceNotFound)
 
 		require.NoError(t, openstack.DetachVolumeWithClients(t.Context(), compute, blockStorage, nil, volume))
-	})
-
-	t.Run("DeleteNotFoundYieldsWhileCinderReportsAttachment", func(t *testing.T) {
-		t.Parallel()
-
-		c := gomock.NewController(t)
-		compute := mock.NewMockComputeInterface(c)
-		blockStorage := mock.NewMockVolumeInterface(c)
-		attachedVolume := cinderVolumeWithAttachment(cinderVolume, openstackServer.ID, false)
-
-		gomock.InOrder(
-			blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(attachedVolume, nil),
-			compute.EXPECT().DeleteVolumeAttachment(t.Context(), openstackServer.ID, cinderVolume.ID).Return(notFound),
-		)
-
-		err := openstack.DetachVolumeWithClients(t.Context(), compute, blockStorage, nil, volume)
-		require.ErrorIs(t, err, provisioners.ErrYield)
-	})
-
-	t.Run("ConflictReturnsConflict", func(t *testing.T) {
-		t.Parallel()
-
-		conflict := gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusConflict}
-		c := gomock.NewController(t)
-		compute := mock.NewMockComputeInterface(c)
-		blockStorage := mock.NewMockVolumeInterface(c)
-		attachedVolume := cinderVolumeWithAttachment(cinderVolume, openstackServer.ID, false)
-
-		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(attachedVolume, nil)
-		compute.EXPECT().DeleteVolumeAttachment(t.Context(), openstackServer.ID, cinderVolume.ID).Return(conflict)
-
-		err := openstack.DetachVolumeWithClients(t.Context(), compute, blockStorage, nil, volume)
-		require.ErrorIs(t, err, coreerrors.ErrConflict)
-	})
-
-	t.Run("ProviderErrorIsPreserved", func(t *testing.T) {
-		t.Parallel()
-
-		c := gomock.NewController(t)
-		compute := mock.NewMockComputeInterface(c)
-		blockStorage := mock.NewMockVolumeInterface(c)
-		attachedVolume := cinderVolumeWithAttachment(cinderVolume, openstackServer.ID, false)
-
-		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(attachedVolume, nil)
-		compute.EXPECT().DeleteVolumeAttachment(t.Context(), openstackServer.ID, cinderVolume.ID).Return(errVolumeAttachmentProvider)
-
-		err := openstack.DetachVolumeWithClients(t.Context(), compute, blockStorage, nil, volume)
-		require.ErrorIs(t, err, errVolumeAttachmentProvider)
 	})
 }
 
@@ -516,7 +513,7 @@ func TestDetachVolumeWhileServerDeleting(t *testing.T) {
 		require.ErrorIs(t, err, provisioners.ErrYield)
 	})
 
-	t.Run("CleansStaleCinderAttachmentAfterNovaDeletion", func(t *testing.T) {
+	t.Run("WaitsForCinderAfterNovaDeletion", func(t *testing.T) {
 		t.Parallel()
 
 		c := gomock.NewController(t)
@@ -527,7 +524,6 @@ func TestDetachVolumeWhileServerDeleting(t *testing.T) {
 		gomock.InOrder(
 			blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(attachedVolume, nil),
 			compute.EXPECT().GetServer(t.Context(), server).Return(nil, notFound),
-			compute.EXPECT().DeleteVolumeAttachment(t.Context(), openstackServer.ID, cinderVolume.ID).Return(nil),
 		)
 
 		err := openstack.DetachVolumeWhileServerDeletingWithClients(t.Context(), compute, blockStorage, server, volume)

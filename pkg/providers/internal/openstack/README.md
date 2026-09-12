@@ -416,8 +416,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     Nova's completed 404 establishes teardown, after which only Cinder
     convergence remains. For a live Server hot detach, it resolves Nova and
     checks Nova directly, so an empty Cinder attachment list cannot hide the
-    claimed Nova attachment. A Cinder attachment row is the supported fallback
-    when Nova cannot confirm the claimed relationship
+    claimed Nova attachment. A Cinder attachment row is a fallback only when
+    its Server ID matches the resolved claimed Nova Server. Foreign or
+    unowned rows are never detached; they conflict or yield until provider
+    state converges
   - an accepted Nova delete yields immediately because detach is asynchronous.
     A later reconcile succeeds only when Nova no longer reports the claimed
     attachment and Cinder reports no attachment with status `available`; a

@@ -200,7 +200,7 @@ func (p *Provisioner) reconcileClaimedVolume(ctx context.Context, provider types
 
 	attachment, err := provider.AttachVolume(ctx, identity, server, p.volume)
 	if err != nil {
-		return p.handleAttachmentError(ctx, provider, identity, server, err)
+		return p.handleAttachmentError(ctx, server, err)
 	}
 
 	if err := p.setAttachmentStatus(ctx, server, unikornv1.AttachmentProvisioned, attachment.Device, ""); err != nil {
@@ -215,19 +215,7 @@ func (p *Provisioner) reconcileClaimedVolume(ctx context.Context, provider types
 	return nil
 }
 
-func (p *Provisioner) handleAttachmentError(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, server *unikornv1.Server, err error) error {
-	if errors.Is(err, coreerrors.ErrConflict) {
-		if statusErr := p.setAttachmentStatus(ctx, server, unikornv1.AttachmentProvisioning, nil, "detaching existing volume attachment"); statusErr != nil {
-			return statusErr
-		}
-
-		if detachErr := p.detachAttachments(ctx, provider, identity, server, false); detachErr != nil {
-			return detachErr
-		}
-
-		return provisioners.ErrYield
-	}
-
+func (p *Provisioner) handleAttachmentError(ctx context.Context, server *unikornv1.Server, err error) error {
 	status := unikornv1.AttachmentProvisioning
 	if !errors.Is(err, provisioners.ErrYield) {
 		status = unikornv1.AttachmentErrored
@@ -275,6 +263,10 @@ func serverRequestsVolume(server *unikornv1.Server, volumeID string) bool {
 func attachmentMessage(err error) string {
 	if errors.Is(err, provisioners.ErrYield) {
 		return "waiting for volume attachment to converge"
+	}
+
+	if errors.Is(err, coreerrors.ErrConflict) {
+		return "volume attachment conflicts with provider state"
 	}
 
 	var provisioningError *provisioners.Error
