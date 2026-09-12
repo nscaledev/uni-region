@@ -30,6 +30,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
+	"github.com/unikorn-cloud/region/pkg/handler/volume"
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
@@ -70,13 +71,9 @@ func validateVolumes(ctx context.Context, c *ClientV2, network *regionv1.Network
 }
 
 func validateVolume(ctx context.Context, c *ClientV2, network *regionv1.Network, region *regionv1.Region, flavorID, volumeID, serverID string) (*regionv1.Volume, error) {
-	volume := &regionv1.Volume{}
-	if err := c.Client.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: volumeID}, volume); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, fmt.Errorf("%w: unable to lookup volume", err)
+	volume, err := volume.New(c.Client.ClientArgs).GetV2Raw(ctx, volumeID)
+	if err != nil {
+		return nil, err
 	}
 
 	if volume.DeletionTimestamp != nil {

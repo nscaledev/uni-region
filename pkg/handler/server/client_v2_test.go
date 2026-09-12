@@ -27,6 +27,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"slices"
 	"testing"
 	"time"
 
@@ -135,9 +136,8 @@ func testSrvVolume() *regionv1.Volume {
 	}, Spec: regionv1.VolumeSpec{VolumeClassID: "fast"}}
 }
 
-// aclWithOrgScopeServerCreate grants network:read, securitygroups:read,
-// sshcertificateauthorities:read and region:servers/Create at organization scope so
-// the referenced-resource GetV2Raw calls pass and AllowProjectScopeCreate is reached.
+// aclWithOrgScopeServerCreate grants read access to referenced resources and
+// region:servers/Create at organization scope.
 func aclWithOrgScopeServerCreate() *identityapi.Acl {
 	return &identityapi.Acl{
 		Organizations: &identityapi.AclOrganizationList{
@@ -158,6 +158,10 @@ func aclWithOrgScopeServerCreate() *identityapi.Acl {
 					},
 					{
 						Name:       "region:sshcertificateauthorities:v2",
+						Operations: identityapi.AclOperations{identityapi.Read},
+					},
+					{
+						Name:       "region:volumes:v2",
 						Operations: identityapi.AclOperations{identityapi.Read},
 					},
 				},
@@ -197,6 +201,10 @@ func aclWithSrvUpdate() *identityapi.Acl {
 					{
 						Name:       "region:servers",
 						Operations: identityapi.AclOperations{identityapi.Read, identityapi.Update},
+					},
+					{
+						Name:       "region:volumes:v2",
+						Operations: identityapi.AclOperations{identityapi.Read},
 					},
 				},
 			},
@@ -626,6 +634,30 @@ func TestServerCreateV2ClaimsRequestedVolumes(t *testing.T) {
 	require.Equal(t, *request.Spec.Volumes, *result.Spec.Volumes)
 	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: srvVolumeID}, volume))
 	require.Equal(t, &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: result.Metadata.Id}, volume.Spec.ClaimRef)
+}
+
+func TestServerCreateV2RejectsUnreadableVolume(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	volume := testSrvVolume()
+	k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), testSrvRegion(), volume).Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace, Identity: mockIdentity, Providers: newMockProvidersWithReadyImage(ctrl)})
+	request := minimalServerV2CreateRequest()
+	request.Spec.Volumes = &openapi.ServerV2VolumeList{idstest.MustParseVolumeID(srvVolumeID)}
+	acl := aclWithOrgScopeServerCreate()
+	endpoints := (*acl.Organizations)[0].Endpoints
+	*endpoints = slices.DeleteFunc(*endpoints, func(endpoint identityapi.AclEndpoint) bool {
+		return endpoint.Name == "region:volumes:v2"
+	})
+
+	_, err := c.CreateV2(withPrincipal(rbac.NewContext(t.Context(), acl)), request)
+
+	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKeyFromObject(volume), volume))
+	require.Nil(t, volume.Spec.ClaimRef)
 }
 
 func TestServerCreateV2SagaReturnsPersistenceError(t *testing.T) {
