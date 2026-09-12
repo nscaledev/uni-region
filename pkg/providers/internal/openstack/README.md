@@ -400,21 +400,37 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - attach requires both the server and volume; either missing resource maps to
     `ErrResourceNotFound`
   - a Cinder attachment already present on the requested server is successful
-    and returns its observed device without a Nova read
+    only when Cinder reports the Volume `in-use`; it returns that row's observed
+    device without a Nova read. `reserved`, `attaching`, and other transitional
+    states yield for another observation; `error*` states return a terminal
+    provider error
   - an attachment to any other server maps to `ErrConflict`; Region does not
     support multi-attach even when the Cinder volume is multiattach-capable
-  - when Cinder reports no attachment, attach calls Nova create directly; a
-    create `409 Conflict` is followed by one Nova attachment read so concurrent
-    creation of the same desired attachment becomes success, while an
+  - when Cinder reports no attachment, attach requests Nova only after Cinder
+    observes the Volume `available`; transitional states yield. It yields after
+    Nova acceptance. A create `409 Conflict` is followed by one Nova attachment
+    read so a concurrent desired request yields for Cinder `in-use`; an
     unresolved conflict maps to `ErrConflict`
-  - detach calls Nova delete only when Cinder reports an attachment to the
-    requested server; a missing server, volume, requested-server attachment, or
-    Nova delete `404` is success because detached state already holds, including
-    when the volume remains attached only to another server
-  - a Nova delete `409 Conflict` maps to `ErrConflict`; other provider failures
-    are preserved
+  - detach receives whether Region is deleting the claimed Server. While it is
+    deleting, it resolves Nova but never requests a competing Nova detach;
+    Nova's completed 404 establishes teardown, after which only Cinder
+    convergence remains. For a live Server hot detach, it resolves Nova and
+    checks Nova directly, so an empty Cinder attachment list cannot hide the
+    claimed Nova attachment. A Cinder attachment row is the supported fallback
+    when Nova cannot confirm the claimed relationship
+  - an accepted Nova delete yields immediately because detach is asynchronous.
+    A later reconcile succeeds only when Nova no longer reports the claimed
+    attachment and Cinder reports no attachment with status `available`; a
+    missing backing Volume is idempotent success
+  - a Nova delete `400 Bad Request` yields while the provider attachment state
+    converges; the claim is retained and Region does not reset Cinder state. A
+    `409 Conflict` maps to `ErrConflict`; other provider failures are preserved
   - detach also no-ops when the backing OpenStack identity was never realized,
     matching the provider's other teardown contracts
+
+  Region owns these resources through its API. Detach does not attempt
+  administrative repair of foreign attachments, multiattach, or resources
+  changed directly through Kubernetes or OpenStack.
 
   Attachment intent and observed rows remain on `Server.Spec.Volumes` and
   `Server.Status.Volumes`; this provider slice does not mirror attachments into
