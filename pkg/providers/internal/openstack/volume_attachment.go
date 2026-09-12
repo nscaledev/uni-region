@@ -21,13 +21,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
-	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/volumeattach"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 )
@@ -45,14 +47,6 @@ func serverVolumeAttachment(device string) *types.ServerVolumeAttachment {
 	}
 
 	return result
-}
-
-func providerVolumeAttachment(attachment *volumeattach.VolumeAttachment) (*types.ServerVolumeAttachment, error) {
-	if attachment == nil {
-		return nil, fmt.Errorf("%w: provider returned an empty volume attachment", coreerrors.ErrConsistency)
-	}
-
-	return serverVolumeAttachment(attachment.Device), nil
 }
 
 func volumeAttachmentForServer(volume *volumes.Volume, serverID string) *volumes.Attachment {
@@ -97,28 +91,45 @@ func volumeAttachmentResources(ctx context.Context, compute ServerInterface, blo
 	return openstackServer, cinderVolume, nil
 }
 
+func observedVolumeAttachment(cinderVolume *volumes.Volume, serverID string) (*types.ServerVolumeAttachment, bool, error) {
+	if volumeAttachmentForOtherServer(cinderVolume, serverID) != nil {
+		return nil, false, fmt.Errorf("%w: volume is already attached to another server", coreerrors.ErrConflict)
+	}
+
+	if strings.HasPrefix(cinderVolume.Status, volumeStatusErrorPrefix) {
+		return nil, false, provisioners.Terminal(unikornv1core.ConditionReasonErrored, "provider volume entered an error state")
+	}
+
+	attachment := volumeAttachmentForServer(cinderVolume, serverID)
+	if attachment == nil {
+		return nil, false, nil
+	}
+
+	if cinderVolume.Status != volumeStatusInUse {
+		return nil, true, provisioners.ErrYield
+	}
+
+	return serverVolumeAttachment(attachment.Device), true, nil
+}
+
 func attachVolume(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, server *unikornv1.Server, volume *unikornv1.Volume) (*types.ServerVolumeAttachment, error) {
 	openstackServer, cinderVolume, err := volumeAttachmentResources(ctx, compute, blockStorage, server, volume)
 	if err != nil {
 		return nil, err
 	}
 
-	if attachment := volumeAttachmentForOtherServer(cinderVolume, openstackServer.ID); attachment != nil {
-		return nil, fmt.Errorf(
-			"%w: volume %s is already attached to server %s",
-			coreerrors.ErrConflict,
-			cinderVolume.ID,
-			attachment.ServerID,
-		)
+	attachment, observed, err := observedVolumeAttachment(cinderVolume, openstackServer.ID)
+	if observed || err != nil {
+		return attachment, err
 	}
 
-	if attachment := volumeAttachmentForServer(cinderVolume, openstackServer.ID); attachment != nil {
-		return serverVolumeAttachment(attachment.Device), nil
+	if cinderVolume.Status != volumeStatusAvailable {
+		return nil, provisioners.ErrYield
 	}
 
-	attachment, err := compute.CreateVolumeAttachment(ctx, openstackServer.ID, cinderVolume.ID)
+	_, err = compute.CreateVolumeAttachment(ctx, openstackServer.ID, cinderVolume.ID)
 	if err == nil {
-		return providerVolumeAttachment(attachment)
+		return nil, provisioners.ErrYield
 	}
 
 	if providerResourceNotFound(err) {
@@ -136,9 +147,9 @@ func attachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 
 	// A concurrent request may have created the same attachment between the
 	// read and create. Confirm that desired state before surfacing the conflict.
-	attachment, getErr := compute.GetVolumeAttachment(ctx, openstackServer.ID, cinderVolume.ID)
+	_, getErr := compute.GetVolumeAttachment(ctx, openstackServer.ID, cinderVolume.ID)
 	if getErr == nil {
-		return providerVolumeAttachment(attachment)
+		return nil, provisioners.ErrYield
 	}
 
 	if !providerResourceNotFound(getErr) {
@@ -153,8 +164,8 @@ func attachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 	)
 }
 
-func detachVolume(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, server *unikornv1.Server, volume *unikornv1.Volume) error {
-	openstackServer, cinderVolume, err := volumeAttachmentResources(ctx, compute, blockStorage, server, volume)
+func detachVolume(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, server *unikornv1.Server, volume *unikornv1.Volume, serverDeleting bool) error {
+	cinderVolume, err := blockStorage.GetVolume(ctx, volume)
 	if err != nil {
 		if providerResourceNotFound(err) {
 			return nil
@@ -163,28 +174,94 @@ func detachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 		return err
 	}
 
-	if volumeAttachmentForServer(cinderVolume, openstackServer.ID) == nil {
-		return nil
+	serverID := ""
+	if server != nil {
+		serverID, err = requestServerVolumeDetach(ctx, compute, server, cinderVolume.ID, serverDeleting)
+		if err != nil {
+			return err
+		}
 	}
 
-	if err := compute.DeleteVolumeAttachment(ctx, openstackServer.ID, cinderVolume.ID); err != nil {
-		if providerResourceNotFound(err) {
-			return nil
+	if len(cinderVolume.Attachments) != 0 {
+		attachment := cinderVolume.Attachments[0]
+
+		if serverID == "" {
+			return provisioners.ErrYield
 		}
 
-		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
-			return fmt.Errorf(
-				"%w: volume %s cannot be detached from server %s in its current state",
-				coreerrors.ErrConflict,
-				cinderVolume.ID,
-				openstackServer.ID,
-			)
+		if attachment.ServerID != serverID {
+			return fmt.Errorf("%w: volume is attached to another server", coreerrors.ErrConflict)
 		}
 
-		return err
+		if err := deleteVolumeAttachment(ctx, compute, attachment.ServerID, cinderVolume.ID); err != nil {
+			return err
+		}
+
+		return provisioners.ErrYield
+	}
+
+	// An empty Cinder attachment list is not enough: during the reproduced race,
+	// Cinder returned [] while the Volume was still attaching or detaching.
+	if cinderVolume.Status != volumeStatusAvailable {
+		return provisioners.ErrYield
 	}
 
 	return nil
+}
+
+func requestServerVolumeDetach(ctx context.Context, compute ComputeInterface, server *unikornv1.Server, volumeID string, serverDeleting bool) (string, error) {
+	openstackServer, err := compute.GetServer(ctx, server)
+	if err != nil {
+		if providerResourceNotFound(err) {
+			return "", nil
+		}
+
+		return "", err
+	}
+
+	if serverDeleting {
+		return "", provisioners.ErrYield
+	}
+
+	// Cinder can report Attachments=[] while Nova still owns the attachment,
+	// so always query Nova while the claimed Region Server is available.
+	_, err = compute.GetVolumeAttachment(ctx, openstackServer.ID, volumeID)
+	if err != nil {
+		if providerResourceNotFound(err) {
+			return openstackServer.ID, nil
+		}
+
+		return "", err
+	}
+
+	if err := deleteVolumeAttachment(ctx, compute, openstackServer.ID, volumeID); err != nil {
+		return "", err
+	}
+
+	// Nova detach is asynchronous. Verify Nova and Cinder again on the next
+	// reconciliation before allowing the claim to be released.
+	return "", provisioners.ErrYield
+}
+
+func deleteVolumeAttachment(ctx context.Context, compute ComputeInterface, serverID, volumeID string) error {
+	err := compute.DeleteVolumeAttachment(ctx, serverID, volumeID)
+	if err == nil {
+		return nil
+	}
+
+	if providerResourceNotFound(err) {
+		return nil
+	}
+
+	if gophercloud.ResponseCodeIs(err, http.StatusBadRequest) {
+		return provisioners.ErrYield
+	}
+
+	if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+		return fmt.Errorf("%w: volume %s cannot be detached from server %s in its current state", coreerrors.ErrConflict, volumeID, serverID)
+	}
+
+	return err
 }
 
 func (p *Provider) AttachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume) (*types.ServerVolumeAttachment, error) {
@@ -201,7 +278,7 @@ func (p *Provider) AttachVolume(ctx context.Context, identity *unikornv1.Identit
 	return attachVolume(ctx, compute, blockStorage, server, volume)
 }
 
-func (p *Provider) DetachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume) error {
+func (p *Provider) DetachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume, serverDeleting bool) error {
 	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
 	if err != nil {
 		return err
@@ -221,5 +298,5 @@ func (p *Provider) DetachVolume(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
-	return detachVolume(ctx, compute, blockStorage, server, volume)
+	return detachVolume(ctx, compute, blockStorage, server, volume, serverDeleting)
 }

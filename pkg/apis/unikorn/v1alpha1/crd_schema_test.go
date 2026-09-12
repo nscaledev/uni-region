@@ -95,6 +95,7 @@ func TestVolumeClaimSchema(t *testing.T) {
 	claim := requireSchemaProperty(t, schema, "spec", "claimRef")
 	require.Contains(t, claim.Properties, "kind")
 	require.Contains(t, claim.Properties, "id")
+	require.Len(t, claim.Properties, 2)
 	require.Len(t, claim.Properties["kind"].Enum, 1)
 	require.JSONEq(t, `"Server"`, string(claim.Properties["kind"].Enum[0].Raw))
 	require.NotNil(t, claim.Properties["id"].MinLength)
