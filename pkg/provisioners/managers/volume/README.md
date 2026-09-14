@@ -51,11 +51,15 @@ terminal write releases the claim through saga compensation. This deliberately
 prefers a visible, indefinitely provisioning Volume over releasing an ambiguous
 claim: failed compensation or a lost attachment-status write requires operator
 repair.
-When the Server is deleting, the provider waits for Nova to delete it and does
-not request a competing Nova detach; after Nova is absent it waits for Cinder
-convergence. When a live Server no longer requests the Volume, the full Server
-remains available to the provider until it confirms Nova and Cinder teardown. A
-provider yield or error retains the claim and its recovery context.
+Before provider attachment, the Volume controller uses the core reference
+helpers to place its canonical per-Volume reference on the Server. During Server
+deletion those references block Server deprovisioning, so each Volume actively
+detaches from Nova and waits for Cinder convergence first. After provider
+detachment, the controller removes only that Volume's Server reference before
+releasing the claim. The same ordering applies when a live Server no longer
+requests the Volume. Teardown does not require Identity readiness; provider
+state is authoritative. A provider yield or error retains the claim, reference,
+and recovery context.
 An attachment conflict is projected as errored and retained for retry or
 operator repair; it never authorizes detaching the conflicting attachment.
 The provider remains authoritative for attachment and detach work. The
@@ -66,8 +70,8 @@ confirmed detachment. It advances the Volume observed generation only when both
 the backing Volume and attachment converge.
 It does not project attachment status until the backing Volume has converged
 and attachment reconciliation begins. Before an asynchronous detach, existing
-attachment rows are marked `Deprovisioning`; they and the claim are removed only
-after the provider confirms detachment.
+attachment rows are marked `Deprovisioning`; they, the Server reference, and the
+claim are removed only after the provider confirms detachment.
 After releasing a claim, the provisioner yields so the refreshed Volume is
 reconciled before its generation is observed.
 Each projection re-reads the Server and retries status conflicts while merging

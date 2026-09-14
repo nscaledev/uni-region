@@ -29,6 +29,7 @@ rules:
   verbs:
   - list
   - watch
+  - update
 - apiGroups:
   - region.unikorn-cloud.org
   resources:

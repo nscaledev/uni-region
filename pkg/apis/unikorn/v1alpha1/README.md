@@ -104,7 +104,13 @@ stored objects rely on for linkage, migration, and operational coordination.
   kind. `Server.Status.Volumes` projects
   attachment progress, optional provider device, and a safe message.
   `Volume.Status.AttachedAt` records when the current attachment was first
-  confirmed; omission means no current attachment is recorded. The Volume
+  confirmed; omission means no current attachment is recorded. The attachment
+  finalizer `volumes.region.unikorn-cloud.org/<volume-id>` is stored on the
+  claimed Server. It blocks Server deletion until the Volume controller confirms
+  provider detachment and removes that finalizer. The Volume controller creates
+  this canonical resource reference before provider attachment and removes it
+  before releasing the claim. References for removed intent remain until
+  controller teardown completes. The Volume
   controller advances
   `ObservedGeneration`
   only after both backing Volume and requested attachment state converge,

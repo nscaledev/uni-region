@@ -39,12 +39,14 @@ related dependencies rather than from nested path scope.
   because absence of evidence is not evidence of incompatibility
 - create/update can validate and bind an SSH certificate authority
 - create/update execute as sagas. Before the terminal Server write, they acquire
-  new Volume claims. The Volume controller leaves an unconfirmed claim untouched
-  while its Server is absent or does not yet contain the attachment intent. A
-  failed terminal write releases its claims through saga compensation. Update
-  also repairs a missing claim for Volume intent already present on the Server.
-  Removed claims remain until the Volume controller reconciles the changed
-  Server intent. Providers remain exclusively controller-owned
+  new Volume claims. The terminal write persists only Server intent; the Volume
+  controller owns the corresponding Server reference and places it before
+  provider attachment. The Volume controller leaves an unconfirmed claim
+  untouched while its Server is absent or does not yet contain the attachment
+  intent. A failed terminal write releases its claims through saga compensation.
+  Update also repairs a missing claim for Volume intent already present on the
+  Server. Removed claims remain until the Volume controller reconciles the
+  changed Server intent. Providers remain exclusively controller-owned
 - v2 reads the stored per-Volume attachment state (attachment progress, optional
   provider device, and a safe message). A removed Volume remains in this
   projection while its observed attachment deprovisions and disappears only
