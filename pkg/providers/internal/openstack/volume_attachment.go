@@ -164,7 +164,7 @@ func attachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 	)
 }
 
-func detachVolume(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, server *unikornv1.Server, volume *unikornv1.Volume, serverDeleting bool) error {
+func detachVolume(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, server *unikornv1.Server, volume *unikornv1.Volume) error {
 	cinderVolume, err := blockStorage.GetVolume(ctx, volume)
 	if err != nil {
 		if providerResourceNotFound(err) {
@@ -176,7 +176,7 @@ func detachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 
 	serverID := ""
 	if server != nil {
-		serverID, err = requestServerVolumeDetach(ctx, compute, server, cinderVolume.ID, serverDeleting)
+		serverID, err = requestServerVolumeDetach(ctx, compute, server, cinderVolume.ID)
 		if err != nil {
 			return err
 		}
@@ -209,7 +209,7 @@ func detachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 	return nil
 }
 
-func requestServerVolumeDetach(ctx context.Context, compute ComputeInterface, server *unikornv1.Server, volumeID string, serverDeleting bool) (string, error) {
+func requestServerVolumeDetach(ctx context.Context, compute ComputeInterface, server *unikornv1.Server, volumeID string) (string, error) {
 	openstackServer, err := compute.GetServer(ctx, server)
 	if err != nil {
 		if providerResourceNotFound(err) {
@@ -217,10 +217,6 @@ func requestServerVolumeDetach(ctx context.Context, compute ComputeInterface, se
 		}
 
 		return "", err
-	}
-
-	if serverDeleting {
-		return "", provisioners.ErrYield
 	}
 
 	// Cinder can report Attachments=[] while Nova still owns the attachment,
@@ -278,7 +274,7 @@ func (p *Provider) AttachVolume(ctx context.Context, identity *unikornv1.Identit
 	return attachVolume(ctx, compute, blockStorage, server, volume)
 }
 
-func (p *Provider) DetachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume, serverDeleting bool) error {
+func (p *Provider) DetachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume) error {
 	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
 	if err != nil {
 		return err
@@ -298,5 +294,5 @@ func (p *Provider) DetachVolume(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
-	return detachVolume(ctx, compute, blockStorage, server, volume, serverDeleting)
+	return detachVolume(ctx, compute, blockStorage, server, volume)
 }

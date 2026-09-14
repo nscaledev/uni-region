@@ -99,12 +99,11 @@ packages are the concrete provider implementations.
     consumers are gone: at delete time it is either realized-and-complete or
     never realized. Callers must therefore never gate a delete on identity
     readiness or recorded status — that belongs to this layer.
-- `DetachVolume` receives whether Region is deleting the claimed Server and
-  verifies claimed attachment teardown against both compute and block-storage
-  state before the caller releases its claim. While Region deletes the Server,
-  providers wait for provider-side Server deletion instead of issuing a
-  competing detach request. Transitional or inconsistent claimed state yields
-  for recovery; no provider-side
+- `DetachVolume` verifies claimed attachment teardown against both compute and
+  block-storage state before the caller releases its claim. Per-Volume
+  finalizers block Server deletion until this active detach completes, so the
+  provider uses the same detach path for removed intent and deleting Servers.
+  Transitional or inconsistent claimed state yields for recovery; no provider-side
   administrative reset is attempted. A provider detach `400 Bad Request` also
   yields and retains the claim. A missing provider Volume remains idempotent
   success. `AttachVolume` requires both backing resources and reports semantic

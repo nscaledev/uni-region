@@ -20,6 +20,12 @@ subsequent Server create or spec change enqueues every Volume in both the old
 and new attachment sets. A Server deletion transition also enqueues its
 requested Volumes.
 
+Before provider attachment, each Volume reconciliation places its canonical
+resource reference on the Server. Those references keep a deleting Server
+available while the Volume controllers actively detach provider attachments.
+After detachment, each controller removes only its own reference before
+releasing its claim.
+
 `VolumeStatus.ProvisionedAt` records the first successful discovery of backing
 storage. Later generation events continue reconciliation, but a missing
 backing volume is never recreated under the same Region Volume ID. The health

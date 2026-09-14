@@ -39,6 +39,7 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // Options allows access to CLI options in the provisioner.
@@ -99,10 +100,6 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
-	if err := manager.ResourceReady(ctx, identity); err != nil {
-		return err
-	}
-
 	if err := p.reconcileVolume(ctx, provider, identity); err != nil {
 		return err
 	}
@@ -114,6 +111,10 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 func (p *Provisioner) reconcileVolume(ctx context.Context, provider types.Provider, identity *unikornv1.Identity) error {
 	if p.volume.Spec.ClaimRef == nil {
+		if err := manager.ResourceReady(ctx, identity); err != nil {
+			return err
+		}
+
 		p.volume.Status.AttachedAt = nil
 
 		return provider.CreateVolume(ctx, identity, p.volume)
@@ -124,43 +125,92 @@ func (p *Provisioner) reconcileVolume(ctx context.Context, provider types.Provid
 		return err
 	}
 
-	serverDeleting := exists && server.GetDeletionTimestamp() != nil
-	requested := exists && serverRequestsVolume(server, p.volume.Name)
+	if exists {
+		return p.reconcileServerClaim(ctx, provider, identity, server)
+	}
 
-	if !exists {
-		// The create saga claims before writing the Server. Without a confirmed
-		// attachment, wait for that write or its compensation to become visible.
-		if p.volume.Status.AttachedAt == nil {
-			return provisioners.ErrYield
-		}
+	// The create saga claims before writing the Server. Without a confirmed
+	// attachment, wait for that write or its compensation to become visible.
+	if p.volume.Status.AttachedAt == nil {
+		return provisioners.ErrYield
+	}
 
-		return p.teardownClaim(ctx, provider, identity, nil, false)
+	return p.teardownClaim(ctx, provider, identity, nil, "")
+}
+
+func (p *Provisioner) reconcileServerClaim(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, server *unikornv1.Server) error {
+	cli, err := coreclient.FromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	reference, err := manager.GenerateResourceReference(cli, p.volume)
+	if err != nil {
+		return err
 	}
 
 	// Keep the claim available to the provider until it confirms teardown, then
 	// release it because the Server is going away or no longer wants the Volume.
-	if serverDeleting {
-		return p.teardownClaim(ctx, provider, identity, server, serverDeleting)
+	if server.GetDeletionTimestamp() != nil {
+		return p.teardownClaim(ctx, provider, identity, server, reference)
 	}
 
-	if !requested {
+	if !serverRequestsVolume(server, p.volume.Name) {
 		// The update saga claims before writing Server intent. Without a confirmed
-		// attachment, wait for that write or its compensation to become visible.
-		if p.volume.Status.AttachedAt == nil {
+		// attachment or controller reference, wait for that write or its compensation.
+		if p.volume.Status.AttachedAt == nil && !controllerutil.ContainsFinalizer(server, reference) {
 			return provisioners.ErrYield
 		}
 
-		return p.teardownClaim(ctx, provider, identity, server, false)
+		return p.teardownClaim(ctx, provider, identity, server, reference)
+	}
+
+	if err := manager.AddResourceReference(ctx, cli, &unikornv1.Server{}, client.ObjectKeyFromObject(server), reference); err != nil {
+		return err
+	}
+
+	return p.reconcileReferencedVolume(ctx, provider, identity, reference)
+}
+
+func (p *Provisioner) reconcileReferencedVolume(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, reference string) error {
+	// Re-read after placing the reference so a concurrent update cannot attach a
+	// Volume that the Server no longer requests.
+	server, exists, err := p.claimedServer(ctx)
+	if err != nil {
+		return err
+	}
+
+	if !exists {
+		return provisioners.ErrYield
+	}
+
+	if server.GetDeletionTimestamp() != nil || !serverRequestsVolume(server, p.volume.Name) {
+		return p.teardownClaim(ctx, provider, identity, server, reference)
+	}
+
+	if err := manager.ResourceReady(ctx, identity); err != nil {
+		return err
 	}
 
 	return p.reconcileClaimedVolume(ctx, provider, identity, server)
 }
 
-func (p *Provisioner) teardownClaim(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, server *unikornv1.Server, serverDeleting bool) error {
+func (p *Provisioner) teardownClaim(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, server *unikornv1.Server, reference string) error {
 	// Preserve the Server until the provider has confirmed Nova and Cinder agree
 	// that the attachment is gone. Releasing the claim earlier loses that context.
-	if err := p.detachAttachments(ctx, provider, identity, server, serverDeleting); err != nil {
+	if err := p.detachAttachments(ctx, provider, identity, server); err != nil {
 		return err
+	}
+
+	if server != nil {
+		cli, err := coreclient.FromContext(ctx)
+		if err != nil {
+			return err
+		}
+
+		if err := manager.RemoveResourceReference(ctx, cli, &unikornv1.Server{}, client.ObjectKeyFromObject(server), reference); err != nil {
+			return err
+		}
 	}
 
 	if err := p.releaseClaim(ctx); err != nil {
@@ -281,7 +331,7 @@ func attachmentMessage(err error) string {
 	return "an unexpected error occurred"
 }
 
-func (p *Provisioner) detachAttachments(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, server *unikornv1.Server, serverDeleting bool) error {
+func (p *Provisioner) detachAttachments(ctx context.Context, provider types.Provider, identity *unikornv1.Identity, server *unikornv1.Server) error {
 	if server != nil {
 		status := &unikornv1.ServerVolumeStatus{
 			ID:                 p.volume.Name,
@@ -294,7 +344,7 @@ func (p *Provisioner) detachAttachments(ctx context.Context, provider types.Prov
 		}
 	}
 
-	if err := provider.DetachVolume(ctx, identity, server, p.volume, serverDeleting); err != nil {
+	if err := provider.DetachVolume(ctx, identity, server, p.volume); err != nil {
 		return err
 	}
 
